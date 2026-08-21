@@ -183,23 +183,24 @@ jobs:
           npm install
           npm run build
 
-      - name: Package ag-doctor-ui Windows Executable
+      - name: Package ag-doctor-ui Windows Executables (Installer & Portable)
         working-directory: ag-doctor-ui
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx electron-builder --win portable
+          npx electron-builder --win nsis portable
 
       - name: Prepare Desktop Artifacts
         shell: bash
         run: |
           mkdir -p release-artifacts/desktop
           cp ag-doctor-ui/release/*.exe release-artifacts/desktop/ || true
-          # Create direct ag-doctor-ui.exe alias
-          PORTABLE_EXE=$(ls ag-doctor-ui/release/*.exe 2>/dev/null | head -1)
-          if [ -f "$PORTABLE_EXE" ]; then
-            cp "$PORTABLE_EXE" release-artifacts/desktop/ag-doctor-ui.exe
+          # Create direct ag-doctor-Setup.exe and ag-doctor-portable.exe aliases
+          SETUP_EXE=$(ls ag-doctor-ui/release/*Setup*.exe 2>/dev/null | head -1)
+          if [ -f "$SETUP_EXE" ]; then
+            cp "$SETUP_EXE" release-artifacts/desktop/ag-doctor-installer.exe
           fi
+
 
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
