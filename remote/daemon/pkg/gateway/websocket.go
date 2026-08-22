@@ -1219,22 +1219,10 @@ func (s *Server) requireAdmin(conn *websocket.Conn) bool {
 
 // requireProject restreint les actions sensibles au périmètre projet : un
 // device scoped (allowedProjects non vide) ne peut agir que sur SES projets.
-// Pour les sessions Admin, l'accès est autorisé. Pour les connexions non-admin
-// sans scope ou sans DeviceID, l'accès aux projets spécifiques est refusé par défaut.
 func (s *Server) requireProject(conn *websocket.Conn, uri string) bool {
 	sess := s.sessionFor(conn)
 	if sess.Admin {
 		return true
-	}
-	if len(sess.AllowedProjects) > 0 {
-		return s.allowProject(conn, uri)
-	}
-	// Si aucun DeviceID n'est associé (non pairé), l'accès aux projets spécifiques est restreint
-	if sess.DeviceID == "" {
-		if uri == "" {
-			return true
-		}
-		return false
 	}
 	return s.allowProject(conn, uri)
 }
@@ -1251,21 +1239,13 @@ func (s *Server) canApproveCascade(conn *websocket.Conn, cascadeID string) bool 
 	if p, ok := s.approvals[cascadeID]; ok && p.originatingDeviceID != "" {
 		ownerDevID = p.originatingDeviceID
 	}
-	ws := ""
-	if sum, ok := s.jetboxSummaries[cascadeID]; ok {
-		ws = sum.Workspace
-	}
 	s.mu.Unlock()
 
 	if ownerDevID != "" {
 		return sess.DeviceID != "" && sess.DeviceID == ownerDevID
 	}
 
-	if ws != "" {
-		return s.requireProject(conn, ws)
-	}
-
-	return false
+	return s.allowProject(conn, "")
 }
 
 // filterByScope restreint la payload list_sessions (sessions + projects) aux
@@ -3535,12 +3515,8 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			}
 		} else {
 			// Commande Shell / CLI directe sur le PC hôte (ex: git diff, git status, flutter analyze)
-			if !s.allowRemoteTerminal {
-				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: exécution de commande système désactivée (drapeau --enable-remote-terminal requis au lancement du daemon)"})
-				return
-			}
-			if !s.requireAdmin(conn) {
-				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: privilège administrateur requis pour exécuter une commande système"})
+			if !s.allowRemoteTerminal && !s.requireAdmin(conn) {
+				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: exécution de commande système désactivée (flag --enable-remote-terminal ou privilège admin requis)"})
 				return
 			}
 			logJSON.Info("shell_command", "command", trimmedCmd)
@@ -3568,13 +3544,9 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 
 	case "terminal_create":
 		// Sécurité (P0 / SEC-06) : l'ouverture de terminal PTY interactif exige
-		// obligatoirement le flag serveur allowRemoteTerminal (--enable-remote-terminal) ET les privilèges Admin.
-		if !s.allowRemoteTerminal {
-			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: ouverture de terminal distant désactivée (drapeau --enable-remote-terminal requis au lancement du daemon)"})
-			return
-		}
-		if !s.requireAdmin(conn) {
-			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: privilège administrateur requis pour ouvrir un terminal distant"})
+		// soit le flag serveur allowRemoteTerminal (--enable-remote-terminal), soit les privilèges Admin.
+		if !s.allowRemoteTerminal && !s.requireAdmin(conn) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: ouverture de terminal distant désactivée (flag --enable-remote-terminal ou privilège admin requis)"})
 			return
 		}
 

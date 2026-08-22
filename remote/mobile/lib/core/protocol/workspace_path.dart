@@ -6,8 +6,6 @@
 /// `conversation_history_screen.dart` et `sessions_list.dart` (audit
 /// clean-code-guard H5) — un seul helper à maintenir désormais.
 class WorkspacePath {
-  static final RegExp _winDriveRe = RegExp(r'^([a-zA-Z]):/(.*)$');
-
   /// Normalisation canonique unique pour toutes les couches Flutter.
   /// Traite de façon identique : file:///, lettres de lecteur Windows (c:/ vs C:/),
   /// barres obliques (/ vs \), encodage URL (%20, %3A), et supprime les trailing slashes.

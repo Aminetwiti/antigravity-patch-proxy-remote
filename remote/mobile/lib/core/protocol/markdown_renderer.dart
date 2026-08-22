@@ -345,6 +345,23 @@ class MarkdownRenderer {
   }) {
     final spans = <InlineSpan>[];
 
+    void addTextSpans(List<TextSpan> newSpans) {
+      for (final span in newSpans) {
+        if (spans.isNotEmpty &&
+            spans.last is TextSpan &&
+            (spans.last as TextSpan).children == null &&
+            (spans.last as TextSpan).recognizer == null &&
+            span.children == null &&
+            span.recognizer == null &&
+            (spans.last as TextSpan).style == span.style) {
+          final prev = spans.removeLast() as TextSpan;
+          spans.add(TextSpan(text: '${prev.text ?? ''}${span.text ?? ''}', style: span.style));
+        } else {
+          spans.add(span);
+        }
+      }
+    }
+
     List<TextSpan> highlightText(String content, TextStyle style) {
       if (searchQuery == null || searchQuery.isEmpty) {
         return [TextSpan(text: content, style: style)];
@@ -389,11 +406,11 @@ class MarkdownRenderer {
 
       if (nextTrigger == -1) {
         // No more markdown trigger characters anywhere in the remaining text
-        spans.addAll(highlightText(remaining, base));
+        addTextSpans(highlightText(remaining, base));
         break;
       } else if (nextTrigger > 0) {
         // Emit plain text up to the first trigger character
-        spans.addAll(highlightText(remaining.substring(0, nextTrigger), base));
+        addTextSpans(highlightText(remaining.substring(0, nextTrigger), base));
         remaining = remaining.substring(nextTrigger);
       }
 
@@ -694,11 +711,11 @@ class MarkdownRenderer {
       ].reduce((a, b) => a < b ? a : b);
       if (nextIndex == 0) {
         // Defensive: a token matched but not at position 0 (shouldn't happen).
-        spans.addAll(highlightText(remaining[0], base));
+        addTextSpans(highlightText(remaining[0], base));
         remaining = remaining.substring(1);
         continue;
       }
-      spans.addAll(highlightText(remaining.substring(0, nextIndex), base));
+      addTextSpans(highlightText(remaining.substring(0, nextIndex), base));
       remaining = remaining.substring(nextIndex);
     }
     return spans;

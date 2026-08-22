@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -98,10 +99,10 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
         setState(() => _pinnedIds.addAll(added));
       }
     }
-    if (widget.sessions != old.sessions) {
-      _loadPins();
-      _loadReadSessions();
-    }
+    // Perf : ne PAS recharger pins/read-ids à chaque nouvelle instance de
+    // liste (chaque rafale d'évènements daemon produit une nouvelle liste) :
+    // les pins daemon sont déjà fusionnés ci-dessus, les prefs locales ne
+    // changent que via ce widget. Charge initial uniquement (initState).
     if (widget.activeSessionId != old.activeSessionId && widget.activeSessionId.isNotEmpty) {
       _markSessionAsRead(widget.activeSessionId);
     }
@@ -231,12 +232,33 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final allSessions = widget.sessions ?? [];
-    final availableSessions = allSessions
+  // ── Mémoïsation du pipeline filtre → tri → pins → groupe ──────────────
+  // Le pipeline complet (4 passes + tri + groupage) était recalculé à chaque
+  // build, donc à chaque évènement daemon (stream_start/end, refresh 15 s,
+  // hover setState…) même quand ni la liste ni les filtres n'avaient changé.
+  List<CascadeSession>? _pipeSessionsInput;
+  String? _pipeQuery;
+  SessionSortBy? _pipeSort;
+  SessionGroupBy? _pipeGroup;
+  Set<String>? _pipePinned;
+  List<ProjectItem>? _pipeProjects;
+  Map<String, List<CascadeSession>>? _pipeResult;
+
+  Map<String, List<CascadeSession>> _projectSessionsOf() {
+    final sessions = widget.sessions ?? const <CascadeSession>[];
+    final projects = widget.projects;
+    final pinnedSnapshot = Set<String>.of(_pinnedIds);
+    if (_pipeResult != null &&
+        identical(sessions, _pipeSessionsInput) &&
+        _filterQuery == _pipeQuery &&
+        _sortBy == _pipeSort &&
+        _groupBy == _pipeGroup &&
+        setEquals(pinnedSnapshot, _pipePinned) &&
+        identical(projects, _pipeProjects)) {
+      return _pipeResult!;
+    }
+
+    final availableSessions = sessions
         .where((s) => s.isAvailable && s.id.isNotEmpty)
         .where((s) {
           if (_filterQuery.isEmpty) return true;
@@ -257,11 +279,26 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
       ...sortedSessions.where((s) => !_pinnedIds.contains(s.id)),
     ];
 
-    final projectSessions = groupSessions(
+    final result = groupSessions(
       sessions: pinnedFirst,
       groupBy: _groupBy,
-      projects: widget.projects,
+      projects: projects,
     );
+    _pipeSessionsInput = sessions;
+    _pipeQuery = _filterQuery;
+    _pipeSort = _sortBy;
+    _pipeGroup = _groupBy;
+    _pipePinned = pinnedSnapshot;
+    _pipeProjects = projects;
+    _pipeResult = result;
+    return result;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final projectSessions = _projectSessionsOf();
 
     final projectNames = projectSessions.keys.toList();
 
@@ -942,6 +979,7 @@ class _WorkspaceFolderSection extends StatelessWidget {
             )
           else ...[
             ...visibleSessions.map((s) => _SessionRowItem(
+                  key: ValueKey('session_${s.id}'),
                   session: s,
                   isSelected: s.id == activeSessionId,
                   showSubtitle: showSubtitle,
@@ -989,6 +1027,7 @@ class _SessionRowItem extends StatefulWidget {
   final VoidCallback? onTogglePin;
 
   const _SessionRowItem({
+    super.key,
     required this.session,
     required this.isSelected,
     this.showSubtitle = true,
@@ -1229,10 +1268,12 @@ class _SessionRowItemState extends State<_SessionRowItem> {
         ? widget.session.title.trim()
         : 'Nouvelle conversation';
     // Point 9 : remplacer [nom](url) par @nom propre
-    final displayTitle = rawTitle.replaceAllMapped(
-      _cleanTitleRe,
-      (m) => '@${m.group(1)}',
-    );
+    final displayTitle = rawTitle.contains('[')
+        ? rawTitle.replaceAllMapped(
+            _cleanTitleRe,
+            (m) => '@${m.group(1)}',
+          )
+        : rawTitle;
     final subtitleText = widget.session.worktree ?? WorkspacePath.displayName(widget.session.workspacePath);
     final pinText = widget.isPinned ? "Épinglée, " : "";
     final runningText = isRunning ? "En cours d'exécution, " : "";

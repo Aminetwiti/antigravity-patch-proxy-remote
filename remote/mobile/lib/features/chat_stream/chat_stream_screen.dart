@@ -280,28 +280,41 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     });
   }
 
+  /// Debounce de la recherche : le scan des textes complets des messages
+  /// tourne sur l'isolate UI — sans debounce, chaque frappe rebuild la page.
+  Timer? _searchDebounce;
+
+  /// Abonnements stream des prompts envoyés : suivis pour être annulés au
+  /// dispose (sinon un stream orphelin continue de parser et de muter
+  /// `_sessionMessages` jusqu'au stream_end après fermeture de l'écran).
+  final List<StreamSubscription<Map<String, dynamic>>> _promptStreamSubs = [];
+
   void _onSearchQueryChanged(String query) {
-    final q = query.trim().toLowerCase();
-    final msgs = _sessionMessages[widget.activeSessionId] ?? [];
-    if (q.isEmpty) {
-      setState(() {
-        _searchMatches = [];
-        _currentSearchMatchIndex = 0;
-      });
-      return;
-    }
-    final matches = <int>[];
-    for (var i = 0; i < msgs.length; i++) {
-      final m = msgs[i];
-      if (m.text.toLowerCase().contains(q) || m.sender.toLowerCase().contains(q)) {
-        matches.add(i);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      final q = query.trim().toLowerCase();
+      final msgs = _sessionMessages[widget.activeSessionId] ?? [];
+      if (q.isEmpty) {
+        setState(() {
+          _searchMatches = [];
+          _currentSearchMatchIndex = 0;
+        });
+        return;
       }
-    }
-    setState(() {
-      _searchMatches = matches;
-      _currentSearchMatchIndex = matches.isNotEmpty ? matches.length - 1 : 0;
+      final matches = <int>[];
+      for (var i = 0; i < msgs.length; i++) {
+        final m = msgs[i];
+        if (m.text.toLowerCase().contains(q) || m.sender.toLowerCase().contains(q)) {
+          matches.add(i);
+        }
+      }
+      setState(() {
+        _searchMatches = matches;
+        _currentSearchMatchIndex = matches.isNotEmpty ? matches.length - 1 : 0;
+      });
+      _jumpToSearchMatch();
     });
-    _jumpToSearchMatch();
   }
 
   void _jumpToSearchMatch() {
@@ -1223,6 +1236,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.removeListener(_onScroll);
     _throttleTimer?.cancel();
+    _searchDebounce?.cancel();
+    for (final s in _promptStreamSubs) {
+      s.cancel();
+    }
+    _promptStreamSubs.clear();
     _streamSub?.cancel();
     _tapSub?.cancel();
     _stillWorkingTimer?.cancel();
@@ -2056,7 +2074,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     List<Map<String, dynamic>>? media,
   }) {
     if (text.trim().startsWith('/btw ') || text.trim().startsWith('/btw')) {
-      final sideQ = text.trim().replaceFirst(RegExp(r'^/btw\s*'), '');
+      final sideQ = text.trim().substring(4).trim();
       setState(() {
         _sideQuestion = sideQ.isNotEmpty ? sideQ : 'Question parallèle';
         _isSideQuestionLoading = true;
@@ -2255,7 +2273,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
     var thoughtBuffer = StringBuffer();
     _onStreamStarted(targetSession);
-    api.sendPrompt(
+    final promptSub = api.sendPrompt(
       targetSession,
       text,
       base64Data: base64Data,
@@ -2389,6 +2407,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         });
       },
     );
+    _promptStreamSubs.add(promptSub);
   }
 
   void _handleRetryTaskDirectly(ChatMessage errorMsg) {
@@ -2451,20 +2470,21 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     ).catchError((_) => <String, dynamic>{});
   }
 
+  /// Mises à jour de streaming à échéance uniquement (trailing) : au plus
+  /// un rebuild de page par [_throttleDuration]. Avant : leading + trailing
+  /// permettait jusqu'à ~80 setState/s de l'écran complet sous un flux de
+  /// deltas rapide, annulant le batch de DaemonApi.
   void _scheduleThrottledUpdate() {
-    if (_throttleTimer?.isActive ?? false) {
-      _needsStateUpdate = true;
-      return;
-    }
-
-    setState(() {}); // Immediate update
+    _needsStateUpdate = true;
+    if (_throttleTimer?.isActive ?? false) return;
 
     _throttleTimer = Timer(_throttleDuration, () {
+      _throttleTimer = null;
       if (_needsStateUpdate && mounted) {
-        setState(() {});
         _needsStateUpdate = false;
+        setState(() {});
+        _scrollToBottom();
       }
-      _scrollToBottom();
     });
   }
 
@@ -3182,6 +3202,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               final isLatest = msgIndex == visibleList.length - 1;
 
               final bubbleWidget = _MessageBubble(
+                key: ValueKey('msg_${msg.id}'),
                 message: msg,
                 api: widget.api,
                 workspacePath: widget.activeProjectName,
@@ -3199,7 +3220,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 onViewPlan: () => setState(() => _currentTab = SessionTabType.plan),
                 onViewReview: () => setState(() => _currentTab = SessionTabType.review),
                 onOpenFile: (file) {
-                  final fileName = file.split(RegExp(r'[/\\]')).last;
+                  final fileName = file.split(_mediaSlashSplitRe).last;
                   final matching = _modifiedFileList
                       .where((f) => _pathsMatch(f.path, file))
                       .firstOrNull;
@@ -3284,7 +3305,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 );
               }
 
+              // Clé stable par message : sans elle, une insertion au milieu
+              // de la liste réassocie l'état (cache markdown, animations)
+              // aux mauvais éléments lors des insertions/retraits.
               return Padding(
+                key: ValueKey('msg_${msg.id}'),
                 padding: const EdgeInsets.only(bottom: 16),
                 child: isolatedBubble,
               );
@@ -3417,7 +3442,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       },
       onSplitDiffView: () {
         final firstPath = _modifiedFiles.firstOrNull;
-        final firstName = firstPath?.split(RegExp(r'[/\\]')).last;
+        final firstName = firstPath?.split(_mediaSlashSplitRe).last;
         _openUnifiedDiffViewer(
           filePath: firstPath,
           fileName: firstName,
@@ -3425,7 +3450,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       },
       onExpandAll: () {
         final firstPath = _modifiedFiles.firstOrNull;
-        final firstName = firstPath?.split(RegExp(r'[/\\]')).last;
+        final firstName = firstPath?.split(_mediaSlashSplitRe).last;
         _openUnifiedDiffViewer(
           filePath: firstPath,
           fileName: firstName,
@@ -4135,6 +4160,7 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback? onRetryTask;
 
   const _MessageBubble({
+    super.key,
     required this.message,
     this.api,
     this.workspacePath = '',
@@ -5117,17 +5143,42 @@ class _ExtractedMedia {
   });
 }
 
+final RegExp _mediaImageRe = RegExp(r'!\[([^\]]*)\]\(([^)\s]+)\)');
+final RegExp _mediaAttachRe = RegExp(r'\[(Images? jointes?|Image|Fichier|File|Pièce jointe|Piece jointe):\s*([^\]]+)\]', caseSensitive: false);
+final RegExp _mediaArtifactRe = RegExp(
+  r'\[ARTIFACT:\s*([^\]]+)\](?:\s*\r?\n\s*Path:\s*([^\r\n]+))?',
+  caseSensitive: false,
+);
+final RegExp _mediaMetaResidualRe = RegExp(r'(?:Path|Last Edited):\s*[^\r\n]+', caseSensitive: false);
+final RegExp _mediaSlashSplitRe = RegExp(r'[\\/]');
+
 ({List<_ExtractedMedia> media, String cleanText}) _extractMediaAndCleanText(String rawText) {
+  if (rawText.isEmpty) return (media: const [], cleanText: '');
+  if (!rawText.contains('![') &&
+      !rawText.contains('[ARTIFACT:') &&
+      !rawText.contains('[Artifact:') &&
+      !rawText.contains('[Image') &&
+      !rawText.contains('[image') &&
+      !rawText.contains('[Fichier') &&
+      !rawText.contains('[fichier') &&
+      !rawText.contains('[File') &&
+      !rawText.contains('[file') &&
+      !rawText.contains('[Pièce') &&
+      !rawText.contains('[Piece') &&
+      !rawText.contains('Path:') &&
+      !rawText.contains('Last Edited:')) {
+    return (media: const [], cleanText: rawText.trim());
+  }
+
   final mediaList = <_ExtractedMedia>[];
   var text = rawText;
 
   // 1. Markdown images: ![alt](url)
-  final imageRe = RegExp(r'!\[([^\]]*)\]\(([^)\s]+)\)');
-  for (final match in imageRe.allMatches(text)) {
+  for (final match in _mediaImageRe.allMatches(text)) {
     final alt = match.group(1) ?? '';
     final url = match.group(2) ?? '';
     final isDataUri = url.startsWith('data:image/');
-    final name = alt.isNotEmpty ? alt : (isDataUri ? 'image.png' : url.split(RegExp(r'[\\/]')).last);
+    final name = alt.isNotEmpty ? alt : (isDataUri ? 'image.png' : url.split(_mediaSlashSplitRe).last);
     mediaList.add(_ExtractedMedia(
       path: url,
       name: name,
@@ -5135,17 +5186,16 @@ class _ExtractedMedia {
       dataUri: isDataUri ? url : null,
     ));
   }
-  text = text.replaceAll(imageRe, '').trim();
+  text = text.replaceAll(_mediaImageRe, '').trim();
 
   // 2. Bracketed attachment tags: [Images jointes: ...], [Fichier: ...]
-  final attachRe = RegExp(r'\[(Images? jointes?|Image|Fichier|File|Pièce jointe|Piece jointe):\s*([^\]]+)\]', caseSensitive: false);
-  for (final match in attachRe.allMatches(text)) {
+  for (final match in _mediaAttachRe.allMatches(text)) {
     final label = match.group(1) ?? 'Image';
     final pathsStr = match.group(2) ?? '';
     final paths = pathsStr.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty);
     for (final p in paths) {
       final cleanP = p.startsWith('file://') ? p.substring(7) : p;
-      final name = cleanP.split(RegExp(r'[\\/]')).last;
+      final name = cleanP.split(_mediaSlashSplitRe).last;
       final lower = cleanP.toLowerCase();
       final isImg = lower.endsWith('.png') ||
           lower.endsWith('.jpg') ||
@@ -5161,21 +5211,17 @@ class _ExtractedMedia {
       ));
     }
   }
-  text = text.replaceAll(attachRe, '').trim();
+  text = text.replaceAll(_mediaAttachRe, '').trim();
 
   // 3. Artifact tags: [ARTIFACT: name]\nPath: file:///...
-  final artifactRe = RegExp(
-    r'\[ARTIFACT:\s*([^\]]+)\](?:\s*\r?\n\s*Path:\s*([^\r\n]+))?',
-    caseSensitive: false,
-  );
-  for (final match in artifactRe.allMatches(text)) {
+  for (final match in _mediaArtifactRe.allMatches(text)) {
     final artName = match.group(1)?.trim() ?? 'Artifact';
     final artPath = match.group(2)?.trim() ?? artName;
     if (artName == '...' || artPath == 'file:///...' || artPath == '...' || artPath.endsWith('/...')) {
       continue;
     }
     final cleanP = artPath.startsWith('file://') ? artPath.substring(7) : artPath;
-    final name = artName.isNotEmpty ? artName : cleanP.split(RegExp(r'[\\/]')).last;
+    final name = artName.isNotEmpty ? artName : cleanP.split(_mediaSlashSplitRe).last;
     final lower = cleanP.toLowerCase();
     final isImg = lower.endsWith('.png') ||
         lower.endsWith('.jpg') ||
@@ -5191,11 +5237,10 @@ class _ExtractedMedia {
       dataUri: cleanP.startsWith('data:image/') ? cleanP : null,
     ));
   }
-  text = text.replaceAll(artifactRe, '').trim();
+  text = text.replaceAll(_mediaArtifactRe, '').trim();
 
   // 4. Nettoyage de balises de métadonnées résiduelles (Path:, Last Edited:)
-  final metaResidualRe = RegExp(r'(?:Path|Last Edited):\s*[^\r\n]+', caseSensitive: false);
-  text = text.replaceAll(metaResidualRe, '').trim();
+  text = text.replaceAll(_mediaMetaResidualRe, '').trim();
 
   return (media: mediaList, cleanText: text);
 }

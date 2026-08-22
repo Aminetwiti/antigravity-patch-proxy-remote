@@ -153,6 +153,7 @@ func TestPairingManager_HTTPRevoke(t *testing.T) {
 	// DELETE sans deviceId → 400 (avec token valide pour tester le paramètre manquant)
 	// On crée une nouvelle session d'abord
 	_, _, _ = pm.VerifyPIN("127.0.0.1:9999", pm.GeneratePIN(), "dev-2")
+	pm.PromoteAdmin("dev-2")
 	tok2 := ""
 	for tok, s := range pm.sessions {
 		if s.DeviceID == "dev-2" {

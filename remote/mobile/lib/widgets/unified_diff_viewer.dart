@@ -32,6 +32,7 @@ class UnifiedDiffViewer extends StatefulWidget {
 }
 
 class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
+  static final RegExp _hunkHeaderRe = RegExp(r'@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@');
   int _additions = 0;
   int _deletions = 0;
   List<_DiffLine> _lines = [];
@@ -103,7 +104,7 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
           content: raw,
           hunkIndex: hunkIndex,
         ));
-        final match = RegExp(r'@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@').firstMatch(raw);
+        final match = _hunkHeaderRe.firstMatch(raw);
         if (match != null) {
           oldLineNum = int.tryParse(match.group(1) ?? '1') ?? 1;
           newLineNum = int.tryParse(match.group(2) ?? '1') ?? 1;

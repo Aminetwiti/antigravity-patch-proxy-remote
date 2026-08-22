@@ -62,7 +62,10 @@ class OutboxQueue {
           return t == null || t.isBefore(cutoff);
         })
         .toList();
-    _pending.removeWhere((m) => expired.contains(m));
+    if (expired.isNotEmpty) {
+      final expiredSet = expired.toSet();
+      _pending.removeWhere((m) => expiredSet.contains(m));
+    }
     return expired;
   }
 

@@ -145,7 +145,7 @@ class _GitCommitDialogState extends State<GitCommitDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            Row(
+            Wrap(
               children: [
                 OutlinedButton.icon(
                   onPressed: _isGenerating || _isCommitting ? null : _generateMessage,
@@ -191,24 +191,32 @@ class _GitCommitDialogState extends State<GitCommitDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _isCommitting ? null : () => Navigator.of(context).pop(),
-          child: const Text('Annuler'),
-        ),
-        ElevatedButton(
-          onPressed: _isCommitting ? null : _submit,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: scheme.primary,
-            foregroundColor: scheme.onPrimary,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          ),
-          child: _isCommitting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                )
-              : const Text('Valider le Commit'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            TextButton(
+              onPressed: _isCommitting ? null : () => Navigator.of(context).pop(),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: _isCommitting ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: scheme.primary,
+                foregroundColor: scheme.onPrimary,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              child: _isCommitting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Valider le Commit'),
+            ),
+          ],
         ),
       ],
     );

@@ -79,13 +79,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   /// Extrait le nom court du dossier d'un chemin de workspace.
-  static String _extractWorkspaceName(String raw) {
-    final p = raw.trim();
-    if (p.isEmpty || p == '.') return 'Workspace';
-    final cleaned = p.endsWith('/') || p.endsWith('\\') ? p.substring(0, p.length - 1) : p;
-    final i = cleaned.lastIndexOf(RegExp(r'[/\\]'));
-    return i >= 0 ? cleaned.substring(i + 1) : cleaned;
-  }
+  static String _extractWorkspaceName(String raw) =>
+      WorkspacePath.displayName(raw, fallback: 'Workspace');
 
   @override
   void initState() {

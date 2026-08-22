@@ -29,7 +29,6 @@ tsc_*.txt
 
 # Temporary development & extract directories
 scratch/
-.env
 test-extract/
 .kimchi/
 
@@ -64,3 +63,4 @@ remote/daemon/!scratch/README.md
 remote/daemon/*.crt
 remote/daemon/*.key
 remote/insperer/*
+config.bat

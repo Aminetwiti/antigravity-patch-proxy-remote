@@ -80,6 +80,8 @@ const (
 // BuildStartCascade génère un message StartCascadeRequest brut.
 func BuildStartCascade(workspaceURI, projectID, modelUID string, modelEnum uint64) []byte {
 	w := &writer{}
+	w.varintField(4, 1) // CortexTrajectorySource = 1
+	w.varintField(5, 1) // TrajectoryType = 1
 	if projectID != "" {
 		envW := &writer{}
 		envW.stringField(1, projectID)
