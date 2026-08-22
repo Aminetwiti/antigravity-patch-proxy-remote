@@ -168,10 +168,21 @@ Map<String, List<CascadeSession>> groupSessions({
         }
       }
 
-      // 4. Priority 4: folder name matching project name
+      // 4. Priority 4: folder name matching project name or workspace containing project name
       if (matchedProject == null && s.workspacePath.isNotEmpty) {
-        final sessionFolder = WorkspacePath.displayName(s.workspacePath).toLowerCase();
-        matchedProject = byNameLower[sessionFolder];
+        final lowerWs = s.workspacePath.toLowerCase();
+        for (final p in officialProjects) {
+          final pName = p.name.trim().toLowerCase();
+          if (pName.isNotEmpty && (lowerWs.contains(pName) || p.path.toLowerCase().contains(lowerWs))) {
+            matchedProject = p;
+            break;
+          }
+        }
+      }
+
+      // 5. Priority 5: fallback to first project for git branch workspaces
+      if (matchedProject == null && officialProjects.isNotEmpty) {
+        matchedProject = officialProjects.first;
       }
 
       if (matchedProject != null) {

@@ -609,8 +609,8 @@ func (s *Server) sessionsFromSummariesLocked(jetbox map[string]connectrpc.Jetbox
 		if isSubagentTitle(title) {
 			continue
 		}
-		// Masquer les sessions vides abandonnées anciennes (sans titre personnalisé, < 2 étapes, créées il y a plus de 24h)
-		if (title == "Untitled Conversation" || title == "Cascade Session") && sum.StepCount <= 1 && !sum.UpdatedAt.IsZero() && time.Since(sum.UpdatedAt) > 24*time.Hour {
+		// Masquer les sessions vides abandonnées (sans titre personnalisé / "Cascade Session", < 2 étapes, ou sans date, ou plus de 24h)
+		if (title == "Untitled Conversation" || title == "Cascade Session" || strings.HasPrefix(title, "Empty ") || strings.HasPrefix(title, "New ") || strings.HasPrefix(title, "General Conversation")) && (sum.StepCount <= 1 || sum.UpdatedAt.IsZero() || time.Since(sum.UpdatedAt) > 24*time.Hour) {
 			continue
 		}
 		wsName, wsPath, projID := matchOfficialProject(sum.ProjectID, sum.Workspace, sum.Workspace, projects)
@@ -3109,8 +3109,8 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 		if isSubagentTitle(title) {
 			continue
 		}
-		// Masquer les sessions vides abandonnées anciennes (sans titre personnalisé, < 2 étapes, créées il y a plus de 24h)
-		if (title == "Untitled Conversation" || title == "Cascade Session") && sum.StepCount <= 1 && !sum.UpdatedAt.IsZero() && time.Since(sum.UpdatedAt) > 24*time.Hour {
+		// Masquer les sessions vides abandonnées (sans titre personnalisé / "Cascade Session", < 2 étapes, ou sans date, ou plus de 24h)
+		if (title == "Untitled Conversation" || title == "Cascade Session" || strings.HasPrefix(title, "Empty ") || strings.HasPrefix(title, "New ") || strings.HasPrefix(title, "General Conversation")) && (sum.StepCount <= 1 || sum.UpdatedAt.IsZero() || time.Since(sum.UpdatedAt) > 24*time.Hour) {
 			continue
 		}
 

@@ -208,7 +208,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx electron-builder --win portable
+          npx electron-builder --win portable --publish never
 
       - name: Build & Package Antigravity Remote Daemon
         working-directory: remote/antigravity-remote-daemon
@@ -217,7 +217,7 @@ jobs:
         run: |
           npm install
           npm run build
-          npx electron-builder --win portable
+          npx electron-builder --win portable --publish never
 
       - name: Prepare Desktop Artifacts
         shell: bash
