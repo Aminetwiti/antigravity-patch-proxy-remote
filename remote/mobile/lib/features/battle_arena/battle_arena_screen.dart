@@ -252,17 +252,33 @@ class _BattleArenaScreenState extends State<BattleArenaScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.danger)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.danger),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      ),
                       onPressed: () => _eliminateArm('arm_a'),
-                      child: const Text('Éliminer Arm A', style: TextStyle(color: AppColors.danger, fontSize: 11)),
+                      child: const Text(
+                        'Éliminer Arm A',
+                        style: TextStyle(color: AppColors.danger, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.danger)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.danger),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      ),
                       onPressed: () => _eliminateArm('arm_b'),
-                      child: const Text('Éliminer Arm B', style: TextStyle(color: AppColors.danger, fontSize: 11)),
+                      child: const Text(
+                        'Éliminer Arm B',
+                        style: TextStyle(color: AppColors.danger, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                 ],
@@ -272,17 +288,33 @@ class _BattleArenaScreenState extends State<BattleArenaScreen> {
                 children: [
                   Expanded(
                     child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.positive),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.positive,
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      ),
                       onPressed: () => _concludeBattle('arm_a', 2), // 2 = SAFE_MERGE
-                      child: const Text('Gagnant : Arm A (SafeMerge)', style: TextStyle(color: Colors.white, fontSize: 11)),
+                      child: const Text(
+                        'Gagnant : Arm A',
+                        style: TextStyle(color: Colors.white, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.positive),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.positive,
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      ),
                       onPressed: () => _concludeBattle('arm_b', 2), // 2 = SAFE_MERGE
-                      child: const Text('Gagnant : Arm B (SafeMerge)', style: TextStyle(color: Colors.white, fontSize: 11)),
+                      child: const Text(
+                        'Gagnant : Arm B',
+                        style: TextStyle(color: Colors.white, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                 ],

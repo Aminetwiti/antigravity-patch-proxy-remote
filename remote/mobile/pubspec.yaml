@@ -24,6 +24,9 @@ dependencies:
   path: ^1.9.1
   file_picker: ^11.0.3
   image_picker: ^1.2.1
+  # SEC-04 : jetons daemon / PIN déplacés de SharedPreferences (XML en clair,
+  # inclus dans les backups adb) vers le Keychain/Keystore système.
+  flutter_secure_storage: ^9.2.2
 
 dev_dependencies:
   flutter_test:

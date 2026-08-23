@@ -20,56 +20,50 @@ class AppNotificationBanner extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scheme = Theme.of(context).colorScheme;
 
-    Color borderColor;
-    Color iconColor;
     IconData iconData;
 
     switch (data.type) {
       case BannerType.quotaExceeded:
-        borderColor = isDark ? const Color(0xFF5C1D24) : scheme.error.withValues(alpha: 0.4);
-        iconColor = isDark ? const Color(0xFFFCA5A5) : scheme.error;
         iconData = Icons.indeterminate_check_box_outlined;
         break;
       case BannerType.modelCapacity:
-        borderColor = isDark ? const Color(0xFF6B4E1B) : const Color(0xFFEAB308).withValues(alpha: 0.4);
-        iconColor = const Color(0xFFEAB308);
         iconData = Icons.cloud_off_rounded;
         break;
       case BannerType.apiKeyInvalid:
-        borderColor = isDark ? const Color(0xFF5C1D24) : scheme.error.withValues(alpha: 0.4);
-        iconColor = isDark ? const Color(0xFFFCA5A5) : scheme.error;
         iconData = Icons.key_off_rounded;
         break;
       case BannerType.fallbackActive:
-        borderColor = isDark ? const Color(0xFF1D3E6B) : AppColors.accentBlue.withValues(alpha: 0.4);
-        iconColor = AppColors.accentBlue;
         iconData = Icons.swap_horiz_rounded;
         break;
       case BannerType.contextLimit:
-        borderColor = isDark ? const Color(0xFF6B4E1B) : const Color(0xFFEAB308).withValues(alpha: 0.4);
-        iconColor = const Color(0xFFEAB308);
         iconData = Icons.memory_rounded;
         break;
     }
 
     final surfaceBg = isDark
-        ? const Color(0xF2191A1E)
+        ? const Color(0xFF15161A)
         : scheme.surfaceContainerHighest.withValues(alpha: 0.95);
 
+    final dismissAction = data.actions.where((a) => a.label.toLowerCase() == 'dismiss' || a.label.toLowerCase() == 'ignorer').firstOrNull;
+    final otherActions = data.actions.where((a) => a != dismissAction).toList();
+
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       padding: EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: isCompact ? 8 : 12,
+        horizontal: 16,
+        vertical: isCompact ? 10 : 14,
       ),
       decoration: BoxDecoration(
         color: surfaceBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor, width: 0.8),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? const Color(0xFF272A30) : scheme.outlineVariant.withValues(alpha: 0.7),
+          width: 1.0,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 10,
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 14,
             offset: const Offset(0, 4),
           ),
         ],
@@ -80,13 +74,13 @@ class AppNotificationBanner extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(iconData, size: 16, color: iconColor),
+              Icon(iconData, size: 17, color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   data.title,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w600,
                     color: isDark ? Colors.white : scheme.onSurface,
                     letterSpacing: -0.01,
@@ -101,7 +95,7 @@ class AppNotificationBanner extends StatelessWidget {
                   },
                   borderRadius: BorderRadius.circular(4),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -122,49 +116,91 @@ class AppNotificationBanner extends StatelessWidget {
             ],
           ),
           if (!isCompact) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               data.message,
               style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: isDark ? const Color(0xFFD4D4D8) : scheme.onSurfaceVariant,
+                fontSize: 12.5,
+                height: 1.45,
+                color: isDark ? const Color(0xFFB0B3BC) : scheme.onSurfaceVariant,
               ),
             ),
           ],
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: data.actions.map((action) {
-              final isPrimary = action.isPrimary;
-              return Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: InkWell(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Bouton Dismiss à gauche
+              if (dismissAction != null)
+                InkWell(
                   onTap: () {
                     HapticFeedback.lightImpact();
-                    action.onPressed();
+                    dismissAction.onPressed();
                   },
                   borderRadius: BorderRadius.circular(6),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                     decoration: BoxDecoration(
-                      color: isPrimary
-                          ? AppColors.accentBlue
-                          : (isDark ? Colors.white.withValues(alpha: 0.1) : scheme.surfaceContainerHigh),
+                      color: isDark ? const Color(0xFF26282E) : scheme.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF383A42) : scheme.outlineVariant.withValues(alpha: 0.5),
+                        width: 0.8,
+                      ),
                     ),
                     child: Text(
-                      action.label,
+                      dismissAction.label,
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: isPrimary ? FontWeight.w600 : FontWeight.w500,
-                        color: isPrimary ? Colors.white : (isDark ? const Color(0xFFE0E0E0) : scheme.onSurface),
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? const Color(0xFFD4D4D8) : scheme.onSurface,
                       ),
                     ),
                   ),
-                ),
-              );
-            }).toList(),
+                )
+              else
+                const SizedBox.shrink(),
+              // Boutons d'action à droite
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: otherActions.map((action) {
+                  final isPrimary = action.isPrimary;
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: InkWell(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        action.onPressed();
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: isPrimary
+                              ? const Color(0xFF007FFF)
+                              : (isDark ? const Color(0xFF26282E) : scheme.surfaceContainerHigh),
+                          borderRadius: BorderRadius.circular(6),
+                          border: isPrimary
+                              ? null
+                              : Border.all(
+                                  color: isDark ? const Color(0xFF383A42) : scheme.outlineVariant.withValues(alpha: 0.5),
+                                  width: 0.8,
+                                ),
+                        ),
+                        child: Text(
+                          action.label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isPrimary ? FontWeight.w600 : FontWeight.w500,
+                            color: isPrimary ? Colors.white : (isDark ? const Color(0xFFE0E0E0) : scheme.onSurface),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
           ),
         ],
       ),

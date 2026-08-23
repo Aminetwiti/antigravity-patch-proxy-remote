@@ -16,13 +16,12 @@ class EnvConfig {
     defaultValue: 8090,
   );
 
-  /// Jeton d'appairage par défaut (dev) : correspond au démon lancé avec
-  /// `-auth-token demo123`. Surchargé par l'appairage QR/discovery réel.
-  /// ponytail: plafond connu — jeton partagé en dur; remplacer par un
-  /// appairage persisté (QR → stockage sécurisé) en production.
+  /// Jeton d'appairage (SEC-07) : PLUS de valeur par défaut — vide si non
+  /// fourni via `--dart-define=AUTH_TOKEN=...`. La connexion sans token
+  /// échoue côté daemon (fail-closed) au lieu d'envoyer un secret trivial.
   static const String authToken = String.fromEnvironment(
     'AUTH_TOKEN',
-    defaultValue: '11',
+    defaultValue: '',
   );
 
   static const bool useSsl = bool.fromEnvironment(

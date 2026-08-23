@@ -13,6 +13,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../widgets/artifact_cards.dart';
 
@@ -102,6 +103,11 @@ typedef LocalFileTap = void Function(String filePath);
 class MarkdownRenderer {
   static final Map<String, List<MarkdownBlock>> _blocksCache = {};
   static const int _maxCacheEntries = 500;
+
+  /// P3 : taille du cache LRU — exposée uniquement pour les tests de
+  /// régression (le streaming ne doit pas y écrire ses snapshots).
+  @visibleForTesting
+  static int get debugBlocksCacheSize => _blocksCache.length;
   static final _toolArgRe = RegExp(r'"(command|query|file|path|TargetFile|AbsolutePath)"\s*:\s*"([^"]+)"');
   static final _whitespaceRe = RegExp(r'\s+');
 
@@ -127,15 +133,42 @@ class MarkdownRenderer {
   /// Nettoie les balises internes et les messages systèmes résiduels
   static String cleanContent(String text) {
     if (text.isEmpty) return text;
+    if (!text.contains('<') && !text.contains('[Message]')) {
+      return text.trim();
+    }
     var cleaned = text.replaceAll(_systemTagsRe, '').trim();
     cleaned = cleaned.replaceAll(_bgTaskMsgRe, '').trim();
     return cleaned;
   }
 
-  /// Splits raw markdown text into display blocks.
+  /// Asynchronous block parsing with background isolate offloading for large text (> 50KB).
+  static Future<List<MarkdownBlock>> blocksOfAsync(String text) async {
+    if (text.length > 50000) {
+      return compute(blocksOf, text);
+    }
+    return blocksOf(text);
+  }
+
+  /// Parses raw markdown text for live streaming snapshots without LRU caching.
+  static List<MarkdownBlock> blocksOfStreaming(String text) {
+    return _parseBlocks(text, cache: false);
+  }
+
+  /// Splits raw markdown text into display blocks (cached in LRU).
   static List<MarkdownBlock> blocksOf(String text) {
-    final cached = _blocksCache[text];
-    if (cached != null) return cached;
+    return _parseBlocks(text, cache: true);
+  }
+
+  static List<MarkdownBlock> _parseBlocks(String text, {required bool cache}) {
+    if (cache) {
+      final cached = _blocksCache.remove(text);
+      if (cached != null) {
+        // LRU refresh: réinsère en fin pour que l'éviction retire les entrées
+        // les moins récemment utilisées et non les plus anciennes insérées.
+        _blocksCache[text] = cached;
+        return cached;
+      }
+    }
 
     final cleanText = cleanContent(text);
     if (cleanText.isEmpty) return const [];
@@ -258,10 +291,12 @@ class MarkdownRenderer {
     }
     flushParagraph();
 
-    if (_blocksCache.length >= _maxCacheEntries) {
-      _blocksCache.remove(_blocksCache.keys.first);
+    if (cache) {
+      while (_blocksCache.length >= _maxCacheEntries) {
+        _blocksCache.remove(_blocksCache.keys.first);
+      }
+      _blocksCache[text] = List<MarkdownBlock>.unmodifiable(blocks);
     }
-    _blocksCache[text] = List<MarkdownBlock>.unmodifiable(blocks);
     return blocks;
   }
 
@@ -281,7 +316,7 @@ class MarkdownRenderer {
     if (cells.isEmpty) return false;
     return cells.every((c) {
       final t = c.trim();
-      return RegExp(r'^:?-+:?$').hasMatch(t) && t.replaceAll(':', '').replaceAll('-', '').isEmpty;
+      return _tableCellRe.hasMatch(t) && t.replaceAll(':', '').replaceAll('-', '').isEmpty;
     });
   }
 
@@ -307,6 +342,31 @@ class MarkdownRenderer {
   /// [onLocalFile] (P5) est appelé quand l'utilisateur tape un lien markdown
   /// vers un fichier local (file:///...) — le caller ouvre le fichier (ex.
   /// ArtifactViewerModal). Sans callback, le lien reste un simple tooltip.
+  static final _codeRe = RegExp(r'`([^`]+)`');
+  static final _imageRe = RegExp(r'!\[([^\]]*)\]\(([^)\s]+)\)');
+  static final _linkRe = RegExp(r'\[([^\]]+)\]\(([^)\s]+)\)');
+  static final _boldRe = RegExp(r'\*\*([^*]+)\*\*');
+  static final _italicRe = RegExp(r'\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)');
+  static final _artifactTagRe = RegExp(r'^\[ARTIFACT:\s*([^\]]+)\](?:\s*\r?\n\s*Path:\s*([^\r\n]+))?', caseSensitive: false);
+  static final _attachmentTagRe = RegExp(r'^\[(Images? jointes?|Image|Fichier|File|Pièce jointe|Piece jointe):\s*([^\]]+)\]', caseSensitive: false);
+  static final _matchAttachPrefixRe = RegExp(r'\[(Images? jointes?|Image|Fichier|File|Pièce jointe|Piece jointe):\s*[^\]]+\]', caseSensitive: false);
+  static final _matchArtifactPrefixRe = RegExp(r'\[ARTIFACT:\s*[^\]]+\]', caseSensitive: false);
+  static final _tableCellRe = RegExp(r'^:?-+:?$');
+  static final Map<String, bool> _localFileExistsCache = {};
+  static const int _maxLocalFileExistsEntries = 500;
+
+  static final Map<String, List<InlineSpan>> _inlineSpansCache = {};
+  static const int _maxInlineCacheEntries = 1000;
+
+  // Pattern de surlignage compilé une seule fois par requête de recherche
+  // (au lieu d'une RegExp neuve par paragraphe à chaque build).
+  static String? _lastSearchQuery;
+  static RegExp? _lastSearchPattern;
+
+  /// Builds inline [TextSpan]s for a paragraph, resolving bold/italic/code.
+  /// [onLocalFile] (P5) est appelé quand l'utilisateur tape un lien markdown
+  /// vers un fichier local (file:///...) — le caller ouvre le fichier (ex.
+  /// ArtifactViewerModal). Sans callback, le lien reste un simple tooltip.
   static List<InlineSpan> inlineSpans(
     String text,
     TextStyle base, {
@@ -314,20 +374,46 @@ class MarkdownRenderer {
     LocalFileTap? onLocalFile,
     String? searchQuery,
   }) {
+    final bool canCache = searchQuery == null && onLocalFile == null;
+    final String cacheKey = canCache
+        ? '${text.hashCode}_${base.fontSize}_${base.color?.value}_${base.fontWeight}_${base.fontStyle}_${scheme.primary.value}'
+        : '';
+    if (canCache) {
+      final cached = _inlineSpansCache.remove(cacheKey);
+      if (cached != null) {
+        _inlineSpansCache[cacheKey] = cached;
+        return cached;
+      }
+    }
+
     final spans = <InlineSpan>[];
-    final codeRe = RegExp(r'`([^`]+)`');
-    final imageRe = RegExp(r'!\[([^\]]*)\]\(([^)\s]+)\)');
-    final linkRe = RegExp(r'\[([^\]]+)\]\(([^)\s]+)\)');
-    final boldRe = RegExp(r'\*\*([^*]+)\*\*');
-    // CommonMark flanking: opening * must be followed by non-space, closing *
-    // must be preceded by non-space (so `a * b * c` stays literal).
-    final italicRe = RegExp(r'\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)');
+
+    void addTextSpans(List<TextSpan> newSpans) {
+      for (final span in newSpans) {
+        if (spans.isNotEmpty &&
+            spans.last is TextSpan &&
+            (spans.last as TextSpan).children == null &&
+            (spans.last as TextSpan).recognizer == null &&
+            span.children == null &&
+            span.recognizer == null &&
+            (spans.last as TextSpan).style == span.style) {
+          final prev = spans.removeLast() as TextSpan;
+          spans.add(TextSpan(text: '${prev.text ?? ''}${span.text ?? ''}', style: span.style));
+        } else {
+          spans.add(span);
+        }
+      }
+    }
 
     List<TextSpan> highlightText(String content, TextStyle style) {
       if (searchQuery == null || searchQuery.isEmpty) {
         return [TextSpan(text: content, style: style)];
       }
-      final pattern = RegExp(RegExp.escape(searchQuery), caseSensitive: false);
+      if (searchQuery != _lastSearchQuery || _lastSearchPattern == null) {
+        _lastSearchQuery = searchQuery;
+        _lastSearchPattern = RegExp(RegExp.escape(searchQuery), caseSensitive: false);
+      }
+      final pattern = _lastSearchPattern!;
       final res = <TextSpan>[];
       int cursor = 0;
       for (final match in pattern.allMatches(content)) {
@@ -351,8 +437,28 @@ class MarkdownRenderer {
 
     var remaining = text;
     while (remaining.isNotEmpty) {
+      // Fast path: find earliest trigger character for markdown syntax (` ! [ *)
+      int nextTrigger = -1;
+      for (int i = 0; i < remaining.length; i++) {
+        final c = remaining.codeUnitAt(i);
+        if (c == 0x60 /* ` */ || c == 0x21 /* ! */ || c == 0x5B /* [ */ || c == 0x2A /* * */) {
+          nextTrigger = i;
+          break;
+        }
+      }
+
+      if (nextTrigger == -1) {
+        // No more markdown trigger characters anywhere in the remaining text
+        addTextSpans(highlightText(remaining, base));
+        break;
+      } else if (nextTrigger > 0) {
+        // Emit plain text up to the first trigger character
+        addTextSpans(highlightText(remaining.substring(0, nextTrigger), base));
+        remaining = remaining.substring(nextTrigger);
+      }
+
       // 1. Inline code — highest priority, its content must not be restyled.
-      final codeMatch = codeRe.firstMatch(remaining);
+      final codeMatch = _codeRe.firstMatch(remaining);
       if (codeMatch != null && codeMatch.start == 0) {
         final isDark = scheme.brightness == Brightness.dark;
         spans.add(TextSpan(
@@ -371,7 +477,7 @@ class MarkdownRenderer {
       }
 
       // 2. Markdown Image ![alt](url)
-      final imageMatch = imageRe.firstMatch(remaining);
+      final imageMatch = _imageRe.firstMatch(remaining);
       if (imageMatch != null && imageMatch.start == 0) {
         final alt = imageMatch.group(1) ?? '';
         final url = imageMatch.group(2) ?? '';
@@ -399,8 +505,7 @@ class MarkdownRenderer {
       }
 
       // 3. Artifact Tag [ARTIFACT: name]\nPath: file:///...
-      final artifactRe = RegExp(r'^\[ARTIFACT:\s*([^\]]+)\](?:\s*\r?\n\s*Path:\s*([^\r\n]+))?', caseSensitive: false);
-      final artifactMatch = artifactRe.firstMatch(remaining);
+      final artifactMatch = _artifactTagRe.firstMatch(remaining);
       if (artifactMatch != null) {
         final artName = artifactMatch.group(1)?.trim() ?? 'Artifact';
         final artPath = artifactMatch.group(2)?.trim() ?? artName;
@@ -427,63 +532,62 @@ class MarkdownRenderer {
           spans.add(WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: _buildImageWidget(
-                url: artPath,
-                alt: artName,
-                filePath: filePath,
-                isLocalFile: isLocalFile,
-                isDataUri: artPath.startsWith('data:image/'),
-                scheme: scheme,
-                onLocalFile: onLocalFile,
-              ),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: _buildImageWidget(
+              url: artPath,
+              alt: artName,
+              filePath: filePath,
+              isLocalFile: isLocalFile,
+              isDataUri: artPath.startsWith('data:image/'),
+              scheme: scheme,
+              onLocalFile: onLocalFile,
             ),
-          ));
-        } else {
-          final fileName = filePath.split(RegExp(r'[\\/]')).last;
-          spans.add(WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: InkWell(
-                onTap: onLocalFile == null ? null : () => onLocalFile(filePath),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.insert_drive_file_outlined, size: 16, color: scheme.primary),
-                      const SizedBox(width: 6),
-                      Text(
-                        fileName.isNotEmpty ? fileName : filePath,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurface,
-                        ),
+          ),
+        ));
+      } else {
+        final fileName = filePath.split(RegExp(r'[\\/]')).last;
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: InkWell(
+              onTap: onLocalFile == null ? null : () => onLocalFile(filePath),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.insert_drive_file_outlined, size: 16, color: scheme.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      fileName.isNotEmpty ? fileName : filePath,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
                       ),
-                      const SizedBox(width: 4),
-                      Icon(Icons.open_in_new, size: 13, color: scheme.onSurfaceVariant),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.open_in_new, size: 13, color: scheme.onSurfaceVariant),
+                  ],
                 ),
               ),
             ),
-          ));
-        }
-        remaining = remaining.substring(artifactMatch.end);
-        continue;
+          ),
+        ));
       }
+      remaining = remaining.substring(artifactMatch.end);
+      continue;
+    }
 
       // 4. Bracketed Attachment Tag [Images jointes: ...], [Image: ...], [Fichier: ...]
-      final attachmentRe = RegExp(r'^\[(Images? jointes?|Image|Fichier|File|Pièce jointe|Piece jointe):\s*([^\]]+)\]', caseSensitive: false);
-      final attachmentMatch = attachmentRe.firstMatch(remaining);
+      final attachmentMatch = _attachmentTagRe.firstMatch(remaining);
       if (attachmentMatch != null) {
         final label = attachmentMatch.group(1) ?? 'Fichier';
         final pathsStr = attachmentMatch.group(2) ?? '';
@@ -559,10 +663,10 @@ class MarkdownRenderer {
         continue;
       }
 
-      // 4. Link with tooltip showing full target path/URL on hover.
+      // 5. Link with tooltip showing full target path/URL on hover.
       // P5 : un lien file:/// devient tappable (ouvre le fichier côté hôte)
       // quand onLocalFile est fourni ; sinon comportement historique.
-      final linkMatch = linkRe.firstMatch(remaining);
+      final linkMatch = _linkRe.firstMatch(remaining);
       if (linkMatch != null && linkMatch.start == 0) {
         final label = linkMatch.group(1) ?? '';
         final url = linkMatch.group(2) ?? '';
@@ -621,8 +725,8 @@ class MarkdownRenderer {
         continue;
       }
 
-      // 5. Bold.
-      final boldMatch = boldRe.firstMatch(remaining);
+      // 6. Bold.
+      final boldMatch = _boldRe.firstMatch(remaining);
       if (boldMatch != null && boldMatch.start == 0) {
         spans.add(TextSpan(
           text: boldMatch.group(1),
@@ -632,8 +736,8 @@ class MarkdownRenderer {
         continue;
       }
 
-      // 6. Italic.
-      final italicMatch = italicRe.firstMatch(remaining);
+      // 7. Italic.
+      final italicMatch = _italicRe.firstMatch(remaining);
       if (italicMatch != null && italicMatch.start == 0) {
         spans.add(TextSpan(
           text: italicMatch.group(1),
@@ -643,21 +747,25 @@ class MarkdownRenderer {
         continue;
       }
 
-      // 7. Plain text up to the next markdown token.
-      final matchAttach = RegExp(r'\[(Images? jointes?|Image|Fichier|File|Pièce jointe|Piece jointe):\s*[^\]]+\]', caseSensitive: false);
-      final matchArtifact = RegExp(r'\[ARTIFACT:\s*[^\]]+\]', caseSensitive: false);
+      // 8. Plain text up to the next markdown token if nothing matched at start 0.
       final nextIndex = <int>[
-        for (final r in [codeRe, imageRe, linkRe, matchArtifact, matchAttach, boldRe, italicRe])
+        for (final r in [_codeRe, _imageRe, _linkRe, _matchArtifactPrefixRe, _matchAttachPrefixRe, _boldRe, _italicRe])
           r.firstMatch(remaining)?.start ?? remaining.length,
       ].reduce((a, b) => a < b ? a : b);
       if (nextIndex == 0) {
         // Defensive: a token matched but not at position 0 (shouldn't happen).
-        spans.addAll(highlightText(remaining[0], base));
+        addTextSpans(highlightText(remaining[0], base));
         remaining = remaining.substring(1);
         continue;
       }
-      spans.addAll(highlightText(remaining.substring(0, nextIndex), base));
+      addTextSpans(highlightText(remaining.substring(0, nextIndex), base));
       remaining = remaining.substring(nextIndex);
+    }
+    if (canCache) {
+      while (_inlineSpansCache.length >= _maxInlineCacheEntries) {
+        _inlineSpansCache.remove(_inlineSpansCache.keys.first);
+      }
+      _inlineSpansCache[cacheKey] = List<InlineSpan>.unmodifiable(spans);
     }
     return spans;
   }
@@ -695,9 +803,27 @@ class MarkdownRenderer {
     }
 
     if (isLocalFile && filePath.isNotEmpty) {
+      // existsSync est un appel système bloquant dans le chemin de build :
+      // le résultat est mémoïsé par chemin (les fichiers ne disparaissent
+      bool fileExists;
+      final cachedExists = _localFileExistsCache.remove(filePath);
+      if (cachedExists != null) {
+        _localFileExistsCache[filePath] = cachedExists;
+        fileExists = cachedExists;
+      } else {
+        try {
+          fileExists = File(filePath).existsSync();
+        } catch (_) {
+          fileExists = false;
+        }
+        while (_localFileExistsCache.length >= _maxLocalFileExistsEntries) {
+          _localFileExistsCache.remove(_localFileExistsCache.keys.first);
+        }
+        _localFileExistsCache[filePath] = fileExists;
+      }
       try {
         final file = File(filePath);
-        if (file.existsSync()) {
+        if (fileExists) {
           return InkWell(
             onTap: onLocalFile == null ? null : () => onLocalFile(filePath),
             borderRadius: BorderRadius.circular(8),
@@ -705,7 +831,7 @@ class MarkdownRenderer {
               borderRadius: BorderRadius.circular(8),
               child: Image.file(
                 file,
-                key: ValueKey('${file.path}_${file.existsSync() ? file.lastModifiedSync().millisecondsSinceEpoch : 0}'),
+                key: ValueKey('local_img_${file.path}'),
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => _imageErrorTile(alt.isNotEmpty ? alt : filePath, scheme),
               ),

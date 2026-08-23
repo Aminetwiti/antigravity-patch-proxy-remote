@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>Antigravity Remote Daemon</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="header-icon">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+          <line x1="12" y1="18" x2="12.01" y2="18"/>
+        </svg>
+      </div>
+      <div class="header-titles">
+        <h1>Remote Server</h1>
+        <p>Scan the QR code with the Antigravity mobile app to pair your device.</p>
+      </div>
+    </div>
+    <div>
+      <button class="btn btn-primary" id="startRemoteBtn" type="button">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        <span>Start Remote Server</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content 2 Columns -->
+  <main class="main-content">
+    <!-- Left Column: Config & Live Telemetry & Console -->
+    <div class="column">
+      <!-- Daemon Configuration Card -->
+      <div class="card">
+        <h2 class="card-title">Daemon Configuration</h2>
+
+        <div class="form-group">
+          <label class="form-label" for="remotePort">Port d'écoute</label>
+          <input type="number" id="remotePort" class="input" value="8090" min="1024" max="65535" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="remoteTunnel">Type de Tunnel</label>
+          <select id="remoteTunnel" class="select">
+            <option value="pinggy">Pinggy (ssh.pinggy.io — Inclus nativement sans installation)</option>
+            <option value="none">Aucun (Réseau Wi-Fi local uniquement)</option>
+            <option value="cloudflare" selected>Cloudflare (Nécessite cloudflared.exe)</option>
+            <option value="pangolin">Pangolin (Client Newt / URL VPS)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="remoteAuthToken">
+            <span>Auth Token <span style="font-size: 11px; opacity: 0.7; font-weight: normal;">(sauvegardé automatiquement)</span></span>
+            <span id="tokenSavedBadge" style="font-size: 11px; color: var(--ok); display: none;">✓ Sauvegardé</span>
+          </label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="remoteAuthToken" class="input" placeholder="ex: 11 ou mon-token-secret" value="11" />
+            <button class="btn btn-ghost" id="regenerateTokenBtn" type="button" title="Générer un token aléatoire sécurisé" style="padding: 0 10px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Admin Mode Option -->
+        <div class="checkbox-card">
+          <label class="checkbox-label" for="remoteAllowFirstAdmin">
+            <input type="checkbox" id="remoteAllowFirstAdmin" checked />
+            <span>👑 Connecter avec privilèges Admin (Allow First Admin)</span>
+          </label>
+          <p class="checkbox-desc">
+            Promeut automatiquement le premier appareil connecté comme <b>Administrateur</b> (accès complet aux fichiers, terminal et sessions sans blocage PIN).
+          </p>
+        </div>
+
+        <!-- Quick Actions -->
+        <div style="display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap;">
+          <button class="btn btn-ghost" id="remoteCheckHealthBtn" type="button" style="font-size: 12px; padding: 6px 12px;">
+            🧪 Tester la Santé (/health)
+          </button>
+          <button class="btn btn-ghost" id="remoteCopyWsUrlBtn" type="button" style="font-size: 12px; padding: 6px 12px;">
+            📋 Copier l'URL WebSocket
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Telemetry Card -->
+      <div class="card">
+        <div class="card-title">
+          <span>Statut &amp; Télémétrie en Direct</span>
+          <span id="remoteTelemetryBadge" class="badge badge-offline">Hors ligne</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-label">Clients Connectés</div>
+            <div class="stat-val" id="remoteClientsCount">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Sessions Actives</div>
+            <div class="stat-val" id="remoteSessionsCount">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Uptime Daemon</div>
+            <div class="stat-val" id="remoteUptimeDisplay" style="font-size: 15px; margin-top: 4px;">-</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Console Card -->
+      <div class="card console-container">
+        <div class="card-title" style="margin-bottom: 8px;">
+          <span>Console</span>
+          <button class="btn btn-ghost" id="clearConsoleBtn" type="button" style="font-size: 11px; padding: 2px 8px;">
+            Effacer
+          </button>
+        </div>
+        <textarea id="remoteConsole" class="console-area" readonly placeholder="Les logs du Daemon s'afficheront ici..."></textarea>
+      </div>
+    </div>
+
+    <!-- Right Column: QR Code & Pairing PIN -->
+    <div class="column">
+      <!-- QR Code Card -->
+      <div class="card qr-card">
+        <h2 class="card-title" style="justify-content: center; width: 100%;">Pairing QR Code</h2>
+        
+        <div class="qr-box" id="remoteQrContainer" style="display: none;">
+          <img id="remoteQrImage" width="220" height="220" alt="Pairing QR Code" />
+        </div>
+
+        <div class="qr-placeholder" id="remoteQrPlaceholder">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"/>
+            <rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/>
+          </svg>
+          <span>Server not running</span>
+        </div>
+
+        <div class="qr-status" id="remoteStatusText">
+          Click 'Start Remote Server' to host
+        </div>
+      </div>
+
+      <!-- Pairing PIN Card -->
+      <div class="card pin-card">
+        <div class="pin-label">CODE PIN D'APPAIRAGE MOBILE</div>
+        <div class="pin-number" id="remotePinDisplay">------</div>
+        <div class="pin-hint">
+          Saisissez ce code à 6 chiffres sur votre mobile lors du premier appairage.
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

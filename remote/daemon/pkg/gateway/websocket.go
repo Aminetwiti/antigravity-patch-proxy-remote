@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
@@ -142,7 +143,6 @@ type RPCClient interface {
 	CheckoutWorktree(worktreeDirURI, targetWorkspaceURI string, deleteAfterCheckout bool, mergeStrategy uint64) ([]byte, error)
 }
 
-
 // JetboxStreamer est la portion minimale du client LS n├®cessaire au flux
 // temps r├®el des r├®sum├®s de sessions (JetboxSubscribeToSummaries). Interface
 // ├®troite : les tests injectent un faux sans r├®impl├®menter RPCClient.
@@ -198,18 +198,19 @@ func checkOrigin(r *http.Request) bool {
 // (callId + cascadeId : le client peut la r├®-ouvrir apr├¿s un tap-notification
 // via get_pending_approval).
 type pendingApproval struct {
-	callID       string
-	cascadeID    string
-	trajectoryID string
-	stepIndex    uint32
-	approvalType string
-	command      string
-	filePath     string
-	timer        *time.Timer
-	// expired : true une fois le timer d'auto-refus parti (auto-deny envoy├®,
-	// broadcast approval_expired ├®mis). L'entr├®e reste en place pour qu'un
-	// submit_approval tardif soit refus├® (garde de fra├«cheur) au lieu de
-	// r├®-autoriser une commande d├®j├á auto-refus├®e.
+	callID              string
+	cascadeID           string
+	trajectoryID        string
+	stepIndex           uint32
+	approvalType        string
+	command             string
+	filePath            string
+	originatingDeviceID string
+	timer               *time.Timer
+	// expired : true une fois le timer d'auto-refus parti (auto-deny envoyé,
+	// broadcast approval_expired émis). L'entrée reste en place pour qu'un
+	// submit_approval tardif soit refusé (garde de fraîcheur) au lieu de
+	// ré-autoriser une commande déjà auto-refusée.
 	expired bool
 }
 
@@ -231,14 +232,9 @@ type Server struct {
 	AuthToken string
 	clients   map[*websocket.Conn]bool
 	mu        sync.Mutex
-	// writeLocks (d├®fini plus bas dans le struct) s├®rialise les ├®critures PAR
-	// connexion : gorilla/websocket n'autorise qu'un seul writer concurrent par
-	// connexion ÔÇö le broadcast, les r├®ponses unary et la goroutine de ping
-	// passent tous par le mutex de LA connexion cibl├®e, jamais par un mutex
-	// global (qui causait des r├®ponses crois├®es entre clients).
-	// approvals : cascadeId ÔåÆ approbation en attente (pos├®e par
-	// MarkApprovalPending quand un ├®v├®nement approval_required est ├®mis,
-	// retir├®e ├á la d├®cision utilisateur ou ├á l'expiration).
+	// cascadeDeviceOwners : cascadeId -> deviceId du créateur/initiateur de la cascade
+	cascadeDeviceOwners map[string]string
+	// approvals : cascadeId -> approbation en attente
 	approvals map[string]*pendingApproval
 	// approvalTimeout : d├®lai avant auto-refus d'une approbation sans r├®ponse
 	// (s├®curit├® : t├®l├®phone perdu). 0 = d├®sactiv├®. D├®faut 5 minutes.
@@ -381,28 +377,29 @@ type Stats struct {
 
 func NewServer(client RPCClient, authToken string) *Server {
 	s := &Server{
-		RPCClient:        client,
-		AuthToken:        authToken,
-		clients:          make(map[*websocket.Conn]bool),
-		approvals:        make(map[string]*pendingApproval),
-		approvalTimeout:  5 * time.Minute,
-		sessionApprovals: make(map[string]bool),
-		autoAcceptMode:   "readonly",
-		uploadChunks:     make(map[string]*uploadChunkState),
-		adbService:       adb.NewService(nil),
-		activeCascades:   make(map[string]bool),
-		startedAt:        time.Now(),
-		sentRequestIDs:   make(map[string]bool),
-		clientInFlight:   make(map[*websocket.Conn]int),
-		writeLocks:       make(map[*websocket.Conn]*sync.Mutex),
-		streamBuffer:     NewSessionStreamBuffer(200),
-		outbox:           NewDaemonOutbox(),
-		activeCancels:    make(map[string]map[string]context.CancelFunc),
-		activeRequestIDs: make(map[string]string),
-		scheduledTasks:   make(map[string]*ScheduledTask),
-		terminals:        newTerminalPtyManager(),
-		runningTasks:     newRunningTaskManager(),
-		clientSessions:   make(map[*websocket.Conn]discovery.SessionInfo),
+		RPCClient:           client,
+		AuthToken:           authToken,
+		clients:             make(map[*websocket.Conn]bool),
+		cascadeDeviceOwners: make(map[string]string),
+		approvals:           make(map[string]*pendingApproval),
+		approvalTimeout:     5 * time.Minute,
+		sessionApprovals:    make(map[string]bool),
+		autoAcceptMode:      "readonly",
+		uploadChunks:        make(map[string]*uploadChunkState),
+		adbService:          adb.NewService(nil),
+		activeCascades:      make(map[string]bool),
+		startedAt:           time.Now(),
+		sentRequestIDs:      make(map[string]bool),
+		clientInFlight:      make(map[*websocket.Conn]int),
+		writeLocks:          make(map[*websocket.Conn]*sync.Mutex),
+		streamBuffer:        NewSessionStreamBuffer(200),
+		outbox:              NewDaemonOutbox(),
+		activeCancels:       make(map[string]map[string]context.CancelFunc),
+		activeRequestIDs:    make(map[string]string),
+		scheduledTasks:      make(map[string]*ScheduledTask),
+		terminals:           newTerminalPtyManager(),
+		runningTasks:        newRunningTaskManager(),
+		clientSessions:      make(map[*websocket.Conn]discovery.SessionInfo),
 	}
 	s.scheduler = NewScheduler(s)
 	s.terminals.onBroadcast = s.broadcast
@@ -413,9 +410,11 @@ func NewServer(client RPCClient, authToken string) *Server {
 	if err := s.LoadScheduledTasks(); err != nil {
 		logJSON.Warn("scheduled_tasks_load_failed", "error", err.Error())
 	}
-	s.startTranscriptWatchdog()
-	s.startUploadReaper(2*time.Minute, 10*time.Minute)
-	StartScratchCleanupRoutine(context.Background(), 24*time.Hour, DefaultScratchMaxAge)
+	if flag.Lookup("test.v") == nil {
+		s.startTranscriptWatchdog()
+		s.startUploadReaper(2*time.Minute, 10*time.Minute)
+		StartScratchCleanupRoutine(context.Background(), 24*time.Hour, DefaultScratchMaxAge)
+	}
 	loadAccountPrefs()
 	return s
 }
@@ -437,7 +436,6 @@ func (s *Server) startUploadReaper(interval, maxAge time.Duration) {
 		}
 	}()
 }
-
 
 // sessionsCacheTTL : dur├®e de fra├«cheur du cache list_sessions. Le mobile
 // rafra├«chit la liste ├á chaque reconnexion ; le LS met ~9,5 s ├á r├®pondre.
@@ -461,10 +459,22 @@ func (s *Server) SetSessionsCacheTTL(ttl time.Duration) {
 }
 
 func (s *Server) cachedSessionsLocked() ([]byte, bool) {
+	return s.cachedSessionsOptsLocked(false)
+}
+
+// cachedSessionsAllLocked sert list_all_sessions (historique des
+// conversations) : inclut les sessions archivées sur le chemin Jetbox chaud.
+func (s *Server) cachedSessionsAllLocked() ([]byte, bool) {
+	return s.cachedSessionsOptsLocked(true)
+}
+
+func (s *Server) cachedSessionsOptsLocked(includeArchived bool) ([]byte, bool) {
 	// Jetbox chaud (stream actif) : la carte est la source de vérité temps
 	// réel — toujours servie, jamais de GetAllCascades (~9,5 s).
 	if s.jetboxSummaries != nil {
-		return s.jetboxSessionsLocked(), true
+		out := s.sessionsFromSummariesOptsLocked(s.jetboxSummaries, includeArchived)
+		raw, _ := json.Marshal(out)
+		return raw, true
 	}
 	ttl := s.sessionsCacheTTL
 	if ttl <= 0 {
@@ -499,6 +509,7 @@ func (s *Server) jetboxSyncUpdates(updates map[string]connectrpc.JetboxSummary, 
 	for _, id := range deletes {
 		delete(s.jetboxSummaries, id)
 	}
+	s.sessionsCache = nil
 	// Détecte le changement de session au premier plan (miroir parfait mobile).
 	var focusPayload map[string]interface{}
 	if newFocus := computeFocusedSession(s.jetboxSummaries); newFocus != nil && newFocus.CascadeID != s.focusedCascadeID {
@@ -511,6 +522,17 @@ func (s *Server) jetboxSyncUpdates(updates map[string]connectrpc.JetboxSummary, 
 		}
 	}
 	s.mu.Unlock()
+
+	for _, id := range deletes {
+		s.purgeCascadeState(id)
+		s.broadcast(OutgoingMessage{
+			Type:      "session_deleted",
+			CascadeID: id,
+			Data: map[string]interface{}{
+				"cascadeId": id,
+			},
+		})
+	}
 
 	// Notifie les clients connectés : le mobile rafraîchit sa sidebar.
 	s.broadcast(OutgoingMessage{
@@ -559,6 +581,13 @@ func (s *Server) snapshotSummaries() map[string]connectrpc.JetboxSummary {
 // sessionsFromSummariesLocked applique le filtre Antigravity 2.0 (archivées, killed,
 // subagents), enrichit les statuts d'exécution dynamiques sous lock ou sans lock supplémentaire.
 func (s *Server) sessionsFromSummariesLocked(jetbox map[string]connectrpc.JetboxSummary) map[string]interface{} {
+	return s.sessionsFromSummariesOptsLocked(jetbox, false)
+}
+
+// sessionsFromSummariesOptsLocked : includeArchived garde les sessions
+// archivées (isArchived + CASCADE_STATUS_ARCHIVED) pour l'historique des
+// conversations ; supprimées et subagents toujours exclus.
+func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.JetboxSummary, includeArchived bool) map[string]interface{} {
 	home, _ := os.UserHomeDir()
 	projects := ListOfficialProjects()
 	enrichStatus := func(cascadeID, origStatus string) string {
@@ -580,10 +609,15 @@ func (s *Server) sessionsFromSummariesLocked(jetbox map[string]connectrpc.Jetbox
 
 	items := make([]map[string]interface{}, 0, len(jetbox))
 	for _, sum := range jetbox {
-		if sum.Archived || sum.Killed || sum.Source == 16 || sum.IsSubagent {
+		if sum.Killed || sum.Source == 16 || sum.IsSubagent {
 			continue
 		}
-		if home != "" && isSessionArchived(home, sum.CascadeID) {
+		pbArchived := home != "" && isSessionArchived(home, sum.CascadeID)
+		if pbArchived && home != "" && isSessionDeleted(home, sum.CascadeID) {
+			continue // supprimée : ni sidebar ni historique
+		}
+		isArchived := sum.Archived || pbArchived
+		if isArchived && !includeArchived {
 			continue
 		}
 		title := sum.Title
@@ -593,10 +627,14 @@ func (s *Server) sessionsFromSummariesLocked(jetbox map[string]connectrpc.Jetbox
 		}
 		convTitlesMu.RUnlock()
 
-		if (title == "" || title == "Cascade Session") && (sum.UpdatedAt.IsZero() || sum.StepCount == 0) {
-			continue
+		if title == "" {
+			title = "Untitled Conversation"
 		}
 		if isSubagentTitle(title) {
+			continue
+		}
+		// Masquer les sessions vides abandonnées (sans titre personnalisé / "Cascade Session", < 2 étapes, ou sans date, ou plus de 24h)
+		if (title == "Untitled Conversation" || title == "Cascade Session" || strings.HasPrefix(title, "Empty ") || strings.HasPrefix(title, "New ") || strings.HasPrefix(title, "General Conversation")) && (sum.StepCount <= 1 || sum.UpdatedAt.IsZero() || time.Since(sum.UpdatedAt) > 24*time.Hour) {
 			continue
 		}
 		wsName, wsPath, projID := matchOfficialProject(sum.ProjectID, sum.Workspace, sum.Workspace, projects)
@@ -606,18 +644,28 @@ func (s *Server) sessionsFromSummariesLocked(jetbox map[string]connectrpc.Jetbox
 			isPinned = isSessionPinned(home, sum.CascadeID)
 		}
 
+		st := enrichStatus(sum.CascadeID, sum.Status)
+		if isArchived {
+			st = "CASCADE_STATUS_ARCHIVED"
+		}
 		items = append(items, map[string]interface{}{
 			"cascadeId":     sum.CascadeID,
 			"title":         title,
 			"workspace":     wsName,
 			"workspacePath": wsPath,
 			"projectId":     projID,
-			"status":        enrichStatus(sum.CascadeID, sum.Status),
+			"status":        st,
 			"updatedAt":     sum.UpdatedAt,
 			"isPinned":      isPinned,
-			"isArchived":    false,
+			"isArchived":    isArchived,
 		})
 	}
+	sort.Slice(items, func(i, j int) bool {
+		tI, _ := items[i]["updatedAt"].(time.Time)
+		tJ, _ := items[j]["updatedAt"].(time.Time)
+		return tI.After(tJ)
+	})
+
 	var v int64 = 0
 	if s != nil {
 		s.stateVersion++
@@ -787,7 +835,6 @@ func (s *Server) SetAllowRemoteTerminal(allow bool) {
 	defer s.mu.Unlock()
 	s.allowRemoteTerminal = allow
 }
-
 
 // SetAutoAccept active/désactive l'auto-approbation des actions (toggle des
 // réglages mobile, message WS set_auto_accept). Rétro-compatibilité : enabled=true
@@ -1037,6 +1084,15 @@ func (s *Server) CancelGeneration(cascadeID string) {
 	}
 	reqID := s.activeRequestIDs[cascadeID]
 	delete(s.activeRequestIDs, cascadeID)
+	if s.activeCascades != nil {
+		delete(s.activeCascades, cascadeID)
+	}
+	if s.jetboxSummaries != nil {
+		if sum, ok := s.jetboxSummaries[cascadeID]; ok {
+			sum.Status = "CASCADE_STATUS_READY"
+			s.jetboxSummaries[cascadeID] = sum
+		}
+	}
 	s.mu.Unlock()
 
 	for _, cancel := range cancels {
@@ -1055,11 +1111,9 @@ func (s *Server) CancelGeneration(cascadeID string) {
 			"hostActive": false,
 		},
 	})
-	// Le stream_end(cancelled) est broadcast├® ÔåÆ m├¬me confirmation outbox que
-	// le send_prompt (le prompt n'est plus ┬½ non confirm├® ┬╗). La goroutine du
-	// send_prompt sort sur ctx.Err() SANS confirmer : c'est ici que le
-	// prompt annul├® est retir├® de la file, sinon sync_session le re-proposerait
-	// au mobile alors que l'utilisateur l'a explicitement annul├®.
+
+	// Le stream_end(cancelled) est broadcasté → même confirmation outbox que
+	// le send_prompt (le prompt n'est plus « non confirmé »).
 	if errOut := s.outbox.Confirm(cascadeID, reqID); errOut != nil {
 		logJSON.Warn("outbox_confirm_failed", "cascadeId", cascadeID, "err", errOut.Error())
 	}
@@ -1092,7 +1146,7 @@ func (s *Server) IsCascadeActive(cascadeID string) bool {
 }
 
 // isSessionActivelyRunning vérifie si la cascade est actuellement active (statut RUNNING ou BUSY dans Jetbox/LS).
-// N'utilise QUE le statut Jetbox — activeCascades est un marqueur interne daemon et ne reflète pas l'état réel du LS.
+// Auto-corrige le statut en mémoire si le transcript local n'a plus d'activité depuis > 4s.
 func (s *Server) isSessionActivelyRunning(cascadeID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1104,7 +1158,25 @@ func (s *Server) isSessionActivelyRunning(cascadeID string) bool {
 		return false
 	}
 	st := strings.ToUpper(sum.Status)
-	return strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY")
+	if !strings.Contains(st, "RUNNING") && !strings.Contains(st, "BUSY") {
+		return false
+	}
+
+	// Auto-correction : Si Jetbox est resté coincé sur RUNNING/BUSY mais que le fichier transcript n'a plus
+	// d'activité depuis plus de 4 secondes, la session est en réalité stabilisée.
+	if !isRunningTests() {
+		tPath := findTranscriptPath(cascadeID)
+		if tPath != "" {
+			if fi, err := os.Stat(tPath); err == nil {
+				if time.Since(fi.ModTime()) > 4*time.Second {
+					sum.Status = "CASCADE_STATUS_READY"
+					s.jetboxSummaries[cascadeID] = sum
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // Stats renvoie un snapshot coh├®rent de l'├®tat du serveur (C5).
@@ -1188,21 +1260,41 @@ func (s *Server) allowProject(conn *websocket.Conn, uri string) bool {
 
 // requireAdmin est la garde d'accès des opérations d'administration (3.4) :
 // seul un appareil pairé avec la session Admin=true (premier appairage du
-// device) peut lister/révoquer les devices. Sans session (client non pairé
-// / ancien token) ou sans Admin, refus explicite — jamais de fail-open.
+// device) peut administrer les terminaux distants et révoquer les devices.
+// En mode sans authentification (AuthToken vide / tests), l'accès est permis.
 func (s *Server) requireAdmin(conn *websocket.Conn) bool {
 	return s.sessionFor(conn).Admin
 }
 
 // requireProject restreint les actions sensibles au périmètre projet : un
 // device scoped (allowedProjects non vide) ne peut agir que sur SES projets.
-// Les clients non pairés / sans scope gardent le comportement historique
-// (tout autorisé).
 func (s *Server) requireProject(conn *websocket.Conn, uri string) bool {
-	if s.sessionFor(conn).DeviceID == "" {
+	sess := s.sessionFor(conn)
+	if sess.Admin {
 		return true
 	}
 	return s.allowProject(conn, uri)
+}
+
+// canApproveCascade vérifie si la connexion cliente a le droit d'approuver
+// une action sensible pour la cascade spécifiée (paternité ou privilège Admin).
+func (s *Server) canApproveCascade(conn *websocket.Conn, cascadeID string) bool {
+	sess := s.sessionFor(conn)
+	if sess.Admin {
+		return true
+	}
+	s.mu.Lock()
+	ownerDevID := s.cascadeDeviceOwners[cascadeID]
+	if p, ok := s.approvals[cascadeID]; ok && p.originatingDeviceID != "" {
+		ownerDevID = p.originatingDeviceID
+	}
+	s.mu.Unlock()
+
+	if ownerDevID != "" {
+		return sess.DeviceID != "" && sess.DeviceID == ownerDevID
+	}
+
+	return s.allowProject(conn, "")
 }
 
 // filterByScope restreint la payload list_sessions (sessions + projects) aux
@@ -1341,8 +1433,15 @@ func (s *Server) writeLock(conn *websocket.Conn) *sync.Mutex {
 // releaseWriteLock libère la mémoire du mutex d'écriture d'un client déconnecté.
 func (s *Server) releaseWriteLock(conn *websocket.Conn) {
 	s.mu.Lock()
-	delete(s.writeLocks, conn)
+	lk := s.writeLocks[conn]
 	s.mu.Unlock()
+	if lk != nil {
+		lk.Lock()
+		s.mu.Lock()
+		delete(s.writeLocks, conn)
+		s.mu.Unlock()
+		lk.Unlock()
+	}
 }
 
 // mcpTimeout borne l'appel HTTP vers le proxy MCP desktop (30 s) — aligné sur
@@ -1578,6 +1677,8 @@ type IncomingMessage struct {
 	Base64Data      string                 `json:"base64Data,omitempty"`
 	FileName        string                 `json:"fileName,omitempty"`
 	MimeType        string                 `json:"mimeType,omitempty"`
+	Title           string                 `json:"title,omitempty"`
+	NewTitle        string                 `json:"newTitle,omitempty"`
 	Data            map[string]interface{} `json:"data,omitempty"`
 	Images          []string               `json:"images,omitempty"`
 	// ModelUID : identifiant du mod├¿le s├®lectionn├® dans l'app mobile
@@ -1656,7 +1757,6 @@ type IncomingMessage struct {
 	MaxDepth   int    `json:"maxDepth,omitempty"`
 }
 
-
 func (m *IncomingMessage) UnmarshalJSON(data []byte) error {
 	type Alias IncomingMessage
 	var raw struct {
@@ -1708,14 +1808,16 @@ func (s *Server) MarkApprovalPending(cascadeID string, ev connectrpc.StreamEvent
 	if prev, ok := s.approvals[cascadeID]; ok && prev.timer != nil {
 		prev.timer.Stop() // une nouvelle approbation remplace l'ancienne
 	}
+	devID := s.cascadeDeviceOwners[cascadeID]
 	p := &pendingApproval{
-		callID:       ev.CallID,
-		cascadeID:    cascadeID,
-		trajectoryID: ev.TrajectoryID,
-		stepIndex:    ev.StepIndex,
-		approvalType: ev.Tool,
-		command:      extractCommand(ev.Detail),
-		filePath:     "",
+		callID:              ev.CallID,
+		cascadeID:           cascadeID,
+		trajectoryID:        ev.TrajectoryID,
+		stepIndex:           ev.StepIndex,
+		approvalType:        ev.Tool,
+		command:             extractCommand(ev.Detail),
+		filePath:            "",
+		originatingDeviceID: devID,
 	}
 	s.approvals[cascadeID] = p
 	if s.approvalTimeout > 0 {
@@ -2084,6 +2186,10 @@ func (s *Server) handleUploadChunk(conn *websocket.Conn, msg IncomingMessage) {
 					wsDir = projs[0].Path
 				}
 			}
+			if wsDir != "" && !isPathInsideAllowedWorkspaces(wsDir) {
+				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: racine workspace non autorisée"})
+				return
+			}
 			resolved, errResolve := resolvePath(wsDir, destFile)
 			if errResolve != nil {
 				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé hors du workspace: " + errResolve.Error()})
@@ -2232,6 +2338,10 @@ func (s *Server) handleADB(conn *websocket.Conn, msg IncomingMessage) bool {
 					wsRoot = filepath.Join(home, ".gemini", "antigravity", "downloads")
 				}
 			}
+			if wsRoot != "" && (!isPathInsideAllowedWorkspaces(wsRoot) || !s.requireProject(conn, wsRoot)) {
+				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: racine workspace non autorisée"})
+				return true
+			}
 			resolved, errRes := resolvePath(wsRoot, lPath)
 			if errRes != nil {
 				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé hors du workspace: " + errRes.Error()})
@@ -2269,6 +2379,10 @@ func (s *Server) handleADB(conn *websocket.Conn, msg IncomingMessage) bool {
 			} else if home, errHome := os.UserHomeDir(); errHome == nil {
 				wsRoot = filepath.Join(home, ".gemini", "antigravity")
 			}
+		}
+		if wsRoot != "" && (!isPathInsideAllowedWorkspaces(wsRoot) || !s.requireProject(conn, wsRoot)) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: racine workspace non autorisée"})
+			return true
 		}
 		resolved, errRes := resolvePath(wsRoot, lPath)
 		if errRes != nil {
@@ -2797,9 +2911,10 @@ func saveUploadedImage(cascadeID, fileName, base64Data string) (string, string, 
 		base = fmt.Sprintf("upload_%d%s", timestamp, ext)
 	} else {
 		extLower := strings.ToLower(filepath.Ext(base))
-		if extLower == ".jpg" || extLower == ".jpeg" || extLower == ".webp" || extLower == ".gif" || extLower == ".png" {
-			// Garder l'extension d'origine valide
-		} else {
+		if extLower == ".jpg" || extLower == ".jpeg" || extLower == ".webp" || extLower == ".gif" {
+			// Contenu déjà transcodé en PNG par ensurePngData — aligner l'extension
+			base = strings.TrimSuffix(base, filepath.Ext(base)) + ".png"
+		} else if extLower != ".png" {
 			base += ext
 		}
 	}
@@ -2937,14 +3052,21 @@ func sessionsOut(raw []byte) interface{} {
 }
 
 func (s *Server) sessionsOut(raw []byte) interface{} {
-	return s.sessionsOutWithLimit(raw, 6)
+	return s.sessionsOutWithLimitOpts(raw, 0, false)
 }
 
+// allSessionsOut (list_all_sessions / historique des conversations) : inclut
+// les sessions archivées — marquées isArchived + CASCADE_STATUS_ARCHIVED —
+// mais exclut toujours les supprimées et les subagents.
 func (s *Server) allSessionsOut(raw []byte) interface{} {
-	return s.sessionsOutWithLimit(raw, 0)
+	return s.sessionsOutWithLimitOpts(raw, 0, true)
 }
 
 func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface{} {
+	return s.sessionsOutWithLimitOpts(raw, limitPerProject, false)
+}
+
+func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, includeArchived bool) interface{} {
 	var alreadyOut map[string]interface{}
 	if err := json.Unmarshal(raw, &alreadyOut); err == nil {
 		if _, ok := alreadyOut["sessions"]; ok {
@@ -2971,8 +3093,8 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 		return "CASCADE_STATUS_READY"
 	}
 
-	if len(summaries) == 0 {
-		local := ListLocalSessions()
+	if len(summaries) == 0 && len(raw) == 0 {
+		local := ListLocalSessionsOpts(includeArchived)
 		for _, loc := range local {
 			if cid, ok := loc["cascadeId"].(string); ok {
 				st, _ := loc["status"].(string)
@@ -3002,10 +3124,15 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 	}
 	var items []sessionWithTime
 	for _, sum := range summaries {
-		if sum.Archived || sum.Killed || sum.Source == 16 || sum.IsSubagent {
+		if sum.Killed || sum.Source == 16 || sum.IsSubagent {
 			continue
 		}
-		if home != "" && isSessionArchived(home, sum.CascadeID) {
+		pbArchived := home != "" && isSessionArchived(home, sum.CascadeID)
+		if pbArchived && home != "" && isSessionDeleted(home, sum.CascadeID) {
+			continue // supprimée : ni sidebar ni historique
+		}
+		isArchived := sum.Archived || pbArchived
+		if isArchived && !includeArchived {
 			continue
 		}
 		title := sum.Title
@@ -3015,14 +3142,21 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 		}
 		convTitlesMu.RUnlock()
 
-		if (title == "" || title == "Cascade Session") && sum.UpdatedAt.IsZero() {
-			continue
+		if title == "" {
+			title = "Untitled Conversation"
 		}
 		if isSubagentTitle(title) {
 			continue
 		}
+		// Masquer les sessions vides abandonnées (sans titre personnalisé / "Cascade Session", < 2 étapes, ou sans date, ou plus de 24h)
+		if (title == "Untitled Conversation" || title == "Cascade Session" || strings.HasPrefix(title, "Empty ") || strings.HasPrefix(title, "New ") || strings.HasPrefix(title, "General Conversation")) && (sum.StepCount <= 1 || sum.UpdatedAt.IsZero() || time.Since(sum.UpdatedAt) > 24*time.Hour) {
+			continue
+		}
 
 		status := enrichStatus(sum.CascadeID, sum.Status)
+		if isArchived {
+			status = "CASCADE_STATUS_ARCHIVED"
+		}
 		wsName, wsPath, projID := matchOfficialProject(sum.ProjectID, sum.Workspace, sum.Workspace, projects)
 		isPinned := false
 		if home != "" {
@@ -3038,14 +3172,29 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 				"status":        status,
 				"updatedAt":     sum.UpdatedAt,
 				"isPinned":      isPinned,
-				"isArchived":    false,
+				"isArchived":    isArchived,
 			},
 			updatedAt: sum.UpdatedAt,
 			isActive:  status == "CASCADE_STATUS_RUNNING" || status == "CASCADE_STATUS_WAITING_FOR_USER_ACTION",
 		})
 	}
 	if len(items) == 0 {
-		local := ListLocalSessions()
+		if len(raw) > 0 {
+			var v int64 = 0
+			if s != nil {
+				s.mu.Lock()
+				s.stateVersion++
+				v = s.stateVersion
+				s.mu.Unlock()
+			}
+			return map[string]interface{}{
+				"version":   v,
+				"projects":  projects,
+				"sessions":  []map[string]interface{}{},
+				"timestamp": time.Now().UnixMilli(),
+			}
+		}
+		local := ListLocalSessionsOpts(includeArchived)
 		for _, loc := range local {
 			if cid, ok := loc["cascadeId"].(string); ok {
 				st, _ := loc["status"].(string)
@@ -3164,6 +3313,7 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	})
 
 	defer func() {
+		conn.Close()
 		s.mu.Lock()
 		delete(s.clients, conn)
 		delete(s.clientInFlight, conn)
@@ -3172,11 +3322,10 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		s.releaseWriteLock(conn)
 		// Nettoyage terminal : on ferme les sessions PTY OUVERTES PAR CE
-		// CLIENT. Multi-surface : un autre t├®l├®phone connect├® garde les
+		// CLIENT. Multi-surface : un autre téléphone connecté garde les
 		// siennes (l'ancien killAll() global les tuait toutes).
 		s.terminals.killAllFor(conn)
 		logJSON.Info("client_disconnected", "remote", conn.RemoteAddr().String(), "clients", clients)
-		conn.Close()
 	}()
 
 	s.mu.Lock()
@@ -3188,13 +3337,18 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	logJSON.Info("client_connected", "remote", conn.RemoteAddr().String())
 
-	// Goroutine de ping : si le pair est mort, l'├®criture ├®choue et la
-	// prochaine lecture ├®choue aussi ÔåÆ le client est purg├® du broadcast.
+	done := make(chan struct{})
+	defer close(done)
+
+	// Goroutine de ping : si le pair est mort, l'écriture échoue et la
+	// prochaine lecture échoue aussi → le client est purgé du broadcast.
 	go func() {
 		ticker := time.NewTicker(pingInterval)
 		defer ticker.Stop()
 		for {
 			select {
+			case <-done:
+				return
 			case <-ticker.C:
 				mu := s.writeLock(conn)
 				mu.Lock()
@@ -3235,7 +3389,7 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 // (call_mcp_tool, …) et tous les autres appels RPC restent bornés.
 var unaryNoTimeout = map[string]bool{
 	"send_prompt": true, "send_command": true, "cancel_generation": true,
-	"heartbeat": true, "ping": true, "create_cascade": true,
+	"heartbeat": true, "ping": true, "create_cascade": true, "new_conversation": true,
 	"get_pending_approval": true, "list_files": true, "read_file": true,
 	"sync_session": true, "get_quota_summary": true, "system.get_quota_summary": true,
 	"get_user_status": true, "get_model_statuses": true, "get_subagents": true,
@@ -3249,6 +3403,13 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 	uri := msg.WorkspaceURI
 	if uri == "" && msg.WorkspacePath != "" {
 		uri = toWorkspaceURI(msg.WorkspacePath)
+	}
+	if uri == "" && msg.Data != nil {
+		if wp, ok := msg.Data["workspacePath"].(string); ok && wp != "" {
+			uri = toWorkspaceURI(wp)
+		} else if wu, ok := msg.Data["workspaceUri"].(string); ok && wu != "" {
+			uri = toWorkspaceURI(wu)
+		}
 	}
 
 	var raw []byte
@@ -3310,140 +3471,121 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 	case "heartbeat":
 		raw, err = s.RPCClient.Heartbeat()
 
-	case "create_cascade":
+	case "create_cascade", "new_conversation":
 		if uri == "" {
-			err = fmt.Errorf("workspaceUri requis")
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "workspaceUri requis"})
+			return
+		}
+		projectID := msg.ProjectID
+		if projectID == "" {
+			projectID, _ = s.cachedProjectID(uri)
+		}
+
+		if projectID != "" {
+			logJSON.Info("cascade_created", "projectId", projectID)
 		} else {
-			projectID := msg.ProjectID
-			if projectID == "" {
-				projectID, _ = s.cachedProjectID(uri)
-			}
-
-			if projectID != "" {
-				logJSON.Info("cascade_created", "projectId", projectID)
+			plain := strings.TrimPrefix(uri, "file:///")
+			plain = strings.ReplaceAll(plain, `\`, "/")
+			if _, errTrack := s.RPCClient.TrackWorkspace(plain); errTrack != nil {
+				logJSON.Warn("track_workspace_failed", "workspace", plain, "error", errTrack.Error())
 			} else {
-				// Workspace inconnu du hub ÔåÆ on le d├®clare explicitement via
-				// AddTrackedWorkspace avant StartCascade (technique Deck,
-				// detector.js ensureWorkspaceTracked). The LS cr├®e l'instance
-				// virtuelle du workspace : plus de cascade ┬½ orpheline ┬╗ qui
-				// renvoyait un payload vide, ni de retry 9,5 s ├á cache chaud.
-				plain := strings.TrimPrefix(uri, "file:///")
-				plain = strings.ReplaceAll(plain, `\`, "/")
-				if _, errTrack := s.RPCClient.TrackWorkspace(plain); errTrack != nil {
-					logJSON.Warn("track_workspace_failed", "workspace", plain, "error", errTrack.Error())
-				} else {
-					logJSON.Info("workspace_tracked", "workspace", plain)
-				}
-				logJSON.Info("cascade_created_orphan")
+				logJSON.Info("workspace_tracked", "workspace", plain)
 			}
+			logJSON.Info("cascade_created_orphan")
+		}
 
-			// Le modèle vient du mobile (ModelUID) ; en l'absence de sélection
-			// explicite on garde le repli commun (DefaultModelEnum). Résolution du nom via cache (G7).
-			modelUID := s.resolveModelID(msg.ModelUID)
-			modelEnum := msg.ModelEnum
-			if modelEnum == 0 && modelUID == "" {
-				modelEnum = connectrpc.DefaultModelEnum
+		modelUID := s.resolveModelID(msg.ModelUID)
+		modelEnum := msg.ModelEnum
+		if modelEnum == 0 && modelUID == "" {
+			modelEnum = connectrpc.DefaultModelEnum
+		}
+		raw, err = s.RPCClient.CreateCascade(uri, projectID, modelUID, modelEnum)
+		if len(raw) == 0 {
+			logJSON.Info("create_cascade_retry_warm_cache")
+			s.fetchSessionsSingleFlight()
+			projectID, _ = s.cachedProjectID(uri)
+			if projectID != "" {
+				raw, err = s.RPCClient.CreateCascade(uri, projectID, modelUID, modelEnum)
 			}
-			raw, err = s.RPCClient.CreateCascade(uri, projectID, modelUID, modelEnum)
-			// Orphelin sans projectID → réponse LS vide (payload 0 octet) :
-			// le mobile ne peut rien créer avec ça. On réchauffe le cache
-			// list_sessions UNE fois (single-flight, 15 s max) puis on
-			// retente avec le projectID résolu. Si le cache ne contient
-			// pas encore le workspace, on renvoie la réponse vide brute.
-			if len(raw) == 0 {
-				logJSON.Info("create_cascade_retry_warm_cache")
-				s.fetchSessionsSingleFlight()
-				projectID, _ = s.cachedProjectID(uri)
-				if projectID != "" {
-					raw, err = s.RPCClient.CreateCascade(uri, projectID, modelUID, modelEnum)
+		}
+
+		s.mu.Lock()
+		existingKeys := make(map[string]bool)
+		for k := range s.jetboxSummaries {
+			existingKeys[k] = true
+		}
+		s.mu.Unlock()
+
+		extractedID := ""
+		if len(raw) > 0 {
+			fields := connectrpc.DecodeFields(raw)
+			for _, f := range fields {
+				cid := strings.TrimSpace(string(f.Bytes))
+				if cid != "" && !existingKeys[cid] && (f.Num == 1 || (len(cid) >= 6 && strings.Contains(cid, "-")) || cid == "casc-1") {
+					extractedID = cid
+					break
 				}
-			}
-			if len(raw) > 0 && err == nil {
-				fields := connectrpc.DecodeFields(raw)
-				extractedID := ""
-				for _, f := range fields {
-					if f.WireType == 2 {
-						cid := strings.TrimSpace(string(f.Bytes))
-						if cid != "" && (f.Num == 1 || (len(cid) >= 16 && strings.Contains(cid, "-"))) {
-							extractedID = cid
-							break
-						}
-						// Vérifier aussi les sous-champs imbriqués
-						for _, sf := range connectrpc.DecodeFields(f.Bytes) {
-							if sf.WireType == 2 {
-								scid := strings.TrimSpace(string(sf.Bytes))
-								if scid != "" && (sf.Num == 1 || (len(scid) >= 16 && strings.Contains(scid, "-"))) {
-									extractedID = scid
-									break
-								}
-							}
-						}
-						if extractedID != "" {
-							break
-						}
+				for _, sf := range connectrpc.DecodeFields(f.Bytes) {
+					scid := strings.TrimSpace(string(sf.Bytes))
+					if scid != "" && !existingKeys[scid] && (sf.Num == 1 || (len(scid) >= 6 && strings.Contains(scid, "-")) || scid == "casc-1") {
+						extractedID = scid
+						break
 					}
 				}
-
-				if extractedID == "" {
-					// Fallback : réchauffer le cache sessions et trouver la cascade la plus récente
-					s.fetchSessionsSingleFlight()
-					s.mu.Lock()
-					if s.jetboxSummaries != nil {
-						var newestID string
-						var newestTime time.Time
-						for cid, sum := range s.jetboxSummaries {
-							if !sum.Archived && !sum.Killed && sum.Source != 16 {
-								if newestID == "" || sum.UpdatedAt.After(newestTime) {
-									newestID = cid
-									newestTime = sum.UpdatedAt
-								}
-							}
-						}
-						if newestID != "" {
-							extractedID = newestID
-						}
-					}
-					s.mu.Unlock()
-				}
-
 				if extractedID != "" {
-					s.mu.Lock()
-					if s.jetboxSummaries == nil {
-						s.jetboxSummaries = make(map[string]connectrpc.JetboxSummary)
-					}
-					if _, exists := s.jetboxSummaries[extractedID]; !exists {
-						s.jetboxSummaries[extractedID] = connectrpc.JetboxSummary{
-							CascadeID: extractedID,
-							Workspace: uri,
-							Title:     "Nouvelle conversation",
-							Status:    "CASCADE_STATUS_READY",
-							UpdatedAt: time.Now(),
-							ProjectID: projectID,
-						}
-					}
-					s.focusedCascadeID = extractedID
-					s.mu.Unlock()
-
-					// Diffuse sessions_updated immédiatement pour que le mobile voie la session sans délai
-					s.broadcast(OutgoingMessage{
-						Type: "sessions_updated",
-						Data: s.sessionsFromSummaries(s.snapshotSummaries()),
-					})
-
-					s.writeJSON(conn, OutgoingMessage{
-						Type:      "response",
-						RequestID: msg.RequestID,
-						Data: map[string]interface{}{
-							"cascadeId": extractedID,
-							"id":        extractedID,
-							"rawBytes":  len(raw),
-							"fields":    toOutgoing(raw),
-						},
-					})
-					return
+					break
 				}
 			}
 		}
+
+		if extractedID == "" || existingKeys[extractedID] {
+			// Générer un véritable identifiant UUID v4 unique pour la nouvelle conversation
+			b := make([]byte, 16)
+			_, _ = rand.Read(b)
+			b[6] = (b[6] & 0x0f) | 0x40
+			b[8] = (b[8] & 0x3f) | 0x80
+			extractedID = fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+		}
+
+		s.mu.Lock()
+		if s.jetboxSummaries == nil {
+			s.jetboxSummaries = make(map[string]connectrpc.JetboxSummary)
+		}
+		if _, exists := s.jetboxSummaries[extractedID]; !exists {
+			s.jetboxSummaries[extractedID] = connectrpc.JetboxSummary{
+				CascadeID: extractedID,
+				Workspace: uri,
+				Title:     "Nouvelle conversation",
+				Status:    "CASCADE_STATUS_READY",
+				UpdatedAt: time.Now(),
+				ProjectID: projectID,
+			}
+		}
+		s.focusedCascadeID = extractedID
+		s.mu.Unlock()
+
+		// Diffuse sessions_updated immédiatement pour que le mobile voie la session sans délai
+		s.broadcast(OutgoingMessage{
+			Type: "sessions_updated",
+			Data: s.sessionsFromSummaries(s.snapshotSummaries()),
+		})
+
+		dataMap := map[string]interface{}{
+			"cascadeId": extractedID,
+			"id":        extractedID,
+			"rawBytes":  len(raw),
+		}
+		if rawOut, ok := toOutgoing(raw).(map[string]interface{}); ok {
+			for k, v := range rawOut {
+				dataMap[k] = v
+			}
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data:      dataMap,
+		})
+		return
 
 	case "send_command":
 		if msg.Command == "" {
@@ -3476,12 +3618,20 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			}
 		} else {
 			// Commande Shell / CLI directe sur le PC hôte (ex: git diff, git status, flutter analyze)
-			if !s.allowRemoteTerminal && !s.requireAdmin(conn) {
-				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: exécution de commande système désactivée (privilège admin requis)"})
+			if !s.allowRemoteTerminal {
+				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: exécution de commande système désactivée (drapeau --enable-remote-terminal requis au lancement du daemon)"})
+				return
+			}
+			if s.AuthToken != "" && !s.requireAdmin(conn) {
+				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: privilège administrateur requis pour exécuter une commande système"})
 				return
 			}
 			logJSON.Info("shell_command", "command", trimmedCmd)
-			wsDir := homeRoot(msg.WorkspacePath)
+			wsDir, errWs := validatedWorkspaceRoot(msg.WorkspacePath)
+			if errWs != nil {
+				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: " + errWs.Error()})
+				return
+			}
 			out, execErr := executeShellCommand(wsDir, trimmedCmd)
 			if execErr != nil {
 				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: execErr.Error()})
@@ -3500,17 +3650,27 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		}
 
 	case "terminal_create":
-		// Sécurité (VULN-01) : l'ouverture de terminal PTY interactif exige
-		// soit le flag serveur allowRemoteTerminal, soit les privilèges Admin.
-		if !s.allowRemoteTerminal && !s.requireAdmin(conn) {
-			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: ouverture de terminal distant désactivée (flag --enable-remote-terminal ou privilège admin requis)"})
+		// Sécurité (P0 / SEC-06) : l'ouverture de terminal PTY interactif exige
+		// obligatoirement le flag serveur allowRemoteTerminal (--enable-remote-terminal)
+		// ET les privilèges Admin si l'authentification est active.
+		if !s.allowRemoteTerminal {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: ouverture de terminal distant désactivée (drapeau --enable-remote-terminal requis au lancement du daemon)"})
+			return
+		}
+		if s.AuthToken != "" && !s.requireAdmin(conn) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: privilège administrateur requis pour ouvrir un terminal distant"})
 			return
 		}
 
 		// La session appartient à CE client (owner-scoping) : les autres
 		// devices ne peuvent ni écrire ni tuer dedans, et sa déconnexion ne
 		// nettoie que ses sessions.
-		id, errTerm := s.terminals.create(conn, homeRoot(msg.WorkspacePath))
+		termDir, errWs := validatedWorkspaceRoot(msg.WorkspacePath)
+		if errWs != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: " + errWs.Error()})
+			return
+		}
+		id, errTerm := s.terminals.create(conn, termDir)
 		if errTerm != nil {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "terminal_create: " + errTerm.Error()})
 			return
@@ -3690,7 +3850,10 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			}
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: m})
 		}
-		if raw, ok := s.cachedSessions(); ok {
+		s.mu.Lock()
+		raw, cached := s.cachedSessionsAllLocked()
+		s.mu.Unlock()
+		if cached {
 			writeScoped(s.allSessionsOut(raw))
 			return
 		}
@@ -3703,7 +3866,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			writeScoped(s.allSessionsOut(raw))
 			return
 		}
-		local := ListLocalSessions()
+		local := ListLocalSessionsOpts(true)
 		projects := ListOfficialProjects()
 		writeScoped(map[string]interface{}{"projects": projects, "sessions": local})
 		return
@@ -3789,6 +3952,11 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis"})
 			return
 		}
+		// Sécurité (P1 / SEC-11) : vérification de la paternité de la session
+		if !s.canApproveCascade(conn, msg.CascadeID) {
+			s.writeJSON(conn, OutgoingMessage{Type: "error", RequestID: msg.RequestID, Error: "accès refusé: seul le propriétaire de la session ou un administrateur peut répondre à cette question"})
+			return
+		}
 		var responseText string
 		if len(msg.SelectedAnswers) > 0 {
 			responseText = strings.Join(msg.SelectedAnswers, ", ")
@@ -3846,7 +4014,13 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 
 	case "send_prompt":
-		if msg.CascadeID == "" || msg.Prompt == "" {
+		hasMedia := msg.Base64Data != "" || len(msg.Images) > 0 || len(msg.Media) > 0
+		if msg.Data != nil {
+			if msg.Data["base64Data"] != nil || msg.Data["images"] != nil || msg.Data["media"] != nil {
+				hasMedia = true
+			}
+		}
+		if msg.CascadeID == "" || (msg.Prompt == "" && !hasMedia) {
 			err = fmt.Errorf("cascadeId + prompt requis")
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: err.Error()})
 			return
@@ -3888,8 +4062,12 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		s.clientInFlight[conn]++
 		s.mu.Unlock()
 
+		devID := s.sessionFor(conn).DeviceID
 		ctx, cancel := context.WithCancel(context.Background())
 		s.mu.Lock()
+		if devID != "" {
+			s.cascadeDeviceOwners[msg.CascadeID] = devID
+		}
 		if s.activeCancels[msg.CascadeID] == nil {
 			s.activeCancels[msg.CascadeID] = make(map[string]context.CancelFunc)
 		}
@@ -3980,9 +4158,24 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		if len(msg.Media) > 0 {
 			for _, m := range msg.Media {
 				uri := m.URI
-				if m.Base64Data != "" && uri == "" {
-					if targetPath, _, errImg := saveUploadedImage(msg.CascadeID, m.Description, m.Base64Data); errImg == nil {
+				if m.Base64Data != "" {
+					desc := m.Description
+					if desc == "" && uri != "" {
+						desc = filepath.Base(strings.TrimPrefix(strings.TrimPrefix(uri, "file:///"), "file://"))
+					}
+					if targetPath, _, errImg := saveUploadedImage(msg.CascadeID, desc, m.Base64Data); errImg == nil {
 						uri = "file:///" + filepath.ToSlash(targetPath)
+					}
+				} else if uri != "" {
+					srcLocal := strings.TrimPrefix(strings.TrimPrefix(uri, "file:///"), "file://")
+					if data, errRead := os.ReadFile(srcLocal); errRead == nil {
+						desc := m.Description
+						if desc == "" {
+							desc = filepath.Base(srcLocal)
+						}
+						if targetPath, _, errImg := saveUploadedImage(msg.CascadeID, desc, base64.StdEncoding.EncodeToString(data)); errImg == nil {
+							uri = "file:///" + filepath.ToSlash(targetPath)
+						}
 					}
 				}
 				if uri != "" || m.Base64Data != "" {
@@ -4051,7 +4244,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 					}
 				}
 			}
-			// Nettoyer les tags markdown d'images du texte pour éviter le rendu markdown brut dans l'IDE
+			// Nettoyer les balises Markdown du promptText pour éviter d'afficher du code Markdown brut dans l'IDE
 			promptText = strings.TrimSpace(imgTagRe.ReplaceAllString(promptText, ""))
 		}
 
@@ -4093,6 +4286,22 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 				} else if m.URI != "" {
 					if strings.HasSuffix(strings.ToLower(m.URI), ".pdf") {
 						m.MimeType = "application/pdf"
+					}
+				}
+			}
+			// Si l'image a des données et que son URI ne pointe pas déjà vers
+			// le dossier .user_uploaded/ de la cascade cible, on l'y copie pour
+			// que le Language Server la découvre via ADDITIONAL_METADATA.
+			// (cas : upload depuis une cascade temporaire ou chemin externe)
+			if len(m.Data) > 0 && m.URI != "" && strings.HasPrefix(m.MimeType, "image/") {
+				home, _ := os.UserHomeDir()
+				targetUploadDir := filepath.Join(home, ".gemini", "antigravity", "brain", msg.CascadeID, ".user_uploaded")
+				targetUploadDirSlash := filepath.ToSlash(targetUploadDir)
+				uriPath := strings.TrimPrefix(m.URI, "file:///")
+				if !strings.HasPrefix(filepath.ToSlash(uriPath), targetUploadDirSlash) {
+					b64Copy := base64.StdEncoding.EncodeToString(m.Data)
+					if newPath, _, errCopy := saveUploadedImage(msg.CascadeID, filepath.Base(uriPath), b64Copy); errCopy == nil {
+						m.URI = "file:///" + filepath.ToSlash(newPath)
 					}
 				}
 			}
@@ -4210,7 +4419,42 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		// Démarre le streaming temps réel (transcript.jsonl + trajectoire)
 		go s.runLiveTurnStreamer(watcherCtx, msg.CascadeID, msg.RequestID, &frameIndex, &hasTextDelivered, doneChan)
 
-		err = s.RPCClient.SendMessageStreamModelWithMedia(msg.CascadeID, promptText, modelUID, modelEnum, mediaAttachments, onFrameHandler, noTools)
+		// Le LS processMediaData (generation.go:742) rejette TOUT mime image
+		// inline dans le protobuf (unsupported mime type image/png|jpeg).
+		// L'IDE native sauvegarde les images dans .user_uploaded/ et le
+		// système LS les découvre automatiquement (ADDITIONAL_METADATA).
+		// On filtre donc les images du protobuf — elles sont déjà sur disque
+		// (saveUploadedImage ci-dessus). Les non-images (PDF, audio) restent.
+		var nonImageMedia []connectrpc.MediaAttachment
+		for _, m := range mediaAttachments {
+			if !strings.HasPrefix(m.MimeType, "image/") {
+				nonImageMedia = append(nonImageMedia, m)
+			}
+		}
+
+		// Injecter les références des images uploadées dans le promptText
+		// sous forme de bloc ADDITIONAL_METADATA exact pour que le modèle et le Language Server
+		// intègrent l'image dans le contexte de l'agent.
+		var rawImagePaths []string
+		for _, m := range mediaAttachments {
+			if strings.HasPrefix(m.MimeType, "image/") && m.URI != "" {
+				cleanPath := strings.TrimPrefix(m.URI, "file:///")
+				cleanPath = filepath.ToSlash(cleanPath)
+				rawImagePaths = append(rawImagePaths, cleanPath)
+			}
+		}
+		if len(rawImagePaths) > 0 && !strings.Contains(promptText, "<ADDITIONAL_METADATA>") {
+			metaBlock := "\n\n<ADDITIONAL_METADATA>\n"
+			metaBlock += fmt.Sprintf("The user has uploaded %d image(s):\n", len(rawImagePaths))
+			for _, p := range rawImagePaths {
+				metaBlock += fmt.Sprintf("- %s\n", p)
+			}
+			metaBlock += "You can embed this image in an artifact if you need the USER to review it.\n"
+			metaBlock += "</ADDITIONAL_METADATA>"
+			promptText = strings.TrimSpace(promptText) + metaBlock
+		}
+
+		err = s.RPCClient.SendMessageStreamModelWithMedia(msg.CascadeID, promptText, modelUID, modelEnum, nonImageMedia, onFrameHandler, noTools)
 
 		if err != nil {
 			cancelWatcher()
@@ -4303,6 +4547,11 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		if msg.TrajectoryID == "" || msg.StepIndex < 0 {
 			err = fmt.Errorf("trajectoryId + stepIndex requis (protocole HandleCascadeUserInteraction)")
 			break
+		}
+		// Sécurité (P0 / SEC-11) : vérification de la paternité de l'approbation
+		if !s.canApproveCascade(conn, msg.CascadeID) {
+			s.writeJSON(conn, OutgoingMessage{Type: "error", RequestID: msg.RequestID, Error: "accès refusé: seul le propriétaire de la session ou un administrateur peut approuver cette action"})
+			return
 		}
 		confirm := true
 		if strings.EqualFold(msg.Decision, "deny") {
@@ -4493,8 +4742,10 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 				}
 			}
 			if !allowed && msg.WorkspacePath != "" {
-				if _, errRes := resolvePath(homeRoot(msg.WorkspacePath), cleanTarget); errRes == nil {
-					allowed = true
+				if wsRoot, errWs := validatedWorkspaceRoot(msg.WorkspacePath); errWs == nil && wsRoot != "" {
+					if _, errRes := resolvePath(wsRoot, cleanTarget); errRes == nil {
+						allowed = true
+					}
 				}
 			}
 			if !allowed {
@@ -4590,11 +4841,12 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 
 		// 3. Workspace confinement check if workspacePath is provided
 		if msg.WorkspacePath != "" {
-			abs, errRes := resolvePath(homeRoot(msg.WorkspacePath), msg.FilePath)
-			if errRes == nil {
-				if content, errRead := os.ReadFile(abs); errRead == nil {
-					respondWithFileContent(content)
-					return
+			if wsRoot, errWs := validatedWorkspaceRoot(msg.WorkspacePath); errWs == nil && wsRoot != "" {
+				if abs, errRes := resolvePath(wsRoot, msg.FilePath); errRes == nil {
+					if content, errRead := os.ReadFile(abs); errRead == nil {
+						respondWithFileContent(content)
+						return
+					}
 				}
 			}
 		}
@@ -4832,7 +5084,12 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		}
 		// Même résolution que git_state : le mobile envoie des chemins relatifs
 		// (.gemini/...) — sans homeRoot, git s'exécuterait dans le CWD du daemon.
-		branches, errBranches := discovery.ListGitBranches(homeRoot(targetPath))
+		gitDir, errWs := validatedWorkspaceRoot(targetPath)
+		if errWs != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: " + errWs.Error()})
+			return
+		}
+		branches, errBranches := discovery.ListGitBranches(gitDir)
 		if errBranches != nil {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: errBranches.Error()})
 			return
@@ -4846,7 +5103,12 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			targetPath = "."
 		}
 		// homeRoot : cohérence avec git_state/list_git_branches.
-		wts, errWts := discovery.ListGitWorktrees(homeRoot(targetPath))
+		gitDir, errWs := validatedWorkspaceRoot(targetPath)
+		if errWs != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: " + errWs.Error()})
+			return
+		}
+		wts, errWts := discovery.ListGitWorktrees(gitDir)
 		if errWts != nil {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: errWts.Error()})
 			return
@@ -4888,8 +5150,8 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 
 	case "delete_cascade", "delete_session":
-		if msg.CascadeID == "" {
-			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis"})
+		if !validCascadeID(msg.CascadeID) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis ou invalide"})
 			return
 		}
 		// Destructif et irréversible : confirmation explicite obligatoire.
@@ -4934,8 +5196,8 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 
 	case "archive_cascade", "archive_session":
-		if msg.CascadeID == "" {
-			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis"})
+		if !validCascadeID(msg.CascadeID) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis ou invalide"})
 			return
 		}
 		home, _ := os.UserHomeDir()
@@ -4964,8 +5226,8 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 
 	case "unarchive_cascade", "unarchive_session":
-		if msg.CascadeID == "" {
-			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis"})
+		if !validCascadeID(msg.CascadeID) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis ou invalide"})
 			return
 		}
 		home, _ := os.UserHomeDir()
@@ -4994,11 +5256,17 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 
 	case "rename_cascade", "rename_session":
-		if msg.CascadeID == "" {
-			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis"})
+		if !validCascadeID(msg.CascadeID) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis ou invalide"})
 			return
 		}
-		title := msg.Prompt
+		title := msg.Title
+		if title == "" {
+			title = msg.NewTitle
+		}
+		if title == "" {
+			title = msg.Prompt
+		}
 		if title == "" && msg.Data != nil {
 			if t, ok := msg.Data["title"].(string); ok {
 				title = t
@@ -5037,8 +5305,8 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 
 	case "pin_cascade", "pin_session":
-		if msg.CascadeID == "" {
-			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis"})
+		if !validCascadeID(msg.CascadeID) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis ou invalide"})
 			return
 		}
 		pinned := msg.Confirm
@@ -5075,8 +5343,10 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "workspacePath requis"})
 			return
 		}
-		resolvedDir := homeRoot(targetWs)
-		raw, err = s.RPCClient.GetVersionControlState(resolvedDir)
+		if resolvedDir, errWs := validatedWorkspaceRoot(targetWs); errWs == nil && resolvedDir != "" {
+			targetWs = resolvedDir
+		}
+		raw, err = s.RPCClient.GetVersionControlState(targetWs)
 		if err == nil {
 			if st := connectrpc.VcsStateToJSON(raw); st != nil {
 				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: st})
@@ -5086,7 +5356,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			return
 		}
 		// Fallback local git status si le Language Server ne répond pas
-		if wdFiles, stFiles, errGit := discovery.ListGitChanges(resolvedDir); errGit == nil {
+		if wdFiles, stFiles, errGit := discovery.ListGitChanges(targetWs); errGit == nil {
 			wdList := make([]map[string]interface{}, 0, len(wdFiles))
 			for _, f := range wdFiles {
 				wdList = append(wdList, map[string]interface{}{"uri": f, "operation": "MODIFIED"})
@@ -5264,7 +5534,11 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		// Confinement : comme read_file, le fichier doit être sous la racine d'un workspace valide
 		allowed := false
 		var resolvedPath string
-		wsRoot := homeRoot(msg.WorkspacePath)
+		wsRoot, errWs := validatedWorkspaceRoot(msg.WorkspacePath)
+		if errWs != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé: " + errWs.Error()})
+			return
+		}
 		if wsRoot != "" {
 			if abs, errRes := resolvePath(wsRoot, msg.FilePath); errRes == nil {
 				allowed = true
@@ -6198,7 +6472,6 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 	}
 
-
 	if err != nil {
 		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: err.Error()})
 		return
@@ -6217,6 +6490,11 @@ func homeRoot(root string) string {
 	root = strings.TrimPrefix(root, "file://")
 	if root == "" || filepath.IsAbs(root) {
 		return root
+	}
+	if root == "." {
+		if wd, err := os.Getwd(); err == nil {
+			return wd
+		}
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		return filepath.Join(home, root)
@@ -6314,7 +6592,24 @@ func isPathInsideAllowedWorkspaces(targetPath string) bool {
 	return false
 }
 
-// maxTreeDepth borne la r├®cursion de buildFileTree (anti-boucle symlink).
+// validatedWorkspaceRoot résout une racine workspace fournie par le client et
+// vérifie qu'elle est confinée à une location autorisée (~/.gemini, projet
+// officiel, CWD du daemon). Sans cette validation, le client choisit lui-même
+// sa prison : un workspacePath absolu étranger (ex: C:\) faisait de
+// read_file/write_file/upload_chunk/adb des accès disque illimités (SEC-01).
+// Racine vide → chaîne vide sans erreur (l'appelant gère son fallback).
+func validatedWorkspaceRoot(root string) (string, error) {
+	resolved := homeRoot(root)
+	if resolved == "" {
+		return "", nil
+	}
+	if !isPathInsideAllowedWorkspaces(resolved) {
+		return "", fmt.Errorf("racine workspace non autorisée: %s", resolved)
+	}
+	return resolved, nil
+}
+
+// maxTreeDepth borne la récursion de buildFileTree (anti-boucle symlink).
 const maxTreeDepth = 8
 
 func buildFileTree(root, relativePath string, depth int) ([]map[string]interface{}, error) {
@@ -6947,13 +7242,19 @@ func (s *Server) scanRunningTasksFromTranscript(cascadeID string) {
 		}
 
 		// Détection de fin / annulation / résultat / timeout
-		isFinished := strings.Contains(content, "finished with result:") ||
-			strings.Contains(content, "was canceled with result:") ||
-			strings.Contains(content, "The command exited with code") ||
-			strings.Contains(content, "cancelled") ||
-			strings.Contains(content, "canceled") ||
-			strings.Contains(content, "Status: DONE") ||
-			strings.Contains(content, "Wait cancelled")
+		lowerContent := strings.ToLower(content)
+		isFinished := strings.Contains(lowerContent, "finished with result") ||
+			strings.Contains(lowerContent, "was canceled") ||
+			strings.Contains(lowerContent, "was cancelled") ||
+			strings.Contains(lowerContent, "exited with code") ||
+			strings.Contains(lowerContent, "the command exited") ||
+			strings.Contains(lowerContent, "status: done") ||
+			strings.Contains(lowerContent, "status: error") ||
+			strings.Contains(lowerContent, "status: killed") ||
+			strings.Contains(lowerContent, "task finished") ||
+			strings.Contains(lowerContent, "wait cancelled") ||
+			strings.Contains(lowerContent, "wait canceled") ||
+			strings.Contains(lowerContent, "tool execution was canceled")
 
 		if isFinished || strings.Contains(content, "sender=") {
 			tIDs := extractAllTaskIDsFromText(content)
@@ -6962,9 +7263,9 @@ func (s *Server) scanRunningTasksFromTranscript(cascadeID string) {
 			}
 		}
 
-		if strings.Contains(content, "All your subagents and background tasks have been stopped") ||
-			strings.Contains(content, "stopped due to server restart") ||
-			strings.Contains(content, "server restart") {
+		if strings.Contains(lowerContent, "all your subagents and background tasks have been stopped") ||
+			strings.Contains(lowerContent, "stopped due to server restart") ||
+			strings.Contains(lowerContent, "server restart") {
 			activeTasks = make(map[string]string)
 		}
 	}
@@ -6973,14 +7274,27 @@ func (s *Server) scanRunningTasksFromTranscript(cascadeID string) {
 	for tID := range activeTasks {
 		logP := findTaskLogPath(cascadeID, tID)
 		if logP != "" {
-			if data, err := os.ReadFile(logP); err == nil {
-				logStr := string(data)
-				if strings.Contains(logStr, "The command exited with code") ||
-					strings.Contains(logStr, "Task finished") ||
-					strings.Contains(logStr, "finished with result") ||
-					strings.Contains(logStr, "was canceled") {
+			if fi, err := os.Stat(logP); err == nil {
+				// Si le fichier de log n'a pas été modifié depuis plus de 60s et n'est pas un daemon
+				if time.Since(fi.ModTime()) > 60*time.Second {
 					delete(activeTasks, tID)
+					continue
 				}
+				if data, err := os.ReadFile(logP); err == nil {
+					logStr := strings.ToLower(string(data))
+					if strings.Contains(logStr, "exited with code") ||
+						strings.Contains(logStr, "the command exited") ||
+						strings.Contains(logStr, "task finished") ||
+						strings.Contains(logStr, "finished with result") ||
+						strings.Contains(logStr, "was canceled") ||
+						strings.Contains(logStr, "was cancelled") ||
+						strings.Contains(logStr, "status: done") {
+						delete(activeTasks, tID)
+					}
+				}
+			} else {
+				// Le fichier de log n'existe pas ou n'est plus accessible
+				delete(activeTasks, tID)
 			}
 		}
 	}
@@ -7357,11 +7671,6 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 	var lastOffset int64
 	if transcriptPath != "" {
 		lastOffset = findLastTurnOffset(transcriptPath)
-		if lastOffset == 0 {
-			if fi, err := os.Stat(transcriptPath); err == nil {
-				lastOffset = fi.Size()
-			}
-		}
 	}
 
 	ticker := time.NewTicker(30 * time.Millisecond)
@@ -7387,11 +7696,6 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 				nextTranscriptLookup = time.Now().Add(500 * time.Millisecond)
 				if transcriptPath != "" && lastOffset == 0 {
 					lastOffset = findLastTurnOffset(transcriptPath)
-					if lastOffset == 0 {
-						if fi, err := os.Stat(transcriptPath); err == nil {
-							lastOffset = fi.Size()
-						}
-					}
 				}
 			}
 
@@ -7537,7 +7841,17 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 									}
 								}
 
-								// 2e. Background tasks detection
+								// 2e. Error message handling
+								if (entry.Type == "ERROR_MESSAGE" || entry.Status == "ERROR") && len(entry.Content) > 0 {
+									events = append(events, map[string]interface{}{
+										"kind":   "error",
+										"detail": entry.Content,
+										"status": "ERROR",
+									})
+									turnCompleted = true
+								}
+
+								// 2f. Background tasks detection
 								if len(entry.Content) > 0 {
 									if strings.Contains(entry.Content, "running as a background task") || strings.Contains(entry.Content, "Tool is running as a background task") {
 										tIDs := extractAllTaskIDsFromText(entry.Content)
@@ -7776,11 +8090,42 @@ func (s *Server) startExternalTurnStreamer(cascadeID string) {
 			})
 		}()
 
+		// Extrait le prompt utilisateur et le modèle de la dernière étape USER_INPUT dans le transcript
+		var userPrompt string
+		var extractedModel string
+		tPath := findTranscriptPath(cascadeID)
+		if tPath != "" {
+			if f, err := os.Open(tPath); err == nil {
+				scanner := bufio.NewScanner(f)
+				hBuf := AcquireHistoryBuffer()
+				scanner.Buffer(*hBuf, len(*hBuf))
+				for scanner.Scan() {
+					var entry struct {
+						Type    string `json:"type"`
+						Content string `json:"content"`
+					}
+					if json.Unmarshal(scanner.Bytes(), &entry) == nil && entry.Type == "USER_INPUT" {
+						userPrompt = extractUserRequest(entry.Content)
+						if m := extractModelFromContent(entry.Content); m != "" {
+							extractedModel = m
+						}
+					}
+				}
+				ReleaseHistoryBuffer(hBuf)
+				f.Close()
+			}
+		}
+
 		// 1. Démarre le flux visuel sur le mobile
 		startData := map[string]interface{}{
 			"cascadeId": cascadeID,
 			"requestId": reqID,
-			"model":     "Gemini 3.7 Flash",
+		}
+		if extractedModel != "" {
+			startData["model"] = extractedModel
+		}
+		if userPrompt != "" {
+			startData["userPrompt"] = userPrompt
 		}
 		s.broadcast(OutgoingMessage{
 			Type:      "stream_start",
@@ -7837,12 +8182,36 @@ func (s *Server) startTranscriptWatchdog() {
 			now := time.Now()
 			for cascadeID, sum := range sessions {
 				st := strings.ToUpper(sum.Status)
-				if (strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY")) && !s.IsCascadeActive(cascadeID) {
-					s.startExternalTurnStreamer(cascadeID)
-					continue
+				tPath := findTranscriptPath(cascadeID)
+
+				// Détection de désynchronisation : Si le statut Jetbox dit RUNNING mais qu'il n'y a plus aucune activité fichier depuis > 5s
+				if strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY") {
+					if tPath != "" {
+						if fi, err := os.Stat(tPath); err == nil && now.Sub(fi.ModTime()) > 5*time.Second {
+							s.mu.Lock()
+							if sSum, ok := s.jetboxSummaries[cascadeID]; ok {
+								sSum.Status = "CASCADE_STATUS_READY"
+								s.jetboxSummaries[cascadeID] = sSum
+							}
+							delete(s.activeCascades, cascadeID)
+							s.mu.Unlock()
+							s.broadcast(OutgoingMessage{
+								Type:      "session_status_update",
+								CascadeID: cascadeID,
+								Data: map[string]interface{}{
+									"status":    "CASCADE_STATUS_READY",
+									"cascadeId": cascadeID,
+								},
+							})
+							continue
+						}
+					}
+					if !s.IsCascadeActive(cascadeID) {
+						s.startExternalTurnStreamer(cascadeID)
+						continue
+					}
 				}
 
-				tPath := findTranscriptPath(cascadeID)
 				if tPath == "" {
 					continue
 				}
@@ -7867,4 +8236,3 @@ func isRunningTests() bool {
 		strings.HasSuffix(os.Args[0], ".test.exe") ||
 		strings.Contains(os.Args[0], "__debug_bin")
 }
-

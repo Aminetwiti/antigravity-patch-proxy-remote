@@ -133,6 +133,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         backgroundColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
@@ -442,7 +443,10 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         // Frequency dropdown (Daily ⌄)
                         Container(
@@ -470,12 +474,10 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                           ),
                         ),
 
-                        const SizedBox(width: 8),
                         Text(
                           'around',
                           style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                         ),
-                        const SizedBox(width: 8),
 
                         // Time dropdown (9:00 AM ⌄)
                         Container(

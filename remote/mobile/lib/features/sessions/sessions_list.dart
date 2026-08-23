@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,98 @@ import '../../widgets/antigravity_logo.dart';
 import '../../widgets/antigravity_spinning_arc.dart';
 import 'package:mobile/theme/app_colors.dart';
 import 'display_options.dart';
+
+// ── Entrée aplatie de la sidebar (virtualisation ListView.builder) ─────────
+class _SidebarEntry {
+  final String folderName;
+  final ProjectItem? project;
+  final CascadeSession? session;
+  final bool isHeader;
+  final bool isEmptyFolder;
+
+  const _SidebarEntry.header(this.folderName, this.project)
+      : session = null,
+        isHeader = true,
+        isEmptyFolder = false;
+
+  const _SidebarEntry.empty(this.folderName)
+      : project = null,
+        session = null,
+        isHeader = false,
+        isEmptyFolder = true;
+
+  const _SidebarEntry.row(this.session, this.folderName)
+      : project = null,
+        isHeader = false,
+        isEmptyFolder = false;
+
+  const _SidebarEntry.spacer()
+      : folderName = '',
+        project = null,
+        session = null,
+        isHeader = false,
+        isEmptyFolder = false;
+}
+
+// ── Workspace Folder Header (séparé pour virtualisation) ───────────────────
+class _FolderHeader extends StatelessWidget {
+  final String folderName;
+  final ProjectItem? project;
+  final VoidCallback onToggleCollapse;
+  final void Function(ProjectItem? project)? onNewConversation;
+  final VoidCallback? onOpenSettings;
+
+  const _FolderHeader({
+    super.key,
+    required this.folderName,
+    this.project,
+    required this.onToggleCollapse,
+    this.onNewConversation,
+    this.onOpenSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return InkWell(
+      onTap: onToggleCollapse,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Row(
+          children: [
+            Icon(
+              Icons.folder_outlined,
+              size: 15,
+              color: scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                folderName,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                  color: scheme.primary,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (onNewConversation != null)
+              IconButton(
+                icon: const Icon(Icons.add, size: 16),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => onNewConversation!(project),
+                tooltip: 'Nouvelle conversation',
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class LeftSidebarDrawer extends StatefulWidget {
   final String activeSessionId;
@@ -67,7 +160,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
 
   SessionGroupBy _groupBy = SessionGroupBy.project;
   SessionSortBy _sortBy = SessionSortBy.lastUpdated;
-  SessionSubtitle _subtitle = SessionSubtitle.worktree;
+  SessionSubtitle _subtitle = SessionSubtitle.none;
 
   // P4 : sessions épinglées — synchronisées localement et avec le daemon.
   final Set<String> _pinnedIds = {};
@@ -98,10 +191,10 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
         setState(() => _pinnedIds.addAll(added));
       }
     }
-    if (widget.sessions != old.sessions) {
-      _loadPins();
-      _loadReadSessions();
-    }
+    // Perf : ne PAS recharger pins/read-ids à chaque nouvelle instance de
+    // liste (chaque rafale d'évènements daemon produit une nouvelle liste) :
+    // les pins daemon sont déjà fusionnés ci-dessus, les prefs locales ne
+    // changent que via ce widget. Charge initial uniquement (initState).
     if (widget.activeSessionId != old.activeSessionId && widget.activeSessionId.isNotEmpty) {
       _markSessionAsRead(widget.activeSessionId);
     }
@@ -231,12 +324,33 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final allSessions = widget.sessions ?? [];
-    final availableSessions = allSessions
+  // ── Mémoïsation du pipeline filtre → tri → pins → groupe ──────────────
+  // Le pipeline complet (4 passes + tri + groupage) était recalculé à chaque
+  // build, donc à chaque évènement daemon (stream_start/end, refresh 15 s,
+  // hover setState…) même quand ni la liste ni les filtres n'avaient changé.
+  List<CascadeSession>? _pipeSessionsInput;
+  String? _pipeQuery;
+  SessionSortBy? _pipeSort;
+  SessionGroupBy? _pipeGroup;
+  Set<String>? _pipePinned;
+  List<ProjectItem>? _pipeProjects;
+  Map<String, List<CascadeSession>>? _pipeResult;
+
+  Map<String, List<CascadeSession>> _projectSessionsOf() {
+    final sessions = widget.sessions ?? const <CascadeSession>[];
+    final projects = widget.projects;
+    final pinnedSnapshot = Set<String>.of(_pinnedIds);
+    if (_pipeResult != null &&
+        identical(sessions, _pipeSessionsInput) &&
+        _filterQuery == _pipeQuery &&
+        _sortBy == _pipeSort &&
+        _groupBy == _pipeGroup &&
+        setEquals(pinnedSnapshot, _pipePinned) &&
+        identical(projects, _pipeProjects)) {
+      return _pipeResult!;
+    }
+
+    final availableSessions = sessions
         .where((s) => s.isAvailable && s.id.isNotEmpty)
         .where((s) {
           if (_filterQuery.isEmpty) return true;
@@ -257,12 +371,101 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
       ...sortedSessions.where((s) => !_pinnedIds.contains(s.id)),
     ];
 
-    final projectSessions = groupSessions(
+    final result = groupSessions(
       sessions: pinnedFirst,
       groupBy: _groupBy,
-      projects: widget.projects,
+      projects: projects,
     );
+    _pipeSessionsInput = sessions;
+    _pipeQuery = _filterQuery;
+    _pipeSort = _sortBy;
+    _pipeGroup = _groupBy;
+    _pipePinned = pinnedSnapshot;
+    _pipeProjects = projects;
+    _pipeResult = result;
+    return result;
+  }
 
+  // Aplatissement virtualise : dossiers + lignes en UNE ListView.builder.
+  // Avant, chaque dossier etait un Column qui construisait TOUTES ses lignes
+  // de maniere avide (aucune virtualisation) ; le matching projet/dossier
+  // etait en O(projects x dossiers) a chaque build. Ici la liste aplatie est
+  // memoisee et seuls les items visibles sont construits par le builder.
+  Map<String, List<CascadeSession>>? _flatInput;
+  Set<String>? _flatCollapsed;
+  SessionGroupBy? _flatGroup;
+  List<_SidebarEntry>? _flatResult;
+
+  List<_SidebarEntry> _entriesOf(Map<String, List<CascadeSession>> projectSessions) {
+    final collapsedSnapshot = Set<String>.of(_collapsedFolders);
+    if (_flatResult != null &&
+        identical(projectSessions, _flatInput) &&
+        setEquals(collapsedSnapshot, _flatCollapsed) &&
+        _groupBy == _flatGroup) {
+      return _flatResult!;
+    }
+
+    final hideHeader = _groupBy == SessionGroupBy.none;
+    final projs = widget.projects;
+    final entries = <_SidebarEntry>[];
+    final matchCache = <String, ProjectItem?>{};
+
+    ProjectItem? projectFor(String folder, List<CascadeSession> sessions) {
+      return matchCache.putIfAbsent(folder, () {
+        ProjectItem? m;
+        if (projs != null) {
+          for (final p in projs) {
+            if (p.name == folder || p.path == folder || p.id == folder || WorkspacePath.isSameWorkspace(p.path, folder)) {
+              m = p;
+              break;
+            }
+          }
+        }
+        return m ??
+            ProjectItem(
+              id: '',
+              name: folder,
+              folderUri: sessions.isNotEmpty ? sessions.first.workspacePath : folder,
+              path: sessions.isNotEmpty ? sessions.first.workspacePath : folder,
+            );
+      });
+    }
+
+    projectSessions.forEach((folder, sessions) {
+      if (!hideHeader && folder.isNotEmpty) {
+        entries.add(_SidebarEntry.header(folder, projectFor(folder, sessions)));
+      }
+      if (!collapsedSnapshot.contains(folder)) {
+        if (sessions.isEmpty) {
+          if (folder.isNotEmpty) {
+            entries.add(_SidebarEntry.empty(folder));
+          }
+        } else {
+          entries.addAll(
+            sessions.map((s) => _SidebarEntry.row(s, folder)),
+          );
+        }
+      }
+      if (folder.isNotEmpty || sessions.isNotEmpty) {
+        entries.add(const _SidebarEntry.spacer());
+      }
+    });
+
+    _flatInput = projectSessions;
+    _flatCollapsed = collapsedSnapshot;
+    _flatGroup = _groupBy;
+    _flatResult = entries;
+    return entries;
+  }
+
+
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final projectSessions = _projectSessionsOf();
+    final entries = _entriesOf(projectSessions);
     final projectNames = projectSessions.keys.toList();
 
     return Drawer(
@@ -540,84 +743,112 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                 thickness: 3,
                 radius: const Radius.circular(2),
                 thumbColor: AppColors.borderStrong.withValues(alpha: 0.6),
-                child: ListView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  children: [
-                    if (projectNames.isEmpty)
-                      _EmptyState(
-                        isConnected: widget.isConnected,
-                        onConnect: () {
-                          Navigator.of(context).pop();
-                          widget.onToggleConnection();
-                        },
+                child: projectNames.isEmpty
+                    ? ListView(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        children: [
+                          _EmptyState(
+                            isConnected: widget.isConnected,
+                            onConnect: () {
+                              Navigator.of(context).pop();
+                              widget.onToggleConnection();
+                            },
+                          ),
+                        ],
                       )
-                    else
-                      ...projectNames.map((proj) {
-                        final sessions = projectSessions[proj] ?? [];
-                        final isCollapsed = _collapsedFolders.contains(proj);
-                        ProjectItem? matchingProj;
-                        if (widget.projects != null) {
-                          for (final p in widget.projects!) {
-                            if (p.name == proj || p.path == proj || p.id == proj || WorkspacePath.isSameWorkspace(p.path, proj)) {
-                              matchingProj = p;
-                              break;
-                            }
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        itemCount: entries.length + 1,
+                        itemBuilder: (ctx, index) {
+                          if (index == entries.length) {
+                            return const SizedBox(height: 16);
                           }
-                        }
-                        final effectiveProj = matchingProj ?? ProjectItem(
-                          id: '',
-                          name: proj,
-                          folderUri: sessions.isNotEmpty ? sessions.first.workspacePath : proj,
-                          path: sessions.isNotEmpty ? sessions.first.workspacePath : proj,
-                        );
-                        return _WorkspaceFolderSection(
-                          folderName: proj,
-                          sessions: sessions,
-                          project: effectiveProj,
-                          isCollapsed: isCollapsed,
-                          showSubtitle: _subtitle == SessionSubtitle.worktree,
-                          hideHeader: _groupBy == SessionGroupBy.none,
-                          activeSessionId: widget.activeSessionId,
-                          onToggleCollapse: () {
-                            setState(() {
-                              if (isCollapsed) {
-                                _collapsedFolders.remove(proj);
-                              } else {
-                                _collapsedFolders.add(proj);
-                              }
-                            });
-                            _saveCollapsedFolders();
-                          },
-                          onSessionTap: (id) {
-                            _markSessionAsRead(id);
-                            if (Navigator.of(context).canPop()) {
-                              Navigator.of(context).pop();
-                            }
-                            widget.onSessionSelected(id);
-                          },
-                          onNewConversation: (ProjectItem? p) {
-                            if (Navigator.of(context).canPop()) {
-                              Navigator.of(context).pop();
-                            }
-                            _callNewConversation(p ?? effectiveProj);
-                          },
-                          onOpenSettings: () {
-                            Navigator.of(context).pop();
-                            widget.onOpenSettings?.call();
-                          },
-                          onDeleteSession: widget.onDeleteSession,
-                          onArchiveSession: widget.onArchiveSession,
-                          onRenameSession: widget.onRenameSession,
-                          onExportSession: widget.onExportSession,
-                          pinnedIds: _pinnedIds,
-                          onTogglePin: _togglePin,
-                          readIds: _readSessionIds,
-                        );
-                      }),
-                    const SizedBox(height: 16),
-                  ],
-                ),
+                          final entry = entries[index];
+
+                          // En-tete de dossier (virtualise, memoise)
+                          if (entry.isHeader) {
+                            final folder = entry.folderName;
+                            final isCollapsed = _collapsedFolders.contains(folder);
+                            return _FolderHeader(
+                              key: ValueKey('folder_$folder'),
+                              folderName: folder,
+                              project: entry.project,
+                              onToggleCollapse: () {
+                                setState(() {
+                                  if (isCollapsed) {
+                                    _collapsedFolders.remove(folder);
+                                  } else {
+                                    _collapsedFolders.add(folder);
+                                  }
+                                });
+                                _saveCollapsedFolders();
+                              },
+                              onNewConversation: (ProjectItem? p) {
+                                if (Navigator.of(context).canPop()) {
+                                  Navigator.of(context).pop();
+                                }
+                                _callNewConversation(p ?? entry.project);
+                              },
+                              onOpenSettings: () {
+                                Navigator.of(context).pop();
+                                widget.onOpenSettings?.call();
+                              },
+                            );
+                          }
+
+                          // Dossier vide
+                          if (entry.isEmptyFolder) {
+                            return const Padding(
+                              padding: EdgeInsets.only(left: 28, top: 4, bottom: 8),
+                              child: Text(
+                                'No conversations yet',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                  color: Color(0xFF5E606A),
+                                ),
+                              ),
+                            );
+                          }
+
+                          // Ligne de session
+                          final s = entry.session;
+                          if (s != null) {
+                            return _SessionRowItem(
+                              key: ValueKey('session_${s.id}'),
+                              session: s,
+                              isSelected: s.id == widget.activeSessionId,
+                              showSubtitle: _subtitle == SessionSubtitle.worktree || (_groupBy == SessionGroupBy.none && s.workspacePath.isNotEmpty),
+                              isUnread: (s.hasUnread || (s.stepCount >= 1 && !s.isRunning)) && !_readSessionIds.contains(s.id) && s.id != widget.activeSessionId,
+                              onTap: () {
+                                _markSessionAsRead(s.id);
+                                if (Navigator.of(context).canPop()) {
+                                  Navigator.of(context).pop();
+                                }
+                                widget.onSessionSelected(s.id);
+                              },
+                              onDelete: widget.onDeleteSession != null
+                                  ? () => widget.onDeleteSession!(s.id)
+                                  : null,
+                              onArchive: widget.onArchiveSession != null
+                                  ? () => widget.onArchiveSession!(s.id)
+                                  : null,
+                              onRename: widget.onRenameSession != null
+                                  ? (newTitle) => widget.onRenameSession!(s.id, newTitle)
+                                  : null,
+                              onExport: widget.onExportSession != null
+                                  ? () => widget.onExportSession!(s)
+                                  : null,
+                              isPinned: _pinnedIds.contains(s.id),
+                              onTogglePin: () => _togglePin(s.id),
+                            );
+                          }
+
+                          return const SizedBox(height: 4);
+                        },
+                      ),
               ),
             ),
 
@@ -754,215 +985,6 @@ class _SidebarActionItemState extends State<_SidebarActionItem> {
   }
 }
 
-// ── Workspace Folder Section (Grouping & Sessions under a folder)
-class _WorkspaceFolderSection extends StatelessWidget {
-  final String folderName;
-  final List<CascadeSession> sessions;
-  final ProjectItem? project;
-  final bool isCollapsed;
-  final bool showSubtitle;
-  final bool hideHeader;
-  final String activeSessionId;
-  final VoidCallback onToggleCollapse;
-  final Function(String id) onSessionTap;
-  final void Function(ProjectItem? project)? onNewConversation;
-  final VoidCallback? onOpenSettings;
-  final Function(String id)? onDeleteSession;
-  final Function(String id)? onArchiveSession;
-  final Function(String id, String newTitle)? onRenameSession;
-  final Function(CascadeSession session)? onExportSession;
-  final Set<String> pinnedIds;
-  final ValueChanged<String>? onTogglePin;
-  final Set<String> readIds;
-
-  const _WorkspaceFolderSection({
-    required this.folderName,
-    required this.sessions,
-    this.project,
-    required this.isCollapsed,
-    this.showSubtitle = true,
-    this.hideHeader = false,
-    required this.activeSessionId,
-    required this.onToggleCollapse,
-    required this.onSessionTap,
-    this.onNewConversation,
-    this.onOpenSettings,
-    this.onDeleteSession,
-    this.onArchiveSession,
-    this.onRenameSession,
-    this.onExportSession,
-    required this.pinnedIds,
-    this.onTogglePin,
-    this.readIds = const {},
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    // Antigravity 2.0 IDE sidebar: jusqu'à 30 sessions en vue non groupée, 6 en vue groupée par projet
-    final visibleSessions = hideHeader ? sessions.take(30).toList() : sessions.take(6).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Workspace Folder Header (hidden if hideHeader is true)
-        if (!hideHeader && folderName.isNotEmpty)
-          InkWell(
-            onTap: onToggleCollapse,
-            borderRadius: BorderRadius.circular(4),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.folder_outlined,
-                    size: 15,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      folderName,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                        color: scheme.primary,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  // ── Project Options Context Menu (:)
-                  PopupMenuButton<String>(
-                    tooltip: 'Options du projet',
-                    color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
-                    surfaceTintColor: Colors.transparent,
-                    elevation: 8,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      side: BorderSide(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant, width: 1),
-                    ),
-                    icon: Icon(
-                      Icons.more_vert_rounded,
-                      size: 15,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onSelected: (val) {
-                      if (val == 'copy_name') {
-                        Clipboard.setData(ClipboardData(text: folderName));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Nom du projet "$folderName" copié'),
-                            duration: const Duration(seconds: 2),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      } else if (val == 'settings') {
-                        onOpenSettings?.call();
-                      }
-                    },
-                    itemBuilder: (ctx) {
-                      final itemScheme = Theme.of(ctx).colorScheme;
-                      return [
-                        PopupMenuItem<String>(
-                          value: 'copy_name',
-                          height: 32,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Icon(Icons.copy_rounded, size: 14, color: itemScheme.onSurface),
-                              const SizedBox(width: 8),
-                              Text('Copy Project Name', style: TextStyle(fontSize: 12.5, color: itemScheme.onSurface)),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'settings',
-                          height: 32,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Icon(Icons.settings_outlined, size: 14, color: itemScheme.onSurface),
-                              const SizedBox(width: 8),
-                              Text('Project Settings', style: TextStyle(fontSize: 12.5, color: itemScheme.onSurface)),
-                            ],
-                          ),
-                        ),
-                      ];
-                    },
-                  ),
-                  const SizedBox(width: 2),
-                  // ── New Session in Project (+)
-                  Tooltip(
-                    message: 'New Conversation in Project',
-                    child: InkWell(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        onNewConversation?.call(project);
-                      },
-                      borderRadius: BorderRadius.circular(4),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.add_rounded,
-                          size: 16,
-                          color: Color(0xFF8F909A),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-        // Session list under this workspace
-        if (!isCollapsed) ...[
-          if (sessions.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(left: 28, top: 4, bottom: 8),
-              child: Text(
-                'No conversations yet',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                  color: Color(0xFF5E606A),
-                ),
-              ),
-            )
-          else ...[
-            ...visibleSessions.map((s) => _SessionRowItem(
-                  session: s,
-                  isSelected: s.id == activeSessionId,
-                  showSubtitle: showSubtitle,
-                  isUnread: (s.hasUnread || (s.stepCount >= 1 && !s.isRunning)) && !readIds.contains(s.id) && s.id != activeSessionId,
-                  onTap: () => onSessionTap(s.id),
-                  onDelete: onDeleteSession != null
-                      ? () => onDeleteSession!(s.id)
-                      : null,
-                  onArchive: onArchiveSession != null
-                      ? () => onArchiveSession!(s.id)
-                      : null,
-                  onRename: onRenameSession != null
-                      ? (newTitle) => onRenameSession!(s.id, newTitle)
-                      : null,
-                  onExport: onExportSession != null
-                      ? () => onExportSession!(s)
-                      : null,
-                  isPinned: pinnedIds.contains(s.id),
-                  onTogglePin: onTogglePin != null
-                      ? () => onTogglePin!(s.id)
-                      : null,
-                )),
-          ],
-        ],
-        const SizedBox(height: 4),
-      ],
-    );
-  }
-}
-
 // ── Individual Session Row Item
 class _SessionRowItem extends StatefulWidget {
   final CascadeSession session;
@@ -980,6 +1002,7 @@ class _SessionRowItem extends StatefulWidget {
   final VoidCallback? onTogglePin;
 
   const _SessionRowItem({
+    super.key,
     required this.session,
     required this.isSelected,
     this.showSubtitle = true,
@@ -999,6 +1022,7 @@ class _SessionRowItem extends StatefulWidget {
 
 class _SessionRowItemState extends State<_SessionRowItem> {
   bool _hovered = false;
+  static final RegExp _cleanTitleRe = RegExp(r'\[([^\]]+)\]\([^\)]+\)');
 
   void _showSessionContextMenu(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -1133,6 +1157,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         backgroundColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
         title: Text('Renommer la conversation', style: TextStyle(fontSize: 15, color: scheme.onSurface)),
         content: TextField(
@@ -1183,6 +1208,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         backgroundColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
         title: Text('Supprimer la conversation ?', style: TextStyle(fontSize: 15, color: scheme.onSurface)),
         content: Text(
@@ -1219,10 +1245,12 @@ class _SessionRowItemState extends State<_SessionRowItem> {
         ? widget.session.title.trim()
         : 'Nouvelle conversation';
     // Point 9 : remplacer [nom](url) par @nom propre
-    final displayTitle = rawTitle.replaceAllMapped(
-      RegExp(r'\[([^\]]+)\]\([^\)]+\)'),
-      (m) => '@${m.group(1)}',
-    );
+    final displayTitle = rawTitle.contains('[')
+        ? rawTitle.replaceAllMapped(
+            _cleanTitleRe,
+            (m) => '@${m.group(1)}',
+          )
+        : rawTitle;
     final subtitleText = widget.session.worktree ?? WorkspacePath.displayName(widget.session.workspacePath);
     final pinText = widget.isPinned ? "Épinglée, " : "";
     final runningText = isRunning ? "En cours d'exécution, " : "";
@@ -1452,37 +1480,48 @@ class _SessionRowItemState extends State<_SessionRowItem> {
   ),
 );
 
-    // P4 : swipe gauche = supprimer (endToStart), swipe droite = épingler
-    // (startToEnd). Un seul Dismissible horizontal, chaque direction branchée
-    // sur son action — confirmDismiss retourne false pour ne jamais supprimer
-    // l'item de la liste (les actions passent par les callbacks parents).
-    if (widget.onDelete != null || widget.onTogglePin != null) {
+    // Swipe gesture : glisser vers la droite (startToEnd) = Archiver,
+    // glisser vers la gauche (endToStart) = Supprimer.
+    if (widget.onArchive != null || widget.onDelete != null || widget.onTogglePin != null) {
       return Dismissible(
         key: ValueKey('dismiss-${widget.session.id}'),
         direction: DismissDirection.horizontal,
         confirmDismiss: (dir) async {
-          if (dir == DismissDirection.endToStart) {
-            if (widget.onDelete != null) _confirmDelete(context);
-          } else {
-            widget.onTogglePin?.call();
+          HapticFeedback.mediumImpact();
+          if (dir == DismissDirection.startToEnd) {
+            // Swipe droite : Archiver
+            if (widget.onArchive != null) {
+              widget.onArchive?.call();
+            } else if (widget.onTogglePin != null) {
+              widget.onTogglePin?.call();
+            }
+          } else if (dir == DismissDirection.endToStart) {
+            // Swipe gauche : Supprimer
+            if (widget.onDelete != null) {
+              _confirmDelete(context);
+            } else if (widget.onArchive != null) {
+              widget.onArchive?.call();
+            }
           }
           return false;
         },
-        background: widget.onTogglePin != null
+        background: widget.onArchive != null || widget.onTogglePin != null
             ? Container(
                 alignment: Alignment.centerLeft,
                 padding: const EdgeInsets.only(left: 16),
                 margin: const EdgeInsets.only(left: 14, right: 6, top: 1, bottom: 1),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF3D5AFE).withValues(alpha: 0.85),
+                  color: widget.onArchive != null
+                      ? const Color(0xFF6366F1).withValues(alpha: 0.85)
+                      : const Color(0xFF3D5AFE).withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.push_pin_outlined, color: Colors.white, size: 18),
-                    SizedBox(width: 4),
-                    Text('Épingler', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                    Icon(widget.onArchive != null ? Icons.archive_outlined : Icons.push_pin_outlined, color: Colors.white, size: 18),
+                    const SizedBox(width: 6),
+                    Text(widget.onArchive != null ? 'Archiver' : 'Épingler', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
                   ],
                 ),
               )
@@ -1500,7 +1539,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.delete_outline_rounded, color: Colors.white, size: 18),
-                    SizedBox(width: 4),
+                    SizedBox(width: 6),
                     Text('Supprimer', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
                   ],
                 ),
@@ -1667,13 +1706,20 @@ class _ConnectionRowState extends State<_ConnectionRow> {
                 ),
               ),
               const SizedBox(width: 10),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w400,
-                  color: color,
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
+                    color: color,
+                  ),
                 ),
+              ),
+              Icon(
+                widget.isConnected ? Icons.power_settings_new_rounded : Icons.link_rounded,
+                size: 15,
+                color: isDark ? AppColors.inkFaint : scheme.onSurfaceVariant,
               ),
             ],
           ),

@@ -274,38 +274,36 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
           _buildCard(
             isDark: isDark,
             scheme: scheme,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Queued Messages',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Configure when follow-up messages are sent.',
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Text(
-                            'Keyboard shortcuts',
-                            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withValues(alpha: 0.8)),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(Icons.info_outline, size: 12, color: scheme.onSurfaceVariant),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _buildSegmentedToggle(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 360;
+                final textCol = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Queued Messages',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Configure when follow-up messages are sent.',
+                      style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 2),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          'Keyboard shortcuts',
+                          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withValues(alpha: 0.8)),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.info_outline, size: 12, color: scheme.onSurfaceVariant),
+                      ],
+                    ),
+                  ],
+                );
+                final toggle = _buildSegmentedToggle(
                   isDark: isDark,
                   scheme: scheme,
                   options: const [
@@ -314,8 +312,28 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
                   ],
                   selectedId: _queuedMessagesMode,
                   onChanged: _setQueuedMessagesMode,
-                ),
-              ],
+                );
+
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      textCol,
+                      const SizedBox(height: 10),
+                      toggle,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: textCol),
+                    const SizedBox(width: 12),
+                    toggle,
+                  ],
+                );
+              },
             ),
           ),
 
@@ -327,38 +345,36 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
           _buildCard(
             isDark: isDark,
             scheme: scheme,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Security Preset',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        _getSecurityPresetDescription(_securityPreset),
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Text(
-                            'Learn more about $_securityPreset',
-                            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withValues(alpha: 0.8)),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(Icons.info_outline, size: 12, color: scheme.onSurfaceVariant),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _buildDropdown(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 360;
+                final textCol = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Security Preset',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _getSecurityPresetDescription(_securityPreset),
+                      style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 2),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          'Learn more about $_securityPreset',
+                          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withValues(alpha: 0.8)),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.info_outline, size: 12, color: scheme.onSurfaceVariant),
+                      ],
+                    ),
+                  ],
+                );
+                final dropdown = _buildDropdown(
                   isDark: isDark,
                   scheme: scheme,
                   value: _securityPreset,
@@ -366,8 +382,28 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
                   onChanged: (val) {
                     if (val != null) _setSecurityPreset(val);
                   },
-                ),
-              ],
+                );
+
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      textCol,
+                      const SizedBox(height: 10),
+                      dropdown,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: textCol),
+                    const SizedBox(width: 12),
+                    dropdown,
+                  ],
+                );
+              },
             ),
           ),
 
@@ -601,8 +637,9 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
         border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        spacing: 2,
+        runSpacing: 2,
         children: options.map((opt) {
           final isSelected = opt['id'] == selectedId;
           return GestureDetector(

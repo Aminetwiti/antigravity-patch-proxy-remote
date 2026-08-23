@@ -1,14 +1,19 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/services/saved_connections_store.dart';
+import 'package:mobile/services/secure_credentials.dart';
 import 'package:mobile/services/settings_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    SecureCredentials.testValues = {};
+  });
+
   group('SettingsStore & SavedConnectionsStore Persistence', () {
     test('round-trip save/load session avec token et PIN', () async {
-      SharedPreferences.setMockInitialValues({});
       final before = await SettingsStore.loadSession();
       expect(before, isEmpty);
 

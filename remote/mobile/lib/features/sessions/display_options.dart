@@ -103,65 +103,75 @@ Map<String, List<CascadeSession>> groupSessions({
   }
 
   // SessionGroupBy.project
-  final officialProjects = projects ?? [];
+  final officialProjects = projects ?? const [];
   if (officialProjects.isNotEmpty) {
+    final Map<String, ProjectItem> byId = {};
+    final Map<String, ProjectItem> byPath = {};
+    final Map<String, ProjectItem> byNameLower = {};
+    final List<MapEntry<String, ProjectItem>> parentPathEntries = [];
+
     for (final p in officialProjects) {
       grouped[p.name] = [];
+      if (p.id.isNotEmpty) byId[p.id] = p;
+      if (p.name.isNotEmpty) byNameLower[p.name.trim().toLowerCase()] = p;
+
+      final pPath = WorkspacePath.canonicalPath(p.path);
+      final pUri = WorkspacePath.canonicalPath(p.folderUri);
+      final effectiveP = pPath.isNotEmpty ? pPath : pUri;
+
+      if (p.path.isNotEmpty) byPath[WorkspacePath.canonicalPath(p.path)] = p;
+      if (p.folderUri.isNotEmpty) byPath[WorkspacePath.canonicalPath(p.folderUri)] = p;
+
+      if (effectiveP.isNotEmpty) {
+        parentPathEntries.add(MapEntry(effectiveP, p));
+      }
     }
+
+    // Pre-canonicalize and lower-case parent paths so loop does 0 canonicalization allocations
+    final canonicalParentEntries = parentPathEntries
+        .map((e) {
+          final c = WorkspacePath.canonicalPath(e.key).toLowerCase();
+          return MapEntry(c, e.value);
+        })
+        .where((e) => e.key.isNotEmpty)
+        .toList();
+
+    // Sort parent paths by descending length so first match in loop is the most specific
+    canonicalParentEntries.sort((a, b) => b.key.length.compareTo(a.key.length));
 
     for (final s in sessions) {
       ProjectItem? matchedProject;
 
-      // 1. Priorité 1 : correspondance projectId explicite
+      // 1. Priority 1: explicit projectId
       if (s.projectId != null && s.projectId!.isNotEmpty) {
-        for (final p in officialProjects) {
-          if (s.projectId == p.id) {
-            matchedProject = p;
+        matchedProject = byId[s.projectId];
+      }
+
+      String? canonicalWs;
+      String? cWsLower;
+
+      // 2. Priority 2: exact path or URI match
+      if (matchedProject == null && s.workspacePath.isNotEmpty) {
+        canonicalWs = WorkspacePath.canonicalPath(s.workspacePath);
+        matchedProject = byPath[canonicalWs];
+      }
+
+      // 3. Priority 3: most specific parent directory (longest matching prefix)
+      if (matchedProject == null && s.workspacePath.isNotEmpty) {
+        cWsLower = (canonicalWs ?? WorkspacePath.canonicalPath(s.workspacePath)).toLowerCase();
+        for (final entry in canonicalParentEntries) {
+          final pPrefix = entry.key;
+          if (cWsLower == pPrefix || cWsLower.startsWith('$pPrefix/')) {
+            matchedProject = entry.value;
             break;
           }
         }
       }
 
-      // 2. Priorité 2 : correspondance exacte de chemin ou d'URI canonique
-      if (matchedProject == null && s.workspacePath.isNotEmpty) {
-        for (final p in officialProjects) {
-          if (WorkspacePath.isSameWorkspace(s.workspacePath, p.path) ||
-              WorkspacePath.isSameWorkspace(s.workspacePath, p.folderUri)) {
-            matchedProject = p;
-            break;
-          }
-        }
-      }
-
-      // 3. Priorité 3 : parent le plus spécifique (le plus profond) pour les sous-projets / monorepos
-      if (matchedProject == null && s.workspacePath.isNotEmpty) {
-        ProjectItem? mostSpecificParent;
-        int longestParentPathLength = -1;
-
-        for (final p in officialProjects) {
-          final pPath = WorkspacePath.canonicalPath(p.path);
-          final pUri = WorkspacePath.canonicalPath(p.folderUri);
-          final effectiveP = pPath.isNotEmpty ? pPath : pUri;
-
-          if (effectiveP.isNotEmpty && WorkspacePath.isSubdirOf(s.workspacePath, effectiveP)) {
-            if (effectiveP.length > longestParentPathLength) {
-              longestParentPathLength = effectiveP.length;
-              mostSpecificParent = p;
-            }
-          }
-        }
-        matchedProject = mostSpecificParent;
-      }
-
-      // 4. Priorité 4 : nom de projet exact correspondant au nom de dossier
+      // 4. Priority 4: folder name matching project name
       if (matchedProject == null && s.workspacePath.isNotEmpty) {
         final sessionFolder = WorkspacePath.displayName(s.workspacePath).toLowerCase();
-        for (final p in officialProjects) {
-          if (p.name.trim().toLowerCase() == sessionFolder) {
-            matchedProject = p;
-            break;
-          }
-        }
+        matchedProject = byNameLower[sessionFolder];
       }
 
       if (matchedProject != null) {
@@ -197,20 +207,41 @@ List<CascadeSession> sortSessions({
 
   switch (sortBy) {
     case SessionSortBy.alphabetical:
-      copy.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      if (copy.length <= 100) {
+        copy.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      } else {
+        // O(N) pre-key extraction eliminates O(N log N) string allocations during sorting
+        final indexed = List.generate(copy.length, (i) => (copy[i].title.toLowerCase(), copy[i]));
+        indexed.sort((a, b) => a.$1.compareTo(b.$1));
+        for (int i = 0; i < copy.length; i++) {
+          copy[i] = indexed[i].$2;
+        }
+      }
       break;
     case SessionSortBy.lastPrompt:
-      copy.sort((a, b) {
-        final aPrompt = (a.lastPrompt ?? a.title).toLowerCase();
-        final bPrompt = (b.lastPrompt ?? b.title).toLowerCase();
-        return aPrompt.compareTo(bPrompt);
-      });
+      if (copy.length <= 100) {
+        copy.sort((a, b) {
+          final aPrompt = (a.lastPrompt ?? a.title).toLowerCase();
+          final bPrompt = (b.lastPrompt ?? b.title).toLowerCase();
+          return aPrompt.compareTo(bPrompt);
+        });
+      } else {
+        final indexed = List.generate(copy.length, (i) => ((copy[i].lastPrompt ?? copy[i].title).toLowerCase(), copy[i]));
+        indexed.sort((a, b) => a.$1.compareTo(b.$1));
+        for (int i = 0; i < copy.length; i++) {
+          copy[i] = indexed[i].$2;
+        }
+      }
       break;
     case SessionSortBy.dateAdded:
       copy.sort((a, b) => a.id.compareTo(b.id));
       break;
     case SessionSortBy.lastUpdated:
-      // Preserves original dynamic order
+      copy.sort((a, b) {
+        final aTime = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bTime.compareTo(aTime);
+      });
       break;
   }
 

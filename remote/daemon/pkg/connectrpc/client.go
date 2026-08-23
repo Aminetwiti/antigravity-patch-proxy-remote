@@ -2,6 +2,7 @@ package connectrpc
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ type Client struct {
 	port      int
 	csrfToken string
 	Host      string
+	UseTLS    bool
 	HTTP      *http.Client
 	// APIKey est la clé d'API envoyée au Language Server (champ metadata 3).
 	// Sans elle le LS répond « untrusted workspace ».
@@ -42,6 +44,7 @@ func NewClient(port int, csrfToken string) *Client {
 		IdleConnTimeout:     90 * time.Second,
 		DisableKeepAlives:   false,
 		ForceAttemptHTTP2:   true,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // #nosec G402 — certificat auto-signé LS
 	}
 	return &Client{
 		port:      port,
@@ -52,6 +55,23 @@ func NewClient(port int, csrfToken string) *Client {
 			Transport: transport,
 		},
 	}
+}
+
+// Scheme retourne "https" ou "http" selon la configuration TLS.
+func (c *Client) Scheme() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.UseTLS {
+		return "https"
+	}
+	return "http"
+}
+
+// SetUseTLS active ou désactive l'utilisation de HTTPS/TLS.
+func (c *Client) SetUseTLS(useTLS bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.UseTLS = useTLS
 }
 
 // Endpoint retourne le port et le jeton CSRF de maniÃ¨re thread-safe.
@@ -81,7 +101,8 @@ func Frame(payload []byte) []byte {
 // Call exécute une méthode RPC et retourne les messages protobuf bruts.
 func (c *Client) Call(method string, payload []byte) ([]byte, error) {
 	port, csrfToken := c.Endpoint()
-	url := fmt.Sprintf("http://%s:%d/exa.language_server_pb.LanguageServerService/%s", c.Host, port, method)
+	scheme := c.Scheme()
+	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
 	body := Frame(payload)
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
@@ -105,7 +126,12 @@ func (c *Client) Call(method string, payload []byte) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return raw, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 200))
+		rawStr := string(raw)
+		if scheme == "http" && strings.Contains(rawStr, "HTTPS server") {
+			c.SetUseTLS(true)
+			return c.Call(method, payload)
+		}
+		return raw, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(rawStr, 200))
 	}
 
 	if st := resp.Header.Get("grpc-status"); st != "" && st != "0" {
@@ -154,7 +180,8 @@ func (c *Client) Call(method string, payload []byte) ([]byte, error) {
 // CallJSON exécute une méthode RPC en ConnectRPC JSON direct (Content-Type: application/json).
 func (c *Client) CallJSON(method string, payload []byte) ([]byte, error) {
 	port, csrfToken := c.Endpoint()
-	url := fmt.Sprintf("http://%s:%d/exa.language_server_pb.LanguageServerService/%s", c.Host, port, method)
+	scheme := c.Scheme()
+	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
 	if len(payload) == 0 {
 		payload = []byte("{}")
 	}
@@ -177,7 +204,12 @@ func (c *Client) CallJSON(method string, payload []byte) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return raw, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 200))
+		rawStr := string(raw)
+		if scheme == "http" && strings.Contains(rawStr, "HTTPS server") {
+			c.SetUseTLS(true)
+			return c.CallJSON(method, payload)
+		}
+		return raw, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(rawStr, 200))
 	}
 	return raw, nil
 }
@@ -185,7 +217,8 @@ func (c *Client) CallJSON(method string, payload []byte) ([]byte, error) {
 // CallStream exécute une méthode RPC en streaming gRPC-Web et invoque onFrame pour chaque frame protobuf reçue.
 func (c *Client) CallStream(method string, payload []byte, timeout time.Duration, onFrame func([]byte) error) error {
 	port, csrfToken := c.Endpoint()
-	url := fmt.Sprintf("http://%s:%d/exa.language_server_pb.LanguageServerService/%s", c.Host, port, method)
+	scheme := c.Scheme()
+	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
 	body := Frame(payload)
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
@@ -198,7 +231,7 @@ func (c *Client) CallStream(method string, payload []byte, timeout time.Duration
 	req.Header.Set("Connect-Protocol-Version", "1")
 	req.Header.Set("X-Grpc-Web", "1")
 
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: timeout, Transport: c.HTTP.Transport}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -207,7 +240,12 @@ func (c *Client) CallStream(method string, payload []byte, timeout time.Duration
 
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 200))
+		rawStr := string(raw)
+		if scheme == "http" && strings.Contains(rawStr, "HTTPS server") {
+			c.SetUseTLS(true)
+			return c.CallStream(method, payload, timeout, onFrame)
+		}
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(rawStr, 200))
 	}
 
 	buf := make([]byte, 32768)
@@ -266,7 +304,8 @@ func splitFrames(buf []byte) ([][]byte, []byte) {
 // frames au fil de l'eau, la connexion reste ouverte).
 func (c *Client) CallStreamJSON(method string, body []byte, timeout time.Duration, onFrame func([]byte) error) error {
 	port, csrfToken := c.Endpoint()
-	url := fmt.Sprintf("http://%s:%d/exa.language_server_pb.LanguageServerService/%s", c.Host, port, method)
+	scheme := c.Scheme()
+	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
@@ -276,7 +315,7 @@ func (c *Client) CallStreamJSON(method string, body []byte, timeout time.Duratio
 	req.Header.Set("Connect-Protocol-Version", "1")
 	req.Header.Set("x-codeium-csrf-token", csrfToken)
 
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: timeout, Transport: c.HTTP.Transport}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -285,7 +324,12 @@ func (c *Client) CallStreamJSON(method string, body []byte, timeout time.Duratio
 
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 200))
+		rawStr := string(raw)
+		if scheme == "http" && strings.Contains(rawStr, "HTTPS server") {
+			c.SetUseTLS(true)
+			return c.CallStreamJSON(method, body, timeout, onFrame)
+		}
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(rawStr, 200))
 	}
 
 	buf := make([]byte, 32768)

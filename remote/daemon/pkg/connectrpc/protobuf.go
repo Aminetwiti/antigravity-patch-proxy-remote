@@ -78,8 +78,12 @@ const (
 // 8 workspace_uris (string), 14 requested_model (varint),
 // 15 requested_model_uid (string).
 // BuildStartCascade génère un message StartCascadeRequest brut.
+// Note cruciale gRPC : Le Language Server refuse la requête avec "cannot specify both workspace URIs and project environment config"
+// si field 17 et field 8 sont tous les deux présents. Si projectID != "", on met UNIQUEMENT field 17. Sinon, field 8.
 func BuildStartCascade(workspaceURI, projectID, modelUID string, modelEnum uint64) []byte {
 	w := &writer{}
+	w.varintField(4, 1) // CortexTrajectorySource = 1
+	w.varintField(5, 1) // TrajectoryType = 1
 	if projectID != "" {
 		envW := &writer{}
 		envW.stringField(1, projectID)
@@ -99,6 +103,9 @@ func BuildStartCascade(workspaceURI, projectID, modelUID string, modelEnum uint6
 	if enum > 0 {
 		w.varintField(14, enum)
 	}
+	if modelUID != "" {
+		w.stringField(15, modelUID)
+	}
 	return w.b
 }
 
@@ -114,8 +121,8 @@ type MediaAttachment struct {
 func buildMediaItem(m MediaAttachment) []byte {
 	mw := &writer{}
 	mime := m.MimeType
-	if mime == "" || mime == "image/jpeg" || mime == "image/jpg" {
-		mime = "image/png"
+	if mime == "" {
+		mime = "application/octet-stream"
 	}
 	mw.stringField(1, mime)
 	if len(m.Data) > 0 {
@@ -151,7 +158,7 @@ func buildImageData(m MediaAttachment) []byte {
 		iw.stringField(1, b64)
 	}
 	mime := m.MimeType
-	if mime == "" || mime == "image/jpeg" || mime == "image/jpg" {
+	if mime == "" {
 		mime = "image/png"
 	}
 	iw.stringField(2, mime)
@@ -167,16 +174,12 @@ func buildImageData(m MediaAttachment) []byte {
 
 // SendUserCascadeMessageRequest : field 1 cascade_id, field 2 items[]
 // où chaque item est TextOrScopeItem{ 1: chunk.text }.
-// field 6 : images[] (ImageData)
-// field 14 : media[] (Media)
 //
-// Le LS 2.5.0 refuse tout message sans cascade_config (field 5) contenant
-// requested_model_id (14) ou requested_model_uid (15) : l'exécuteur plante
-// avec « neither PlanModel nor RequestedModel specified ». Même schéma que
-// buildSendCascadeMessageRequest de windsurf_main.js (éprouvé en prod).
-// Le modelUID est fourni par le client mobile ; s'il est vide on retombe
-// sur l'enum historique (requested_model_id).
-// BuildSendMessageWithMedia construit un SendMessageRequest avec pièces jointes (media/images).
+// NOTE: Les images ne doivent JAMAIS être injectées comme blobs binaires inline
+// dans le protobuf (fields 6/14), car le Language Server (processMediaData generation.go:742)
+// plante lors du hook de summarisation de contexte ("unsupported mime type image/png").
+// Comme dans l'IDE native Antigravity, les images sont sauvegardées sur disque dans .user_uploaded/
+// et référencées dans le texte du prompt via le bloc <ADDITIONAL_METADATA>.
 func BuildSendMessageWithMedia(cascadeID, text, apiKey, sessionID, modelUID string, modelEnum uint64, media []MediaAttachment, noTools ...bool) []byte {
 	item := &writer{}
 	item.stringField(1, text)
@@ -186,9 +189,9 @@ func BuildSendMessageWithMedia(cascadeID, text, apiKey, sessionID, modelUID stri
 	w.bytesField(2, item.b)
 
 	for _, m := range media {
-		if m.URI != "" || len(m.Data) > 0 || m.Base64Data != "" {
-			w.bytesField(6, buildImageData(m))
-			w.bytesField(14, buildMediaItem(m))
+		// N'encoder en protobuf que les pièces non-images (ex: PDF) pour éviter le crash processMediaData du LS
+		if !strings.HasPrefix(m.MimeType, "image/") && (m.URI != "" || len(m.Data) > 0 || m.Base64Data != "") {
+			w.bytesField(13, buildMediaItem(m))
 		}
 	}
 
@@ -725,9 +728,7 @@ func BuildGetRevertPreview(cascadeID string, stepIndex int64, apiKey, sessionID 
 	if apiKey != "" {
 		w.bytesField(3, buildMetadata(apiKey, sessionID))
 	}
-	if modelUID != "" || modelEnum != 0 {
-		w.bytesField(4, BuildCascadeConfig(modelUID, modelEnum))
-	}
+	w.bytesField(4, BuildCascadeConfig(modelUID, modelEnum))
 	return w.b
 }
 
@@ -742,9 +743,7 @@ func BuildRevertToCascadeStep(cascadeID string, stepIndex int64, apiKey, session
 	if apiKey != "" {
 		w.bytesField(3, buildMetadata(apiKey, sessionID))
 	}
-	if modelUID != "" || modelEnum != 0 {
-		w.bytesField(5, BuildCascadeConfig(modelUID, modelEnum))
-	}
+	w.bytesField(5, BuildCascadeConfig(modelUID, modelEnum))
 	return w.b
 }
 

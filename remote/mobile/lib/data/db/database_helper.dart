@@ -57,30 +57,28 @@ CREATE TABLE session_messages (
 
   Future<void> saveSessions(List<dynamic> sessions) async {
     final db = await instance.database;
-    final batch = db.batch();
-
-    // On efface et on recrÃ©e pour simplifier, ou on utilise insert/replace
-    await db.delete('sessions');
-
-    for (final session in sessions) {
-      if (session is Map) {
-        final id = session['id']?.toString() ?? session['cascadeId']?.toString() ?? '';
-        if (id.isEmpty) continue;
-        final title = session['title']?.toString() ?? 'Session';
-        final time = session['time']?.toString() ?? session['updatedAt']?.toString() ?? '';
-        batch.insert(
-          'sessions',
-          {
-            'id': id,
-            'title': title,
-            'time': time,
-            'updated_at': DateTime.now().millisecondsSinceEpoch,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final session in sessions) {
+        if (session is Map) {
+          final id = session['id']?.toString() ?? session['cascadeId']?.toString() ?? '';
+          if (id.isEmpty) continue;
+          final title = session['title']?.toString() ?? 'Session';
+          final time = session['time']?.toString() ?? session['updatedAt']?.toString() ?? '';
+          batch.insert(
+            'sessions',
+            {
+              'id': id,
+              'title': title,
+              'time': time,
+              'updated_at': DateTime.now().millisecondsSinceEpoch,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
       }
-    }
-    await batch.commit(noResult: true);
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<List<Map<String, dynamic>>> getSessions() async {

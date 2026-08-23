@@ -112,9 +112,14 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
       }
     } catch (e) {
       if (!mounted) return;
+      final errStr = e.toString();
+      String friendlyMsg = 'Erreur lors du rollback: $errStr';
+      if (errStr.contains('run state not found')) {
+        friendlyMsg = 'Impossible de revenir à cette étape : la session active a été réinitialisée ou a expiré de la mémoire de l\'IDE.';
+      }
       setState(() {
         _isReverting = false;
-        _errorMessage = 'Erreur lors du rollback: $e';
+        _errorMessage = friendlyMsg;
       });
     }
   }

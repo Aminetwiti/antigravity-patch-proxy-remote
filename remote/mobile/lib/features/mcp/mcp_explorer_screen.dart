@@ -77,6 +77,7 @@ class _McpExplorerScreenState extends State<McpExplorerScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         backgroundColor: scheme.surfaceContainer,
         title: Row(
           children: [
@@ -342,9 +343,12 @@ class _McpExplorerScreenState extends State<McpExplorerScreen> {
                                             ),
                                           ),
                                           const SizedBox(width: 8),
-                                          Text(
-                                            server.name,
-                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                          Flexible(
+                                            child: Text(
+                                              server.name,
+                                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
                                           const SizedBox(width: 8),
                                           Container(
@@ -371,7 +375,7 @@ class _McpExplorerScreenState extends State<McpExplorerScreen> {
                                               ),
                                             ),
                                           ),
-                                          const Spacer(),
+                                          const SizedBox(width: 6),
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                             decoration: BoxDecoration(

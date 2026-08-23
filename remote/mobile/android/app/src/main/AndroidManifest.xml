@@ -16,6 +16,7 @@
         android:label="Antigravity Remote"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
+        android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true">
         <activity

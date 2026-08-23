@@ -14,12 +14,26 @@ import 'dart:async';
 /// l'historique). Chemin d'upgrade : serializer l'outbox dans shared_preferences
 /// et la rejouer à froid au démarrage.
 class OutboxQueue {
+  // P3 (mémoire) : les sets de dedup ne doivent pas croître à vie — au-delà
+  // de [_maxIdMemory] entrées, les plus anciens sont évacués (FIFO). Un
+  // requestId évacué après ce délai ne peut plus être rejoué en doublon : la
+  // queue elle-même expire après [_maxAge] (5 min), très en-deçà du plafond.
+  static const int _maxIdMemory = 1024;
+
   final List<Map<String, dynamic>> _pending = [];
   final Set<String> _replayedRequestIds = {};
   final Set<String> _drainedRequestIds = {};
   final Duration _maxAge;
 
   OutboxQueue({Duration maxAge = const Duration(minutes: 5)}) : _maxAge = maxAge;
+
+  void _rememberId(Set<String> ids, String requestId) {
+    if (requestId.isEmpty) return;
+    ids.add(requestId);
+    while (ids.length > _maxIdMemory) {
+      ids.remove(ids.first);
+    }
+  }
 
   bool get hasPending {
     takeExpired();
@@ -39,12 +53,12 @@ class OutboxQueue {
   }
 
   void remove(String requestId) {
-    _drainedRequestIds.add(requestId);
+    _rememberId(_drainedRequestIds, requestId);
     _pending.removeWhere((m) => m['requestId'] == requestId);
   }
 
   void markReplayed(String requestId) {
-    _replayedRequestIds.add(requestId);
+    _rememberId(_replayedRequestIds, requestId);
   }
 
   /// La queue rejouée doit ignorer les requestId qui ont déjà été drainés
@@ -62,7 +76,10 @@ class OutboxQueue {
           return t == null || t.isBefore(cutoff);
         })
         .toList();
-    _pending.removeWhere((m) => expired.contains(m));
+    if (expired.isNotEmpty) {
+      final expiredSet = expired.toSet();
+      _pending.removeWhere((m) => expiredSet.contains(m));
+    }
     return expired;
   }
 

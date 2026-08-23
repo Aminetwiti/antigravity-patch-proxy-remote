@@ -109,14 +109,10 @@
 
         <li class="nav-group">
           <ul>
-            <li><span class="nav-group-label">About</span></li>
-            <li><button class="nav-item" data-view="antigravity" type="button" title="Antigravity">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-              <span>Antigravity</span>
-            </button></li>
+            <li><span class="nav-group-label">Remote &amp; Companion</span></li>
             <li><button class="nav-item" data-view="remote" type="button" title="Remote Server">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-              <span>Remote App</span>
+              <span>Remote Server</span>
             </button></li>
           </ul>
         </li>
@@ -183,24 +179,80 @@
                   </button>
                 </div>
               </div>
+
+              <!-- Admin Mode Option -->
+              <div class="form-group" style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 4px;">
+                  <input type="checkbox" id="remoteAllowFirstAdmin" style="width: 16px; height: 16px; cursor: pointer;" checked />
+                  <span style="font-weight: 600; font-size: 13px;">👑 Connecter avec privilèges Admin (Allow First Admin)</span>
+                </label>
+                <p style="font-size: 11.5px; color: var(--text-2); margin: 0; margin-left: 26px;">
+                  Promeut automatiquement le premier appareil connecté comme <b>Administrateur</b> (accès complet aux fichiers, terminal et sessions sans blocage PIN).
+                </p>
+              </div>
+
+              <!-- Quick Actions -->
+              <div style="display: flex; gap: 8px; margin-top: 15px; flex-wrap: wrap;">
+                <button class="btn btn-ghost" id="remoteCheckHealthBtn" type="button" style="font-size: 12px; padding: 6px 12px;">
+                  🧪 Tester la Santé (/health)
+                </button>
+                <button class="btn btn-ghost" id="remoteCopyWsUrlBtn" type="button" style="font-size: 12px; padding: 6px 12px;">
+                  📋 Copier l'URL WebSocket
+                </button>
+              </div>
+            </div>
+
+            <!-- Telemetry & Active Sessions -->
+            <div class="settings-card" id="remoteTelemetryCard" style="display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0;">Statut & Télémétrie en Direct</h3>
+                <span id="remoteTelemetryBadge" style="font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.08); color: var(--text-2);">En attente</span>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                <div style="padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid var(--border);">
+                  <div style="font-size: 11px; color: var(--text-2);">Clients Connectés</div>
+                  <div id="remoteClientsCount" style="font-size: 18px; font-weight: 700; color: var(--text-1); margin-top: 2px;">0</div>
+                </div>
+                <div style="padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid var(--border);">
+                  <div style="font-size: 11px; color: var(--text-2);">Sessions Actives</div>
+                  <div id="remoteSessionsCount" style="font-size: 18px; font-weight: 700; color: var(--text-1); margin-top: 2px;">0</div>
+                </div>
+                <div style="padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid var(--border);">
+                  <div style="font-size: 11px; color: var(--text-2);">Uptime Daemon</div>
+                  <div id="remoteUptimeDisplay" style="font-size: 14px; font-weight: 600; color: var(--text-1); margin-top: 5px;">-</div>
+                </div>
+              </div>
             </div>
 
             <div class="settings-card" style="flex: 1; display: flex; flex-direction: column;">
               <h3>Console</h3>
-              <textarea id="remoteConsole" readonly style="flex: 1; width: 100%; min-height: 200px; margin-top: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 12px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); resize: none;"></textarea>
+              <textarea id="remoteConsole" readonly style="flex: 1; width: 100%; min-height: 180px; margin-top: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 12px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); resize: none;"></textarea>
             </div>
           </div>
 
-          <!-- Right Column: QR Code -->
-          <div class="settings-card" style="display:flex; flex-direction:column; align-items:center; padding: 40px;">
-              <h3 style="margin-bottom: 20px;">Pairing QR Code</h3>
-              <div id="remoteQrContainer" style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none;">
-                  <img id="remoteQrImage" width="256" height="256" />
+          <!-- Right Column: QR Code & Pairing PIN -->
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="settings-card" style="display:flex; flex-direction:column; align-items:center; padding: 24px;">
+              <h3 style="margin-bottom: 16px;">Pairing QR Code</h3>
+              <div id="remoteQrContainer" style="background: white; padding: 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none;">
+                  <img id="remoteQrImage" width="220" height="220" />
               </div>
-              <div id="remoteQrPlaceholder" style="width: 256px; height: 256px; background: var(--bg-1); border: 2px dashed var(--border); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--text-2);">
+              <div id="remoteQrPlaceholder" style="width: 220px; height: 220px; background: var(--bg-1); border: 2px dashed var(--border); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--text-2);">
                   Server not running
               </div>
-              <p id="remoteStatusText" style="margin-top: 20px; font-family: monospace; color: var(--text-2); text-align: center;">Click 'Start' to host the remote proxy</p>
+              <p id="remoteStatusText" style="margin-top: 16px; font-family: monospace; color: var(--text-2); text-align: center; font-size: 12px;">Click 'Start' to host the remote proxy</p>
+            </div>
+
+            <!-- PIN Code Card -->
+            <div class="settings-card" id="remotePinCard" style="display: flex; flex-direction: column; align-items: center; padding: 20px; text-align: center;">
+              <div style="font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px;">Code PIN d'Appairage Mobile</div>
+              <div id="remotePinDisplay" style="font-size: 28px; font-weight: 800; letter-spacing: 4px; font-family: monospace; color: var(--accent-blue, #38bdf8); margin: 10px 0;">
+                ------
+              </div>
+              <p style="font-size: 11px; color: var(--text-2); margin: 0;">
+                Saisissez ce code à 6 chiffres sur votre mobile lors du premier appairage.
+              </p>
+            </div>
           </div>
         </div>
       </div>

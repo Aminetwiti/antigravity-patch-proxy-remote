@@ -5,6 +5,7 @@ class CascadeSession {
   final String title;
   final String status;
   final String time;
+  final DateTime? updatedAt;
   final String? lastPrompt;
   final String? worktree;
   final String? projectId;
@@ -23,6 +24,7 @@ class CascadeSession {
     required this.title,
     required this.status,
     required this.time,
+    this.updatedAt,
     this.lastPrompt,
     this.worktree,
     this.projectId,
@@ -32,13 +34,23 @@ class CascadeSession {
     this.isArchived = false,
   });
 
-  factory CascadeSession.fromJson(Map<String, dynamic> json) {
+  factory CascadeSession.fromJson(Map<String, dynamic> json, [DateTime? now]) {
+    DateTime? parsedDate;
+    if (json['updatedAt'] is String && (json['updatedAt'] as String).isNotEmpty) {
+      parsedDate = DateTime.tryParse(json['updatedAt']);
+    } else if (json['lastTurnTime'] is String && (json['lastTurnTime'] as String).isNotEmpty) {
+      parsedDate = DateTime.tryParse(json['lastTurnTime']);
+    } else if (json['updatedAt'] is int || json['updatedAt'] is num) {
+      parsedDate = DateTime.fromMillisecondsSinceEpoch((json['updatedAt'] as num).toInt());
+    }
+
     return CascadeSession(
       id: json['cascadeId'] ?? json['id'] ?? '',
       workspacePath: json['workspacePath'] ?? json['workspace'] ?? '',
       title: json['title'] ?? 'Cascade Session',
       status: json['status'] ?? 'CASCADE_STATUS_READY',
-      time: json['time'] ?? _relativeTime(json['updatedAt']),
+      time: json['time'] ?? (parsedDate != null ? formatRelativeTime(parsedDate, now) : _relativeTime(json['updatedAt'], now)),
+      updatedAt: parsedDate,
       lastPrompt: json['lastPrompt']?.toString(),
       worktree: json['worktree']?.toString(),
       projectId: json['projectId']?.toString(),
@@ -49,41 +61,50 @@ class CascadeSession {
     );
   }
 
-  static String _relativeTime(Object? iso) {
-    if (iso is! String) return 'Just now';
-    final parsed = DateTime.tryParse(iso);
-    if (parsed == null || parsed.year < 2000) return 'Just now';
-    final diff = DateTime.now().difference(parsed.toLocal());
+  static String formatRelativeTime(DateTime parsed, [DateTime? now]) {
+    if (parsed.year < 2000) return 'Just now';
+    final currentNow = now ?? DateTime.now();
+    final diff = currentNow.difference(parsed.toLocal());
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m';
     if (diff.inHours < 24) return '${diff.inHours}h';
     return '${diff.inDays}d';
   }
 
+  static String _relativeTime(Object? iso, [DateTime? now]) {
+    if (iso is! String || iso.isEmpty) return 'Just now';
+    final parsed = DateTime.tryParse(iso);
+    if (parsed == null) return 'Just now';
+    return formatRelativeTime(parsed, now);
+  }
+
   bool get isAvailable {
     if (id.isEmpty) return false;
     if (isArchived) return false;
-    final st = status.toUpperCase();
-    if (st.contains('ARCHIV') ||
-        st.contains('DELET') ||
-        st.contains('TRASH') ||
-        st.contains('KILLED') ||
-        st.contains('SUBAGENT') ||
-        st == 'CASCADE_STATUS_ARCHIVED' ||
-        st == 'CASCADE_STATUS_DELETED' ||
-        st == 'CASCADE_STATUS_KILLED' ||
-        st == 'CASCADE_STATUS_SUBAGENT') {
-      return false;
+    if (status.isNotEmpty) {
+      final st = status.toUpperCase();
+      if (st.contains('ARCHIV') ||
+          st.contains('DELET') ||
+          st.contains('TRASH') ||
+          st.contains('KILLED') ||
+          st.contains('SUBAGENT')) {
+        return false;
+      }
     }
-    final lowerTitle = title.toLowerCase();
-    final lowerWs = workspacePath.toLowerCase();
-    if (lowerTitle.startsWith('subagent') ||
-        lowerTitle.contains('subagent-') ||
-        lowerTitle.contains('subagent_') ||
-        lowerWs.startsWith('subagent') ||
-        lowerWs.contains('subagent-') ||
-        lowerWs.contains('subagent_')) {
-      return false;
+    if (title.contains('subagent') ||
+        title.contains('Subagent') ||
+        workspacePath.contains('subagent') ||
+        workspacePath.contains('Subagent')) {
+      final lowerTitle = title.toLowerCase();
+      final lowerWs = workspacePath.toLowerCase();
+      if (lowerTitle.startsWith('subagent') ||
+          lowerTitle.contains('subagent-') ||
+          lowerTitle.contains('subagent_') ||
+          lowerWs.startsWith('subagent') ||
+          lowerWs.contains('subagent-') ||
+          lowerWs.contains('subagent_')) {
+        return false;
+      }
     }
     return true;
   }
@@ -204,6 +225,7 @@ class ProjectItem {
 enum ChatSegmentType {
   thought, // Pensées, outils, diffs, minuteurs
   text,    // Paragraphe de texte émis par l'assistant
+  error,   // Message d'erreur d'exécution de l'agent
 }
 
 /// Segment unitaire dans une bulle de message pour le rendu chronologique séquentiel.
@@ -241,14 +263,18 @@ class ChatSegment {
         if (isRunning) 'isRunning': isRunning,
       };
 
-  factory ChatSegment.fromJson(Map<String, dynamic> json) => ChatSegment(
-        type: json['type'] == 'thought'
-            ? ChatSegmentType.thought
-            : ChatSegmentType.text,
-        content: json['content']?.toString() ?? '',
-        title: json['title']?.toString(),
-        isRunning: json['isRunning'] == true,
-      );
+  factory ChatSegment.fromJson(Map<String, dynamic> json) {
+    final typeStr = json['type']?.toString();
+    final type = typeStr == 'thought'
+        ? ChatSegmentType.thought
+        : (typeStr == 'error' ? ChatSegmentType.error : ChatSegmentType.text);
+    return ChatSegment(
+      type: type,
+      content: json['content']?.toString() ?? '',
+      title: json['title']?.toString(),
+      isRunning: json['isRunning'] == true,
+    );
+  }
 }
 
 class ChatMessage {

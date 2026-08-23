@@ -174,10 +174,23 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12)),
-          Text(value, style: TextStyle(color: valueColor, fontWeight: FontWeight.bold, fontSize: 12)),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              style: TextStyle(color: valueColor, fontWeight: FontWeight.bold, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+            ),
+          ),
         ],
       ),
     );

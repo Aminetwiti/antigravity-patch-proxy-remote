@@ -330,9 +330,42 @@ export function validateCustomModels(file: CustomModelsFile): ValidationIssue[] 
   return issues;
 }
 
-/** Returns the data dir, creating it if needed. */
+/** Returns the data dir, creating it and guaranteeing valid configuration files if needed. */
 export function ensureDataDir(): string {
   const dir = getAntigravityDataDir();
   fs.mkdirSync(dir, { recursive: true });
+
+  // Auto-heal ~/.gemini/config/config.json & ~/.gemini/config/projects/.json
+  try {
+    const home = process.env.HOME || process.env.USERPROFILE || '';
+    if (home) {
+      const configDir = path.join(home, '.gemini', 'config');
+      const projectsDir = path.join(configDir, 'projects');
+      fs.mkdirSync(projectsDir, { recursive: true });
+
+      const configJsonPath = path.join(configDir, 'config.json');
+      let configValid = false;
+      if (fs.existsSync(configJsonPath)) {
+        try {
+          const content = fs.readFileSync(configJsonPath, 'utf-8').replace(/^\uFEFF/, '');
+          JSON.parse(content);
+          configValid = true;
+        } catch {
+          configValid = false;
+        }
+      }
+      if (!configValid) {
+        fs.writeFileSync(configJsonPath, '{}', 'utf-8');
+      }
+
+      const defaultProjectJson = path.join(projectsDir, '.json');
+      if (!fs.existsSync(defaultProjectJson)) {
+        fs.writeFileSync(defaultProjectJson, '{}', 'utf-8');
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
   return dir;
 }

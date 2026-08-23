@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/protocol/daemon_api.dart';
 import '../core/protocol/model_catalog.dart';
@@ -84,6 +85,7 @@ class ChatInputBar extends StatefulWidget {
 
   final DaemonApi? api;
   final String? cascadeId;
+  final String? initialModel;
   final ValueChanged<String>? onModelChanged;
   final VoidCallback? onStop;
 
@@ -110,6 +112,7 @@ class ChatInputBar extends StatefulWidget {
     this.hasActiveStream = false,
     this.api,
     this.cascadeId,
+    this.initialModel,
     this.onModelChanged,
     this.onStop,
     this.initialText = '',
@@ -133,6 +136,33 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     }
   }
 
+  /// Change programmatiquement le modèle sélectionné pour cette session
+  void setModel(String modelIdOrName, {int? modelEnum, String? effort}) {
+    if (!mounted) return;
+    final matched = ModelCatalog.findModel(modelIdOrName, customModels: _availableModels);
+    final effective = effort != null ? matched.withEffort(effort) : matched;
+    setState(() {
+      _selectedModel = effective.shortName;
+      _selectedModelId = effective.id;
+      _selectedModelEnum = modelEnum ?? effective.modelEnum;
+      if (effort != null) {
+        _reasoningEffort = effort;
+      }
+    });
+    final cascadeId = widget.cascadeId;
+    if (cascadeId != null && cascadeId.isNotEmpty) {
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('session_model_$cascadeId', effective.id);
+      });
+      widget.api?.setSessionModel(
+        cascadeId,
+        effective.id,
+        modelEnum: effective.modelEnum,
+      );
+    }
+    widget.onModelChanged?.call(effective.displayName);
+  }
+
   /// Insère une citation markdown formatée (> texte) dans le champ de saisie
   void insertQuote(String quoteText) {
     if (!mounted) return;
@@ -151,6 +181,16 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     if (!mounted) return;
     _controller.text = text;
     _controller.selection = TextSelection.collapsed(offset: text.length);
+  }
+
+  String get selectedModel => _selectedModel;
+
+  void setSelectedModel(String modelName) {
+    if (!mounted || modelName.isEmpty) return;
+    setState(() {
+      _selectedModel = modelName;
+      _selectedModelId = modelName.toLowerCase().replaceAll(' ', '-');
+    });
   }
 
   final TextEditingController _controller = TextEditingController();
@@ -195,7 +235,6 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
   // Feature multi-attachements fichiers et images (Quiet Console)
   final List<_AttachedItem> _attachments = [];
   double? _uploadProgress;
-  String? _clipboardPreviewText;
 
   final GlobalKey _modelButtonKey = GlobalKey();
   final GlobalKey _textFieldKey = GlobalKey();
@@ -223,8 +262,10 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     }
     _controller.addListener(_onTextChanged);
     widget.onDraftChanged?.call(_controller.text);
-    _loadModelsAndPreferences();
-    _checkClipboard();
+    if (widget.initialModel != null && widget.initialModel!.isNotEmpty) {
+      setModel(widget.initialModel!);
+    }
+    _loadSessionModelForCascade();
   }
 
   void _onFocusChanged() {
@@ -233,46 +274,13 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkClipboard();
-    }
-  }
-
-  Future<void> _checkClipboard() async {
-    try {
-      final data = await Clipboard.getData(Clipboard.kTextPlain);
-      final text = data?.text?.trim();
-      if (text != null &&
-          text.isNotEmpty &&
-          text.length > 2 &&
-          text.length < 3000 &&
-          text != _controller.text.trim()) {
-        if (mounted) {
-          setState(() => _clipboardPreviewText = text);
-        }
-      } else {
-        if (mounted && _clipboardPreviewText != null) {
-          setState(() => _clipboardPreviewText = null);
-        }
-      }
-    } catch (_) {}
-  }
-
-  void _pasteClipboard() {
-    if (_clipboardPreviewText == null) return;
-    HapticFeedback.selectionClick();
-    final current = _controller.text;
-    final newText = current.isEmpty ? _clipboardPreviewText! : '$current\n${_clipboardPreviewText!}';
-    _controller.text = newText;
-    _controller.selection = TextSelection.collapsed(offset: newText.length);
-    widget.onDraftChanged?.call(newText);
-    setState(() => _clipboardPreviewText = null);
   }
 
   @override
   void didUpdateWidget(covariant ChatInputBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.cascadeId != widget.cascadeId) {
+    if (oldWidget.cascadeId != widget.cascadeId ||
+        (widget.initialModel != null && widget.initialModel != oldWidget.initialModel)) {
       if (widget.initialText != _controller.text) {
         _controller.text = widget.initialText;
         _lastDraftText = widget.initialText;
@@ -280,6 +288,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
           offset: _controller.text.length,
         );
       }
+      _loadSessionModelForCascade();
       // Re-focus the text input when switching conversations via keyboard shortcuts
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _focusNode.canRequestFocus) {
@@ -298,6 +307,25 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     }
   }
 
+  Future<void> _loadSessionModelForCascade() async {
+    if (widget.initialModel != null && widget.initialModel!.isNotEmpty) {
+      setModel(widget.initialModel!);
+      return;
+    }
+    final cascadeId = widget.cascadeId;
+    if (cascadeId != null && cascadeId.isNotEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final saved = prefs.getString('session_model_$cascadeId');
+        if (saved != null && saved.isNotEmpty && mounted) {
+          setModel(saved);
+          return;
+        }
+      } catch (_) {}
+    }
+    _loadModelsAndPreferences();
+  }
+
   Future<void> _loadModelsAndPreferences() async {
     List<AntigravityModel> models = _availableModels;
     if (widget.api != null) {
@@ -310,6 +338,35 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
               _availableModels = models;
             });
           }
+        }
+      } catch (_) {}
+    }
+
+    if (widget.initialModel != null && widget.initialModel!.isNotEmpty) {
+      final matched = ModelCatalog.findModel(widget.initialModel!, customModels: models);
+      if (mounted) {
+        setState(() {
+          _selectedModel = matched.shortName;
+          _selectedModelId = matched.id;
+          _selectedModelEnum = matched.modelEnum;
+        });
+      }
+      return;
+    }
+
+    final cascadeId = widget.cascadeId;
+    if (cascadeId != null && cascadeId.isNotEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final sessionModel = prefs.getString('session_model_$cascadeId');
+        if (sessionModel != null && sessionModel.isNotEmpty && mounted) {
+          final matched = ModelCatalog.findModel(sessionModel, customModels: models);
+          setState(() {
+            _selectedModel = matched.shortName;
+            _selectedModelId = matched.id;
+            _selectedModelEnum = matched.modelEnum;
+          });
+          return;
         }
       } catch (_) {}
     }
@@ -488,8 +545,11 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
           if (!clean.startsWith('file:///')) {
             clean = clean.startsWith('/') ? 'file://$clean' : 'file:///$clean';
           }
-          buffer.writeln('![${img.name}]($clean)\n');
-
+        } else if (img.base64Data != null && img.base64Data!.isNotEmpty) {
+          clean = 'data:${img.mimeType ?? "image/png"};base64,${img.base64Data}';
+        }
+        if (clean.isNotEmpty) {
+          buffer.writeln('![${img.name}]($clean)');
         }
         mediaList.add({
           'uri': clean,
@@ -919,6 +979,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
         final nameCtrl = TextEditingController(text: 'data.json');
         final contentCtrl = TextEditingController();
         return AlertDialog(
+          scrollable: true,
           backgroundColor: scheme.surfaceContainer,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -1014,6 +1075,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
         final mimeCtrl = TextEditingController(text: 'image/png');
         final base64Ctrl = TextEditingController();
         return AlertDialog(
+          scrollable: true,
           backgroundColor: scheme.surfaceContainer,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -1985,6 +2047,19 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     });
     CustomDropdownOverlay.hide();
 
+    final cascadeId = widget.cascadeId;
+    if (cascadeId != null && cascadeId.isNotEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('session_model_$cascadeId', effectiveModel.id);
+      } catch (_) {}
+      widget.api?.setSessionModel(
+        cascadeId,
+        effectiveModel.id,
+        modelEnum: effectiveModel.modelEnum,
+      );
+    }
+
     widget.onModelChanged?.call(effectiveModel.displayName);
 
     // Persist choice in local settings
@@ -2278,56 +2353,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                   ),
                 ),
               ),
-            if (_clipboardPreviewText != null && _clipboardPreviewText!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6, left: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    BouncingTap(
-                      hapticType: BouncingHapticType.selection,
-                      onTap: _pasteClipboard,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                          border: Border.all(
-                            color: AppColors.accentBlue.withValues(alpha: isDark ? 0.4 : 0.3),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.content_paste_rounded, size: 12, color: AppColors.accentBlue),
-                            const SizedBox(width: 5),
-                            Text(
-                              'Coller : ${_clipboardPreviewText!.replaceAll('\n', ' ').length > 24 ? '${_clipboardPreviewText!.replaceAll('\n', ' ').substring(0, 24)}…' : _clipboardPreviewText!.replaceAll('\n', ' ')}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: scheme.onSurface,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    InkWell(
-                      onTap: () => setState(() => _clipboardPreviewText = null),
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                        alignment: Alignment.center,
-                        child: Icon(Icons.close_rounded, size: 14, color: isDark ? AppColors.inkMuted : scheme.outline),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (!hasKeyboard && !isIdle)
+            if (!hasKeyboard && !isIdle && widget.hasPlan)
               _buildQuickActionPills(scheme, isDark),
             DragTarget<String>(
               onWillAcceptWithDetails: (details) => true,
@@ -2548,11 +2574,14 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                 const SizedBox(width: 5),
                                 Flexible(
                                   child: ConstrainedBox(
-                                    constraints: const BoxConstraints(maxWidth: 130),
+                                    constraints: BoxConstraints(
+                                      maxWidth: MediaQuery.of(context).size.width * 0.55,
+                                    ),
                                     child: Text(
                                       _displayModelName,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
+                                      softWrap: false,
                                       style: TextStyle(
                                         fontSize: 11.5,
                                         color: isDark ? AppColors.inkPrimary : scheme.onSurface,
@@ -2637,7 +2666,8 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                       const SizedBox(width: 2),
 
                       // Historique des messages envoyés
-                      if (_promptHistory.isNotEmpty) ...[
+                      if (_promptHistory.isNotEmpty &&
+                          (MediaQuery.of(context).size.width >= 360 || _controller.text.isEmpty)) ...[
                         BouncingTap(
                           hapticType: BouncingHapticType.selection,
                           onTap: () => _showPromptHistoryMenu(context),
@@ -2772,6 +2802,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
   }
 
   Widget _buildQuickActionPills(ColorScheme scheme, bool isDark) {
+    if (!widget.hasPlan) return const SizedBox.shrink();
     return Container(
       height: 30,
       margin: const EdgeInsets.only(bottom: 6),
@@ -2779,76 +2810,19 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 2),
         children: [
-          if (widget.hasPlan)
-            _buildActionPill(
-              icon: Icons.play_arrow_rounded,
-              label: 'Proceed ⌘↵',
-              color: AppColors.positive,
-              isDark: isDark,
-              scheme: scheme,
-              onTap: () {
-                HapticFeedback.selectionClick();
-                if (widget.onProceedPlan != null) {
-                  widget.onProceedPlan!();
-                } else {
-                  widget.onSend('proceed');
-                }
-              },
-            ),
           _buildActionPill(
-            icon: Icons.play_circle_outline,
-            label: 'Tests',
-            color: scheme.primary,
+            icon: Icons.play_arrow_rounded,
+            label: 'Proceed ⌘↵',
+            color: AppColors.positive,
             isDark: isDark,
             scheme: scheme,
             onTap: () {
               HapticFeedback.selectionClick();
-              if (widget.onRunTests != null) {
-                widget.onRunTests!();
+              if (widget.onProceedPlan != null) {
+                widget.onProceedPlan!();
               } else {
-                widget.onSend('Exécute les tests unitaires du projet');
+                widget.onSend('proceed');
               }
-            },
-          ),
-          _buildActionPill(
-            icon: Icons.difference_outlined,
-            label: 'Diff Git',
-            color: scheme.secondary,
-            isDark: isDark,
-            scheme: scheme,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              if (widget.onViewDiff != null) {
-                widget.onViewDiff!();
-              } else {
-                widget.onSend('Affiche le diff git des changements récents');
-              }
-            },
-          ),
-          _buildActionPill(
-            icon: Icons.help_outline,
-            label: 'Expliquer',
-            color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
-            isDark: isDark,
-            scheme: scheme,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              _controller.text = 'Explique le code récent et ce qui a changé';
-              _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
-              widget.onDraftChanged?.call(_controller.text);
-            },
-          ),
-          _buildActionPill(
-            icon: Icons.build_outlined,
-            label: 'Corriger',
-            color: scheme.error,
-            isDark: isDark,
-            scheme: scheme,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              _controller.text = 'Analyse l\'erreur et applique le correctif';
-              _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
-              widget.onDraftChanged?.call(_controller.text);
             },
           ),
         ],

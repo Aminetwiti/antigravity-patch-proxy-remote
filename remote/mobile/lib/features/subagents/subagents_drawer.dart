@@ -243,12 +243,15 @@ class SubagentsDrawer extends StatelessWidget {
                                     children: [
                                       Icon(Icons.tag, size: 11, color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
                                       const SizedBox(width: 2),
-                                      Text(
-                                        agent.id,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontFamily: 'monospace',
-                                          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                                      Flexible(
+                                        child: Text(
+                                          agent.id,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontFamily: 'monospace',
+                                            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                       if (agent.typeName != null && agent.typeName!.isNotEmpty) ...[

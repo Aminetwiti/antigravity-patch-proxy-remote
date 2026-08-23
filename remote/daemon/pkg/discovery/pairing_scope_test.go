@@ -130,7 +130,11 @@ func TestPairingManager_HTTPRevoke(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&pairResp)
 	token := pairResp["token"].(string)
 	if !pm.ValidateToken(token) {
-		t.Fatalf("Token doit ├¬tre valide apr├¿s pairing")
+		t.Fatalf("Token doit être valide après pairing")
+	}
+	// SEC-03 : promotion admin explicite côté hôte avant la révocation.
+	if !pm.PromoteAdmin("dev-1") {
+		t.Fatalf("PromoteAdmin doit réussir pour dev-1")
 	}
 
 	reqDel := httptest.NewRequest(http.MethodDelete, "/pair?deviceId=dev-1&token="+token, nil)
@@ -149,6 +153,7 @@ func TestPairingManager_HTTPRevoke(t *testing.T) {
 	// DELETE sans deviceId → 400 (avec token valide pour tester le paramètre manquant)
 	// On crée une nouvelle session d'abord
 	_, _, _ = pm.VerifyPIN("127.0.0.1:9999", pm.GeneratePIN(), "dev-2")
+	pm.PromoteAdmin("dev-2")
 	tok2 := ""
 	for tok, s := range pm.sessions {
 		if s.DeviceID == "dev-2" {

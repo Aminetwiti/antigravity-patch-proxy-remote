@@ -11,18 +11,23 @@ import 'package:mobile/widgets/app_toast.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../diagnostics/diagnostics_screen.dart';
+import '../discovery/discovery_screen.dart';
 
 /// Section App (Antigravity IDE 1:1)
 /// Gère la connexion au daemon bridge, les tunnels, et les diagnostics système.
 class AppSettingsSection extends StatefulWidget {
   final DaemonApi? api;
   final ValueChanged<Map<String, dynamic>>? onDaemonSaved;
+  final VoidCallback? onDiscover;
+  final Future<bool> Function(String host, int port, String csrfToken)? onConnect;
   final http.Client? httpClient;
 
   const AppSettingsSection({
     super.key,
     this.api,
     this.onDaemonSaved,
+    this.onDiscover,
+    this.onConnect,
     this.httpClient,
   });
 
@@ -186,10 +191,69 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Daemon Bridge Connection',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Daemon Bridge Connection',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF007AFF),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () {
+                        if (widget.onDiscover != null) {
+                          widget.onDiscover!();
+                        } else {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => DiscoveryScreen(
+                                onConnect: widget.onConnect,
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.radar_rounded, size: 16),
+                      label: const Text('Découvrir', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF007AFF),
+                      side: BorderSide(color: isDark ? const Color(0xFF007AFF).withValues(alpha: 0.5) : const Color(0xFF007AFF)),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+                    ),
+                    onPressed: () {
+                      if (widget.onDiscover != null) {
+                        widget.onDiscover!();
+                      } else {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => DiscoveryScreen(
+                              onConnect: widget.onConnect,
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+                    label: const Text('Découvrir les daemons / Scanner QR', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 const SizedBox(height: 12),
                 Text('Daemon Host IP / Domain', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                 const SizedBox(height: 6),
@@ -231,7 +295,13 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('SSL / TLS (WSS)', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                              Expanded(
+                                child: Text(
+                                  'SSL / TLS (WSS)',
+                                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
                               Switch.adaptive(
                                 value: _useSsl,
                                 activeColor: const Color(0xFF007AFF),

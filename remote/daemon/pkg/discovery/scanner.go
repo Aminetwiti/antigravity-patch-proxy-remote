@@ -28,6 +28,7 @@ type LocalHarnessInfo struct {
 	WorkspaceID     string
 	SubclientType   string
 	ConnectRPCPort  int
+	UseTLS          bool
 }
 
 type procEntry struct {
@@ -95,24 +96,30 @@ func Discover() (*LocalHarnessInfo, error) {
 
 		candidates := candidatePorts(info, &pick)
 		token := info.ExtensionCSRF
-		if port := probePorts(candidates, token); port > 0 {
+		if port, useTLS := probePorts(candidates, token); port > 0 {
 			info.ConnectRPCPort = port
+			info.UseTLS = useTLS
 			return info, nil
 		}
 	}
 	return nil, fmt.Errorf("aucun port ne répond au service RPC parmi les %d processus testés", len(sortedProcs))
 }
 
+type probeResult struct {
+	port   int
+	useTLS bool
+}
+
 // probePorts sonde les ports candidats EN PARALLÈLE (worker pool borné — le
 // premier port qui répond gagne). L'ancien balayage séquentiel coûtait jusqu'à
 // 20 × timeout HTTP (3 s) = 60 s au pire quand le hub était sur un port haut.
-func probePorts(ports []int, csrfToken string) int {
+func probePorts(ports []int, csrfToken string) (int, bool) {
 	if len(ports) == 0 {
-		return 0
+		return 0, false
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	result := make(chan int, 1)
+	result := make(chan probeResult, 1)
 
 	workers := len(ports)
 	if workers > 8 {
@@ -131,9 +138,9 @@ func probePorts(ports []int, csrfToken string) int {
 			case <-ctx.Done():
 				return
 			}
-			if probeService(port, csrfToken) {
+			if ok, useTLS := probeService(port, csrfToken); ok {
 				select {
-				case result <- port:
+				case result <- probeResult{port: port, useTLS: useTLS}:
 					cancel() // le premier gagnant arrête les autres sondes
 				default:
 				}
@@ -142,10 +149,10 @@ func probePorts(ports []int, csrfToken string) int {
 	}
 	go func() { wg.Wait(); close(result) }()
 
-	for port := range result {
-		return port
+	for res := range result {
+		return res.port, res.useTLS
 	}
-	return 0
+	return 0, false
 }
 
 // candidatePorts : https_server_port, active_port file, netstat PID ports, extension_server_port+1..+20.
@@ -239,17 +246,20 @@ func listeningPortsForPID(pid int) []int {
 }
 
 // probeService vérifie que le port expose bien le LanguageServerService.
-// 1. Sonde HTTP : frame gRPC-Web Heartbeat (chemin principal).
-// 2. Sonde HTTPS : frame gRPC-Web Heartbeat (sur port TLS auto-signé).
-// 3. Sonde HTTPS : GetUserStatus en JSON.
-func probeService(port int, csrfToken string) bool {
-	if probeHTTPHeartbeat(port, csrfToken) {
-		return true
-	}
+// 1. Sonde HTTPS : frame gRPC-Web Heartbeat (prioritaire — le LS Antigravity écoute en HTTPS TLS).
+// 2. Sonde HTTPS : GetUserStatus en JSON.
+// 3. Sonde HTTP : repli pour les environnements en clair sans TLS.
+func probeService(port int, csrfToken string) (bool, bool) {
 	if probeHTTPSHeartbeat(port, csrfToken) {
-		return true
+		return true, true
 	}
-	return probeHTTPSGetUserStatus(port, csrfToken)
+	if probeHTTPSGetUserStatus(port, csrfToken) {
+		return true, true
+	}
+	if probeHTTPHeartbeat(port, csrfToken) {
+		return true, false
+	}
+	return false, false
 }
 
 func probeHTTPHeartbeat(port int, csrfToken string) bool {

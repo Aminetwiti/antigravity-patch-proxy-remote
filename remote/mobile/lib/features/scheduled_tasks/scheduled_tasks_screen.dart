@@ -793,7 +793,10 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
               ),
             ),
             const SizedBox(height: 6),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 // Frequency Dropdown (Daily ⌄)
                 Container(
@@ -821,12 +824,10 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
                   ),
                 ),
 
-                const SizedBox(width: 8),
                 Text(
                   'around',
                   style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                 ),
-                const SizedBox(width: 8),
 
                 // Time Dropdown (9:00 AM ⌄)
                 Container(

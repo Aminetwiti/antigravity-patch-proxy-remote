@@ -63,14 +63,22 @@ class _MarkdownBubbleState extends State<MarkdownBubble> {
       if (!widget.isStreaming) {
         _throttleTimer?.cancel();
         _lastRenderedText = widget.text;
+        // Texte final stabilisé → passe par le cache LRU normal.
         _blocks = MarkdownRenderer.blocksOf(widget.text);
       } else {
-        // Throttling à 30ms pendant le streaming intensif pour garantir 60/120 FPS
+        // P3 : throttle adaptatif — 30 ms pour un texte raisonnable, 100 ms
+        // au-delà de 20 KB (le re-parse complet d'un grand message à chaque
+        // tick domine le CPU de l'UI isolate ; à 100 ms le flux reste fluide
+        // visuellement puisque le texte continue de croître entre deux ticks).
+        final interval = widget.text.length > 20000
+            ? const Duration(milliseconds: 100)
+            : const Duration(milliseconds: 30);
         if (_throttleTimer == null || !_throttleTimer!.isActive) {
-          _throttleTimer = Timer(const Duration(milliseconds: 30), () {
+          _throttleTimer = Timer(interval, () {
             if (mounted && _lastRenderedText != widget.text) {
               setState(() {
                 _lastRenderedText = widget.text;
+                // Snapshot intermédiaire → sans écriture dans le cache LRU.
                 _blocks = MarkdownRenderer.blocksOf(widget.text);
               });
             }

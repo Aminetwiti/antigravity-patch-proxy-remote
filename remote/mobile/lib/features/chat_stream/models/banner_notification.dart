@@ -109,11 +109,11 @@ class BannerClassifier {
 
       final actions = <BannerAction>[
         if (onDismiss != null)
-          BannerAction(label: 'Ignorer', onPressed: onDismiss),
+          BannerAction(label: 'Dismiss', onPressed: onDismiss),
         if (onSeePlans != null)
-          BannerAction(label: 'Forfaits', onPressed: onSeePlans),
+          BannerAction(label: 'See Plans', onPressed: onSeePlans),
         if (onSwitchModel != null)
-          BannerAction(label: 'Changer de modèle', onPressed: onSwitchModel, isPrimary: true),
+          BannerAction(label: 'Enable Overages', onPressed: onSwitchModel, isPrimary: true),
       ];
 
       return BannerNotificationData(
@@ -122,8 +122,8 @@ class BannerClassifier {
         severity: BannerSeverity.critical,
         title: 'Baseline model quota reached',
         message: resetStr != null
-            ? 'Votre quota sera réinitialisé ($resetStr). Vous pouvez basculer sur un autre modèle ou mettre à niveau votre forfait.'
-            : 'Votre quota de modèle est épuisé. Basculez sur un autre modèle ou mettez à niveau votre forfait.',
+            ? "Your plan's baseline quota will refresh on $resetStr. You can upgrade to a Google AI Ultra plan to receive higher rate limits. See plans."
+            : "Your plan's baseline quota has been reached. You can upgrade to a Google AI Ultra plan to receive higher rate limits or switch to another model.",
         resetTime: resetStr,
         errorId: errorId,
         actions: actions,

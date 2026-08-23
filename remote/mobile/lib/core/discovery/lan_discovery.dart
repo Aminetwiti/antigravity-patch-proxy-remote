@@ -30,6 +30,7 @@ class DiscoveredDaemon {
 class LanDiscoveryService {
   static const int discoveryPort = 41234;
   static const String magic = 'antigravity-remote';
+  static bool enabled = true;
 
   RawDatagramSocket? _socket;
   final StreamController<List<DiscoveredDaemon>> _daemonsController =
@@ -46,6 +47,7 @@ class LanDiscoveryService {
 
   Future<void> startDiscovery() async {
     stopDiscovery();
+    if (!enabled) return;
     _isSearching = true;
 
     try {

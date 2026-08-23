@@ -43,6 +43,7 @@ func (w *Watchdog) Start() {
 				if info.ConnectRPCPort != port || info.ExtensionCSRF != token {
 					log.Printf("[Watchdog] Hub redémarré détecté ! Mise à jour du port (%d -> %d) et du jeton CSRF", port, info.ConnectRPCPort)
 					w.Client.UpdateEndpoint(info.ConnectRPCPort, info.ExtensionCSRF)
+					w.Client.SetUseTLS(info.UseTLS)
 				}
 			case <-w.stopChan:
 				ticker.Stop()

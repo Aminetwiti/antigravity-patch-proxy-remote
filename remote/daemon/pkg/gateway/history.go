@@ -24,26 +24,28 @@ type HistorySegment struct {
 	Content string `json:"content"`
 }
 
-// HistoryMessage represents a parsed message to be sent to the mobile app
 type HistoryMessage struct {
-	ID          string           `json:"id"`
-	Sender      string           `json:"sender"`
-	Text        string           `json:"text"`
-	Thought     string           `json:"thought,omitempty"`
-	Segments    []HistorySegment `json:"segments,omitempty"`
-	Timestamp   string           `json:"timestamp"`
-	IsStreaming bool             `json:"isStreaming"`
-	IsError     bool             `json:"isError"`
-	StepIndex   int64            `json:"stepIndex,omitempty"`
+	ID           string           `json:"id"`
+	Sender       string           `json:"sender"`
+	Text         string           `json:"text"`
+	Thought      string           `json:"thought,omitempty"`
+	Segments     []HistorySegment `json:"segments,omitempty"`
+	Timestamp    string           `json:"timestamp"`
+	IsStreaming  bool             `json:"isStreaming"`
+	IsError      bool             `json:"isError"`
+	StepIndex    int64            `json:"stepIndex,omitempty"`
+	FilesChanged []string         `json:"filesChanged,omitempty"`
+	Additions    int              `json:"additions,omitempty"`
+	Deletions    int              `json:"deletions,omitempty"`
 }
 
 var (
-	wsMappingRe     = regexp.MustCompile(`(?i)([a-zA-Z]:(?:\\\\|/|\\)[^"\r\n\t<>]+?)\s*->`)
-	wsFileURIRe     = regexp.MustCompile(`file:///[^\s"'\r\n]+`)
-	convTitleRe     = regexp.MustCompile(`##\s*Conversation\s+([0-9a-fA-F-]+):\s*([^"\r\n\\]+?)(?:\\[nrt]|\r|\n|"|$)`)
-	userObjectiveRe = regexp.MustCompile(`(?i)###\s*USER Objective:\s*([^"\r\n\\]+?)(?:\\[nrt]|\r|\n|"|$)`)
-	rawWsMappingRe  = regexp.MustCompile(`(?i)(?:\[|\b)([a-zA-Z]:(?:\\\\|[\\/])[^"\r\n\t<>]+?)(?:\]|\b)\s*->`)
-	rawWsToolArgRe  = regexp.MustCompile(`(?i)"(?:filePath|file_path|targetFile|TargetFile|AbsolutePath|DirectoryPath|Cwd)"\s*:\s*"([a-zA-Z]:(?:\\\\|[\\/])[^"\r\n\t<>]+?)"`)
+	wsMappingRe      = regexp.MustCompile(`(?i)([a-zA-Z]:(?:\\\\|/|\\)[^"\r\n\t<>]+?)\s*->`)
+	wsFileURIRe      = regexp.MustCompile(`file:///[^\s"'\r\n]+`)
+	convTitleRe      = regexp.MustCompile(`##\s*Conversation\s+([0-9a-fA-F-]+):\s*([^"\r\n\\]+?)(?:\\[nrt]|\r|\n|"|$)`)
+	userObjectiveRe  = regexp.MustCompile(`(?i)###\s*USER Objective:\s*([^"\r\n\\]+?)(?:\\[nrt]|\r|\n|"|$)`)
+	rawWsMappingRe   = regexp.MustCompile(`(?i)(?:\[|\b)([a-zA-Z]:(?:\\\\|[\\/])[^"\r\n\t<>]+?)(?:\]|\b)\s*->`)
+	rawWsToolArgRe   = regexp.MustCompile(`(?i)"(?:filePath|file_path|targetFile|TargetFile|AbsolutePath|DirectoryPath|Cwd)"\s*:\s*"([a-zA-Z]:(?:\\\\|[\\/])[^"\r\n\t<>]+?)"`)
 	globalConvTitles = make(map[string]string)
 	convTitlesMu     sync.RWMutex
 
@@ -86,9 +88,12 @@ func normalizeWorkspace(uri string) string {
 	return uri
 }
 
-// isSubagentTitle détecte si un titre ou prompt correspond à un sous-agent interne
+// isSubagentTitle détecte si un titre ou prompt correspond à un sous-agent interne ou tâche système
 func isSubagentTitle(title string) bool {
 	lowerTitle := strings.ToLower(strings.TrimSpace(title))
+	if lowerTitle == "" {
+		return false
+	}
 	return strings.HasPrefix(lowerTitle, "you are") ||
 		strings.HasPrefix(lowerTitle, "en tant qu'") ||
 		strings.HasPrefix(lowerTitle, "tu es ") ||
@@ -101,7 +106,15 @@ func isSubagentTitle(title string) bool {
 		strings.HasPrefix(lowerTitle, "analyzing stream delta") ||
 		strings.HasPrefix(lowerTitle, "subagent") ||
 		strings.Contains(lowerTitle, "subagent-") ||
-		strings.Contains(lowerTitle, "subagent_")
+		strings.Contains(lowerTitle, "subagent_") ||
+		strings.HasPrefix(lowerTitle, "to begin the **claim verification**") ||
+		strings.HasPrefix(lowerTitle, "examine the project") ||
+		strings.HasPrefix(lowerTitle, "compris. je commence") ||
+		strings.Contains(lowerTitle, "audit backoffice navicab") ||
+		strings.Contains(lowerTitle, "audit technique architecture navicab") ||
+		strings.Contains(lowerTitle, "analyze flutter taxi app") ||
+		strings.Contains(lowerTitle, "analyze prepayservice") ||
+		strings.Contains(lowerTitle, "debugging chauffeur bank data")
 }
 
 // isSessionArchived vérifie si la session est archivée dans ~/.gemini/antigravity/annotations/<cascadeID>.pbtxt ou antigravity-ide
@@ -129,6 +142,36 @@ func isSessionArchived(home, cascadeID string) bool {
 	return false
 }
 
+// isSessionDeleted distingue les cascades supprimées (deleted: true dans le
+// pbtxt d'annotations) des simplement archivées : une session supprimée ne
+// doit réapparaître ni dans la sidebar ni dans l'historique des conversations.
+func isSessionDeleted(home, cascadeID string) bool {
+	if cascadeID == "" {
+		return false
+	}
+	for _, sub := range []string{"antigravity", "antigravity-ide"} {
+		annoPath := filepath.Join(home, ".gemini", sub, "annotations", cascadeID+".pbtxt")
+		data, err := os.ReadFile(annoPath)
+		if err != nil {
+			continue
+		}
+		s := strings.ToLower(string(data))
+		if strings.Contains(s, "deleted: true") || strings.Contains(s, "deleted:true") {
+			return true
+		}
+	}
+	return false
+}
+
+// isJunkSessionTitle : titre par défaut/abandonné (le mobile affiche « Cascade
+// Session » quand le titre est vide). Aligné sur le filtre 2.0 de
+// sessionsOut/sessionsFromSummariesLocked.
+func isJunkSessionTitle(title string) bool {
+	return title == "" || title == "Untitled Conversation" || title == "Cascade Session" ||
+		strings.HasPrefix(title, "Empty ") || strings.HasPrefix(title, "New ") ||
+		strings.HasPrefix(title, "General Conversation")
+}
+
 // resolveGeminiSubDir détermine si la session réside dans antigravity-ide ou antigravity
 func resolveGeminiSubDir(home, cascadeID string) string {
 	for _, sub := range []string{"antigravity-ide", "antigravity"} {
@@ -145,134 +188,128 @@ func resolveGeminiSubDir(home, cascadeID string) string {
 	return "antigravity"
 }
 
+// cascadeIDRe borne le format des identifiants de cascade acceptés pour toute
+// opération disque : alphanumérique, tiret et underscore, 64 chars max.
+// Bloque les traversées (.., /, \, :) à la source (SEC-02 : delete_cascade et
+// consorts joignaient cascadeID au chemin ~/.gemini sans validation).
+var cascadeIDRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+
+func validCascadeID(id string) bool {
+	return cascadeIDRe.MatchString(id)
+}
+
 // renameSessionOnDisk persiste le titre personnalisé d'une session dans annotations/<cascadeID>.pbtxt
 func renameSessionOnDisk(home, cascadeID, title string) error {
-	if cascadeID == "" {
-		return fmt.Errorf("cascadeId requis")
+	if !validCascadeID(cascadeID) {
+		return fmt.Errorf("identifiant de cascade invalide")
 	}
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return fmt.Errorf("title requis")
 	}
-	annoDir := filepath.Join(home, ".gemini", resolveGeminiSubDir(home, cascadeID), "annotations")
-	_ = os.MkdirAll(annoDir, 0o755)
-	annoPath := filepath.Join(annoDir, cascadeID+".pbtxt")
+	for _, subDir := range []string{"antigravity", "antigravity-ide"} {
+		annoDir := filepath.Join(home, ".gemini", subDir, "annotations")
+		_ = os.MkdirAll(annoDir, 0o755)
+		annoPath := filepath.Join(annoDir, cascadeID+".pbtxt")
 
-	nowSec := time.Now().Unix()
-	nowNano := time.Now().Nanosecond()
+		nowSec := time.Now().Unix()
+		nowNano := time.Now().Nanosecond()
 
-	data, err := os.ReadFile(annoPath)
-	if err != nil {
-		content := fmt.Sprintf("custom_title:%q last_user_view_time:{seconds:%d nanos:%d}\n",
-			title, nowSec, nowNano)
-		return os.WriteFile(annoPath, []byte(content), 0o644)
-	}
+		data, err := os.ReadFile(annoPath)
+		if err != nil {
+			content := fmt.Sprintf("custom_title:%q last_user_view_time:{seconds:%d nanos:%d}\n",
+				title, nowSec, nowNano)
+			_ = os.WriteFile(annoPath, []byte(content), 0o644)
+			continue
+		}
 
-	s := string(data)
-	reTitle := regexp.MustCompile(`(?i)custom_title:\s*"[^"]*"`)
-	s = reTitle.ReplaceAllString(s, "")
-	s = strings.TrimSpace(s)
-	s = fmt.Sprintf("custom_title:%q %s\n", title, s)
-	return os.WriteFile(annoPath, []byte(s), 0o644)
-}
-
-// pinSessionOnDisk persiste le statut épinglé dans annotations/<cascadeID>.pbtxt
-// cascadeExistsOnDisk vérifie si une session/cascade existe physiquement sur le disque.
-func cascadeExistsOnDisk(home, cascadeID string) bool {
-	if cascadeID == "" {
-		return false
+		s := string(data)
+		reTitle := regexp.MustCompile(`(?i)custom_title:\s*"[^"]*"`)
+		s = reTitle.ReplaceAllString(s, "")
+		s = strings.TrimSpace(s)
+		s = fmt.Sprintf("custom_title:%q %s\n", title, s)
+		_ = os.WriteFile(annoPath, []byte(s), 0o644)
 	}
-	subDir := resolveGeminiSubDir(home, cascadeID)
-	brainDir := filepath.Join(home, ".gemini", subDir, "brain", cascadeID)
-	if fi, err := os.Stat(brainDir); err == nil && fi.IsDir() {
-		return true
-	}
-	convDir := filepath.Join(home, ".gemini", subDir, "conversations", cascadeID)
-	if fi, err := os.Stat(convDir); err == nil && fi.IsDir() {
-		return true
-	}
-	annoPath := filepath.Join(home, ".gemini", subDir, "annotations", cascadeID+".pbtxt")
-	if _, err := os.Stat(annoPath); err == nil {
-		return true
-	}
-	return false
+	return nil
 }
 
 func pinSessionOnDisk(home, cascadeID string, pinned bool) error {
-	if cascadeID == "" {
-		return fmt.Errorf("cascadeId requis")
+	if !validCascadeID(cascadeID) {
+		return fmt.Errorf("identifiant de cascade invalide")
 	}
-	if !cascadeExistsOnDisk(home, cascadeID) {
-		return fmt.Errorf("conversation introuvable sur le disque (impossible d'épingler)")
-	}
-	annoDir := filepath.Join(home, ".gemini", resolveGeminiSubDir(home, cascadeID), "annotations")
-	_ = os.MkdirAll(annoDir, 0o755)
-	annoPath := filepath.Join(annoDir, cascadeID+".pbtxt")
+	for _, subDir := range []string{"antigravity", "antigravity-ide"} {
+		annoDir := filepath.Join(home, ".gemini", subDir, "annotations")
+		_ = os.MkdirAll(annoDir, 0o755)
+		annoPath := filepath.Join(annoDir, cascadeID+".pbtxt")
 
-	nowSec := time.Now().Unix()
-	nowNano := time.Now().Nanosecond()
+		nowSec := time.Now().Unix()
+		nowNano := time.Now().Nanosecond()
 
-	data, err := os.ReadFile(annoPath)
-	if err != nil {
-		if !pinned {
-			return nil
+		data, err := os.ReadFile(annoPath)
+		if err != nil {
+			if !pinned {
+				continue
+			}
+			content := fmt.Sprintf("pinned:true last_user_view_time:{seconds:%d nanos:%d}\n",
+				nowSec, nowNano)
+			_ = os.WriteFile(annoPath, []byte(content), 0o644)
+			continue
 		}
-		content := fmt.Sprintf("pinned:true last_user_view_time:{seconds:%d nanos:%d}\n",
-			nowSec, nowNano)
-		return os.WriteFile(annoPath, []byte(content), 0o644)
-	}
 
-	s := string(data)
-	rePin := regexp.MustCompile(`(?i)pinned:\s*(true|false)`)
-	s = rePin.ReplaceAllString(s, "")
-	s = strings.TrimSpace(s)
+		s := string(data)
+		rePin := regexp.MustCompile(`(?i)pinned:\s*(true|false)`)
+		s = rePin.ReplaceAllString(s, "")
+		s = strings.TrimSpace(s)
 
-	if pinned {
-		s = fmt.Sprintf("pinned:true %s", s)
-	} else {
-		s = fmt.Sprintf("pinned:false %s", s)
+		if pinned {
+			s = fmt.Sprintf("pinned:true %s", s)
+		} else {
+			s = fmt.Sprintf("pinned:false %s", s)
+		}
+		s = strings.TrimSpace(s) + "\n"
+		_ = os.WriteFile(annoPath, []byte(s), 0o644)
 	}
-	s = strings.TrimSpace(s) + "\n"
-	return os.WriteFile(annoPath, []byte(s), 0o644)
+	return nil
 }
 
 // archiveSessionOnDisk persiste le statut archivé dans annotations/<cascadeID>.pbtxt
 func archiveSessionOnDisk(home, cascadeID string, archived bool) error {
-	if cascadeID == "" {
-		return fmt.Errorf("cascadeId requis")
+	if !validCascadeID(cascadeID) {
+		return fmt.Errorf("identifiant de cascade invalide")
 	}
-	if !cascadeExistsOnDisk(home, cascadeID) {
-		return fmt.Errorf("conversation introuvable sur le disque (impossible d'archiver)")
-	}
-	annoDir := filepath.Join(home, ".gemini", resolveGeminiSubDir(home, cascadeID), "annotations")
-	_ = os.MkdirAll(annoDir, 0o755)
-	annoPath := filepath.Join(annoDir, cascadeID+".pbtxt")
+	for _, subDir := range []string{"antigravity", "antigravity-ide"} {
+		annoDir := filepath.Join(home, ".gemini", subDir, "annotations")
+		_ = os.MkdirAll(annoDir, 0o755)
+		annoPath := filepath.Join(annoDir, cascadeID+".pbtxt")
 
-	nowSec := time.Now().Unix()
-	nowNano := time.Now().Nanosecond()
+		nowSec := time.Now().Unix()
+		nowNano := time.Now().Nanosecond()
 
-	data, err := os.ReadFile(annoPath)
-	if err != nil {
-		if !archived {
-			return nil
+		data, err := os.ReadFile(annoPath)
+		if err != nil {
+			if !archived {
+				continue
+			}
+			content := fmt.Sprintf("archived:true last_user_view_time:{seconds:%d nanos:%d}\n",
+				nowSec, nowNano)
+			_ = os.WriteFile(annoPath, []byte(content), 0o644)
+			continue
 		}
-		content := fmt.Sprintf("archived:true last_user_view_time:{seconds:%d nanos:%d}\n",
-			nowSec, nowNano)
-		return os.WriteFile(annoPath, []byte(content), 0o644)
-	}
 
-	s := string(data)
-	reArch := regexp.MustCompile(`(?i)archived:\s*(true|false)`)
-	s = reArch.ReplaceAllString(s, "")
-	s = strings.TrimSpace(s)
+		s := string(data)
+		reArch := regexp.MustCompile(`(?i)archived:\s*(true|false)`)
+		s = reArch.ReplaceAllString(s, "")
+		s = strings.TrimSpace(s)
 
-	if archived {
-		s = fmt.Sprintf("archived:true %s", s)
-	} else {
-		s = fmt.Sprintf("archived:false %s", s)
+		if archived {
+			s = fmt.Sprintf("archived:true %s", s)
+		} else {
+			s = fmt.Sprintf("archived:false %s", s)
+		}
+		s = strings.TrimSpace(s) + "\n"
+		_ = os.WriteFile(annoPath, []byte(s), 0o644)
 	}
-	s = strings.TrimSpace(s) + "\n"
-	return os.WriteFile(annoPath, []byte(s), 0o644)
+	return nil
 }
 
 // isSessionPinned vérifie si la session est épinglée dans annotations/<cascadeID>.pbtxt (antigravity ou antigravity-ide)
@@ -294,8 +331,12 @@ func isSessionPinned(home, cascadeID string) bool {
 
 // deleteSessionFromDisk supprime les artefacts résiduels d'une session sur disque (.pbtxt, .db, brain/)
 func deleteSessionFromDisk(home, cascadeID string) error {
-	if cascadeID == "" {
-		return nil
+	if !validCascadeID(cascadeID) {
+		// cascadeID vide ou malformé : ne rien supprimer (fail-closed, SEC-02).
+		if cascadeID == "" {
+			return nil
+		}
+		return fmt.Errorf("identifiant de cascade invalide")
 	}
 	for _, sub := range []string{"antigravity", "antigravity-ide"} {
 		annoPath := filepath.Join(home, ".gemini", sub, "annotations", cascadeID+".pbtxt")
@@ -337,7 +378,7 @@ func findTranscriptPath(cascadeID string) string {
 
 // findBrainDir returns the active brain directory for a cascade ID.
 func findBrainDir(cascadeID string) string {
-	if cascadeID == "" {
+	if !validCascadeID(cascadeID) {
 		return ""
 	}
 	home, err := os.UserHomeDir()
@@ -442,6 +483,13 @@ func ListSessionUploads(cascadeID string) []map[string]interface{} {
 
 // ListLocalSessions scans local brain directories for conversations when gRPC returns empty.
 func ListLocalSessions() []map[string]interface{} {
+	return ListLocalSessionsOpts(false)
+}
+
+// ListLocalSessionsOpts énumère les cascades sur disque. includeArchived
+// garde les sessions archivées (marquées isArchived + status ARCHIVED) pour
+// l'historique des conversations ; les supprimées sont toujours exclues.
+func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
@@ -487,7 +535,11 @@ func ListLocalSessions() []map[string]interface{} {
 			}
 
 			// Antigravity 2.0 : v├®rifier si la session est archiv├®e dans ~/.gemini/antigravity/annotations/
-			if isSessionArchived(home, cascadeID) {
+			archived := isSessionArchived(home, cascadeID)
+			if archived && (!includeArchived || isSessionDeleted(home, cascadeID)) {
+				// Sidebar : archivée/supprimée masquée. Historique
+				// (includeArchived) : l'archivée est conservée ci-dessous,
+				// la supprimée reste toujours exclue.
 				continue
 			}
 
@@ -501,6 +553,16 @@ func ListLocalSessions() []map[string]interface{} {
 
 			// Exclure les subagents et prompts systèmes
 			if isSubagentTitle(title) {
+				continue
+			}
+
+			// Filtre Antigravity 2.0 aligné sur sessionsOut /
+			// sessionsFromSummariesLocked : le fallback disque faisait
+			// réapparaître des sessions abandonnées sans titre réel
+			// (« Cascade Session » côté mobile) de plus de 24 h dans la
+			// sidebar — dont des sessions archivées/supprimées sans
+			// annotation pbtxt.
+			if isJunkSessionTitle(title) && time.Since(modTime) > 24*time.Hour {
 				continue
 			}
 
@@ -546,16 +608,20 @@ func ListLocalSessions() []map[string]interface{} {
 			if home != "" {
 				pinned = isSessionPinned(home, cascadeID)
 			}
+			status := "idle"
+			if archived {
+				status = "CASCADE_STATUS_ARCHIVED"
+			}
 			sMap := map[string]interface{}{
 				"cascadeId":     cascadeID,
 				"title":         title,
 				"workspace":     matchedProjectName,
 				"workspacePath": matchedProjectPath,
 				"projectId":     matchedProjectID,
-				"status":        "idle",
+				"status":        status,
 				"updatedAt":     modTime.Format(time.RFC3339),
 				"isPinned":      pinned,
-				"isArchived":    false,
+				"isArchived":    archived,
 			}
 			items = append(items, sessionItem{data: sMap, updatedAt: modTime})
 		}
@@ -1208,6 +1274,7 @@ func parseTranscriptFullTurns(transcriptPath string) ([]HistoryMessage, error) {
 	var currentTurnLastIdx int
 	var currentTurnHasError bool
 	turnFilesExplored := make(map[string]bool)
+	turnFilesChangedMap := make(map[string]struct{ add, del int })
 	turnSearchesCount := 0
 	lastSearchIdx := -1
 	lastCmdIdx := -1
@@ -1271,14 +1338,26 @@ func parseTranscriptFullTurns(transcriptPath string) ([]HistoryMessage, error) {
 			ts = currentTurnUser.Timestamp
 		}
 
+		var turnFiles []string
+		var totalAdd, totalDel int
+		for fp, diff := range turnFilesChangedMap {
+			turnFiles = append(turnFiles, fp)
+			totalAdd += diff.add
+			totalDel += diff.del
+		}
+		sort.Strings(turnFiles)
+
 		messages = append(messages, HistoryMessage{
-			ID:        msgID,
-			Sender:    "assistant",
-			Text:      strings.TrimSpace(fullText),
-			Thought:   strings.TrimSpace(fullThought),
-			Segments:  currentTurnSegments,
-			Timestamp: ts,
-			IsError:   currentTurnHasError,
+			ID:           msgID,
+			Sender:       "assistant",
+			Text:         strings.TrimSpace(fullText),
+			Thought:      strings.TrimSpace(fullThought),
+			Segments:     currentTurnSegments,
+			Timestamp:    ts,
+			IsError:      currentTurnHasError,
+			FilesChanged: turnFiles,
+			Additions:    totalAdd,
+			Deletions:    totalDel,
 		})
 
 		currentTurnSegments = nil
@@ -1286,6 +1365,7 @@ func parseTranscriptFullTurns(transcriptPath string) ([]HistoryMessage, error) {
 		currentTurnAnswers = nil
 		currentTurnHasError = false
 		turnFilesExplored = make(map[string]bool)
+		turnFilesChangedMap = make(map[string]struct{ add, del int })
 		turnSearchesCount = 0
 		lastSearchIdx = -1
 		lastCmdIdx = -1
@@ -1431,6 +1511,37 @@ func parseTranscriptFullTurns(transcriptPath string) ([]HistoryMessage, error) {
 						for _, k := range []string{"targetFile", "TargetFile", "filePath", "file_path", "AbsolutePath"} {
 							if fv, ok := argMap[k].(string); ok && fv != "" {
 								turnFilesExplored[filepath.Base(fv)] = true
+							}
+						}
+
+						// Détection des fichiers modifiés lors de ce tour spécifique
+						isEditTool := strings.Contains(lower, "write_to_file") ||
+							strings.Contains(lower, "replace_file_content") ||
+							strings.Contains(lower, "multi_replace_file_content") ||
+							strings.Contains(lower, "edit_file") ||
+							strings.Contains(lower, "modify_file") ||
+							strings.Contains(lower, "create_file")
+
+						if isEditTool {
+							for _, k := range []string{"targetFile", "TargetFile", "filePath", "file_path", "AbsolutePath", "path"} {
+								if fv, ok := argMap[k].(string); ok && fv != "" {
+									cleanP := filepath.Clean(fv)
+									cleanP = strings.ReplaceAll(cleanP, `\`, `/`)
+									addCount := 1
+									delCount := 0
+									if repl, ok := argMap["ReplacementContent"].(string); ok && repl != "" {
+										addCount = len(strings.Split(repl, "\n"))
+									}
+									if targ, ok := argMap["TargetContent"].(string); ok && targ != "" {
+										delCount = len(strings.Split(targ, "\n"))
+									}
+									prevDiff := turnFilesChangedMap[cleanP]
+									turnFilesChangedMap[cleanP] = struct{ add, del int }{
+										add: prevDiff.add + addCount,
+										del: prevDiff.del + delCount,
+									}
+									break
+								}
 							}
 						}
 					}
@@ -2623,11 +2734,13 @@ func extractMediaArtifacts(content string) []string {
 		}
 	}
 
-	// 2. Direct paths in .user_uploaded or scratch or tempmediaStorage
+	// 2. Direct paths in .user_uploaded, user_uploaded, scratch, media_ or tempmediaStorage
 	for _, match := range userUploadedRe.FindAllString(content, -1) {
 		p := strings.TrimSpace(match)
 		lower := strings.ToLower(p)
 		if (strings.Contains(lower, ".user_uploaded") ||
+			strings.Contains(lower, "user_uploaded") ||
+			strings.Contains(lower, "media_") ||
 			strings.Contains(lower, "tempmediastorage") ||
 			strings.Contains(lower, "scratch/upload_") ||
 			strings.Contains(lower, "scratch\\upload_")) && !seen[p] {
@@ -2698,6 +2811,26 @@ func extractUserRequest(content string) string {
 	}
 
 	return strings.TrimSpace(userReq)
+}
+
+// extractModelFromContent extrait le nom du modèle s'il a été changé dans les métadonnées <USER_SETTINGS_CHANGE>
+func extractModelFromContent(content string) string {
+	if idx := strings.Index(content, "<USER_SETTINGS_CHANGE>"); idx != -1 {
+		sub := content[idx:]
+		if mIdx := strings.Index(sub, "`Model Selection` from "); mIdx != -1 {
+			target := sub[mIdx+len("`Model Selection` from "):]
+			if toIdx := strings.Index(target, " to "); toIdx != -1 {
+				afterTo := target[toIdx+len(" to "):]
+				if endIdx := strings.Index(afterTo, "."); endIdx != -1 {
+					return strings.TrimSpace(afterTo[:endIdx])
+				}
+				if endIdx := strings.Index(afterTo, "\n"); endIdx != -1 {
+					return strings.TrimSpace(afterTo[:endIdx])
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func cleanPromptTitle(s string) string {
@@ -2932,7 +3065,7 @@ func matchOfficialProject(projID, wsPath, wsName string, projects []ProjectSumma
 		}
 	}
 
-	return "", wsPath, projID
+	return wsName, wsPath, projID
 }
 
 // GetUniqueWorkspaces returns the list of unique workspace names discovered on the machine.

@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'messages.dart';
 
 /// Parses the daemon's `list_sessions` response into [CascadeSession] items.
@@ -12,18 +12,30 @@ import 'messages.dart';
 /// Fallback: legacy daemons that still send the raw protobuf field dump
 /// (`{"fields":[...]}`) are parsed heuristically (UUID + readable title).
 class SessionParser {
-  static List<CascadeSession> parseListSessions(Map<String, dynamic> data) {
+  /// Asynchronous parse with background isolate offloading when sessions count > 200.
+  static Future<List<CascadeSession>> parseListSessionsAsync(Map<String, dynamic> data) async {
+    final sessions = data['sessions'] ?? (data['data'] is Map ? data['data']['sessions'] : null);
+    if (sessions is List && sessions.length > 200) {
+      return compute(parseListSessions, data);
+    }
+    return parseListSessions(data);
+  }
+
+  /// [includeArchived] conserve les sessions archivées (destinées à
+  /// l'historique des conversations) ; la sidebar les filtre toujours via
+  /// `isAvailable`.
+  static List<CascadeSession> parseListSessions(Map<String, dynamic> data,
+      {bool includeArchived = false}) {
     final sessions = data['sessions'] ?? (data['data'] is Map ? data['data']['sessions'] : null);
     if (sessions is List) {
-      var out = <CascadeSession>[];
+      final now = DateTime.now();
+      final entries = <(CascadeSession, int)>[];
       for (final s in sessions) {
         if (s is Map) {
-          final sMap = Map<String, dynamic>.from(s);
+          final sMap = s;
           final id = sMap['cascadeId'] ?? sMap['id'];
           if (id is String && id.isNotEmpty) {
             final stepCount = (sMap['stepCount'] as num?)?.toInt() ?? 0;
-            // Point bleu : session avec activité (≥ 1 étape) mais pas en cours
-            // Identique au comportement de l'indicateur Antigravity IDE
             final status = (sMap['status'] as String? ?? '').toUpperCase();
             final isRunning = status.contains('RUNNING') ||
                 status.contains('BUSY') ||
@@ -32,35 +44,36 @@ class SessionParser {
                 status.contains('EXECUTING') ||
                 status.contains('BACKGROUND');
             final hasUnread = stepCount >= 1 && !isRunning;
-            final session = CascadeSession.fromJson({
-              ...sMap,
-              'stepCount': stepCount,
-              'hasUnread': hasUnread,
-            });
-            if (session.isAvailable) {
-              out.add(session);
+            final updatedParsed = sMap['updatedAt'] is String
+                ? DateTime.tryParse(sMap['updatedAt'] as String)
+                : null;
+            final updatedMs = updatedParsed?.millisecondsSinceEpoch ?? 0;
+            final timeStr = sMap['time']?.toString() ??
+                (updatedParsed != null ? CascadeSession.formatRelativeTime(updatedParsed, now) : 'Just now');
+            final session = CascadeSession(
+              id: id,
+              workspacePath: sMap['workspacePath'] ?? sMap['workspace'] ?? '',
+              title: sMap['title'] ?? 'Cascade Session',
+              status: sMap['status'] ?? 'CASCADE_STATUS_READY',
+              time: timeStr,
+              updatedAt: updatedParsed,
+              lastPrompt: sMap['lastPrompt']?.toString(),
+              worktree: sMap['worktree']?.toString(),
+              projectId: sMap['projectId']?.toString(),
+              stepCount: stepCount,
+              hasUnread: hasUnread,
+              isPinned: sMap['isPinned'] == true || sMap['pinned'] == true,
+              isArchived: sMap['isArchived'] == true,
+            );
+            if (session.isAvailable || (includeArchived && session.isArchived)) {
+              entries.add((session, updatedMs));
             }
           }
         }
       }
-      if (out.isNotEmpty) {
-        // Tri par date de mise à jour décroissante.
-        final byId = <String, DateTime>{};
-        for (final s in sessions) {
-          if (s is Map) {
-            final sMap = Map<String, dynamic>.from(s);
-            final cId = sMap['cascadeId'] ?? sMap['id'];
-            if (cId is String) {
-              byId[cId] =
-                  DateTime.tryParse(sMap['updatedAt'] as String? ?? '') ??
-                      DateTime.fromMillisecondsSinceEpoch(0);
-            }
-          }
-        }
-        out.sort((a, b) =>
-            (byId[b.id] ?? DateTime.fromMillisecondsSinceEpoch(0))
-                .compareTo(byId[a.id] ?? DateTime.fromMillisecondsSinceEpoch(0)));
-        return out;
+      if (entries.isNotEmpty) {
+        entries.sort((a, b) => b.$2.compareTo(a.$2));
+        return entries.map((e) => e.$1).toList();
       }
     }
     return _parseLegacyFieldDump(data);

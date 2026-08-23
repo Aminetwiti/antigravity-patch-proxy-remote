@@ -5,6 +5,22 @@ All notable changes to Antigravity will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-08-22
+
+### Added
+- **Antigravity Remote Daemon Desktop Controller** (`remote/antigravity-remote-daemon`): Dedicated Electron 1-page tray controller for the Go Daemon bridge, automated Cloudflare tunnel launcher, real-time PID watchdog, and dynamic pairing QR code generator.
+- **CI/CD Desktop Daemon Packaging**: Integrated automated multi-platform compilation and release publishing for `antigravity-remote-daemon.exe` (Windows portable) directly into GitHub Actions (`flutter-mobile.yml`).
+- **Background Isolate Offloading (`compute`)**: Asynchronous decoding and sorting of massive session dumps (`parseListSessionsAsync`) and heavy Markdown code blocks (`blocksOfAsync`), eliminating all UI thread jank on payloads exceeding 50,000 items and 50 MB.
+- **Extreme Benchmark Matrix (TEST-01 to TEST-10)**: Automated test suite validating 50k sessions virtualization, 20 concurrent agents with 500 events/s streaming, 1,000-cycle memory soak, and idempotent outbox replay.
+
+### Changed
+- **Bounded LRU Caches**: Strict LRU eviction capping in-memory session histories to 30 sessions and thumbnails to 50 items with zero memory leakage.
+- **Streaming Coalescence & Repaint Boundaries**: 30ms throttling on Markdown token rendering and strict repaint boundaries on message bubbles, preventing parent tree rebuild cascades.
+
+### Fixed
+- **LAN Discovery & UDP Socket Cleanup**: Proper subscription cancellation and lifecycle disposal on `LanDiscoveryService`.
+- **Security & Secret Storage**: Automated credential migration to hardware-backed keystore (`flutter_secure_storage`) without plaintext JSON token retention.
+
 ## [3.3.3] - 2026-08-21
 
 ## [3.3.0] - 2026-08-21

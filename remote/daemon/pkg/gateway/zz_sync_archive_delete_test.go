@@ -284,3 +284,108 @@ func TestArchiveAndUnarchiveCascadeActions(t *testing.T) {
 		t.Fatalf("isSessionArchived(%s) = true après unarchive_cascade, attendu false", testID)
 	}
 }
+
+// TestSessionsFromSummariesSortsByUpdatedAtDesc vérifie que la payload list_sessions
+// et sessions_updated trie strictement les sessions par date updatedAt décroissante.
+func TestSessionsFromSummariesSortsByUpdatedAtDesc(t *testing.T) {
+	now := time.Now()
+	summaries := map[string]connectrpc.JetboxSummary{
+		"sess-old": {
+			CascadeID: "sess-old",
+			Title:     "Old Session",
+			Status:    "CASCADE_STATUS_READY",
+			UpdatedAt: now.Add(-10 * time.Minute),
+			StepCount: 5,
+		},
+		"sess-recent": {
+			CascadeID: "sess-recent",
+			Title:     "Recent Session",
+			Status:    "CASCADE_STATUS_READY",
+			UpdatedAt: now.Add(-1 * time.Minute),
+			StepCount: 5,
+		},
+		"sess-active": {
+			CascadeID: "sess-active",
+			Title:     "Active Session",
+			Status:    "CASCADE_STATUS_RUNNING",
+			UpdatedAt: now,
+			StepCount: 5,
+		},
+	}
+
+	gw := &Server{}
+	res := gw.sessionsFromSummaries(summaries)
+	sessions, ok := res["sessions"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("sessions invalides: %v", res["sessions"])
+	}
+	if len(sessions) != 3 {
+		t.Fatalf("attendu 3 sessions, reçu %d", len(sessions))
+	}
+
+	if sessions[0]["cascadeId"] != "sess-active" {
+		t.Errorf("attendu sess-active en 1er, reçu %v", sessions[0]["cascadeId"])
+	}
+	if sessions[1]["cascadeId"] != "sess-recent" {
+		t.Errorf("attendu sess-recent en 2ème, reçu %v", sessions[1]["cascadeId"])
+	}
+	if sessions[2]["cascadeId"] != "sess-old" {
+		t.Errorf("attendu sess-old en 3ème, reçu %v", sessions[2]["cascadeId"])
+	}
+}
+
+// TestRenameCascadeSyncsToDisk vérifie que rename_cascade persiste custom_title
+// dans les annotations sur disque et diffuse sessions_updated.
+func TestRenameCascadeSyncsToDisk(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("UserHomeDir indisponible")
+	}
+
+	testID := "feedface-0000-4000-8000-00000000ren1"
+	defer func() {
+		for _, sub := range []string{"antigravity", "antigravity-ide"} {
+			_ = os.Remove(filepath.Join(home, ".gemini", sub, "annotations", testID+".pbtxt"))
+		}
+	}()
+
+	ts, gw := newTestServerWithGW(&fakeRPCClient{})
+	defer ts.Close()
+
+	gw.mu.Lock()
+	gw.jetboxSummaries = map[string]connectrpc.JetboxSummary{
+		testID: {CascadeID: testID, Title: "titre original", Status: "CASCADE_STATUS_READY"},
+	}
+	gw.mu.Unlock()
+
+	client := dialWS(t, "ws"+strings.TrimPrefix(ts.URL, "http")+"/ws")
+	defer client.conn.Close()
+
+	client.send(t, map[string]string{
+		"type":      "rename_cascade",
+		"requestId": "rR1",
+		"cascadeId": testID,
+		"prompt":    "Nouveau Titre Renommé",
+	})
+
+	msg := client.recv(t)
+	if msg["type"] != "response" || msg["error"] != nil {
+		t.Fatalf("réponse rename inattendue: %v", msg)
+	}
+
+	// Broadcast sessions_updated
+	msg = client.recv(t)
+	if msg["type"] != "sessions_updated" {
+		t.Fatalf("attendu broadcast sessions_updated, reçu %v", msg)
+	}
+
+	// Vérifie sur disque
+	for _, sub := range []string{"antigravity", "antigravity-ide"} {
+		annoPath := filepath.Join(home, ".gemini", sub, "annotations", testID+".pbtxt")
+		if data, err := os.ReadFile(annoPath); err == nil {
+			if !strings.Contains(string(data), "Nouveau Titre Renommé") {
+				t.Errorf("%s: attendu 'Nouveau Titre Renommé' dans le pbtxt, reçu: %s", sub, string(data))
+			}
+		}
+	}
+}

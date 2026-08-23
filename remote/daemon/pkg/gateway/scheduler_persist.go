@@ -132,12 +132,24 @@ func (s *Server) syncSidecarsLocked() {
 	}
 }
 
+// sanitizeTaskID nettoie l'identifiant pour empêcher toute traversée de chemin.
+func sanitizeTaskID(id string) string {
+	clean := filepath.Base(filepath.Clean(id))
+	clean = strings.ReplaceAll(clean, "..", "")
+	clean = strings.Trim(clean, ". /\\")
+	return clean
+}
+
 // writeSidecarSync synchronise une tâche planifiée vers les sidecars Antigravity IDE.
 func writeSidecarSync(task *ScheduledTask) {
 	if task == nil || task.ID == "" || sidecarsDirPath == "" || mainConfigFilePath == "" {
 		return
 	}
-	taskDir := filepath.Join(sidecarsDirPath, task.ID)
+	safeID := sanitizeTaskID(task.ID)
+	if safeID == "" {
+		return
+	}
+	taskDir := filepath.Join(sidecarsDirPath, safeID)
 	_ = os.MkdirAll(taskDir, 0755)
 	sc := sidecarConfigJSON{
 		Builtin: "schedule",
@@ -150,7 +162,7 @@ func writeSidecarSync(task *ScheduledTask) {
 		DisplayName: task.Name,
 	}
 	if sc.DisplayName == "" {
-		sc.DisplayName = task.ID
+		sc.DisplayName = safeID
 	}
 	if scData, err := json.MarshalIndent(sc, "", "  "); err == nil {
 		_ = os.WriteFile(filepath.Join(taskDir, "sidecar.json"), scData, 0644)
@@ -165,10 +177,10 @@ func writeSidecarSync(task *ScheduledTask) {
 				sidecarsMap = make(map[string]interface{})
 				rawMap["sidecars"] = sidecarsMap
 			}
-			cur, ok := sidecarsMap[task.ID].(map[string]interface{})
+			cur, ok := sidecarsMap[safeID].(map[string]interface{})
 			if !ok || cur == nil {
 				cur = make(map[string]interface{})
-				sidecarsMap[task.ID] = cur
+				sidecarsMap[safeID] = cur
 			}
 			cur["enabled"] = task.IsEnabled
 			if outData, err := json.MarshalIndent(rawMap, "", "  "); err == nil {
@@ -183,7 +195,11 @@ func removeSidecarSync(taskID string) {
 	if taskID == "" || sidecarsDirPath == "" || mainConfigFilePath == "" {
 		return
 	}
-	taskDir := filepath.Join(sidecarsDirPath, taskID)
+	safeID := sanitizeTaskID(taskID)
+	if safeID == "" {
+		return
+	}
+	taskDir := filepath.Join(sidecarsDirPath, safeID)
 	_ = os.RemoveAll(taskDir)
 
 	data, err := os.ReadFile(mainConfigFilePath)
@@ -191,7 +207,7 @@ func removeSidecarSync(taskID string) {
 		var rawMap map[string]interface{}
 		if err := json.Unmarshal(data, &rawMap); err == nil {
 			if sidecarsMap, ok := rawMap["sidecars"].(map[string]interface{}); ok && sidecarsMap != nil {
-				delete(sidecarsMap, taskID)
+				delete(sidecarsMap, safeID)
 				if outData, err := json.MarshalIndent(rawMap, "", "  "); err == nil {
 					_ = os.WriteFile(mainConfigFilePath, outData, 0644)
 				}

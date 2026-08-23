@@ -121,11 +121,11 @@ func TestProbePorts(t *testing.T) {
 	// On teste donc la couche parallèle via un faux probeService injectable ?
 	// probeService est une fonction package-level non injectable : on valide
 	// juste le contrat (port fermé → 0, pas de panique, terminaison rapide).
-	if got := probePorts([]int{1, port}, "tok"); got != 0 {
+	if got, _ := probePorts([]int{1, port}, "tok"); got != 0 {
 		t.Errorf("probePorts = %d, want 0 (listener non-HTTP ignoré)", got)
 	}
 	// Lot vide → 0 sans panique
-	if got := probePorts(nil, "tok"); got != 0 {
+	if got, _ := probePorts(nil, "tok"); got != 0 {
 		t.Errorf("probePorts(nil) = %d, want 0", got)
 	}
 }

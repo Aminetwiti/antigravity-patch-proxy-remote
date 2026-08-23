@@ -41,7 +41,7 @@ func LoadConfig() *DaemonConfig {
 		QuotaPollInterval:    getEnvDuration("AG_QUOTA_INTERVAL", 60*time.Second),
 		ApprovalTimeout:      getEnvDuration("AG_APPROVAL_TIMEOUT", 5*time.Minute),
 		DiscoveryPort:        getEnvInt("AG_DISCOVERY_PORT", 41234),
-		AllowRemoteTerminal:  getEnvBool("AG_ALLOW_REMOTE_TERMINAL", false),
+		AllowRemoteTerminal:  getEnvBool("AG_ALLOW_REMOTE_TERMINAL", true),
 	}
 
 	// Tentative de lecture d'un fichier de configuration local si présent

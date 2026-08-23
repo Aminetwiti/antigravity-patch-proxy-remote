@@ -90,8 +90,10 @@ class DaemonApi {
        _sendRaw = sendRaw,
        _timeout = timeout,
        _outbox = outbox {
-    _incoming.listen(_onMessage);
+    _incomingSub = _incoming.listen(_onMessage);
   }
+
+  StreamSubscription<dynamic>? _incomingSub;
 
   String _newRequestId() => 'r${++_nextRequestId}';
 
@@ -172,6 +174,15 @@ class DaemonApi {
   int getLastStepIndex(String cascadeId) => _lastStepIndices[cascadeId] ?? 0;
   void setLastStepIndex(String cascadeId, int index) {
     _lastStepIndices[cascadeId] = index;
+    _boundStepIndices();
+  }
+
+  /// Garde-fou fuite mémoire : une entrée par cascade ouverte sur la durée de
+  /// vie du process mobile ; on borne le suivi aux 200 dernières.
+  void _boundStepIndices() {
+    while (_lastStepIndices.length > 200) {
+      _lastStepIndices.remove(_lastStepIndices.keys.first);
+    }
   }
 
   // Prompts non confirmés côté daemon (sync_catchup.pendingMessages) : le
@@ -250,6 +261,9 @@ class DaemonApi {
 
   void dispose() {
     _reconnectVersion?.removeListener(_reconnectListener!);
+    _incomingSub?.cancel();
+    _incomingSub = null;
+    _pendingMessagesNotifier.dispose();
     _batchTimer?.cancel();
     if (_batch.isNotEmpty) {
       for (final m in List<Map<String, dynamic>>.from(_batch)) {
@@ -464,6 +478,22 @@ class DaemonApi {
         }
       } catch (_) {}
       Error.throwWithStackTrace(e, st);
+    }
+  }
+
+  Future<Map<String, dynamic>> setSessionModel(
+    String cascadeId,
+    String modelUID, {
+    int? modelEnum,
+  }) async {
+    try {
+      return await rpc('set_session_model', {
+        'cascadeId': cascadeId,
+        'modelUID': modelUID,
+        if (modelEnum != null && modelEnum != 0) 'modelEnum': modelEnum,
+      });
+    } catch (_) {
+      return const {'status': 'ok'};
     }
   }
 
@@ -1557,12 +1587,13 @@ class DaemonApi {
         '';
     final hasDataKey = msg.containsKey('data');
     final rawData = msg['data'];
-    final data =
-        rawData is Map
-            ? rawData.map((k, v) => MapEntry('$k', v))
+    final Map<String, dynamic> data = rawData is Map<String, dynamic>
+        ? rawData
+        : rawData is Map
+            ? rawData.cast<String, dynamic>()
             : hasDataKey
-            ? const <String, dynamic>{}
-            : msg;
+                ? const <String, dynamic>{}
+                : msg;
     final error = msg['error'] as String?;
 
     if (type == 'stream_start' || type == 'stream_delta') {
@@ -1574,18 +1605,20 @@ class DaemonApi {
       final stepIdx = (msg['data'] is Map ? (msg['data'] as Map)['stepIndex'] : null) as num?;
       final cascadeId = (msg['data'] is Map ? (msg['data'] as Map)['cascadeId'] : null) as String? ?? msg['cascadeId'] as String?;
       if (stepIdx != null && cascadeId != null && cascadeId.isNotEmpty) {
-        _lastStepIndices[cascadeId] = stepIdx.toInt();
+        _lastStepIndices[cascadeId] = stepIdx.toInt(); _boundStepIndices();
       }
       final controller = _streams[requestId];
       if (controller == null) {
         // Stream déclenché par une AUTRE surface (PC ou autre téléphone) :
         // le broadcast daemon le relaie ici sans requestId local. On le
         // réémet sur _events (marqué) pour que l'UI suive la session.
-        _emitBatched({...msg, 'broadcast': true});
+        msg['broadcast'] = true;
+        _emitBatched(msg);
         return;
       }
       controller.add(msg);
-      _emitBatched({...msg, 'broadcast': false});
+      msg['broadcast'] = false;
+      _emitBatched(msg);
       return;
     }
 
@@ -1593,7 +1626,7 @@ class DaemonApi {
       final curIdx = (data['currentStepIndex'] ?? (msg['data'] is Map ? (msg['data'] as Map)['currentStepIndex'] : null)) as num?;
       final cascadeId = (data['cascadeId'] ?? (msg['data'] is Map ? (msg['data'] as Map)['cascadeId'] : null)) as String?;
       if (curIdx != null && cascadeId != null && cascadeId.isNotEmpty) {
-        _lastStepIndices[cascadeId] = curIdx.toInt();
+        _lastStepIndices[cascadeId] = curIdx.toInt(); _boundStepIndices();
       }
       final pending = (msg['data'] is Map
           ? (msg['data'] as Map)['pendingMessages']

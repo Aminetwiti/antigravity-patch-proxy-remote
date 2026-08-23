@@ -345,8 +345,11 @@ class _AskQuestionChoiceCardState extends State<AskQuestionChoiceCard> {
           ],
 
           // Boutons d'action (Skip & Submit)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               TextButton(
                 onPressed: !_isSubmitting
@@ -365,7 +368,6 @@ class _AskQuestionChoiceCardState extends State<AskQuestionChoiceCard> {
                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
                 ),
               ),
-              const SizedBox(width: 8),
               ElevatedButton.icon(
                 key: const Key('submit-question-response'),
                 onPressed:

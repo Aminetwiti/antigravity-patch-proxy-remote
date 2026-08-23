@@ -91,10 +91,11 @@ class _VoicePromptDialogState extends State<VoicePromptDialog> with SingleTicker
           top: 10,
           bottom: viewInsets > 0 ? viewInsets + 8 : 16,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             // Drag Handle
             Center(
               child: Container(
@@ -311,7 +312,11 @@ class _VoicePromptDialogState extends State<VoicePromptDialog> with SingleTicker
             ),
 
           // Bottom Action Buttons
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               OutlinedButton.icon(
                 onPressed: () {
@@ -338,7 +343,6 @@ class _VoicePromptDialogState extends State<VoicePromptDialog> with SingleTicker
                 ),
                 label: Text(_isListening ? 'Arrêter' : 'Dictée'),
               ),
-              const Spacer(),
               ElevatedButton.icon(
                 onPressed: _confirmInsert,
                 icon: const Icon(Icons.check, size: 16),
@@ -353,7 +357,8 @@ class _VoicePromptDialogState extends State<VoicePromptDialog> with SingleTicker
         ],
       ),
     ),
-  );
+  ),
+);
 }
 
   Widget _buildQuickChip(String text) {

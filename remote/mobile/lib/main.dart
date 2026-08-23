@@ -132,6 +132,20 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
   // Bug #15 : guard pour éviter le double fetch concurrent de sessions.
   bool _sessionsFetching = false;
   int _lastStateVersion = 0;
+  // P3 : timestamp de la dernière sync sessions réussie (push ou poll) —
+  // permet au timer de polling de se mettre en veille quand le push est actif.
+  DateTime? _lastSessionsSyncAt;
+
+  /// Garde-fou anti-fantôme : quand la session active disparaît des listes
+  /// daemon (archivée/supprimée depuis l'IDE desktop), on la préserve
+  /// temporairement — une session flambant neuve peut mettre ~10 s à
+  /// apparaître dans les résumés du Language Server — puis on honore
+  /// l'exclusion définitive du daemon.
+  DateTime? _activeMissingSince;
+  bool get _activeGhostExpired =>
+      _activeMissingSince != null &&
+      DateTime.now().difference(_activeMissingSince!) >
+          const Duration(seconds: 45);
 
   ConnectionStatus _prevStatus = ConnectionStatus.disconnected;
 
@@ -332,6 +346,15 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       _sessionsPollTimer?.cancel();
       _sessionsPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
         if (mounted && _wsClient.statusNotifier.value == ConnectionStatus.connected) {
+          // P3 : filet de sécurité, pas une source primaire — le daemon pousse
+          // déjà `sessions_updated`. On saute le poll si une sync (push ou
+          // refresh manuel) a eu lieu il y a moins de 12 s pour éviter le
+          // double-chargement réseau + re-parse de la liste complète.
+          final lastSync = _lastSessionsSyncAt;
+          if (lastSync != null &&
+              DateTime.now().difference(lastSync) < const Duration(seconds: 12)) {
+            return;
+          }
           _refreshSessions();
         }
       });
@@ -433,9 +456,36 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     final api = _api;
     if (api == null) {
       _isCreatingSession = false;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ Non connecté au serveur daemon'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
       return;
     }
     try {
+      HapticFeedback.lightImpact();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                ),
+                SizedBox(width: 12),
+                Text('Création de la nouvelle conversation...'),
+              ],
+            ),
+            duration: Duration(milliseconds: 1500),
+          ),
+        );
+      }
       var ws = targetProject?.path ?? '';
       if (ws.isEmpty && targetProject != null) {
         ws = targetProject.folderUri.isNotEmpty ? targetProject.folderUri : targetProject.name;
@@ -506,11 +556,33 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           _sessions = [newSession, ..._sessions.where((s) => s.id != newId)];
           _contextStats = {};
         });
-        await _refreshSessions();
+        SettingsStore.saveSession(
+          wsUrl: _wsClient.targetUrl,
+          token: _wsClient.authToken ?? '',
+          sessionId: newId,
+        );
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✨ Nouvelle conversation ouverte ($newId)'),
+            backgroundColor: const Color(0xFF1E88E5),
+            duration: const Duration(seconds: 2),
+          ),
+        );
         await _refreshContext();
       }
     } catch (e) {
       debugPrint('createCascade failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Échec création session: $e'),
+            backgroundColor: Colors.red.shade800,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     } finally {
       _isCreatingSession = false;
     }
@@ -533,7 +605,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         _lastStateVersion = version;
       }
 
-      final sessions = SessionParser.parseListSessions(data);
+      final sessions = await SessionParser.parseListSessionsAsync(data);
 
       List<ProjectItem> projects = [];
       if (data['projects'] is List) {
@@ -550,53 +622,44 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           }
           if (sessions.isNotEmpty) {
             final stillActive = sessions.any((s) => s.id == _activeSessionId);
-            if (_activeSessionId.isNotEmpty) {
-              if (stillActive) {
-                _sessions = sessions;
-                final cur = sessions.firstWhere((s) => s.id == _activeSessionId);
-                _activeSessionTitle = cur.title.isNotEmpty
-                    ? cur.title
-                    : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
-              } else {
-                // Si la session active locale n'est pas encore synchronisée sur le serveur,
-                // la préserver en tête de liste sans changer de session active.
-                final curLocal = _sessions.firstWhere(
-                  (s) => s.id == _activeSessionId,
-                  orElse: () => CascadeSession(
-                    id: _activeSessionId,
-                    workspacePath: _projects.isNotEmpty ? _projects.first.path : '',
-                    title: _activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation',
-                    status: 'CASCADE_STATUS_READY',
-                    time: 'Maintenant',
-                    projectId: _projects.isNotEmpty ? _projects.first.id : '',
-                  ),
-                );
-                _sessions = [curLocal, ...sessions.where((s) => s.id != _activeSessionId)];
-              }
+            if (_activeSessionId.isNotEmpty && stillActive) {
+              _activeMissingSince = null;
+              _sessions = sessions;
+              final cur = sessions.firstWhere((s) => s.id == _activeSessionId);
+              _activeSessionTitle = cur.title.isNotEmpty
+                  ? cur.title
+                  : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
+            } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired) {
+              _activeMissingSince ??= DateTime.now();
+              // Préserve la session active en tête de liste si c'est une nouvelle session
+              final existingPending = _sessions.where((s) => s.id == _activeSessionId);
+              final activeItem = existingPending.isNotEmpty
+                  ? existingPending.first
+                  : CascadeSession(
+                      id: _activeSessionId,
+                      workspacePath: _projects.isNotEmpty ? _projects.first.path : '',
+                      title: _activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation',
+                      status: 'CASCADE_STATUS_READY',
+                      time: 'Maintenant',
+                    );
+              _sessions = [activeItem, ...sessions.where((s) => s.id != _activeSessionId)];
             } else {
+              _activeMissingSince = null;
               _sessions = sessions;
               _activeSessionId = sessions.first.id;
               _activeSessionTitle = sessions.first.title;
             }
-          } else {
-            if (_activeSessionId.isNotEmpty) {
-              final curLocal = _sessions.firstWhere(
-                (s) => s.id == _activeSessionId,
-                orElse: () => CascadeSession(
-                  id: _activeSessionId,
-                  workspacePath: _projects.isNotEmpty ? _projects.first.path : '',
-                  title: _activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation',
-                  status: 'CASCADE_STATUS_READY',
-                  time: 'Maintenant',
-                ),
-              );
-              _sessions = [curLocal];
-            } else {
-              _sessions = const [];
-              _activeSessionId = '';
-              _activeSessionTitle = '';
+          } else if (_activeSessionId.isNotEmpty) {
+            final existingPending = _sessions.where((s) => s.id == _activeSessionId);
+            if (existingPending.isNotEmpty) {
+              _sessions = [existingPending.first];
             }
+          } else {
+            _sessions = const [];
+            _activeSessionId = '';
+            _activeSessionTitle = 'Nouvelle conversation';
           }
+          _lastSessionsSyncAt = DateTime.now();
         });
         if (_activeSessionId.isNotEmpty) {
           SettingsStore.saveSession(
@@ -620,7 +683,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
 
   void _watchSessionEvents() {
     _sessionsSub?.cancel();
-    _sessionsSub = _api?.events.listen((msg) {
+    _sessionsSub = _api?.events.listen((msg) async {
       if (!mounted) return;
       final type = msg['type'] as String?;
       final cascadeId = (msg['cascadeId'] ?? msg['data']?['cascadeId']) as String? ?? '';
@@ -722,6 +785,26 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         return;
       }
 
+      if (type == 'session_deleted') {
+        final deletedId = msg['cascadeId'] as String? ?? (msg['data'] is Map ? msg['data']['cascadeId']?.toString() : null);
+        if (deletedId != null && deletedId.isNotEmpty) {
+          setState(() {
+            _sessions = _sessions.where((s) => s.id != deletedId).toList();
+            if (_activeSessionId == deletedId) {
+              if (_sessions.isNotEmpty) {
+                _activeSessionId = _sessions.first.id;
+                _activeSessionTitle = _sessions.first.title;
+              } else {
+                _activeSessionId = '';
+                _activeSessionTitle = 'Nouvelle conversation';
+              }
+              _refreshContext();
+            }
+          });
+        }
+        return;
+      }
+
       // sessions_updated : push réactif du daemon (flux Jetbox) — payload
       // complet au format list_sessions. Évite le rechargement réseau complet
       // (et la latence GetAllCascades) ; met à jour la sidebar en place
@@ -747,7 +830,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                 .toList();
           }
 
-          final parsed = SessionParser.parseListSessions(dataMap);
+          final parsed = await SessionParser.parseListSessionsAsync(dataMap);
 
           setState(() {
             if (projects.isNotEmpty) {
@@ -755,42 +838,48 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
             }
             if (parsed.isNotEmpty) {
               final stillActive = parsed.any((s) => s.id == _activeSessionId);
-              if (_activeSessionId.isNotEmpty) {
-                if (stillActive) {
-                  _sessions = parsed;
-                  final current = parsed.firstWhere((s) => s.id == _activeSessionId);
-                  _activeSessionTitle = current.title.isNotEmpty
-                      ? current.title
-                      : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
-                } else {
-                  // Garde : préserver la session active locale sans basculer sur l'ancienne
-                  final curLocal = _sessions.firstWhere(
-                    (s) => s.id == _activeSessionId,
-                    orElse: () => CascadeSession(
-                      id: _activeSessionId,
-                      workspacePath: _projects.isNotEmpty ? _projects.first.path : '',
-                      title: _activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation',
-                      status: 'CASCADE_STATUS_READY',
-                      time: 'Maintenant',
-                    ),
-                  );
-                  _sessions = [curLocal, ...parsed.where((s) => s.id != _activeSessionId)];
-                }
+              if (_activeSessionId.isNotEmpty && stillActive) {
+                _activeMissingSince = null;
+                _sessions = parsed;
+                final current = parsed.firstWhere((s) => s.id == _activeSessionId);
+                _activeSessionTitle = current.title.isNotEmpty
+                    ? current.title
+                    : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
+              } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired) {
+                _activeMissingSince ??= DateTime.now();
+                // Préserve la session active en tête de liste si c'est une nouvelle session
+                // qui n'est pas encore synchronisée dans les résumés distants
+                final existingPending = _sessions.where((s) => s.id == _activeSessionId);
+                final activeItem = existingPending.isNotEmpty
+                    ? existingPending.first
+                    : CascadeSession(
+                        id: _activeSessionId,
+                        workspacePath: _projects.isNotEmpty ? _projects.first.path : '',
+                        title: _activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation',
+                        status: 'CASCADE_STATUS_READY',
+                        time: 'Maintenant',
+                      );
+                _sessions = [activeItem, ...parsed.where((s) => s.id != _activeSessionId)];
               } else {
+                _activeMissingSince = null;
                 _sessions = parsed;
                 _activeSessionId = parsed.first.id;
                 _activeSessionTitle = parsed.first.title;
                 _refreshContext();
               }
+            } else if (_activeSessionId.isNotEmpty) {
+              final existingPending = _sessions.where((s) => s.id == _activeSessionId);
+              if (existingPending.isNotEmpty) {
+                _sessions = [existingPending.first];
+              }
             } else {
               // Liste vide : toutes les sessions ont été supprimées/archivées
               _sessions = const [];
-              if (_activeSessionId.isNotEmpty) {
-                _activeSessionId = '';
-                _activeSessionTitle = '';
-                _contextStats = {};
-              }
+              _activeSessionId = '';
+              _activeSessionTitle = 'Nouvelle conversation';
+              _contextStats = {};
             }
+            _lastSessionsSyncAt = DateTime.now();
           });
           return;
         }
@@ -822,6 +911,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           onSessionSelected: (id) {
             setState(() {
               _activeSessionId = id;
+              _activeMissingSince = null;
               _contextStats = {};
               final s = _sessions.firstWhere(
                 (s) => s.id == id,
@@ -852,26 +942,24 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     final api = _api;
     if (api == null) return;
     try {
-      await api.deleteCascade(id);
       final wasActive = (id == _activeSessionId);
-      await _refreshSessions();
-      if (wasActive) {
-        final remaining = _sessions.where((s) => s.id != id).toList();
-        if (remaining.isNotEmpty) {
-          if (mounted) {
-            setState(() {
-              _activeSessionId = remaining.first.id;
-              _activeSessionTitle = remaining.first.title;
-            });
-          }
-        } else {
-          if (mounted) {
-            setState(() {
+      if (mounted) {
+        setState(() {
+          _sessions = _sessions.where((s) => s.id != id).toList();
+          if (wasActive) {
+            if (_sessions.isNotEmpty) {
+              _activeSessionId = _sessions.first.id;
+              _activeSessionTitle = _sessions.first.title;
+            } else {
               _activeSessionId = '';
               _activeSessionTitle = 'Nouvelle conversation';
-            });
+            }
           }
-        }
+        });
+      }
+      await api.deleteCascade(id);
+      await _refreshSessions();
+      if (wasActive) {
         await _refreshContext();
       }
       if (mounted) {
@@ -891,26 +979,24 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     final api = _api;
     if (api == null) return;
     try {
-      await api.archiveCascade(id);
       final wasActive = (id == _activeSessionId);
-      await _refreshSessions();
-      if (wasActive) {
-        final remaining = _sessions.where((s) => s.id != id).toList();
-        if (remaining.isNotEmpty) {
-          if (mounted) {
-            setState(() {
-              _activeSessionId = remaining.first.id;
-              _activeSessionTitle = remaining.first.title;
-            });
-          }
-        } else {
-          if (mounted) {
-            setState(() {
+      if (mounted) {
+        setState(() {
+          _sessions = _sessions.where((s) => s.id != id).toList();
+          if (wasActive) {
+            if (_sessions.isNotEmpty) {
+              _activeSessionId = _sessions.first.id;
+              _activeSessionTitle = _sessions.first.title;
+            } else {
               _activeSessionId = '';
               _activeSessionTitle = 'Nouvelle conversation';
-            });
+            }
           }
-        }
+        });
+      }
+      await api.archiveCascade(id);
+      await _refreshSessions();
+      if (wasActive) {
         await _refreshContext();
       }
       if (mounted) {
@@ -1045,24 +1131,32 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       onToggleConnection: () {
         if (isConnected) {
           _wsClient.disconnect();
-        } else {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => DiscoveryScreen(
-                onConnect: (host, port, token) async {
-                  final url = _formatWsUrl(host, port);
-                  _wsClient.disconnect();
-                  await _wsClient.connect(customUrl: url, authToken: token);
-                  return _wsClient.statusNotifier.value == ConnectionStatus.connected;
-                },
-              ),
-            ),
-          );
         }
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => DiscoveryScreen(
+              onConnect: (host, port, token) async {
+                final url = _formatWsUrl(host, port);
+                _wsClient.disconnect();
+                await _wsClient.connect(customUrl: url, authToken: token);
+                final ok = _wsClient.statusNotifier.value == ConnectionStatus.connected;
+                if (ok) {
+                  SettingsStore.saveSession(
+                    wsUrl: url,
+                    token: token,
+                    sessionId: _activeSessionId,
+                  );
+                }
+                return ok;
+              },
+            ),
+          ),
+        );
       },
       onSessionSelected: (id) {
         setState(() {
           _activeSessionId = id;
+          _activeMissingSince = null;
           _contextStats = {};
           _sessions = _sessions.map((s) {
             if (s.id == id) {
@@ -1123,6 +1217,28 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
               initialSettings: _savedSettings,
               onThemeModeChanged: widget.onThemeModeChanged,
               onDaemonSaved: _applyDaemonSettings,
+              onDiscover: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => DiscoveryScreen(
+                      onConnect: (host, port, token) async {
+                        final url = _formatWsUrl(host, port);
+                        _wsClient.disconnect();
+                        await _wsClient.connect(customUrl: url, authToken: token);
+                        final ok = _wsClient.statusNotifier.value == ConnectionStatus.connected;
+                        if (ok) {
+                          SettingsStore.saveSession(
+                            wsUrl: url,
+                            token: token,
+                            sessionId: _activeSessionId,
+                          );
+                        }
+                        return ok;
+                      },
+                    ),
+                  ),
+                );
+              },
               api: _api,
               notifier: ApprovalNotifier.instance,
               workspacePath: s.workspacePath,

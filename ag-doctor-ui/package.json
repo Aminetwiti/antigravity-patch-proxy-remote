@@ -1,6 +1,6 @@
 {
   "name": "ag-doctor-ui",
-  "version": "3.3.3",
+  "version": "3.4.0",
   "description": "Premium Electron UI for the ag-doctor CLI",
   "main": "dist/main.js",
   "scripts": {
@@ -29,7 +29,7 @@
   "author": "Antigravity",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Aminetwiti/antigravity-add-model-main.git"
+    "url": "git+https://github.com/Aminetwiti/antigravity-patch-proxy.git"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -44,7 +44,7 @@
     "publish": {
       "provider": "github",
       "owner": "Aminetwiti",
-      "repo": "antigravity-add-model-main"
+      "repo": "antigravity-patch-proxy"
     },
     "directories": {
       "output": "release"

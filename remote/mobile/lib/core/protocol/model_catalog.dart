@@ -154,6 +154,7 @@ class ModelCatalog {
   /// Helper to find a model by its id, displayName or shortName.
   static AntigravityModel findModel(String query, {List<AntigravityModel>? customModels}) {
     final lower = query.toLowerCase().trim();
+    if (lower.isEmpty) return defaultModel;
     final all = [...standardModels, ...(customModels ?? const [])];
     for (final m in all) {
       if (m.id.toLowerCase() == lower ||
@@ -164,7 +165,12 @@ class ModelCatalog {
         return m;
       }
     }
-    return defaultModel;
+    // Dynamic fallback for custom/injected proxy models (e.g. gpt-4o, claude-3-7-sonnet, deepseek-r1)
+    return AntigravityModel(
+      id: query.trim(),
+      displayName: query.trim(),
+      isCustom: true,
+    );
   }
 
   /// Fetches custom models dynamically from the daemon or custom_models.json.

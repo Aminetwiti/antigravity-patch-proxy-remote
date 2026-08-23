@@ -170,13 +170,16 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
           // Header avec bouton refresh ↻
           Row(
             children: [
-              Text(
-                'Models & Usage',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurface,
-                  letterSpacing: -0.5,
+              Expanded(
+                child: Text(
+                  'Models & Usage',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                    letterSpacing: -0.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 8),
@@ -209,27 +212,24 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
           _buildCard(
             isDark: isDark,
             scheme: scheme,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Your Plan: Google AI Pro',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'You can upgrade to a Google AI Ultra plan to receive higher rate limits.',
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 360;
+                final textCol = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your Plan: Google AI Pro',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'You can upgrade to a Google AI Ultra plan to receive higher rate limits.',
+                      style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                );
+                final button = ElevatedButton(
                   onPressed: () {
                     AppToast.show(context, message: 'Redirection vers Google AI One Pro / Ultra...', icon: Icons.rocket_launch_outlined);
                   },
@@ -244,8 +244,28 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                     'Upgrade',
                     style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                   ),
-                ),
-              ],
+                );
+
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      textCol,
+                      const SizedBox(height: 10),
+                      button,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: textCol),
+                    const SizedBox(width: 12),
+                    button,
+                  ],
+                );
+              },
             ),
           ),
 
@@ -257,42 +277,60 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
           _buildCard(
             isDark: isDark,
             scheme: scheme,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Enable AI Credit Overages',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'When toggled on, Antigravity will use your AI credits to fulfill model requests once you\'re out of model quota. Antigravity will always use your model quota first before using AI credits.',
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Switch.adaptive(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 360;
+                final textCol = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Enable AI Credit Overages',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'When toggled on, Antigravity will use your AI credits to fulfill model requests once you\'re out of model quota. Antigravity will always use your model quota first before using AI credits.',
+                      style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                );
+                final toggle = Switch.adaptive(
                   value: _enableCreditOverages,
                   activeColor: const Color(0xFF007AFF),
                   onChanged: (val) {
                     setState(() => _enableCreditOverages = val);
                     SettingsStore.save({'enableCreditOverages': val});
                   },
-                ),
-              ],
+                );
+
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      textCol,
+                      const SizedBox(height: 8),
+                      toggle,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: textCol),
+                    const SizedBox(width: 12),
+                    toggle,
+                  ],
+                );
+              },
             ),
           ),
 
           const SizedBox(height: 24),
 
           // ── 3. Gemini Models
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildSectionHeader('Gemini Models', scheme),
               const SizedBox(width: 4),
@@ -327,7 +365,8 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
           const SizedBox(height: 24),
 
           // ── 4. Claude and GPT models
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildSectionHeader('Claude and GPT models', scheme),
               const SizedBox(width: 4),
@@ -370,25 +409,24 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Active Model',
-                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Select the primary model used for agent turns.',
-                            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                    _buildDropdown(
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isCompact = constraints.maxWidth < 420;
+                    final textCol = Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Active Model',
+                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Select the primary model used for agent turns.',
+                          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                        ),
+                      ],
+                    );
+                    final dropdown = _buildDropdown(
                       isDark: isDark,
                       scheme: scheme,
                       value: _selectedModel,
@@ -396,8 +434,28 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                       onChanged: (v) {
                         if (v != null) _onModelSelected(v);
                       },
-                    ),
-                  ],
+                    );
+
+                    if (isCompact) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          textCol,
+                          const SizedBox(height: 10),
+                          dropdown,
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(child: textCol),
+                        const SizedBox(width: 12),
+                        SizedBox(width: 200, child: dropdown),
+                      ],
+                    );
+                  },
                 ),
                 const Divider(height: 20, thickness: 0.5),
                 Text(
@@ -530,8 +588,9 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
         border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        spacing: 2,
+        runSpacing: 2,
         children: options.map((opt) {
           final isSelected = opt['id'] == selectedId;
           return GestureDetector(
@@ -581,6 +640,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
           icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: scheme.onSurfaceVariant),
           style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: scheme.onSurface),
           isDense: true,
+          isExpanded: true,
           items: items.map((item) {
             final lower = item.toLowerCase();
             Color dotColor = const Color(0xFF4CAF50); // Vert par défaut (opérationnel)
@@ -602,7 +662,6 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             return DropdownMenuItem<String>(
               value: item,
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     width: 6,
@@ -613,7 +672,12 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                       shape: BoxShape.circle,
                     ),
                   ),
-                  Text(item),
+                  Expanded(
+                    child: Text(
+                      item,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   if (statusText != null) ...[
                     const SizedBox(width: 6),
                     Text(

@@ -46,12 +46,14 @@ class SessionStore {
   }) async {
     try {
       final file = await _file();
+      // SEC-04 : le token n'est volontairement PAS persisté sur disque
+      // (répertoire temp monde-lisible sur desktop) — cf. SecureCredentials.
       await file.writeAsString(jsonEncode({
         'host': host,
         'port': port,
-        'token': token,
         'sessions': sessions.map((s) => s.toJson()).toList(),
       }));
+      // `token` conservé dans la signature pour compat appelants — ignoré.
     } catch (_) {
       // ponytail: cache is best-effort — never crash the app on disk errors.
     }

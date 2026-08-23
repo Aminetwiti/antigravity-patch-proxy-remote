@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile/core/protocol/daemon_api.dart';
@@ -51,12 +53,21 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
   List<CascadeSession> get _allSessions => _fetchedSessions ?? widget.sessions;
   List<ProjectItem>? get _allProjects => _fetchedProjects ?? widget.projects;
 
+  /// Debounce de la recherche : sans lui, chaque frappe déclenche un setState
+  /// (rebuild de la liste) alors que le pipeline mémoïsé ne change qu'après
+  /// stabilisation de la requête.
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
     _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text.trim().toLowerCase();
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 150), () {
+        if (!mounted) return;
+        setState(() {
+          _searchQuery = _searchController.text.trim().toLowerCase();
+        });
       });
     });
     if (widget.api != null) {
@@ -69,7 +80,9 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
     setState(() => _isLoading = true);
     try {
       final res = await widget.api!.listAllSessions();
-      final parsed = SessionParser.parseListSessions(res);
+      // Historique des conversations : conserve les sessions archivées
+      // (le daemon les marque isArchived + CASCADE_STATUS_ARCHIVED).
+      final parsed = SessionParser.parseListSessions(res, includeArchived: true);
       List<ProjectItem>? projs;
       if (res['projects'] is List) {
         projs = (res['projects'] as List)
@@ -94,29 +107,50 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // Filtrer STRICTEMENT les sessions disponibles (non archivées et non supprimées)
-    final available = _allSessions.where((s) => s.isAvailable && s.id.isNotEmpty).toList();
+  List<CascadeSession>? _memoAllSessions;
+  List<ProjectItem>? _memoAllProjects;
+  String? _memoSearchQuery;
+  String? _memoSelectedFilter;
+  SessionGroupBy? _memoGroupBy;
+  SessionSortBy? _memoSortBy;
+  List<String> _memoWorkspaces = const [];
+  List<dynamic> _memoDisplayItems = const [];
 
-    // Extraire tous les workspaces distincts pour le filtre
-    final workspaces = available
-        .map((s) => WorkspacePath.displayName(s.workspacePath))
-        .toSet()
-        .toList()
-      ..sort();
+  void _computePipeline() {
+    final sessions = _allSessions;
+    final projects = _allProjects;
+    if (_memoDisplayItems.isNotEmpty &&
+        identical(sessions, _memoAllSessions) &&
+        identical(projects, _memoAllProjects) &&
+        _searchQuery == _memoSearchQuery &&
+        _selectedWorkspaceFilter == _memoSelectedFilter &&
+        _groupBy == _memoGroupBy &&
+        _sortBy == _memoSortBy) {
+      return;
+    }
 
-    // Appliquer le filtre par workspace
+    // L'historique affiche les sessions actives ET archivées (leur emplacement
+    // désigné) ; les supprimées restent exclues par le daemon/parser.
+    final available = sessions
+        .where((s) => (s.isAvailable || s.isArchived) && s.id.isNotEmpty)
+        .toList();
+
+    final Set<String> workspaceSet = {};
+    for (final s in available) {
+      workspaceSet.add(WorkspacePath.displayName(s.workspacePath));
+    }
+    final workspaces = workspaceSet.toList()..sort();
+
     var filtered = available;
     if (_selectedWorkspaceFilter != null) {
       filtered = filtered.where((s) => WorkspacePath.displayName(s.workspacePath) == _selectedWorkspaceFilter).toList();
     }
 
-    // Appliquer la recherche textuelle
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((s) {
         final title = s.title.toLowerCase();
@@ -125,17 +159,14 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
       }).toList();
     }
 
-    // Tri dynamique selon Display Options
     filtered = sortSessions(sessions: filtered, sortBy: _sortBy);
 
-    // Groupement dynamique selon Display Options avec la même liste de projets canonique
     final groupedSessions = groupSessions(
       sessions: filtered,
       groupBy: _groupBy,
-      projects: _allProjects,
+      projects: projects,
     );
 
-    // Flatten for list rendering with headers
     final List<dynamic> displayItems = [];
     if (_groupBy == SessionGroupBy.none) {
       displayItems.addAll(filtered);
@@ -147,6 +178,22 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
         }
       }
     }
+
+    _memoAllSessions = sessions;
+    _memoAllProjects = projects;
+    _memoSearchQuery = _searchQuery;
+    _memoSelectedFilter = _selectedWorkspaceFilter;
+    _memoGroupBy = _groupBy;
+    _memoSortBy = _sortBy;
+    _memoWorkspaces = workspaces;
+    _memoDisplayItems = displayItems;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _computePipeline();
+    final workspaces = _memoWorkspaces;
+    final displayItems = _memoDisplayItems;
 
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -583,6 +630,7 @@ class _ConversationHistoryRow extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         backgroundColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
         title: Text('Supprimer la conversation ?', style: TextStyle(fontSize: 15, color: scheme.onSurface)),
         content: Text(
@@ -679,6 +727,35 @@ class _ConversationHistoryRow extends StatelessWidget {
                 ),
 
                 const SizedBox(width: 12),
+
+                // Badge « Archivée » : les sessions archivées n'apparaissent
+                // que dans cet écran d'historique, jamais dans la sidebar.
+                if (session.isArchived) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.archive_outlined, size: 11, color: scheme.onSurfaceVariant),
+                        const SizedBox(width: 3),
+                        Text(
+                          'Archivée',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
 
                 // Trailing Status: Active blue dot, Spinner, or relative time
                 if (isRunning)

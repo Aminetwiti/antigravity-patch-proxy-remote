@@ -126,6 +126,18 @@ func TestPairingManager_HTTPHandler(t *testing.T) {
 		t.Fatalf("Le token de session doit être validé par PairingManager")
 	}
 
+	// SEC-03 : le premier device pairé n'est PAS admin par défaut — la
+	// révocation exige une promotion explicite côté hôte.
+	reqDelForbidden := httptest.NewRequest(http.MethodDelete, "/pair?deviceId=dev1&token="+token, nil)
+	rrDelForbidden := httptest.NewRecorder()
+	handler.ServeHTTP(rrDelForbidden, reqDelForbidden)
+	if rrDelForbidden.Code != http.StatusForbidden {
+		t.Fatalf("DELETE /pair sans promotion doit être 403, reçu %d", rrDelForbidden.Code)
+	}
+	if !pm.PromoteAdmin("dev1") {
+		t.Fatalf("PromoteAdmin doit réussir pour un device appairé")
+	}
+
 	// 4. DELETE /pair sans token -> 401 Unauthorized (VULN-07)
 	reqDelNoAuth := httptest.NewRequest(http.MethodDelete, "/pair?deviceId=dev1", nil)
 	rrDelNoAuth := httptest.NewRecorder()

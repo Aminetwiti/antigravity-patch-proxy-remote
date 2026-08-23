@@ -9,8 +9,10 @@ import 'package:mobile/features/sessions/conversation_history_screen.dart';
 import 'package:mobile/features/sessions/sessions_list.dart';
 
 void main() {
-  testWidgets('LeftSidebarDrawer limits workspace sessions to 6 and does not show See more expander', (WidgetTester tester) async {
-    // Generate 12 sessions for "antigravity-add-model-main"
+  testWidgets('LeftSidebarDrawer renders all workspace sessions virtually and shows no See more expander', (WidgetTester tester) async {
+    // 12 sessions pour "antigravity-add-model-main" : la liste aplatie est
+    // virtualisée (ListView.builder) — aucune raison de plafonner l'affichage,
+    // et l'expander « See more / Afficher plus » n'existe plus.
     final sessions = List.generate(
       12,
       (i) => CascadeSession(
@@ -21,6 +23,11 @@ void main() {
         time: '${i + 1}m',
       ),
     );
+
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -37,15 +44,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Verify first sessions are rendered
+    // Toutes les sessions du workspace sont présentes (liste virtualisée,
+    // viewport de test plus grand que la liste).
     expect(find.text('Session number 0'), findsOneWidget);
-    expect(find.text('Session number 5'), findsOneWidget);
+    expect(find.text('Session number 11'), findsOneWidget);
 
-    // Verify 7th+ session is not in the sidebar tree
-    expect(find.text('Session number 6'), findsNothing);
-
-    // Verify "See more" is never displayed
+    // Aucun expander résiduel
     expect(find.textContaining('See more'), findsNothing);
+    expect(find.textContaining('Afficher plus'), findsNothing);
   });
 
   testWidgets('ConversationHistoryScreen fetches and displays all sessions via listAllSessions', (WidgetTester tester) async {

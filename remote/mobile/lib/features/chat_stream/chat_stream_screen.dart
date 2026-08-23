@@ -27,6 +27,7 @@ import '../../widgets/background_task_output_sheet.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/unified_diff_viewer.dart';
 import '../../widgets/artifact_viewer_modal.dart';
+import '../../widgets/agent_error_card.dart';
 import '../../widgets/project_selector_bottom_sheet.dart';
 import '../../widgets/session_breadcrumb.dart';
 import 'widgets/execution_progress_view.dart';
@@ -171,6 +172,27 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   static const _stillWorkingDelay = Duration(seconds: 15);
   final Set<String> _pendingApprovalCallIds = {};
   final Set<String> _processedCallIds = {};
+  // Les sets de callIds utilisés pour dédupliquer les approvals poussées
+  // par le daemon croissent sans borne sur une session longue. On les borne
+  // (les callIds très anciens ne reviennent plus : le daemon ne rejoue que
+  // les étapes récentes au sync_catchup).
+  static const int _maxTrackedCallIds = 500;
+
+  void _rememberProcessedCall(String callId) {
+    _processedCallIds.add(callId);
+    if (_processedCallIds.length > _maxTrackedCallIds) {
+      _processedCallIds.remove(_processedCallIds.first);
+    }
+  }
+
+  void _rememberExpiredCall(String callId) {
+    _expiredCallIds.add(callId);
+    if (_expiredCallIds.length > _maxTrackedCallIds) {
+      _expiredCallIds.remove(_expiredCallIds.first);
+    }
+  }
+
+
   Timer? _stillWorkingTimer;
   final List<Timer> _settleTimers = [];
   
@@ -217,6 +239,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   set _currentTab(SessionTabType tab) => _sessionTabs[widget.activeSessionId] = tab;
 
   final Map<String, Set<String>> _sessionModifiedFiles = {};
+  final Map<String, Set<String>> _turnModifiedFiles = {};
   final Map<String, List<SessionModifiedFile>> _sessionModifiedFileList = {};
   final Map<String, List<String>> _sessionArtifacts = {};
   final Map<String, int> _sessionSubagentCounts = {};
@@ -279,28 +302,41 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     });
   }
 
+  /// Debounce de la recherche : le scan des textes complets des messages
+  /// tourne sur l'isolate UI — sans debounce, chaque frappe rebuild la page.
+  Timer? _searchDebounce;
+
+  /// Abonnements stream des prompts envoyés : suivis pour être annulés au
+  /// dispose (sinon un stream orphelin continue de parser et de muter
+  /// `_sessionMessages` jusqu'au stream_end après fermeture de l'écran).
+  final List<StreamSubscription<Map<String, dynamic>>> _promptStreamSubs = [];
+
   void _onSearchQueryChanged(String query) {
-    final q = query.trim().toLowerCase();
-    final msgs = _sessionMessages[widget.activeSessionId] ?? [];
-    if (q.isEmpty) {
-      setState(() {
-        _searchMatches = [];
-        _currentSearchMatchIndex = 0;
-      });
-      return;
-    }
-    final matches = <int>[];
-    for (var i = 0; i < msgs.length; i++) {
-      final m = msgs[i];
-      if (m.text.toLowerCase().contains(q) || m.sender.toLowerCase().contains(q)) {
-        matches.add(i);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      final q = query.trim().toLowerCase();
+      final msgs = _sessionMessages[widget.activeSessionId] ?? [];
+      if (q.isEmpty) {
+        setState(() {
+          _searchMatches = [];
+          _currentSearchMatchIndex = 0;
+        });
+        return;
       }
-    }
-    setState(() {
-      _searchMatches = matches;
-      _currentSearchMatchIndex = matches.isNotEmpty ? matches.length - 1 : 0;
+      final matches = <int>[];
+      for (var i = 0; i < msgs.length; i++) {
+        final m = msgs[i];
+        if (m.text.toLowerCase().contains(q) || m.sender.toLowerCase().contains(q)) {
+          matches.add(i);
+        }
+      }
+      setState(() {
+        _searchMatches = matches;
+        _currentSearchMatchIndex = matches.isNotEmpty ? matches.length - 1 : 0;
+      });
+      _jumpToSearchMatch();
     });
-    _jumpToSearchMatch();
   }
 
   void _jumpToSearchMatch() {
@@ -350,6 +386,39 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   final Map<String, String> _taskCommandToId = {};
   final Map<String, String> _taskIdToCommand = {};
   final Map<String, DateTime> _streamStartTimes = {};
+
+  // P3 : borne l'état des tâches d'arrière-plan conservé en mémoire (sortie
+  // cumulée, mappings cmd↔id, statuts). Au-delà, les plus anciennes sont
+  // élaguées — sauf celles encore en cours.
+  static const int _maxTrackedTasks = 40;
+
+  void _closeTaskController(String key) {
+    final c = _taskOutputControllers.remove(key);
+    if (c != null && !c.isClosed) c.close();
+  }
+
+  void _pruneTaskState() {
+    void pruneMap<K, V>(Map<K, V> m) {
+      while (m.length > _maxTrackedTasks) {
+        final oldest = m.keys.first;
+        if (oldest is String && _runningBackgroundTasks.contains(oldest)) {
+          // encore active : on déplace en fin pour ne pas bloquer l'élagage
+          final v = m.remove(oldest);
+          if (v != null) m[oldest] = v;
+          break;
+        }
+        m.remove(oldest);
+      }
+    }
+
+    pruneMap(_taskOutputs);
+    pruneMap(_taskStatuses);
+    pruneMap(_taskCommandToId);
+    pruneMap(_taskIdToCommand);
+    while (_taskOutputControllers.length > _maxTrackedTasks) {
+      _closeTaskController(_taskOutputControllers.keys.first);
+    }
+  }
 
   String _computeWorkedDuration(DateTime? startTime) {
     if (startTime == null) return 'Worked for 1s';
@@ -466,6 +535,18 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         _dismissedBannerIds.add(bannerId);
       });
     }
+  }
+
+  String _resolveModelLabel(dynamic rawModel) {
+    final str = rawModel != null ? rawModel.toString().trim() : '';
+    if (str.isNotEmpty && str != 'Gemini 3.7 Flash') {
+      return str;
+    }
+    final currentSelected = _chatInputKey.currentState?.selectedModel;
+    if (currentSelected != null && currentSelected.isNotEmpty) {
+      return currentSelected;
+    }
+    return str.isNotEmpty ? str : 'Gemini 3.7 Flash';
   }
 
   void _showModelSelector() {
@@ -888,6 +969,24 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               ..clear()
               ..addAll(parsed);
             SessionHistoryCacheStore.instance.saveSessionHistory(targetSession, buf);
+            for (final msg in buf.reversed) {
+              if (msg.sender == 'assistant') {
+                final txt = msg.text.toLowerCase();
+                final thought = (msg.thought ?? '').toLowerCase();
+                if (txt.contains('quota') || thought.contains('quota')) {
+                  final banner = BannerClassifier.classifyError(
+                    msg.text.isNotEmpty ? msg.text : (msg.thought ?? ''),
+                    onDismiss: () => _dismissBanner('quota-exceeded'),
+                    onSwitchModel: _showModelSelector,
+                    onSeePlans: _showPlansOrLimitsSheet,
+                  );
+                  if (banner != null) {
+                    _activeBanners[banner.id] = banner;
+                  }
+                  break;
+                }
+              }
+            }
           }
           if (isStreaming) {
             _onStreamStarted(targetSession);
@@ -1034,7 +1133,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       if (callId.isNotEmpty && mounted) {
         // Retire immédiatement la carte si elle est affichée (l'utilisateur
         // a répondu depuis la notification, pas depuis l'app).
-        _processedCallIds.add(callId);
+        _rememberProcessedCall(callId);
         _removeApproval(callId);
       }
       // La réponse du daemon (approval_resolved / stream_delta) nettoiera la
@@ -1204,6 +1303,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.removeListener(_onScroll);
     _throttleTimer?.cancel();
+    _searchDebounce?.cancel();
+    for (final s in _promptStreamSubs) {
+      s.cancel();
+    }
+    _promptStreamSubs.clear();
     _streamSub?.cancel();
     _tapSub?.cancel();
     _stillWorkingTimer?.cancel();
@@ -1215,6 +1319,12 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       t.cancel();
     }
     _settleTimers.clear();
+    // P3 (leak) : les broadcast controllers de sortie de tâche doivent être
+    // fermés — sinon 2 controllers fuient par tâche d'arrière-plan.
+    for (final c in _taskOutputControllers.values) {
+      if (!c.isClosed) c.close();
+    }
+    _taskOutputControllers.clear();
     _scrollController.dispose();
     _searchController.dispose();
     final client = widget.wsClient;
@@ -1230,6 +1340,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
   void _onStreamStarted(String sessionId) {
     _streamStartTimes[sessionId] = DateTime.now();
+    _turnModifiedFiles[sessionId] = <String>{};
     final wasEmpty = _activeStreamingSessions.isEmpty;
     _activeStreamingSessions.add(sessionId);
     widget.onStreamingSessionChanged?.call(sessionId, true);
@@ -1533,6 +1644,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             _taskOutputs.putIfAbsent(cmd, () => StringBuffer());
             _taskOutputs.putIfAbsent(taskId, () => StringBuffer());
           });
+          _pruneTaskState();
         }
         return;
       } else if (type == 'task_output') {
@@ -1570,6 +1682,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               (taskId.isNotEmpty && t.contains(taskId)));
           _taskStatuses[cmd] = status;
           _taskStatuses[taskId] = status;
+          // P3 (leak) : tâche terminée → fermer ses controllers (plus aucun
+          // delta n'arrivera ; la vue détail relit le snapshot StringBuffer).
+          _closeTaskController(cmd);
+          _closeTaskController(taskId);
         });
         _refreshRunningTasks();
 
@@ -1609,13 +1725,29 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         _onStreamStarted(targetSessionId);
         if (isActiveSession && _showJumpToBottom) _hiddenNewCount++;
 
+        final userPrompt = msg['data']?['userPrompt']?.toString() ?? '';
+        if (userPrompt.isNotEmpty) {
+          final alreadyPresent = buf.isNotEmpty &&
+              buf.last.sender == 'user' &&
+              (buf.last.id == 'user-ext-$requestId' || buf.last.text.trim() == userPrompt.trim());
+          if (!alreadyPresent) {
+            buf.add(ChatMessage(
+              id: 'user-ext-$requestId',
+              sender: 'user',
+              text: userPrompt,
+              timestamp: _timestamp(),
+            ));
+          }
+        }
+
         final msgId = 'ext-$requestId';
         _streamRequestToMessageId[thKey] = msgId;
+        final resolvedModel = _resolveModelLabel(msg['data']?['model']);
         final existingIdx = buf.indexWhere((m) => m.id == msgId);
         if (existingIdx >= 0) {
           buf[existingIdx] = buf[existingIdx].copyWith(
             isStreaming: true,
-            modelLabel: msg['data']?['model']?.toString() ?? buf[existingIdx].modelLabel,
+            modelLabel: resolvedModel,
           );
         } else if (buf.isNotEmpty && buf.last.isStreaming && buf.last.sender == 'assistant') {
           _streamRequestToMessageId[thKey] = buf.last.id;
@@ -1626,7 +1758,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             text: '',
             timestamp: _timestamp(),
             isStreaming: true,
-            modelLabel: msg['data']?['model']?.toString() ?? 'Gemini 3.7 Flash',
+            modelLabel: resolvedModel,
           ));
         }
         if (isActiveSession && mounted) {
@@ -1647,20 +1779,15 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               final evMap = rawEv.cast<String, dynamic>();
               final reqId = evMap['requestId'] as String? ?? '';
               final textDelta = StreamDeltaParser.textOf(evMap);
-              final thoughtDelta = StreamDeltaParser.thinkingOf(evMap);
               final key = '${targetSessionId}_$reqId';
               final idx = buf.indexWhere((m) =>
                   m.id == 'ext-$reqId' ||
-                  (buf.isNotEmpty && m == buf.last && m.isStreaming));
+                  m.id == _streamRequestToMessageId[key] ||
+                  (m.isStreaming && m.sender == 'assistant'));
               if (idx >= 0) {
-                final current = buf[idx];
-                _externalThoughts[key] = (_externalThoughts[key] ?? '') + thoughtDelta;
-                buf[idx] = current.copyWith(
-                  text: current.text + textDelta,
-                  thought: _externalThoughts[key]!.isNotEmpty
-                      ? _externalThoughts[key]!.trim()
-                      : current.thought,
-                );
+                final cur = buf[idx];
+                final newText = textDelta.isNotEmpty ? cur.text + textDelta : cur.text;
+                buf[idx] = cur.copyWith(text: newText);
               }
             }
           }
@@ -1697,8 +1824,12 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           if (queuedIdx >= 0) {
             buf[queuedIdx] = buf[queuedIdx].copyWith(isQueued: false);
           } else {
-            final hasUserMsg = buf.any((m) => m.sender == 'user' && m.text.trim() == userInput.trim());
-            if (!hasUserMsg) {
+            final targetId = _streamRequestToMessageId[thKey] ?? 'ext-$requestId';
+            final assistantIdx = buf.indexWhere((m) => m.id == targetId || (m.isStreaming && m.sender == 'assistant'));
+            final hasImmediateUserMsg = assistantIdx > 0 &&
+                buf[assistantIdx - 1].sender == 'user' &&
+                (buf[assistantIdx - 1].id == 'user-ext-$requestId' || buf[assistantIdx - 1].text.trim() == userInput.trim());
+            if (!hasImmediateUserMsg) {
               final userMsg = ChatMessage(
                 id: 'user-ext-$requestId',
                 sender: 'user',
@@ -1717,7 +1848,13 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         }
         final textDelta = StreamDeltaParser.textOf(msg);
         final thoughtDelta = StreamDeltaParser.thinkingOf(msg);
+        final errorDelta = StreamDeltaParser.errorOf(msg);
         final approval = StreamDeltaParser.approvalOf(msg);
+        final deltaFiles = StreamDeltaParser.fileChangesOf(msg);
+        if (deltaFiles.isNotEmpty) {
+          final tFiles = _turnModifiedFiles.putIfAbsent(targetSessionId, () => {});
+          tFiles.addAll(deltaFiles);
+        }
 
         final targetId = _streamRequestToMessageId[thKey] ?? 'ext-$requestId';
         var idx = buf.indexWhere((m) => m.id == targetId);
@@ -1730,13 +1867,14 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             _onStreamStarted(targetSessionId);
             final msgId = targetId;
             _streamRequestToMessageId[thKey] = msgId;
+            final resolvedChunkModel = _resolveModelLabel(msg['data']?['model']);
             buf.add(ChatMessage(
               id: msgId,
               sender: 'assistant',
               text: '',
               timestamp: _timestamp(),
               isStreaming: true,
-              modelLabel: msg['data']?['model']?.toString() ?? 'Gemini 3.7 Flash',
+              modelLabel: resolvedChunkModel,
             ));
             idx = buf.length - 1;
           }
@@ -1787,6 +1925,16 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               ));
             }
           }
+          if (errorDelta.isNotEmpty) {
+            if (updatedSegments.isNotEmpty && updatedSegments.last.type == ChatSegmentType.thought && updatedSegments.last.isRunning) {
+              final last = updatedSegments.last;
+              updatedSegments[updatedSegments.length - 1] = last.copyWith(isRunning: false);
+            }
+            updatedSegments.add(ChatSegment(
+              type: ChatSegmentType.error,
+              content: errorDelta,
+            ));
+          }
 
           buf[idx] = current.copyWith(
             text: newText,
@@ -1829,11 +1977,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         final targetId = _streamRequestToMessageId[thKey] ?? 'ext-$requestId';
         final idx = buf.indexWhere((m) => m.id == targetId);
 
-        // Stamp the completed assistant message with the session's file-change summary.
-        final changedFiles = (_sessionModifiedFiles[targetSessionId] ?? {}).toList();
+        // Stamp the completed assistant message with THIS TURN's file changes.
+        final turnFiles = (_turnModifiedFiles[targetSessionId] ?? {}).toList();
         final modFileList = _sessionModifiedFileList[targetSessionId] ?? [];
-        final totalAdded = modFileList.fold(0, (s, f) => s + f.additions);
-        final totalRemoved = modFileList.fold(0, (s, f) => s + f.deletions);
+        final totalAdded = modFileList.where((f) => turnFiles.contains(f.path)).fold(0, (s, f) => s + f.additions);
+        final totalRemoved = modFileList.where((f) => turnFiles.contains(f.path)).fold(0, (s, f) => s + f.deletions);
 
         final workedDurationStr = _computeWorkedDuration(startTime);
         final currentThought = (_externalThoughts[thKey] != null && _externalThoughts[thKey]!.isNotEmpty)
@@ -1879,9 +2027,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             isStreaming: false,
             thought: finalThought,
             segments: finalizedSegments.isNotEmpty ? finalizedSegments : buf[idx].segments,
-            filesChanged: changedFiles.isNotEmpty ? changedFiles : null,
-            additions: changedFiles.isNotEmpty ? totalAdded : null,
-            deletions: changedFiles.isNotEmpty ? totalRemoved : null,
+            filesChanged: turnFiles.isNotEmpty ? turnFiles : null,
+            additions: turnFiles.isNotEmpty ? totalAdded : null,
+            deletions: turnFiles.isNotEmpty ? totalRemoved : null,
           );
         } else {
           final lastStreamingIdx = buf.lastIndexWhere((m) => m.isStreaming);
@@ -1890,9 +2038,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               isStreaming: false,
               thought: finalThought,
               segments: finalizedSegments.isNotEmpty ? finalizedSegments : buf[lastStreamingIdx].segments,
-              filesChanged: changedFiles.isNotEmpty ? changedFiles : null,
-              additions: changedFiles.isNotEmpty ? totalAdded : null,
-              deletions: changedFiles.isNotEmpty ? totalRemoved : null,
+              filesChanged: turnFiles.isNotEmpty ? turnFiles : null,
+              additions: turnFiles.isNotEmpty ? totalAdded : null,
+              deletions: turnFiles.isNotEmpty ? totalRemoved : null,
             );
           }
         }
@@ -1955,7 +2103,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             '';
         final cascadeId = (msg['cascadeId'] ?? data['cascadeId']) as String? ?? '';
         if (callId.isNotEmpty && _pendingApprovalCallIds.contains(callId)) {
-          setState(() => _expiredCallIds.add(callId));
+          setState(() => _rememberExpiredCall(callId));
           _pendingApprovalCallIds.remove(callId);
           ApprovalNotifier.instance.cancelApproval(callId);
         } else if (cascadeId.isNotEmpty) {
@@ -2031,7 +2179,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     List<Map<String, dynamic>>? media,
   }) {
     if (text.trim().startsWith('/btw ') || text.trim().startsWith('/btw')) {
-      final sideQ = text.trim().replaceFirst(RegExp(r'^/btw\s*'), '');
+      final sideQ = text.trim().substring(4).trim();
       setState(() {
         _sideQuestion = sideQ.isNotEmpty ? sideQ : 'Question parallèle';
         _isSideQuestionLoading = true;
@@ -2053,11 +2201,42 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     final isStreaming = _activeStreamingSessions.contains(targetSession);
     final isOffline = !widget.isConnected || widget.api == null;
 
+    String displayText = text;
+    if (!displayText.contains('![') && !displayText.contains('[Image:') && !displayText.contains('[Fichier:')) {
+      final imgBuf = StringBuffer();
+      if (base64Data != null && base64Data.isNotEmpty) {
+        final uri = base64Data.startsWith('data:') ? base64Data : 'data:image/png;base64,$base64Data';
+        final name = fileName != null && fileName.isNotEmpty ? fileName : 'image.png';
+        imgBuf.writeln('![$name]($uri)');
+      }
+      if (images != null && images.isNotEmpty) {
+        for (var i = 0; i < images.length; i++) {
+          final img = images[i];
+          final uri = img.startsWith('data:') ? img : 'data:image/png;base64,$img';
+          imgBuf.writeln('![image_$i.png]($uri)');
+        }
+      }
+      if (media != null && media.isNotEmpty) {
+        for (final m in media) {
+          final uri = m['uri'] as String? ?? (m['base64Data'] != null ? 'data:${m['mimeType'] ?? "image/png"};base64,${m['base64Data']}' : '');
+          final name = m['name'] as String? ?? m['description'] as String? ?? 'image.png';
+          if (uri.isNotEmpty) {
+            imgBuf.writeln('![$name]($uri)');
+          }
+        }
+      }
+      if (imgBuf.isNotEmpty) {
+        if (displayText.isNotEmpty) imgBuf.writeln();
+        imgBuf.write(displayText);
+        displayText = imgBuf.toString().trim();
+      }
+    }
+
     if (queued || isStreaming || isOffline) {
       final queue = _sessionMessageQueues.putIfAbsent(targetSession, () => []);
       setState(() {
         queue.add({
-          'text': text,
+          'text': displayText,
           'activeSessionId': targetSession,
           'modelUID': modelUID,
           'modelEnum': modelEnum,
@@ -2077,7 +2256,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       buf.add(ChatMessage(
         id: 'm${++_messageCounter}',
         sender: 'user',
-        text: text,
+        text: displayText,
         timestamp: _timestamp(),
       ));
     });
@@ -2172,9 +2351,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     final targetSession = targetSessionOverride ?? widget.activeSessionId;
     final assistantId = 'a${++_messageCounter}';
     _sessionLastStreamEnds.remove(targetSession);
-    final modelLabel = modelUID != null && modelUID.isNotEmpty
-        ? modelUID
-        : 'Gemini 3.7 Flash';
+    final modelLabel = _resolveModelLabel(modelUID);
 
     final buf = _sessionMessages.putIfAbsent(targetSession, () => []);
     setState(() {
@@ -2199,7 +2376,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
     var thoughtBuffer = StringBuffer();
     _onStreamStarted(targetSession);
-    api.sendPrompt(
+    final promptSub = api.sendPrompt(
       targetSession,
       text,
       base64Data: base64Data,
@@ -2272,9 +2449,17 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                         ? localData['message'] as String? ?? 'Erreur'
                         : null)
                     : null);
-            if (error != null) {
+            final currentMsg = buf[idx];
+            final fullText = currentMsg.text;
+            final fullThought = currentMsg.thought ?? '';
+            final candidateError = error ??
+                (fullText.toLowerCase().contains('quota')
+                    ? fullText
+                    : (fullThought.toLowerCase().contains('quota') ? fullThought : null));
+
+            if (candidateError != null) {
               final banner = BannerClassifier.classifyError(
-                error,
+                candidateError,
                 onDismiss: () => _dismissBanner('quota-exceeded'),
                 onSwitchModel: _showModelSelector,
                 onSeePlans: _showPlansOrLimitsSheet,
@@ -2285,12 +2470,13 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               }
               _refreshQuotaSummary();
             }
+            final isQuotaErr = candidateError != null && candidateError.toLowerCase().contains('quota');
             if (error != null && (error.contains('MODEL_CAPACITY_EXHAUSTED') || error.contains('No capacity available') || error.contains('503'))) {
               error = '⚠️ Capacité du modèle saturée sur les serveurs (HTTP 503 / MODEL_CAPACITY_EXHAUSTED).\nVeuillez basculer vers Gemini 3.7 Flash, Claude ou un modèle custom via le sélecteur ci-dessous.';
             }
             buf[idx] = buf[idx].copyWith(
               isStreaming: false,
-              isError: error != null,
+              isError: error != null || isQuotaErr,
               text: error != null
                   ? (buf[idx].text.isEmpty ? error : buf[idx].text)
                   : buf[idx].text,
@@ -2324,6 +2510,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         });
       },
     );
+    _promptStreamSubs.add(promptSub);
   }
 
   void _handleRetryTaskDirectly(ChatMessage errorMsg) {
@@ -2363,7 +2550,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
     // Scénarios Extrêmes (1 & 7) : On marque cet appel comme traité pour ne plus jamais
     // ré-afficher cette carte si le serveur rejoue le message après une perte de connexion.
-    _processedCallIds.add(approval.callId);
+    _rememberProcessedCall(approval.callId);
 
     if (_expiredCallIds.contains(approval.callId)) {
       // La carte affichait déjà l'état expiré : on nettoie juste l'état.
@@ -2386,21 +2573,53 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     ).catchError((_) => <String, dynamic>{});
   }
 
+  /// Mises à jour de streaming à échéance uniquement (trailing) : au plus
+  /// un rebuild de page par [_throttleDuration]. Avant : leading + trailing
+  /// permettait jusqu'à ~80 setState/s de l'écran complet sous un flux de
+  /// deltas rapide, annulant le batch de DaemonApi.
   void _scheduleThrottledUpdate() {
-    if (_throttleTimer?.isActive ?? false) {
-      _needsStateUpdate = true;
-      return;
-    }
-
-    setState(() {}); // Immediate update
+    _needsStateUpdate = true;
+    if (_throttleTimer?.isActive ?? false) return;
 
     _throttleTimer = Timer(_throttleDuration, () {
+      _throttleTimer = null;
       if (_needsStateUpdate && mounted) {
-        setState(() {});
         _needsStateUpdate = false;
+        _trimInMemoryMessages();
+        setState(() {});
+        _scrollToBottom();
       }
-      _scrollToBottom();
     });
+  }
+
+  // P3 (mémoire) : bornes l'historique conservé en RAM. Chaque session
+  // ouverte garde jusqu'à [_maxInMemoryMessages] messages (au-delà de la
+  // fenêtre paginée réellement consultable), et au plus
+  // [_maxInMemorySessions] sessions restent bufferisées — les plus anciennes
+  // (hors session active) sont libérées ; un retour dessus recharge depuis
+  // SessionHistoryCacheStore / le daemon.
+  static const int _maxInMemoryMessages = 1000;
+  static const int _maxInMemorySessions = 20;
+
+  void _trimInMemoryMessages() {
+    if (_sessionMessages.isEmpty) return;
+    for (final entry in _sessionMessages.entries) {
+      final list = entry.value;
+      if (list.length > _maxInMemoryMessages) {
+        list.removeRange(0, list.length - _maxInMemoryMessages);
+        final visible = _visibleCounts[entry.key];
+        if (visible != null && visible > list.length) {
+          _visibleCounts[entry.key] = list.length;
+        }
+      }
+    }
+    while (_sessionMessages.length > _maxInMemorySessions) {
+      final oldest = _sessionMessages.keys
+          .firstWhere((k) => k != widget.activeSessionId, orElse: () => '');
+      if (oldest.isEmpty) break;
+      _sessionMessages.remove(oldest);
+      _visibleCounts.remove(oldest);
+    }
   }
 
   void _scrollToBottom() {
@@ -2857,63 +3076,81 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             ),
           ),
           _buildApprovalArea(),
-          if (_sideQuestion != null)
-            SideQuestionCard(
-              question: _sideQuestion!,
-              answer: _sideQuestionAnswer,
-              isLoading: _isSideQuestionLoading,
-              onClose: () => setState(() {
-                _sideQuestion = null;
-                _sideQuestionAnswer = null;
-              }),
-            ),
-          if (_runningBackgroundTasks.isNotEmpty)
-            BackgroundTasksBar(
-              runningTasks: _runningBackgroundTasks,
-              onTapTask: _openTaskOutputSheet,
-              onStopTask: _handleStopBackgroundTask,
-              onViewTasks: () {
-                if (_runningBackgroundTasks.isNotEmpty) {
-                  _openTaskOutputSheet(_runningBackgroundTasks.first);
-                }
-              },
-            ),
-          if (_subagents.isNotEmpty)
-            SubagentTreeCard(
-              subagents: _subagents,
-              projectName: widget.activeProjectName,
-              sessionTitle: widget.activeSessionTitle,
-              onOpenFullTree: () {
-                SubagentsTreeSheet.show(
-                  context,
-                  api: widget.api,
-                  cascadeId: widget.activeSessionId,
-                  sessionTitle: widget.activeSessionTitle,
-                );
-              },
-              onSelectSubagent: (sub) {
-                SubagentDetailModal.show(
-                  context,
-                  agent: sub,
-                  api: widget.api,
-                  cascadeId: widget.activeSessionId,
-                  projectName: widget.activeProjectName,
-                  sessionTitle: widget.activeSessionTitle,
-                  onKill: () => _fetchSubagentsForSession(widget.activeSessionId),
-                );
-              },
-            ),
-          if ((_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false))
-            QueuedMessagesCard(
-              queuedMessages: _sessionMessageQueues[widget.activeSessionId]!,
-              onSendNow: _handleQueueSendNow,
-              onEdit: _handleQueueEdit,
-              onDelete: _handleQueueDelete,
-            ),
-          if (_topActiveBanner != null)
-            AppNotificationBanner(
-              data: _topActiveBanner!,
-              isCompact: hasKeyboard,
+          if (_sideQuestion != null ||
+              _runningBackgroundTasks.isNotEmpty ||
+              _subagents.isNotEmpty ||
+              (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
+              _topActiveBanner != null)
+            Flexible(
+              flex: 0,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: hasKeyboard ? 110 : 200),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_sideQuestion != null)
+                        SideQuestionCard(
+                          question: _sideQuestion!,
+                          answer: _sideQuestionAnswer,
+                          isLoading: _isSideQuestionLoading,
+                          onClose: () => setState(() {
+                            _sideQuestion = null;
+                            _sideQuestionAnswer = null;
+                          }),
+                        ),
+                      if (_runningBackgroundTasks.isNotEmpty)
+                        BackgroundTasksBar(
+                          runningTasks: _runningBackgroundTasks,
+                          onTapTask: _openTaskOutputSheet,
+                          onStopTask: _handleStopBackgroundTask,
+                          onViewTasks: () {
+                            if (_runningBackgroundTasks.isNotEmpty) {
+                              _openTaskOutputSheet(_runningBackgroundTasks.first);
+                            }
+                          },
+                        ),
+                      if (_subagents.isNotEmpty)
+                        SubagentTreeCard(
+                          subagents: _subagents,
+                          projectName: widget.activeProjectName,
+                          sessionTitle: widget.activeSessionTitle,
+                          onOpenFullTree: () {
+                            SubagentsTreeSheet.show(
+                              context,
+                              api: widget.api,
+                              cascadeId: widget.activeSessionId,
+                              sessionTitle: widget.activeSessionTitle,
+                            );
+                          },
+                          onSelectSubagent: (sub) {
+                            SubagentDetailModal.show(
+                              context,
+                              agent: sub,
+                              api: widget.api,
+                              cascadeId: widget.activeSessionId,
+                              projectName: widget.activeProjectName,
+                              sessionTitle: widget.activeSessionTitle,
+                              onKill: () => _fetchSubagentsForSession(widget.activeSessionId),
+                            );
+                          },
+                        ),
+                      if ((_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false))
+                        QueuedMessagesCard(
+                          queuedMessages: _sessionMessageQueues[widget.activeSessionId]!,
+                          onSendNow: _handleQueueSendNow,
+                          onEdit: _handleQueueEdit,
+                          onDelete: _handleQueueDelete,
+                        ),
+                      if (_topActiveBanner != null)
+                        AppNotificationBanner(
+                          data: _topActiveBanner!,
+                          isCompact: hasKeyboard,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ChatInputBar(
             key: _chatInputKey,
@@ -2939,17 +3176,20 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
   void _handleStopGeneration() {
     final targetSession = widget.activeSessionId;
+    HapticFeedback.mediumImpact();
     widget.api?.stopGeneration(cascadeId: targetSession);
     setState(() {
       _activeStreamingSessions.remove(targetSession);
+      _runningBackgroundTasks.clear();
       _showStillWorking = false;
       _stillWorkingTimer?.cancel();
       _stillWorkingTimer = null;
       final buf = _sessionMessages[targetSession];
       if (buf != null) {
-        final idx = buf.lastIndexWhere((m) => m.isStreaming);
-        if (idx >= 0) {
-          buf[idx] = buf[idx].copyWith(isStreaming: false);
+        for (int i = 0; i < buf.length; i++) {
+          if (buf[i].isStreaming) {
+            buf[i] = buf[i].copyWith(isStreaming: false);
+          }
         }
       }
     });
@@ -2957,6 +3197,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     if (_activeStreamingSessions.isEmpty) {
       widget.onStreamingStateChanged?.call(false);
     }
+    _refreshRunningTasks();
   }
 
   Widget _buildActiveTabContent(ColorScheme scheme, bool isConnected) {
@@ -3113,6 +3354,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               final isLatest = msgIndex == visibleList.length - 1;
 
               final bubbleWidget = _MessageBubble(
+                key: ValueKey('msg_${msg.id}'),
                 message: msg,
                 api: widget.api,
                 workspacePath: widget.activeProjectName,
@@ -3130,7 +3372,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 onViewPlan: () => setState(() => _currentTab = SessionTabType.plan),
                 onViewReview: () => setState(() => _currentTab = SessionTabType.review),
                 onOpenFile: (file) {
-                  final fileName = file.split(RegExp(r'[/\\]')).last;
+                  final fileName = file.split(_mediaSlashSplitRe).last;
                   final matching = _modifiedFileList
                       .where((f) => _pathsMatch(f.path, file))
                       .firstOrNull;
@@ -3215,7 +3457,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 );
               }
 
+              // Clé stable par message : sans elle, une insertion au milieu
+              // de la liste réassocie l'état (cache markdown, animations)
+              // aux mauvais éléments lors des insertions/retraits.
               return Padding(
+                key: ValueKey('msg_${msg.id}'),
                 padding: const EdgeInsets.only(bottom: 16),
                 child: isolatedBubble,
               );
@@ -3313,21 +3559,6 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
       _sessionModifiedFileList[targetSession] = list;
 
-      // Update the last assistant message's filesChanged / additions / deletions
-      final buf = _sessionMessages[targetSession];
-      if (buf != null && buf.isNotEmpty && list.isNotEmpty) {
-        final totalAdded = list.fold(0, (s, f) => s + f.additions);
-        final totalRemoved = list.fold(0, (s, f) => s + f.deletions);
-        final lastAssistantIdx = buf.lastIndexWhere((m) => m.sender != 'user');
-        if (lastAssistantIdx >= 0) {
-          buf[lastAssistantIdx] = buf[lastAssistantIdx].copyWith(
-            filesChanged: list.map((f) => f.path).toList(),
-            additions: totalAdded,
-            deletions: totalRemoved,
-          );
-        }
-      }
-
       if (mounted && targetSession == widget.activeSessionId) {
         setState(() {
           _modifiedFileList
@@ -3363,7 +3594,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       },
       onSplitDiffView: () {
         final firstPath = _modifiedFiles.firstOrNull;
-        final firstName = firstPath?.split(RegExp(r'[/\\]')).last;
+        final firstName = firstPath?.split(_mediaSlashSplitRe).last;
         _openUnifiedDiffViewer(
           filePath: firstPath,
           fileName: firstName,
@@ -3371,7 +3602,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       },
       onExpandAll: () {
         final firstPath = _modifiedFiles.firstOrNull;
-        final firstName = firstPath?.split(RegExp(r'[/\\]')).last;
+        final firstName = firstPath?.split(_mediaSlashSplitRe).last;
         _openUnifiedDiffViewer(
           filePath: firstPath,
           fileName: firstName,
@@ -3818,6 +4049,243 @@ class _ReminderBanner extends StatelessWidget {
   }
 }
 
+class _UserMessageBubble extends StatefulWidget {
+  final ChatMessage message;
+  final DaemonApi? api;
+  final String workspacePath;
+  final LocalFileTap? onLocalFile;
+  final ValueChanged<String>? onEditPrompt;
+  final ValueChanged<ChatMessage>? onRevertStep;
+
+  const _UserMessageBubble({
+    required this.message,
+    this.api,
+    this.workspacePath = '',
+    this.onLocalFile,
+    this.onEditPrompt,
+    this.onRevertStep,
+  });
+
+  @override
+  State<_UserMessageBubble> createState() => _UserMessageBubbleState();
+}
+
+class _UserMessageBubbleState extends State<_UserMessageBubble> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final parsed = _extractMediaAndCleanText(widget.message.text);
+    final hasMedia = parsed.media.isNotEmpty;
+    final cleanText = parsed.cleanText;
+
+    final effectiveText = cleanText.isNotEmpty
+        ? cleanText
+        : (hasMedia ? '' : widget.message.text);
+
+    // Détection si le message est long (> 4 sauts de ligne ou texte long > 220 caractères)
+    final lines = effectiveText.split('\n');
+    final isLong = lines.length > 4 || effectiveText.length > 220;
+
+    final String displayText;
+    if (isLong && !_isExpanded) {
+      if (lines.length > 4) {
+        displayText = lines.take(4).join('\n');
+      } else {
+        displayText = effectiveText.length > 220 ? '${effectiveText.substring(0, 220)}...' : effectiveText;
+      }
+    } else {
+      displayText = effectiveText;
+    }
+
+    return RepaintBoundary(
+      child: GestureDetector(
+        onDoubleTap: widget.onEditPrompt != null ? () => widget.onEditPrompt!(widget.message.text) : null,
+        onLongPress: () {
+          HapticFeedback.lightImpact();
+          Clipboard.setData(ClipboardData(text: widget.message.text));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Prompt copié dans le presse-papiers'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          width: double.infinity,
+          clipBehavior: Clip.antiAlias,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(AppRadius.lg),
+              bottomLeft: Radius.circular(AppRadius.lg),
+              bottomRight: Radius.circular(AppRadius.xs),
+              topRight: Radius.circular(AppRadius.lg),
+            ),
+            border: Border(
+              left: BorderSide(
+                color: isDark ? AppColors.accentBlue.withValues(alpha: 0.3) : scheme.primary.withValues(alpha: 0.3),
+                width: 3,
+              ),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasMedia) ...[
+                _MediaGalleryRow(
+                  media: parsed.media,
+                  api: widget.api,
+                  workspacePath: widget.workspacePath,
+                  onLocalFile: widget.onLocalFile,
+                ),
+                if (effectiveText.isNotEmpty) const SizedBox(height: 10),
+              ],
+              if (effectiveText.isNotEmpty) ...[
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: MarkdownBubble(
+                    key: ValueKey('user-md-${widget.message.id}-$_isExpanded'),
+                    text: displayText,
+                    isStreaming: false,
+                    api: widget.api,
+                    workspacePath: widget.workspacePath,
+                    onLocalFile: widget.onLocalFile,
+                  ),
+                ),
+                if (isLong) ...[
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _isExpanded = !_isExpanded);
+                    },
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF22242B)
+                            : scheme.surfaceContainerHighest.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF323640)
+                              : scheme.outlineVariant.withValues(alpha: 0.6),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                            size: 15,
+                            color: isDark ? AppColors.accentBlue : scheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isExpanded
+                                ? 'Réduire'
+                                : 'Afficher tout (${lines.length > 4 ? '+${lines.length - 4} lignes' : 'déplier'})',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? AppColors.accentBlue : scheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (widget.message.timestamp.isNotEmpty)
+                    Text(
+                      widget.message.timestamp,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? AppColors.inkMuted : scheme.outline,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  // Bouton Copier
+                  Tooltip(
+                    message: 'Copier le message',
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          Clipboard.setData(ClipboardData(text: widget.message.text));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Prompt copié dans le presse-papiers'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(6),
+                        hoverColor: (isDark ? AppColors.accentBlue : scheme.primary).withValues(alpha: 0.08),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          child: Icon(
+                            Icons.copy_rounded,
+                            size: 14.5,
+                            color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (widget.onRevertStep != null) ...[
+                    const SizedBox(width: 4),
+                    // Bouton Revert / Undo changes up to this point
+                    Tooltip(
+                      message: 'Undo changes up to this point',
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            widget.onRevertStep!(widget.message);
+                          },
+                          borderRadius: BorderRadius.circular(6),
+                          hoverColor: const Color(0xFFD97706).withValues(alpha: 0.1),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            child: Icon(
+                              Icons.undo_rounded,
+                              size: 15.5,
+                              color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
 
@@ -3844,6 +4312,7 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback? onRetryTask;
 
   const _MessageBubble({
+    super.key,
     required this.message,
     this.api,
     this.workspacePath = '',
@@ -3870,137 +4339,13 @@ class _MessageBubble extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (isUser) {
-      final parsed = _extractMediaAndCleanText(message.text);
-      final hasMedia = parsed.media.isNotEmpty;
-
-      return RepaintBoundary(
-        child: GestureDetector(
-          onDoubleTap: onEditPrompt != null ? () => onEditPrompt!(message.text) : null,
-          onLongPress: () {
-            HapticFeedback.lightImpact();
-            Clipboard.setData(ClipboardData(text: message.text));
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Prompt copié dans le presse-papiers'),
-                duration: Duration(seconds: 1),
-              ),
-            );
-          },
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerLow,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(AppRadius.lg),
-                bottomLeft: Radius.circular(AppRadius.lg),
-                bottomRight: Radius.circular(AppRadius.xs),
-                topRight: Radius.circular(AppRadius.lg),
-              ),
-              border: Border(
-                left: BorderSide(
-                  color: isDark ? AppColors.accentBlue.withValues(alpha: 0.3) : scheme.primary.withValues(alpha: 0.3),
-                  width: 3,
-                ),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (hasMedia) ...[
-                  _MediaGalleryRow(
-                    media: parsed.media,
-                    api: api,
-                    workspacePath: workspacePath,
-                    onLocalFile: onLocalFile,
-                  ),
-                  if (parsed.cleanText.isNotEmpty) const SizedBox(height: 10),
-                ],
-                if (parsed.cleanText.isNotEmpty)
-                  MarkdownBubble(
-                    text: parsed.cleanText,
-                    isStreaming: false,
-                    api: api,
-                    workspacePath: workspacePath,
-                    onLocalFile: onLocalFile,
-                  ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (message.timestamp.isNotEmpty)
-                      Text(
-                        message.timestamp,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? AppColors.inkMuted : scheme.outline,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    // Bouton Copier
-                    Tooltip(
-                      message: 'Copier le message',
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            Clipboard.setData(ClipboardData(text: message.text));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Prompt copié dans le presse-papiers'),
-                                duration: Duration(seconds: 1),
-                              ),
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(6),
-                          hoverColor: (isDark ? AppColors.accentBlue : scheme.primary).withValues(alpha: 0.08),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                            child: Icon(
-                              Icons.copy_rounded,
-                              size: 14.5,
-                              color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (onRevertStep != null) ...[
-                      const SizedBox(width: 4),
-                      // Bouton Revert / Undo changes up to this point
-                      Tooltip(
-                        message: 'Undo changes up to this point',
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              onRevertStep!(message);
-                            },
-                            borderRadius: BorderRadius.circular(6),
-                            hoverColor: const Color(0xFFD97706).withValues(alpha: 0.1),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                              child: Icon(
-                                Icons.undo_rounded,
-                                size: 15.5,
-                                color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
+      return _UserMessageBubble(
+        message: message,
+        api: api,
+        workspacePath: workspacePath,
+        onLocalFile: onLocalFile,
+        onEditPrompt: onEditPrompt,
+        onRevertStep: onRevertStep,
       );
     }
 
@@ -4090,14 +4435,66 @@ class _MessageBubble extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: SelectableText(
-                            message.text,
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              height: 1.4,
-                              color: isDark ? const Color(0xFFFCA5A5) : scheme.onErrorContainer,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          child: Builder(
+                            builder: (context) {
+                              final rawText = message.text;
+                              final errorIdMatch = RegExp(
+                                r'Error\s*ID:\s*([0-9a-fA-F\-]+)',
+                                caseSensitive: false,
+                              ).firstMatch(rawText);
+                              final errorId = errorIdMatch?.group(1);
+                              final mainText = errorId != null
+                                  ? rawText.replaceAll(RegExp(r'\s*Error\s*ID:\s*[0-9a-fA-F\-]+', caseSensitive: false), '').trim()
+                                  : rawText;
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SelectableText(
+                                    mainText,
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      height: 1.4,
+                                      color: isDark ? const Color(0xFFFCA5A5) : scheme.onErrorContainer,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  if (errorId != null && errorId.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    InkWell(
+                                      onTap: () {
+                                        Clipboard.setData(ClipboardData(text: errorId));
+                                        HapticFeedback.lightImpact();
+                                      },
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.copy_rounded,
+                                              size: 11,
+                                              color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Error ID: $errorId',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontFamily: 'monospace',
+                                                color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -4209,6 +4606,13 @@ class _MessageBubble extends StatelessWidget {
                     api: api,
                     workspacePath: workspacePath,
                     onLocalFile: onLocalFile,
+                  ),
+                ] else if (message.segments[segIdx].type == ChatSegmentType.error &&
+                    message.segments[segIdx].content.trim().isNotEmpty) ...[
+                  AgentErrorCard(
+                    errorText: message.segments[segIdx].content,
+                    title: message.segments[segIdx].title,
+                    onRetry: onRetryTask,
                   ),
                 ],
               ],
@@ -4950,17 +5354,42 @@ class _ExtractedMedia {
   });
 }
 
+final RegExp _mediaImageRe = RegExp(r'!\[([^\]]*)\]\(([^)\s]+)\)');
+final RegExp _mediaAttachRe = RegExp(r'\[(Images? jointes?|Image|Fichier|File|Pièce jointe|Piece jointe):\s*([^\]]+)\]', caseSensitive: false);
+final RegExp _mediaArtifactRe = RegExp(
+  r'\[ARTIFACT:\s*([^\]]+)\](?:\s*\r?\n\s*Path:\s*([^\r\n]+))?',
+  caseSensitive: false,
+);
+final RegExp _mediaMetaResidualRe = RegExp(r'(?:Path|Last Edited):\s*[^\r\n]+', caseSensitive: false);
+final RegExp _mediaSlashSplitRe = RegExp(r'[\\/]');
+
 ({List<_ExtractedMedia> media, String cleanText}) _extractMediaAndCleanText(String rawText) {
+  if (rawText.isEmpty) return (media: const [], cleanText: '');
+  if (!rawText.contains('![') &&
+      !rawText.contains('[ARTIFACT:') &&
+      !rawText.contains('[Artifact:') &&
+      !rawText.contains('[Image') &&
+      !rawText.contains('[image') &&
+      !rawText.contains('[Fichier') &&
+      !rawText.contains('[fichier') &&
+      !rawText.contains('[File') &&
+      !rawText.contains('[file') &&
+      !rawText.contains('[Pièce') &&
+      !rawText.contains('[Piece') &&
+      !rawText.contains('Path:') &&
+      !rawText.contains('Last Edited:')) {
+    return (media: const [], cleanText: rawText.trim());
+  }
+
   final mediaList = <_ExtractedMedia>[];
   var text = rawText;
 
   // 1. Markdown images: ![alt](url)
-  final imageRe = RegExp(r'!\[([^\]]*)\]\(([^)\s]+)\)');
-  for (final match in imageRe.allMatches(text)) {
+  for (final match in _mediaImageRe.allMatches(text)) {
     final alt = match.group(1) ?? '';
     final url = match.group(2) ?? '';
     final isDataUri = url.startsWith('data:image/');
-    final name = alt.isNotEmpty ? alt : (isDataUri ? 'image.png' : url.split(RegExp(r'[\\/]')).last);
+    final name = alt.isNotEmpty ? alt : (isDataUri ? 'image.png' : url.split(_mediaSlashSplitRe).last);
     mediaList.add(_ExtractedMedia(
       path: url,
       name: name,
@@ -4968,17 +5397,16 @@ class _ExtractedMedia {
       dataUri: isDataUri ? url : null,
     ));
   }
-  text = text.replaceAll(imageRe, '').trim();
+  text = text.replaceAll(_mediaImageRe, '').trim();
 
   // 2. Bracketed attachment tags: [Images jointes: ...], [Fichier: ...]
-  final attachRe = RegExp(r'\[(Images? jointes?|Image|Fichier|File|Pièce jointe|Piece jointe):\s*([^\]]+)\]', caseSensitive: false);
-  for (final match in attachRe.allMatches(text)) {
+  for (final match in _mediaAttachRe.allMatches(text)) {
     final label = match.group(1) ?? 'Image';
     final pathsStr = match.group(2) ?? '';
     final paths = pathsStr.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty);
     for (final p in paths) {
       final cleanP = p.startsWith('file://') ? p.substring(7) : p;
-      final name = cleanP.split(RegExp(r'[\\/]')).last;
+      final name = cleanP.split(_mediaSlashSplitRe).last;
       final lower = cleanP.toLowerCase();
       final isImg = lower.endsWith('.png') ||
           lower.endsWith('.jpg') ||
@@ -4994,21 +5422,17 @@ class _ExtractedMedia {
       ));
     }
   }
-  text = text.replaceAll(attachRe, '').trim();
+  text = text.replaceAll(_mediaAttachRe, '').trim();
 
   // 3. Artifact tags: [ARTIFACT: name]\nPath: file:///...
-  final artifactRe = RegExp(
-    r'\[ARTIFACT:\s*([^\]]+)\](?:\s*\r?\n\s*Path:\s*([^\r\n]+))?',
-    caseSensitive: false,
-  );
-  for (final match in artifactRe.allMatches(text)) {
+  for (final match in _mediaArtifactRe.allMatches(text)) {
     final artName = match.group(1)?.trim() ?? 'Artifact';
     final artPath = match.group(2)?.trim() ?? artName;
     if (artName == '...' || artPath == 'file:///...' || artPath == '...' || artPath.endsWith('/...')) {
       continue;
     }
     final cleanP = artPath.startsWith('file://') ? artPath.substring(7) : artPath;
-    final name = artName.isNotEmpty ? artName : cleanP.split(RegExp(r'[\\/]')).last;
+    final name = artName.isNotEmpty ? artName : cleanP.split(_mediaSlashSplitRe).last;
     final lower = cleanP.toLowerCase();
     final isImg = lower.endsWith('.png') ||
         lower.endsWith('.jpg') ||
@@ -5024,11 +5448,10 @@ class _ExtractedMedia {
       dataUri: cleanP.startsWith('data:image/') ? cleanP : null,
     ));
   }
-  text = text.replaceAll(artifactRe, '').trim();
+  text = text.replaceAll(_mediaArtifactRe, '').trim();
 
   // 4. Nettoyage de balises de métadonnées résiduelles (Path:, Last Edited:)
-  final metaResidualRe = RegExp(r'(?:Path|Last Edited):\s*[^\r\n]+', caseSensitive: false);
-  text = text.replaceAll(metaResidualRe, '').trim();
+  text = text.replaceAll(_mediaMetaResidualRe, '').trim();
 
   return (media: mediaList, cleanText: text);
 }
@@ -5090,8 +5513,17 @@ class _MediaThumbnailItem extends StatefulWidget {
 
 class _MediaThumbnailItemState extends State<_MediaThumbnailItem> {
   static final Map<String, Uint8List> _thumbnailMemoryCache = {};
+  static const int _maxThumbnailCacheSize = 50;
   Uint8List? _bytes;
   bool _isLoading = false;
+
+  static void _putThumbnail(String key, Uint8List bytes) {
+    _thumbnailMemoryCache.remove(key);
+    while (_thumbnailMemoryCache.length >= _maxThumbnailCacheSize) {
+      _thumbnailMemoryCache.remove(_thumbnailMemoryCache.keys.first);
+    }
+    _thumbnailMemoryCache[key] = bytes;
+  }
 
   @override
   void initState() {
@@ -5101,8 +5533,10 @@ class _MediaThumbnailItemState extends State<_MediaThumbnailItem> {
 
   void _loadThumbnail() async {
     final cacheKey = widget.item.dataUri ?? widget.item.path;
-    if (_thumbnailMemoryCache.containsKey(cacheKey)) {
-      setState(() => _bytes = _thumbnailMemoryCache[cacheKey]);
+    final cached = _thumbnailMemoryCache.remove(cacheKey);
+    if (cached != null) {
+      _thumbnailMemoryCache[cacheKey] = cached;
+      setState(() => _bytes = cached);
       return;
     }
 
@@ -5111,7 +5545,7 @@ class _MediaThumbnailItemState extends State<_MediaThumbnailItem> {
         final comma = widget.item.dataUri!.indexOf(',');
         if (comma != -1) {
           final b = base64Decode(widget.item.dataUri!.substring(comma + 1));
-          _thumbnailMemoryCache[cacheKey] = b;
+          _putThumbnail(cacheKey, b);
           setState(() {
             _bytes = b;
           });
@@ -5132,7 +5566,7 @@ class _MediaThumbnailItemState extends State<_MediaThumbnailItem> {
       final f = File(p);
       if (f.existsSync()) {
         final b = await f.readAsBytes();
-        _thumbnailMemoryCache[cacheKey] = b;
+        _putThumbnail(cacheKey, b);
         if (mounted) setState(() => _bytes = b);
         return;
       }
@@ -5146,7 +5580,7 @@ class _MediaThumbnailItemState extends State<_MediaThumbnailItem> {
         final b64 = res['base64Data'] as String?;
         if (b64 != null && b64.isNotEmpty && mounted) {
           final b = base64Decode(b64);
-          _thumbnailMemoryCache[cacheKey] = b;
+          _putThumbnail(cacheKey, b);
           setState(() {
             _bytes = b;
             _isLoading = false;

@@ -89,7 +89,8 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
             ),
           ),
           const SizedBox(height: 4),
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 'Configure default behaviors, skills, and MCP servers. ',
@@ -458,12 +459,15 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
               children: [
                 Row(
                   children: [
-                    Text(
-                      name,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurface,
+                    Flexible(
+                      child: Text(
+                        name,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -533,11 +537,14 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 8),
-        Text(
-          '$title ($percent%) $tokens',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: scheme.onSurface),
+        Expanded(
+          child: Text(
+            '$title ($percent%) $tokens',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: scheme.onSurface),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-        const Spacer(),
+        const SizedBox(width: 8),
         GestureDetector(
           onTap: onTap,
           child: Text(
@@ -612,12 +619,15 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
               children: [
                 Row(
                   children: [
-                    Text(
-                      name,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurface,
+                    Flexible(
+                      child: Text(
+                        name,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 8),

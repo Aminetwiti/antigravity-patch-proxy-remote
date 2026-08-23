@@ -175,27 +175,24 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
                 ),
                 const Divider(height: 20, thickness: 0.5),
                 // Conversation Width
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Conversation Width',
-                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Configure the maximum width of the conversation panel.',
-                            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    _buildSegmentedToggle(
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isCompact = constraints.maxWidth < 360;
+                    final textCol = Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Conversation Width',
+                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Configure the maximum width of the conversation panel.',
+                          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                        ),
+                      ],
+                    );
+                    final toggle = _buildSegmentedToggle(
                       isDark: isDark,
                       scheme: scheme,
                       options: const [
@@ -205,8 +202,28 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
                       ],
                       selectedId: _conversationWidth,
                       onChanged: _setConversationWidth,
-                    ),
-                  ],
+                    );
+
+                    if (isCompact) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          textCol,
+                          const SizedBox(height: 10),
+                          toggle,
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(child: textCol),
+                        const SizedBox(width: 12),
+                        toggle,
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -220,27 +237,24 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
           _buildCard(
             isDark: isDark,
             scheme: scheme,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Appearance',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Select light, dark, or inherit system settings.',
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 360;
+                final textCol = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Appearance',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Select light, dark, or inherit system settings.',
+                      style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                );
+                final toggle = Container(
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(6),
@@ -255,8 +269,28 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
                       _buildIconToggle(2, Icons.dark_mode_outlined, 'Dark', isDark, scheme),
                     ],
                   ),
-                ),
-              ],
+                );
+
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      textCol,
+                      const SizedBox(height: 12),
+                      toggle,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: textCol),
+                    const SizedBox(width: 12),
+                    toggle,
+                  ],
+                );
+              },
             ),
           ),
 
@@ -416,10 +450,14 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
+        const SizedBox(width: 8),
         child,
       ],
     );
@@ -474,8 +512,9 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
         border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        spacing: 2,
+        runSpacing: 2,
         children: options.map((opt) {
           final isSelected = opt['id'] == selectedId;
           return GestureDetector(

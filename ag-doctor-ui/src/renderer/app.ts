@@ -4159,9 +4159,18 @@ const remoteAuthToken = $('#remoteAuthToken') as HTMLInputElement;
 const remoteConsole = $('#remoteConsole') as HTMLTextAreaElement;
 const regenerateTokenBtn = $('#regenerateTokenBtn');
 const tokenSavedBadge = $('#tokenSavedBadge');
+const remoteAllowFirstAdmin = $('#remoteAllowFirstAdmin') as HTMLInputElement;
+const remotePinDisplay = $('#remotePinDisplay');
+const remoteTelemetryBadge = $('#remoteTelemetryBadge');
+const remoteClientsCount = $('#remoteClientsCount');
+const remoteSessionsCount = $('#remoteSessionsCount');
+const remoteUptimeDisplay = $('#remoteUptimeDisplay');
+const remoteCheckHealthBtn = $('#remoteCheckHealthBtn');
+const remoteCopyWsUrlBtn = $('#remoteCopyWsUrlBtn');
 
 let isDaemonRunning = false;
 let tokenBadgeTimeout: any = null;
+let currentActiveWsUrl = '';
 
 function flashTokenSavedBadge() {
   if (tokenSavedBadge) {
@@ -4186,6 +4195,10 @@ try {
   const savedTunnel = localStorage.getItem('ag_remote_tunnel');
   if (savedTunnel !== null && remoteTunnel) {
     remoteTunnel.value = savedTunnel;
+  }
+  const savedAllowAdmin = localStorage.getItem('ag_remote_allow_first_admin');
+  if (savedAllowAdmin !== null && remoteAllowFirstAdmin) {
+    remoteAllowFirstAdmin.checked = savedAllowAdmin === 'true';
   }
 } catch { /* ignore */ }
 
@@ -4213,6 +4226,12 @@ remoteTunnel?.addEventListener('change', () => {
   } catch { /* ignore */ }
 });
 
+remoteAllowFirstAdmin?.addEventListener('change', () => {
+  try {
+    localStorage.setItem('ag_remote_allow_first_admin', remoteAllowFirstAdmin.checked ? 'true' : 'false');
+  } catch { /* ignore */ }
+});
+
 regenerateTokenBtn?.addEventListener('click', () => {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let rand = '';
@@ -4233,6 +4252,7 @@ regenerateTokenBtn?.addEventListener('click', () => {
 });
 
 function attachCopyButton(wsUrl: string) {
+  currentActiveWsUrl = wsUrl;
   $('#copyRemoteWsBtn')?.addEventListener('click', () => {
     navigator.clipboard.writeText(wsUrl).then(() => {
       toast('URL WebSocket copiée dans le presse-papier !', 'ok');
@@ -4242,11 +4262,48 @@ function attachCopyButton(wsUrl: string) {
   });
 }
 
+remoteCopyWsUrlBtn?.addEventListener('click', () => {
+  if (currentActiveWsUrl) {
+    navigator.clipboard.writeText(currentActiveWsUrl).then(() => {
+      toast('URL WebSocket copiée !', 'ok');
+    }).catch(() => {
+      toast('Impossible de copier', 'warn');
+    });
+  } else {
+    const port = parseInt(remotePort?.value || '8090');
+    const token = remoteAuthToken?.value?.trim() || '11';
+    window.ag?.getLocalIp?.().then((ip: string) => {
+      const url = `ws://${ip}:${port}/ws?token=${encodeURIComponent(token)}`;
+      navigator.clipboard.writeText(url).then(() => {
+        toast(`URL locale copiée : ${url}`, 'ok');
+      });
+    });
+  }
+});
+
+remoteCheckHealthBtn?.addEventListener('click', async () => {
+  const port = parseInt(remotePort?.value || '8090');
+  const token = remoteAuthToken?.value?.trim() || '11';
+  try {
+    const status = await window.ag?.getDaemonStatus?.(port, token);
+    if (status && status.running) {
+      const sessions = status.telemetry?.sessions ?? 0;
+      const clients = status.telemetry?.clients ?? 0;
+      const uptime = status.telemetry?.uptime ?? 'récent';
+      toast(`✅ Démon sain sur :${port} — ${clients} client(s), ${sessions} session(s), Uptime: ${uptime}`, 'ok');
+    } else {
+      toast(`⚠️ Démon non joignable sur le port ${port}`, 'warn');
+    }
+  } catch (err: any) {
+    toast(`❌ Erreur santé: ${err.message}`, 'err');
+  }
+});
+
 async function syncDaemonUiStatus(port?: number) {
   try {
     const currentPort = port || parseInt(remotePort?.value || localStorage.getItem('ag_remote_port') || '8090');
     const token = remoteAuthToken?.value?.trim() || localStorage.getItem('ag_remote_auth_token') || '11';
-    const status = await window.ag?.getDaemonStatus?.(currentPort);
+    const status = await window.ag?.getDaemonStatus?.(currentPort, token);
     if (status && status.running) {
       isDaemonRunning = true;
       if (startRemoteBtn) {
@@ -4254,9 +4311,28 @@ async function syncDaemonUiStatus(port?: number) {
         startRemoteBtn.classList.add('btn-danger');
         startRemoteBtn.removeAttribute('disabled');
       }
+
+      if (remoteTelemetryBadge) {
+        remoteTelemetryBadge.textContent = 'En ligne';
+        remoteTelemetryBadge.style.background = 'rgba(34, 197, 94, 0.2)';
+        remoteTelemetryBadge.style.color = '#22c55e';
+      }
+      if (status.telemetry) {
+        if (remoteClientsCount && typeof status.telemetry.clients !== 'undefined') {
+          remoteClientsCount.textContent = status.telemetry.clients.toString();
+        }
+        if (remoteSessionsCount && typeof status.telemetry.sessions !== 'undefined') {
+          remoteSessionsCount.textContent = status.telemetry.sessions.toString();
+        }
+        if (remoteUptimeDisplay && status.telemetry.uptime) {
+          remoteUptimeDisplay.textContent = status.telemetry.uptime;
+        }
+      }
+
       if (status.publicUrl && status.publicUrl.length > 0) {
         const cleanHost = status.publicUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
         const wsUrl = `wss://${cleanHost}/ws?token=${token}`;
+        currentActiveWsUrl = wsUrl;
         const dataUrl = await window.ag.generateQr(wsUrl);
         if (remoteQrImage) remoteQrImage.src = dataUrl;
         if (remoteQrPlaceholder) remoteQrPlaceholder.style.display = 'none';
@@ -4268,6 +4344,7 @@ async function syncDaemonUiStatus(port?: number) {
       } else {
         const ip = await window.ag.getLocalIp();
         const wsUrl = `ws://${ip}:${status.port || currentPort}/ws?token=${token}`;
+        currentActiveWsUrl = wsUrl;
         const dataUrl = await window.ag.generateQr(wsUrl);
         if (remoteQrImage) remoteQrImage.src = dataUrl;
         if (remoteQrPlaceholder) remoteQrPlaceholder.style.display = 'none';
@@ -4277,6 +4354,15 @@ async function syncDaemonUiStatus(port?: number) {
           attachCopyButton(wsUrl);
         }
       }
+    } else {
+      if (remoteTelemetryBadge) {
+        remoteTelemetryBadge.textContent = 'Hors ligne';
+        remoteTelemetryBadge.style.background = 'rgba(255, 255, 255, 0.08)';
+        remoteTelemetryBadge.style.color = 'var(--text-2)';
+      }
+      if (remoteClientsCount) remoteClientsCount.textContent = '0';
+      if (remoteSessionsCount) remoteSessionsCount.textContent = '0';
+      if (remoteUptimeDisplay) remoteUptimeDisplay.textContent = '-';
     }
   } catch { /* ignore */ }
 }
@@ -4286,6 +4372,12 @@ if (window.ag && window.ag.onDaemonLog) {
     if (remoteConsole) {
       remoteConsole.value += data;
       remoteConsole.scrollTop = remoteConsole.scrollHeight;
+
+      // Extract PIN code if present in daemon logs
+      const pinMatch = data.match(/Code PIN d'appairage mobile\s*:\s*([0-9]{6})/);
+      if (pinMatch && remotePinDisplay) {
+        remotePinDisplay.textContent = pinMatch[1];
+      }
 
       // Extract tunnel URL (Pinggy or Cloudflare or wss://) from logs to generate QR Code dynamically!
       let wsUrl = '';
@@ -4309,6 +4401,7 @@ if (window.ag && window.ag.onDaemonLog) {
       }
 
       if (wsUrl && remoteQrImage) {
+        currentActiveWsUrl = wsUrl;
         window.ag.generateQr(wsUrl).then((dataUrl) => {
           remoteQrImage.src = dataUrl;
           if (remoteQrPlaceholder) remoteQrPlaceholder.style.display = 'none';
@@ -4328,6 +4421,7 @@ if (window.ag && window.ag.onDaemonLog) {
         const port = parseInt(remotePort?.value || '8090');
         window.ag.getLocalIp().then((localIp: string) => {
           const localWsUrl = `ws://${localIp}:${port}/ws?token=${encodeURIComponent(token)}`;
+          currentActiveWsUrl = localWsUrl;
           window.ag.generateQr(localWsUrl).then((dataUrl: string) => {
             if (remoteQrImage) remoteQrImage.src = dataUrl;
             if (remoteQrPlaceholder) remoteQrPlaceholder.style.display = 'none';
@@ -4361,6 +4455,11 @@ if (startRemoteBtn) {
       if (remoteStatusText) remoteStatusText.textContent = 'Server stopped.';
       if (remoteQrContainer) remoteQrContainer.style.display = 'none';
       if (remoteQrPlaceholder) remoteQrPlaceholder.style.display = 'flex';
+      if (remoteTelemetryBadge) {
+        remoteTelemetryBadge.textContent = 'Hors ligne';
+        remoteTelemetryBadge.style.background = 'rgba(255, 255, 255, 0.08)';
+        remoteTelemetryBadge.style.color = 'var(--text-2)';
+      }
       return;
     }
 
@@ -4371,6 +4470,7 @@ if (startRemoteBtn) {
       
       const port = parseInt(remotePort?.value || '8090');
       const tunnel = remoteTunnel?.value || 'cloudflare';
+      const allowFirstAdmin = remoteAllowFirstAdmin?.checked ?? true;
       let token = remoteAuthToken?.value?.trim() || localStorage.getItem('ag_remote_auth_token') || '11';
       if (remoteAuthToken && (!remoteAuthToken.value || remoteAuthToken.value.trim().length === 0)) {
         remoteAuthToken.value = token;
@@ -4381,15 +4481,17 @@ if (startRemoteBtn) {
         localStorage.setItem('ag_remote_auth_token', token);
         localStorage.setItem('ag_remote_port', port.toString());
         localStorage.setItem('ag_remote_tunnel', tunnel);
+        localStorage.setItem('ag_remote_allow_first_admin', allowFirstAdmin ? 'true' : 'false');
       } catch { /* ignore */ }
 
-      const res = await window.ag.startDaemon({ port, tunnel, token });
+      const res = await window.ag.startDaemon({ port, tunnel, token, allowFirstAdmin });
 
       if (res && res.alreadyRunning) {
         await syncDaemonUiStatus(port);
       } else if (tunnel === 'none') {
         const ip = await window.ag.getLocalIp();
         const wsUrl = `ws://${ip}:${port}/ws?token=${token}`;
+        currentActiveWsUrl = wsUrl;
         const dataUrl = await window.ag.generateQr(wsUrl);
         if (remoteQrImage) remoteQrImage.src = dataUrl;
         if (remoteQrPlaceholder) remoteQrPlaceholder.style.display = 'none';
@@ -4411,5 +4513,10 @@ if (startRemoteBtn) {
   });
 }
 
-// Auto-détection de l'état du daemon au chargement
+// Auto-détection de l'état du daemon au chargement et rafraîchissement périodique
 void syncDaemonUiStatus();
+setInterval(() => {
+  if (isDaemonRunning) {
+    void syncDaemonUiStatus();
+  }
+}, 5000);

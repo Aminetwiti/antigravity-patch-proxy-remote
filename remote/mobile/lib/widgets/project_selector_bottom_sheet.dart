@@ -263,6 +263,7 @@ class ProjectSelectorBottomSheet extends StatelessWidget {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
+        scrollable: true,
         backgroundColor: isDark ? const Color(0xFF1F2127) : scheme.surfaceContainerHighest,
         title: Text(
           'Supprimer définitivement le projet ?',

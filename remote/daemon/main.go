@@ -42,6 +42,7 @@ func main() {
 	var noAuth bool
 	var approvalTimeoutMin int
 	var enableRemoteTerminal bool
+	var allowFirstAdmin bool
 
 	flag.IntVar(&listenPort, "port", cfg.Port, "Port for the WebSocket server")
 	flag.StringVar(&host, "host", cfg.Host, "Host for the WebSocket server")
@@ -50,6 +51,7 @@ func main() {
 	flag.BoolVar(&noAuth, "no-auth", false, "Disable authentication (allow any client without token)")
 	flag.IntVar(&approvalTimeoutMin, "approval-timeout", int(cfg.ApprovalTimeout.Minutes()), "Auto-deny timeout for pending approvals in minutes (0 = disabled)")
 	flag.BoolVar(&enableRemoteTerminal, "enable-remote-terminal", cfg.AllowRemoteTerminal, "Allow remote interactive PTY terminal creation")
+	flag.BoolVar(&allowFirstAdmin, "allow-first-admin", false, "Let the FIRST paired device become Admin (default: promote via host console with 'promote <deviceId>')")
 	flag.Parse()
 
 	// Silencer le logger standard Go pour éliminer le spam brut de gorilla/websocket (qui échappe à slog)
@@ -89,6 +91,9 @@ func main() {
 	fmt.Printf("   CSRF Token: %s...\n", maskToken(token))
 
 	rpcClient := connectrpc.NewClient(info.ConnectRPCPort, token)
+	if info.UseTLS {
+		rpcClient.SetUseTLS(true)
+	}
 
 	// Lancement du Watchdog CSRF
 	watchdog := discovery.NewWatchdog(rpcClient, 10*time.Second)
@@ -125,10 +130,14 @@ func main() {
 	// (AG_REMOTE_LOG_LEVEL) ÔÇö les logs du gateway partent en JSON exploitable.
 	gateway.SetLogJSON(gateway.NewLogger())
 
-	// P4 : Pairing PIN ├®ph├®m├¿re + anti-brute-force
+	// P4 : Pairing PIN éphémère + anti-brute-force
 	pairingMgr := discovery.NewPairingManager()
+	pairingMgr.AllowFirstAdmin = allowFirstAdmin
 	pin, _ := pairingMgr.CurrentPIN()
-	fmt.Printf("­ƒöæ Code PIN d'appairage mobile : %s (valable 60s ÔÇö saisissez ce code sur votre t├®l├®phone)\n", pin)
+	fmt.Printf("🔑 Code PIN d'appairage mobile : %s (valable 60s — saisissez ce code sur votre téléphone)\n", pin)
+	if !allowFirstAdmin {
+		fmt.Println("⚠️  Premier appairage NON-admin par défaut : promouvez votre device depuis l'hôte (pairingMgr.PromoteAdmin) ou relancez avec --allow-first-admin")
+	}
 
 	server := gateway.NewServer(rpcClient, resolvedToken)
 	if !authMgr.IsDisabled() {

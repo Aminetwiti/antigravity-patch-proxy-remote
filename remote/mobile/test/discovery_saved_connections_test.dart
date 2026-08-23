@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/discovery/lan_discovery.dart';
 import 'package:mobile/features/discovery/discovery_screen.dart';
 import 'package:mobile/services/saved_connections_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,11 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    LanDiscoveryService.enabled = false;
+  });
+
+  tearDown(() {
+    LanDiscoveryService.enabled = true;
   });
 
   group('DiscoveryScreen Saved Connections & PIN/Token Persistence', () {

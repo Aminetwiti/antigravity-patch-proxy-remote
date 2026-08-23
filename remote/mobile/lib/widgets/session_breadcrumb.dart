@@ -54,6 +54,7 @@ class SessionBreadcrumb extends StatelessWidget {
         : 'Nouvelle conversation';
 
     final canSwitchProject = onSelectProject != null && (projects == null || projects!.length > 1);
+    final isCompact = MediaQuery.of(context).size.width < 380;
 
     return Container(
       height: 30,
@@ -234,7 +235,7 @@ class SessionBreadcrumb extends StatelessWidget {
               onTap: onToggleFullscreen,
               borderRadius: BorderRadius.circular(4),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: EdgeInsets.symmetric(horizontal: isCompact ? 5 : 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(4),
@@ -251,15 +252,17 @@ class SessionBreadcrumb extends StatelessWidget {
                       size: 13,
                       color: isDark ? AppColors.accentBlue : scheme.primary,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isFullscreen ? 'Quitter' : 'Plein écran',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                    if (!isCompact) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        isFullscreen ? 'Quitter' : 'Plein écran',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -270,7 +273,7 @@ class SessionBreadcrumb extends StatelessWidget {
               onTap: onOpenIde,
               borderRadius: BorderRadius.circular(4),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: EdgeInsets.symmetric(horizontal: isCompact ? 5 : 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(4),
@@ -283,19 +286,21 @@ class SessionBreadcrumb extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.open_in_new_rounded,
-                      size: 11,
+                      Icons.terminal_rounded,
+                      size: 13,
                       color: isDark ? AppColors.accentBlue : scheme.primary,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Open IDE',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                    if (!isCompact) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        'Ouvrir IDE',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

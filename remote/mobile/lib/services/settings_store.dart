@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/env_config.dart';
 import 'saved_connections_store.dart';
+import 'secure_credentials.dart';
 
 /// Persistance des réglages utilisateur via `shared_preferences`.
 /// Écriture atomique par clé, lecture paresseuse au démarrage (initState).
@@ -43,6 +44,11 @@ class SettingsStore {
   static const _kLastSsl = 'session.lastSsl';
   static const _kSessionSavedAt = 'session.savedAt';
 
+  // Secrets (SEC-04) : plus JAMAIS dans SharedPreferences — voir SecureCredentials.
+  static const _kSecToken = 'session.token';
+  static const _kSecPin = 'session.pin';
+  static const _kSecCsrf = 'settings.csrf';
+
   static const _kVerboseAgentChat = 'settings.verboseAgentChat';
   static const _kConversationWidth = 'settings.conversationWidth';
   static const _kQueuedMessagesMode = 'settings.queuedMessagesMode';
@@ -59,15 +65,37 @@ class SettingsStore {
 
   SettingsStore._();
 
+  /// Migre les secrets hérités de SharedPreferences (versions < correctif
+  /// SEC-04) vers le stockage sécurisé, puis efface les copies en clair.
+  static Future<void> _migrateLegacySecrets(SharedPreferences prefs) async {
+    final legacyToken = prefs.getString(_kLastWsToken);
+    final legacyCsrf = prefs.getString(_kCsrf);
+    final legacyPin = prefs.getString(_kLastPin) ?? prefs.getString(_kPin);
+    if (legacyToken != null && legacyToken.isNotEmpty) {
+      await SecureCredentials.write(_kSecToken, legacyToken);
+      await prefs.remove(_kLastWsToken);
+    }
+    if (legacyCsrf != null && legacyCsrf.isNotEmpty) {
+      await SecureCredentials.write(_kSecCsrf, legacyCsrf);
+      await prefs.remove(_kCsrf);
+    }
+    if (legacyPin != null && legacyPin.isNotEmpty) {
+      await SecureCredentials.write(_kSecPin, legacyPin);
+      await prefs.remove(_kLastPin);
+      await prefs.remove(_kPin);
+    }
+  }
+
   /// Charge l'état initial (valeurs par défaut si jamais persistées).
   static Future<Map<String, dynamic>> load() async {
     final prefs = await SharedPreferences.getInstance();
+    await _migrateLegacySecrets(prefs);
     return {
       'host': prefs.getString(_kHost) ?? '127.0.0.1',
       'port': prefs.getInt(_kPort) ?? EnvConfig.daemonPort,
       'ssl': prefs.getBool(_kSsl) ?? false,
-      'csrf': prefs.getString(_kCsrf) ?? '',
-      'pin': prefs.getString(_kPin) ?? '',
+      'csrf': await SecureCredentials.read(_kSecCsrf) ?? '',
+      'pin': await SecureCredentials.read(_kSecPin) ?? '',
       'themeMode': prefs.getInt(_kThemeMode) ?? 0,
       'defaultModel': prefs.getString(_kDefaultModel) ?? 'Gemini 3.6 Flash Medium',
       'displayName': prefs.getString(_kDisplayName) ?? 'Developer',
@@ -113,9 +141,9 @@ class SettingsStore {
         case 'ssl':
           await prefs.setBool(_kSsl, entry.value as bool);
         case 'csrf':
-          await prefs.setString(_kCsrf, entry.value as String);
+          await SecureCredentials.write(_kSecCsrf, entry.value as String);
         case 'pin':
-          await prefs.setString(_kPin, entry.value as String);
+          await SecureCredentials.write(_kSecPin, entry.value as String);
         case 'themeMode':
           await prefs.setInt(_kThemeMode, entry.value as int);
         case 'defaultModel':
@@ -187,22 +215,25 @@ class SettingsStore {
 
   /// Dernière session connectée : `{wsUrl, token, sessionId, pin, host, port, ssl, savedAt}`.
   /// Persiste indéfiniment après fermeture et réouverture de l'application.
+  /// SEC-04 : token et pin sont relus depuis le stockage sécurisé.
   static Future<Map<String, dynamic>> loadSession() async {
     final prefs = await SharedPreferences.getInstance();
+    await _migrateLegacySecrets(prefs);
     final url = prefs.getString(_kLastWsUrl) ?? '';
-    final lastToken = prefs.getString(_kLastWsToken);
     final lastHost = prefs.getString(_kLastHost);
     final savedAt = DateTime.tryParse(prefs.getString(_kSessionSavedAt) ?? '');
+    final token = await SecureCredentials.read(_kSecToken) ??
+        await SecureCredentials.read(_kSecCsrf) ??
+        '';
 
-    if (url.isEmpty && lastToken == null && lastHost == null) {
+    if (url.isEmpty && token.isEmpty && lastHost == null) {
       return const {};
     }
 
-    final token = lastToken ?? prefs.getString(_kCsrf) ?? '';
     final host = lastHost ?? prefs.getString(_kHost) ?? '';
     final port = prefs.getInt(_kLastPort) ?? prefs.getInt(_kPort) ?? EnvConfig.daemonPort;
     final ssl = prefs.getBool(_kLastSsl) ?? prefs.getBool(_kSsl) ?? false;
-    final pin = prefs.getString(_kLastPin) ?? prefs.getString(_kPin) ?? '';
+    final pin = await SecureCredentials.read(_kSecPin) ?? '';
     final sessionId = prefs.getString(_kLastSessionId) ?? '';
 
     return {
@@ -231,15 +262,15 @@ class SettingsStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kLastWsUrl, wsUrl);
     if (token.isNotEmpty) {
-      await prefs.setString(_kLastWsToken, token);
-      await prefs.setString(_kCsrf, token);
+      // SEC-04 : secrets en coffre-fort, plus en SharedPreferences.
+      await SecureCredentials.write(_kSecToken, token);
+      await SecureCredentials.write(_kSecCsrf, token);
     }
     if (sessionId.isNotEmpty) {
       await prefs.setString(_kLastSessionId, sessionId);
     }
     if (pin.isNotEmpty) {
-      await prefs.setString(_kLastPin, pin);
-      await prefs.setString(_kPin, pin);
+      await SecureCredentials.write(_kSecPin, pin);
     }
     if (host.isNotEmpty) {
       await prefs.setString(_kLastHost, host);
@@ -259,8 +290,11 @@ class SettingsStore {
     final resolvedHost = host.isNotEmpty ? host : (Uri.tryParse(wsUrl)?.host ?? '127.0.0.1');
     final resolvedPort = port ?? Uri.tryParse(wsUrl)?.port ?? EnvConfig.daemonPort;
     final resolvedSsl = ssl ?? (wsUrl.startsWith('wss') || wsUrl.startsWith('https'));
-    final effectiveToken = token.isNotEmpty ? token : (prefs.getString(_kLastWsToken) ?? '');
-    final effectivePin = pin.isNotEmpty ? pin : (prefs.getString(_kLastPin) ?? '');
+    final effectiveToken = token.isNotEmpty
+        ? token
+        : (await SecureCredentials.read(_kSecToken) ?? '');
+    final effectivePin =
+        pin.isNotEmpty ? pin : (await SecureCredentials.read(_kSecPin) ?? '');
 
     final conn = SavedConnection(
       id: '$resolvedHost:$resolvedPort',
@@ -287,5 +321,8 @@ class SettingsStore {
     await prefs.remove(_kLastPort);
     await prefs.remove(_kLastSsl);
     await prefs.remove(_kSessionSavedAt);
+    await SecureCredentials.delete(_kSecToken);
+    await SecureCredentials.delete(_kSecCsrf);
+    await SecureCredentials.delete(_kSecPin);
   }
 }

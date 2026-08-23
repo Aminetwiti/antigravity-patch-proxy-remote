@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -26,6 +27,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   final TextEditingController _pinController = TextEditingController();
 
   final LanDiscoveryService _lanDiscovery = LanDiscoveryService();
+  StreamSubscription<List<DiscoveredDaemon>>? _lanDiscoverySub;
   List<DiscoveredDaemon> _discoveredDaemons = [];
   List<SavedConnection> _savedConnections = [];
 
@@ -90,7 +92,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   void _startLanDiscovery() {
     _lanDiscovery.startDiscovery();
-    _lanDiscovery.daemonsStream.listen((daemons) {
+    _lanDiscoverySub?.cancel();
+    _lanDiscoverySub = _lanDiscovery.daemonsStream.listen((daemons) {
       if (mounted) {
         setState(() {
           _discoveredDaemons = daemons;
@@ -364,11 +367,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   ),
                                 ),
                               if (c.pin.isNotEmpty)
-                                Text(
-                                  '• PIN: ${c.pin}',
+                                // SEC-04 : PIN jamais affiché en clair
+                                // (shoulder-surfing) — présence seulement.
+                                const Text(
+                                  '• PIN: ••••••',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    color: Color(0xFF9CA3AF),
                                   ),
                                 ),
                               Text(
@@ -415,6 +420,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   @override
   void dispose() {
+    _lanDiscoverySub?.cancel();
     _lanDiscovery.dispose();
     _hostController.dispose();
     _portController.dispose();

@@ -55,19 +55,48 @@ type PairingManager struct {
 	maxAttempts     int
 	lockoutDuration time.Duration
 	sessionTTL      time.Duration
+	// SEC-03 : budget global de tentatives pour le PIN courant, toutes sources
+	// confondues. La clé de verrouillage est l'IP seule — le deviceId étant
+	// contrôlé par le client, sa rotation offrait 5 essais neufs à chaque
+	// requête. À l'épuisement du budget : régénération immédiate du PIN et gel
+	// des tentatives jusqu'à la fin du TTL courant (plafond ~30 essais/min).
+	globalAttempts    int
+	globalMaxAttempts int
+	globalLockUntil   time.Time
+	// AllowFirstAdmin : le premier device pairé ne devient Admin que si l'hôte
+	// l'a explicitement autorisé (flag --allow-first-admin). Sinon, la
+	// promotion passe exclusivement par PromoteAdmin (action hôte). Un scanner
+	// Internet qui devine le PIN sur le tunnel public ne gagne donc PAS les
+	// droits Admin (shell/PTY/révocation).
+	AllowFirstAdmin bool
 }
 
 func NewPairingManager() *PairingManager {
 	pm := &PairingManager{
-		pinTTL:          60 * time.Second,
-		sessions:        make(map[string]SessionInfo),
-		attempts:        make(map[string]*attemptRecord),
-		maxAttempts:     5,
-		lockoutDuration: 5 * time.Minute,
-		sessionTTL:      30 * 24 * time.Hour, // session 30 jours
+		pinTTL:            60 * time.Second,
+		sessions:          make(map[string]SessionInfo),
+		attempts:          make(map[string]*attemptRecord),
+		maxAttempts:       5,
+		lockoutDuration:   5 * time.Minute,
+		sessionTTL:        30 * 24 * time.Hour, // session 30 jours
+		globalMaxAttempts: 30,
 	}
 	pm.GeneratePIN()
 	return pm
+}
+
+// regeneratePINLocked remplace le PIN courant et réarme le budget global de
+// tentatives. À appeler sous pm.mu exclusivement.
+func (pm *PairingManager) regeneratePINLocked() {
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		pm.currentPIN = ""
+		return
+	}
+	pm.currentPIN = fmt.Sprintf("%06d", n.Int64())
+	pm.pinExpiresAt = time.Now().Add(pm.pinTTL)
+	pm.globalAttempts = 0
+	pm.globalLockUntil = time.Time{}
 }
 
 // GeneratePIN génère un nouveau code à 6 chiffres aléatoire cryptographique.
@@ -75,13 +104,7 @@ func (pm *PairingManager) GeneratePIN() string {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
-	if err != nil {
-		pm.currentPIN = ""
-		return ""
-	}
-	pm.currentPIN = fmt.Sprintf("%06d", n.Int64())
-	pm.pinExpiresAt = time.Now().Add(pm.pinTTL)
+	pm.regeneratePINLocked()
 	return pm.currentPIN
 }
 
@@ -92,13 +115,7 @@ func (pm *PairingManager) CurrentPIN() (string, time.Duration) {
 	defer pm.mu.Unlock()
 
 	if time.Now().After(pm.pinExpiresAt) || pm.currentPIN == "" {
-		n, err := rand.Int(rand.Reader, big.NewInt(1000000))
-		if err != nil {
-			pm.currentPIN = ""
-			return "", 0
-		}
-		pm.currentPIN = fmt.Sprintf("%06d", n.Int64())
-		pm.pinExpiresAt = time.Now().Add(pm.pinTTL)
+		pm.regeneratePINLocked()
 	}
 	return pm.currentPIN, time.Until(pm.pinExpiresAt)
 }
@@ -107,11 +124,11 @@ func (pm *PairingManager) CurrentPIN() (string, time.Duration) {
 // En cas de succès, génère un jeton de session cryptographique et reset les tentatives.
 // allowedProjects (optionnel) restreint le device aux projets donnés (scope 3.3).
 func (pm *PairingManager) VerifyPIN(remoteAddr, pin, deviceID string, allowedProjects ...[]string) (string, time.Time, error) {
+	// SEC-03 : la clé de verrouillage est l'IP seule. Le deviceId est fourni
+	// par le client : l'inclure dans la clé permettait de contourner le
+	// verrou en tournant les identifiants.
 	ip := extractIP(remoteAddr)
 	attemptKey := ip
-	if deviceID != "" {
-		attemptKey = ip + ":" + deviceID
-	}
 
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -123,7 +140,12 @@ func (pm *PairingManager) VerifyPIN(remoteAddr, pin, deviceID string, allowedPro
 
 	now := time.Now()
 
-	// 1. Vérification anti-brute-force (isolée par IP et deviceId)
+	// 0. Gel global : budget de tentatives épuisé pour ce PIN (SEC-03)
+	if now.Before(pm.globalLockUntil) {
+		return "", time.Time{}, fmt.Errorf("%w (nouveau PIN requis, réessayez dans %v)", ErrLockedOut, time.Until(pm.globalLockUntil).Round(time.Second))
+	}
+
+	// 1. Vérification anti-brute-force (par IP)
 	rec := pm.attempts[attemptKey]
 	if rec != nil {
 		if now.Before(rec.lockedUntil) {
@@ -150,8 +172,17 @@ func (pm *PairingManager) VerifyPIN(remoteAddr, pin, deviceID string, allowedPro
 			pm.attempts[attemptKey] = rec
 		}
 		rec.count++
+		pm.globalAttempts++
 		if rec.count >= pm.maxAttempts {
 			rec.lockedUntil = now.Add(pm.lockoutDuration)
+		}
+		// Budget global épuisé : nouveau PIN + gel jusqu'à la fin du TTL.
+		if pm.globalAttempts >= pm.globalMaxAttempts {
+			pm.regeneratePINLocked()
+			pm.globalLockUntil = pm.pinExpiresAt
+			return "", time.Time{}, fmt.Errorf("%w : %d tentatives échouées, nouveau PIN généré", ErrLockedOut, pm.globalMaxAttempts)
+		}
+		if rec.lockedUntil.After(now) {
 			return "", time.Time{}, fmt.Errorf("%w : %d tentatives échouées, verrouillé pendant %v", ErrLockedOut, rec.count, pm.lockoutDuration)
 		}
 		return "", time.Time{}, fmt.Errorf("%w (%d/%d tentatives restantes)", ErrInvalidPIN, pm.maxAttempts-rec.count, pm.maxAttempts)
@@ -159,6 +190,7 @@ func (pm *PairingManager) VerifyPIN(remoteAddr, pin, deviceID string, allowedPro
 
 	// 4. Succès : reset des tentatives et génération du token de session
 	delete(pm.attempts, attemptKey)
+	pm.globalAttempts = 0
 
 	tokenBytes := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, tokenBytes); err != nil {
@@ -167,9 +199,10 @@ func (pm *PairingManager) VerifyPIN(remoteAddr, pin, deviceID string, allowedPro
 	token := hex.EncodeToString(tokenBytes)
 	expiresAt := now.Add(pm.sessionTTL)
 
+	// SEC-03 : premier pairé = Admin uniquement si l'hôte l'a autorisé.
 	isAdmin := false
 	if len(pm.sessions) == 0 {
-		isAdmin = true
+		isAdmin = pm.AllowFirstAdmin
 	} else {
 		isAdmin = pm.hasAdminSessionLocked(deviceID)
 	}
@@ -185,11 +218,27 @@ func (pm *PairingManager) VerifyPIN(remoteAddr, pin, deviceID string, allowedPro
 	}
 
 	// Régénérer un nouveau PIN immédiatement après un appairage réussi
-	n, _ := rand.Int(rand.Reader, big.NewInt(1000000))
-	pm.currentPIN = fmt.Sprintf("%06d", n.Int64())
-	pm.pinExpiresAt = now.Add(pm.pinTTL)
+	pm.regeneratePINLocked()
 
 	return token, expiresAt, nil
+}
+
+// PromoteAdmin élève un device appairé au rang d'administrateur. Action
+// réservée à l'hôte (console/outil local) — jamais exposée via /pair.
+func (pm *PairingManager) PromoteAdmin(deviceID string) bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	promoted := false
+	now := time.Now()
+	for token, sess := range pm.sessions {
+		if sess.DeviceID == deviceID && now.Before(sess.ExpiresAt) {
+			sess.Admin = true
+			pm.sessions[token] = sess
+			promoted = true
+		}
+	}
+	return promoted
 }
 
 // ValidateSession retourne les infos de session si le jeton est valide et non
@@ -199,14 +248,15 @@ func (pm *PairingManager) ValidateSession(token string) (SessionInfo, bool) {
 	if token == "" {
 		return SessionInfo{}, false
 	}
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 
 	sess, ok := pm.sessions[token]
 	if !ok {
 		return SessionInfo{}, false
 	}
 	if !time.Now().Before(sess.ExpiresAt) {
+		delete(pm.sessions, token)
 		return SessionInfo{}, false
 	}
 	return sess, true
@@ -228,7 +278,6 @@ func (pm *PairingManager) RevokeDevice(deviceID string) bool {
 	return revoked
 }
 
-
 // hasAdminSessionLocked rapporte si un device possède déjà une session Admin active.
 func (pm *PairingManager) hasAdminSessionLocked(deviceID string) bool {
 	if deviceID == "" {
@@ -245,14 +294,16 @@ func (pm *PairingManager) hasAdminSessionLocked(deviceID string) bool {
 
 // ListSessions retourne la liste des sessions actives (pour /admin/devices).
 func (pm *PairingManager) ListSessions() []SessionInfo {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 
 	now := time.Now()
 	out := make([]SessionInfo, 0, len(pm.sessions))
-	for _, sess := range pm.sessions {
+	for token, sess := range pm.sessions {
 		if now.Before(sess.ExpiresAt) {
 			out = append(out, sess)
+		} else {
+			delete(pm.sessions, token)
 		}
 	}
 	return out
@@ -263,14 +314,18 @@ func (pm *PairingManager) ValidateToken(token string) bool {
 	if token == "" {
 		return false
 	}
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 
 	sess, ok := pm.sessions[token]
 	if !ok {
 		return false
 	}
-	return time.Now().Before(sess.ExpiresAt)
+	if !time.Now().Before(sess.ExpiresAt) {
+		delete(pm.sessions, token)
+		return false
+	}
+	return true
 }
 
 // HTTPHandler expose l'endpoint de pairing pour le client mobile (POST /pair).

@@ -1,7 +1,7 @@
 {
   "name": "antigravity-patch-proxy",
   "productName": "Antigravity Patch Proxy",
-  "version": "3.3.3",
+  "version": "3.4.0",
 
   "description": "Antigravity Patch Proxy — Multi-Provider AI Model Proxy for Google Antigravity",
   "homepage": "https://antigravity.google",
@@ -37,7 +37,9 @@
     "mitm:start": "powershell -ExecutionPolicy Bypass -File scripts/mitm/start_mitm_443.ps1",
     "mitm:restart": "cmd /c scripts\\\\mitm\\\\restart-mitm.bat",
     "repatch": "cmd /c repatch.bat",
-    "start:mitm": "cmd /c \"Start Antigravity MITM.bat\""
+    "start:mitm": "cmd /c \"Start Antigravity MITM.bat\"",
+    "remote:ui": "npm --prefix remote/antigravity-remote-daemon start",
+    "remote:build": "npm --prefix remote/antigravity-remote-daemon run build"
   },
   "dependencies": {
     "chrome-devtools-mcp": "^0.23.0",

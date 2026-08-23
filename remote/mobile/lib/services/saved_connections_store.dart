@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'secure_credentials.dart';
+
 /// Modèle d'une connexion sauvegardée persistée sur l'appareil.
 class SavedConnection {
   final String id;
@@ -27,31 +29,39 @@ class SavedConnection {
     this.deviceName,
   });
 
+  /// toJson persiste dans SharedPreferences : SEC-04 — authToken et pin ne
+  /// sont volontairement PAS sérialisés (stockage sécurisé par id, cf.
+  /// SavedConnectionsStore._secretKeys).
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'label': label,
-    'host': host,
-    'port': port,
-    'ssl': ssl,
-    'authToken': authToken,
-    'wsUrl': wsUrl,
-    'lastConnectedAt': lastConnectedAt.toIso8601String(),
-    if (deviceName != null) 'deviceName': deviceName,
-  };
+        'id': id,
+        'label': label,
+        'host': host,
+        'port': port,
+        'ssl': ssl,
+        'wsUrl': wsUrl,
+        'lastConnectedAt': lastConnectedAt.toIso8601String(),
+        if (deviceName != null) 'deviceName': deviceName,
+      };
 
   factory SavedConnection.fromJson(Map<String, dynamic> json) {
     final host = json['host'] as String? ?? '127.0.0.1';
     final port = (json['port'] as num?)?.toInt() ?? 8090;
     final id = json['id'] as String? ?? '$host:$port';
     final label = json['label'] as String? ?? (host.isNotEmpty ? host : 'Daemon');
+    // Compat : les versions antérieures au correctif SEC-04 sérialisaient le
+    // token dans le JSON — on l'accepte en lecture pour migration, il est
+    // ré-écrit dans le coffre puis retiré du JSON à la prochaine sauvegarde.
+    final legacyToken =
+        json['authToken'] as String? ?? json['token'] as String? ?? '';
+    final legacyPin = json['pin'] as String? ?? '';
     return SavedConnection(
       id: id,
       label: label,
       host: host,
       port: port,
       ssl: json['ssl'] as bool? ?? false,
-      authToken: json['authToken'] as String? ?? json['token'] as String? ?? '',
-      pin: '',
+      authToken: legacyToken,
+      pin: legacyPin,
       wsUrl: json['wsUrl'] as String? ?? '',
       lastConnectedAt: DateTime.tryParse(json['lastConnectedAt'] as String? ?? '') ?? DateTime.now(),
       deviceName: json['deviceName'] as String?,
@@ -87,9 +97,14 @@ class SavedConnection {
 
 /// Gestionnaire de persistance pour l'historique des connexions sauvegardées.
 /// Stocke la liste dans `SharedPreferences` sous forme de JSON sérialisé.
+/// SEC-04 : les secrets (authToken, pin) vivent dans SecureCredentials sous
+/// les clés `conn.<id>.token` / `conn.<id>.pin` — jamais dans le JSON.
 class SavedConnectionsStore {
   static const _kKey = 'saved_connections.list';
   static const int _kMaxHistory = 10;
+
+  static String _tokenKey(String id) => 'conn.$id.token';
+  static String _pinKey(String id) => 'conn.$id.pin';
 
   SavedConnectionsStore._();
 
@@ -101,10 +116,17 @@ class SavedConnectionsStore {
       if (raw == null || raw.isEmpty) return [];
       final list = jsonDecode(raw) as List?;
       if (list == null) return [];
-      final connections = list
-          .whereType<Map<String, dynamic>>()
-          .map((m) => SavedConnection.fromJson(m))
-          .toList();
+      final connections = <SavedConnection>[];
+      for (final m in (list).whereType<Map<String, dynamic>>()) {
+        var conn = SavedConnection.fromJson(m);
+        // Migration SEC-04 : token hérité du JSON → coffre, puis purge du JSON.
+        if (conn.authToken.isNotEmpty) {
+          await SecureCredentials.write(_tokenKey(conn.id), conn.authToken);
+        }
+        final token = await SecureCredentials.read(_tokenKey(conn.id)) ?? '';
+        conn = conn.copyWith(authToken: token, pin: '');
+        connections.add(conn);
+      }
       connections.sort((a, b) => b.lastConnectedAt.compareTo(a.lastConnectedAt));
       return connections;
     } catch (_) {
@@ -125,13 +147,20 @@ class SavedConnectionsStore {
       if (index >= 0) {
         current[index] = connection.copyWith(
           authToken: connection.authToken.isNotEmpty ? connection.authToken : current[index].authToken,
-          pin: connection.pin.isNotEmpty ? connection.pin : current[index].pin,
+          pin: '',
           wsUrl: connection.wsUrl.isNotEmpty ? connection.wsUrl : current[index].wsUrl,
           label: connection.label.isNotEmpty ? connection.label : current[index].label,
           lastConnectedAt: DateTime.now(),
         );
       } else {
-        current.insert(0, connection);
+        current.insert(0, connection.copyWith(pin: ''));
+      }
+
+      // Secrets par id dans le coffre (SEC-04) — jamais dans le JSON prefs.
+      for (final c in current) {
+        if (c.authToken.isNotEmpty) {
+          await SecureCredentials.write(_tokenKey(c.id), c.authToken);
+        }
       }
 
       current.sort((a, b) => b.lastConnectedAt.compareTo(a.lastConnectedAt));
@@ -150,6 +179,8 @@ class SavedConnectionsStore {
       final current = await getSavedConnections();
       current.removeWhere((c) => c.id == id);
       await prefs.setString(_kKey, jsonEncode(current.map((c) => c.toJson()).toList()));
+      await SecureCredentials.delete(_tokenKey(id));
+      await SecureCredentials.delete(_pinKey(id));
     } catch (_) {}
   }
 

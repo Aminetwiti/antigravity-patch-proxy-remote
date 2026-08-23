@@ -32,6 +32,8 @@ class SettingsScreen extends StatefulWidget {
     this.initialSettings = const {},
     this.onThemeModeChanged,
     this.onDaemonSaved,
+    this.onDiscover,
+    this.onConnect,
     this.api,
     this.notifier,
     this.httpClient,
@@ -42,6 +44,8 @@ class SettingsScreen extends StatefulWidget {
   final Map<String, dynamic> initialSettings;
   final ValueChanged<int>? onThemeModeChanged;
   final ValueChanged<Map<String, dynamic>>? onDaemonSaved;
+  final VoidCallback? onDiscover;
+  final Future<bool> Function(String host, int port, String csrfToken)? onConnect;
   final DaemonApi? api;
   final ApprovalNotifier? notifier;
   final http.Client? httpClient;
@@ -93,6 +97,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return AppSettingsSection(
           api: widget.api,
           onDaemonSaved: widget.onDaemonSaved,
+          onDiscover: widget.onDiscover,
+          onConnect: widget.onConnect,
           httpClient: widget.httpClient,
         );
     }

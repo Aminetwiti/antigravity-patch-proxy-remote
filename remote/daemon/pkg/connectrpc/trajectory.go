@@ -17,6 +17,7 @@ type TrajectorySummary struct {
 	ProjectID    string    `json:"projectId"`
 	Status       string    `json:"status"`
 	UpdatedAt    time.Time `json:"updatedAt,omitempty"`
+	StepCount    int       `json:"stepCount,omitempty"`
 	Size         int       `json:"size"`
 	Archived     bool      `json:"archived,omitempty"` // annotations.archived (field 15→4)
 	Killed       bool      `json:"killed,omitempty"`   // field 23
@@ -92,19 +93,62 @@ func trajectoryFromBlob(blob []byte) TrajectorySummary {
 			case 2:
 				if f.WireType == 2 {
 					for _, mf := range DecodeFields(f.Bytes) {
-						if mf.Num == 18 && mf.WireType == 2 {
-							t.ProjectID = string(mf.Bytes)
-						}
-						if mf.Num == 17 && mf.WireType == 2 {
-							// Sous-agent / branche d'exécution subagent Antigravity
-							t.IsSubagent = true
-							t.Source = 16
+						switch mf.Num {
+						case 1:
+							if mf.WireType == 2 && len(mf.Bytes) > 0 {
+								t.Title = string(mf.Bytes)
+							}
+						case 2:
+							if mf.WireType == 0 {
+								t.StepCount = int(mf.Varint)
+							}
+						case 3:
+							if t.UpdatedAt.IsZero() {
+								t.UpdatedAt = timestampFromMessage(mf.Bytes)
+							}
+						case 9:
+							if mf.WireType == 2 {
+								for _, wf := range DecodeFields(mf.Bytes) {
+									if wf.WireType == 2 {
+										s := string(wf.Bytes)
+										if strings.Contains(s, "/") || strings.Contains(s, "\\") {
+											t.Workspace = s
+										}
+									}
+								}
+								if t.Workspace == "" {
+									t.Workspace = string(mf.Bytes)
+								}
+							}
+						case 10:
+							tUp := timestampFromMessage(mf.Bytes)
+							if !tUp.IsZero() {
+								t.UpdatedAt = tUp
+							}
+						case 15:
+							if mf.WireType == 2 {
+								for _, af := range DecodeFields(mf.Bytes) {
+									if (af.Num == 4 && af.WireType == 0 && af.Varint != 0) || af.Num == 5 {
+										t.Archived = true
+									}
+								}
+							}
+						case 18:
+							if mf.WireType == 2 {
+								t.ProjectID = string(mf.Bytes)
+							}
+						case 22:
+							if mf.WireType == 0 {
+								t.Status = statusName(int(mf.Varint))
+							}
 						}
 					}
 				}
-			case 3: // timestamp
-				t.UpdatedAt = timestampFromMessage(f.Bytes)
-			case 15: // annotations submessage
+			case 3: // timestamp fallback
+				if t.UpdatedAt.IsZero() {
+					t.UpdatedAt = timestampFromMessage(f.Bytes)
+				}
+			case 15: // annotations submessage fallback
 				if f.WireType == 2 {
 					for _, af := range DecodeFields(f.Bytes) {
 						if (af.Num == 4 && af.WireType == 0 && af.Varint != 0) || af.Num == 5 {
@@ -118,7 +162,9 @@ func trajectoryFromBlob(blob []byte) TrajectorySummary {
 					t.IsSubagent = true
 				}
 			case 22:
-				t.Status = statusName(int(f.Varint))
+				if t.Status == "" {
+					t.Status = statusName(int(f.Varint))
+				}
 			case 23: // killed
 				if f.Varint != 0 {
 					t.Killed = true
@@ -130,13 +176,6 @@ func trajectoryFromBlob(blob []byte) TrajectorySummary {
 				}
 				if t.Workspace == "" {
 					t.Workspace = workspaceRe.FindString(string(f.Bytes))
-				}
-				if t.ProjectID == "" && f.Num == 2 {
-					for _, mf := range DecodeFields(f.Bytes) {
-						if mf.Num == 11 && mf.WireType == 2 && len(mf.Bytes) == 36 {
-							t.ProjectID = string(mf.Bytes)
-						}
-					}
 				}
 			}
 		}

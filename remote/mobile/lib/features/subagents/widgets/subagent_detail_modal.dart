@@ -404,16 +404,19 @@ class _SubagentDetailModalState extends State<SubagentDetailModal> {
                     // 1. User Prompt Bubble (Mission from parent agent)
                     if (userPrompt.isNotEmpty) ...[
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Mission / Instructions',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                          Expanded(
+                            child: Text(
+                              'Mission / Instructions',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: 8),
                           TextButton.icon(
                             onPressed: () {
                               Clipboard.setData(ClipboardData(text: userPrompt));

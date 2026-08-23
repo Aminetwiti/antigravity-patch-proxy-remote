@@ -279,18 +279,39 @@ class DaemonWebSocketClient {
     }
   }
 
+  /// Vérifie la complétude du JSON par comptage de délimiteurs (strings et
+  /// échappements respectés) — O(n) sans allocation, au lieu d'un jsonDecode
+  /// complet qui décoderait ensuite une seconde fois dans DaemonApi.
   bool _isCompleteJson(String s) {
     if (s.isEmpty) return false;
-    if (!((s.startsWith('{') && s.endsWith('}')) ||
-          (s.startsWith('[') && s.endsWith(']')))) {
-      return false;
+    final first = s.codeUnitAt(0);
+    if (first != 0x7B /* { */ && first != 0x5B /* [ */) return false;
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    for (var i = 0; i < s.length; i++) {
+      final c = s.codeUnitAt(i);
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (c == 0x5C /* \ */) {
+          escaped = true;
+        } else if (c == 0x22 /* " */) {
+          inString = false;
+        }
+        continue;
+      }
+      if (c == 0x22) {
+        inString = true;
+      } else if (c == 0x7B || c == 0x5B) {
+        depth++;
+      } else if (c == 0x7D /* } */ || c == 0x5D /* ] */) {
+        depth--;
+        if (depth == 0) return i == s.length - 1;
+        if (depth < 0) return false;
+      }
     }
-    try {
-      jsonDecode(s);
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return false;
   }
 
   void send(dynamic data) {
@@ -423,6 +444,8 @@ class DaemonWebSocketClient {
     _messageController = null;
     reconnectVersion.dispose();
     retryInfo.dispose();
+    statusNotifier.dispose();
+    latencyMsNotifier.dispose();
   }
 }
 

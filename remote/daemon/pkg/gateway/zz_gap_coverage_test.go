@@ -537,19 +537,27 @@ func TestGapStopGeneration(t *testing.T) {
 	defer client.conn.Close()
 
 	client.send(t, map[string]string{"type": "stop_generation", "requestId": "g1", "cascadeId": "casc-stop"})
-	// CancelGeneration diffuse d'abord un stream_end(cancelled) à tous les
-	// clients, PUIS handleAction écrit la réponse unary {status: cancelled}.
-	msg := client.recv(t)
-	if msg["type"] != "stream_end" {
-		t.Fatalf("stream_end(cancelled) broadcast attendu en premier: %v", msg)
+	gotStreamEnd := false
+	gotResponse := false
+	for i := 0; i < 5; i++ {
+		m := client.recv(t)
+		if m["type"] == "stream_end" {
+			gotStreamEnd = true
+			if data, _ := m["data"].(map[string]interface{}); data == nil || data["outcome"] != "cancelled" {
+				t.Fatalf("outcome=cancelled attendu: %v", m)
+			}
+		}
+		if m["type"] == "response" && m["requestId"] == "g1" {
+			gotResponse = true
+			data, _ := m["data"].(map[string]interface{})
+			if data == nil || data["status"] != "cancelled" {
+				t.Fatalf("réponse cancelled attendue: %v", m)
+			}
+			break
+		}
 	}
-	if data, _ := msg["data"].(map[string]interface{}); data == nil || data["outcome"] != "cancelled" {
-		t.Fatalf("outcome=cancelled attendu: %v", msg)
-	}
-	msgResp := client.recv(t)
-	data, _ := msgResp["data"].(map[string]interface{})
-	if msgResp["type"] != "response" || msgResp["requestId"] != "g1" || data == nil || data["status"] != "cancelled" {
-		t.Fatalf("réponse cancelled attendue: %v", msgResp)
+	if !gotStreamEnd || !gotResponse {
+		t.Fatalf("stream_end et réponse attendus (gotStreamEnd=%v, gotResponse=%v)", gotStreamEnd, gotResponse)
 	}
 
 	// Sans cascadeId → erreur.

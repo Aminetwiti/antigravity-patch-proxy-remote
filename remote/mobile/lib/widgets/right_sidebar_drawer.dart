@@ -119,6 +119,7 @@ class _RightSidebarDrawerState extends State<RightSidebarDrawer> {
     final created = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: const Text('Nouveau Git Worktree', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         content: SingleChildScrollView(
           child: Column(
