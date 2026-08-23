@@ -237,27 +237,24 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
           _buildCard(
             isDark: isDark,
             scheme: scheme,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Appearance',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Select light, dark, or inherit system settings.',
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 360;
+                final textCol = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Appearance',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Select light, dark, or inherit system settings.',
+                      style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                );
+                final toggle = Container(
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(6),
@@ -272,8 +269,28 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
                       _buildIconToggle(2, Icons.dark_mode_outlined, 'Dark', isDark, scheme),
                     ],
                   ),
-                ),
-              ],
+                );
+
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      textCol,
+                      const SizedBox(height: 12),
+                      toggle,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: textCol),
+                    const SizedBox(width: 12),
+                    toggle,
+                  ],
+                );
+              },
             ),
           ),
 

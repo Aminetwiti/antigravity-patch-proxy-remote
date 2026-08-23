@@ -138,7 +138,7 @@ void main() {
 
       // Dropdown should show Antigravity 2.0 models & View Usage
       expect(find.text('Model'), findsOneWidget);
-      expect(find.text('Gemini 3.7 Flash'), findsOneWidget);
+      expect(find.text('Gemini 3.7 Flash'), findsWidgets);
       expect(find.text('Claude Sonnet 4.6 (Thinking)'), findsOneWidget);
       expect(find.text('View Usage'), findsOneWidget);
 

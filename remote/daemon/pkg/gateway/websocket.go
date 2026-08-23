@@ -459,10 +459,22 @@ func (s *Server) SetSessionsCacheTTL(ttl time.Duration) {
 }
 
 func (s *Server) cachedSessionsLocked() ([]byte, bool) {
+	return s.cachedSessionsOptsLocked(false)
+}
+
+// cachedSessionsAllLocked sert list_all_sessions (historique des
+// conversations) : inclut les sessions archivées sur le chemin Jetbox chaud.
+func (s *Server) cachedSessionsAllLocked() ([]byte, bool) {
+	return s.cachedSessionsOptsLocked(true)
+}
+
+func (s *Server) cachedSessionsOptsLocked(includeArchived bool) ([]byte, bool) {
 	// Jetbox chaud (stream actif) : la carte est la source de vérité temps
 	// réel — toujours servie, jamais de GetAllCascades (~9,5 s).
 	if s.jetboxSummaries != nil {
-		return s.jetboxSessionsLocked(), true
+		out := s.sessionsFromSummariesOptsLocked(s.jetboxSummaries, includeArchived)
+		raw, _ := json.Marshal(out)
+		return raw, true
 	}
 	ttl := s.sessionsCacheTTL
 	if ttl <= 0 {
@@ -569,6 +581,13 @@ func (s *Server) snapshotSummaries() map[string]connectrpc.JetboxSummary {
 // sessionsFromSummariesLocked applique le filtre Antigravity 2.0 (archivées, killed,
 // subagents), enrichit les statuts d'exécution dynamiques sous lock ou sans lock supplémentaire.
 func (s *Server) sessionsFromSummariesLocked(jetbox map[string]connectrpc.JetboxSummary) map[string]interface{} {
+	return s.sessionsFromSummariesOptsLocked(jetbox, false)
+}
+
+// sessionsFromSummariesOptsLocked : includeArchived garde les sessions
+// archivées (isArchived + CASCADE_STATUS_ARCHIVED) pour l'historique des
+// conversations ; supprimées et subagents toujours exclus.
+func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.JetboxSummary, includeArchived bool) map[string]interface{} {
 	home, _ := os.UserHomeDir()
 	projects := ListOfficialProjects()
 	enrichStatus := func(cascadeID, origStatus string) string {
@@ -590,10 +609,15 @@ func (s *Server) sessionsFromSummariesLocked(jetbox map[string]connectrpc.Jetbox
 
 	items := make([]map[string]interface{}, 0, len(jetbox))
 	for _, sum := range jetbox {
-		if sum.Archived || sum.Killed || sum.Source == 16 || sum.IsSubagent {
+		if sum.Killed || sum.Source == 16 || sum.IsSubagent {
 			continue
 		}
-		if home != "" && isSessionArchived(home, sum.CascadeID) {
+		pbArchived := home != "" && isSessionArchived(home, sum.CascadeID)
+		if pbArchived && home != "" && isSessionDeleted(home, sum.CascadeID) {
+			continue // supprimée : ni sidebar ni historique
+		}
+		isArchived := sum.Archived || pbArchived
+		if isArchived && !includeArchived {
 			continue
 		}
 		title := sum.Title
@@ -621,6 +645,9 @@ func (s *Server) sessionsFromSummariesLocked(jetbox map[string]connectrpc.Jetbox
 		}
 
 		st := enrichStatus(sum.CascadeID, sum.Status)
+		if isArchived {
+			st = "CASCADE_STATUS_ARCHIVED"
+		}
 		items = append(items, map[string]interface{}{
 			"cascadeId":     sum.CascadeID,
 			"title":         title,
@@ -630,7 +657,7 @@ func (s *Server) sessionsFromSummariesLocked(jetbox map[string]connectrpc.Jetbox
 			"status":        st,
 			"updatedAt":     sum.UpdatedAt,
 			"isPinned":      isPinned,
-			"isArchived":    false,
+			"isArchived":    isArchived,
 		})
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -3025,14 +3052,21 @@ func sessionsOut(raw []byte) interface{} {
 }
 
 func (s *Server) sessionsOut(raw []byte) interface{} {
-	return s.sessionsOutWithLimit(raw, 0)
+	return s.sessionsOutWithLimitOpts(raw, 0, false)
 }
 
+// allSessionsOut (list_all_sessions / historique des conversations) : inclut
+// les sessions archivées — marquées isArchived + CASCADE_STATUS_ARCHIVED —
+// mais exclut toujours les supprimées et les subagents.
 func (s *Server) allSessionsOut(raw []byte) interface{} {
-	return s.sessionsOutWithLimit(raw, 0)
+	return s.sessionsOutWithLimitOpts(raw, 0, true)
 }
 
 func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface{} {
+	return s.sessionsOutWithLimitOpts(raw, limitPerProject, false)
+}
+
+func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, includeArchived bool) interface{} {
 	var alreadyOut map[string]interface{}
 	if err := json.Unmarshal(raw, &alreadyOut); err == nil {
 		if _, ok := alreadyOut["sessions"]; ok {
@@ -3060,7 +3094,7 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 	}
 
 	if len(summaries) == 0 && len(raw) == 0 {
-		local := ListLocalSessions()
+		local := ListLocalSessionsOpts(includeArchived)
 		for _, loc := range local {
 			if cid, ok := loc["cascadeId"].(string); ok {
 				st, _ := loc["status"].(string)
@@ -3090,10 +3124,15 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 	}
 	var items []sessionWithTime
 	for _, sum := range summaries {
-		if sum.Archived || sum.Killed || sum.Source == 16 || sum.IsSubagent {
+		if sum.Killed || sum.Source == 16 || sum.IsSubagent {
 			continue
 		}
-		if home != "" && isSessionArchived(home, sum.CascadeID) {
+		pbArchived := home != "" && isSessionArchived(home, sum.CascadeID)
+		if pbArchived && home != "" && isSessionDeleted(home, sum.CascadeID) {
+			continue // supprimée : ni sidebar ni historique
+		}
+		isArchived := sum.Archived || pbArchived
+		if isArchived && !includeArchived {
 			continue
 		}
 		title := sum.Title
@@ -3115,6 +3154,9 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 		}
 
 		status := enrichStatus(sum.CascadeID, sum.Status)
+		if isArchived {
+			status = "CASCADE_STATUS_ARCHIVED"
+		}
 		wsName, wsPath, projID := matchOfficialProject(sum.ProjectID, sum.Workspace, sum.Workspace, projects)
 		isPinned := false
 		if home != "" {
@@ -3130,7 +3172,7 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 				"status":        status,
 				"updatedAt":     sum.UpdatedAt,
 				"isPinned":      isPinned,
-				"isArchived":    false,
+				"isArchived":    isArchived,
 			},
 			updatedAt: sum.UpdatedAt,
 			isActive:  status == "CASCADE_STATUS_RUNNING" || status == "CASCADE_STATUS_WAITING_FOR_USER_ACTION",
@@ -3152,7 +3194,7 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 				"timestamp": time.Now().UnixMilli(),
 			}
 		}
-		local := ListLocalSessions()
+		local := ListLocalSessionsOpts(includeArchived)
 		for _, loc := range local {
 			if cid, ok := loc["cascadeId"].(string); ok {
 				st, _ := loc["status"].(string)
@@ -3808,7 +3850,10 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			}
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: m})
 		}
-		if raw, ok := s.cachedSessions(); ok {
+		s.mu.Lock()
+		raw, cached := s.cachedSessionsAllLocked()
+		s.mu.Unlock()
+		if cached {
 			writeScoped(s.allSessionsOut(raw))
 			return
 		}
@@ -3821,7 +3866,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			writeScoped(s.allSessionsOut(raw))
 			return
 		}
-		local := ListLocalSessions()
+		local := ListLocalSessionsOpts(true)
 		projects := ListOfficialProjects()
 		writeScoped(map[string]interface{}{"projects": projects, "sessions": local})
 		return

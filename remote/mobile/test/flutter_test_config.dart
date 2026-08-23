@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/services/secure_credentials.dart';
 
 /// Config globale exécutée avant CHAQUE fichier de test (mécanisme officiel

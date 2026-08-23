@@ -136,6 +136,17 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
   // permet au timer de polling de se mettre en veille quand le push est actif.
   DateTime? _lastSessionsSyncAt;
 
+  /// Garde-fou anti-fantôme : quand la session active disparaît des listes
+  /// daemon (archivée/supprimée depuis l'IDE desktop), on la préserve
+  /// temporairement — une session flambant neuve peut mettre ~10 s à
+  /// apparaître dans les résumés du Language Server — puis on honore
+  /// l'exclusion définitive du daemon.
+  DateTime? _activeMissingSince;
+  bool get _activeGhostExpired =>
+      _activeMissingSince != null &&
+      DateTime.now().difference(_activeMissingSince!) >
+          const Duration(seconds: 45);
+
   ConnectionStatus _prevStatus = ConnectionStatus.disconnected;
 
   Map<String, dynamic> _savedSettings = const {};
@@ -612,12 +623,14 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           if (sessions.isNotEmpty) {
             final stillActive = sessions.any((s) => s.id == _activeSessionId);
             if (_activeSessionId.isNotEmpty && stillActive) {
+              _activeMissingSince = null;
               _sessions = sessions;
               final cur = sessions.firstWhere((s) => s.id == _activeSessionId);
               _activeSessionTitle = cur.title.isNotEmpty
                   ? cur.title
                   : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
-            } else if (_activeSessionId.isNotEmpty) {
+            } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired) {
+              _activeMissingSince ??= DateTime.now();
               // Préserve la session active en tête de liste si c'est une nouvelle session
               final existingPending = _sessions.where((s) => s.id == _activeSessionId);
               final activeItem = existingPending.isNotEmpty
@@ -631,6 +644,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                     );
               _sessions = [activeItem, ...sessions.where((s) => s.id != _activeSessionId)];
             } else {
+              _activeMissingSince = null;
               _sessions = sessions;
               _activeSessionId = sessions.first.id;
               _activeSessionTitle = sessions.first.title;
@@ -825,12 +839,14 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
             if (parsed.isNotEmpty) {
               final stillActive = parsed.any((s) => s.id == _activeSessionId);
               if (_activeSessionId.isNotEmpty && stillActive) {
+                _activeMissingSince = null;
                 _sessions = parsed;
                 final current = parsed.firstWhere((s) => s.id == _activeSessionId);
                 _activeSessionTitle = current.title.isNotEmpty
                     ? current.title
                     : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
-              } else if (_activeSessionId.isNotEmpty) {
+              } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired) {
+                _activeMissingSince ??= DateTime.now();
                 // Préserve la session active en tête de liste si c'est une nouvelle session
                 // qui n'est pas encore synchronisée dans les résumés distants
                 final existingPending = _sessions.where((s) => s.id == _activeSessionId);
@@ -845,6 +861,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                       );
                 _sessions = [activeItem, ...parsed.where((s) => s.id != _activeSessionId)];
               } else {
+                _activeMissingSince = null;
                 _sessions = parsed;
                 _activeSessionId = parsed.first.id;
                 _activeSessionTitle = parsed.first.title;
@@ -894,6 +911,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           onSessionSelected: (id) {
             setState(() {
               _activeSessionId = id;
+              _activeMissingSince = null;
               _contextStats = {};
               final s = _sessions.firstWhere(
                 (s) => s.id == id,
@@ -1138,6 +1156,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       onSessionSelected: (id) {
         setState(() {
           _activeSessionId = id;
+          _activeMissingSince = null;
           _contextStats = {};
           _sessions = _sessions.map((s) {
             if (s.id == id) {

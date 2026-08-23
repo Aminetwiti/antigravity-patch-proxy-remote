@@ -406,7 +406,6 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     }
 
     final hideHeader = _groupBy == SessionGroupBy.none;
-    final baseLimit = hideHeader ? 30 : 6;
     final projs = widget.projects;
     final entries = <_SidebarEntry>[];
     final matchCache = <String, ProjectItem?>{};
@@ -443,7 +442,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
           }
         } else {
           entries.addAll(
-            sessions.take(baseLimit).map((s) => _SidebarEntry.row(s, folder)),
+            sessions.map((s) => _SidebarEntry.row(s, folder)),
           );
         }
       }

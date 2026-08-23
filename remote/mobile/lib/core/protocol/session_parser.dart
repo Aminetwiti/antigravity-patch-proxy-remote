@@ -21,7 +21,11 @@ class SessionParser {
     return parseListSessions(data);
   }
 
-  static List<CascadeSession> parseListSessions(Map<String, dynamic> data) {
+  /// [includeArchived] conserve les sessions archivées (destinées à
+  /// l'historique des conversations) ; la sidebar les filtre toujours via
+  /// `isAvailable`.
+  static List<CascadeSession> parseListSessions(Map<String, dynamic> data,
+      {bool includeArchived = false}) {
     final sessions = data['sessions'] ?? (data['data'] is Map ? data['data']['sessions'] : null);
     if (sessions is List) {
       final now = DateTime.now();
@@ -61,7 +65,7 @@ class SessionParser {
               isPinned: sMap['isPinned'] == true || sMap['pinned'] == true,
               isArchived: sMap['isArchived'] == true,
             );
-            if (session.isAvailable) {
+            if (session.isAvailable || (includeArchived && session.isArchived)) {
               entries.add((session, updatedMs));
             }
           }

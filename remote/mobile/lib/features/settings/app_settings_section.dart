@@ -194,10 +194,14 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Daemon Bridge Connection',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                    Expanded(
+                      child: Text(
+                        'Daemon Bridge Connection',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     TextButton.icon(
                       style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF007AFF),

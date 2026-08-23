@@ -728,9 +728,7 @@ func BuildGetRevertPreview(cascadeID string, stepIndex int64, apiKey, sessionID 
 	if apiKey != "" {
 		w.bytesField(3, buildMetadata(apiKey, sessionID))
 	}
-	if modelUID != "" || modelEnum != 0 {
-		w.bytesField(4, BuildCascadeConfig(modelUID, modelEnum))
-	}
+	w.bytesField(4, BuildCascadeConfig(modelUID, modelEnum))
 	return w.b
 }
 
@@ -745,9 +743,7 @@ func BuildRevertToCascadeStep(cascadeID string, stepIndex int64, apiKey, session
 	if apiKey != "" {
 		w.bytesField(3, buildMetadata(apiKey, sessionID))
 	}
-	if modelUID != "" || modelEnum != 0 {
-		w.bytesField(5, BuildCascadeConfig(modelUID, modelEnum))
-	}
+	w.bytesField(5, BuildCascadeConfig(modelUID, modelEnum))
 	return w.b
 }
 

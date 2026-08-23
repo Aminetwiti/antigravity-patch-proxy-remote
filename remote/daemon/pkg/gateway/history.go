@@ -142,6 +142,36 @@ func isSessionArchived(home, cascadeID string) bool {
 	return false
 }
 
+// isSessionDeleted distingue les cascades supprimées (deleted: true dans le
+// pbtxt d'annotations) des simplement archivées : une session supprimée ne
+// doit réapparaître ni dans la sidebar ni dans l'historique des conversations.
+func isSessionDeleted(home, cascadeID string) bool {
+	if cascadeID == "" {
+		return false
+	}
+	for _, sub := range []string{"antigravity", "antigravity-ide"} {
+		annoPath := filepath.Join(home, ".gemini", sub, "annotations", cascadeID+".pbtxt")
+		data, err := os.ReadFile(annoPath)
+		if err != nil {
+			continue
+		}
+		s := strings.ToLower(string(data))
+		if strings.Contains(s, "deleted: true") || strings.Contains(s, "deleted:true") {
+			return true
+		}
+	}
+	return false
+}
+
+// isJunkSessionTitle : titre par défaut/abandonné (le mobile affiche « Cascade
+// Session » quand le titre est vide). Aligné sur le filtre 2.0 de
+// sessionsOut/sessionsFromSummariesLocked.
+func isJunkSessionTitle(title string) bool {
+	return title == "" || title == "Untitled Conversation" || title == "Cascade Session" ||
+		strings.HasPrefix(title, "Empty ") || strings.HasPrefix(title, "New ") ||
+		strings.HasPrefix(title, "General Conversation")
+}
+
 // resolveGeminiSubDir détermine si la session réside dans antigravity-ide ou antigravity
 func resolveGeminiSubDir(home, cascadeID string) string {
 	for _, sub := range []string{"antigravity-ide", "antigravity"} {
@@ -453,6 +483,13 @@ func ListSessionUploads(cascadeID string) []map[string]interface{} {
 
 // ListLocalSessions scans local brain directories for conversations when gRPC returns empty.
 func ListLocalSessions() []map[string]interface{} {
+	return ListLocalSessionsOpts(false)
+}
+
+// ListLocalSessionsOpts énumère les cascades sur disque. includeArchived
+// garde les sessions archivées (marquées isArchived + status ARCHIVED) pour
+// l'historique des conversations ; les supprimées sont toujours exclues.
+func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
@@ -498,7 +535,11 @@ func ListLocalSessions() []map[string]interface{} {
 			}
 
 			// Antigravity 2.0 : v├®rifier si la session est archiv├®e dans ~/.gemini/antigravity/annotations/
-			if isSessionArchived(home, cascadeID) {
+			archived := isSessionArchived(home, cascadeID)
+			if archived && (!includeArchived || isSessionDeleted(home, cascadeID)) {
+				// Sidebar : archivée/supprimée masquée. Historique
+				// (includeArchived) : l'archivée est conservée ci-dessous,
+				// la supprimée reste toujours exclue.
 				continue
 			}
 
@@ -512,6 +553,16 @@ func ListLocalSessions() []map[string]interface{} {
 
 			// Exclure les subagents et prompts systèmes
 			if isSubagentTitle(title) {
+				continue
+			}
+
+			// Filtre Antigravity 2.0 aligné sur sessionsOut /
+			// sessionsFromSummariesLocked : le fallback disque faisait
+			// réapparaître des sessions abandonnées sans titre réel
+			// (« Cascade Session » côté mobile) de plus de 24 h dans la
+			// sidebar — dont des sessions archivées/supprimées sans
+			// annotation pbtxt.
+			if isJunkSessionTitle(title) && time.Since(modTime) > 24*time.Hour {
 				continue
 			}
 
@@ -557,16 +608,20 @@ func ListLocalSessions() []map[string]interface{} {
 			if home != "" {
 				pinned = isSessionPinned(home, cascadeID)
 			}
+			status := "idle"
+			if archived {
+				status = "CASCADE_STATUS_ARCHIVED"
+			}
 			sMap := map[string]interface{}{
 				"cascadeId":     cascadeID,
 				"title":         title,
 				"workspace":     matchedProjectName,
 				"workspacePath": matchedProjectPath,
 				"projectId":     matchedProjectID,
-				"status":        "idle",
+				"status":        status,
 				"updatedAt":     modTime.Format(time.RFC3339),
 				"isPinned":      pinned,
-				"isArchived":    false,
+				"isArchived":    archived,
 			}
 			items = append(items, sessionItem{data: sMap, updatedAt: modTime})
 		}

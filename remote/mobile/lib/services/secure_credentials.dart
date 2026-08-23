@@ -24,7 +24,10 @@ class SecureCredentials {
   static Future<String?> read(String key) async {
     if (testValues != null) return testValues![key];
     try {
-      return await _storage.read(key: key);
+      return await _storage.read(key: key).timeout(
+        const Duration(seconds: 1),
+        onTimeout: () => null,
+      );
     } catch (_) {
       return null;
     }
@@ -37,7 +40,10 @@ class SecureCredentials {
       return;
     }
     try {
-      await _storage.write(key: key, value: value);
+      await _storage.write(key: key, value: value).timeout(
+        const Duration(seconds: 1),
+        onTimeout: () {},
+      );
     } catch (_) {}
   }
 
@@ -47,7 +53,10 @@ class SecureCredentials {
       return;
     }
     try {
-      await _storage.delete(key: key);
+      await _storage.delete(key: key).timeout(
+        const Duration(seconds: 1),
+        onTimeout: () {},
+      );
     } catch (_) {}
   }
 }

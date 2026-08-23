@@ -153,15 +153,19 @@ void main() {
         final reqId = map['requestId'] as String?;
         final type = map['type'] as String?;
         if (reqId != null && type == 'get_project_settings') {
-          ctrl.add(jsonEncode({
-            'type': 'response',
-            'requestId': reqId,
-            'data': {
-              'projectId': 'p1',
-              'securityPreset': 'Turbo mode',
-              'artifactReviewPolicy': 'Auto Approve',
-            },
-          }));
+          scheduleMicrotask(() {
+            if (!ctrl.isClosed) {
+              ctrl.add(jsonEncode({
+                'type': 'response',
+                'requestId': reqId,
+                'data': {
+                  'projectId': 'p1',
+                  'securityPreset': 'Turbo mode',
+                  'artifactReviewPolicy': 'Auto Approve',
+                },
+              }));
+            }
+          });
         }
       },
     );

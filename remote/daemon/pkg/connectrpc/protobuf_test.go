@@ -498,3 +498,32 @@ func TestBuildGetRevertPreview(t *testing.T) {
 		t.Errorf("field 4 (override_config) expected to be present")
 	}
 }
+
+func TestBuildRevertToCascadeStep_DefaultModel(t *testing.T) {
+	buf := BuildRevertToCascadeStep("casc-undo-default", 3, "key", "sess", "", 0)
+	fields := DecodeFields(buf)
+	var foundOverrideConfig bool
+	for _, f := range fields {
+		if f.Num == 5 {
+			foundOverrideConfig = true
+		}
+	}
+	if !foundOverrideConfig {
+		t.Errorf("field 5 (override_config) must be present even when model is empty")
+	}
+}
+
+func TestBuildGetRevertPreview_DefaultModel(t *testing.T) {
+	buf := BuildGetRevertPreview("casc-prev-default", 3, "key", "sess", "", 0)
+	fields := DecodeFields(buf)
+	var foundOverrideConfig bool
+	for _, f := range fields {
+		if f.Num == 4 {
+			foundOverrideConfig = true
+		}
+	}
+	if !foundOverrideConfig {
+		t.Errorf("field 4 (override_config) must be present even when model is empty")
+	}
+}
+
