@@ -199,7 +199,19 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   // Streaming multi-session : ensemble des sessions actuellement en train de streamer
   final Set<String> _activeStreamingSessions = {};
   int get _activeStreamCount => _activeStreamingSessions.length;
-  bool get _hasCurrentActiveStream => _activeStreamingSessions.contains(widget.activeSessionId);
+  bool get _hasCurrentActiveStream {
+    final activeId = widget.activeSessionId;
+    if (_activeStreamingSessions.contains(activeId)) return true;
+    if (_runningBackgroundTasks.isNotEmpty) return true;
+
+    final msgs = _sessionMessages[activeId];
+    if (msgs != null && msgs.isNotEmpty) {
+      final last = msgs.last;
+      if (last.isStreaming) return true;
+      if (last.segments.any((s) => s.isRunning)) return true;
+    }
+    return false;
+  }
   
   bool _showStillWorking = false;
   final Map<String, Map<String, dynamic>> _sessionLastStreamEnds = {};
@@ -3832,6 +3844,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               final p = (fd['path'] as String? ?? '').replaceAll('\\', '/');
               final target = (effectivePath ?? '').replaceAll('\\', '/');
               if (_pathsMatch(p, target)) {
+                final directDiff = fd['unifiedDiff'] as String? ?? fd['diffContent'] as String?;
+                if (directDiff != null && directDiff.isNotEmpty) {
+                  diff = directDiff;
+                  break;
+                }
                 final d = fd['diff'];
                 if (d is Map) {
                   final orig = d['originalContents'] as String? ?? '';
@@ -3844,6 +3861,21 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               }
             }
           }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Si le diff est toujours vide mais qu'on a un chemin de fichier, tenter de lire le fichier
+    if (diff.isEmpty && widget.api != null && effectivePath != null && effectivePath.isNotEmpty) {
+      try {
+        final res = await widget.api!.readFile(
+          effectivePath,
+          workspacePath: widget.workspacePath,
+          cascadeId: widget.activeSessionId,
+        );
+        final content = res['content'] as String? ?? '';
+        if (content.isNotEmpty) {
+          diff = _buildUnifiedDiffFromStrings(effectiveName, '', content);
         }
       } catch (_) {}
     }
@@ -4905,7 +4937,7 @@ class _ChatSearchBar extends StatelessWidget {
             child: TextField(
               key: const Key('chat-search-input'),
               controller: controller,
-              autofocus: true,
+              autofocus: false,
               style: TextStyle(fontSize: 13, color: scheme.onSurface),
               decoration: InputDecoration(
                 hintText: 'Rechercher dans cette session...',

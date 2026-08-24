@@ -1,0 +1,117 @@
+﻿syntax = "proto3";
+
+// file: exa/google/internal/cloud/code/v1internal/model_configs.proto
+// package: google.internal.cloud.code.v1internal
+message FetchAvailableModelsRequest {
+  optional string project = 1;
+  optional string request_id = 2;
+  optional .google.internal.cloud.code.v1internal.Entitlement entitlement = 9;
+  optional string location = 3;
+}
+message QuotaInfo {
+  optional float remaining_fraction = 1;
+  optional .google.protobuf.Timestamp reset_time = 2;
+}
+message ModelDetails {
+  optional string display_name = 1;
+  optional bool supports_images = 2;
+  optional bool supports_thinking = 3;
+  optional int32 thinking_budget = 4;
+  optional int32 min_thinking_budget = 5;
+  optional bool recommended = 6;
+  optional int32 max_tokens = 7;
+  optional int32 max_output_tokens = 8;
+  optional string tokenizer_type = 9;
+  optional .google.internal.cloud.code.v1internal.QuotaInfo quota_info = 10;
+  optional string beta_warning_message = 11;
+  optional bool beta = 12;
+  optional bool disabled = 13;
+  optional string description = 14;
+  optional .exa.codeium_common_pb.Model model = 15;
+  optional .exa.codeium_common_pb.APIProvider api_provider = 16;
+  optional .exa.codeium_common_pb.ModelProvider model_provider = 17;
+  optional bool supports_cumulative_context = 18;
+  optional bool tab_jump_print_line_range = 19;
+  optional bool supports_estimate_token_counter = 20;
+  optional bool is_internal = 21;
+  optional bool add_cursor_to_find_replace_target = 22;
+  optional .exa.codeium_common_pb.PromptTemplaterType prompt_templater_type = 23;
+  optional .exa.codeium_common_pb.ToolFormatterType tool_formatter_type = 24;
+  optional bool supports_raw_thinking = 25;
+  optional bool supports_video = 26;
+  optional bool supports_pdf = 27;
+  optional bool requires_lead_in_generation = 28;
+  optional string tag_title = 29;
+  optional string tag_description = 30;
+  optional bool requires_no_xml_tool_examples = 31;
+  repeated .google.internal.cloud.code.v1internal.ModelDetails.SupportedMimeTypesEntry supported_mime_types = 32;
+  optional bool requires_image_output_outside_function_responses = 33;
+  optional bool preview = 34;
+  optional int32 thinking_level = 35;
+  optional string tool_response_key = 36;
+  optional .google.internal.cloud.code.v1internal.ModelExperiments model_experiments = 37;
+  optional bool supports_thought_circulation = 38;
+  optional string vertex_model_id = 39;
+  optional bool supports_deferred_tool_loading = 40;
+  optional string model_url = 41;
+  optional bool supports_adaptive_thinking = 42;
+  message SupportedMimeTypesEntry {
+    optional string key = 1;
+    optional bool value = 2;
+  }
+}
+message ModelSort {
+  optional string display_name = 1;
+  repeated .google.internal.cloud.code.v1internal.ModelGroup groups = 2;
+}
+message ModelGroup {
+  optional string display_name = 1;
+  repeated string model_ids = 2;
+}
+message DeprecatedModelReroutingInfo {
+  optional string new_model_id = 1;
+  optional .exa.codeium_common_pb.Model old_model_enum = 2;
+  optional .exa.codeium_common_pb.Model new_model_enum = 3;
+}
+message ExperimentValue {
+  optional bool bool_value = 1;
+  optional double float_value = 2;
+  optional int64 int_value = 3;
+  optional string string_value = 4;
+}
+message ModelExperiments {
+  repeated .google.internal.cloud.code.v1internal.ModelExperiments.ExperimentsEntry experiments = 1;
+  message ExperimentsEntry {
+    optional string key = 1;
+    optional .google.internal.cloud.code.v1internal.ExperimentValue value = 2;
+  }
+}
+message TieredModelConfig {
+  repeated string flash_lite = 1;
+  repeated string flash = 2;
+  repeated string pro = 3;
+}
+message FetchAvailableModelsResponse {
+  repeated .google.internal.cloud.code.v1internal.FetchAvailableModelsResponse.ModelsEntry models = 1;
+  optional string default_agent_model_id = 2;
+  repeated .google.internal.cloud.code.v1internal.ModelSort agent_model_sorts = 3;
+  repeated string command_model_ids = 4;
+  repeated string tab_model_ids = 5;
+  repeated string image_generation_model_ids = 6;
+  repeated string mquery_model_ids = 7;
+  repeated string web_search_model_ids = 8;
+  repeated string commit_message_model_ids = 10;
+  repeated .google.internal.cloud.code.v1internal.FetchAvailableModelsResponse.DeprecatedModelIdsEntry deprecated_model_ids = 9;
+  repeated string audio_transcription_model_ids = 11;
+  repeated .google.internal.cloud.code.v1internal.ModelSort battle_mode_model_sorts = 12;
+  optional .google.internal.cloud.code.v1internal.TieredModelConfig tiered_model_ids = 14;
+  repeated int32 experiment_ids = 13;
+  message ModelsEntry {
+    optional string key = 1;
+    optional .google.internal.cloud.code.v1internal.ModelDetails value = 2;
+  }
+  message DeprecatedModelIdsEntry {
+    optional string key = 1;
+    optional .google.internal.cloud.code.v1internal.DeprecatedModelReroutingInfo value = 2;
+  }
+}

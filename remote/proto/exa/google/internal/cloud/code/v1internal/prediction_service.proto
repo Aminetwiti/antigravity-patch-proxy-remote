@@ -1,0 +1,45 @@
+﻿syntax = "proto3";
+
+// file: exa/google/internal/cloud/code/v1internal/prediction_service.proto
+// package: google.internal.cloud.code.v1internal
+message RetrieveUserQuotaRequest {
+  optional string project = 1;
+}
+message RetrieveUserQuotaResponse {
+  repeated .google.internal.cloud.code.v1internal.RetrieveUserQuotaResponse.BucketInfo buckets = 1;
+  message BucketInfo {
+    optional int64 remaining_amount = 1;
+    optional float remaining_fraction = 5;
+    optional .google.protobuf.Timestamp reset_time = 2;
+    optional .google.internal.cloud.code.v1internal.RetrieveUserQuotaResponse.TokenType token_type = 3;
+    optional string model_id = 4;
+  }
+  enum TokenType {
+    TOKEN_TYPE_UNSPECIFIED = 0;
+    REQUESTS = 1;
+    WTUS = 2;
+  }
+}
+message RetrieveUserQuotaSummaryRequest {
+  optional string project = 1;
+}
+message QuotaSummaryBucket {
+  optional string bucket_id = 1;
+  optional string display_name = 2;
+  optional string description = 7;
+  optional string window = 3;
+  optional float remaining_fraction = 4;
+  optional int64 remaining_amount = 5;
+  optional bool disabled = 8;
+  optional .google.protobuf.Timestamp reset_time = 6;
+}
+message QuotaSummaryGroup {
+  optional string display_name = 2;
+  optional string description = 3;
+  repeated .google.internal.cloud.code.v1internal.QuotaSummaryBucket buckets = 1;
+}
+message RetrieveUserQuotaSummaryResponse {
+  repeated .google.internal.cloud.code.v1internal.QuotaSummaryBucket buckets = 1;
+  repeated .google.internal.cloud.code.v1internal.QuotaSummaryGroup groups = 2;
+  optional string description = 3;
+}

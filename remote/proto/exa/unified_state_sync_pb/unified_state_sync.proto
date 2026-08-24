@@ -1,0 +1,71 @@
+﻿syntax = "proto3";
+
+// file: exa/unified_state_sync_pb/unified_state_sync.proto
+// package: exa.unified_state_sync_pb
+message Topic {
+  repeated .exa.unified_state_sync_pb.Topic.DataEntry data = 1;
+  message DataEntry {
+    optional string key = 1;
+    optional .exa.unified_state_sync_pb.Row value = 2;
+  }
+}
+message Row {
+  optional string value = 1;
+  optional int64 e_tag = 2;
+}
+message AppliedUpdate {
+  optional string key = 1;
+  optional .exa.unified_state_sync_pb.Row new_row = 2;
+  optional bool deleted = 5;
+  optional int64 current_e_tag = 3;
+}
+message UpdateRequest {
+  optional string topic_name = 1;
+  optional .exa.unified_state_sync_pb.AppliedUpdate applied_update = 5;
+  optional string key = 2;
+  optional .exa.unified_state_sync_pb.Row row = 3;
+}
+message Primitive {
+  optional bool bool_value = 1;
+  optional int32 int32_value = 2;
+  optional string string_value = 3;
+  optional .exa.unified_state_sync_pb.RepeatedString repeated_string_value = 4;
+  optional .exa.unified_state_sync_pb.OptionalString optional_string_value = 5;
+}
+message OptionalString {
+  optional string value = 1;
+}
+message RepeatedString {
+  repeated string values = 1;
+}
+message PlanningModeConfig {
+  optional .exa.codeium_common_pb.PlanningMode planning_mode = 1;
+}
+message BrowserAllowlistConfig {
+  repeated string allowlisted_urls = 1;
+}
+message BrowserCdpPortConfig {
+  optional int32 cdp_port = 1;
+}
+message BrowserUserProfilePath {
+  optional string user_profile_path = 1;
+}
+message BrowserChromeBinaryPath {
+  optional string chrome_binary_path = 1;
+}
+message BrowserToolsConfig {
+  optional .exa.codeium_common_pb.AgentBrowserTools agent_browser_tools = 1;
+}
+message BrowserJavascriptExecutionConfig {
+  optional .exa.codeium_common_pb.BrowserJsExecutionPolicy browser_js_execution_policy = 1;
+}
+message WorkspaceApiConfig {
+  optional bool workspace_api_enabled = 1;
+}
+message CustomModels {
+  repeated .exa.unified_state_sync_pb.CustomModels.CustomModelsEntry custom_models = 1;
+  message CustomModelsEntry {
+    optional string key = 1;
+    optional .exa.codeium_common_pb.ModelInfo value = 2;
+  }
+}

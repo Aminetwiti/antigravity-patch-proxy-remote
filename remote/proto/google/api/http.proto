@@ -1,0 +1,24 @@
+﻿syntax = "proto3";
+
+// file: google/api/http.proto
+// package: google.api
+message Http {
+  repeated .google.api.HttpRule rules = 1;
+  optional bool fully_decode_reserved_expansion = 2;
+}
+message HttpRule {
+  optional string selector = 1;
+  optional string get = 2;
+  optional string put = 3;
+  optional string post = 4;
+  optional string delete = 5;
+  optional string patch = 6;
+  optional .google.api.CustomHttpPattern custom = 8;
+  optional string body = 7;
+  optional string response_body = 12;
+  repeated .google.api.HttpRule additional_bindings = 11;
+}
+message CustomHttpPattern {
+  optional string kind = 1;
+  optional string path = 2;
+}

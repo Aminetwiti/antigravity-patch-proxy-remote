@@ -1,0 +1,8 @@
+﻿syntax = "proto3";
+
+// file: google/protobuf/duration.proto
+// package: google.protobuf
+message Duration {
+  optional int64 seconds = 1;
+  optional int32 nanos = 2;
+}

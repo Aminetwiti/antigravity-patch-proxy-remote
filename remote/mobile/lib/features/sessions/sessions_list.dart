@@ -711,7 +711,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                   height: 32,
                   child: TextField(
                     controller: _filterController,
-                    autofocus: true,
+                    autofocus: false,
                     style: TextStyle(fontSize: 12, color: scheme.onSurface),
                     decoration: InputDecoration(
                       hintText: 'Filtrer les sessions...',

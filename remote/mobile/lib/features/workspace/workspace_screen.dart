@@ -946,7 +946,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                             Expanded(
                               child: TextField(
                                 controller: _findController,
-                                autofocus: true,
+                                autofocus: false,
                                 style: TextStyle(
                                   fontSize: 12.5,
                                   color:

@@ -1,0 +1,363 @@
+﻿syntax = "proto3";
+
+// file: exa/index_pb/index.proto
+// package: exa.index_pb
+message IndexDbVersion {
+  optional int32 version = 1;
+  optional int32 enterprise_version = 2;
+}
+message IndexBuildConfig {
+  optional .exa.index_pb.IndexDbVersion db_version = 2;
+  optional int32 cci_timeout_secs = 3;
+  optional .exa.index_pb.IndexMode index_mode = 4;
+}
+message RepositoryConfig {
+  optional string git_url = 1;
+  optional .exa.codeium_common_pb.ScmProvider scm_provider = 2;
+  optional .exa.index_pb.RepositoryConfig.AutoIndexConfig auto_index_config = 3;
+  optional bool store_snippets = 4;
+  repeated string whitelisted_groups = 5;
+  optional bool use_github_app = 6;
+  optional string auth_uid = 7;
+  optional string email = 9;
+  optional string service_key_id = 8;
+  message AutoIndexConfig {
+    optional string branch_name = 1;
+    optional .google.protobuf.Duration interval = 2;
+    optional int32 max_num_auto_indexes = 3;
+  }
+}
+message IndexConfig {
+  optional .google.protobuf.Timestamp prune_time = 1;
+  optional .google.protobuf.Duration prune_interval = 2;
+  optional bool enable_prune = 3;
+  optional bool enable_smallest_repo_first = 4;
+  optional bool enable_round_robin = 5;
+}
+message VectorIndexStats {
+  optional int64 num_embeddings = 1;
+  optional int64 index_bytes_count = 2;
+}
+message ProgressBar {
+  optional float progress = 1;
+  optional string text = 2;
+  optional .google.protobuf.Duration remaining_time = 3;
+}
+message Index {
+  optional string id = 1;
+  optional string repo_name = 2;
+  optional string workspace = 3;
+  optional .exa.codeium_common_pb.GitRepoInfo repo_info = 4;
+  optional .google.protobuf.Timestamp created_at = 5;
+  optional .google.protobuf.Timestamp updated_at = 6;
+  optional .google.protobuf.Timestamp scheduled_at = 13;
+  optional .exa.index_pb.IndexingStatus status = 7;
+  optional string status_detail = 8;
+  optional bool auto_indexed = 9;
+  optional bool has_snippets = 12;
+  optional string auth_uid = 15;
+  optional string email = 16;
+  optional .exa.index_pb.Index.RepoStats repo_stats = 14;
+  repeated .exa.index_pb.Index.IndexingProgressEntry indexing_progress = 10;
+  optional .exa.index_pb.VectorIndexStats index_stats = 11;
+  message RepoStats {
+    optional int64 size = 1;
+    optional int64 file_count = 2;
+    optional int64 size_no_ignore = 3;
+    optional int64 file_count_no_ignore = 4;
+  }
+  message IndexingProgressEntry {
+    optional string key = 1;
+    optional .exa.index_pb.ProgressBar value = 2;
+  }
+}
+message Repository {
+  optional string repo_name = 1;
+  optional .exa.index_pb.RepositoryConfig config = 2;
+  optional .google.protobuf.Timestamp created_at = 4;
+  optional .google.protobuf.Timestamp updated_at = 5;
+  optional .google.protobuf.Timestamp last_used_at = 6;
+  optional .exa.index_pb.Index latest_index = 3;
+}
+message RequestIndexVersion {
+  optional string commit = 1;
+  optional string branch = 2;
+  optional string version_alias = 3;
+}
+message ManagementMetadata {
+  optional string auth_token = 1;
+  optional string auth_uid = 2;
+  optional string service_key = 3;
+  optional bool force_target_public_index = 4;
+  optional string force_team_id = 5;
+  optional string service_key_id = 6;
+}
+message AddRepositoryRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional .exa.index_pb.RepositoryConfig config = 2;
+  optional .exa.index_pb.RequestIndexVersion initial_index = 3;
+}
+message AddRepositoryResponse {
+  optional string repo_name = 1;
+  optional string index_id = 2;
+}
+message EnableIndexingRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional .exa.index_pb.IndexBuildConfig config = 2;
+}
+message EnableIndexingResponse {
+}
+message DisableIndexingRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+}
+message DisableIndexingResponse {
+}
+message EditRepositoryRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional string repo_name = 2;
+  optional .exa.index_pb.RepositoryConfig config = 3;
+}
+message EditRepositoryResponse {
+}
+message DeleteRepositoryRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional string repo_name = 2;
+  repeated string repo_names = 3;
+}
+message DeleteRepositoryResponse {
+}
+message GetRepositoriesFilter {
+  optional string repo_name = 1;
+  optional string group_id = 2;
+}
+message GetRepositoriesRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional .exa.index_pb.GetRepositoriesFilter filter = 2;
+}
+message GetRepositoriesResponse {
+  repeated .exa.index_pb.Repository repositories = 1;
+}
+message GetIndexesRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional string repo_name = 2;
+}
+message GetIndexesResponse {
+  repeated .exa.index_pb.Index indexes = 1;
+}
+message GetIndexRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional string index_id = 2;
+}
+message GetIndexResponse {
+  optional .exa.index_pb.Index index = 1;
+  optional .exa.index_pb.Repository repository = 2;
+}
+message RemoteIndexStats {
+  optional string index_id = 1;
+  optional int64 cci_count = 2;
+  optional int64 snippet_count = 3;
+  optional int64 embedding_count = 4;
+}
+message GetRemoteIndexStatsRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  repeated string index_ids = 2;
+}
+message GetRemoteIndexStatsResponse {
+  repeated .exa.index_pb.RemoteIndexStats index_stats = 1;
+}
+message AddIndexRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional string repo_name = 2;
+  optional .exa.index_pb.RequestIndexVersion version = 3;
+}
+message AddIndexResponse {
+  optional string index_id = 1;
+}
+message CancelIndexingRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional string index_id = 2;
+  repeated string index_ids = 3;
+}
+message CancelIndexingResponse {
+}
+message RetryIndexingRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional string index_id = 2;
+  repeated string index_ids = 3;
+}
+message RetryIndexingResponse {
+}
+message DeleteIndexRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional string index_id = 2;
+  repeated string index_ids = 3;
+}
+message DeleteIndexResponse {
+}
+message PruneDatabaseRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+}
+message PruneDatabaseResponse {
+}
+message GetDatabaseStatsRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+}
+message GetDatabaseStatsResponse {
+  optional int64 database_total_bytes_count = 1;
+  optional int64 table_total_bytes_count = 2;
+  optional int64 index_total_bytes_count = 3;
+  optional int64 estimate_prunable_bytes = 4;
+  optional bool is_pruning = 5;
+  optional string last_prune_error = 6;
+  optional int64 all_tables_bytes_count = 7;
+}
+message SetIndexConfigRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+  optional .exa.index_pb.IndexConfig index_config = 2;
+}
+message SetIndexConfigResponse {
+}
+message GetIndexConfigRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+}
+message GetIndexConfigResponse {
+  optional .exa.index_pb.IndexConfig index_config = 1;
+}
+message GetNumberConnectionsRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+}
+message GetNumberConnectionsResponse {
+  repeated .exa.index_pb.GetNumberConnectionsResponse.ConnectionsMapEntry connections_map = 1;
+  message ConnectionsMapEntry {
+    optional string key = 1;
+    optional uint32 value = 2;
+  }
+}
+message GetConnectionsDebugInfoRequest {
+  optional .exa.index_pb.ManagementMetadata metadata = 1;
+}
+message GetConnectionsDebugInfoResponse {
+  optional string debug_info = 1;
+}
+message GetIndexedRepositoriesRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional bool include_incomplete = 2;
+  repeated string group_ids_filter = 3;
+}
+message GetIndexedRepositoriesResponse {
+  repeated .exa.codeium_common_pb.GitRepoInfo repositories = 1;
+  repeated .exa.index_pb.Index indexes = 2;
+}
+message RepositoryFilter {
+  optional .exa.codeium_common_pb.GitRepoInfo repository = 1;
+  repeated string excluded_files = 2;
+  repeated string filter_paths = 3;
+}
+message GetMatchingFilePathsRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional .exa.codeium_common_pb.GitRepoInfo repository = 2;
+  optional string query = 3;
+  optional uint32 max_items = 4;
+  repeated string group_ids_filter = 5;
+}
+message GetMatchingFilePathsResponse {
+  repeated string relative_file_paths = 1;
+}
+message GetNearestCCIsFromEmbeddingRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional .exa.codeium_common_pb.Embedding embedding = 2;
+  repeated .exa.index_pb.RepositoryFilter repository_filters = 3;
+  optional int64 max_results = 4;
+  repeated string group_ids_filter = 5;
+}
+message ScoredContextItem {
+  optional .exa.codeium_common_pb.CodeContextItem code_context_item = 1;
+  optional float score = 2;
+}
+message GetNearestCCIsFromEmbeddingResponse {
+  repeated .exa.index_pb.ScoredContextItem scored_context_items = 1;
+}
+message GetEmbeddingsForCodeContextItemsRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  repeated .exa.codeium_common_pb.CodeContextItem code_context_items = 2;
+  optional .exa.codeium_common_pb.ContextSnippetType snippet_type = 3;
+}
+message GetEmbeddingsForCodeContextItemsResponse {
+  repeated .exa.codeium_common_pb.Embedding embeddings = 1;
+}
+message IndexStats {
+  optional string repository_name = 1;
+  optional int64 file_count = 2;
+  optional int64 code_context_item_count = 3;
+}
+message IndexerEvent {
+  optional uint64 uid = 1;
+  optional .exa.index_pb.IndexerEvent.Deletion deletion = 2;
+  optional .exa.index_pb.IndexerEvent.Untrack untrack = 3;
+  optional .exa.index_pb.IndexerEvent.Update update = 4;
+  optional .exa.index_pb.IndexerEvent.AddWorkspace add_workspace = 5;
+  optional .exa.index_pb.IndexerEvent.RemoveWorkspace remove_workspace = 6;
+  optional .exa.index_pb.IndexerEvent.IgnoreWorkspace ignore_workspace = 7;
+  optional .exa.index_pb.IndexerEvent.AddCommit add_commit = 8;
+  message Deletion {
+    optional string absolute_uri = 1;
+  }
+  message Untrack {
+    optional string absolute_uri = 1;
+    repeated .exa.codeium_common_pb.WorkspacePath paths = 2;
+    optional string workspace_uri = 3;
+  }
+  message Update {
+    optional string absolute_uri = 1;
+    repeated .exa.codeium_common_pb.WorkspacePath paths = 2;
+    optional .google.protobuf.Timestamp mod_time = 3;
+    optional .exa.index_pb.IndexerEvent.Update.AddWorkspaceInfo add_workspace_info = 4;
+    message AddWorkspaceInfo {
+      optional uint64 add_workspace_uid = 1;
+      optional uint64 add_workspace_queue_uid = 2;
+    }
+  }
+  message AddWorkspace {
+    optional uint64 add_workspace_uid = 1;
+    optional uint64 add_workspace_queue_uid = 2;
+    optional string workspace_uri = 3;
+    optional int64 num_files = 4;
+    optional int64 size = 5;
+  }
+  message RemoveWorkspace {
+    optional string workspace_uri = 1;
+  }
+  message IgnoreWorkspace {
+    optional string workspace_uri = 1;
+  }
+  message AddCommit {
+    optional string sha = 1;
+  }
+}
+service IndexManagementService {
+  rpc EnableIndexing(.exa.index_pb.EnableIndexingRequest) returns (.exa.index_pb.EnableIndexingResponse);
+  rpc DisableIndexing(.exa.index_pb.DisableIndexingRequest) returns (.exa.index_pb.DisableIndexingResponse);
+  rpc AddRepository(.exa.index_pb.AddRepositoryRequest) returns (.exa.index_pb.AddRepositoryResponse);
+  rpc EditRepository(.exa.index_pb.EditRepositoryRequest) returns (.exa.index_pb.EditRepositoryResponse);
+  rpc DeleteRepository(.exa.index_pb.DeleteRepositoryRequest) returns (.exa.index_pb.DeleteRepositoryResponse);
+  rpc GetRepositories(.exa.index_pb.GetRepositoriesRequest) returns (.exa.index_pb.GetRepositoriesResponse);
+  rpc AddIndex(.exa.index_pb.AddIndexRequest) returns (.exa.index_pb.AddIndexResponse);
+  rpc CancelIndexing(.exa.index_pb.CancelIndexingRequest) returns (.exa.index_pb.CancelIndexingResponse);
+  rpc RetryIndexing(.exa.index_pb.RetryIndexingRequest) returns (.exa.index_pb.RetryIndexingResponse);
+  rpc DeleteIndex(.exa.index_pb.DeleteIndexRequest) returns (.exa.index_pb.DeleteIndexResponse);
+  rpc GetIndexes(.exa.index_pb.GetIndexesRequest) returns (.exa.index_pb.GetIndexesResponse);
+  rpc GetIndex(.exa.index_pb.GetIndexRequest) returns (.exa.index_pb.GetIndexResponse);
+  rpc GetRemoteIndexStats(.exa.index_pb.GetRemoteIndexStatsRequest) returns (.exa.index_pb.GetRemoteIndexStatsResponse);
+  rpc PruneDatabase(.exa.index_pb.PruneDatabaseRequest) returns (.exa.index_pb.PruneDatabaseResponse);
+  rpc GetDatabaseStats(.exa.index_pb.GetDatabaseStatsRequest) returns (.exa.index_pb.GetDatabaseStatsResponse);
+  rpc SetIndexConfig(.exa.index_pb.SetIndexConfigRequest) returns (.exa.index_pb.SetIndexConfigResponse);
+  rpc GetIndexConfig(.exa.index_pb.GetIndexConfigRequest) returns (.exa.index_pb.GetIndexConfigResponse);
+  rpc GetNumberConnections(.exa.index_pb.GetNumberConnectionsRequest) returns (.exa.index_pb.GetNumberConnectionsResponse);
+  rpc GetConnectionsDebugInfo(.exa.index_pb.GetConnectionsDebugInfoRequest) returns (.exa.index_pb.GetConnectionsDebugInfoResponse);
+}
+service IndexService {
+  rpc GetIndexedRepositories(.exa.index_pb.GetIndexedRepositoriesRequest) returns (.exa.index_pb.GetIndexedRepositoriesResponse);
+  rpc GetNearestCCIsFromEmbedding(.exa.index_pb.GetNearestCCIsFromEmbeddingRequest) returns (.exa.index_pb.GetNearestCCIsFromEmbeddingResponse);
+  rpc GetEmbeddingsForCodeContextItems(.exa.index_pb.GetEmbeddingsForCodeContextItemsRequest) returns (.exa.index_pb.GetEmbeddingsForCodeContextItemsResponse);
+  rpc GetMatchingFilePaths(.exa.index_pb.GetMatchingFilePathsRequest) returns (.exa.index_pb.GetMatchingFilePathsResponse);
+}

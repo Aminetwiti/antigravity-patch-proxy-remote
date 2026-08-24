@@ -1,0 +1,68 @@
+﻿syntax = "proto3";
+
+// file: exa/project_pb/project.proto
+// package: exa.project_pb
+message Resource {
+  optional string folder_uri = 1;
+  optional .exa.project_pb.Google3 google3 = 2;
+  optional .exa.project_pb.GitFolder git_folder = 3;
+}
+message Google3 {
+  optional .exa.project_pb.Google3.ForkType fork_type = 1;
+  enum ForkType {
+    FORK_TYPE_UNSPECIFIED = 0;
+    FORK_TYPE_PIPER = 1;
+    FORK_TYPE_JJ = 2;
+    FORK_TYPE_FIG = 3;
+  }
+}
+message GitFolder {
+  optional string folder_uri = 1;
+  optional string default_branch = 2;
+  optional bool allow_write = 3;
+}
+message ConversationIds {
+  repeated string ids = 1;
+}
+message ProjectConversation {
+  optional string conversation_id = 1;
+  optional string environment_id = 2;
+}
+message ProjectConversations {
+  repeated .exa.project_pb.ProjectConversation conversations = 1;
+}
+message Resources {
+  repeated .exa.project_pb.Resource resources = 1;
+}
+message Environment {
+  optional string id = 1;
+  optional string name = 2;
+  optional .exa.project_pb.Resources resources = 3;
+}
+message Environments {
+  repeated .exa.project_pb.Environment environments = 1;
+}
+message PermissionGrants {
+  optional .exa.codeium_common_pb.PermissionGrantsConfig permission_grants = 2;
+}
+message ProjectSettings {
+  optional .exa.codeium_common_pb.AgentSettingPolicy file_access_policy = 1;
+  optional .exa.codeium_common_pb.AgentSettingPolicy internet_policy = 2;
+  optional bool sandbox_mode = 3;
+  optional .exa.codeium_common_pb.CascadeCommandsAutoExecution auto_execution_policy = 4;
+  optional .exa.codeium_common_pb.ArtifactReviewMode artifact_review_mode = 5;
+  optional bool enable_permissioned_github = 6;
+  optional string shell_setup_script = 7;
+}
+message Project {
+  optional string id = 1;
+  optional string name = 2;
+  optional .exa.project_pb.ProjectConversations project_conversations = 8;
+  optional .exa.project_pb.Resources project_resources = 6;
+  optional .exa.project_pb.Environments environments = 7;
+  optional .exa.project_pb.PermissionGrants permission_grants = 9;
+  optional .exa.project_pb.ProjectSettings settings = 10;
+  optional .google.protobuf.Timestamp updated_at = 11;
+  optional bool is_workspace_only = 12;
+  optional bool archived = 13;
+}

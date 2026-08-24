@@ -1,0 +1,1945 @@
+﻿syntax = "proto3";
+
+// file: exa/codeium_common_pb/codeium_common.proto
+// package: exa.codeium_common_pb
+message CompletionsRequest {
+  optional .exa.codeium_common_pb.CompletionConfiguration configuration = 1;
+  optional string prompt = 2;
+  optional string serialized_prompt = 26;
+  optional string context_prompt = 21;
+  optional string uid = 25;
+  repeated .exa.codeium_common_pb.PromptElementRange prompt_element_ranges = 8;
+  repeated .exa.codeium_common_pb.PromptElementKindInfo prompt_element_kind_infos = 9;
+  optional uint64 prompt_latency_ms = 11;
+  repeated .exa.codeium_common_pb.PromptStageLatency prompt_stage_latencies = 12;
+  optional uint64 num_tokenized_bytes = 20;
+  optional string editor_language = 3;
+  optional .exa.codeium_common_pb.Language language = 4;
+  optional string absolute_path_uri_for_telemetry = 5;
+  optional string relative_path_for_telemetry = 6;
+  optional string workspace_uri_for_telemetry = 13;
+  optional string experiment_features_json = 7;
+  optional string experiment_variant_json = 19;
+  optional .exa.codeium_common_pb.Model model = 10;
+  optional bool has_line_suffix = 14;
+  optional bool should_inline_fim = 15;
+  optional .exa.codeium_common_pb.Repository repository = 16;
+  optional string model_tag = 17;
+  repeated string experiment_tags = 18;
+  optional string eval_suffix = 22;
+  repeated .exa.codeium_common_pb.PromptAnnotationRange prompt_annotation_ranges = 23;
+  optional bool supports_packed_streaming_completion_maps = 24;
+}
+message CompletionConfiguration {
+  optional uint64 num_completions = 1;
+  optional uint64 max_tokens = 2;
+  optional double temperature = 5;
+  optional uint64 top_k = 7;
+  optional double top_p = 8;
+  repeated string stop_patterns = 9;
+  optional uint64 seed = 10;
+  optional bool last_message_is_partial = 15;
+  optional bool disable_parallel_tool_calls = 17;
+  optional uint64 max_newlines = 3;
+  optional double min_log_probability = 4;
+  optional double first_temperature = 6;
+  optional double fim_eot_prob_threshold = 11;
+  optional bool use_fim_eot_threshold = 12;
+  optional bool do_not_score_stop_tokens = 13;
+  optional bool sqrt_len_normalized_log_prob_score = 14;
+  optional bool return_logprob = 16;
+}
+message PromptElementRange {
+  optional .exa.codeium_common_pb.PromptElementKind kind = 1;
+  optional uint64 byte_offset_start = 2;
+  optional uint64 byte_offset_end = 3;
+  optional uint64 token_offset_start = 4;
+  optional uint64 token_offset_end = 5;
+}
+message ActionPointer {
+  optional string cortex_plan_id = 1;
+  optional string code_plan_id = 2;
+  optional int32 action_index = 3;
+}
+message PromptAnnotationRange {
+  optional .exa.codeium_common_pb.PromptAnnotationKind kind = 1;
+  optional uint64 byte_offset_start = 2;
+  optional uint64 byte_offset_end = 3;
+  optional string suffix = 4;
+}
+message ExperimentWithVariant {
+  optional .exa.codeium_common_pb.ExperimentKey key = 1;
+  optional string key_string = 5;
+  optional bool disabled = 6;
+  optional string string = 2;
+  optional string json = 3;
+  optional string csv = 4;
+  optional .exa.codeium_common_pb.ExperimentSource source = 7;
+}
+message ExperimentConfig {
+  repeated .exa.codeium_common_pb.ExperimentWithVariant experiments = 6;
+  repeated .exa.codeium_common_pb.ExperimentKey force_enable_experiments = 1;
+  repeated .exa.codeium_common_pb.ExperimentKey force_disable_experiments = 2;
+  repeated .exa.codeium_common_pb.ExperimentWithVariant force_enable_experiments_with_variants = 3;
+  repeated string force_enable_experiment_strings = 4;
+  repeated string force_disable_experiment_strings = 5;
+  optional bool dev_mode = 7;
+}
+message ExperimentLanguageServerVersionPayload {
+  optional string sha = 1;
+  optional string crc32c_linux_x64 = 2;
+  optional string crc32c_linux_arm = 3;
+  optional string crc32c_macos_x64 = 4;
+  optional string crc32c_macos_arm = 5;
+  optional string crc32c_windows_x64 = 6;
+}
+message ExperimentModelConfigPayload {
+  optional string model_name = 1;
+  optional string context_check_model_name = 2;
+}
+message ExperimentMiddleModeTokenPayload {
+  optional string mode_token = 1;
+}
+message ExperimentMultilineModelThresholdPayload {
+  optional float threshold = 1;
+}
+message ErrorSamplingConfig {
+  optional double sample_rate = 1;
+  repeated .exa.codeium_common_pb.ErrorSamplingConfig.ErrorMatchToSampleRateEntry error_match_to_sample_rate = 2;
+  message ErrorMatchToSampleRateEntry {
+    optional string key = 1;
+    optional double value = 2;
+  }
+}
+message ExperimentSentryPayload {
+  optional double sample_rate = 2;
+  repeated .exa.codeium_common_pb.ExperimentSentryPayload.ProcedureToSampleRateEntry procedure_to_sample_rate = 3;
+  repeated .exa.codeium_common_pb.ExperimentSentryPayload.ErrorMatchToSampleRateEntry error_match_to_sample_rate = 5;
+  message ProcedureToSampleRateEntry {
+    optional string key = 1;
+    optional double value = 2;
+  }
+  message ErrorMatchToSampleRateEntry {
+    optional string key = 1;
+    optional double value = 2;
+  }
+}
+message TeamOrganizationalControls {
+  optional string team_id = 1;
+  repeated string cascade_model_labels = 2;
+  repeated string command_model_labels = 3;
+  optional .google.protobuf.Timestamp created_at = 4;
+  optional .google.protobuf.Timestamp updated_at = 5;
+  repeated string extension_model_labels = 6;
+}
+message ExperimentProfilingTelemetrySampleRatePayload {
+  repeated .exa.codeium_common_pb.ExperimentProfilingTelemetrySampleRatePayload.MemoryUsageToSampleRateEntry memory_usage_to_sample_rate = 1;
+  message MemoryUsageToSampleRateEntry {
+    optional string key = 1;
+    optional double value = 2;
+  }
+}
+message ModelOrAlias {
+  optional .exa.codeium_common_pb.Model model = 1;
+  optional .exa.codeium_common_pb.ModelAlias alias = 2;
+}
+message PromptElementKindInfo {
+  optional .exa.codeium_common_pb.PromptElementKind kind = 1;
+  optional .exa.codeium_common_pb.ExperimentKey experiment_key = 2;
+  optional bool enabled = 3;
+  optional uint64 num_considered = 4;
+  optional uint64 num_included = 5;
+}
+message PromptElementInclusionMetadata {
+  optional bool included = 1;
+  optional .exa.codeium_common_pb.PromptElementExclusionReason exclusion_reason = 2;
+}
+message PromptStageLatency {
+  optional string name = 1;
+  optional uint64 latency_ms = 2;
+}
+message CompletionResponse {
+  repeated .exa.codeium_common_pb.Completion completions = 1;
+  optional uint64 max_tokens = 2;
+  optional double temperature = 3;
+  optional uint64 top_k = 4;
+  optional double top_p = 5;
+  repeated string stop_patterns = 6;
+  optional uint64 prompt_length = 7;
+  optional string prompt_id = 8;
+  optional string model_tag = 10;
+  optional .exa.codeium_common_pb.CompletionProfile completion_profile = 11;
+}
+message Completion {
+  optional string completion_id = 1;
+  optional string text = 2;
+  optional string stop = 4;
+  optional double score = 5;
+  repeated uint64 tokens = 6;
+  repeated string decoded_tokens = 7;
+  repeated double probabilities = 8;
+  repeated double adjusted_probabilities = 9;
+  repeated double logprobs = 16;
+  optional uint64 generated_length = 10;
+  optional .exa.codeium_common_pb.StopReason stop_reason = 12;
+  repeated .exa.codeium_common_pb.FilterReason filter_reasons = 13;
+  optional string original_text = 14;
+  repeated .exa.codeium_common_pb.ChatToolCall tool_calls = 15;
+  optional string trace_id = 17;
+}
+message StreamingCompletionInfo {
+  repeated string completion_ids = 1;
+  optional uint64 max_tokens = 2;
+  optional double temperature = 3;
+  optional uint64 top_k = 4;
+  optional double top_p = 5;
+  repeated string stop_patterns = 6;
+  optional uint64 prompt_length = 7;
+  optional string prompt_id = 9;
+  optional string model_tag = 8;
+  optional .exa.codeium_common_pb.CompletionsRequest completions_request = 10;
+  optional .exa.codeium_common_pb.StreamingEvalSuffixInfo eval_suffix_info = 11;
+}
+message SingleModelCompletionProfile {
+  optional double total_prefill_pass_time = 1;
+  optional double avg_prefill_pass_time = 2;
+  optional uint64 num_prefill_passes = 3;
+  optional double total_spec_copy_pass_time = 7;
+  optional double avg_spec_copy_pass_time = 8;
+  optional uint64 num_spec_copy_passes = 9;
+  optional double total_generation_pass_time = 4;
+  optional double avg_generation_pass_time = 5;
+  optional uint64 num_generation_passes = 6;
+  optional double total_model_time = 10;
+}
+message CompletionProfile {
+  optional .exa.codeium_common_pb.SingleModelCompletionProfile model_profile = 1;
+  optional .exa.codeium_common_pb.SingleModelCompletionProfile draft_model_profile = 2;
+  optional double time_to_first_prefill_pass = 3;
+  optional double time_to_first_token = 4;
+  optional double total_completion_time = 5;
+  optional .exa.codeium_common_pb.ModelUsageStats model_usage = 6;
+}
+message StreamingCompletion {
+  optional bytes decoded_token = 1;
+  optional uint64 token = 2;
+  optional double probability = 3;
+  optional double adjusted_probability = 4;
+  optional double logprob = 9;
+  optional bool completion_finished = 5;
+  optional string stop = 6;
+  optional .exa.codeium_common_pb.StopReason stop_reason = 7;
+  repeated .exa.codeium_common_pb.StreamingCompletion.AttributionStatusesEntry attribution_statuses = 8;
+  message AttributionStatusesEntry {
+    optional uint32 key = 1;
+    optional .exa.codeium_common_pb.AttributionStatus value = 2;
+  }
+}
+message StreamingCompletionMap {
+  repeated .exa.codeium_common_pb.StreamingCompletionMap.CompletionsEntry completions = 1;
+  message CompletionsEntry {
+    optional int32 key = 1;
+    optional .exa.codeium_common_pb.StreamingCompletion value = 2;
+  }
+}
+message PackedStreamingCompletionMaps {
+  repeated .exa.codeium_common_pb.StreamingCompletionMap completion_maps = 1;
+}
+message StreamingEvalSuffixInfo {
+  repeated float per_token_log_likelihoods = 1;
+  optional bool is_greedy = 2;
+}
+message StreamingCompletionResponse {
+  optional .exa.codeium_common_pb.StreamingCompletionInfo completion_info = 1;
+  optional .exa.codeium_common_pb.StreamingCompletionMap completion_map = 2;
+  optional .exa.codeium_common_pb.PackedStreamingCompletionMaps packed_completion_maps = 4;
+  optional .exa.codeium_common_pb.CompletionProfile completion_profile = 5;
+}
+message CompletionLatencyInfo {
+  optional uint64 api_server_latency_ms = 1;
+  optional uint64 language_server_latency_ms = 2;
+  optional uint64 network_latency_ms = 3;
+  optional uint64 api_server_first_byte_latency_ms = 4;
+  optional uint64 language_server_first_byte_latency_ms = 5;
+  optional uint64 network_first_byte_latency_ms = 6;
+  optional uint64 api_server_first_line_latency_ms = 7;
+  optional uint64 language_server_first_line_latency_ms = 8;
+  optional uint64 network_first_line_latency_ms = 9;
+}
+message CompletionWithLatencyInfo {
+  optional .exa.codeium_common_pb.Completion completion = 1;
+  optional .exa.codeium_common_pb.CompletionLatencyInfo latency_info = 2;
+}
+message EmbeddingsRequest {
+  repeated string prompts = 1;
+  optional .exa.codeium_common_pb.EmbeddingPriority priority = 2;
+  optional .exa.codeium_common_pb.EmbeddingPrefix prefix = 3;
+  optional .exa.codeium_common_pb.Model model = 4;
+}
+message Embedding {
+  repeated float values = 1;
+}
+message EmbeddingResponse {
+  repeated .exa.codeium_common_pb.Embedding embeddings = 1;
+  optional bool prompts_exceeded_context_length = 2;
+}
+message RewardsRequest {
+  optional string prefix = 2;
+  repeated string items = 3;
+  optional bool has_instruct_tokens = 4;
+}
+message RewardsResponse {
+  repeated float values = 1;
+  optional bool prompts_exceeded_context_length = 2;
+}
+message Metadata {
+  optional string ide_name = 1;
+  optional string ide_version = 7;
+  optional string extension_name = 12;
+  optional string extension_version = 2;
+  optional string extension_path = 17;
+  optional string locale = 4;
+  optional string os = 5;
+  optional string hardware = 8;
+  optional string session_id = 10;
+  optional string device_fingerprint = 24;
+  optional string user_tier_id = 29;
+  optional .google.protobuf.Timestamp ls_timestamp = 16;
+  optional string trigger_id = 25;
+  optional string id = 27;
+  optional string api_key = 3;
+  optional bool disable_telemetry = 6;
+  repeated string user_tags = 18;
+  optional string region_code = 30;
+  optional string product_name = 31;
+  optional string environment_type = 32;
+  optional .exa.codeium_common_pb.RuntimeEnvironment runtime_environment = 33;
+  optional .exa.codeium_common_pb.ExperimentConfig experiment_config = 35;
+}
+message RuntimeEnvironment {
+  optional string host = 1;
+  optional string binary = 2;
+  optional string viewport_width_cohort = 3;
+  optional string user_cohort = 4;
+  optional string os = 5;
+  optional string environment_type = 6;
+  optional string identity_type = 7;
+}
+message EditorOptions {
+  optional uint64 tab_size = 1;
+  optional bool insert_spaces = 2;
+  optional bool disable_autocomplete_in_comments = 3;
+}
+message ErrorTrace {
+  optional string error_id = 1;
+  optional int64 timestamp_unix_ms = 2;
+  optional string stacktrace = 3;
+  optional bool recovered = 4;
+  optional string full_stderr = 5;
+  optional string ide_name = 6;
+  optional string ide_version = 7;
+  optional string os = 8;
+  optional bool is_dev = 9;
+}
+message Event {
+  optional .exa.codeium_common_pb.EventType event_type = 1;
+  optional string event_json = 2;
+  optional int64 timestamp_unix_ms = 3;
+}
+message Citation {
+  optional int32 start_index = 1;
+  optional int32 end_index = 2;
+  optional string uri = 3;
+  optional string title = 4;
+  optional string license = 5;
+}
+message CitationMetadata {
+  repeated .exa.codeium_common_pb.Citation citations = 1;
+}
+message Recitation {
+  optional .exa.codeium_common_pb.Citation citation = 1;
+  optional string content = 2;
+}
+message RecitationMetadata {
+  repeated .exa.codeium_common_pb.Recitation recitations = 1;
+}
+message SearchResultRecord {
+  optional string search_id = 1;
+  optional string result_id = 2;
+  optional string absolute_path = 3;
+  repeated .exa.codeium_common_pb.WorkspacePath workspace_paths = 4;
+  optional string text = 5;
+  optional .exa.codeium_common_pb.EmbeddingMetadata embedding_metadata = 6;
+  optional float similarity_score = 7;
+  optional int64 num_results_in_cluster = 8;
+  optional string representative_path = 9;
+  optional float mean_similarity_score = 10;
+  optional .exa.codeium_common_pb.SearchResultType search_result_type = 11;
+}
+message WorkspacePath {
+  optional string workspace_migrate_me_to_uri = 1;
+  optional string workspace_uri = 3;
+  optional string relative_path = 2;
+}
+message EmbeddingMetadata {
+  optional string node_name = 1;
+  optional uint32 start_line = 2;
+  optional uint32 end_line = 3;
+  optional .exa.codeium_common_pb.EmbedType embed_type = 4;
+}
+message MockResponseData {
+  repeated .exa.codeium_common_pb.Completion completions = 1;
+}
+message WorkspaceIndexData {
+  optional string workspace_uri_for_telemetry = 1;
+  optional .google.protobuf.Timestamp indexing_start = 2;
+  optional .google.protobuf.Timestamp indexing_end = 3;
+  optional .google.protobuf.Duration embedding_duration = 4;
+  optional int64 num_files_total = 5;
+  optional int64 num_files_to_embed = 6;
+  optional int64 num_nodes_total = 7;
+  optional int64 num_nodes_to_embed = 8;
+  optional int64 num_tokens = 9;
+  optional int64 num_high_priority_nodes_to_embed = 10;
+  optional string error = 11;
+}
+message WorkspaceStats {
+  optional string workspace = 3;
+  repeated .exa.codeium_common_pb.WorkspaceStats.NumFilesEntry num_files = 1;
+  repeated .exa.codeium_common_pb.WorkspaceStats.NumBytesEntry num_bytes = 2;
+  optional bool initial_scan_completed = 4;
+  message NumFilesEntry {
+    optional int32 key = 1;
+    optional int64 value = 2;
+  }
+  message NumBytesEntry {
+    optional int32 key = 1;
+    optional int64 value = 2;
+  }
+}
+message PartialIndexMetadata {
+  optional uint32 num_total_files = 1;
+  optional uint32 num_indexed_files = 2;
+  optional .google.protobuf.Timestamp cutoff_timestamp = 3;
+}
+message FunctionInfo {
+  optional string raw_source = 1;
+  optional string clean_function = 2;
+  optional string docstring = 3;
+  optional string node_name = 4;
+  optional string params = 5;
+  optional int32 definition_line = 6;
+  optional int32 start_line = 7;
+  optional int32 end_line = 8;
+  optional int32 start_col = 9;
+  optional int32 end_col = 10;
+  optional string leading_whitespace = 11;
+  optional .exa.codeium_common_pb.Language language = 12;
+  optional int32 body_start_line = 13;
+  optional int32 body_start_col = 14;
+}
+message ClassInfo {
+  optional string raw_source = 1;
+  optional int32 start_line = 2;
+  optional int32 end_line = 3;
+  optional int32 start_col = 4;
+  optional int32 end_col = 5;
+  optional string leading_whitespace = 6;
+  repeated string fields_and_constructors = 7;
+  optional string docstring = 8;
+  optional string node_name = 9;
+  repeated .exa.codeium_common_pb.FunctionInfo methods = 10;
+  repeated string node_lineage = 11;
+  optional bool is_exported = 12;
+  optional .exa.codeium_common_pb.Language language = 13;
+  optional int32 definition_line = 14;
+}
+message TeamsFeaturesMetadata {
+  optional bool is_active = 1;
+  optional string stripe_subscription_id = 2;
+  optional bool has_access = 3;
+}
+message QuotaInfo {
+  optional float remaining_fraction = 1;
+  optional .google.protobuf.Timestamp reset_time = 2;
+}
+message ClientModelConfig {
+  optional string label = 1;
+  optional .exa.codeium_common_pb.ModelOrAlias model_or_alias = 2;
+  optional float credit_multiplier = 3;
+  optional .exa.codeium_common_pb.ModelPricingType pricing_type = 13;
+  optional bool disabled = 4;
+  optional bool supports_images = 5;
+  optional bool supports_legacy = 6;
+  optional bool is_premium = 7;
+  optional string beta_warning_message = 8;
+  optional bool is_beta = 9;
+  optional .exa.codeium_common_pb.ModelProvider provider = 10;
+  optional bool is_recommended = 11;
+  repeated .exa.codeium_common_pb.TeamsTier allowed_tiers = 12;
+  optional string description = 14;
+  optional .exa.codeium_common_pb.QuotaInfo quota_info = 15;
+  optional string tag_title = 16;
+  optional string tag_description = 17;
+  repeated .exa.codeium_common_pb.ClientModelConfig.SupportedMimeTypesEntry supported_mime_types = 18;
+  optional bool supports_thought_circulation = 19;
+  optional string model_url = 20;
+  optional string model_id = 21;
+  message SupportedMimeTypesEntry {
+    optional string key = 1;
+    optional bool value = 2;
+  }
+}
+message DefaultOverrideModelConfig {
+  optional .exa.codeium_common_pb.ModelOrAlias model_or_alias = 1;
+  optional string version_id = 2;
+}
+message ClientModelSort {
+  optional string name = 1;
+  repeated .exa.codeium_common_pb.ClientModelGroup groups = 2;
+}
+message ClientModelGroup {
+  optional string group_name = 1;
+  repeated string model_labels = 2;
+}
+message CascadeModelConfigData {
+  repeated .exa.codeium_common_pb.ClientModelConfig client_model_configs = 1;
+  repeated .exa.codeium_common_pb.ClientModelSort client_model_sorts = 2;
+  optional .exa.codeium_common_pb.DefaultOverrideModelConfig default_override_model_config = 3;
+  repeated .exa.codeium_common_pb.ClientModelConfig battle_mode_model_configs = 4;
+  repeated .exa.codeium_common_pb.ClientModelSort battle_mode_model_sorts = 5;
+}
+message AllowedModelConfig {
+  optional .exa.codeium_common_pb.ModelOrAlias model_or_alias = 1;
+  optional float credit_multiplier = 2;
+}
+message PlanInfo {
+  optional .exa.codeium_common_pb.TeamsTier teams_tier = 1;
+  optional string plan_name = 2;
+  optional bool has_autocomplete_fast_mode = 3;
+  optional bool allow_sticky_premium_models = 4;
+  optional bool has_forge_access = 5;
+  optional bool disable_code_snippet_telemetry = 11;
+  optional bool allow_premium_command_models = 15;
+  optional bool has_tab_to_jump = 23;
+  optional int64 max_num_premium_chat_messages = 6;
+  optional int64 max_num_chat_input_tokens = 7;
+  optional int64 max_custom_chat_instruction_characters = 8;
+  optional int64 max_num_pinned_context_items = 9;
+  optional int64 max_local_index_size = 10;
+  optional int32 max_unclaimed_sites = 26;
+  optional int32 monthly_prompt_credits = 12;
+  optional int32 monthly_flow_credits = 13;
+  optional int32 monthly_flex_credit_purchase_amount = 14;
+  optional bool is_teams = 17;
+  optional bool is_enterprise = 16;
+  optional bool can_buy_more_credits = 18;
+  optional bool cascade_web_search_enabled = 19;
+  optional bool can_customize_app_icon = 20;
+  optional bool cascade_can_auto_run_commands = 22;
+  optional bool can_generate_commit_messages = 25;
+  optional bool knowledge_base_enabled = 27;
+  repeated .exa.codeium_common_pb.AllowedModelConfig cascade_allowed_models_config = 21;
+  optional .exa.codeium_common_pb.TeamConfig default_team_config = 24;
+  optional bool can_share_conversations = 28;
+  optional bool can_allow_cascade_in_background = 29;
+  repeated .exa.codeium_common_pb.PlanInfo.DefaultTeamFeaturesEntry default_team_features = 30;
+  optional bool browser_enabled = 31;
+  message DefaultTeamFeaturesEntry {
+    optional int32 key = 1;
+    optional .exa.codeium_common_pb.TeamsFeaturesMetadata value = 2;
+  }
+}
+message TopUpStatus {
+  optional .exa.codeium_common_pb.TransactionStatus top_up_transaction_status = 1;
+  optional bool top_up_enabled = 2;
+  optional int32 monthly_top_up_amount = 3;
+  optional int32 top_up_spent = 4;
+  optional int32 top_up_increment = 5;
+  optional bool top_up_criteria_met = 6;
+}
+message PlanStatus {
+  optional .exa.codeium_common_pb.PlanInfo plan_info = 1;
+  optional .google.protobuf.Timestamp plan_start = 2;
+  optional .google.protobuf.Timestamp plan_end = 3;
+  optional int32 available_prompt_credits = 8;
+  optional int32 available_flow_credits = 9;
+  optional int32 available_flex_credits = 4;
+  optional int32 used_flex_credits = 7;
+  optional int32 used_flow_credits = 5;
+  optional int32 used_prompt_credits = 6;
+  optional .exa.codeium_common_pb.TopUpStatus top_up_status = 10;
+}
+message UserStatus {
+  optional bool pro = 1;
+  optional bool disable_telemetry = 2;
+  optional string name = 3;
+  optional bool ignore_chat_telemetry_setting = 4;
+  optional string team_id = 5;
+  optional .exa.codeium_common_pb.UserTeamStatus team_status = 6;
+  optional string email = 7;
+  repeated .exa.codeium_common_pb.UserFeatures user_features = 9;
+  repeated .exa.codeium_common_pb.TeamsFeatures teams_features = 8;
+  repeated .exa.codeium_common_pb.Permission permissions = 11;
+  optional .exa.codeium_common_pb.PlanInfo plan_info = 12;
+  optional .exa.codeium_common_pb.PlanStatus plan_status = 13;
+  optional bool has_used_antigravity = 31;
+  optional int64 user_used_prompt_credits = 28;
+  optional int64 user_used_flow_credits = 29;
+  optional bool has_fingerprint_set = 30;
+  optional .exa.codeium_common_pb.TeamConfig team_config = 32;
+  optional .exa.codeium_common_pb.CascadeModelConfigData cascade_model_config_data = 33;
+  optional bool accepted_latest_terms_of_service = 34;
+  optional string g1_tier = 35;
+  optional .google.internal.cloud.code.v1internal.UserTier user_tier = 36;
+  optional bool user_data_collection_force_disabled = 37;
+  optional string profile_picture_url = 38;
+}
+message ScmWorkspaceInfo {
+  optional .exa.codeium_common_pb.PerforceDepotInfo perforce_info = 1;
+  optional .exa.codeium_common_pb.GitRepoInfo git_info = 2;
+}
+message PerforceDepotInfo {
+  optional string depot_name = 1;
+  optional string version_alias = 2;
+  optional string base_p4d_url = 3;
+}
+message GitRepoInfo {
+  optional string name = 1;
+  optional string owner = 2;
+  optional string repo_name = 5;
+  optional string commit = 3;
+  optional string version_alias = 4;
+  optional .exa.codeium_common_pb.ScmProvider scm_provider = 6;
+  optional string base_git_url = 7;
+}
+message CodeContextItem {
+  optional string absolute_path_migrate_me_to_uri = 1;
+  optional string absolute_uri = 16;
+  repeated .exa.codeium_common_pb.WorkspacePath workspace_paths = 2;
+  optional string node_name = 3;
+  repeated string node_lineage = 4;
+  optional uint32 start_line = 5;
+  optional uint32 start_col = 12;
+  optional uint32 end_line = 6;
+  optional uint32 end_col = 13;
+  optional .exa.codeium_common_pb.CodeContextType context_type = 7;
+  optional .exa.codeium_common_pb.Language language = 10;
+  repeated .exa.codeium_common_pb.CodeContextItem.SnippetByTypeEntry snippet_by_type = 11;
+  optional .exa.codeium_common_pb.GitRepoInfo repo_info = 14;
+  optional bytes file_content_hash = 15;
+  message SnippetByTypeEntry {
+    optional string key = 1;
+    optional .exa.codeium_common_pb.SnippetWithWordCount value = 2;
+  }
+}
+message SnippetWithWordCount {
+  optional string snippet = 1;
+  repeated .exa.codeium_common_pb.SnippetWithWordCount.WordCountBySplitterEntry word_count_by_splitter = 2;
+  message WordCountBySplitterEntry {
+    optional string key = 1;
+    optional .exa.codeium_common_pb.WordCount value = 2;
+  }
+}
+message WordCount {
+  repeated .exa.codeium_common_pb.WordCount.WordCountMapEntry word_count_map = 1;
+  message WordCountMapEntry {
+    optional string key = 1;
+    optional int64 value = 2;
+  }
+}
+message Repository {
+  optional string computed_name = 1;
+  optional string git_origin_url = 2;
+  optional string git_upstream_url = 3;
+  optional string reported_name = 4;
+  optional string model_name = 5;
+  optional string submodule_url = 6;
+  optional string submodule_path = 7;
+}
+message CaptureFileRequestData {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional string prompt_id = 2;
+  optional string file_path = 3;
+  optional string original_file_content = 4;
+  optional string completion_text = 5;
+  optional uint64 start_offset = 6;
+  optional uint64 end_offset = 7;
+  optional uint64 cursor_line = 8;
+  optional uint64 cursor_column = 9;
+}
+message CompletionStatistics {
+  optional uint32 num_acceptances = 1;
+  optional uint32 num_rejections = 2;
+  optional uint32 num_lines_accepted = 3;
+  optional uint32 num_bytes_accepted = 4;
+  optional uint32 num_users = 5;
+  optional uint32 active_developer_days = 6;
+  optional uint32 active_developer_hours = 7;
+}
+message CompletionByDateEntry {
+  optional .google.protobuf.Timestamp timestamp = 1;
+  optional .exa.codeium_common_pb.CompletionStatistics completion_statistics = 2;
+}
+message CompletionByLanguageEntry {
+  optional .exa.codeium_common_pb.Language language = 1;
+  optional .exa.codeium_common_pb.CompletionStatistics completion_statistics = 2;
+}
+message ChatStats {
+  optional uint64 chats_sent = 1;
+  optional uint64 chats_received = 2;
+  optional uint64 chats_accepted = 3;
+  optional uint64 chats_inserted_at_cursor = 4;
+  optional uint64 chats_applied = 5;
+  optional uint64 chat_loc_used = 6;
+  optional uint64 chat_code_blocks_used = 7;
+  optional uint64 function_explain_count = 8;
+  optional uint64 function_docstring_count = 9;
+  optional uint64 function_refactor_count = 10;
+  optional uint64 code_block_explain_count = 11;
+  optional uint64 code_block_refactor_count = 12;
+  optional uint64 problem_explain_count = 13;
+  optional uint64 function_unit_tests_count = 14;
+  optional uint32 active_developer_days = 15;
+}
+message ChatStatsByDateEntry {
+  optional .google.protobuf.Timestamp timestamp = 1;
+  optional .exa.codeium_common_pb.ChatStats chat_stats = 2;
+}
+message ChatStatsByModelEntry {
+  optional .exa.codeium_common_pb.Model model_id = 1;
+  optional .exa.codeium_common_pb.ChatStats chat_stats = 2;
+}
+message CommandStats {
+  optional uint64 num_commands = 1;
+  optional uint64 num_commands_accepted = 2;
+  optional uint64 num_commands_rejected = 3;
+  optional uint64 num_edits = 4;
+  optional uint64 num_generations = 5;
+  optional uint64 loc_added = 6;
+  optional uint64 loc_removed = 7;
+  optional uint64 bytes_added = 8;
+  optional uint64 bytes_removed = 9;
+  optional uint64 loc_selected = 10;
+  optional uint64 bytes_selected = 11;
+  repeated .exa.codeium_common_pb.CommandStats.NumCommandsBySourceEntry num_commands_by_source = 12;
+  message NumCommandsBySourceEntry {
+    optional string key = 1;
+    optional uint64 value = 2;
+  }
+}
+message CommandStatsByDateEntry {
+  optional .google.protobuf.Timestamp timestamp = 1;
+  optional .exa.codeium_common_pb.CommandStats command_stats = 2;
+}
+message UserTableStats {
+  optional string name = 1;
+  optional string email = 2;
+  optional .google.protobuf.Timestamp last_update_time = 3;
+  optional string api_key = 4;
+  optional bool disable_codeium = 5;
+  optional uint32 active_days = 6;
+  optional string role = 7;
+  optional .google.protobuf.Timestamp signup_time = 8;
+  optional .google.protobuf.Timestamp last_autocomplete_usage_time = 9;
+  optional .google.protobuf.Timestamp last_chat_usage_time = 10;
+  optional .google.protobuf.Timestamp last_command_usage_time = 11;
+  optional int64 prompt_credits_used = 12;
+}
+message CascadeNUXState {
+  optional .exa.codeium_common_pb.CascadeNUXEvent event = 1;
+  optional .google.protobuf.Timestamp timestamp = 2;
+}
+message UserNUXState {
+  optional .exa.codeium_common_pb.UserNUXEvent event = 1;
+  optional .google.protobuf.Timestamp timestamp = 2;
+}
+message ConversationBrainConfig {
+  optional .exa.codeium_common_pb.PlanMode plan_mode = 1;
+}
+message FeatureUsageData {
+  optional bool has_used = 1;
+}
+message CascadeNUXConfig {
+  optional uint32 uid = 1;
+  optional .exa.codeium_common_pb.CascadeNUXLocation location = 2;
+  optional .exa.codeium_common_pb.CascadeNUXTrigger trigger = 3;
+  optional string analytics_event_name = 4;
+  optional string learn_more_url = 7;
+  optional int32 priority = 8;
+  optional .exa.codeium_common_pb.CascadeNUXIcon icon = 10;
+  optional bool requires_idle_cascade = 11;
+  optional string title = 12;
+  optional string body = 13;
+  optional string image_url = 14;
+  optional string video_url = 15;
+  repeated .exa.codeium_common_pb.CascadeNUXInteractionType available_interactions = 16;
+  optional string learn_more_button_text = 17;
+  optional string primary_cta_text = 18;
+}
+message UserSettings {
+  optional bool open_most_recent_chat_conversation = 1;
+  optional .exa.codeium_common_pb.Model last_selected_model = 2;
+  optional .exa.codeium_common_pb.ThemePreference theme_preference = 3;
+  optional .exa.codeium_common_pb.RememberLastModelSelection remember_last_model_selection = 7;
+  optional .exa.codeium_common_pb.AutocompleteSpeed autocomplete_speed = 6;
+  optional string last_selected_model_name = 8;
+  optional .exa.codeium_common_pb.Model last_selected_cascade_model = 9;
+  optional .exa.codeium_common_pb.ModelOrAlias last_selected_cascade_model_or_alias = 30;
+  optional .exa.codeium_common_pb.ConversationalPlannerMode cascade_planner_mode = 13;
+  optional .exa.codeium_common_pb.Model last_model_override = 46;
+  optional string last_model_default_override_version_id = 58;
+  repeated string cascade_allowed_commands = 14;
+  repeated string cascade_denied_commands = 15;
+  optional bool cascade_web_search_disabled = 18;
+  optional .exa.codeium_common_pb.TabEnabled tab_enabled = 67;
+  optional bool disable_selection_popup = 21;
+  optional bool disable_explain_problem_inlay_hint = 22;
+  optional bool disable_inlay_hint_shortcuts = 23;
+  optional bool disable_open_cascade_on_reload = 24;
+  optional bool disable_auto_open_edited_files = 25;
+  optional bool disable_tab_to_jump = 26;
+  optional .exa.codeium_common_pb.CascadeCommandsAutoExecution cascade_auto_execution_policy = 27;
+  optional string last_selected_cascade_id = 28;
+  optional bool explain_and_fix_in_current_conversation = 29;
+  optional bool allow_cascade_access_gitignore_files = 31;
+  optional bool allow_agent_access_non_workspace_files = 79;
+  optional bool disable_cascade_auto_fix_lints = 32;
+  optional .exa.codeium_common_pb.DetectAndUseProxy detect_and_use_proxy = 34;
+  optional bool disable_tab_to_import = 35;
+  optional bool use_clipboard_for_completions = 36;
+  optional bool disable_highlight_after_accept = 37;
+  optional bool disable_auto_generate_memories = 39;
+  optional bool enable_sounds_for_special_events = 40;
+  optional bool enable_tab_sounds = 41;
+  optional bool allow_cascade_in_background = 42;
+  optional .exa.codeium_common_pb.TabToJump tab_to_jump = 43;
+  optional .exa.codeium_common_pb.CascadeWebSearchTool cascade_web_search = 44;
+  optional bool enable_terminal_completion = 45;
+  optional bool is_snoozed = 55;
+  optional bool disable_cascade_in_background = 48;
+  repeated string custom_workspace = 50;
+  optional .exa.codeium_common_pb.PlanMode global_plan_mode_preference = 54;
+  repeated .exa.codeium_common_pb.ClientModelConfig cached_cascade_model_configs = 52;
+  repeated .exa.codeium_common_pb.ClientModelSort cached_cascade_model_sorts = 53;
+  optional .exa.codeium_common_pb.CascadeRunExtensionCode cascade_run_extension_code = 56;
+  optional .exa.codeium_common_pb.CascadeRunExtensionCodeAutoRun cascade_run_extension_code_auto_run = 57;
+  optional .exa.codeium_common_pb.CascadeInputAutocomplete cascade_input_autocomplete = 65;
+  optional .exa.codeium_common_pb.AutoContinueOnMaxGeneratorInvocations auto_continue_on_max_generator_invocations = 59;
+  repeated string recently_used_cascade_models = 61;
+  optional .exa.codeium_common_pb.AnnotationsConfig annotations_config = 63;
+  repeated string relative_working_dir_paths = 66;
+  repeated .exa.codeium_common_pb.UserSettings.CustomModelsEntry custom_models = 68;
+  optional bool disable_code_snippet_telemetry = 69;
+  optional .exa.codeium_common_pb.PlanningMode planning_mode = 70;
+  optional .exa.codeium_common_pb.AgentBrowserTools agent_browser_tools = 71;
+  optional .exa.codeium_common_pb.ArtifactReviewMode artifact_review_mode = 72;
+  optional bool allow_tab_access_gitignore_files = 75;
+  optional string browser_chrome_path = 76;
+  optional string browser_user_profile_path = 77;
+  optional int32 browser_cdp_port = 78;
+  optional bool demo_mode_enabled = 80;
+  optional .exa.codeium_common_pb.BrowserJsExecutionPolicy browser_js_execution_policy = 81;
+  optional bool secure_mode_enabled = 82;
+  message CustomModelsEntry {
+    optional string key = 1;
+    optional .exa.codeium_common_pb.ModelInfo value = 2;
+  }
+}
+message UserAccountSettings {
+  optional bool disable_code_snippet_telemetry = 1;
+}
+message ModelFeatures {
+  optional bool supports_context_tokens = 2;
+  optional bool requires_instruct_tags = 3;
+  optional bool requires_fim_context = 4;
+  optional bool requires_context_snippet_prefix = 5;
+  optional bool requires_context_relevance_tags = 6;
+  optional bool requires_llama3_tokens = 7;
+  optional bool zero_shot_capable = 8;
+  optional bool requires_autocomplete_as_command = 9;
+  optional bool supports_cursor_aware_supercomplete = 10;
+  optional bool supports_images = 11;
+  optional bool supports_pdf = 22;
+  optional bool supports_video = 23;
+  repeated .exa.codeium_common_pb.ModelFeatures.SupportedMimeTypesEntry supported_mime_types = 28;
+  optional bool supports_tool_calls = 12;
+  optional bool does_not_support_tool_choice = 27;
+  optional bool supports_cumulative_context = 13;
+  optional bool tab_jump_print_line_range = 14;
+  optional bool supports_thinking = 15;
+  optional bool supports_adaptive_thinking = 29;
+  optional bool supports_raw_thinking = 21;
+  optional bool supports_estimate_token_counter = 17;
+  optional bool add_cursor_to_find_replace_target = 18;
+  optional bool supports_tab_jump_use_whole_document = 19;
+  optional bool supports_model_info_override = 24;
+  optional bool requires_lead_in_generation = 25;
+  optional bool requires_no_xml_tool_examples = 26;
+  optional bool supports_thought_circulation = 30;
+  optional bool supports_deferred_tool_loading = 31;
+  message SupportedMimeTypesEntry {
+    optional string key = 1;
+    optional bool value = 2;
+  }
+}
+message ExternalModel {
+  optional bool is_internal = 1;
+  optional .exa.codeium_common_pb.Model model_id = 2;
+  optional string model_name = 3;
+  optional string base_url = 4;
+  optional string api_key = 5;
+  optional string access_key = 6;
+  optional string secret_access_key = 7;
+  optional string region = 8;
+  optional string project_id = 9;
+  optional uint32 id = 10;
+  optional int32 max_completion_tokens = 11;
+  optional int32 max_input_tokens = 12;
+}
+message ModelInfo {
+  optional .exa.codeium_common_pb.Model model_id = 1;
+  optional bool is_internal = 2;
+  optional .exa.codeium_common_pb.ModelType model_type = 3;
+  optional int32 max_tokens = 4;
+  optional string tokenizer_type = 5;
+  optional .exa.codeium_common_pb.ModelFeatures model_features = 6;
+  optional .exa.codeium_common_pb.APIProvider api_provider = 7;
+  optional string model_name = 8;
+  optional bool supports_context = 9;
+  optional int32 embed_dim = 10;
+  optional string base_url = 11;
+  optional string chat_model_name = 12;
+  optional int32 max_output_tokens = 13;
+  optional .exa.codeium_common_pb.PromptTemplaterType prompt_templater_type = 14;
+  optional .exa.codeium_common_pb.ToolFormatterType tool_formatter_type = 15;
+  optional int32 thinking_budget = 16;
+  optional int32 min_thinking_budget = 17;
+  optional bool use_ccpa_for_eval = 18;
+  optional int32 thinking_level = 19;
+  optional string display_name = 20;
+  optional string tool_response_key = 21;
+  optional uint32 tokens_per_image = 22;
+  optional string vertex_model_id = 23;
+  optional .exa.codeium_common_pb.ModelProvider model_provider = 24;
+  optional string model_url = 25;
+}
+message ApiProviderRoutingConfig {
+  repeated .exa.codeium_common_pb.ApiProviderRoutingConfig.ModelMapEntry model_map = 1;
+  message ModelMapEntry {
+    optional string key = 1;
+    optional .exa.codeium_common_pb.ApiProviderConfigMap value = 2;
+  }
+}
+message ApiProviderConfigMap {
+  repeated .exa.codeium_common_pb.ApiProviderConfigMap.ProviderMapEntry provider_map = 1;
+  message ProviderMapEntry {
+    optional string key = 1;
+    optional .exa.codeium_common_pb.ApiProviderConfig value = 2;
+  }
+}
+message ApiProviderConfig {
+  optional uint32 weight = 1;
+  optional uint32 cache_ttl_minutes = 2;
+}
+message ModelConfig {
+  optional .exa.codeium_common_pb.ModelInfo generation_model = 1;
+  optional .exa.codeium_common_pb.ModelInfo context_check_model = 2;
+}
+message ModelStatusInfo {
+  optional .exa.codeium_common_pb.Model model = 1;
+  optional string message = 2;
+  optional .exa.codeium_common_pb.ModelStatus status = 3;
+}
+message CompletionExample {
+  optional string uid = 1;
+  optional string completion_id = 2;
+  optional string file_path = 3;
+  optional string short_prefix = 4;
+  optional string completion_text = 5;
+  optional string short_suffix = 6;
+}
+message CompletionExampleWithMetadata {
+  optional .exa.codeium_common_pb.CompletionExample example = 1;
+  optional string name = 2;
+  optional .google.protobuf.Timestamp time = 4;
+}
+message CciWithSubrange {
+  optional .exa.codeium_common_pb.CodeContextItem cci = 1;
+  optional .exa.codeium_common_pb.ContextSubrange subrange = 2;
+}
+message ContextSubrange {
+  optional .exa.codeium_common_pb.ContextSnippetType snippet_type = 1;
+  optional int64 start_offset = 2;
+  optional int64 end_offset = 3;
+}
+message PathScopeItem {
+  optional string absolute_path_migrate_me_to_uri = 1;
+  optional string absolute_uri = 5;
+  repeated .exa.codeium_common_pb.PathScopeItem.WorkspaceRelativePathsMigrateMeToWorkspaceUrisEntry workspace_relative_paths_migrate_me_to_workspace_uris = 2;
+  repeated .exa.codeium_common_pb.PathScopeItem.WorkspaceUrisToRelativePathsEntry workspace_uris_to_relative_paths = 6;
+  optional uint32 num_files = 3;
+  optional uint64 num_bytes = 4;
+  message WorkspaceRelativePathsMigrateMeToWorkspaceUrisEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+  message WorkspaceUrisToRelativePathsEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message FileLineRange {
+  optional string absolute_uri = 1;
+  optional uint32 start_line = 2;
+  optional uint32 end_line = 3;
+}
+message TextBlock {
+  optional string content = 1;
+  optional .exa.codeium_common_pb.FileLineRange file_line_range = 2;
+  optional string label = 3;
+}
+message DynamicContextScopeItem {
+  optional string provider_label = 1;
+  optional string item_value = 2;
+  optional string item_label = 3;
+  optional string uri = 4;
+}
+message RepositoryScopeItem {
+  optional .exa.codeium_common_pb.GitRepoInfo repo_info = 1;
+}
+message RepositoryPathScopeItem {
+  optional .exa.codeium_common_pb.GitRepoInfo repo_info = 1;
+  optional string relative_path = 2;
+  optional bool is_dir = 3;
+}
+message KnowledgeBaseScopeItem {
+  optional string document_id = 1;
+  optional .exa.codeium_common_pb.IndexChoice index = 7;
+  optional .exa.codeium_common_pb.DocumentType document_type = 8;
+  optional string display_name = 3;
+  optional string description = 4;
+  optional string display_source = 5;
+  optional string url = 6;
+}
+message ConsoleLogLine {
+  optional string timestamp_str = 1;
+  optional string type = 2;
+  optional string output = 3;
+  optional string location = 4;
+}
+message ConsoleLogScopeItem {
+  repeated .exa.codeium_common_pb.ConsoleLogLine lines = 1;
+  optional string server_address = 2;
+}
+message DOMElementScopeItem {
+  optional string tag_name = 1;
+  optional string outer_html = 2;
+  optional string id = 3;
+  optional string react_component_name = 4;
+  optional .exa.codeium_common_pb.FileLineRange file_line_range = 5;
+}
+message DOMNode {
+  optional bool is_visible = 1;
+  optional .exa.codeium_common_pb.DOMNode.ElementNode element = 2;
+  optional .exa.codeium_common_pb.DOMNode.TextNode text = 3;
+  message ElementNode {
+    optional string tag_name = 1;
+    optional string xpath = 2;
+    repeated string children = 3;
+    repeated .exa.codeium_common_pb.DOMNode.ElementNode.AttributesEntry attributes = 4;
+    optional bool is_interactive = 5;
+    optional bool is_top_element = 6;
+    optional int32 highlight_index = 7;
+    optional int32 central_x = 8;
+    optional int32 central_y = 9;
+    message AttributesEntry {
+      optional string key = 1;
+      optional string value = 2;
+    }
+  }
+  message TextNode {
+    optional string text = 1;
+  }
+}
+message DOMTree {
+  optional string root_id = 1;
+  repeated .exa.codeium_common_pb.DOMTree.MapEntry map = 2;
+  message MapEntry {
+    optional string key = 1;
+    optional .exa.codeium_common_pb.DOMNode value = 2;
+  }
+}
+message Viewport {
+  optional int32 x = 1;
+  optional int32 y = 2;
+  optional int32 width = 3;
+  optional int32 height = 4;
+}
+message RecipeScopeItem {
+  optional string recipe_id = 1;
+  optional string title = 2;
+  optional string description = 3;
+  optional string system_prompt = 4;
+  optional string uri = 5;
+}
+message RuleScopeItem {
+  optional string rule_path = 1;
+  optional string rule_name = 2;
+  optional string description = 3;
+}
+message McpResourceItem {
+  optional string uri = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional string mime_type = 4;
+  optional string server_name = 5;
+}
+message McpResourceContent {
+  optional string uri = 1;
+  optional .exa.codeium_common_pb.TextData text = 2;
+  optional .exa.codeium_common_pb.ImageData image = 3;
+  optional .exa.codeium_common_pb.Media media_content = 4;
+}
+message McpPromptMessage {
+  optional string role = 1;
+  optional string text = 2;
+  optional .exa.codeium_common_pb.Media media = 3;
+  optional .exa.codeium_common_pb.McpResourceContent resource = 4;
+}
+message McpPromptArgument {
+  optional string name = 1;
+  optional string description = 2;
+  optional bool required = 3;
+}
+message McpPromptScopeItem {
+  optional string server_name = 1;
+  optional string name = 2;
+  optional string description = 3;
+  repeated .exa.codeium_common_pb.McpPromptArgument arguments = 4;
+  repeated .exa.codeium_common_pb.McpPromptScopeItem.ArgumentValuesEntry argument_values = 5;
+  repeated .exa.codeium_common_pb.McpPromptMessage messages = 6;
+  message ArgumentValuesEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message BrowserPageScopeItem {
+  optional string url = 1;
+  optional string title = 2;
+  optional string visible_text_content = 3;
+  optional string page_id = 4;
+}
+message BrowserCodeBlockScopeItem {
+  optional string url = 1;
+  optional string title = 2;
+  optional string code_content = 3;
+  optional .exa.codeium_common_pb.Language language = 4;
+  optional string context_text = 5;
+  optional string page_id = 6;
+}
+message BrowserTextScopeItem {
+  optional string url = 1;
+  optional string visible_text = 2;
+  optional string page_id = 3;
+}
+message ConversationScopeItem {
+  optional string id = 1;
+  optional string title = 2;
+  optional .google.protobuf.Timestamp last_modified_time = 3;
+  optional string source = 4;
+}
+message UserActivityScopeItem {
+  optional string id = 1;
+  optional string branch = 2;
+  optional bool current = 3;
+}
+message TerminalScopeItem {
+  optional string process_id = 1;
+  optional string name = 2;
+  optional string last_command = 3;
+  optional string selectionContent = 4;
+}
+message SlashCommandInfo {
+  optional string name = 1;
+  optional string model_facing_text = 2;
+  optional .exa.codeium_common_pb.SlashCommandType type = 3;
+  optional string icon = 4;
+}
+message SlashCommandScopeItem {
+  optional .exa.codeium_common_pb.SlashCommandInfo info = 1;
+  repeated .exa.codeium_common_pb.SlashCommandScopeItem.ArgumentValuesEntry argument_values = 2;
+  message ArgumentValuesEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message ContextScopeItem {
+  optional .exa.codeium_common_pb.PathScopeItem file = 1;
+  optional .exa.codeium_common_pb.PathScopeItem directory = 2;
+  optional .exa.codeium_common_pb.RepositoryScopeItem repository = 3;
+  optional .exa.codeium_common_pb.CodeContextItem code_context = 4;
+  optional .exa.codeium_common_pb.CciWithSubrange cci_with_subrange = 6;
+  optional .exa.codeium_common_pb.RepositoryPathScopeItem repository_path = 7;
+  optional .exa.codeium_common_pb.KnowledgeBaseScopeItem slack = 8;
+  optional .exa.codeium_common_pb.KnowledgeBaseScopeItem github = 9;
+  optional .exa.codeium_common_pb.FileLineRange file_line_range = 10;
+  optional .exa.codeium_common_pb.TextBlock text_block = 11;
+  optional .exa.codeium_common_pb.KnowledgeBaseScopeItem jira = 12;
+  optional .exa.codeium_common_pb.KnowledgeBaseScopeItem google_drive = 13;
+  optional .exa.codeium_common_pb.ConsoleLogScopeItem console_log = 14;
+  optional .exa.codeium_common_pb.DOMElementScopeItem dom_element = 15;
+  optional .exa.codeium_common_pb.RecipeScopeItem recipe = 16;
+  optional .exa.codeium_common_pb.KnowledgeBaseScopeItem knowledge = 17;
+  optional .exa.codeium_common_pb.RuleScopeItem rule = 18;
+  optional .exa.codeium_common_pb.McpResourceItem mcp_resource = 19;
+  optional .exa.codeium_common_pb.BrowserPageScopeItem browser_page = 20;
+  optional .exa.codeium_common_pb.BrowserCodeBlockScopeItem browser_code_block = 21;
+  optional .exa.codeium_common_pb.BrowserTextScopeItem browser_text = 22;
+  optional .exa.codeium_common_pb.ConversationScopeItem conversation = 23;
+  optional .exa.codeium_common_pb.UserActivityScopeItem user_activity = 24;
+  optional .exa.codeium_common_pb.TerminalScopeItem terminal = 25;
+  optional .exa.codeium_common_pb.McpPromptScopeItem mcp_prompt = 26;
+  optional .exa.codeium_common_pb.SlashCommandScopeItem slash_command = 27;
+  optional .exa.codeium_common_pb.DynamicContextScopeItem dynamic_context = 28;
+}
+message ContextScope {
+  repeated .exa.codeium_common_pb.ContextScopeItem items = 1;
+}
+message NodeExecutionRecord {
+  optional string node_name = 1;
+  optional .google.protobuf.Timestamp start_time = 2;
+  optional .google.protobuf.Timestamp end_time = 3;
+  optional bytes graph_state_json = 5;
+  optional uint64 graph_state_json_num_bytes = 6;
+  optional .exa.codeium_common_pb.GraphExecutionState subgraph_execution = 4;
+}
+message GraphExecutionState {
+  optional .exa.codeium_common_pb.NodeExecutionRecord current = 1;
+  repeated .exa.codeium_common_pb.NodeExecutionRecord history = 2;
+}
+message Guideline {
+  repeated .exa.codeium_common_pb.GuidelineItem items = 1;
+}
+message GuidelineItem {
+  optional string guideline = 1;
+}
+message ChatNodeConfig {
+  optional .exa.codeium_common_pb.Model model = 1;
+  optional uint32 max_input_tokens = 2;
+  optional float temperature = 3;
+  optional uint32 max_output_tokens = 4;
+  optional bool order_snippets_by_file = 5;
+}
+message MQueryConfig {
+  optional bool should_batch_ccis = 1;
+  optional int64 max_tokens_per_subrange = 2;
+  optional int64 num_parser_workers = 3;
+  optional int64 num_workers_per_distributed_scorer = 4;
+  optional bool verbose = 5;
+  repeated string ignore_extensions = 6;
+  repeated string ignore_directory_stubs = 7;
+  optional uint32 min_token_space_for_context = 8;
+  optional uint32 max_target_files = 9;
+  optional uint32 top_cci_count = 10;
+}
+message CompletionDelta {
+  optional string delta_text = 1;
+  optional string delta_raw_generation = 12;
+  optional uint32 delta_tokens = 2;
+  optional .exa.codeium_common_pb.StopReason stop_reason = 3;
+  optional .exa.codeium_common_pb.ModelUsageStats usage = 4;
+  repeated .exa.codeium_common_pb.ChatToolCall delta_tool_calls = 5;
+  optional string delta_thinking = 6;
+  optional string delta_raw_thinking = 17;
+  optional bytes delta_signature = 7;
+  optional bool thinking_redacted = 8;
+  optional .exa.codeium_common_pb.CitationMetadata citation_metadata = 11;
+  optional string trace_id = 13;
+  optional string stop_message = 14;
+  repeated .google.internal.cloud.code.v1internal.Credits consumed_credits = 15;
+  optional string response_model = 16;
+}
+message CompletionDeltaMap {
+  repeated .exa.codeium_common_pb.CompletionDeltaMap.DeltasEntry deltas = 1;
+  optional string prompt = 2;
+  optional .exa.codeium_common_pb.CompletionProfile completion_profile = 3;
+  message DeltasEntry {
+    optional int32 key = 1;
+    optional .exa.codeium_common_pb.CompletionDelta value = 2;
+  }
+}
+message ChatCompletionInfo {
+  optional string prompt = 1;
+  optional string inference_address = 2;
+  optional string serialized_prompt = 3;
+}
+message ChatToolCall {
+  optional string id = 1;
+  optional string name = 2;
+  optional string arguments_json = 3;
+  optional string invalid_json_str = 4;
+  optional string invalid_json_err = 5;
+  optional string thought_signature = 6;
+  optional bytes thinking_signature = 7;
+  optional string original_arguments_json = 8;
+  optional string original_name = 9;
+}
+message Status {
+  optional .exa.codeium_common_pb.StatusLevel level = 1;
+  optional string message = 2;
+}
+message DocumentPosition {
+  optional uint64 row = 1;
+  optional uint64 col = 2;
+}
+message Range {
+  optional uint64 start_offset = 1;
+  optional uint64 end_offset = 2;
+  optional .exa.codeium_common_pb.DocumentPosition start_position = 3;
+  optional .exa.codeium_common_pb.DocumentPosition end_position = 4;
+}
+message Document {
+  optional string absolute_path_migrate_me_to_uri = 1;
+  optional string absolute_uri = 12;
+  optional string relative_path_migrate_me_to_workspace_uri = 2;
+  optional string workspace_uri = 13;
+  optional string text = 3;
+  optional string editor_language = 4;
+  optional .exa.codeium_common_pb.Language language = 5;
+  optional uint64 cursor_offset = 6;
+  optional .exa.codeium_common_pb.DocumentPosition cursor_position = 8;
+  optional string line_ending = 7;
+  optional .exa.codeium_common_pb.Range visible_range = 9;
+  optional bool is_cutoff_start = 10;
+  optional bool is_cutoff_end = 11;
+  optional int32 lines_cutoff_start = 14;
+  optional int32 lines_cutoff_end = 15;
+  optional .google.protobuf.Timestamp timestamp = 16;
+  optional bool is_dirty = 17;
+  optional bool is_synthetic = 18;
+}
+message PromptComponents {
+  optional .exa.codeium_common_pb.Document document = 1;
+  repeated .exa.codeium_common_pb.Document other_documents = 2;
+  repeated .exa.codeium_common_pb.CodeContextItem code_context_items = 3;
+}
+message TextOrScopeItem {
+  optional string text = 1;
+  optional .exa.codeium_common_pb.ContextScopeItem item = 2;
+}
+message PinnedContextConfig {
+  optional string match_repo_name = 1;
+  optional string match_path = 2;
+  repeated .exa.codeium_common_pb.PinnedContext pinned_contexts = 3;
+}
+message PinnedContext {
+  optional .exa.codeium_common_pb.RepositoryPath repository_path = 1;
+}
+message RepositoryPath {
+  optional string remote_repo_name = 1;
+  optional string version = 2;
+  optional string relative_path = 3;
+}
+message DefaultPinnedContextConfig {
+  repeated .exa.codeium_common_pb.PinnedContextConfig pinned_context_configs = 1;
+}
+message Rule {
+  optional string id = 1;
+  optional string prompt = 2;
+}
+message RuleViolation {
+  optional string id = 1;
+  optional .exa.codeium_common_pb.Rule rule = 2;
+  optional int32 start_line = 3;
+  optional int32 end_line = 4;
+}
+message LanguageServerDiagnostics {
+  repeated string logs = 1;
+}
+message IndexerStats {
+  optional .exa.codeium_common_pb.IndexerDbStats database = 1;
+}
+message IndexerDbStats {
+  optional .exa.codeium_common_pb.LocalSqliteFaissDbStats local_sqlite_faiss = 1;
+  optional .exa.codeium_common_pb.PostgresDbStats postgres = 2;
+}
+message LocalSqliteFaissDbStats {
+  repeated .exa.codeium_common_pb.FaissStateStats faiss_state_stats = 1;
+  optional int64 total_item_count = 2;
+  optional bool quantized = 3;
+}
+message FaissStateStats {
+  optional .exa.codeium_common_pb.EmbeddingSource embedding_source = 1;
+  optional string workspace = 2;
+  optional int64 item_count = 3;
+}
+message PostgresDbStats {
+}
+message LastUpdateRecord {
+  optional .google.protobuf.Timestamp time = 1;
+  optional .exa.codeium_common_pb.LastUpdateType type = 2;
+}
+message ModelUsageStats {
+  optional .exa.codeium_common_pb.Model model = 1;
+  optional uint64 input_tokens = 2;
+  optional uint64 output_tokens = 3;
+  optional uint64 thinking_output_tokens = 9;
+  optional uint64 response_output_tokens = 10;
+  optional uint64 cache_read_tokens = 5;
+  optional .exa.codeium_common_pb.APIProvider api_provider = 6;
+  optional string message_id = 7;
+  repeated .exa.codeium_common_pb.ModelUsageStats.ResponseHeaderEntry response_header = 8;
+  optional string response_id = 11;
+  optional string provider_assigned_message_id = 12;
+  optional uint64 cache_write_tokens = 4;
+  message ResponseHeaderEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message SuperCompleteFilterReason {
+  optional string reason = 1;
+}
+message CodeDiagnostic {
+  optional .exa.codeium_common_pb.Range range = 1;
+  optional string message = 2;
+  optional string severity = 3;
+  optional string source = 4;
+  optional string uri = 5;
+  optional string id = 6;
+  optional .exa.codeium_common_pb.Language language = 7;
+  optional int64 score = 8;
+}
+message IntellisenseSuggestion {
+  optional .exa.codeium_common_pb.Range range = 1;
+  optional string text = 2;
+  optional string label = 3;
+  optional string label_detail = 4;
+  optional string description = 5;
+  optional string detail = 6;
+  optional string documentation = 7;
+  optional string kind = 8;
+  optional bool selected = 9;
+}
+message DocumentLinesElement {
+  optional .exa.codeium_common_pb.DocumentQuery document_query = 1;
+  repeated .exa.codeium_common_pb.CodeContextItem overlapped_code_context_items = 2;
+  optional uint32 first_element_suffix_overlap = 3;
+  optional uint32 last_element_prefix_overlap = 4;
+}
+message DocumentQuery {
+  optional string text = 1;
+  optional int32 cursor_offset = 2;
+  optional uint32 start_line = 3;
+  optional uint32 end_line = 4;
+  optional bool use_character_position = 5;
+}
+message DocumentOutlineElement {
+  optional .exa.codeium_common_pb.CodeContextItem code_context_item = 1;
+  optional .exa.codeium_common_pb.DocumentLinesElement document_lines_element = 2;
+  optional string text = 3;
+}
+message DocumentOutline {
+  repeated .exa.codeium_common_pb.DocumentOutlineElement elements = 1;
+  optional int64 start_index = 2;
+}
+message ProductEvent {
+  optional string event_name = 1;
+  optional string api_key = 2;
+  optional string installation_id = 3;
+  optional string ide_name = 4;
+  optional string os = 5;
+  optional string codeium_version = 6;
+  optional string ide_version = 7;
+  optional uint64 duration_ms = 8;
+  repeated .exa.codeium_common_pb.ProductEvent.ExtraEntry extra = 9;
+  message ExtraEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message KnowledgeBaseChunk {
+  optional string text = 1;
+  optional .exa.codeium_common_pb.MarkdownChunk markdown_chunk = 3;
+  optional int32 position = 2;
+}
+message KnowledgeBaseItem {
+  optional string document_id = 1;
+  optional string url = 3;
+  optional string title = 4;
+  optional .google.protobuf.Timestamp timestamp = 5;
+  repeated .exa.codeium_common_pb.KnowledgeBaseChunk chunks = 6;
+  optional string summary = 7;
+  optional .exa.codeium_common_pb.DOMTree dom_tree = 9;
+  optional .exa.codeium_common_pb.ImageData image = 8;
+  optional .exa.codeium_common_pb.Media media = 10;
+  optional string text = 2;
+}
+message KnowledgeBaseItemWithMetadata {
+  optional .exa.codeium_common_pb.KnowledgeBaseItem knowledge_base_item = 1;
+  optional float score = 2;
+  optional string index_name = 3;
+  optional string document_source_name = 4;
+}
+message KnowledgeBaseGroup {
+  optional string description = 1;
+  optional .exa.codeium_common_pb.KnowledgeBaseItemWithMetadata item = 2;
+  repeated .exa.codeium_common_pb.KnowledgeBaseGroup children = 3;
+}
+message ImageData {
+  optional string base64_data = 1;
+  optional string mime_type = 2;
+  optional string caption = 3;
+  optional string uri = 4;
+}
+message Blobref {
+  optional string blob_id = 1;
+}
+message Media {
+  optional string mime_type = 1;
+  optional string description = 4;
+  optional bytes inline_data = 2;
+  optional .exa.codeium_common_pb.Blobref blobref = 3;
+  optional string uri = 5;
+  optional bytes thumbnail = 6;
+  optional float duration_seconds = 7;
+}
+message TextData {
+  optional string text = 1;
+  optional string mime_type = 2;
+}
+message MarkdownChunk {
+  repeated .exa.codeium_common_pb.MarkdownChunk.MarkdownHeader headers = 1;
+  optional string text = 2;
+  message MarkdownHeader {
+    optional .exa.codeium_common_pb.MarkdownNodeType type = 1;
+    optional string text = 2;
+  }
+}
+message TerminalShellCommandHeader {
+  optional .exa.codeium_common_pb.Metadata metadata = 7;
+  optional string terminal_id = 1;
+  optional uint32 shell_pid = 2;
+  optional string command_line = 3;
+  optional string cwd = 4;
+  optional .google.protobuf.Timestamp start_time = 5;
+  optional .exa.codeium_common_pb.TerminalShellCommandSource source = 6;
+}
+message TerminalShellCommandData {
+  optional bytes raw_data = 1;
+}
+message TerminalShellCommandTrailer {
+  optional int32 exit_code = 1;
+  optional .google.protobuf.Timestamp end_time = 2;
+}
+message TerminalShellCommandStreamChunk {
+  optional .exa.codeium_common_pb.TerminalShellCommandHeader header = 1;
+  optional .exa.codeium_common_pb.TerminalShellCommandData data = 2;
+  optional .exa.codeium_common_pb.TerminalShellCommandTrailer trailer = 3;
+}
+message TerminalShellCommand {
+  optional string id = 10;
+  optional uint32 shell_pid = 1;
+  optional string command_line = 2;
+  optional string cwd = 3;
+  optional bytes output = 4;
+  optional int32 exit_code = 5;
+  optional .google.protobuf.Timestamp start_time = 6;
+  optional .google.protobuf.Timestamp end_time = 7;
+  optional .google.protobuf.Timestamp last_updated_time = 11;
+  optional .exa.codeium_common_pb.TerminalShellCommandStatus status = 8;
+  optional .exa.codeium_common_pb.TerminalShellCommandSource source = 9;
+}
+message TerminalCommandData {
+  optional string terminal_id = 1;
+  optional string platform = 2;
+  optional string cwd = 3;
+  optional string shell_name = 4;
+}
+message AntigravityProject {
+  optional string antigravity_project_id = 1;
+  optional string auth_uid = 2;
+  optional .exa.codeium_common_pb.DeploymentProvider deployment_provider = 3;
+  optional string provider_project_id = 4;
+  optional string project_name = 5;
+  optional .google.protobuf.Timestamp created_at = 6;
+  optional .google.protobuf.Timestamp updated_at = 7;
+  optional string domain = 8;
+  optional string subdomain_name = 9;
+  optional .google.protobuf.Timestamp expires_at = 10;
+  optional .google.protobuf.Timestamp claimed_at = 11;
+  optional .google.protobuf.Timestamp deprovisioned_at = 12;
+  optional string provider_team_id = 14;
+  optional string project_url = 13;
+}
+message AntigravityDeployment {
+  optional string antigravity_deployment_id = 1;
+  optional string auth_uid = 2;
+  optional .exa.codeium_common_pb.DeploymentProvider deployment_provider = 3;
+  optional string provider_deployment_id = 14;
+  optional string antigravity_project_id = 19;
+  optional string project_id = 4;
+  optional string project_name = 5;
+  optional string workspace_path = 6;
+  optional .google.protobuf.Timestamp created_at = 7;
+  optional .google.protobuf.Timestamp updated_at = 8;
+  optional string domain = 16;
+  optional string subdomain_name = 17;
+  optional string provider_team_id = 20;
+  optional .google.protobuf.Timestamp expires_at = 11;
+  optional string deployment_url = 12;
+  optional .google.protobuf.Timestamp claimed_at = 15;
+  optional .google.protobuf.Timestamp deprovisioned_at = 13;
+  optional string build_status_url = 9;
+  optional string project_url = 10;
+}
+message DeployTarget {
+  optional .exa.codeium_common_pb.DeploymentProvider deployment_provider = 1;
+  optional bool is_sandbox = 2;
+  optional string provider_team_id = 3;
+  optional string provider_team_slug = 4;
+  optional string domain = 5;
+}
+message WebDocsOption {
+  optional string label = 1;
+  optional string docs_url = 2;
+  optional string docs_search_domain = 3;
+  repeated string synonyms = 4;
+  optional bool is_featured = 5;
+}
+message TeamConfig {
+  optional string team_id = 1;
+  optional int32 user_prompt_credit_cap = 2;
+  optional int32 user_flow_credit_cap = 3;
+  optional bool auto_provision_cascade_seat = 4;
+  optional bool allow_mcp_servers = 5;
+  optional bool allow_auto_run_commands = 7;
+  optional int32 max_unclaimed_sites = 9;
+  optional bool allow_app_deployments = 10;
+  optional bool allow_sandbox_app_deployments = 19;
+  optional bool allow_teams_app_deployments = 20;
+  optional int32 max_new_sites_per_day = 11;
+  optional bool allow_github_reviews = 12;
+  optional bool allow_github_description_edits = 13;
+  optional string pull_request_review_guidelines = 14;
+  optional string pull_request_description_guidelines = 16;
+  optional bool disable_tool_calls = 15;
+  optional bool allow_individual_level_analytics = 17;
+  optional bool allow_conversation_sharing = 18;
+  optional int32 pull_request_review_rate_limit = 21;
+  optional bool allow_attribution = 22;
+  repeated .exa.codeium_common_pb.McpServerConfig allowed_mcp_servers = 23;
+  optional bool allow_github_auto_reviews = 24;
+  optional bool allow_browser_experimental_features = 25;
+  optional bool disable_tool_call_execution_outside_workspace = 26;
+}
+message WebAppDeploymentConfig {
+  optional string project_id = 1;
+  optional string framework = 2;
+}
+message McpServerTemplate {
+  optional string title = 1;
+  optional string id = 2;
+  optional string link = 3;
+  optional string description = 4;
+  repeated .exa.codeium_common_pb.McpServerTemplate.CommandsEntry commands = 5;
+  message CommandsEntry {
+    optional string key = 1;
+    optional .exa.codeium_common_pb.McpServerCommand value = 2;
+  }
+}
+message McpServerCommand {
+  optional .exa.codeium_common_pb.McpCommandTemplate template = 1;
+  repeated .exa.codeium_common_pb.McpCommandVariable variables = 2;
+}
+message McpCommandTemplate {
+  optional string command = 1;
+  repeated string args = 2;
+  repeated .exa.codeium_common_pb.McpCommandTemplate.EnvEntry env = 3;
+  message EnvEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message McpCommandVariable {
+  optional string name = 1;
+  optional string title = 2;
+  optional string description = 3;
+  optional string link = 4;
+}
+message McpServerConfig {
+  optional string server_id = 1;
+  optional .exa.codeium_common_pb.McpLocalServer local = 2;
+  optional .exa.codeium_common_pb.McpRemoteServer remote = 3;
+}
+message McpLocalServer {
+  optional string command = 1;
+  repeated string args = 2;
+  repeated .exa.codeium_common_pb.McpLocalServer.EnvEntry env = 3;
+  message EnvEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message McpRemoteServer {
+  optional string type = 1;
+  optional string url = 2;
+  repeated .exa.codeium_common_pb.McpRemoteServer.HeadersEntry headers = 3;
+  message HeadersEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message UnleashContext {
+  optional string user_id = 1;
+  optional string session_id = 2;
+  repeated .exa.codeium_common_pb.UnleashContext.PropertiesEntry properties = 3;
+  message PropertiesEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message BrowserStateSnapshot {
+  optional .google.protobuf.Timestamp timestamp = 1;
+  optional string user_active_page_id = 2;
+  repeated .exa.codeium_common_pb.BrowserPageMetadata pages = 3;
+}
+message BrowserPageMetadata {
+  optional string url = 1;
+  optional string page_id = 2;
+  optional string page_title = 3;
+  optional uint32 viewport_width = 4;
+  optional uint32 viewport_height = 5;
+  optional uint32 page_height = 9;
+  optional string favicon_url = 6;
+  optional float device_pixel_ratio = 8;
+  optional .google.protobuf.Timestamp last_visited_time = 7;
+}
+message BrowserClickInteraction {
+  optional uint32 viewport_scroll_x = 1;
+  optional uint32 viewport_scroll_y = 2;
+  optional uint32 click_x = 3;
+  optional uint32 click_y = 4;
+  optional string target_element_tag_name = 5;
+  optional string target_element_x_path = 6;
+}
+message BrowserScrollInteraction {
+  optional uint32 viewport_scroll_x = 1;
+  optional uint32 viewport_scroll_y = 2;
+}
+message BrowserInteraction {
+  optional .google.protobuf.Timestamp timestamp = 1;
+  optional .exa.codeium_common_pb.BrowserPageMetadata page_metadata = 2;
+  optional .exa.codeium_common_pb.BrowserClickInteraction click = 3;
+  optional .exa.codeium_common_pb.BrowserScrollInteraction scroll = 4;
+}
+message MetricsMetadata {
+  optional int32 version = 1;
+  optional string description = 2;
+  optional .exa.codeium_common_pb.BetterDirection better_direction = 3;
+  optional bool is_bool = 4;
+  optional float null_default_value = 5;
+  optional .exa.codeium_common_pb.MetricsScope scope = 6;
+}
+message MetricsRecord {
+  optional string name = 1;
+  optional .exa.codeium_common_pb.MetricsMetadata metadata = 9;
+  optional float value = 2;
+  optional string value_breakdown = 10;
+  repeated .exa.codeium_common_pb.MetricsRecord.DetailsEntry details = 3;
+  optional string error = 6;
+  optional string trajectory_id = 7;
+  optional bool lower_better = 4;
+  optional bool is_bool = 5;
+  message DetailsEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message StepLevelMetricsRecord {
+  repeated .exa.codeium_common_pb.MetricsRecord metrics = 1;
+}
+message ModelNotification {
+  optional .exa.codeium_common_pb.Model model = 1;
+  optional string message = 2;
+}
+message ModelNotificationExperimentPayload {
+  repeated .exa.codeium_common_pb.ModelNotification model_notifications = 1;
+}
+message LspReference {
+  optional string uri = 1;
+  optional .exa.codeium_common_pb.Range range = 2;
+  optional string snippet = 3;
+}
+message CascadeModelHeaderWarningExperimentPayload {
+  optional string text = 1;
+  optional string tooltip_text = 2;
+}
+message TrajectoryDescription {
+  optional string cascade_conversation_title = 1;
+  optional string mainline_branch_name = 2;
+}
+message ThirdPartyWebSearchConfig {
+  optional .exa.codeium_common_pb.ThirdPartyWebSearchProvider provider = 1;
+}
+message GRPCStatus {
+  optional int32 code = 1;
+  optional string message = 2;
+}
+message WorkingDirectoryInfo {
+  optional string absolute_uri = 1;
+  optional string relative_path = 2;
+  optional .exa.codeium_common_pb.WorkingDirectoryStatus status = 3;
+  optional string error = 4;
+}
+message ArtifactFullFileTarget {
+  optional .exa.codeium_common_pb.ImageData image = 1;
+  optional .exa.codeium_common_pb.Media media = 2;
+}
+message TextSelection {
+  optional string content = 1;
+  optional int32 start_line = 2;
+  optional int32 end_line = 3;
+}
+message ArtifactImageSelection {
+  optional .exa.codeium_common_pb.ImageData cropped_image = 1;
+  optional float x = 2;
+  optional float y = 3;
+  optional float width = 4;
+  optional float height = 5;
+  optional .exa.codeium_common_pb.Media cropped_media = 6;
+}
+message ArtifactSelection {
+  optional .exa.codeium_common_pb.TextSelection text_selection = 1;
+  optional .exa.codeium_common_pb.ArtifactImageSelection image_selection = 2;
+}
+message ArtifactSelectionTarget {
+  repeated .exa.codeium_common_pb.ArtifactSelection selections = 1;
+}
+message ArtifactComment {
+  optional string artifact_uri = 1;
+  optional .exa.codeium_common_pb.ArtifactFullFileTarget full_file = 5;
+  optional .exa.codeium_common_pb.ArtifactSelectionTarget selections = 6;
+  optional string comment = 4;
+  optional .exa.codeium_common_pb.ArtifactApprovalStatus approval_status = 7;
+}
+message ArtifactMetadata {
+  optional .exa.codeium_common_pb.ArtifactType artifact_type = 1;
+  optional string summary = 2;
+  optional .google.protobuf.Timestamp created_at = 3;
+  optional .google.protobuf.Timestamp updated_at = 4;
+  optional int64 version = 5;
+  optional bool request_feedback = 6;
+  optional bool user_facing = 7;
+}
+message DiffCommentInfo {
+  optional .exa.codeium_common_pb.TextSelection original_selection = 1;
+  optional .exa.codeium_common_pb.TextSelection modified_selection = 2;
+  optional string comment = 3;
+}
+message FileDiffComment {
+  optional string file_uri = 1;
+  repeated .exa.codeium_common_pb.DiffCommentInfo diff_comment_infos = 3;
+}
+message FileCommentInfo {
+  optional string comment = 1;
+  optional .exa.codeium_common_pb.TextSelection selection = 2;
+}
+message FileComment {
+  optional string file_uri = 1;
+  repeated .exa.codeium_common_pb.FileCommentInfo file_comment_infos = 2;
+}
+message OnlineMetricsConfig {
+  optional .exa.codeium_common_pb.UserStepJudgeConfig user_step_judge_config = 1;
+  optional .exa.codeium_common_pb.PlanningModeJudgeConfig planning_mode_judge_config = 2;
+  optional .exa.codeium_common_pb.PromptSectionJudgeConfig prompt_section_judge_config = 3;
+}
+message MetricsSamplingConfig {
+  optional .exa.codeium_common_pb.SamplingStrategyUniform uniform = 1;
+  optional .exa.codeium_common_pb.SamplingStrategyGeneratorMetadataAware generator_metadata_aware = 2;
+  optional int64 random_seed = 3;
+}
+message SamplingStrategyUniform {
+  optional float sampling_rate = 1;
+}
+message SamplingStrategyGeneratorMetadataAware {
+  optional float target_sampling_rate = 1;
+  optional float baseline_sampling_rate = 2;
+  optional int32 start_generator_metadata_index = 3;
+  optional int32 end_generator_metadata_index = 4;
+}
+message PromptSectionJudgeConfig {
+  optional bool enabled = 1;
+  optional .exa.codeium_common_pb.MetricsSamplingConfig sampling_config = 2;
+  optional .exa.codeium_common_pb.Model judge_model = 3;
+}
+message UserStepJudgeConfig {
+  optional bool enabled = 1;
+  optional .exa.codeium_common_pb.MetricsSamplingConfig sampling_config = 2;
+  optional .exa.codeium_common_pb.Model judge_model = 3;
+  optional uint32 max_tokens = 4;
+}
+message PlanningModeJudgeConfig {
+  optional bool enabled = 1;
+  optional .exa.codeium_common_pb.MetricsSamplingConfig sampling_config = 2;
+  optional .exa.codeium_common_pb.Model judge_model = 3;
+}
+message Point2 {
+  optional int32 x = 1;
+  optional int32 y = 2;
+}
+message JetskiTelemetryExtension {
+  optional string ide_name = 16;
+  optional string ide_version = 17;
+  optional string os = 18;
+  optional string arch = 19;
+  optional string user_tier_id = 22;
+  repeated string user_tags = 23;
+  optional bool is_redacted = 24;
+  optional .exa.codeium_common_pb.AnalyticsEventMetadata analytics_event_metadata = 6;
+  optional .exa.codeium_common_pb.ErrorTraceMetadata error_trace_metadata = 15;
+  optional .exa.codeium_common_pb.ObservabilityData observability_data = 26;
+}
+message ExtraMetadata {
+  optional string key = 1;
+  optional string value = 2;
+}
+message Experiment {
+  optional string key = 1;
+  optional bool enabled = 2;
+}
+message AnalyticsEventMetadata {
+  optional string event_type = 1;
+  repeated .exa.codeium_common_pb.ExtraMetadata extra = 2;
+  repeated .exa.codeium_common_pb.Experiment experiments = 3;
+}
+message ErrorTraceMetadata {
+  optional .exa.codeium_common_pb.ErrorTrace error_trace = 1;
+}
+message ObservabilityData {
+  optional string type = 1;
+  repeated .exa.codeium_common_pb.ExtraMetadata non_sensitive_data = 2;
+  repeated .exa.codeium_common_pb.ExtraMetadata sensitive_data = 3;
+}
+message LogEvent {
+  optional int64 event_time_ms = 1;
+  optional bytes source_extension = 6;
+}
+message ClientInfo {
+  optional int32 client_type = 1;
+}
+message LogRequest {
+  optional .exa.codeium_common_pb.ClientInfo client_info = 1;
+  optional int32 log_source = 2;
+  repeated .exa.codeium_common_pb.LogEvent log_events = 3;
+  optional int64 request_time_ms = 4;
+}
+message LogResponse {
+  optional int64 next_request_wait_millis = 1;
+}
+message PermissionGrantsConfig {
+  repeated string allow = 1;
+  repeated string deny = 2;
+  repeated string ask = 3;
+}

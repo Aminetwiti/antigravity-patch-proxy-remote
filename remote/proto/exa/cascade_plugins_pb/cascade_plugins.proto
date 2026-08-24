@@ -1,0 +1,86 @@
+﻿syntax = "proto3";
+
+// file: exa/cascade_plugins_pb/cascade_plugins.proto
+// package: exa.cascade_plugins_pb
+message CascadePluginTemplate {
+  optional string title = 1;
+  optional string id = 2;
+  optional string link = 3;
+  optional string description = 4;
+  repeated .exa.cascade_plugins_pb.CascadePluginTemplate.CommandsEntry commands = 5;
+  optional .exa.cascade_plugins_pb.CascadePluginLocalConfig local = 9;
+  optional .exa.cascade_plugins_pb.CascadePluginRemoteConfig remote = 10;
+  optional int64 installation_count = 6;
+  optional string trust_level = 7;
+  optional string readme = 8;
+  message CommandsEntry {
+    optional string key = 1;
+    optional .exa.cascade_plugins_pb.CascadePluginCommand value = 2;
+  }
+}
+message CascadePluginLocalConfig {
+  repeated .exa.cascade_plugins_pb.CascadePluginLocalConfig.CommandsEntry commands = 5;
+  message CommandsEntry {
+    optional string key = 1;
+    optional .exa.cascade_plugins_pb.CascadePluginCommand value = 2;
+  }
+}
+message CascadePluginCommand {
+  optional .exa.cascade_plugins_pb.CascadePluginCommandTemplate template = 1;
+  repeated .exa.cascade_plugins_pb.CascadePluginCommandVariable variables = 2;
+}
+message CascadePluginCommandTemplate {
+  optional string command = 1;
+  repeated string args = 2;
+  repeated .exa.cascade_plugins_pb.CascadePluginCommandTemplate.EnvEntry env = 3;
+  message EnvEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message CascadePluginCommandVariable {
+  optional string name = 1;
+  optional string title = 2;
+  optional string description = 3;
+  optional string link = 4;
+}
+message CascadePluginRemoteConfig {
+  optional .exa.cascade_plugins_pb.CascadePluginRemoteConfigTemplate template = 1;
+}
+message CascadePluginRemoteConfigTemplate {
+  optional string server_url = 1;
+  repeated .exa.cascade_plugins_pb.CascadePluginRemoteConfigTemplate.HeadersEntry headers = 2;
+  optional string auth_provider_type = 3;
+  message HeadersEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message GetAvailableCascadePluginsRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional string os = 2;
+  optional string search_query = 3;
+}
+message GetAvailableCascadePluginsResponse {
+  repeated .exa.cascade_plugins_pb.CascadePluginTemplate plugins = 1;
+}
+message InstallCascadePluginRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional string plugin_id = 2;
+}
+message InstallCascadePluginResponse {
+  optional int64 installation_count = 1;
+}
+message GetCascadePluginByIdRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional string os = 2;
+  optional string plugin_id = 3;
+}
+message GetCascadePluginByIdResponse {
+  optional .exa.cascade_plugins_pb.CascadePluginTemplate plugin = 1;
+}
+service CascadePluginsService {
+  rpc GetAvailableCascadePlugins(.exa.cascade_plugins_pb.GetAvailableCascadePluginsRequest) returns (.exa.cascade_plugins_pb.GetAvailableCascadePluginsResponse);
+  rpc InstallCascadePlugin(.exa.cascade_plugins_pb.InstallCascadePluginRequest) returns (.exa.cascade_plugins_pb.InstallCascadePluginResponse);
+  rpc GetCascadePluginById(.exa.cascade_plugins_pb.GetCascadePluginByIdRequest) returns (.exa.cascade_plugins_pb.GetCascadePluginByIdResponse);
+}

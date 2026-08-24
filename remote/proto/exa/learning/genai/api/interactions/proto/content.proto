@@ -1,0 +1,302 @@
+﻿syntax = "proto3";
+
+// file: exa/learning/genai/api/interactions/proto/content.proto
+// package: genai
+message Content {
+  optional .genai.TextContent text = 10;
+  optional .genai.ImageContent image = 11;
+  optional .genai.AudioContent audio = 12;
+  optional .genai.DocumentContent document = 13;
+  optional .genai.VideoContent video = 14;
+  optional .genai.ThoughtContent thought = 5;
+  optional .genai.ToolCallContent tool_call = 24;
+  optional .genai.ToolResultContent tool_result = 25;
+}
+message ContentList {
+  repeated .genai.Content contents = 1;
+}
+message WordInfo {
+  optional string text = 1;
+  optional .google.protobuf.Duration start_offset = 2;
+  optional .google.protobuf.Duration end_offset = 3;
+  optional string speaker = 4;
+}
+message TextContent {
+  optional string text = 3;
+  repeated .genai.TextContent.Annotation annotations = 4;
+  message Annotation {
+    optional .genai.UrlCitation url_citation = 5;
+    optional .genai.FileCitation file_citation = 6;
+    optional .genai.PlaceCitation place_citation = 7;
+    optional .genai.WordInfo word_info = 8;
+    optional int32 start_index = 1;
+    optional int32 end_index = 2;
+  }
+}
+message ImageContent {
+  optional bytes data = 2;
+  optional string uri = 6;
+  optional .genai.ImageContent.MimeType mime_type = 1;
+  optional .genai.MediaResolution resolution = 5;
+  enum MimeType {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_PNG = 1;
+    TYPE_JPEG = 2;
+    TYPE_WEBP = 3;
+    TYPE_HEIC = 4;
+    TYPE_HEIF = 5;
+    TYPE_GIF = 7;
+    TYPE_BMP = 8;
+    TYPE_TIFF = 9;
+    TYPE_VIDEO_FRAME_JPEG2000 = 10;
+    TYPE_VIDEO_JPEG2000 = 11;
+  }
+}
+message AudioContent {
+  optional bytes data = 2;
+  optional string uri = 5;
+  optional .genai.AudioContent.MimeType mime_type = 1;
+  optional int32 channels = 7;
+  optional int32 sample_rate = 8;
+  enum MimeType {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_WAV = 1;
+    TYPE_MP3 = 2;
+    TYPE_AIFF = 3;
+    TYPE_AAC = 4;
+    TYPE_OGG = 5;
+    TYPE_FLAC = 6;
+    TYPE_MPEG = 7;
+    TYPE_M4A = 8;
+    TYPE_L16 = 9;
+    TYPE_S16LE = 10;
+    TYPE_OPUS = 11;
+    TYPE_ALAW = 12;
+    TYPE_MULAW = 13;
+    TYPE_VIDEO_AUDIO_S16LE = 14;
+  }
+}
+message DocumentContent {
+  optional bytes data = 2;
+  optional string uri = 5;
+  optional .genai.DocumentContent.MimeType mime_type = 1;
+  enum MimeType {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_PDF = 1;
+    TYPE_CSV = 2;
+  }
+}
+message VideoContent {
+  optional bytes data = 2;
+  optional string uri = 6;
+  optional .genai.VideoContent.MimeType mime_type = 1;
+  optional .genai.MediaResolution resolution = 5;
+  enum MimeType {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_MP4 = 1;
+    TYPE_MPEG = 2;
+    TYPE_MPG = 3;
+    TYPE_MOV = 4;
+    TYPE_AVI = 5;
+    TYPE_X_FLV = 6;
+    TYPE_WEBM = 7;
+    TYPE_WMV = 8;
+    TYPE_3GPP = 9;
+    TYPE_YT_BEYOND = 10;
+  }
+}
+message UrlCitation {
+  optional string url = 1;
+  optional string title = 2;
+}
+message FileCitation {
+  optional string document_uri = 1;
+  optional string file_name = 2;
+  optional string source = 3;
+  optional .genai.Struct custom_metadata = 4;
+  optional int32 page_number = 5;
+  optional string media_id = 6;
+}
+message PlaceCitation {
+  optional string place_id = 1;
+  optional string name = 2;
+  optional string url = 3;
+  repeated .genai.ReviewSnippet review_snippets = 4;
+}
+message ReviewSnippet {
+  optional string title = 1;
+  optional string url = 2;
+  optional string review_id = 3;
+}
+message Struct {
+  repeated .genai.Field fields = 1;
+}
+message Field {
+  optional string name = 1;
+  optional .genai.Value value = 2;
+}
+message Value {
+  optional .google.protobuf.NullValue null_value = 1;
+  optional double number_value = 2;
+  optional string string_value = 3;
+  optional bool bool_value = 4;
+  optional .genai.Struct struct_value = 5;
+  optional .genai.ListValue list_value = 6;
+  optional .genai.Content content_value = 7;
+}
+message ListValue {
+  repeated .genai.Value values = 1;
+}
+message GoogleSearch {
+  repeated .genai.GoogleSearch.SearchType search_types = 1;
+  enum SearchType {
+    SEARCH_TYPE_UNSPECIFIED = 0;
+    SEARCH_TYPE_WEB_SEARCH = 1;
+    SEARCH_TYPE_IMAGE_SEARCH = 2;
+    SEARCH_TYPE_ENTERPRISE_WEB_SEARCH = 3;
+  }
+}
+message ThoughtContent {
+  optional bytes signature = 7;
+  repeated .genai.ThoughtSummaryContent summary = 9;
+}
+message ThoughtSummaryContent {
+  optional .genai.TextContent text = 1;
+  optional .genai.ImageContent image = 2;
+}
+message Turn {
+  optional .genai.ContentList content_list = 3;
+  optional string content_string = 4;
+  optional string role = 1;
+}
+message TurnList {
+  repeated .genai.Turn turns = 1;
+}
+message ToolCallContent {
+  optional .genai.FunctionCallContent function_call = 2;
+  optional .genai.CodeExecutionCallContent code_execution_call = 3;
+  optional .genai.UrlContextCallContent url_context_call = 4;
+  optional .genai.McpServerToolCallContent mcp_server_tool_call = 6;
+  optional .genai.GoogleSearchCallContent google_search_call = 7;
+  optional .genai.FileSearchCallContent file_search_call = 8;
+  optional .genai.GoogleMapsCallContent google_maps_call = 10;
+  optional string id = 1;
+  optional bytes signature = 9;
+}
+message ToolResultContent {
+  optional .genai.FunctionResultContent function_result = 2;
+  optional .genai.CodeExecutionResultContent code_execution_result = 3;
+  optional .genai.UrlContextResultContent url_context_result = 4;
+  optional .genai.GoogleSearchResultContent google_search_result = 5;
+  optional .genai.McpServerToolResultContent mcp_server_tool_result = 6;
+  optional .genai.FileSearchResultContent file_search_result = 7;
+  optional .genai.GoogleMapsResultContent google_maps_result = 10;
+  optional string call_id = 8;
+  optional bytes signature = 9;
+}
+message FunctionCallContent {
+  optional string name = 3;
+  optional .genai.Struct arguments = 4;
+}
+message FunctionResultContent {
+  optional .genai.Struct struct_result = 3;
+  optional .genai.FunctionResultSubcontentList content_list = 9;
+  optional string string_result = 7;
+  optional string name = 8;
+  optional bool is_error = 2;
+}
+message CodeExecutionCallContent {
+  optional .genai.CodeExecutionCallContent.CodeExecutionCallArguments arguments = 2;
+  message CodeExecutionCallArguments {
+    optional .genai.CodeExecutionCallContent.CodeExecutionCallArguments.Language language = 1;
+    optional string code = 2;
+    enum Language {
+      LANGUAGE_UNSPECIFIED = 0;
+      PYTHON = 1;
+    }
+  }
+}
+message CodeExecutionResultContent {
+  optional string result = 1;
+  optional bool is_error = 2;
+}
+message UrlContextCallContent {
+  optional .genai.UrlContextCallContent.UrlContextCallArguments arguments = 2;
+  message UrlContextCallArguments {
+    repeated string urls = 1;
+  }
+}
+message UrlContextResultContent {
+  repeated .genai.UrlContextResultContent.UrlContextResult result = 2;
+  optional bool is_error = 3;
+  message UrlContextResult {
+    optional string url = 1;
+    optional .genai.UrlContextResultContent.UrlContextResult.Status status = 2;
+    enum Status {
+      STATUS_UNSPECIFIED = 0;
+      SUCCESS = 1;
+      ERROR = 2;
+      PAYWALL = 3;
+      UNSAFE = 4;
+    }
+  }
+}
+message McpServerToolCallContent {
+  optional string name = 1;
+  optional string server_name = 2;
+  optional .genai.Struct arguments = 3;
+}
+message McpServerToolResultContent {
+  optional .genai.Struct struct_result = 3;
+  optional .genai.FunctionResultSubcontentList content_list = 6;
+  optional string string_result = 4;
+  optional string name = 1;
+  optional string server_name = 2;
+}
+message GoogleSearchCallContent {
+  optional .genai.GoogleSearchCallContent.GoogleSearchCallArguments arguments = 1;
+  optional .genai.GoogleSearch.SearchType search_type = 2;
+  message GoogleSearchCallArguments {
+    repeated string queries = 1;
+  }
+}
+message GoogleSearchResultContent {
+  repeated .genai.GoogleSearchResultContent.GoogleSearchResult result = 2;
+  optional bool is_error = 3;
+  message GoogleSearchResult {
+    optional string search_suggestions = 5;
+  }
+}
+message FileSearchCallContent {
+}
+message FileSearchResultContent {
+  repeated .genai.FileSearchResultContent.FileSearchResult result = 1;
+  message FileSearchResult {
+  }
+}
+message GoogleMapsCallContent {
+  optional .genai.GoogleMapsCallContent.GoogleMapsCallArguments arguments = 1;
+  message GoogleMapsCallArguments {
+    repeated string queries = 1;
+  }
+}
+message GoogleMapsResultContent {
+  repeated .genai.GoogleMapsResultContent.GoogleMapsResult result = 1;
+  message GoogleMapsResult {
+    repeated .genai.GoogleMapsResultContent.GoogleMapsResult.Places places = 1;
+    optional string widget_context_token = 2;
+    message Places {
+      optional string place_id = 1;
+      optional string name = 2;
+      optional string url = 3;
+      repeated .genai.ReviewSnippet review_snippets = 4;
+    }
+  }
+}
+message FunctionResultSubcontent {
+  optional .genai.TextContent text = 1;
+  optional .genai.ImageContent image = 2;
+}
+message FunctionResultSubcontentList {
+  repeated .genai.FunctionResultSubcontent contents = 1;
+}

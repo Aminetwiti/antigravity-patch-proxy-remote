@@ -1,0 +1,109 @@
+﻿syntax = "proto3";
+
+// file: exa/context_module_pb/context_module.proto
+// package: exa.context_module_pb
+message ContextChangeEvent {
+  optional .exa.context_module_pb.ContextChangeActiveDocument context_change_active_document = 1;
+  optional .exa.context_module_pb.ContextChangeCursorPosition context_change_cursor_position = 2;
+  optional .exa.context_module_pb.ContextChangeChatMessageReceived context_change_chat_message_received = 3;
+  optional .exa.context_module_pb.ContextChangeOpenDocuments context_change_open_documents = 4;
+  optional .exa.context_module_pb.ContextChangeOracleItems context_change_oracle_items = 5;
+  optional .exa.context_module_pb.ContextChangePinnedContext context_change_pinned_context = 7;
+  optional .exa.context_module_pb.ContextChangePinnedGuideline context_change_pinned_guideline = 8;
+  optional .exa.context_module_pb.ContextChangeActiveNode context_change_active_node = 10;
+  optional .exa.context_module_pb.ContextRefreshReason context_refresh_reason = 6;
+}
+message ContextChangeActiveDocument {
+  optional .exa.codeium_common_pb.Document document = 1;
+}
+message ContextChangeCursorPosition {
+  optional .exa.codeium_common_pb.Document document = 2;
+}
+message ContextChangeChatMessageReceived {
+  repeated .exa.chat_pb.ChatMessage chat_messages = 1;
+}
+message ContextChangeOpenDocuments {
+  repeated .exa.codeium_common_pb.Document other_open_documents = 1;
+}
+message ContextChangeOracleItems {
+  repeated .exa.codeium_common_pb.CodeContextItem oracle_items = 1;
+}
+message ContextChangePinnedContext {
+  optional .exa.codeium_common_pb.ContextScope pinned_scope = 1;
+  optional .exa.codeium_common_pb.ContextScope mentioned_scope = 2;
+}
+message ContextChangePinnedGuideline {
+  optional .exa.codeium_common_pb.Guideline guideline = 1;
+}
+message ContextChangeActiveNode {
+  optional .exa.codeium_common_pb.CodeContextItem active_node = 1;
+  optional .exa.codeium_common_pb.Document document = 2;
+  optional bool actual_node_change = 3;
+}
+message RetrievedCodeContextItemMetadata {
+  repeated .exa.codeium_common_pb.CodeContextSource context_sources = 1;
+  optional .exa.codeium_common_pb.CodeContextType context_type = 2;
+  optional string scorer = 3;
+  optional float score = 4;
+  repeated .exa.context_module_pb.RetrievedCodeContextItemMetadata.ProviderMetadataEntry provider_metadata = 5;
+  optional bool is_in_pinned_scope = 6;
+  message ProviderMetadataEntry {
+    optional string key = 1;
+    optional .exa.context_module_pb.CodeContextProviderMetadata value = 2;
+  }
+}
+message CciWithSubrangeWithRetrievalMetadata {
+  optional .exa.codeium_common_pb.CciWithSubrange cci_with_subrange = 1;
+  optional .exa.context_module_pb.RetrievedCodeContextItemMetadata metadata = 2;
+}
+message CodeContextItemWithRetrievalMetadata {
+  optional .exa.codeium_common_pb.CodeContextItem code_context_item = 1;
+  optional .exa.context_module_pb.RetrievedCodeContextItemMetadata metadata = 2;
+}
+message FileNameWithRetrievalMetadata {
+  optional string absolute_uri = 1;
+  optional .exa.context_module_pb.RetrievedCodeContextItemMetadata metadata = 2;
+}
+message CodeContextProviderMetadata {
+  optional float relative_weight = 1;
+}
+message ContextModuleStats {
+  optional .exa.context_module_pb.ContextModuleStateStats context_module_state_stats = 1;
+  optional .exa.context_module_pb.CodeContextItemIndexStats code_context_item_index_stats = 2;
+  optional int64 get_stats_latency_ms = 3;
+  optional int64 context_module_age_s = 4;
+}
+message ContextModuleStateStats {
+  optional int64 cci_per_source_bytes = 1;
+  optional int64 active_document_bytes = 2;
+  optional int64 other_open_documents_bytes = 3;
+}
+message CodeContextItemIndexStats {
+  optional int64 all_ccis_bytes = 1;
+  optional int64 num_ccis_tracked = 2;
+  optional int64 term_frequency_map_bytes = 3;
+  optional int64 num_terms_tracked = 4;
+  optional int64 file_to_cci_map_bytes = 5;
+  optional int64 num_files_tracked = 6;
+  optional int64 last_modified_bytes = 7;
+  optional int64 hash_map_bytes = 8;
+}
+message PersistentContextModuleState {
+  optional .exa.codeium_common_pb.Guideline pinned_guideline = 1;
+  optional .exa.codeium_common_pb.ContextScope pinned_context_scope = 2;
+}
+message ContextModuleResult {
+  repeated .exa.context_module_pb.CciWithSubrangeWithRetrievalMetadata retrieved_cci_with_subranges = 1;
+  optional .exa.codeium_common_pb.Document active_document = 2;
+  optional .exa.codeium_common_pb.DocumentOutline active_document_outline = 5;
+  optional .exa.context_module_pb.LocalNodeState local_node_state = 3;
+  optional .exa.codeium_common_pb.Guideline guideline = 4;
+  repeated .exa.codeium_common_pb.Document open_documents = 6;
+  repeated .exa.codeium_common_pb.TerminalShellCommand running_terminal_commands = 8;
+  optional .exa.codeium_common_pb.BrowserStateSnapshot browser_state_snapshot = 9;
+}
+message LocalNodeState {
+  optional .exa.codeium_common_pb.CodeContextItem current_node = 1;
+  optional .exa.codeium_common_pb.CodeContextItem closest_above_node = 2;
+  optional .exa.codeium_common_pb.CodeContextItem closest_below_node = 3;
+}

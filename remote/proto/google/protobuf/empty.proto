@@ -1,0 +1,6 @@
+﻿syntax = "proto3";
+
+// file: google/protobuf/empty.proto
+// package: google.protobuf
+message Empty {
+}

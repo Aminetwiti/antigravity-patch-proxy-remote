@@ -5946,9 +5946,30 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		}
 		raw, err = s.RPCClient.GetTurnDiff(conversationID, stepIndex)
 		if err == nil {
-			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: turnDiffOut(raw)})
+			out := turnDiffOut(raw)
+			if m, ok := out.(map[string]interface{}); ok {
+				diffs, hasDiffs := m["fileDiffs"].([]interface{})
+				if !hasDiffs || len(diffs) == 0 {
+					fb := ExtractTranscriptFileDiffs(conversationID)
+					if len(fb) > 0 {
+						m["fileDiffs"] = fb
+					}
+				}
+			}
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: out})
 			return
 		}
+
+		fb := ExtractTranscriptFileDiffs(conversationID)
+		s.writeJSON(conn, OutgoingMessage{
+			Type: "response", RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"fileDiffs":      fb,
+				"totalAdditions": 0,
+				"totalDeletions": 0,
+			},
+		})
+		return
 
 	case "get_revert_preview", "cascade.get_revert_preview":
 		cid := msg.CascadeID

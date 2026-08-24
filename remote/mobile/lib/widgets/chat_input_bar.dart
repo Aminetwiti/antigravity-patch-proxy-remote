@@ -289,12 +289,6 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
         );
       }
       _loadSessionModelForCascade();
-      // Re-focus the text input when switching conversations via keyboard shortcuts
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _focusNode.canRequestFocus) {
-          _focusNode.requestFocus();
-        }
-      });
     } else if (oldWidget.initialText != widget.initialText && widget.initialText != _controller.text) {
       _controller.text = widget.initialText;
       _lastDraftText = widget.initialText;

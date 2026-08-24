@@ -2415,6 +2415,153 @@ func ListSessionModifiedFiles(cascadeID string) []string {
 	return results
 }
 
+// ExtractTranscriptFileDiffs parcourt le transcript d'une cascade et reconstitue
+// les diffs unifiés et statistiques (additions/deletions) de chaque fichier modifié.
+func ExtractTranscriptFileDiffs(cascadeID string) []map[string]interface{} {
+	transcriptPath := findTranscriptPath(cascadeID)
+	if transcriptPath == "" {
+		return nil
+	}
+	f, err := os.Open(transcriptPath)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	diffMap := make(map[string]map[string]interface{})
+	var orderedPaths []string
+
+	scanner := bufio.NewScanner(f)
+	hBuf := AcquireHistoryBuffer()
+	defer ReleaseHistoryBuffer(hBuf)
+	scanner.Buffer(*hBuf, len(*hBuf))
+
+	cleanFilePath := func(p string) string {
+		p = strings.TrimSpace(p)
+		p = strings.Trim(p, "\"'`")
+		p = strings.ReplaceAll(p, "\\\\", "/")
+		p = strings.ReplaceAll(p, "\\", "/")
+		if strings.HasPrefix(p, "file:///") {
+			p = p[8:]
+		} else if strings.HasPrefix(p, "file://") {
+			p = p[7:]
+		}
+		return strings.TrimSpace(p)
+	}
+
+	diffBlockRe := regexp.MustCompile(`(?s)\[diff_block_start\](.*?)\[diff_block_end\]`)
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		var entry struct {
+			Type      string          `json:"type"`
+			Content   string          `json:"content"`
+			ToolCalls json.RawMessage `json:"tool_calls"`
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue
+		}
+
+		// 1. Parsing depuis tool_calls
+		if len(entry.ToolCalls) > 0 {
+			var calls []struct {
+				Name      string                 `json:"name"`
+				Args      map[string]interface{} `json:"args"`
+				Arguments map[string]interface{} `json:"arguments"`
+			}
+			if json.Unmarshal(entry.ToolCalls, &calls) == nil {
+				for _, c := range calls {
+					m := c.Args
+					if len(m) == 0 {
+						m = c.Arguments
+					}
+					var targetFile string
+					for _, k := range []string{"TargetFile", "AbsolutePath", "file_path", "filePath", "path", "file"} {
+						if val, ok := m[k].(string); ok && val != "" {
+							targetFile = cleanFilePath(val)
+							break
+						}
+					}
+					if targetFile == "" || strings.Contains(strings.ToLower(targetFile), "/brain/") {
+						continue
+					}
+
+					var orig, mod, unifiedDiff string
+					var adds, dels int64
+
+					if c.Name == "replace_file_content" || c.Name == "edit_file" {
+						if target, ok := m["TargetContent"].(string); ok {
+							orig = target
+						}
+						if rep, ok := m["ReplacementContent"].(string); ok {
+							mod = rep
+						}
+					} else if c.Name == "write_to_file" || c.Name == "create_file" {
+						if code, ok := m["CodeContent"].(string); ok {
+							mod = code
+						}
+					}
+
+					if diffMap[targetFile] == nil {
+						orderedPaths = append(orderedPaths, targetFile)
+						diffMap[targetFile] = map[string]interface{}{
+							"path": targetFile,
+							"diff": map[string]interface{}{
+								"originalContents": orig,
+								"modifiedContents": mod,
+								"additions":        adds,
+								"deletions":        dels,
+								"isArtifactFile":   false,
+							},
+							"unifiedDiff": unifiedDiff,
+						}
+					} else {
+						existing := diffMap[targetFile]["diff"].(map[string]interface{})
+						if orig != "" {
+							existing["originalContents"] = existing["originalContents"].(string) + "\n" + orig
+						}
+						if mod != "" {
+							existing["modifiedContents"] = existing["modifiedContents"].(string) + "\n" + mod
+						}
+					}
+				}
+			}
+		}
+
+		// 2. Extraire [diff_block_start]...[diff_block_end] depuis les contenus / TOOL_RESULT
+		if strings.Contains(entry.Content, "[diff_block_start]") {
+			matches := diffBlockRe.FindAllStringSubmatch(entry.Content, -1)
+			for _, match := range matches {
+				if len(match) > 1 {
+					block := strings.TrimSpace(match[1])
+					for _, p := range orderedPaths {
+						if existing, ok := diffMap[p]; ok {
+							existing["unifiedDiff"] = block
+							for _, l := range strings.Split(block, "\n") {
+								if strings.HasPrefix(l, "+") && !strings.HasPrefix(l, "+++") {
+									d := existing["diff"].(map[string]interface{})
+									d["additions"] = d["additions"].(int64) + 1
+								} else if strings.HasPrefix(l, "-") && !strings.HasPrefix(l, "---") {
+									d := existing["diff"].(map[string]interface{})
+									d["deletions"] = d["deletions"].(int64) + 1
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	var results []map[string]interface{}
+	for _, p := range orderedPaths {
+		if d, ok := diffMap[p]; ok {
+			results = append(results, d)
+		}
+	}
+	return results
+}
+
 // extractRawSubagentEntries extrait les objets sous-agents depuis les arguments (map ou string JSON).
 func extractRawSubagentEntries(argsRaw map[string]interface{}) []map[string]interface{} {
 	if argsRaw == nil {

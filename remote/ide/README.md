@@ -10,6 +10,7 @@
 | Fichier | Description & Contenu |
 |:---|:---|
 | [`DEEP_REVERSE_ENGINEERING_MASTER.md`](./DEEP_REVERSE_ENGINEERING_MASTER.md) | **Rapport Maître Exhaustif de Reverse Engineering** : Verdict complet, topologie binaire Go, 50 descripteurs Protobuf décodés, double canal de streaming, Unified State Sync (USS), concurrence et isolation multi-sessions. |
+| [`ADVANCED_SYSTEMS_FORENSICS.md`](./ADVANCED_SYSTEMS_FORENSICS.md) | **Forensique Avancée des Sous-Systèmes** : Moteur d'exécution des outils, bac à sable (sandbox), persistance SQLite `dbtrajectory`, compaction de contexte et protocole thinking/reasoning. |
 | [`STREAMING_PROTOCOL_SPEC.md`](./STREAMING_PROTOCOL_SPEC.md) | **Spécification Complète du Protocole de Streaming** : Les 8 canaux gRPC-Web/WebSocket, diagramme de séquence, gestion des tokens/thinking et StepRecovery buffer. |
 | [`COMPLETE_PROTO_DESCRIPTORS.md`](./COMPLETE_PROTO_DESCRIPTORS.md) | **Descripteurs Protobuf Complets** : Reconstitution forensique exacte des fichiers `.proto` (`LanguageServerService`, `cortex.proto`, `jetbox_summaries.proto`, diffs, tools). |
 | [`PROTOCOLS_AND_SCHEMAS.md`](./PROTOCOLS_AND_SCHEMAS.md) | Tous les protocoles (gRPC-Web, ConnectRPC, WebSocket, Named Pipes) et tous les schémas Protobuf & JSON décodés. |

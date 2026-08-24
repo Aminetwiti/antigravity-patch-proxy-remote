@@ -1,0 +1,454 @@
+﻿syntax = "proto3";
+
+// file: exa/extension_server_pb/extension_server.proto
+// package: exa.extension_server_pb
+message IsAgentManagerEnabledRequest {
+}
+message IsAgentManagerEnabledResponse {
+  optional bool enabled = 1;
+}
+message ConversationPickerRequest {
+  optional .exa.jetski_cortex_pb.CascadeTrajectorySummaries summaries = 1;
+  optional string current_cascade_id = 2;
+  optional string current_workspace_normalized_path = 3;
+  optional string current_workspace_uri = 4;
+}
+message ConversationPickerResponse {
+  optional string chat_message = 1;
+  optional string selected_cascade_id = 2;
+  repeated string deleted_cascade_ids = 3;
+}
+message StartAudioRecordingRequest {
+}
+message EndAudioRecordingRequest {
+}
+message EndAudioRecordingResponse {
+  optional string transcription = 1;
+}
+message StartAudioRecordingResponse {
+}
+message GetCurrentAudioRecordingRequest {
+}
+message GetCurrentAudioRecordingResponse {
+  optional float average_volume = 2;
+}
+message LanguageServerStartedRequest {
+  optional int32 https_port = 1;
+  optional int32 lsp_port = 2;
+  optional string csrf_token = 4;
+  optional int32 http_port = 5;
+}
+message LanguageServerStartedResponse {
+}
+message OpenSettingRequest {
+  optional string setting_id = 1;
+}
+message OpenSettingResponse {
+}
+message OpenFilePointerRequest {
+  optional string file_uri = 1;
+  optional int32 start_line = 2;
+  optional int32 start_col = 3;
+  optional int32 end_line = 4;
+  optional int32 end_col = 5;
+  optional bool is_cascade_diff = 6;
+}
+message OpenFilePointerResponse {
+}
+message InsertCodeAtCursorRequest {
+  optional string text = 1;
+  optional .exa.extension_server_pb.ActiveEditorType editor_type = 2;
+}
+message InsertCodeAtCursorResponse {
+}
+message EventMetadataRecord {
+  optional string key = 1;
+  optional string value = 2;
+}
+message LogEventRequest {
+  optional .exa.codeium_common_pb.ProductEventType event = 1;
+  optional string event_string = 3;
+  repeated .exa.extension_server_pb.EventMetadataRecord metadata = 2;
+}
+message LogEventResponse {
+}
+message CheckTerminalShellSupportRequest {
+}
+message CheckTerminalShellSupportResponse {
+  optional bool has_shell_integration = 1;
+  optional string shell_name = 2;
+  optional string shell_path = 3;
+}
+message ExecuteCommandRequest {
+  optional string command_line = 5;
+  optional string cwd = 3;
+  optional string terminal_id = 4;
+  optional bool sandbox_override = 6;
+  optional string conversation_id = 7;
+  optional string terminal_host = 8;
+  repeated .exa.extension_server_pb.ExecuteCommandRequest.EnvEntry env = 9;
+  message EnvEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message ShowTerminalRequest {
+  optional string terminal_id = 1;
+}
+message ShowTerminalResponse {
+}
+message OpenVirtualFileRequest {
+  optional string text = 1;
+  optional bool show_markdown_preview = 2;
+}
+message OpenVirtualFileResponse {
+}
+message SaveDocumentRequest {
+  optional string uri = 1;
+  optional string conversation_id = 2;
+}
+message SaveDocumentResponse {
+}
+message ReadTerminalRequest {
+  optional string process_id = 1;
+  optional string conversation_id = 2;
+}
+message ReadTerminalResponse {
+  optional string contents = 1;
+}
+message OpenTerminalRequest {
+  optional string process_id = 1;
+}
+message OpenTerminalResponse {
+}
+message SendTerminalInputRequest {
+  optional string terminal_id = 1;
+  optional string input = 2;
+  optional string conversation_id = 3;
+}
+message SendTerminalInputResponse {
+  optional bool success = 1;
+  optional string error = 2;
+}
+message TerminateCommandRequest {
+  optional string terminal_id = 1;
+  optional string conversation_id = 2;
+}
+message TerminateCommandResponse {
+}
+message GetLintErrorsRequest {
+  optional .exa.extension_server_pb.GetLintErrorsRequest.AwaitNewLintsConfig await_new_lints_config = 1;
+  optional string conversation_id = 5;
+  message AwaitNewLintsConfig {
+    optional string acknowledger_id = 1;
+    optional int32 timeout_ms = 2;
+    optional int32 grace_period_ms = 3;
+    optional bool include_saved = 4;
+  }
+}
+message GetLintErrorsResponse {
+  repeated .exa.codeium_common_pb.CodeDiagnostic lint_errors = 1;
+  repeated .exa.codeium_common_pb.CodeDiagnostic persistent_lint_errors = 2;
+}
+message OpenDiffZonesRequest {
+  optional string cascade_id = 1;
+  repeated .exa.language_server_pb.ValidationState validation_states = 2;
+  optional bool write_new_state = 3;
+  repeated uint32 step_indices = 4;
+  optional string trace_id = 5;
+}
+message OpenDiffZonesResponse {
+}
+message OpenExternalUrlRequest {
+  optional string url = 1;
+  optional bool use_ide_browser = 2;
+}
+message OpenExternalUrlResponse {
+}
+message HandleAsyncPostMessageRequest {
+  optional string message_type = 1;
+  optional string message_content = 2;
+}
+message HandleAsyncPostMessageResponse {
+  optional string response_content = 1;
+}
+message PlaySoundRequest {
+  optional .exa.extension_server_pb.SoundType sound_type = 1;
+}
+message PlaySoundResponse {
+}
+message OpenAntigravityRulesFileRequest {
+  optional bool is_workspace_rules = 1;
+}
+message OpenAntigravityRulesFileResponse {
+}
+message OpenPluginPageRequest {
+  optional string plugin_id = 4;
+}
+message OpenPluginPageResponse {
+}
+message OpenPluginConfigModalRequest {
+  optional string plugin_id = 3;
+}
+message OpenPluginConfigModalResponse {
+}
+message TerminalResearchResultRequest {
+  optional .gemini_coder.Step last_step = 1;
+}
+message TerminalResearchResultResponse {
+}
+message OpenConfigurePluginsPageRequest {
+}
+message OpenConfigurePluginsPageResponse {
+}
+message WriteCascadeEditRequest {
+  optional string uri = 1;
+  optional string target_content = 2;
+}
+message WriteCascadeEditResponse {
+}
+message EditNotebookRequest {
+  optional string absolute_path_uri = 1;
+  optional .exa.extension_server_pb.EditNotebookOperation operation = 2;
+  optional string anchor_cell_id = 3;
+  optional int32 anchor_cell_index = 4;
+  repeated .exa.extension_server_pb.EditNotebookRequest.Cell cells = 5;
+  optional int32 delete_count = 6;
+  message Cell {
+    optional string kind = 1;
+    optional string content = 2;
+  }
+}
+message EditNotebookResponse {
+  repeated .exa.extension_server_pb.EditNotebookResponse.ModifiedCell modified_cells = 1;
+  optional int32 total_cell_count = 2;
+  message ModifiedCell {
+    optional string cell_id = 1;
+    optional string kind = 2;
+    optional string content = 3;
+    optional int32 index = 4;
+  }
+}
+message ReadNotebookRequest {
+  optional string absolute_path_uri = 1;
+  repeated int32 cell_indices = 2;
+  repeated string cell_ids = 3;
+}
+message ReadNotebookResponse {
+  optional string flattened_content = 1;
+  optional int32 read_cell_count = 2;
+  repeated .exa.cortex_pb.NotebookBlob blobs = 3;
+}
+message ExecuteNotebookRequest {
+  optional string absolute_path_uri = 1;
+  repeated string cell_ids = 2;
+  repeated int32 cell_indices = 3;
+  optional bool stop_on_error = 4;
+  optional bool restart_kernel = 5;
+}
+message ExecuteNotebookResponse {
+  optional .exa.extension_server_pb.ExecuteNotebookResponse.ExecutionStatus status = 1;
+  optional int32 executed_cells_count = 2;
+  repeated .exa.extension_server_pb.ExecuteNotebookResponse.CellOutput cell_outputs = 3;
+  optional string error_trace = 4;
+  message CellOutput {
+    optional string cell_id = 1;
+    optional int32 cell_index = 2;
+    optional .exa.extension_server_pb.ExecuteNotebookResponse.CellStatus status = 3;
+    optional string output_text = 4;
+    optional bool output_text_truncated = 5;
+    optional bool generated_images = 6;
+    optional string error_trace = 7;
+    repeated .exa.cortex_pb.NotebookBlob blobs = 8;
+  }
+  enum CellStatus {
+    CELL_STATUS_UNSPECIFIED = 0;
+    CELL_STATUS_SUCCESS = 1;
+    CELL_STATUS_FAILURE = 2;
+  }
+  enum ExecutionStatus {
+    EXECUTION_STATUS_UNSPECIFIED = 0;
+    EXECUTION_STATUS_SUCCESS = 1;
+    EXECUTION_STATUS_FAILURE = 2;
+    EXECUTION_STATUS_PARTIAL_SUCCESS = 3;
+  }
+}
+message OpenConversationWorkspaceQuickPickRequest {
+  optional string cascade_id = 1;
+  repeated string workspace_uris = 2;
+}
+message OpenConversationWorkspaceQuickPickResponse {
+  optional bool open_in_current_window = 1;
+}
+message FindAllReferencesRequest {
+  optional string file_uri = 1;
+  optional string symbol = 2;
+  optional uint32 line = 3;
+  optional uint32 occurrence_index = 4;
+}
+message FindAllReferencesResponse {
+  repeated .exa.codeium_common_pb.LspReference references = 1;
+}
+message GetDefinitionRequest {
+  repeated .exa.extension_server_pb.GetDefinitionRequestItem request = 1;
+}
+message GetDefinitionRequestItem {
+  optional string file_uri = 1;
+  optional .exa.codeium_common_pb.DocumentPosition position = 2;
+  optional string line_content = 3;
+}
+message GetDefinitionResponse {
+  repeated .exa.extension_server_pb.GetDefinitionResponseItem response = 1;
+}
+message GetDefinitionResponseItem {
+  repeated .exa.codeium_common_pb.LspReference definitions = 1;
+  optional .exa.codeium_common_pb.GRPCStatus status = 2;
+}
+message HandleProposeCodeExtensionVerificationRequest {
+  optional .gemini_coder.Step step = 1;
+}
+message HandleProposeCodeExtensionVerificationResponse {
+}
+message UpdateCascadeTrajectorySummariesRequest {
+  optional .exa.jetski_cortex_pb.CascadeTrajectorySummaries summaries = 1;
+}
+message UpdateCascadeTrajectorySummariesResponse {
+}
+message RunExtensionCodeRequest {
+  optional string code = 1;
+}
+message RunExtensionCodeResponse {
+  optional string output = 1;
+}
+message UpdateDetailedViewWithCascadeInputRequest {
+  optional .exa.language_server_pb.HandleStreamingCommandRequest request = 1;
+  optional .exa.language_server_pb.HandleStreamingCommandResponse response = 2;
+}
+message UpdateDetailedViewWithCascadeInputResponse {
+}
+message GetSecretValueRequest {
+  optional string key = 1;
+}
+message GetSecretValueResponse {
+  optional string value = 1;
+}
+message StoreSecretValueRequest {
+  optional string key = 1;
+  optional string value = 2;
+}
+message StoreSecretValueResponse {
+}
+message GetBrowserOnboardingPortRequest {
+}
+message GetBrowserOnboardingPortResponse {
+  optional uint32 port = 1;
+}
+message GetChromeDevtoolsMcpUrlRequest {
+}
+message GetChromeDevtoolsMcpUrlResponse {
+  optional string url = 1;
+}
+message FocusManagerWindow {
+  optional string cascade_id = 1;
+}
+message FocusEditorWindow {
+  optional string cascade_id = 1;
+}
+message FocusIDEWindowRequest {
+  optional .exa.extension_server_pb.FocusEditorWindow editor = 1;
+  optional .exa.extension_server_pb.FocusManagerWindow manager = 2;
+}
+message FocusIDEWindowResponse {
+}
+message LaunchBrowserRequest {
+  optional string extension_path = 1;
+  optional bool launch_in_foreground = 2;
+}
+message LaunchBrowserResponse {
+  optional string cdp_address = 1;
+}
+message RestartUserStatusUpdaterRequest {
+}
+message RestartUserStatusUpdaterResponse {
+}
+message RecordErrorRequest {
+  optional .exa.codeium_common_pb.ErrorTrace error_trace = 1;
+}
+message RecordErrorResponse {
+}
+message SubscribeToUnifiedStateSyncTopicRequest {
+  optional string topic = 1;
+}
+message UnifiedStateSyncUpdate {
+  optional .exa.unified_state_sync_pb.Topic initial_state = 1;
+  optional .exa.unified_state_sync_pb.AppliedUpdate applied_update = 2;
+}
+message PushUnifiedStateSyncUpdateRequest {
+  optional .exa.unified_state_sync_pb.UpdateRequest update = 1;
+}
+message PushUnifiedStateSyncUpdateResponse {
+}
+message BroadcastConversationDeletionRequest {
+  optional string deleted_cascade_id = 1;
+}
+message BroadcastConversationDeletionResponse {
+}
+message HeartbeatRequest {
+}
+message HeartbeatResponse {
+}
+service ExtensionServerService {
+  rpc LanguageServerStarted(.exa.extension_server_pb.LanguageServerStartedRequest) returns (.exa.extension_server_pb.LanguageServerStartedResponse);
+  rpc OpenSetting(.exa.extension_server_pb.OpenSettingRequest) returns (.exa.extension_server_pb.OpenSettingResponse);
+  rpc OpenFilePointer(.exa.extension_server_pb.OpenFilePointerRequest) returns (.exa.extension_server_pb.OpenFilePointerResponse);
+  rpc InsertCodeAtCursor(.exa.extension_server_pb.InsertCodeAtCursorRequest) returns (.exa.extension_server_pb.InsertCodeAtCursorResponse);
+  rpc LogEvent(.exa.extension_server_pb.LogEventRequest) returns (.exa.extension_server_pb.LogEventResponse);
+  rpc CheckTerminalShellSupport(.exa.extension_server_pb.CheckTerminalShellSupportRequest) returns (.exa.extension_server_pb.CheckTerminalShellSupportResponse);
+  rpc ExecuteCommand(.exa.extension_server_pb.ExecuteCommandRequest) returns (.exa.codeium_common_pb.TerminalShellCommandStreamChunk);
+  rpc ShowTerminal(.exa.extension_server_pb.ShowTerminalRequest) returns (.exa.extension_server_pb.ShowTerminalResponse);
+  rpc SendTerminalInput(.exa.extension_server_pb.SendTerminalInputRequest) returns (.exa.extension_server_pb.SendTerminalInputResponse);
+  rpc TerminateCommand(.exa.extension_server_pb.TerminateCommandRequest) returns (.exa.extension_server_pb.TerminateCommandResponse);
+  rpc OpenVirtualFile(.exa.extension_server_pb.OpenVirtualFileRequest) returns (.exa.extension_server_pb.OpenVirtualFileResponse);
+  rpc SaveDocument(.exa.extension_server_pb.SaveDocumentRequest) returns (.exa.extension_server_pb.SaveDocumentResponse);
+  rpc ReadTerminal(.exa.extension_server_pb.ReadTerminalRequest) returns (.exa.extension_server_pb.ReadTerminalResponse);
+  rpc OpenTerminal(.exa.extension_server_pb.OpenTerminalRequest) returns (.exa.extension_server_pb.OpenTerminalResponse);
+  rpc GetLintErrors(.exa.extension_server_pb.GetLintErrorsRequest) returns (.exa.extension_server_pb.GetLintErrorsResponse);
+  rpc OpenDiffZones(.exa.extension_server_pb.OpenDiffZonesRequest) returns (.exa.extension_server_pb.OpenDiffZonesResponse);
+  rpc OpenExternalUrl(.exa.extension_server_pb.OpenExternalUrlRequest) returns (.exa.extension_server_pb.OpenExternalUrlResponse);
+  rpc HandleAsyncPostMessage(.exa.extension_server_pb.HandleAsyncPostMessageRequest) returns (.exa.extension_server_pb.HandleAsyncPostMessageResponse);
+  rpc PlaySound(.exa.extension_server_pb.PlaySoundRequest) returns (.exa.extension_server_pb.PlaySoundResponse);
+  rpc OpenAntigravityRulesFile(.exa.extension_server_pb.OpenAntigravityRulesFileRequest) returns (.exa.extension_server_pb.OpenAntigravityRulesFileResponse);
+  rpc OpenPluginPage(.exa.extension_server_pb.OpenPluginPageRequest) returns (.exa.extension_server_pb.OpenPluginPageResponse);
+  rpc OpenPluginConfigModal(.exa.extension_server_pb.OpenPluginConfigModalRequest) returns (.exa.extension_server_pb.OpenPluginConfigModalResponse);
+  rpc OpenConfigurePluginsPage(.exa.extension_server_pb.OpenConfigurePluginsPageRequest) returns (.exa.extension_server_pb.OpenConfigurePluginsPageResponse);
+  rpc OpenConversationWorkspaceQuickPick(.exa.extension_server_pb.OpenConversationWorkspaceQuickPickRequest) returns (.exa.extension_server_pb.OpenConversationWorkspaceQuickPickResponse);
+  rpc FindAllReferences(.exa.extension_server_pb.FindAllReferencesRequest) returns (.exa.extension_server_pb.FindAllReferencesResponse);
+  rpc GetDefinition(.exa.extension_server_pb.GetDefinitionRequest) returns (.exa.extension_server_pb.GetDefinitionResponse);
+  rpc TerminalResearchResult(.exa.extension_server_pb.TerminalResearchResultRequest) returns (.exa.extension_server_pb.TerminalResearchResultResponse);
+  rpc WriteCascadeEdit(.exa.extension_server_pb.WriteCascadeEditRequest) returns (.exa.extension_server_pb.WriteCascadeEditResponse);
+  rpc EditNotebook(.exa.extension_server_pb.EditNotebookRequest) returns (.exa.extension_server_pb.EditNotebookResponse);
+  rpc ReadNotebook(.exa.extension_server_pb.ReadNotebookRequest) returns (.exa.extension_server_pb.ReadNotebookResponse);
+  rpc ExecuteNotebook(.exa.extension_server_pb.ExecuteNotebookRequest) returns (.exa.extension_server_pb.ExecuteNotebookResponse);
+  rpc StartAudioRecording(.exa.extension_server_pb.StartAudioRecordingRequest) returns (.exa.extension_server_pb.StartAudioRecordingResponse);
+  rpc EndAudioRecording(.exa.extension_server_pb.EndAudioRecordingRequest) returns (.exa.extension_server_pb.EndAudioRecordingResponse);
+  rpc GetCurrentAudioRecording(.exa.extension_server_pb.GetCurrentAudioRecordingRequest) returns (.exa.extension_server_pb.GetCurrentAudioRecordingResponse);
+  rpc HandleProposeCodeExtensionVerification(.exa.extension_server_pb.HandleProposeCodeExtensionVerificationRequest) returns (.exa.extension_server_pb.HandleProposeCodeExtensionVerificationResponse);
+  rpc UpdateCascadeTrajectorySummaries(.exa.extension_server_pb.UpdateCascadeTrajectorySummariesRequest) returns (.exa.extension_server_pb.UpdateCascadeTrajectorySummariesResponse);
+  rpc RunExtensionCode(.exa.extension_server_pb.RunExtensionCodeRequest) returns (.exa.extension_server_pb.RunExtensionCodeResponse);
+  rpc UpdateDetailedViewWithCascadeInput(.exa.extension_server_pb.UpdateDetailedViewWithCascadeInputRequest) returns (.exa.extension_server_pb.UpdateDetailedViewWithCascadeInputResponse);
+  rpc GetSecretValue(.exa.extension_server_pb.GetSecretValueRequest) returns (.exa.extension_server_pb.GetSecretValueResponse);
+  rpc StoreSecretValue(.exa.extension_server_pb.StoreSecretValueRequest) returns (.exa.extension_server_pb.StoreSecretValueResponse);
+  rpc LaunchBrowser(.exa.extension_server_pb.LaunchBrowserRequest) returns (.exa.extension_server_pb.LaunchBrowserResponse);
+  rpc RestartUserStatusUpdater(.exa.extension_server_pb.RestartUserStatusUpdaterRequest) returns (.exa.extension_server_pb.RestartUserStatusUpdaterResponse);
+  rpc ShowConversationPicker(.exa.extension_server_pb.ConversationPickerRequest) returns (.exa.extension_server_pb.ConversationPickerResponse);
+  rpc GetBrowserOnboardingPort(.exa.extension_server_pb.GetBrowserOnboardingPortRequest) returns (.exa.extension_server_pb.GetBrowserOnboardingPortResponse);
+  rpc GetChromeDevtoolsMcpUrl(.exa.extension_server_pb.GetChromeDevtoolsMcpUrlRequest) returns (.exa.extension_server_pb.GetChromeDevtoolsMcpUrlResponse);
+  rpc FocusIDEWindow(.exa.extension_server_pb.FocusIDEWindowRequest) returns (.exa.extension_server_pb.FocusIDEWindowResponse);
+  rpc SmartFocusConversation(.exa.language_server_pb.SmartFocusConversationRequest) returns (.exa.language_server_pb.SmartFocusConversationResponse);
+  rpc IsAgentManagerEnabled(.exa.extension_server_pb.IsAgentManagerEnabledRequest) returns (.exa.extension_server_pb.IsAgentManagerEnabledResponse);
+  rpc RecordError(.exa.extension_server_pb.RecordErrorRequest) returns (.exa.extension_server_pb.RecordErrorResponse);
+  rpc SubscribeToUnifiedStateSyncTopic(.exa.extension_server_pb.SubscribeToUnifiedStateSyncTopicRequest) returns (.exa.extension_server_pb.UnifiedStateSyncUpdate);
+  rpc PushUnifiedStateSyncUpdate(.exa.extension_server_pb.PushUnifiedStateSyncUpdateRequest) returns (.exa.extension_server_pb.PushUnifiedStateSyncUpdateResponse);
+  rpc BroadcastConversationDeletion(.exa.extension_server_pb.BroadcastConversationDeletionRequest) returns (.exa.extension_server_pb.BroadcastConversationDeletionResponse);
+  rpc Heartbeat(.exa.extension_server_pb.HeartbeatRequest) returns (.exa.extension_server_pb.HeartbeatResponse);
+}
