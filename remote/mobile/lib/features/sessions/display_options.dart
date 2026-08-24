@@ -176,18 +176,22 @@ Map<String, List<CascadeSession>> groupSessions({
       if (matchedProject != null) {
         grouped.putIfAbsent(matchedProject.name, () => []).add(s);
       } else {
-        const fallbackName = 'Outside of Project';
+        const fallbackName = 'Conversations';
         grouped.putIfAbsent(fallbackName, () => []).add(s);
       }
     }
 
-    // Inclure les projets officiels qui n'ont aucune session active (à la fin de la liste)
+    // Inclure les projets officiels qui n'ont aucune session active (à la fin de la liste des projets)
     for (final p in officialProjects) {
       grouped.putIfAbsent(p.name, () => []);
     }
 
-    if (grouped['Outside of Project']?.isEmpty ?? false) {
-      grouped.remove('Outside of Project');
+    // Placer la section 'Conversations' (hors projet) tout en bas après tous les projets
+    if (grouped.containsKey('Conversations')) {
+      final convs = grouped.remove('Conversations');
+      if (convs != null && convs.isNotEmpty) {
+        grouped['Conversations'] = convs;
+      }
     }
   } else {
     for (final s in sessions) {

@@ -50,6 +50,7 @@ class _FolderHeader extends StatelessWidget {
   final VoidCallback onToggleCollapse;
   final void Function(ProjectItem? project)? onNewConversation;
   final VoidCallback? onOpenSettings;
+  final bool isCollapsed;
 
   const _FolderHeader({
     super.key,
@@ -58,34 +59,53 @@ class _FolderHeader extends StatelessWidget {
     required this.onToggleCollapse,
     this.onNewConversation,
     this.onOpenSettings,
+    this.isCollapsed = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isConversationsSection = folderName == 'Conversations' || folderName == 'Outside of Project';
 
     return InkWell(
       onTap: onToggleCollapse,
       borderRadius: BorderRadius.circular(4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Row(
           children: [
-            Icon(
-              Icons.folder_outlined,
-              size: 15,
-              color: scheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 8),
+            if (!isConversationsSection) ...[
+              Icon(
+                Icons.folder_outlined,
+                size: 15,
+                color: scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+            ],
             Expanded(
-              child: Text(
-                folderName,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
-                  color: scheme.primary,
-                ),
-                overflow: TextOverflow.ellipsis,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      isConversationsSection ? 'Conversations' : folderName,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: isConversationsSection ? FontWeight.w600 : FontWeight.w500,
+                        color: isConversationsSection ? const Color(0xFF8F909A) : scheme.primary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (isConversationsSection) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      isCollapsed ? Icons.keyboard_arrow_right_rounded : Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: const Color(0xFF8F909A),
+                    ),
+                  ],
+                ],
               ),
             ),
             if (onNewConversation != null)
@@ -93,7 +113,7 @@ class _FolderHeader extends StatelessWidget {
                 icon: const Icon(Icons.add, size: 16),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                onPressed: () => onNewConversation!(project),
+                onPressed: () => onNewConversation!(isConversationsSection ? null : project),
                 tooltip: 'Nouvelle conversation',
               ),
           ],
@@ -775,6 +795,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                               key: ValueKey('folder_$folder'),
                               folderName: folder,
                               project: entry.project,
+                              isCollapsed: isCollapsed,
                               onToggleCollapse: () {
                                 setState(() {
                                   if (isCollapsed) {
