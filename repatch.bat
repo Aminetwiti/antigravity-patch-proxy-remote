@@ -57,64 +57,52 @@ if errorlevel 1 (
   echo   [WARN] tsc build failed -- continuing with existing dist/
 )
 
-REM -- 3. Detect target install
-echo [3/5] Detecting Antigravity installation...
-set "TARGET=CLASSIC"
-if exist "%AG_IDE_EXE%" (
-  set "TARGET=IDE"
-  echo   Found Antigravity IDE: %AG_IDE%
-) else if exist "%AG_CLASSIC_EXE%" (
-  echo   Found classic Antigravity: %AG_CLASSIC%
-) else (
-  echo   [ERROR] No Antigravity installation found.
-  echo   Looked for:
-  echo     - %AG_IDE_EXE%
-  echo     - %AG_CLASSIC_EXE%
-  exit /b 1
-)
-
-if "%TARGET%"=="CLASSIC" goto classic_path
-goto common_patch
-
-REM ------------------------------------------------------------
-REM  Classic path: asar overlay surgery (patch-version.js) +
-REM  binary patch. The overlay injects dist/ + proxy-runner.js
-REM  into app.asar; without it the classic shell has no proxy.
-REM ------------------------------------------------------------
-:classic_path
-set "AG_ASAR=%AG_CLASSIC%\resources\app.asar"
-if not exist "%AG_ASAR%" (
-  echo   [ERROR] app.asar not found at %AG_ASAR%
-  exit /b 1
-)
-echo [3b/5] Backing up and applying asar overlay...
-set "STAGING_DIR=%TEMP%\antigravity-asar-staging-%RANDOM%"
-if exist "%AG_ASAR%.bak" (
-  echo   Backup already exists at %AG_ASAR%.bak -- skipping
-) else (
-  copy /Y "%AG_ASAR%" "%AG_ASAR%.bak" >nul
-  echo   Backup created: %AG_ASAR%.bak
-  if exist "%AG_ASAR%.unpacked" (
-    if not exist "%AG_ASAR%.bak.unpacked" (
-      xcopy /E /I /H /Y "%AG_ASAR%.unpacked" "%AG_ASAR%.bak.unpacked" >nul
-      echo   Backup created: %AG_ASAR%.bak.unpacked
+REM -- 3. Patch Classic Antigravity (asar overlay) if present
+if exist "%AG_CLASSIC_EXE%" (
+  echo [3/5] Classic Antigravity found -- applying asar overlay...
+  set "AG_ASAR=%AG_CLASSIC%\resources\app.asar"
+  if not exist "!AG_ASAR!.bak" (
+    copy /Y "!AG_ASAR!" "!AG_ASAR!.bak" >nul
+    echo   Backup created: !AG_ASAR!.bak
+    if exist "!AG_ASAR!.unpacked" (
+      if not exist "!AG_ASAR!.bak.unpacked" (
+        xcopy /E /I /H /Y "!AG_ASAR!.unpacked" "!AG_ASAR!.bak.unpacked" >nul
+        echo   Backup created: !AG_ASAR!.bak.unpacked
+      )
     )
+  ) else (
+    echo   Backup already exists at !AG_ASAR!.bak
+  )
+  set "STAGING_DIR=%TEMP%\antigravity-asar-staging-%RANDOM%"
+  node "%SCRIPT_DIR%scripts\patch-version.js" "!AG_ASAR!.bak" "!STAGING_DIR!" "!AG_ASAR!"
+  if errorlevel 1 (
+    echo   [ERROR] Asar overlay failed. Restoring backup...
+    copy /Y "!AG_ASAR!.bak" "!AG_ASAR!" >nul
+  ) else (
+    if exist "!STAGING_DIR!" rmdir /S /Q "!STAGING_DIR!"
+    echo   Asar overlay applied.
+
+    if not exist "%AG_SCRATCH%" mkdir "%AG_SCRATCH%"
+    copy /Y "!AG_ASAR!" "%AG_SCRATCH%\app.asar.patched" >nul
+    echo   Patched asar cached for auto-heal: %AG_SCRATCH%\app.asar.patched
+    if exist "%AG_CLASSIC%\resources\app.asar.unpacked" (
+      if exist "%AG_SCRATCH%\app.asar.unpacked" rmdir /S /Q "%AG_SCRATCH%\app.asar.unpacked"
+      xcopy /E /I /H /Y "%AG_CLASSIC%\resources\app.asar.unpacked" "%AG_SCRATCH%\app.asar.unpacked" >nul
+      echo   app.asar.unpacked cached as well
+    )
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\register-auto-heal.ps1"
   )
 )
-node "%SCRIPT_DIR%scripts\patch-version.js" "%AG_ASAR%.bak" "%STAGING_DIR%" "%AG_ASAR%"
-if errorlevel 1 (
-  echo   [ERROR] Asar overlay failed. Restoring backup...
-  copy /Y "%AG_ASAR%.bak" "%AG_ASAR%" >nul
-  exit /b 1
-)
-if exist "%STAGING_DIR%" rmdir /S /Q "%STAGING_DIR%"
-echo   Asar overlay applied.
 
-REM ------------------------------------------------------------
-REM  Common path: binary patch (+ IDE override) + proxy + launch
-REM ------------------------------------------------------------
-:common_patch
-echo [4/5] Applying patch (ag-doctor patch apply)...
+if exist "%AG_IDE_EXE%" (
+  echo   Found Antigravity IDE: %AG_IDE%
+  set "TARGET=IDE"
+) else (
+  set "TARGET=CLASSIC"
+)
+
+REM -- 4. Binary patch (+ IDE override)
+echo [4/5] Applying binary patch + IDE settings override (ag-doctor patch apply)...
 node "%SCRIPT_DIR%ag-doctor\bin\ag-doctor.js" patch apply --yes
 if errorlevel 1 (
   echo   [ERROR] Patch failed. Re-run ag-doctor repair to recover.
@@ -137,26 +125,6 @@ if "%TARGET%"=="IDE" (
 ) else (
   echo  Launching Antigravity (classic)...
   start "" "%AG_CLASSIC_EXE%"
-)
-
-REM -- 6. Cache the patched asar for the auto-healer (survives official updates)
-if "%TARGET%"=="CLASSIC" (
-  if not exist "%AG_SCRATCH%" mkdir "%AG_SCRATCH%"
-  copy /Y "%AG_ASAR%" "%AG_SCRATCH%\app.asar.patched" >nul
-  echo [6/6] Patched asar cached: %AG_SCRATCH%\app.asar.patched
-  if exist "%AG_CLASSIC%\resources\app.asar.unpacked" (
-    if exist "%AG_SCRATCH%\app.asar.unpacked" rmdir /S /Q "%AG_SCRATCH%\app.asar.unpacked"
-    xcopy /E /I /H /Y "%AG_CLASSIC%\resources\app.asar.unpacked" "%AG_SCRATCH%\app.asar.unpacked" >nul
-    echo [6/6] app.asar.unpacked cached as well
-  )
-
-  REM -- 7. Register the startup VBS auto-healer
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\register-auto-heal.ps1"
-  if errorlevel 1 (
-    echo   [WARN] Auto-heal registration failed -- re-run scripts\register-auto-heal.ps1 manually
-  ) else (
-    echo [7/7] Auto-heal registered in Windows Startup
-  )
 )
 
 echo.

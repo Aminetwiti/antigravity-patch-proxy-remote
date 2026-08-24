@@ -301,27 +301,30 @@ npm run doctor:logs
 repatch.bat
 ```
 
-### Antigravity IDE (v1.107.0+) Support
+### Antigravity IDE (v1.107.0+) vs Antigravity 2.0 (Classic)
 
-Since mid-2026 the desktop client ships as **Antigravity IDE**, a VS Code-based
-Electron app, in addition to the classic 2.x shell. `ag-doctor` handles both:
+The ecosystem provides full dual-support for both the classic Electron shell and the VS Code-based Antigravity IDE:
 
-- **IDE patch**: the IDE resolves its Cloud Code endpoint from the standard VS
-Code setting `jetski.cloudCodeUrl`. `ag-doctor patch apply` writes
-`http://localhost:${AG_PROXY_PORT:-51074}` there (with a `.bak` backup), so the IDE's language
-server routes through the local proxy — no binary surgery needed.
-- **Standalone proxy**: `ag-doctor proxy start` runs the real proxy under the
-bundled Electron (so DPAPI-encrypted keys decrypt), replacing any leftover
--  stub on port ${AG_PROXY_PORT:-51074}. `proxy stub` / `proxy stop` manage the emergency stub.
-- **`models rekey`**: the language server stores API keys in its own `v10`
-  format that the local proxy cannot decrypt. `ag-doctor models rekey` walks
-  each affected model and re-enters the key in the proxy-compatible format
-  (interactive, or `--keys-file <json>` for batch).
+| Dimension | **Antigravity 2.0 (Classic Shell)** | **Antigravity IDE (VS Code)** |
+| :--- | :--- | :--- |
+| **Installation Path** | `%LOCALAPPDATA%\Programs\antigravity` | `%LOCALAPPDATA%\Programs\Antigravity IDE` |
+| **Binary / Core** | v2.9.1 (Proprietary Electron shell) | v1.107.0 (VS Code platform fork) |
+| **UI Experience** | Lightweight Agent chat & session management | Full IDE (editor, terminals, git, extensions) |
+| **Patch Mechanism** | `app.asar` overlay + `language_server.exe` string table | `jetski.cloudCodeUrl` override + `out/main.js` hook |
+| **Proxy Lifecycle** | Internal Electron main process lifecycle | **Autonomous auto-starter** hook in `main.js` |
+| **Models Injected** | All custom models in `custom_models.json` | All custom models in `custom_models.json` |
 
-> Tip: add or re-key custom models via `ag-doctor models add` / `models rekey`
-> rather than the IDE's own settings UI — the IDE re-encrypts keys into its
-> private format, which the proxy cannot read.
-```
+#### Key Capabilities & Architecture:
+
+- **Autonomous Proxy Auto-Starter (`out/main.js`)**: Antigravity IDE automatically verifies if port `51074` is active upon launch. If closed (e.g. Antigravity 2.0 is not running), it immediately spawns the detached background proxy runner from `~/.gemini/antigravity/proxy/` before extension activation, eliminating initial authentication errors (`ECONNREFUSED`).
+- **Unified Model Configuration**: Both flavors read from the centralized `~/.gemini/antigravity/custom_models.json` with live health monitoring and auto-fallback.
+- **1-Click Launchers**:
+  - `Start Antigravity IDE.bat`: Launches Antigravity IDE with guaranteed background proxy execution.
+  - `repatch.bat`: One-click repatch and launcher for both classic and IDE installations.
+- **`models rekey`**: The language server stores API keys in its own `v10` format that the local proxy cannot decrypt. `ag-doctor models rekey` walks each affected model and re-enters the key in the proxy-compatible format (interactive, or `--keys-file <json>` for batch).
+
+> **Tip**: Add or re-key custom models via `ag-doctor models add` / `models rekey` or `ag-doctor-ui` rather than the IDE's internal settings UI — the IDE re-encrypts keys into its private format, which the proxy cannot read.
+
 
 ### CLI Architecture & Worker Mode
 

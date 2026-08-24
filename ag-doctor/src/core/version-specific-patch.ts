@@ -70,7 +70,7 @@ export const PATCH_REGISTRY: PatchDefinition[] = [
   {
     versionRange: '2.3.0+',
     minVersion: '2.3.0',
-    maxVersion: null,
+    maxVersion: '2.5.99',
     originalUrl: 'https://daily-cloudcode-pa.googleapis.com',
     patchedUrl: `http://localhost:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx`,
     description: 'Patch for Antigravity 2.3.0+ (41 bytes; binary URL unchanged — JS overlay required)',

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getProxyManager, ProxyServerStatus } from './proxy-manager';
+import { EnvironmentConfig } from './config/environment';
 
 /**
  * Extended Unit Tests for ProxyManager (55 tests)
@@ -30,7 +31,7 @@ describe('ProxyManager Status Evaluation (15 Tests)', () => {
     const mgr = getProxyManager();
     const status: ProxyServerStatus = await mgr.getStatus();
     expect(status.running).toBe(false);
-    expect(status.port).toBe(parseInt(process.env.AG_MITM_PORT || '443', 10));
+    expect(status.port).toBe(EnvironmentConfig.proxyPort);
     expect(status.pid).toBeUndefined();
     expect(status.error).toBeUndefined();
   });

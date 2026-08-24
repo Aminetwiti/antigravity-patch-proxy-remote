@@ -27,6 +27,7 @@ export const KNOWN_PATCH_RANGES = [
   '2.0.1 - 2.1.x',
   '2.2.0 - 2.2.x',
   '2.3.0+',
+  '2.6.0+',
 ] as const;
 export type KnownPatchRange = (typeof KNOWN_PATCH_RANGES)[number];
 

@@ -172,6 +172,7 @@ const MISSING_JS_MODULES = [
   'proxy/idleTimeout',
   'proxy/jsonRepair',
   'proxy/logThrottle',
+  'proxy/mcpRelay',
   'proxy/metricsRoute',
   'proxy/modelHealthChecker',
   'proxy/modelInjector',

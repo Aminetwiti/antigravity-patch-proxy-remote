@@ -1,0 +1,33 @@
+{
+  "models": [
+    {
+      "name": "models/gpt-4o",
+      "displayName": "GPT-4o (OpenAI via Proxy)",
+      "description": "OpenAI GPT-4o model redirected through proxy",
+      "provider": "openai",
+      "apiKey": "fallback:WU9VUl9PUEVOQUlfQVBJX0tFWQ==",
+      "apiUrl": "https://api.openai.com/v1/chat/completions",
+      "externalModelName": "gpt-4o",
+      "encrypted": true
+    },
+    {
+      "name": "models/claude-3-5-sonnet",
+      "displayName": "Claude 3.5 Sonnet (Anthropic via Proxy)",
+      "description": "Anthropic Claude 3.5 Sonnet model redirected through proxy",
+      "provider": "anthropic",
+      "apiKey": "fallback:WU9VUl9BTlRIUk9QSUNfQVBJX0tFWQ==",
+      "apiUrl": "https://api.anthropic.com/v1/messages",
+      "externalModelName": "claude-3-5-sonnet-latest",
+      "encrypted": true
+    },
+    {
+      "name": "models/llama3",
+      "displayName": "Llama 3 (Local Ollama)",
+      "description": "Local Ollama Llama 3 model run on your machine",
+      "provider": "ollama",
+      "apiKey": "",
+      "apiUrl": "http://localhost:11434/v1/chat/completions",
+      "externalModelName": "llama3"
+    }
+  ]
+}

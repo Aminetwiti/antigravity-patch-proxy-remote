@@ -95,6 +95,30 @@ describe('detectModelCapabilities', () => {
     });
     expect(result.isClaude).toBe(true);
   });
+
+  it('detects image support for GLM models like glm-5.3', () => {
+    const result = detectModelCapabilities({
+      name: 'glm-5.3',
+      provider: 'openai',
+    });
+    expect(result.supportsImages).toBe(true);
+  });
+
+  it('honors explicit supportsImages or supportsVision override', () => {
+    const forcedYes = detectModelCapabilities({
+      name: 'custom-text-model',
+      provider: 'ollama',
+      supportsImages: true,
+    });
+    expect(forcedYes.supportsImages).toBe(true);
+
+    const forcedNo = detectModelCapabilities({
+      name: 'gpt-4o',
+      provider: 'openai',
+      supportsImages: false,
+    });
+    expect(forcedNo.supportsImages).toBe(false);
+  });
 });
 
 describe('detectModelCapabilitiesByName', () => {

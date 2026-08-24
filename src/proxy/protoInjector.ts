@@ -113,10 +113,8 @@ export function injectCustomModelsIntoResponse(
     for (const m of expandedModels) {
       const health = healthMap?.get(m.name);
       
-      // Do not inject unhealthy models into the dropdown (per user request)
-      if (health?.status === 'unhealthy') {
-        continue;
-      }
+      // Unhealthy models are still injected (with red dot status) so the user knows they are loaded.
+      // Removed the filter that was skipping them.
 
       const placeholderId = generateModelPlaceholderId(m);
       const formattedName = formatModelDisplayName(m, health);

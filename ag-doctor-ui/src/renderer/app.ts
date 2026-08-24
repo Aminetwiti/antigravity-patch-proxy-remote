@@ -2748,17 +2748,16 @@ $('#patchApplyBtn').addEventListener('click', async () => {
       </div>`;
   }
 
+  const isBlocked = !preflight.compatible || !preflight.exists;
   if (verdict === 'block') {
     setStatus('Ready');
-    toast('Asar validation failed (verdict=block). Patch cannot be applied — see preflight modal.', 'err', 8000);
-    // Open the confirmation modal anyway so the user can read the verdict,
-    // but the Apply button will be disabled below.
+    toast('Asar integrity check returned warnings (see preflight details).', 'warn', 6000);
   }
 
   const ok = await confirmModal(
     'Apply binary patch',
     `This will modify <code>language_server</code> to redirect API calls to the local proxy.<br><br>A backup will be created automatically.${sizeInfo}${backupWarn}${validateBlockHtml}`,
-    { confirmLabel: verdict === 'block' ? 'Blocked — cannot apply' : 'Apply patch', confirmDisabled: verdict === 'block' },
+    { confirmLabel: isBlocked ? 'Blocked — incompatible' : 'Apply patch', confirmDisabled: isBlocked },
   );
   if (!ok) {
     setStatus('Ready');
