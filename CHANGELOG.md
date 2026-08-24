@@ -5,6 +5,12 @@ All notable changes to Antigravity will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.1] - 2026-08-24
+
+### Added
+- **Comprehensive Multimodal & Vision Model Support**: Expanded automated capability detection in `IMAGE_SUPPORT_PATTERN` to support GLM (`glm-5.3`, `glm-4v`), Qwen-VL (`qwenvl`, `qwen2.5-vl`, `qvq`), Kimi/Moonshot, MiniMax, DeepSeek-VL/Janus, LLaMA 3.2+ Vision (`llama-3.2`, `mllama`), Phi-3/4 Multimodal, InternVL, Baichuan, Doubao, StepFun, and Pixtral.
+- **Custom Model Image Capability Override**: Support for explicit `supportsImages: true` / `supportsVision: true` override flags in `custom_models.json` for arbitrary user-defined models.
+
 ## [3.4.0] - 2026-08-22
 
 ### Added

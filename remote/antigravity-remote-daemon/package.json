@@ -1,7 +1,7 @@
 {
   "name": "antigravity-remote-daemon",
   "productName": "Antigravity Remote Daemon",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "description": "Antigravity Remote Daemon — Dedicated 1-Page Controller for Remote Server & Mobile Pairing",
   "main": "dist/main.js",
   "scripts": {
