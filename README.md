@@ -1,62 +1,76 @@
-# Google Antigravity Custom Model Proxy — Add Claude, OpenAI, DeepSeek & Ollama to Antigravity IDE
+# Google Antigravity Patch Proxy & Remote 2.0 — Custom LLM Models & Mobile IDE Companion
 
 <p align="center">
-  <img src="assets/antigravity_patch_proxy_logo.png" width="180" alt="Google Antigravity Custom Model Proxy Logo" />
+  <img src="assets/antigravity_patch_proxy_logo.png" width="180" alt="Google Antigravity Custom Model Proxy & Remote Logo" />
 </p>
 
-[![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](package.json)
-[![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)](tsconfig.json)
-[![Tests](https://img.shields.io/badge/tests-2565%20passed-brightgreen.svg)](src/__tests__)
+<p align="center">
+  <a href="package.json"><img src="https://img.shields.io/badge/version-3.4.0-blue.svg?style=for-the-badge" alt="Version 3.4.0" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=for-the-badge" alt="License Apache 2.0" /></a>
+  <a href="remote/mobile"><img src="https://img.shields.io/badge/Flutter-Mobile%20(Android%20%2F%20iOS)-02569B.svg?style=for-the-badge&logo=flutter" alt="Flutter Mobile" /></a>
+  <a href="remote/daemon"><img src="https://img.shields.io/badge/Go%20Daemon-gRPC--Web%20%2F%20WS-00ADD8.svg?style=for-the-badge&logo=go" alt="Go Daemon" /></a>
+  <a href="src"><img src="https://img.shields.io/badge/Desktop%20Proxy-Electron%20%2F%20TS-3178C6.svg?style=for-the-badge&logo=typescript" alt="Electron Proxy" /></a>
+  <a href="src/__tests__"><img src="https://img.shields.io/badge/Tests-2500%2B%20Passed-brightgreen.svg?style=for-the-badge" alt="Tests Passed" /></a>
+</p>
 
-> **One IDE, every custom LLM model.** Enable **Anthropic Claude 3.5 Sonnet**, **OpenAI GPT-4o**, **DeepSeek R1 / V3**, **OpenRouter**, **Ollama**, **Google AI Studio**, **Groq**, **Mistral**, and custom local or cloud AI models directly inside **Google Antigravity IDE**. Features native UI dropdown integration, real-time bi-directional SSE streaming, tool calling, and enterprise-grade AES-256-GCM encryption.
+<p align="center">
+  <b>Add custom AI models (Claude 3.5 Sonnet, GPT-4o, DeepSeek R1, Ollama) to Google Antigravity IDE & control everything on your smartphone with Antigravity Remote 2.0.</b>
+</p>
+
+> **The complete AI development ecosystem for Google Antigravity:**
+> - 🖥️ **Desktop Patch Proxy**: Injects **Anthropic Claude 3.5 Sonnet**, **OpenAI GPT-4o**, **DeepSeek R1 / V3**, **OpenRouter**, **Ollama**, **Google AI Studio**, **Groq**, and **Mistral** directly into the IDE chat and autocomplete dropdowns with AES-256-GCM encryption and bi-directional SSE streaming.
+> - 📱 **Antigravity Remote 2.0 (Mobile Companion)**: Native Flutter application (Android APK & iOS) to supervise agent trajectories, review code diffs, approve terminal commands, inspect MCP servers, manage Git worktrees, and chat with AI from anywhere via **Zero-Config LAN Discovery** or **Cloudflare Quick Tunnels**.
+
+---
+
+## 🌟 Visual Showcase & Hero Tour
+
+<div align="center">
+
+| 🖥️ Desktop IDE Custom Models | 📱 Mobile Remote 2.0 Companion |
+|:---:|:---:|
+| <img src="assets/4.PNG" width="460" alt="Google Antigravity Custom Model Selector Dropdown" /> | <img src="assets/remote/Screenshot_20260823_035746.jpg" width="220" alt="Antigravity Remote Mobile Streaming Chat" /> |
+| *Native IDE dropdown with custom LLMs & Auto-Fallback* | *Live mobile streaming, 7ms latency, unified diffs & voice input* |
+
+</div>
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
+- [Overview & Key Capabilities](#overview--key-capabilities)
+- [Antigravity Remote 2.0 (Mobile & Daemon Bridge)](#antigravity-remote-20-mobile--daemon-bridge)
+  - [Remote Visual Experience & Screen Gallery](#remote-visual-experience--screen-gallery)
+  - [Key Remote Capabilities & Protocols](#key-remote-capabilities--protocols)
+  - [Running Antigravity Remote](#running-antigravity-remote)
 - [Architecture & Reverse Engineering](#architecture--reverse-engineering)
   - [Cloud Code Internal API (`v1internal`)](#cloud-code-internal-api-v1internal)
   - [Language Server Binary Patching](#language-server-binary-patching)
   - [Protobuf Model Injection](#protobuf-model-injection)
   - [Request Lifecycle & Data Flow](#request-lifecycle--data-flow)
-- [Screenshots & UI Integration](#screenshots--ui-integration)
+- [Desktop UI Screenshots & Custom Models](#desktop-ui-screenshots--custom-models)
 - [Key Technical Features](#key-technical-features)
-  - [Format Translators](#format-translators)
-  - [Bi-Directional SSE Streaming](#bi-directional-sse-streaming)
-  - [Tool Calling & Function Execution](#tool-calling--function-execution)
+  - [Automated Model Auto-Fallback](#automated-model-auto-fallback--stream-warning-cards)
+  - [Format Translators (Claude, OpenAI, Ollama, Gemini)](#format-translators)
+  - [Bi-Directional SSE Streaming & Tool Calling](#bi-directional-sse-streaming)
   - [DeepSeek & Claude Thinking Support](#deepseek--claude-thinking-support)
-- [Security Architecture](#security-architecture)
-  - [AES-256-GCM Encryption (`safeStorage`)](#aes-256-gcm-encryption-safestorage)
-  - [Request Hardening & DoS Protection](#request-hardening--dos-protection)
+  - [Per-Model Circuit Breaker & Resiliency](#per-model-circuit-breaker--resiliency-circuitbreakerts)
+- [Security Architecture & AES-256-GCM](#security-architecture)
 - [Quick Start & Installation](#quick-start--installation)
-  - [Windows Setup](#windows-setup)
-  - [macOS & Linux Setup](#macos--linux-setup)
-  - [Enterprise MITM HTTPS Mode](#enterprise-mitm-https-mode)
-- [`ag-doctor` Diagnostic CLI](#ag-doctor-diagnostic-cli)
-- [Antigravity Remote 2.0 (Mobile & Daemon Bridge)](#antigravity-remote-20-mobile--daemon-bridge)
-  - [Architecture & Protocol](#remote-architecture--protocol)
-  - [Mobile Companion Features](#mobile-companion-features)
-  - [Running the Remote Daemon](#running-the-remote-daemon)
-- [Supported LLM Providers & Matrix](#supported-llm-providers--matrix)
+- [`ag-doctor` Diagnostic CLI & UI](#ag-doctor-diagnostic-cli)
+- [Supported LLM Providers & Matrix](#provider-configuration-matrix)
 - [`custom_models.json` Schema Reference](#custom_modelsjson-schema-reference)
-- [Developer Guide](#developer-guide)
-  - [Codebase Structure](#codebase-structure)
-  - [Building & Watch Mode](#building--watch-mode)
-  - [Running Tests](#running-tests)
-  - [Adding a New Translator Module](#adding-a-new-translator-module)
-- [Troubleshooting & Diagnostics](#troubleshooting--diagnostics)
+- [Developer Guide & Testing](#developer-guide)
 - [Frequently Asked Questions (FAQ)](#frequently-asked-questions-faq)
-- [License & Acknowledgments](#license--acknowledgments)
+- [License](#license--acknowledgments)
 
 ---
 
-## Overview
+## Overview & Key Capabilities
 
-**Google Antigravity Custom Model Enabler** is an advanced proxy patch for Google Antigravity. It intercepts internal communication between the IDE's Language Server (Go binary) and Google's internal Cloud Code infrastructure. By injecting a local reverse proxy (`127.0.0.1:${AG_PROXY_PORT:-51074}`), it translates Google Cloud Code API requests into compatible payloads for 19+ LLM providers, while maintaining native UI dropdowns, streaming tokens, and tool calls.
-
----
+**Google Antigravity Custom Model Enabler & Remote Ecosystem** transforms your development environment:
+1. **Universal LLM Bridge**: Intercepts internal communication between the IDE's Language Server (Go binary) and Google's internal Cloud Code infrastructure (`daily-cloudcode-pa.googleapis.com` → `127.0.0.1:${AG_PROXY_PORT:-51074}`), translating API requests into standard payloads for 19+ LLM providers while preserving tool calls and SSE token streaming.
+2. **Mobile IDE Companion**: Connects securely to your IDE session from your smartphone via WebSocket JSON-RPC over local Wi-Fi or Cloudflare Quick Tunnels, giving you real-time human-in-the-loop controls wherever you are.
 
 ## Architecture & Reverse Engineering
 
@@ -137,21 +151,21 @@ sequenceDiagram
 
 ---
 
-## Screenshots & UI Integration
+## Desktop UI Screenshots & Custom Models
 
 The injected UI seamlessly blends with Antigravity's dark VS Code-adjacent chrome:
 
 | Custom Models Dashboard | Add Model Modal |
-|---|---|
-| ![Google Antigravity Custom Models Dashboard Settings](assets/1.PNG) | ![Add Custom LLM Model Modal in Google Antigravity IDE](assets/2.PNG) |
+|:---:|:---:|
+| <img src="assets/1.PNG" width="460" alt="Google Antigravity Custom Models Dashboard Settings" /><br/>*Manage and encrypt custom model endpoints & keys* | <img src="assets/2.PNG" width="460" alt="Add Custom LLM Model Modal in Google Antigravity IDE" /><br/>*Configure model names, thinking budget, and context limits* |
 
 | Provider Selection (Claude, OpenAI, DeepSeek, Ollama) | Model Selector in Antigravity Chat UI |
-|---|---|
-| ![Supported LLM Providers Selection in Google Antigravity](assets/3.PNG) | ![Google Antigravity Model Selector Dropdown Interface](assets/4.PNG) |
+|:---:|:---:|
+| <img src="assets/3.PNG" width="460" alt="Supported LLM Providers Selection in Google Antigravity" /><br/>*Preset selector for 19+ popular cloud and local providers* | <img src="assets/4.PNG" width="460" alt="Google Antigravity Model Selector Dropdown Interface" /><br/>*Native IDE model dropdown with custom models injected* |
 
 | Auto-fallback & Failover Stream Notification |
-|---|
-| ![Google Antigravity Custom Model Auto-fallback Failover Stream Notification](assets/5.PNG) |
+|:---:|
+| <img src="assets/5.PNG" width="500" alt="Google Antigravity Custom Model Auto-fallback Failover Stream Notification" /><br/>*Real-time stream warning notification when failing over to secondary model* |
 
 ---
 
@@ -430,12 +444,28 @@ IDE Chat UI ↔ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go
 
 ---
 
+### 📥 Download Pre-built Binaries (Android APK & Daemons)
+
+Pre-built binaries are automatically built and published via GitHub Actions for every release:
+
+| Component | Platform / Architecture | Asset Name | Description |
+|---|---|---|---|
+| **Android App (Universal)** | Android 7.0+ (ARM64, ARMv7, x86_64) | `antigravity-remote-universal.apk` | Single APK for all Android devices |
+| **Android App (Split ABI)** | Android 64-bit ARM (`arm64-v8a`) | `app-arm64-v8a-release.apk` | Lightweight optimized APK (~25MB) |
+| **Android App Bundle** | Google Play Store Format | `app-release.aab` | Official signed App Bundle |
+| **Daemon Bridge** | Windows (`x86_64`) | `antigravity-remote-daemon-windows-amd64.exe` | Windows standalone daemon binary |
+| **Daemon Bridge** | Linux (`x86_64`) | `antigravity-remote-daemon-linux-amd64` | Linux headless server daemon |
+| **Daemon Bridge** | macOS Apple Silicon (`arm64`) | `antigravity-remote-daemon-darwin-arm64` | macOS M1/M2/M3 native binary |
+
 ### Running Antigravity Remote
 
 ```bash
 # 1. Start the Remote Daemon on host PC (with Cloudflare tunnel & token)
 cd remote/daemon
 go run main.go --port 8090 --tunnel cloudflare --auth-token mysecret
+
+# Or run pre-built daemon binary directly:
+./antigravity-remote-daemon-windows-amd64.exe --tunnel cloudflare
 
 # 2. Run the Flutter Mobile Companion App (or install the release APK)
 cd remote/mobile
