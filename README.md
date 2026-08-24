@@ -344,7 +344,7 @@ In addition to the terminal CLI, this repository includes **`ag-doctor-ui`**, a 
 
 ## Antigravity Remote 2.0 (Mobile & Daemon Bridge)
 
-**Antigravity Remote 2.0** brings Google Antigravity IDE and your custom models directly to your smartphone (Android / iOS). Control background tasks, monitor streaming reasoning models, review unified diffs, and approve CLI tool actions from anywhere via local Wi-Fi or automated Cloudflare Quick Tunnels.
+**Antigravity Remote 2.0** extends Google Antigravity IDE and custom LLM models directly to mobile devices (Flutter on Android & iOS). Control agent trajectories, monitor streaming reasoning models, review unified diffs, execute terminal commands, and approve CLI tool actions from anywhere via local Wi-Fi or automated Cloudflare Quick Tunnels.
 
 ```
 IDE Chat UI ↔ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go (:8090 / Cloudflare Tunnel)
@@ -354,28 +354,90 @@ IDE Chat UI ↔ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go
                                                     Mobile Client (Flutter App)
 ```
 
-### Remote Architecture & Protocol
-- **Go Daemon Bridge (`remote/daemon`)**: Scans running Antigravity `language_server` processes, extracts session CSRF tokens with a background watchdog, frames binary gRPC-Web Protobuf & Jetbox Connect JSON streams, and serves a hardened WebSocket server (`/ws?token=...`).
-- **Zero-Config Discovery & Pairing**: UDP LAN Beacon on port `41234` for automatic discovery, 60s rotating 6-digit PIN pairing (`POST /pair`), and live **Cloudflare Quick Tunnels** with terminal QR code pairing.
-- **Interactive PTY Terminal & ADB Bridge**: Interactive shell terminal emulator and Android Debug Bridge (`adb.*`) for remote device and file management.
-- **StepRecovery Buffer**: Retains the last 100 trajectory frames in memory to re-synchronize sessions immediately after transient network drops without losing chat state.
+---
 
-### Mobile Companion Features (`remote/mobile`)
-- **Exact Antigravity 2.0 Design Tokens**: Built to match real computed IDE stylesheet tokens (`htmlcss.log`) — featuring Quiet Console welcome cards, `#101010` canvas, `#21252B` sidebars, `#528BFF` focus accents, `#D7BA7D` syntax highlights, and native diff insertion/deletion tints.
-- **Interactive Tool Approvals (`submit_approval`)**: Push alerts and cards to authorize shell commands and file writes with single-use (`once`) or full-session (`session`) approval scopes and auto-rejection timeouts.
-- **Interactive Choice Prompts (`AskQuestion`)**: Single and multi-select cards for responding directly to agent decision forks.
-- **Colosseum Battle Arena**: Multi-model duel supervision (e.g. Claude vs Gemini) with live branch diffing and arbitration voting.
-- **MCP Server & Tool Explorer**: Inspect active Model Context Protocol (MCP) servers, trigger tools, and complete OAuth flows.
-- **Workspace File Explorer & Code Viewer**: Interactive tree navigation, search, find-in-page, syntax icons, and code inspection.
-- **Scheduled Tasks Monitor & Code Review Comments**: View cron jobs, trigger tasks on-demand, and attach comments to code diffs on the fly.
+### Remote Visual Experience & Screen Gallery
 
-### Running the Remote Daemon
+#### 1. Pairing, Discovery & Quiet Console Welcome
+| Zero-Config LAN Discovery & 1-Tap Connect | 6-Digit PIN Pairing & Token Auth | Quiet Console & Action Pills |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_035900.jpg" width="240" alt="Zero-Config LAN Discovery & 1-Tap Connect" /> | <img src="assets/remote/Screenshot_20260823_035906.jpg" width="240" alt="6-Digit PIN Pairing & Token Auth" /> | <img src="assets/remote/Screenshot_20260823_035946.jpg" width="240" alt="Quiet Console & Action Pills" /> |
+| Automatic UDP beacon scan (`:41234`), 1-Tap reconnect & Cloudflare QR scanner | Secure 6-digit rotating PIN validation with token persistence | Antigravity 2.0 glowing logo, prompt suggestions & workspace selector |
+
+#### 2. Streaming Chat, Offline Resilience & Navigation Drawer
+| Real-Time Streaming & Quick Actions | Offline Mode & Outbox Queue | Left Navigation & Active Agent State |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_035746.jpg" width="240" alt="Real-Time Streaming & Quick Actions" /> | <img src="assets/remote/Screenshot_20260823_035914.jpg" width="240" alt="Offline Mode & Outbox Queue" /> | <img src="assets/remote/Screenshot_20260823_040613.jpg" width="240" alt="Left Navigation & Active Agent State" /> |
+| Markdown parsing, 7ms latency badge, diff pills, voice & model switcher | Automatic local queuing and seamless replay on reconnection | Active session spinner, workspace grouping, recent chats & status |
+
+#### 3. Conversation Management & Session Lifecycle
+| Conversation History & Search | Session Context Action Sheet | Multi-Project Workspace Switcher |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_035727.jpg" width="240" alt="Conversation History & Search" /> | <img src="assets/remote/Screenshot_20260823_035820.jpg" width="240" alt="Session Context Action Sheet" /> | <img src="assets/remote/Screenshot_20260823_040153.jpg" width="240" alt="Multi-Project Workspace Switcher" /> |
+| Full-text search across all workspaces with timestamps | Rename, Pin, Export Markdown, Copy ID, Archive, or Delete sessions | Switch active workspace on host PC with instant hot reload |
+
+#### 4. Live Code Review, Artifacts & Multi-Tab Workspace
+| Multi-Tab Review & Quota Summary | Session Overview & Subagents | Interactive Artifact Modal |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_040208.jpg" width="240" alt="Multi-Tab Review & Quota Summary" /> | <img src="assets/remote/Screenshot_20260823_040257.jpg" width="240" alt="Session Overview & Subagents" /> | <img src="assets/remote/Screenshot_20260823_040310.jpg" width="240" alt="Interactive Artifact Modal" /> |
+| Live unified diff (`protobuf.go (+1)`), Quota badge (`Gemini: 56%`) | Track subagents, 53 modified files, and generated markdown plans | Embedded markdown renderer with clickable file anchors & code blocks |
+
+| Tabbed Artifact Multitasking | Right Context Drawer |
+|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_040323.jpg" width="240" alt="Tabbed Artifact Multitasking" /> | <img src="assets/remote/Screenshot_20260823_035812.jpg" width="240" alt="Right Context Drawer" /> |
+| Simultaneous artifact navigation (`audit_settings_remote.md`) and chat input | Quick access to Subagents, Changed Files, Uploads, MCP & Background Tasks |
+
+#### 5. Workspace Explorer, Git Workflows & Remote PTY Terminal
+| Workspace File Explorer | Syntax Highlighted Code Viewer | AI-Powered Git Commit Modal |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_040109.jpg" width="240" alt="Workspace File Explorer" /> | <img src="assets/remote/Screenshot_20260823_040119.jpg" width="240" alt="Syntax Highlighted Code Viewer" /> | <img src="assets/remote/Screenshot_20260823_040126.jpg" width="240" alt="AI-Powered Git Commit Modal" /> |
+| Tree view, branch badge, search, and extension chips (`Dart`, `Go`, `TS`) | Line numbers, syntax highlighting, breadcrumb path & share actions | Generate contextual commit messages with 1-tap AI assistance |
+
+| Git Branch & Worktree Switcher | Embedded Remote PTY Terminal | Scheduled Tasks & Background Cron |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_040135.jpg" width="240" alt="Git Branch & Worktree Switcher" /> | <img src="assets/remote/Screenshot_20260823_035754.jpg" width="240" alt="Embedded Remote PTY Terminal" /> | <img src="assets/remote/Screenshot_20260823_035824.jpg" width="240" alt="Scheduled Tasks & Background Cron" /> |
+| Switch local & remote branches and isolated Git worktrees | Interactive shell bridge with quick action pills (`git status`, `diff`, `branch`) | Cron job scheduler, recurring background task monitors & triggers |
+
+#### 6. 7-Category Modular Settings & Diagnostics
+| Modular Settings & Configuration |
+|:---:|
+| <img src="assets/remote/Screenshot_20260823_035832.jpg" width="280" alt="Modular Settings & Configuration" /> |
+| Account, General, Appearance, Models, Customizations (MCP & Skills), Browser (CDP), App & Daemon Bridge |
+
+---
+
+### Key Remote Capabilities & Protocols
+
+1. **Go Daemon Bridge (`remote/daemon`)**:
+   - **Process Auto-Discovery**: Automatically locates running `language_server` instances, parses CSRF credentials from process parameters, and maintains connection health via background watchdogs.
+   - **gRPC-Web Framing**: Decodes and encodes gRPC-Web Protobuf and Jetbox Connect JSON envelopes transparently.
+   - **StepRecovery Buffer**: In-memory ring buffer of the last 100 trajectory frames ensures zero message loss during transient network switches (e.g. Wi-Fi to 5G).
+   - **Push Quota Polling**: Monitors Language Server user quota summary every 60s (only while clients are active) and pushes real-time quota updates over WebSocket.
+
+2. **Security & Zero-Config Pairing**:
+   - **UDP LAN Discovery**: Broadcasts UDP beacons on port `41234` for instant zero-configuration local network discovery.
+   - **6-Digit Rotating PIN & Bearer Tokens**: Authenticate mobile clients using a 60-second rotating PIN displayed on the desktop console.
+   - **Cloudflare Quick Tunnels**: 1-click end-to-end encrypted remote access outside local Wi-Fi with ASCII terminal QR code generation.
+
+3. **Interactive Human-in-the-Loop Controls**:
+   - **Tool Approvals (`submit_approval`)**: Approve or reject dangerous commands (`run_command`, `write_to_file`) with single-use (`once`) or full-session (`session`) scopes and auto-rejection timeouts.
+   - **Structured Question Answering (`AskQuestion`)**: Interactive radio button and multi-select cards for resolving agent forks directly from phone notifications.
+   - **Colosseum Battle Arena**: Multi-model duel supervision (e.g. Claude 3.5 Sonnet vs Gemini 2.0 Flash) with side-by-side branch comparison.
+
+4. **Offline-First Resilience & Outbox Queue**:
+   - **Optimistic UI & Local Outbox**: Messages composed while disconnected are stored in local FIFO storage and automatically drained upon reconnection.
+   - **Zero Duplicate Deliveries**: UUID-based request mapping and message deduplication prevent repeated prompts.
+
+---
+
+### Running Antigravity Remote
+
 ```bash
-# Start Daemon with Cloudflare Tunnel & Auth Token
+# 1. Start the Remote Daemon on host PC (with Cloudflare tunnel & token)
 cd remote/daemon
 go run main.go --port 8090 --tunnel cloudflare --auth-token mysecret
 
-# Run Flutter Mobile Companion
+# 2. Run the Flutter Mobile Companion App (or install the release APK)
 cd remote/mobile
 flutter run -d <device-id>
 ```
