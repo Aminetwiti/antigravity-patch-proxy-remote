@@ -111,7 +111,6 @@ Map<String, List<CascadeSession>> groupSessions({
     final List<MapEntry<String, ProjectItem>> parentPathEntries = [];
 
     for (final p in officialProjects) {
-      grouped[p.name] = [];
       if (p.id.isNotEmpty) byId[p.id] = p;
       if (p.name.isNotEmpty) byNameLower[p.name.trim().toLowerCase()] = p;
 
@@ -175,11 +174,16 @@ Map<String, List<CascadeSession>> groupSessions({
       }
 
       if (matchedProject != null) {
-        grouped[matchedProject.name]?.add(s);
+        grouped.putIfAbsent(matchedProject.name, () => []).add(s);
       } else {
         const fallbackName = 'Outside of Project';
         grouped.putIfAbsent(fallbackName, () => []).add(s);
       }
+    }
+
+    // Inclure les projets officiels qui n'ont aucune session active (à la fin de la liste)
+    for (final p in officialProjects) {
+      grouped.putIfAbsent(p.name, () => []);
     }
 
     if (grouped['Outside of Project']?.isEmpty ?? false) {

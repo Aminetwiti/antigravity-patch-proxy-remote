@@ -94,27 +94,16 @@ func isSubagentTitle(title string) bool {
 	if lowerTitle == "" {
 		return false
 	}
-	return strings.HasPrefix(lowerTitle, "you are") ||
-		strings.HasPrefix(lowerTitle, "en tant qu'") ||
-		strings.HasPrefix(lowerTitle, "tu es ") ||
-		strings.HasPrefix(lowerTitle, "system:") ||
+	return strings.HasPrefix(lowerTitle, "system:") ||
 		strings.HasPrefix(lowerTitle, "@[") ||
-		strings.HasPrefix(lowerTitle, "analyse en profondeur") ||
 		strings.HasPrefix(lowerTitle, "# mission") ||
 		strings.HasPrefix(lowerTitle, "# role") ||
-		strings.HasPrefix(lowerTitle, "# performance") ||
 		strings.HasPrefix(lowerTitle, "analyzing stream delta") ||
-		strings.HasPrefix(lowerTitle, "subagent") ||
+		strings.HasPrefix(lowerTitle, "subagent:") ||
+		strings.HasPrefix(lowerTitle, "subagent-") ||
+		strings.HasPrefix(lowerTitle, "subagent_") ||
 		strings.Contains(lowerTitle, "subagent-") ||
-		strings.Contains(lowerTitle, "subagent_") ||
-		strings.HasPrefix(lowerTitle, "to begin the **claim verification**") ||
-		strings.HasPrefix(lowerTitle, "examine the project") ||
-		strings.HasPrefix(lowerTitle, "compris. je commence") ||
-		strings.Contains(lowerTitle, "audit backoffice navicab") ||
-		strings.Contains(lowerTitle, "audit technique architecture navicab") ||
-		strings.Contains(lowerTitle, "analyze flutter taxi app") ||
-		strings.Contains(lowerTitle, "analyze prepayservice") ||
-		strings.Contains(lowerTitle, "debugging chauffeur bank data")
+		strings.Contains(lowerTitle, "subagent_")
 }
 
 // isSessionArchived vérifie si la session est archivée dans ~/.gemini/antigravity/annotations/<cascadeID>.pbtxt ou antigravity-ide
@@ -586,14 +575,9 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 
 			// Nettoyage du titre si c'est un chemin brut
 			if strings.HasPrefix(title, "C:\\") || strings.HasPrefix(title, "c:\\") || strings.HasPrefix(title, "file://") {
-				if strings.Contains(cleanWs, "new 2") {
-					title = "new 2"
-				} else if strings.Contains(cleanWs, "new 3") {
-					title = "new 3"
-				} else if strings.Contains(cleanWs, "new 4") {
-					title = "new 4"
-				} else if strings.Contains(cleanWs, "new 5") || strings.Contains(cleanWs, "new5") {
-					title = "new5"
+				base := filepath.Base(cleanWs)
+				if base != "" && base != "." && base != "/" && base != "\\" {
+					title = base
 				}
 			}
 

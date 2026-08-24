@@ -616,7 +616,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		if pbArchived && home != "" && isSessionDeleted(home, sum.CascadeID) {
 			continue // supprimée : ni sidebar ni historique
 		}
-		isArchived := sum.Archived || pbArchived
+		isArchived := sum.Archived || pbArchived || sum.Status == "CASCADE_STATUS_ARCHIVED" || strings.EqualFold(sum.Status, "archived")
 		if isArchived && !includeArchived {
 			continue
 		}
@@ -633,8 +633,8 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		if isSubagentTitle(title) {
 			continue
 		}
-		// Masquer les sessions vides abandonnées (sans titre personnalisé / "Cascade Session", < 2 étapes, ou sans date, ou plus de 24h)
-		if (title == "Untitled Conversation" || title == "Cascade Session" || strings.HasPrefix(title, "Empty ") || strings.HasPrefix(title, "New ") || strings.HasPrefix(title, "General Conversation")) && (sum.StepCount <= 1 || sum.UpdatedAt.IsZero() || time.Since(sum.UpdatedAt) > 24*time.Hour) {
+		// Masquer les sessions abandonnées/sans titre réel de plus de 24h (aligné sur Antigravity Desktop)
+		if isJunkSessionTitle(title) && !sum.UpdatedAt.IsZero() && time.Since(sum.UpdatedAt) > 24*time.Hour {
 			continue
 		}
 		wsName, wsPath, projID := matchOfficialProject(sum.ProjectID, sum.Workspace, sum.Workspace, projects)
@@ -3131,7 +3131,7 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		if pbArchived && home != "" && isSessionDeleted(home, sum.CascadeID) {
 			continue // supprimée : ni sidebar ni historique
 		}
-		isArchived := sum.Archived || pbArchived
+		isArchived := sum.Archived || pbArchived || sum.Status == "CASCADE_STATUS_ARCHIVED" || strings.EqualFold(sum.Status, "archived")
 		if isArchived && !includeArchived {
 			continue
 		}
@@ -3148,8 +3148,8 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		if isSubagentTitle(title) {
 			continue
 		}
-		// Masquer les sessions vides abandonnées (sans titre personnalisé / "Cascade Session", < 2 étapes, ou sans date, ou plus de 24h)
-		if (title == "Untitled Conversation" || title == "Cascade Session" || strings.HasPrefix(title, "Empty ") || strings.HasPrefix(title, "New ") || strings.HasPrefix(title, "General Conversation")) && (sum.StepCount <= 1 || sum.UpdatedAt.IsZero() || time.Since(sum.UpdatedAt) > 24*time.Hour) {
+		// Masquer les sessions abandonnées/sans titre réel de plus de 24h (aligné sur Antigravity Desktop)
+		if isJunkSessionTitle(title) && !sum.UpdatedAt.IsZero() && time.Since(sum.UpdatedAt) > 24*time.Hour {
 			continue
 		}
 

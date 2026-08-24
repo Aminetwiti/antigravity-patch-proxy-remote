@@ -64,3 +64,4 @@ remote/daemon/!scratch/README.md
 remote/daemon/*.crt
 remote/daemon/*.key
 remote/insperer/*
+tools/*

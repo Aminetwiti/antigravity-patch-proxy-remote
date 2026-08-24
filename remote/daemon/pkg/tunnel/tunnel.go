@@ -89,6 +89,9 @@ func resolveBinaryPath(name string) (string, error) {
 
 	for _, cand := range candidates {
 		if info, err := os.Stat(cand); err == nil && !info.IsDir() {
+			if abs, err := filepath.Abs(cand); err == nil {
+				return abs, nil
+			}
 			return cand, nil
 		}
 	}
