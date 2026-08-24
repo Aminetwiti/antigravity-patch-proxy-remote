@@ -5,6 +5,10 @@ const fs = require('fs');
 // inside a (possibly stale/legacy) app.asar is only a fallback.
 let proxyPath = path.resolve(__dirname, '..', '..', '..', 'dist', 'proxy.js');
 
+if (!fs.existsSync(proxyPath)) {
+  proxyPath = path.join(__dirname, 'proxy.js');
+}
+
 if (!fs.existsSync(proxyPath) && process.env.LOCALAPPDATA) {
   proxyPath = path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity', 'resources', 'app.asar', 'dist', 'proxy.js');
 }
@@ -18,13 +22,21 @@ console.log(`[StandaloneProxy] Loading proxy from ${proxyPath}`);
 
 // Setup minimal Electron app mock if we are running in pure node
 if (!process.versions.electron) {
-  // Mock electron app for the proxy since it expects it
+  const os = require('os');
   const mockApp = {
     isPackaged: true,
     getVersion: () => '2.1.0',
     getPath: (name) => {
       if (name === 'userData') {
-        const p = path.join(process.env.APPDATA || process.env.HOME || '', 'Antigravity');
+        const p = path.join(process.env.APPDATA || os.homedir(), 'Antigravity');
+        if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+        return p;
+      }
+      if (name === 'home') {
+        return process.env.USERPROFILE || process.env.HOME || os.homedir();
+      }
+      if (name === 'logs') {
+        const p = path.join(os.homedir(), '.gemini', 'antigravity');
         if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
         return p;
       }
@@ -48,6 +60,13 @@ if (!process.versions.electron) {
     return originalRequire.apply(this, arguments);
   };
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('[StandaloneProxy] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[StandaloneProxy] Unhandled rejection:', reason);
+});
 
 function run() {
   const proxy = require(proxyPath);

@@ -246,36 +246,42 @@ export function validateAsar(asarPath: string, liveAsarPath?: string | null): As
     }
   }
 
-  // 3. dist/cryptoStore.js present (critical for the patched proxy tree)
+  const isLiveCheck = liveAsarPath ? path.resolve(asarPath) === path.resolve(liveAsarPath) : false;
+
+  // 3. dist/cryptoStore.js present (critical for the patched proxy tree in overlay mode)
   const cryptoEntry = entries.find((e) => e === '/dist/cryptoStore.js' || e === 'dist/cryptoStore.js');
   if (!cryptoEntry) {
     checks.push({
       id: 'crypto-store-present',
       label: 'dist/cryptoStore.js present',
-      required: true,
+      required: !isLiveCheck,
       status: 'fail',
-      detail: 'Missing dist/cryptoStore.js. The patched proxy tree relies on it.',
+      detail: isLiveCheck
+        ? 'Missing dist/cryptoStore.js (stock unpatched asar or binary-proxy mode).'
+        : 'Missing dist/cryptoStore.js. The patched proxy tree relies on it.',
     });
   } else {
     checks.push({
       id: 'crypto-store-present',
       label: 'dist/cryptoStore.js present',
-      required: true,
+      required: !isLiveCheck,
       status: 'ok',
       detail: cryptoEntry,
     });
   }
 
-  // 4. No dist/__mocks__/* entries
+  // 4. No dist/__mocks__/* entries (critical for candidate overlay archives)
   const mockEntries = entries.filter((e) => /^\/?dist\/__mocks__\//.test(e));
   if (mockEntries.length > 0) {
     checks.push({
       id: 'no-mocks',
       label: 'No dist/__mocks__/* entries',
-      required: true,
+      required: !isLiveCheck,
       status: 'fail',
       value: mockEntries.length,
-      detail: `Found ${mockEntries.length} dist/__mocks__/* entries (e.g. ${mockEntries.slice(0, 3).join(', ')}). The runtime does not load mocks — including them has crashed the app in the past.`,
+      detail: `Found ${mockEntries.length} dist/__mocks__/* entries (e.g. ${mockEntries.slice(0, 3).join(', ')}). ${
+        isLiveCheck ? 'Stock asar includes mocks from upstream packaging.' : 'The runtime does not load mocks — including them has crashed the app in the past.'
+      }`,
     });
   } else {
     checks.push({

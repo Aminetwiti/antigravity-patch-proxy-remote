@@ -1,62 +1,76 @@
-# Google Antigravity Custom Model Proxy — Add Claude, OpenAI, DeepSeek & Ollama to Antigravity IDE
+# Google Antigravity Patch Proxy & Remote 2.0 — Custom LLM Models & Mobile IDE Companion
 
 <p align="center">
-  <img src="assets/antigravity_patch_proxy_logo.png" width="180" alt="Google Antigravity Custom Model Proxy Logo" />
+  <img src="assets/antigravity_patch_proxy_logo.png" width="180" alt="Google Antigravity Custom Model Proxy & Remote Logo" />
 </p>
 
-[![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](package.json)
-[![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)](tsconfig.json)
-[![Tests](https://img.shields.io/badge/tests-2565%20passed-brightgreen.svg)](src/__tests__)
+<p align="center">
+  <a href="package.json"><img src="https://img.shields.io/badge/version-3.4.1-blue.svg?style=for-the-badge" alt="Version 3.4.1" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=for-the-badge" alt="License Apache 2.0" /></a>
+  <a href="remote/mobile"><img src="https://img.shields.io/badge/Flutter-Mobile%20(Android%20%2F%20iOS)-02569B.svg?style=for-the-badge&logo=flutter" alt="Flutter Mobile" /></a>
+  <a href="remote/daemon"><img src="https://img.shields.io/badge/Go%20Daemon-gRPC--Web%20%2F%20WS-00ADD8.svg?style=for-the-badge&logo=go" alt="Go Daemon" /></a>
+  <a href="src"><img src="https://img.shields.io/badge/Desktop%20Proxy-Electron%20%2F%20TS-3178C6.svg?style=for-the-badge&logo=typescript" alt="Electron Proxy" /></a>
+  <a href="src/__tests__"><img src="https://img.shields.io/badge/Tests-2500%2B%20Passed-brightgreen.svg?style=for-the-badge" alt="Tests Passed" /></a>
+</p>
 
-> **One IDE, every custom LLM model.** Enable **Anthropic Claude 3.5 Sonnet**, **OpenAI GPT-4o**, **DeepSeek R1 / V3**, **OpenRouter**, **Ollama**, **Google AI Studio**, **Groq**, **Mistral**, and custom local or cloud AI models directly inside **Google Antigravity IDE**. Features native UI dropdown integration, real-time bi-directional SSE streaming, tool calling, and enterprise-grade AES-256-GCM encryption.
+<p align="center">
+  <b>Add custom AI models (Claude 3.5 Sonnet, GPT-4o, DeepSeek R1, Ollama) to Google Antigravity IDE & control everything on your smartphone with Antigravity Remote 2.0.</b>
+</p>
+
+> **The complete AI development ecosystem for Google Antigravity:**
+> - 🖥️ **Desktop Patch Proxy**: Injects **Anthropic Claude 3.5 Sonnet**, **OpenAI GPT-4o**, **DeepSeek R1 / V3**, **OpenRouter**, **Ollama**, **Google AI Studio**, **Groq**, and **Mistral** directly into the IDE chat and autocomplete dropdowns with AES-256-GCM encryption and bi-directional SSE streaming.
+> - 📱 **Antigravity Remote 2.0 (Mobile Companion)**: Native Flutter application (Android APK & iOS) to supervise agent trajectories, review code diffs, approve terminal commands, inspect MCP servers, manage Git worktrees, and chat with AI from anywhere via **Zero-Config LAN Discovery** or **Cloudflare Quick Tunnels**.
+
+---
+
+## 🌟 Visual Showcase & Hero Tour
+
+<div align="center">
+
+| 🖥️ Desktop IDE Custom Models | 📱 Mobile Remote 2.0 Companion |
+|:---:|:---:|
+| <img src="assets/4.PNG" width="460" alt="Google Antigravity Custom Model Selector Dropdown" /> | <img src="assets/remote/Screenshot_20260823_035746.jpg" width="220" alt="Antigravity Remote Mobile Streaming Chat" /> |
+| *Native IDE dropdown with custom LLMs & Auto-Fallback* | *Live mobile streaming, 7ms latency, unified diffs & voice input* |
+
+</div>
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
+- [Overview & Key Capabilities](#overview--key-capabilities)
+- [Antigravity Remote 2.0 (Mobile & Daemon Bridge)](#antigravity-remote-20-mobile--daemon-bridge)
+  - [Remote Visual Experience & Screen Gallery](#remote-visual-experience--screen-gallery)
+  - [Key Remote Capabilities & Protocols](#key-remote-capabilities--protocols)
+  - [Running Antigravity Remote](#running-antigravity-remote)
 - [Architecture & Reverse Engineering](#architecture--reverse-engineering)
   - [Cloud Code Internal API (`v1internal`)](#cloud-code-internal-api-v1internal)
   - [Language Server Binary Patching](#language-server-binary-patching)
   - [Protobuf Model Injection](#protobuf-model-injection)
   - [Request Lifecycle & Data Flow](#request-lifecycle--data-flow)
-- [Screenshots & UI Integration](#screenshots--ui-integration)
+- [Desktop UI Screenshots & Custom Models](#desktop-ui-screenshots--custom-models)
 - [Key Technical Features](#key-technical-features)
-  - [Format Translators](#format-translators)
-  - [Bi-Directional SSE Streaming](#bi-directional-sse-streaming)
-  - [Tool Calling & Function Execution](#tool-calling--function-execution)
+  - [Automated Model Auto-Fallback](#automated-model-auto-fallback--stream-warning-cards)
+  - [Format Translators (Claude, OpenAI, Ollama, Gemini)](#format-translators)
+  - [Bi-Directional SSE Streaming & Tool Calling](#bi-directional-sse-streaming)
   - [DeepSeek & Claude Thinking Support](#deepseek--claude-thinking-support)
-- [Security Architecture](#security-architecture)
-  - [AES-256-GCM Encryption (`safeStorage`)](#aes-256-gcm-encryption-safestorage)
-  - [Request Hardening & DoS Protection](#request-hardening--dos-protection)
+  - [Per-Model Circuit Breaker & Resiliency](#per-model-circuit-breaker--resiliency-circuitbreakerts)
+- [Security Architecture & AES-256-GCM](#security-architecture)
 - [Quick Start & Installation](#quick-start--installation)
-  - [Windows Setup](#windows-setup)
-  - [macOS & Linux Setup](#macos--linux-setup)
-  - [Enterprise MITM HTTPS Mode](#enterprise-mitm-https-mode)
-- [`ag-doctor` Diagnostic CLI](#ag-doctor-diagnostic-cli)
-- [Antigravity Remote 2.0 (Mobile & Daemon Bridge)](#antigravity-remote-20-mobile--daemon-bridge)
-  - [Architecture & Protocol](#remote-architecture--protocol)
-  - [Mobile Companion Features](#mobile-companion-features)
-  - [Running the Remote Daemon](#running-the-remote-daemon)
-- [Supported LLM Providers & Matrix](#supported-llm-providers--matrix)
+- [`ag-doctor` Diagnostic CLI & UI](#ag-doctor-diagnostic-cli)
+- [Supported LLM Providers & Matrix](#provider-configuration-matrix)
 - [`custom_models.json` Schema Reference](#custom_modelsjson-schema-reference)
-- [Developer Guide](#developer-guide)
-  - [Codebase Structure](#codebase-structure)
-  - [Building & Watch Mode](#building--watch-mode)
-  - [Running Tests](#running-tests)
-  - [Adding a New Translator Module](#adding-a-new-translator-module)
-- [Troubleshooting & Diagnostics](#troubleshooting--diagnostics)
+- [Developer Guide & Testing](#developer-guide)
 - [Frequently Asked Questions (FAQ)](#frequently-asked-questions-faq)
-- [License & Acknowledgments](#license--acknowledgments)
+- [License](#license--acknowledgments)
 
 ---
 
-## Overview
+## Overview & Key Capabilities
 
-**Google Antigravity Custom Model Enabler** is an advanced proxy patch for Google Antigravity. It intercepts internal communication between the IDE's Language Server (Go binary) and Google's internal Cloud Code infrastructure. By injecting a local reverse proxy (`127.0.0.1:${AG_PROXY_PORT:-51074}`), it translates Google Cloud Code API requests into compatible payloads for 19+ LLM providers, while maintaining native UI dropdowns, streaming tokens, and tool calls.
-
----
+**Google Antigravity Custom Model Enabler & Remote Ecosystem** transforms your development environment:
+1. **Universal LLM Bridge**: Intercepts internal communication between the IDE's Language Server (Go binary) and Google's internal Cloud Code infrastructure (`daily-cloudcode-pa.googleapis.com` → `127.0.0.1:${AG_PROXY_PORT:-51074}`), translating API requests into standard payloads for 19+ LLM providers while preserving tool calls and SSE token streaming.
+2. **Mobile IDE Companion**: Connects securely to your IDE session from your smartphone via WebSocket JSON-RPC over local Wi-Fi or Cloudflare Quick Tunnels, giving you real-time human-in-the-loop controls wherever you are.
 
 ## Architecture & Reverse Engineering
 
@@ -137,21 +151,21 @@ sequenceDiagram
 
 ---
 
-## Screenshots & UI Integration
+## Desktop UI Screenshots & Custom Models
 
 The injected UI seamlessly blends with Antigravity's dark VS Code-adjacent chrome:
 
 | Custom Models Dashboard | Add Model Modal |
-|---|---|
-| ![Google Antigravity Custom Models Dashboard Settings](assets/1.PNG) | ![Add Custom LLM Model Modal in Google Antigravity IDE](assets/2.PNG) |
+|:---:|:---:|
+| <img src="assets/1.PNG" width="460" alt="Google Antigravity Custom Models Dashboard Settings" /><br/>*Manage and encrypt custom model endpoints & keys* | <img src="assets/2.PNG" width="460" alt="Add Custom LLM Model Modal in Google Antigravity IDE" /><br/>*Configure model names, thinking budget, and context limits* |
 
 | Provider Selection (Claude, OpenAI, DeepSeek, Ollama) | Model Selector in Antigravity Chat UI |
-|---|---|
-| ![Supported LLM Providers Selection in Google Antigravity](assets/3.PNG) | ![Google Antigravity Model Selector Dropdown Interface](assets/4.PNG) |
+|:---:|:---:|
+| <img src="assets/3.PNG" width="460" alt="Supported LLM Providers Selection in Google Antigravity" /><br/>*Preset selector for 19+ popular cloud and local providers* | <img src="assets/4.PNG" width="460" alt="Google Antigravity Model Selector Dropdown Interface" /><br/>*Native IDE model dropdown with custom models injected* |
 
 | Auto-fallback & Failover Stream Notification |
-|---|
-| ![Google Antigravity Custom Model Auto-fallback Failover Stream Notification](assets/5.PNG) |
+|:---:|
+| <img src="assets/5.PNG" width="500" alt="Google Antigravity Custom Model Auto-fallback Failover Stream Notification" /><br/>*Real-time stream warning notification when failing over to secondary model* |
 
 ---
 
@@ -287,27 +301,30 @@ npm run doctor:logs
 repatch.bat
 ```
 
-### Antigravity IDE (v1.107.0+) Support
+### Antigravity IDE (v1.107.0+) vs Antigravity 2.0 (Classic)
 
-Since mid-2026 the desktop client ships as **Antigravity IDE**, a VS Code-based
-Electron app, in addition to the classic 2.x shell. `ag-doctor` handles both:
+The ecosystem provides full dual-support for both the classic Electron shell and the VS Code-based Antigravity IDE:
 
-- **IDE patch**: the IDE resolves its Cloud Code endpoint from the standard VS
-Code setting `jetski.cloudCodeUrl`. `ag-doctor patch apply` writes
-`http://localhost:${AG_PROXY_PORT:-51074}` there (with a `.bak` backup), so the IDE's language
-server routes through the local proxy — no binary surgery needed.
-- **Standalone proxy**: `ag-doctor proxy start` runs the real proxy under the
-bundled Electron (so DPAPI-encrypted keys decrypt), replacing any leftover
--  stub on port ${AG_PROXY_PORT:-51074}. `proxy stub` / `proxy stop` manage the emergency stub.
-- **`models rekey`**: the language server stores API keys in its own `v10`
-  format that the local proxy cannot decrypt. `ag-doctor models rekey` walks
-  each affected model and re-enters the key in the proxy-compatible format
-  (interactive, or `--keys-file <json>` for batch).
+| Dimension | **Antigravity 2.0 (Classic Shell)** | **Antigravity IDE (VS Code)** |
+| :--- | :--- | :--- |
+| **Installation Path** | `%LOCALAPPDATA%\Programs\antigravity` | `%LOCALAPPDATA%\Programs\Antigravity IDE` |
+| **Binary / Core** | v2.9.1 (Proprietary Electron shell) | v1.107.0 (VS Code platform fork) |
+| **UI Experience** | Lightweight Agent chat & session management | Full IDE (editor, terminals, git, extensions) |
+| **Patch Mechanism** | `app.asar` overlay + `language_server.exe` string table | `jetski.cloudCodeUrl` override + `out/main.js` hook |
+| **Proxy Lifecycle** | Internal Electron main process lifecycle | **Autonomous auto-starter** hook in `main.js` |
+| **Models Injected** | All custom models in `custom_models.json` | All custom models in `custom_models.json` |
 
-> Tip: add or re-key custom models via `ag-doctor models add` / `models rekey`
-> rather than the IDE's own settings UI — the IDE re-encrypts keys into its
-> private format, which the proxy cannot read.
-```
+#### Key Capabilities & Architecture:
+
+- **Autonomous Proxy Auto-Starter (`out/main.js`)**: Antigravity IDE automatically verifies if port `51074` is active upon launch. If closed (e.g. Antigravity 2.0 is not running), it immediately spawns the detached background proxy runner from `~/.gemini/antigravity/proxy/` before extension activation, eliminating initial authentication errors (`ECONNREFUSED`).
+- **Unified Model Configuration**: Both flavors read from the centralized `~/.gemini/antigravity/custom_models.json` with live health monitoring and auto-fallback.
+- **1-Click Launchers**:
+  - `Start Antigravity IDE.bat`: Launches Antigravity IDE with guaranteed background proxy execution.
+  - `repatch.bat`: One-click repatch and launcher for both classic and IDE installations.
+- **`models rekey`**: The language server stores API keys in its own `v10` format that the local proxy cannot decrypt. `ag-doctor models rekey` walks each affected model and re-enters the key in the proxy-compatible format (interactive, or `--keys-file <json>` for batch).
+
+> **Tip**: Add or re-key custom models via `ag-doctor models add` / `models rekey` or `ag-doctor-ui` rather than the IDE's internal settings UI — the IDE re-encrypts keys into its private format, which the proxy cannot read.
+
 
 ### CLI Architecture & Worker Mode
 
@@ -344,7 +361,7 @@ In addition to the terminal CLI, this repository includes **`ag-doctor-ui`**, a 
 
 ## Antigravity Remote 2.0 (Mobile & Daemon Bridge)
 
-**Antigravity Remote 2.0** brings Google Antigravity IDE and your custom models directly to your smartphone (Android / iOS). Control background tasks, monitor streaming reasoning models, review unified diffs, and approve CLI tool actions from anywhere via local Wi-Fi or automated Cloudflare Quick Tunnels.
+**Antigravity Remote 2.0** extends Google Antigravity IDE and custom LLM models directly to mobile devices (Flutter on Android & iOS). Control agent trajectories, monitor streaming reasoning models, review unified diffs, execute terminal commands, and approve CLI tool actions from anywhere via local Wi-Fi or automated Cloudflare Quick Tunnels.
 
 ```
 IDE Chat UI ↔ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go (:8090 / Cloudflare Tunnel)
@@ -354,28 +371,106 @@ IDE Chat UI ↔ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go
                                                     Mobile Client (Flutter App)
 ```
 
-### Remote Architecture & Protocol
-- **Go Daemon Bridge (`remote/daemon`)**: Scans running Antigravity `language_server` processes, extracts session CSRF tokens with a background watchdog, frames binary gRPC-Web Protobuf & Jetbox Connect JSON streams, and serves a hardened WebSocket server (`/ws?token=...`).
-- **Zero-Config Discovery & Pairing**: UDP LAN Beacon on port `41234` for automatic discovery, 60s rotating 6-digit PIN pairing (`POST /pair`), and live **Cloudflare Quick Tunnels** with terminal QR code pairing.
-- **Interactive PTY Terminal & ADB Bridge**: Interactive shell terminal emulator and Android Debug Bridge (`adb.*`) for remote device and file management.
-- **StepRecovery Buffer**: Retains the last 100 trajectory frames in memory to re-synchronize sessions immediately after transient network drops without losing chat state.
+---
 
-### Mobile Companion Features (`remote/mobile`)
-- **Exact Antigravity 2.0 Design Tokens**: Built to match real computed IDE stylesheet tokens (`htmlcss.log`) — featuring Quiet Console welcome cards, `#101010` canvas, `#21252B` sidebars, `#528BFF` focus accents, `#D7BA7D` syntax highlights, and native diff insertion/deletion tints.
-- **Interactive Tool Approvals (`submit_approval`)**: Push alerts and cards to authorize shell commands and file writes with single-use (`once`) or full-session (`session`) approval scopes and auto-rejection timeouts.
-- **Interactive Choice Prompts (`AskQuestion`)**: Single and multi-select cards for responding directly to agent decision forks.
-- **Colosseum Battle Arena**: Multi-model duel supervision (e.g. Claude vs Gemini) with live branch diffing and arbitration voting.
-- **MCP Server & Tool Explorer**: Inspect active Model Context Protocol (MCP) servers, trigger tools, and complete OAuth flows.
-- **Workspace File Explorer & Code Viewer**: Interactive tree navigation, search, find-in-page, syntax icons, and code inspection.
-- **Scheduled Tasks Monitor & Code Review Comments**: View cron jobs, trigger tasks on-demand, and attach comments to code diffs on the fly.
+### Remote Visual Experience & Screen Gallery
 
-### Running the Remote Daemon
+#### 1. Pairing, Discovery & Quiet Console Welcome
+| Zero-Config LAN Discovery & 1-Tap Connect | 6-Digit PIN Pairing & Token Auth | Quiet Console & Action Pills |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_035900.jpg" width="240" alt="Zero-Config LAN Discovery & 1-Tap Connect" /> | <img src="assets/remote/Screenshot_20260823_035906.jpg" width="240" alt="6-Digit PIN Pairing & Token Auth" /> | <img src="assets/remote/Screenshot_20260823_035946.jpg" width="240" alt="Quiet Console & Action Pills" /> |
+| Automatic UDP beacon scan (`:41234`), 1-Tap reconnect & Cloudflare QR scanner | Secure 6-digit rotating PIN validation with token persistence | Antigravity 2.0 glowing logo, prompt suggestions & workspace selector |
+
+#### 2. Streaming Chat, Offline Resilience & Navigation Drawer
+| Real-Time Streaming & Quick Actions | Offline Mode & Outbox Queue | Left Navigation & Active Agent State |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_035746.jpg" width="240" alt="Real-Time Streaming & Quick Actions" /> | <img src="assets/remote/Screenshot_20260823_035914.jpg" width="240" alt="Offline Mode & Outbox Queue" /> | <img src="assets/remote/Screenshot_20260823_040613.jpg" width="240" alt="Left Navigation & Active Agent State" /> |
+| Markdown parsing, 7ms latency badge, diff pills, voice & model switcher | Automatic local queuing and seamless replay on reconnection | Active session spinner, workspace grouping, recent chats & status |
+
+#### 3. Conversation Management & Session Lifecycle
+| Conversation History & Search | Session Context Action Sheet | Multi-Project Workspace Switcher |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_035727.jpg" width="240" alt="Conversation History & Search" /> | <img src="assets/remote/Screenshot_20260823_035820.jpg" width="240" alt="Session Context Action Sheet" /> | <img src="assets/remote/Screenshot_20260823_040153.jpg" width="240" alt="Multi-Project Workspace Switcher" /> |
+| Full-text search across all workspaces with timestamps | Rename, Pin, Export Markdown, Copy ID, Archive, or Delete sessions | Switch active workspace on host PC with instant hot reload |
+
+#### 4. Live Code Review, Artifacts & Multi-Tab Workspace
+| Multi-Tab Review & Quota Summary | Session Overview & Subagents | Interactive Artifact Modal |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_040208.jpg" width="240" alt="Multi-Tab Review & Quota Summary" /> | <img src="assets/remote/Screenshot_20260823_040257.jpg" width="240" alt="Session Overview & Subagents" /> | <img src="assets/remote/Screenshot_20260823_040310.jpg" width="240" alt="Interactive Artifact Modal" /> |
+| Live unified diff (`protobuf.go (+1)`), Quota badge (`Gemini: 56%`) | Track subagents, 53 modified files, and generated markdown plans | Embedded markdown renderer with clickable file anchors & code blocks |
+
+| Tabbed Artifact Multitasking | Right Context Drawer |
+|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_040323.jpg" width="240" alt="Tabbed Artifact Multitasking" /> | <img src="assets/remote/Screenshot_20260823_035812.jpg" width="240" alt="Right Context Drawer" /> |
+| Simultaneous artifact navigation (`audit_settings_remote.md`) and chat input | Quick access to Subagents, Changed Files, Uploads, MCP & Background Tasks |
+
+#### 5. Workspace Explorer, Git Workflows & Remote PTY Terminal
+| Workspace File Explorer | Syntax Highlighted Code Viewer | AI-Powered Git Commit Modal |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_040109.jpg" width="240" alt="Workspace File Explorer" /> | <img src="assets/remote/Screenshot_20260823_040119.jpg" width="240" alt="Syntax Highlighted Code Viewer" /> | <img src="assets/remote/Screenshot_20260823_040126.jpg" width="240" alt="AI-Powered Git Commit Modal" /> |
+| Tree view, branch badge, search, and extension chips (`Dart`, `Go`, `TS`) | Line numbers, syntax highlighting, breadcrumb path & share actions | Generate contextual commit messages with 1-tap AI assistance |
+
+| Git Branch & Worktree Switcher | Embedded Remote PTY Terminal | Scheduled Tasks & Background Cron |
+|:---:|:---:|:---:|
+| <img src="assets/remote/Screenshot_20260823_040135.jpg" width="240" alt="Git Branch & Worktree Switcher" /> | <img src="assets/remote/Screenshot_20260823_035754.jpg" width="240" alt="Embedded Remote PTY Terminal" /> | <img src="assets/remote/Screenshot_20260823_035824.jpg" width="240" alt="Scheduled Tasks & Background Cron" /> |
+| Switch local & remote branches and isolated Git worktrees | Interactive shell bridge with quick action pills (`git status`, `diff`, `branch`) | Cron job scheduler, recurring background task monitors & triggers |
+
+#### 6. 7-Category Modular Settings & Diagnostics
+| Modular Settings & Configuration |
+|:---:|
+| <img src="assets/remote/Screenshot_20260823_035832.jpg" width="280" alt="Modular Settings & Configuration" /> |
+| Account, General, Appearance, Models, Customizations (MCP & Skills), Browser (CDP), App & Daemon Bridge |
+
+---
+
+### Key Remote Capabilities & Protocols
+
+1. **Go Daemon Bridge (`remote/daemon`)**:
+   - **Process Auto-Discovery**: Automatically locates running `language_server` instances, parses CSRF credentials from process parameters, and maintains connection health via background watchdogs.
+   - **gRPC-Web Framing**: Decodes and encodes gRPC-Web Protobuf and Jetbox Connect JSON envelopes transparently.
+   - **StepRecovery Buffer**: In-memory ring buffer of the last 100 trajectory frames ensures zero message loss during transient network switches (e.g. Wi-Fi to 5G).
+   - **Push Quota Polling**: Monitors Language Server user quota summary every 60s (only while clients are active) and pushes real-time quota updates over WebSocket.
+
+2. **Security & Zero-Config Pairing**:
+   - **UDP LAN Discovery**: Broadcasts UDP beacons on port `41234` for instant zero-configuration local network discovery.
+   - **6-Digit Rotating PIN & Bearer Tokens**: Authenticate mobile clients using a 60-second rotating PIN displayed on the desktop console.
+   - **Cloudflare Quick Tunnels**: 1-click end-to-end encrypted remote access outside local Wi-Fi with ASCII terminal QR code generation.
+
+3. **Interactive Human-in-the-Loop Controls**:
+   - **Tool Approvals (`submit_approval`)**: Approve or reject dangerous commands (`run_command`, `write_to_file`) with single-use (`once`) or full-session (`session`) scopes and auto-rejection timeouts.
+   - **Structured Question Answering (`AskQuestion`)**: Interactive radio button and multi-select cards for resolving agent forks directly from phone notifications.
+   - **Colosseum Battle Arena**: Multi-model duel supervision (e.g. Claude 3.5 Sonnet vs Gemini 2.0 Flash) with side-by-side branch comparison.
+
+4. **Offline-First Resilience & Outbox Queue**:
+   - **Optimistic UI & Local Outbox**: Messages composed while disconnected are stored in local FIFO storage and automatically drained upon reconnection.
+   - **Zero Duplicate Deliveries**: UUID-based request mapping and message deduplication prevent repeated prompts.
+
+---
+
+### 📥 Download Pre-built Binaries (Android APK & Daemons)
+
+Pre-built binaries are automatically built and published via GitHub Actions for every release:
+
+| Component | Platform / Architecture | Asset Name | Description |
+|---|---|---|---|
+| **Android App (Universal)** | Android 7.0+ (ARM64, ARMv7, x86_64) | `antigravity-remote-universal.apk` | Single APK for all Android devices |
+| **Android App (Split ABI)** | Android 64-bit ARM (`arm64-v8a`) | `app-arm64-v8a-release.apk` | Lightweight optimized APK (~25MB) |
+| **Android App Bundle** | Google Play Store Format | `app-release.aab` | Official signed App Bundle |
+| **Daemon Bridge** | Windows (`x86_64`) | `antigravity-remote-daemon-windows-amd64.exe` | Windows standalone daemon binary |
+| **Daemon Bridge** | Linux (`x86_64`) | `antigravity-remote-daemon-linux-amd64` | Linux headless server daemon |
+| **Daemon Bridge** | macOS Apple Silicon (`arm64`) | `antigravity-remote-daemon-darwin-arm64` | macOS M1/M2/M3 native binary |
+
+### Running Antigravity Remote
+
 ```bash
-# Start Daemon with Cloudflare Tunnel & Auth Token
+# 1. Start the Remote Daemon on host PC (with Cloudflare tunnel & token)
 cd remote/daemon
 go run main.go --port 8090 --tunnel cloudflare --auth-token mysecret
 
-# Run Flutter Mobile Companion
+# Or run pre-built daemon binary directly:
+./antigravity-remote-daemon-windows-amd64.exe --tunnel cloudflare
+
+# 2. Run the Flutter Mobile Companion App (or install the release APK)
 cd remote/mobile
 flutter run -d <device-id>
 ```

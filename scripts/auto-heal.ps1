@@ -62,3 +62,15 @@ try {
 } catch {
     # Échoue silencieusement en arrière-plan (ne jamais déranger l'utilisateur).
 }
+
+# Assure que le proxy local (port 51074) est toujours démarré pour Antigravity IDE
+try {
+    $repoDir = Split-Path -Parent $PSScriptRoot
+    $doctorJs = Join-Path $repoDir "ag-doctor\bin\ag-doctor.js"
+    if (Test-Path $doctorJs) {
+        $lis = Get-NetTCPConnection -LocalPort 51074 -State Listen -ErrorAction SilentlyContinue
+        if (-not $lis) {
+            Start-Process -FilePath "node" -ArgumentList "`"$doctorJs`" proxy start" -WorkingDirectory $repoDir -WindowStyle Hidden
+        }
+    }
+} catch {}

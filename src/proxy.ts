@@ -1612,7 +1612,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               `[Proxy] fetchAvailableModels response status: ${googleRes.statusCode}, body length: ${googleBody.length}`,
             );
 
-            const googleJson = JSON.parse(googleBody) as Record<string, unknown>;
+            let googleJson: Record<string, unknown>;
+            try {
+              googleJson = JSON.parse(googleBody) as Record<string, unknown>;
+            } catch {
+              log.warn(
+                `[Proxy] fetchAvailableModels: non-JSON response from upstream (status: ${googleRes.statusCode}), generating synthetic models map`,
+              );
+              googleJson = { models: {} };
+            }
             // DEBUG: dump raw upstream fetchAvailableModels response for diagnosis
             fs.promises
               .writeFile(path.join(os.tmpdir(), 'ag-fetchAvailableModels-dump.json'), JSON.stringify(googleJson, null, 2))
@@ -1692,8 +1700,24 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           } catch (err) {
             log.error('[Proxy] Parsing fetchAvailableModels failed:', err);
             if (res.headersSent || res.writableEnded) return;
-            safeWriteHead(res, 502, { 'Content-Type': 'application/json' });
-            safeEnd(res, JSON.stringify({ error: { message: `Upstream parse error: ${(err as Error).message}` } }));
+            const customModels = loadCustomModels();
+            const mappedCustom: Record<string, unknown> = {};
+            customModels.forEach((m) => {
+              const slug = toSlug(m);
+              const pid = generateModelPlaceholderId(m);
+              mappedCustom[slug] = {
+                displayName: m.displayName,
+                maxTokens: 1048576,
+                maxOutputTokens: 4096,
+                model: pid,
+                planModel: pid,
+                requestedModel: pid,
+                apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+                modelProvider: 'MODEL_PROVIDER_GOOGLE',
+              };
+            });
+            safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
+            safeEnd(res, JSON.stringify({ models: mappedCustom }));
           }
         });
       });

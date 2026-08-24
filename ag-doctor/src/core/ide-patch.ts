@@ -200,10 +200,52 @@ export function applyIdePatch(): { ok: boolean; message: string } {
     return { ok: false, message: `Failed to write settings.json: ${(e as Error).message}` };
   }
 
+  // Also ensure out/main.js has the autostart hook so IDE starts the proxy independently
+  injectIdeMainHook(status.installDir);
+
   return {
     ok: true,
     message: `IDE patched (${IDE_ENDPOINT_SETTING}=${IDE_PATCHED_ENDPOINT}; backup at ${status.settingsPath}.bak)`,
   };
+}
+
+const IDE_MAIN_HOOK_SIG = '// Antigravity IDE Proxy Auto-Starter Hook';
+const IDE_MAIN_HOOK = `// Antigravity IDE Proxy Auto-Starter Hook
+try {
+  const _net = require('net');
+  const _s = _net.connect({ port: 51074, host: '127.0.0.1' }, () => { _s.destroy(); });
+  _s.on('error', () => {
+    try {
+      const _path = require('path');
+      const _fs = require('fs');
+      const _os = require('os');
+      const _cp = require('child_process');
+      const _runner = _path.join(_os.homedir(), '.gemini', 'antigravity', 'proxy', 'standalone-runner.js');
+      if (_fs.existsSync(_runner)) {
+        _cp.spawn('node', [_runner], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+          env: Object.assign({}, process.env, { AG_PROXY_PORT: '51074' })
+        }).unref();
+      }
+    } catch (_) {}
+  });
+} catch (_) {}
+
+`;
+
+function injectIdeMainHook(installDir: string): void {
+  try {
+    const mainJsPath = path.join(installDir, 'resources', 'app', 'out', 'main.js');
+    if (!fs.existsSync(mainJsPath)) return;
+    const content = fs.readFileSync(mainJsPath, 'utf-8');
+    if (content.includes(IDE_MAIN_HOOK_SIG)) return;
+    if (!fs.existsSync(mainJsPath + '.bak')) {
+      fs.copyFileSync(mainJsPath, mainJsPath + '.bak');
+    }
+    fs.writeFileSync(mainJsPath, IDE_MAIN_HOOK + content, 'utf-8');
+  } catch {}
 }
 
 /**

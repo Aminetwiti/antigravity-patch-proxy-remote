@@ -22,6 +22,8 @@ export interface CustomModelConfig {
   provider: string;
   externalModelName?: string;
   displayName?: string;
+  supportsImages?: boolean;
+  supportsVision?: boolean;
 }
 
 export interface ModelCapabilities {
@@ -58,29 +60,34 @@ export type ThinkingBudget = 'auto' | 'disabled' | 'enabled';
 export type ModelMode = 'thinking' | 'reasoning' | 'non-thinking' | 'auto';
 
 export interface ModelModeConfig {
-  /** The model ID from /v1/models */
+  /**
+   * The model ID (e.g. 'o1-preview', 'claude-3-7-sonnet').
+   */
   id: string;
-  /** Display name shown in the UI */
+  /**
+   * Display name for the model.
+   */
   name: string;
-  /** Provider this model belongs to */
+  /**
+   * The provider this model belongs to.
+   */
   provider: string;
   /**
+   * Maximum context window tokens.
+   */
+  maxTokens: number;
+  /**
+   * Maximum output tokens.
+   */
+  maxOutputTokens: number;
+  /**
    * Whether this model supports thinking/reasoning.
-   * Determined by the API response, not by hardcoded regex.
    */
   supportsReasoning: boolean;
   /**
    * Whether this model supports images.
    */
   supportsImages: boolean;
-  /**
-   * The maximum number of tokens this model can output.
-   */
-  maxOutputTokens: number;
-  /**
-   * The maximum context window.
-   */
-  maxTokens: number;
   /**
    * The reasoning effort this model supports (if any).
    * e.g. o1 supports 'low', 'medium', 'high'
@@ -104,8 +111,10 @@ const DEEPSEEK_PATTERN = /deepseek/i;
 const CLAUDE_PATTERN = /claude|opus|sonnet/i;
 const CLAUDE_THINKING_PATTERN = /opus-4|sonnet-4|claude-4|claude-3-5|claude-3-7/i;
 const THINKING_MODEL_PATTERN = /opus-4|sonnet-4|claude-4/i;
-const IMAGE_SUPPORT_PATTERN = /gpt-4o|gpt-4-turbo|claude|gemini|vision|llava|qwenvl|pixtral|yi-vision|cogvlm|kimi|moonshot/i;
-const NO_IMAGE_PATTERN = /deepseek(?!.*vision)|llama(?!.*vision)|mixtral(?!.*vision)|mistral(?!.*pixtral)|codestral|qwen(?!.*vl)/i;
+const IMAGE_SUPPORT_PATTERN =
+  /gpt-4o|gpt-4-turbo|gpt-4\.5|claude|gemini|glm|zhipu|vision|vl|llava|bakllava|qwenvl|qwen.*vl|qvq|pixtral|yi-vision|cogvlm|cogview|kimi|moonshot|minimax|abab|internvl|internlm|doubao|step|stepfun|baichuan|janus|paligemma|florence|multimodal|vlm|visual|mllama|llama-3\.2|llama-4|phi-3.*vision|phi-3\.5.*vision|phi-4/i;
+const NO_IMAGE_PATTERN =
+  /deepseek(?!.*(?:vision|vl|janus))|llama(?!.*(?:vision|vl|3\.2|4|mllama))|mixtral(?!.*vision)|mistral(?!.*(?:pixtral|vision))|codestral|qwen(?!.*(?:vl|qvq|vision))/i;
 
 /**
  * Detects model capabilities from a custom model config object.
@@ -133,14 +142,24 @@ export function detectModelCapabilities(m: CustomModelConfig, includeDisplayName
   const maxTokens = isClaude ? 200_000 : 1_048_576;
   const maxOutputTokens = isDeepSeek ? 32_768 : isThinking ? 32_768 : 16_384;
 
-  // Image support: Claude, GPT-4o, Gemini always support images. DeepSeek, Ollama text models don't.
+  // Image support:
+  // 1. Explicit model override takes precedence
+  if (typeof m.supportsImages === 'boolean') {
+    return { isThinking, isDeepSeek, isClaude, maxTokens, maxOutputTokens, supportsImages: m.supportsImages };
+  }
+  if (typeof m.supportsVision === 'boolean') {
+    return { isThinking, isDeepSeek, isClaude, maxTokens, maxOutputTokens, supportsImages: m.supportsVision };
+  }
+
+  // 2. Automated detection based on provider and name patterns
   const allNames = nameLower + ' ' + extLower + ' ' + displayLower;
   const supportsImages =
     m.provider === 'anthropic' ||
     m.provider === 'google' ||
-    (m.provider === 'openai' && IMAGE_SUPPORT_PATTERN.test(allNames)) ||
-    (m.provider === 'openrouter' && IMAGE_SUPPORT_PATTERN.test(allNames)) ||
-    (IMAGE_SUPPORT_PATTERN.test(allNames) && !NO_IMAGE_PATTERN.test(allNames));
+    IMAGE_SUPPORT_PATTERN.test(allNames) ||
+    (m.provider === 'openai' && !NO_IMAGE_PATTERN.test(allNames)) ||
+    (m.provider === 'openrouter' && !NO_IMAGE_PATTERN.test(allNames)) ||
+    (!NO_IMAGE_PATTERN.test(allNames) && m.provider !== 'ollama' && m.provider !== 'lmstudio');
 
   return { isThinking, isDeepSeek, isClaude, maxTokens, maxOutputTokens, supportsImages };
 }

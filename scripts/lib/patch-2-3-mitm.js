@@ -58,12 +58,32 @@ function resolveLayout(repoDir, layout) {
   }));
 }
 
+function ensureCertsInRepo(repoDir, fsImpl = fs) {
+  const certDir = path.join(repoDir, 'certs');
+  fsImpl.mkdirSync(certDir, { recursive: true });
+  const caKey = path.join(certDir, 'server-key.pem');
+  const caCert = path.join(certDir, 'server-cert.pem');
+  const caRoot = path.join(certDir, 'ca-cert.pem');
+  if (!fsImpl.existsSync(caKey) || !fsImpl.existsSync(caCert) || !fsImpl.existsSync(caRoot)) {
+    try {
+      const { ensureCa } = require(path.join(repoDir, 'ag-doctor', 'dist', 'core', 'cert'));
+      const ca = ensureCa();
+      if (fsImpl.existsSync(ca.keyPath) && fsImpl.existsSync(ca.certPath)) {
+        if (!fsImpl.existsSync(caKey)) fsImpl.copyFileSync(ca.keyPath, caKey);
+        if (!fsImpl.existsSync(caCert)) fsImpl.copyFileSync(ca.certPath, caCert);
+        if (!fsImpl.existsSync(caRoot)) fsImpl.copyFileSync(ca.certPath, caRoot);
+      }
+    } catch (_) {}
+  }
+}
+
 /**
  * Validate that every repo source exists. Throws with the full list of
  * missing files if any are absent (matches the assertRequiredArtifacts style
  * used elsewhere in the patcher).
  */
 function assertMitmSourcesExist(repoDir, fsImpl = fs) {
+  ensureCertsInRepo(repoDir, fsImpl);
   const toPosix = (p) => p.replaceAll('\\', '/');
   const missing = UNPACKED_LAYOUT
     .map((entry) => path.join(repoDir, ...entry.src.split('/')))

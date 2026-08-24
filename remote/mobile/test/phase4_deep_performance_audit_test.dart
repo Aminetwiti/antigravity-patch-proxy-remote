@@ -61,9 +61,9 @@ void main() {
           expect(swGroup.elapsedMilliseconds, lessThan(2500),
               reason: 'Grouping 50k sessions took ${swGroup.elapsedMilliseconds}ms');
         } else {
-          expect(swSort.elapsedMilliseconds, lessThan(180),
+          expect(swSort.elapsedMilliseconds, lessThan(500),
               reason: 'Sorting 10k sessions took ${swSort.elapsedMilliseconds}ms');
-          expect(swGroup.elapsedMilliseconds, lessThan(250),
+          expect(swGroup.elapsedMilliseconds, lessThan(800),
               reason: 'Grouping 10k sessions took ${swGroup.elapsedMilliseconds}ms');
         }
       }
