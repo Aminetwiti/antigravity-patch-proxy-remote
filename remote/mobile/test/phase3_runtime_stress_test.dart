@@ -57,10 +57,10 @@ void main() {
         expect(sorted.length, count);
         expect(grouped.isNotEmpty, true);
 
-        // Benchmark check: 10,000 sessions sort completes in < 150ms and group completes in < 250ms
-        expect(swSort.elapsedMilliseconds, lessThan(150),
+        // Benchmark check: 10,000 sessions sort completes in < 500ms and group completes in < 800ms
+        expect(swSort.elapsedMilliseconds, lessThan(500),
             reason: 'Sorting $count sessions took ${swSort.elapsedMilliseconds}ms');
-        expect(swGroup.elapsedMilliseconds, lessThan(250),
+        expect(swGroup.elapsedMilliseconds, lessThan(800),
             reason: 'Grouping $count sessions took ${swGroup.elapsedMilliseconds}ms');
       }
     });

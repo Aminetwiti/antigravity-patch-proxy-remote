@@ -1727,9 +1727,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
         final userPrompt = msg['data']?['userPrompt']?.toString() ?? '';
         if (userPrompt.isNotEmpty) {
-          final alreadyPresent = buf.isNotEmpty &&
-              buf.last.sender == 'user' &&
-              (buf.last.id == 'user-ext-$requestId' || buf.last.text.trim() == userPrompt.trim());
+          final alreadyPresent = buf.any((m) =>
+              m.sender == 'user' &&
+              (m.id == 'user-ext-$requestId' || m.text.trim() == userPrompt.trim()));
           if (!alreadyPresent) {
             buf.add(ChatMessage(
               id: 'user-ext-$requestId',
@@ -1749,17 +1749,23 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             isStreaming: true,
             modelLabel: resolvedModel,
           );
-        } else if (buf.isNotEmpty && buf.last.isStreaming && buf.last.sender == 'assistant') {
-          _streamRequestToMessageId[thKey] = buf.last.id;
         } else {
-          buf.add(ChatMessage(
-            id: msgId,
-            sender: 'assistant',
-            text: '',
-            timestamp: _timestamp(),
-            isStreaming: true,
-            modelLabel: resolvedModel,
-          ));
+          final lastStreamingAssistantIdx = buf.lastIndexWhere((m) => m.isStreaming && m.sender == 'assistant');
+          if (lastStreamingAssistantIdx >= 0) {
+            _streamRequestToMessageId[thKey] = buf[lastStreamingAssistantIdx].id;
+            buf[lastStreamingAssistantIdx] = buf[lastStreamingAssistantIdx].copyWith(
+              modelLabel: resolvedModel,
+            );
+          } else {
+            buf.add(ChatMessage(
+              id: msgId,
+              sender: 'assistant',
+              text: '',
+              timestamp: _timestamp(),
+              isStreaming: true,
+              modelLabel: resolvedModel,
+            ));
+          }
         }
         if (isActiveSession && mounted) {
           setState(() {});
@@ -1824,12 +1830,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           if (queuedIdx >= 0) {
             buf[queuedIdx] = buf[queuedIdx].copyWith(isQueued: false);
           } else {
-            final targetId = _streamRequestToMessageId[thKey] ?? 'ext-$requestId';
-            final assistantIdx = buf.indexWhere((m) => m.id == targetId || (m.isStreaming && m.sender == 'assistant'));
-            final hasImmediateUserMsg = assistantIdx > 0 &&
-                buf[assistantIdx - 1].sender == 'user' &&
-                (buf[assistantIdx - 1].id == 'user-ext-$requestId' || buf[assistantIdx - 1].text.trim() == userInput.trim());
-            if (!hasImmediateUserMsg) {
+            final hasUserMsg = buf.any((m) =>
+                m.sender == 'user' &&
+                (m.id == 'user-ext-$requestId' || m.text.trim() == userInput.trim()));
+            if (!hasUserMsg) {
               final userMsg = ChatMessage(
                 id: 'user-ext-$requestId',
                 sender: 'user',
