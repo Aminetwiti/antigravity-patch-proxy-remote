@@ -221,7 +221,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       // Soumission de la réponse
-      await tester.tap(find.text('Submit Choice'));
+      await tester.ensureVisible(find.text('Submit Choice'));
+      await tester.tap(find.text('Submit Choice'), warnIfMissed: false);
       await tester.pump(const Duration(milliseconds: 100));
 
       final answers = out.where((m) => m['type'] == 'submit_question_response').toList();

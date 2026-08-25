@@ -213,10 +213,11 @@ class DaemonWebSocketClient {
       // le serveur répond 401 au handshake WS. On prévient le consumer pour
       // qu'il efface la session persistée — sinon on martèle le 401 en boucle
       // avec l'ancien token pendant ~30 s (backoff).
-      if (e.toString().contains('401')) {
-        // Statut `error` (≠ `disconnected`) : le retry timer planifié par
-        // _handleDisconnect ne relancera pas connect() — seul onAuthRejected
-        // (via le consumer) décide de la suite. Pas de boucle 401.
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('401') ||
+          errStr.contains('unauthorized') ||
+          errStr.contains('connection reset') ||
+          errStr.contains('not upgraded')) {
         statusNotifier.value = ConnectionStatus.error;
         onAuthRejected?.call();
         _socket?.close();

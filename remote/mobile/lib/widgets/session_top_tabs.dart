@@ -112,7 +112,14 @@ class SessionTopTabs extends StatelessWidget {
                       icon: _iconForArtifact(art),
                       label: art,
                       isSelected: isSel,
-                      onTap: () => onOpenArtifact?.call(art),
+                      onTap: () {
+                        if (isSel) {
+                          onTabChanged(SessionTabType.chat);
+                        } else {
+                          onOpenArtifact?.call(art);
+                        }
+                      },
+                      onClose: isSel ? () => onTabChanged(SessionTabType.chat) : null,
                     ),
                   );
                 }),
@@ -167,6 +174,7 @@ class _TabPill extends StatefulWidget {
   final VoidCallback onTap;
   final String? badge;
   final Color? badgeColor;
+  final VoidCallback? onClose;
 
   const _TabPill({
     required this.icon,
@@ -175,6 +183,7 @@ class _TabPill extends StatefulWidget {
     required this.onTap,
     this.badge,
     this.badgeColor,
+    this.onClose,
   });
 
   @override
@@ -272,6 +281,24 @@ class _TabPillState extends State<_TabPill> {
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
                       color: widget.badgeColor ?? (isDark ? AppColors.accentBlue : scheme.primary),
+                    ),
+                  ),
+                ),
+              ],
+              if (widget.onClose != null && isSelected) ...[
+                const SizedBox(width: 4),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    widget.onClose!();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 12,
+                      color: fgColor.withValues(alpha: 0.8),
                     ),
                   ),
                 ),

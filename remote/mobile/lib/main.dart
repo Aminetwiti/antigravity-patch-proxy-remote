@@ -164,10 +164,9 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     _wsClient.onSessionEstablished = (url, token) {
       SettingsStore.saveSession(wsUrl: url, token: token, sessionId: _activeSessionId);
     };
-    // Token rejeté ou endpoint injoignable : on retente sur les réglages LAN
-    // sans effacer les informations mémorisées (token & PIN restent intacts).
+    // Token rejeté : affiche le statut erreur pour inviter à scanner le QR ou saisir le PIN.
     _wsClient.onAuthRejected = () async {
-      _connectWithSavedSettings();
+      // Pas de boucle infinie : l'utilisateur peut entrer le PIN ou scanner le QR.
     };
     _wsClient.onEndpointDead = () async {
       _connectWithSavedSettings();

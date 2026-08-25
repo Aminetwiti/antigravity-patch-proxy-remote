@@ -2248,6 +2248,14 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       }
     }
 
+    if (_activeArtifact != null || _currentTab != SessionTabType.chat) {
+      setState(() {
+        _activeArtifact = null;
+        _currentTab = SessionTabType.chat;
+        _isHeaderVisible = true;
+      });
+    }
+
     if (queued || isStreaming || isOffline) {
       final queue = _sessionMessageQueues.putIfAbsent(targetSession, () => []);
       setState(() {
@@ -2696,10 +2704,16 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       final q = questions.first;
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        child: AskQuestionChoiceCard(
-          request: q,
-          onSubmit: (selected, custom) =>
-              _handleQuestionSubmit(q, selected, custom),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 280),
+          child: SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
+            child: AskQuestionChoiceCard(
+              request: q,
+              onSubmit: (selected, custom) =>
+                  _handleQuestionSubmit(q, selected, custom),
+            ),
+          ),
         ),
       );
     }
@@ -2985,7 +2999,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       isError: false,
     );
 
-    return ZenithalCanvas(
+    final canPopScreen = _activeArtifact == null && _currentTab == SessionTabType.chat && !_isSearching;
+
+    final content = ZenithalCanvas(
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
@@ -3051,12 +3067,21 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onHorizontalDragEnd: (details) {
-                      if (_activeArtifact != null) return; // onglet artefact : pas de swipe
+                      final velocity = details.primaryVelocity ?? 0;
+                      if (_activeArtifact != null) {
+                        if (velocity > 150) {
+                          // Swipe right dismisses active artifact and returns to chat
+                          setState(() {
+                            _activeArtifact = null;
+                            _currentTab = SessionTabType.chat;
+                          });
+                        }
+                        return;
+                      }
                       final tabs = _swipeableTabs;
                       if (tabs.length < 2) return;
                       final idx = tabs.indexOf(_currentTab);
                       if (idx < 0) return;
-                      final velocity = details.primaryVelocity ?? 0;
                       final next = velocity < -200
                           ? idx + 1
                           : velocity > 200
@@ -3188,6 +3213,52 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     ),
   ),
 );
+
+    return PopScope(
+      canPop: canPopScreen,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_isSearching) {
+          _closeSearch();
+          return;
+        }
+        if (_activeArtifact != null) {
+          setState(() {
+            _activeArtifact = null;
+          });
+          return;
+        }
+        if (_currentTab != SessionTabType.chat) {
+          setState(() {
+            _activeArtifact = null;
+            _currentTab = SessionTabType.chat;
+          });
+          return;
+        }
+      },
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (_isSearching) {
+              _closeSearch();
+            } else if (_activeArtifact != null) {
+              setState(() {
+                _activeArtifact = null;
+              });
+            } else if (_currentTab != SessionTabType.chat) {
+              setState(() {
+                _activeArtifact = null;
+                _currentTab = SessionTabType.chat;
+              });
+            }
+          },
+        },
+        child: Focus(
+          autofocus: false,
+          child: content,
+        ),
+      ),
+    );
   }
 
   void _handleStopGeneration() {
@@ -3632,6 +3703,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       api: widget.api,
       artifactName: artifactName,
       activeSessionId: widget.activeSessionId,
+      onClose: () => setState(() {
+        _activeArtifact = null;
+      }),
       onOpenPlan: () => setState(() {
         _activeArtifact = null;
         _currentTab = SessionTabType.plan;
@@ -5215,12 +5289,14 @@ class _ArtifactTabContent extends StatefulWidget {
   final String artifactName;
   final String activeSessionId;
   final VoidCallback? onOpenPlan;
+  final VoidCallback? onClose;
 
   const _ArtifactTabContent({
     required this.api,
     required this.artifactName,
     required this.activeSessionId,
     this.onOpenPlan,
+    this.onClose,
   });
 
   @override
@@ -5295,10 +5371,128 @@ class _ArtifactTabContentState extends State<_ArtifactTabContent> {
     }
   }
 
+  Widget _buildTopBar(BuildContext context, ColorScheme scheme, bool isDark, bool isPlan) {
+    final isWalkthrough = widget.artifactName.toLowerCase().contains('walkthrough');
+    final icon = isPlan
+        ? Icons.architecture_rounded
+        : (isWalkthrough ? Icons.menu_book_rounded : Icons.description_outlined);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          // Bouton Retour au chat avec feedback tactile
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                widget.onClose?.call();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.arrow_back_rounded, size: 18, color: scheme.primary),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Chat',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            width: 1,
+            height: 16,
+            color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
+          ),
+          const SizedBox(width: 8),
+          Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              widget.artifactName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurface,
+              ),
+            ),
+          ),
+          if (isPlan) ...[
+            const SizedBox(width: 6),
+            FilledButton.icon(
+              icon: const Icon(Icons.play_arrow_rounded, size: 15),
+              label: const Text('Proceed ⌘↵', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                visualDensity: VisualDensity.compact,
+                backgroundColor: scheme.primary,
+              ),
+              onPressed: widget.onOpenPlan,
+            ),
+          ],
+          const SizedBox(width: 2),
+          IconButton(
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            tooltip: 'Copier le contenu',
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            color: scheme.onSurfaceVariant,
+            onPressed: () {
+              if (_content.isNotEmpty) {
+                Clipboard.setData(ClipboardData(text: _content));
+                HapticFeedback.selectionClick();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Contenu de ${widget.artifactName} copié !'),
+                    duration: const Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, size: 18),
+            tooltip: 'Fermer l\'artefact',
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            color: scheme.onSurfaceVariant,
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              widget.onClose?.call();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isPlan = widget.artifactName.toLowerCase().contains('plan');
 
     if (_isLoading) {
       return Center(
@@ -5325,10 +5519,21 @@ class _ArtifactTabContentState extends State<_ArtifactTabContent> {
               Text(_error!,
                   style: TextStyle(color: scheme.error, fontSize: 13),
                   textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              FilledButton.tonal(
-                onPressed: _load,
-                child: const Text('Réessayer'),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FilledButton.tonal(
+                    onPressed: _load,
+                    child: const Text('Réessayer'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                    label: const Text('Retour au chat'),
+                    onPressed: widget.onClose,
+                  ),
+                ],
               ),
             ],
           ),
@@ -5336,41 +5541,21 @@ class _ArtifactTabContentState extends State<_ArtifactTabContent> {
       );
     }
 
-    final isPlan = widget.artifactName.toLowerCase().contains('plan');
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Icon(Icons.article_outlined, size: 20, color: scheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                widget.artifactName,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurface,
-                ),
-              ),
-            ),
-            if (isPlan)
-              FilledButton.icon(
-                icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                label: const Text('Proceed ⌘↵'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: widget.onOpenPlan,
-              ),
-          ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+          child: _buildTopBar(context, scheme, isDark, isPlan),
         ),
-        const SizedBox(height: 12),
-        Divider(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant),
-        const SizedBox(height: 12),
-        MarkdownBody(content: _content.isNotEmpty ? _content : 'Artefact vide.'),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            children: [
+              MarkdownBody(content: _content.isNotEmpty ? _content : 'Artefact vide.'),
+            ],
+          ),
+        ),
       ],
     );
   }

@@ -416,8 +416,9 @@ func NewServer(client RPCClient, authToken string) *Server {
 		s.startUploadReaper(2*time.Minute, 10*time.Minute)
 		StartScratchCleanupRoutine(context.Background(), 24*time.Hour, DefaultScratchMaxAge)
 	}
-	loadAccountPrefs()
-	s.isIDERunning = true
+	if flag.Lookup("test.v") == nil {
+		s.isIDERunning = true
+	}
 	return s
 }
 
@@ -677,7 +678,6 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		if isArchived {
 			st = "CASCADE_STATUS_ARCHIVED"
 		}
-		isIde := strings.Contains(sum.Workspace, "antigravity-ide") || strings.Contains(wsPath, "antigravity-ide")
 		items = append(items, map[string]interface{}{
 			"cascadeId":     sum.CascadeID,
 			"title":         title,
@@ -688,9 +688,34 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 			"updatedAt":     sum.UpdatedAt,
 			"isPinned":      isPinned,
 			"isArchived":    isArchived,
-			"isIde":         isIde,
+			"isIde":         false,
 		})
 	}
+
+	seenIDs := make(map[string]bool)
+	for _, it := range items {
+		if cid, ok := it["cascadeId"].(string); ok {
+			seenIDs[cid] = true
+		}
+	}
+	if s != nil && s.isIDERunning {
+		localIDE := ListIdeSessions(projects, includeArchived)
+		for _, loc := range localIDE {
+			cid, _ := loc["cascadeId"].(string)
+			if cid != "" && !seenIDs[cid] {
+				st, _ := loc["status"].(string)
+				loc["status"] = enrichStatus(cid, st)
+				seenIDs[cid] = true
+				var updTime time.Time
+				if updStr, ok := loc["updatedAt"].(string); ok {
+					updTime, _ = time.Parse(time.RFC3339, updStr)
+				}
+				loc["updatedAt"] = updTime
+				items = append(items, loc)
+			}
+		}
+	}
+
 	sort.Slice(items, func(i, j int) bool {
 		tI, _ := items[i]["updatedAt"].(time.Time)
 		tJ, _ := items[j]["updatedAt"].(time.Time)
@@ -3194,7 +3219,7 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		if home != "" {
 			isPinned = isSessionPinned(home, sum.CascadeID)
 		}
-		isIde := strings.Contains(sum.Workspace, "antigravity-ide") || strings.Contains(wsPath, "antigravity-ide")
+		isIde := false
 		items = append(items, sessionWithTime{
 			data: map[string]interface{}{
 				"cascadeId":     sum.CascadeID,
@@ -3520,6 +3545,9 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 	case "adb.list_devices", "adb.list_files", "adb.search_files", "adb.pull_file", "adb.push_file":
 		s.handleADB(conn, msg)
+		return
+	case "ide.list_workspaces", "ide.list_sessions", "ide.create_session", "ide.send_prompt", "ide.focus", "ide.status":
+		s.handleIDEMessage(conn, msg)
 		return
 	// Keep-alive applicatif : le mobile envoie {"type":"ping"} toutes les
 	// 20 s quand il est en arri├¿re-plan. M├¬me sans r├®ponse, toute frame

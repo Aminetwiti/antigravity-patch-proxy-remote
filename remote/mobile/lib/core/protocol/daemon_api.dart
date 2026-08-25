@@ -681,6 +681,28 @@ class DaemonApi {
     return List<Map<String, dynamic>>.from(_pendingMessages);
   }
 
+  // ── Antigravity IDE (VS Code v1.107.0) Native RPCs ───────────────────────
+
+  /// Liste les workspaces configurés dans Antigravity IDE.
+  Future<Map<String, dynamic>> listIdeWorkspaces() => rpc('ide.list_workspaces');
+
+  /// Liste les sessions persistées dans Antigravity IDE.
+  Future<Map<String, dynamic>> listIdeSessions() => rpc('ide.list_sessions');
+
+  /// Crée une nouvelle session dans Antigravity IDE.
+  Future<Map<String, dynamic>> createIdeSession({String? workspacePath, String? model}) => rpc('ide.create_session', {
+    if (workspacePath != null) 'workspacePath': workspacePath,
+    if (model != null) 'model': model,
+  });
+
+  /// Force le focus de la session dans le panneau React Webview d'Antigravity IDE.
+  Future<Map<String, dynamic>> focusIdeSession(String cascadeId) => rpc('ide.focus', {
+    'cascadeId': cascadeId,
+  });
+
+  /// Vérifie l'état et la présence des instances actives d'Antigravity IDE.
+  Future<Map<String, dynamic>> getIdeStatus() => rpc('ide.status');
+
   /// Upload d'une image vers le dossier scratch de la cascade.
   Future<Map<String, dynamic>> uploadImage({
     required String cascadeId,
