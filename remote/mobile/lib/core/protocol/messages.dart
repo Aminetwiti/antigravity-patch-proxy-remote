@@ -17,6 +17,8 @@ class CascadeSession {
   final bool isArchived;
   /// Session épinglée
   final bool isPinned;
+  /// Session issue d'Antigravity IDE (VS Code)
+  final bool isIde;
 
   const CascadeSession({
     required this.id,
@@ -32,6 +34,7 @@ class CascadeSession {
     this.hasUnread = false,
     this.isPinned = false,
     this.isArchived = false,
+    this.isIde = false,
   });
 
   factory CascadeSession.fromJson(Map<String, dynamic> json, [DateTime? now]) {
@@ -58,6 +61,7 @@ class CascadeSession {
       hasUnread: json['hasUnread'] == true,
       isPinned: json['isPinned'] == true || json['pinned'] == true,
       isArchived: json['isArchived'] == true,
+      isIde: json['isIde'] == true || json['clientType'] == 'ide' || json['source'] == 'ide',
     );
   }
 
@@ -81,6 +85,13 @@ class CascadeSession {
   bool get isAvailable {
     if (id.isEmpty) return false;
     if (isArchived) return false;
+    final trimmedTitle = title.trim();
+    if (trimmedTitle.isEmpty ||
+        trimmedTitle == 'Cascade Session' ||
+        trimmedTitle == 'Untitled Conversation' ||
+        (trimmedTitle.length >= 32 && trimmedTitle.contains('-'))) {
+      return false;
+    }
     if (status.isNotEmpty) {
       final st = status.toUpperCase();
       if (st.contains('ARCHIV') ||
@@ -91,20 +102,20 @@ class CascadeSession {
         return false;
       }
     }
-    if (title.contains('subagent') ||
-        title.contains('Subagent') ||
-        workspacePath.contains('subagent') ||
-        workspacePath.contains('Subagent')) {
-      final lowerTitle = title.toLowerCase();
-      final lowerWs = workspacePath.toLowerCase();
-      if (lowerTitle.startsWith('subagent') ||
-          lowerTitle.contains('subagent-') ||
-          lowerTitle.contains('subagent_') ||
-          lowerWs.startsWith('subagent') ||
-          lowerWs.contains('subagent-') ||
-          lowerWs.contains('subagent_')) {
-        return false;
-      }
+    final lowerTitle = trimmedTitle.toLowerCase();
+    final lowerWs = workspacePath.toLowerCase();
+    if (lowerTitle.startsWith('subagent') ||
+        lowerTitle.contains('subagent-') ||
+        lowerTitle.contains('subagent_') ||
+        lowerTitle.contains('claim verification') ||
+        lowerTitle.startsWith('to begin the') ||
+        lowerTitle.startsWith('system:') ||
+        lowerTitle.startsWith('# mission') ||
+        lowerTitle.startsWith('# role') ||
+        lowerWs.startsWith('subagent') ||
+        lowerWs.contains('subagent-') ||
+        lowerWs.contains('subagent_')) {
+      return false;
     }
     return true;
   }
@@ -152,6 +163,7 @@ class CascadeSession {
     bool? hasUnread,
     bool? isPinned,
     bool? isArchived,
+    bool? isIde,
   }) {
     return CascadeSession(
       id: id ?? this.id,
@@ -166,6 +178,7 @@ class CascadeSession {
       hasUnread: hasUnread ?? this.hasUnread,
       isPinned: isPinned ?? this.isPinned,
       isArchived: isArchived ?? this.isArchived,
+      isIde: isIde ?? this.isIde,
     );
   }
 
@@ -181,6 +194,8 @@ class CascadeSession {
         'stepCount': stepCount,
         'hasUnread': hasUnread,
         'isPinned': isPinned,
+        'isArchived': isArchived,
+        'isIde': isIde,
       };
 }
 

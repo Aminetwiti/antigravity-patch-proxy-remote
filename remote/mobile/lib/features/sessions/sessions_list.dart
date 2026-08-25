@@ -1277,13 +1277,14 @@ class _SessionRowItemState extends State<_SessionRowItem> {
     final runningText = isRunning ? "En cours d'exécution, " : "";
     final timeText = widget.session.time.isNotEmpty ? widget.session.time : "récent";
 
+    final ideTag = widget.session.isIde ? ' [Antigravity IDE]' : '';
     Widget item = Tooltip(
-      message: '$displayTitle\n📁 $subtitleText',
+      message: '$displayTitle$ideTag\n📁 $subtitleText',
       waitDuration: const Duration(milliseconds: 600),
       child: Semantics(
         button: true,
         selected: isSelected,
-        label: '$displayTitle, $pinText$runningText$timeText, projet $subtitleText',
+        label: '$displayTitle$ideTag, $pinText$runningText$timeText, projet $subtitleText',
         child: MouseRegion(
           onEnter: (_) => setState(() => _hovered = true),
           onExit: (_) => setState(() => _hovered = false),
@@ -1314,17 +1315,49 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        displayTitle,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: isSelected
-                              ? (isDark ? const Color(0xFFFFFFFF) : scheme.onSurface)
-                              : (isDark ? const Color(0xFFB0B0BA) : scheme.onSurfaceVariant),
-                          fontWeight: isSelected ? FontWeight.w500 : FontWeight.w400,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.session.isIde) ...[
+                            Container(
+                              margin: const EdgeInsets.only(right: 5),
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                                borderRadius: BorderRadius.circular(3),
+                                border: Border.all(
+                                  color: isDark ? const Color(0xFF38BDF8).withValues(alpha: 0.4) : const Color(0xFF0284C7).withValues(alpha: 0.4),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Text(
+                                'IDE',
+                                style: TextStyle(
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.4,
+                                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                                ),
+                              ),
+                            ),
+                          ],
+                          Flexible(
+                            child: Text(
+                              displayTitle,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: isSelected
+                                    ? (isDark ? const Color(0xFFFFFFFF) : scheme.onSurface)
+                                    : (isDark ? const Color(0xFFB0B0BA) : scheme.onSurfaceVariant),
+                                fontWeight: widget.session.isIde
+                                    ? (isSelected ? FontWeight.w700 : FontWeight.w600)
+                                    : (isSelected ? FontWeight.w500 : FontWeight.w400),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        ],
                       ),
                       if (widget.showSubtitle && subtitleText.isNotEmpty)
                         Padding(
@@ -1332,9 +1365,11 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                           child: Row(
                             children: [
                               Icon(
-                                (widget.session.worktree != null && widget.session.worktree!.isNotEmpty)
-                                    ? Icons.account_tree_outlined
-                                    : Icons.folder_outlined,
+                                widget.session.isIde
+                                    ? Icons.code_rounded
+                                    : ((widget.session.worktree != null && widget.session.worktree!.isNotEmpty)
+                                        ? Icons.account_tree_outlined
+                                        : Icons.folder_outlined),
                                 size: 10.5,
                                 color: isSelected
                                     ? (isDark ? const Color(0xFF8F909A) : scheme.primary)

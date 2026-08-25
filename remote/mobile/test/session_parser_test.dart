@@ -18,6 +18,7 @@ void main() {
             'cascadeId': 'a1b2c3d4-2222-4b2b-9c3c-000000000002',
             'title': 'Doctor UI Data Issue',
             'status': 'CASCADE_STATUS_RUNNING',
+            'isIde': true,
           },
         ],
       };
@@ -29,8 +30,10 @@ void main() {
       expect(sessions.first.title, 'Poème Sur La Gravité');
       expect(sessions.first.workspacePath, 'file:///C:/Users/amine/proj');
       expect(sessions.first.status, 'CASCADE_STATUS_READY');
+      expect(sessions.first.isIde, false);
       expect(sessions.last.title, 'Doctor UI Data Issue');
       expect(sessions.last.status, 'CASCADE_STATUS_RUNNING');
+      expect(sessions.last.isIde, true);
     });
 
     test('extracts sessions from gateway field dump (legacy fallback)', () {

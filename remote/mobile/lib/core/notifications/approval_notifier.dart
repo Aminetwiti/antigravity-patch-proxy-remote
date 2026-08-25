@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -83,7 +84,7 @@ class ApprovalNotifier {
     _plugin = plugin;
 
     try {
-      const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const android = AndroidInitializationSettings('@drawable/ic_service_notification');
       const ios = DarwinInitializationSettings(
         requestAlertPermission: true,
         requestBadgePermission: true,
@@ -203,6 +204,9 @@ class ApprovalNotifier {
         visibility: NotificationVisibility.public,
         playSound: true,
         enableVibration: true,
+        icon: 'ic_service_notification',
+        color: const Color(0xFF3186FF),
+        largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
         // C7 : réveille l'écran verrouillé / l'app en arrière-plan avec
         // l'activité principale (le plugin l'utilise pour le content intent).
         // La notification « vole » l'écran — l'utilisateur approuve ou refuse
@@ -261,6 +265,9 @@ class ApprovalNotifier {
       visibility: NotificationVisibility.public,
       playSound: true,
       enableVibration: true,
+      icon: 'ic_service_notification',
+      color: Color(0xFF00B95C),
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
     );
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
@@ -335,6 +342,9 @@ class ApprovalNotifier {
       visibility: NotificationVisibility.public,
       playSound: true,
       enableVibration: true,
+      icon: 'ic_service_notification',
+      color: Color(0xFF00B95C),
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
     );
     const errorDetails = AndroidNotificationDetails(
       'task_errors',
@@ -344,6 +354,9 @@ class ApprovalNotifier {
       priority: Priority.high,
       playSound: true,
       enableVibration: true,
+      icon: 'ic_service_notification',
+      color: Color(0xFFFF5252),
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
     );
     const approvalDetails = AndroidNotificationDetails(
       'approval_required',
@@ -355,6 +368,9 @@ class ApprovalNotifier {
       visibility: NotificationVisibility.public,
       playSound: true,
       enableVibration: true,
+      icon: 'ic_service_notification',
+      color: Color(0xFF3186FF),
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
     );
 
     final android = switch (channelId) {
@@ -401,6 +417,9 @@ class ApprovalNotifier {
       importance: Importance.high,
       priority: Priority.high,
       visibility: NotificationVisibility.public,
+      icon: 'ic_service_notification',
+      color: Color(0xFFFF5252),
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
     );
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
@@ -433,6 +452,9 @@ class ApprovalNotifier {
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       visibility: NotificationVisibility.public,
+      icon: 'ic_service_notification',
+      color: Color(0xFF00B95C),
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
     );
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
@@ -470,6 +492,9 @@ class ApprovalNotifier {
       visibility: NotificationVisibility.public,
       playSound: true,
       enableVibration: true,
+      icon: 'ic_service_notification',
+      color: Color(0xFFA855F7),
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
     );
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,

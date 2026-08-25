@@ -103,7 +103,16 @@ func isSubagentTitle(title string) bool {
 		strings.HasPrefix(lowerTitle, "subagent-") ||
 		strings.HasPrefix(lowerTitle, "subagent_") ||
 		strings.Contains(lowerTitle, "subagent-") ||
-		strings.Contains(lowerTitle, "subagent_")
+		strings.Contains(lowerTitle, "subagent_") ||
+		strings.Contains(lowerTitle, "claim verification") ||
+		strings.HasPrefix(lowerTitle, "to begin the") ||
+		strings.HasPrefix(lowerTitle, "explore le projet") ||
+		strings.HasPrefix(lowerTitle, "analyze the backend") ||
+		strings.HasPrefix(lowerTitle, "analyze the flutter") ||
+		strings.HasPrefix(lowerTitle, "audit api contract") ||
+		strings.HasPrefix(lowerTitle, "you are a senior") ||
+		strings.HasPrefix(lowerTitle, "i need to understand") ||
+		strings.HasPrefix(lowerTitle, "deep security audit")
 }
 
 // isSessionArchived vérifie si la session est archivée dans ~/.gemini/antigravity/annotations/<cascadeID>.pbtxt ou antigravity-ide
@@ -156,9 +165,15 @@ func isSessionDeleted(home, cascadeID string) bool {
 // Session » quand le titre est vide). Aligné sur le filtre 2.0 de
 // sessionsOut/sessionsFromSummariesLocked.
 func isJunkSessionTitle(title string) bool {
-	return title == "" || title == "Untitled Conversation" || title == "Cascade Session" ||
-		strings.HasPrefix(title, "Empty ") || strings.HasPrefix(title, "New ") ||
-		strings.HasPrefix(title, "General Conversation")
+	t := strings.TrimSpace(title)
+	if t == "" || t == "Untitled Conversation" || t == "Cascade Session" || strings.EqualFold(t, "cascade session") {
+		return true
+	}
+	if cascadeIDRe.MatchString(t) && len(t) >= 32 {
+		return true
+	}
+	return strings.HasPrefix(t, "Empty ") || strings.HasPrefix(t, "New ") ||
+		strings.HasPrefix(t, "General Conversation")
 }
 
 // resolveGeminiSubDir détermine si la session réside dans antigravity-ide ou antigravity
@@ -545,13 +560,12 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 				continue
 			}
 
-			// Filtre Antigravity 2.0 aligné sur sessionsOut /
-			// sessionsFromSummariesLocked : le fallback disque faisait
-			// réapparaître des sessions abandonnées sans titre réel
-			// (« Cascade Session » côté mobile) de plus de 24 h dans la
-			// sidebar — dont des sessions archivées/supprimées sans
-			// annotation pbtxt.
-			if isJunkSessionTitle(title) && time.Since(modTime) > 24*time.Hour {
+			if isJunkSessionTitle(title) {
+				if !includeArchived || modTime.IsZero() {
+					continue
+				}
+			}
+			if modTime.IsZero() {
 				continue
 			}
 
@@ -606,6 +620,7 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 				"updatedAt":     modTime.Format(time.RFC3339),
 				"isPinned":      pinned,
 				"isArchived":    archived,
+				"isIde":         strings.Contains(root, "antigravity-ide"),
 			}
 			items = append(items, sessionItem{data: sMap, updatedAt: modTime})
 		}

@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -111,20 +112,33 @@ class ConnectionKeepAliveService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val largeIcon = try {
+            BitmapFactory.decodeResource(resources, R.mipmap.launcher_icon)
+        } catch (_: Exception) {
+            null
+        }
+
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
-        return builder
+        
+        builder
             .setSmallIcon(R.drawable.ic_service_notification)
             .setContentTitle("Antigravity Remote")
             .setContentText("Connexion maintenue — touchez pour rouvrir")
             .setContentIntent(pending)
             .setOngoing(true)
             .setShowWhen(false)
-            .build()
+            .setColor(0xFF3186FF.toInt())
+
+        if (largeIcon != null) {
+            builder.setLargeIcon(largeIcon)
+        }
+
+        return builder.build()
     }
 
     private fun createChannel() {

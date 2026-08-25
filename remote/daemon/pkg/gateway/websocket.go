@@ -333,6 +333,7 @@ type Server struct {
 		ListSessions() []discovery.SessionInfo
 		RevokeDevice(deviceID string) bool
 	}
+	isIDERunning bool
 	scheduler    *Scheduler
 	stateVersion int64
 }
@@ -416,7 +417,34 @@ func NewServer(client RPCClient, authToken string) *Server {
 		StartScratchCleanupRoutine(context.Background(), 24*time.Hour, DefaultScratchMaxAge)
 	}
 	loadAccountPrefs()
+	s.isIDERunning = true
 	return s
+}
+
+// SetIDERunning met à jour l'état de fonctionnement de l'IDE Antigravity et notifie les clients
+func (s *Server) SetIDERunning(running bool, port int, info *discovery.LocalHarnessInfo) {
+	s.mu.Lock()
+	changed := s.isIDERunning != running
+	s.isIDERunning = running
+	s.mu.Unlock()
+
+	s.broadcast(OutgoingMessage{
+		Type: "ide_status",
+		Data: map[string]interface{}{
+			"running": running,
+			"port":    port,
+		},
+	})
+	if changed && running {
+		s.broadcastSessions()
+	}
+}
+
+// IsIDERunning retourne l'état actuel de l'IDE Antigravity
+func (s *Server) IsIDERunning() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.isIDERunning
 }
 
 // startUploadReaper purge périodiquement les uploads partiels expirés en mémoire (VULN-14).
@@ -627,15 +655,13 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		}
 		convTitlesMu.RUnlock()
 
-		if title == "" {
-			title = "Untitled Conversation"
-		}
 		if isSubagentTitle(title) {
 			continue
 		}
-		// Masquer les sessions abandonnées/sans titre réel de plus de 24h (aligné sur Antigravity Desktop)
-		if isJunkSessionTitle(title) && !sum.UpdatedAt.IsZero() && time.Since(sum.UpdatedAt) > 24*time.Hour {
-			continue
+		if isJunkSessionTitle(title) {
+			if !includeArchived || sum.UpdatedAt.IsZero() {
+				continue
+			}
 		}
 		wsName, wsPath, projID := matchOfficialProject(sum.ProjectID, sum.Workspace, sum.Workspace, projects)
 
@@ -810,8 +836,11 @@ func (s *Server) fetchSessionsSingleFlight() []byte {
 	}
 
 	s.mu.Lock()
-	if err == nil && len(raw) > 0 {
+	if err == nil {
 		s.sessionsCache = raw
+		if len(raw) == 0 {
+			s.sessionsCache = []byte(`{"sessions":[]}`)
+		}
 		s.sessionsCachedAt = time.Now()
 	}
 	s.fetchDone = nil
@@ -3142,15 +3171,13 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		}
 		convTitlesMu.RUnlock()
 
-		if title == "" {
-			title = "Untitled Conversation"
-		}
 		if isSubagentTitle(title) {
 			continue
 		}
-		// Masquer les sessions abandonnées/sans titre réel de plus de 24h (aligné sur Antigravity Desktop)
-		if isJunkSessionTitle(title) && !sum.UpdatedAt.IsZero() && time.Since(sum.UpdatedAt) > 24*time.Hour {
-			continue
+		if isJunkSessionTitle(title) {
+			if !includeArchived || sum.UpdatedAt.IsZero() {
+				continue
+			}
 		}
 
 		status := enrichStatus(sum.CascadeID, sum.Status)
@@ -3173,10 +3200,39 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 				"updatedAt":     sum.UpdatedAt,
 				"isPinned":      isPinned,
 				"isArchived":    isArchived,
+				"isIde":         false,
 			},
 			updatedAt: sum.UpdatedAt,
 			isActive:  status == "CASCADE_STATUS_RUNNING" || status == "CASCADE_STATUS_WAITING_FOR_USER_ACTION",
 		})
+	}
+
+	// Fusionner les sessions Antigravity IDE partageant un workspace commun
+	seenIDs := make(map[string]bool)
+	for _, it := range items {
+		if cid, ok := it.data["cascadeId"].(string); ok {
+			seenIDs[cid] = true
+		}
+	}
+	localIDE := ListLocalSessionsOpts(includeArchived)
+	for _, loc := range localIDE {
+		if isIde, _ := loc["isIde"].(bool); isIde {
+			cid, _ := loc["cascadeId"].(string)
+			if cid != "" && !seenIDs[cid] {
+				st, _ := loc["status"].(string)
+				loc["status"] = enrichStatus(cid, st)
+				var updTime time.Time
+				if updStr, ok := loc["updatedAt"].(string); ok {
+					updTime, _ = time.Parse(time.RFC3339, updStr)
+				}
+				seenIDs[cid] = true
+				items = append(items, sessionWithTime{
+					data:      loc,
+					updatedAt: updTime,
+					isActive:  loc["status"] == "CASCADE_STATUS_RUNNING" || loc["status"] == "CASCADE_STATUS_WAITING_FOR_USER_ACTION",
+				})
+			}
+		}
 	}
 	if len(items) == 0 {
 		if len(raw) > 0 {
@@ -3336,6 +3392,16 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.writeLock(conn)
 
 	logJSON.Info("client_connected", "remote", conn.RemoteAddr().String())
+
+	s.mu.Lock()
+	ideRunning := s.isIDERunning
+	s.mu.Unlock()
+	s.writeJSON(conn, OutgoingMessage{
+		Type: "ide_status",
+		Data: map[string]interface{}{
+			"running": ideRunning,
+		},
+	})
 
 	done := make(chan struct{})
 	defer close(done)

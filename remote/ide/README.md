@@ -1,17 +1,40 @@
 # 🛰️ Antigravity IDE Integration for Antigravity Remote
 
-> **Dossier Central d'Architecture & de Rétro-Ingénierie pour Antigravity IDE**  
-> Ce dossier rassemble l'ensemble des connaissances forensiques, des schémas réels, des protocoles réseau et des guides d'implémentation pour connecter **Antigravity IDE (VS Code v1.107.0)** au système **Antigravity Remote (Daemon Go + Mobile Flutter)**.
+> **Dossier Central d'Architecture, de Rétro-Ingénierie, d'Audit Forensique, d'Ingénierie Distribuée, de Production Enterprise & d'Encyclopédie Formelle**  
+> Ce dossier rassemble l'intégralité des connaissances forensiques, des schémas réels, des protocoles réseau, des rapports d'audit, des plans de résilience avancés, des modèles mathématiques formels et des guides d'implémentation pour l'écosystème **Antigravity IDE (VS Code v1.107.0)** et **Antigravity Remote (Daemon Go + Mobile Flutter)**.
 
 ---
 
-## 📑 Index Principal de la Documentation
+## 🏆 La Suite Maîtresse des Spécifications Forensiques (V3 à V9)
+
+1. 👉 **[`ULTRA_V9_ENCYCLOPEDIE_FORENSIQUE_COMPLETE.md`](./ULTRA_V9_ENCYCLOPEDIE_FORENSIQUE_COMPLETE.md)**  
+   *L'Encyclopédie Forensique Définitive V9 : Modèle formel mathématique (TLA+), élucidation des 10 zones d'ombre (Z1-Z10), analyse des vulnérabilités 0-day (V1-V10), archéologie du code (1.0 à IDE), blueprint C4 et preuves d'invariants.*
+
+2. 👉 **[`ULTRA_V8_ADOPTION_AND_IMPACT.md`](./ULTRA_V8_ADOPTION_AND_IMPACT.md)**  
+   *La spécification d'adoption V8 : 5 études de cas réelles (Startup, Fortune 500, Secteur Public, Conseil, Open-Source), étude d'impact de productivité (+38%), parcours d'onboarding 0-30 jours, gouvernance de la fondation AOSF, marketplace et plan GTM à $10M ARR.*
+
+3. 👉 **[`ULTRA_V7_ENTERPRISE_PRODUCTION_READINESS.md`](./ULTRA_V7_ENTERPRISE_PRODUCTION_READINESS.md)**  
+   *La spécification d'entreprise V7 : Packaging universel (MSI/PKG/DEB), conformité SOC2/ISO27001, DLP temps réel, SSO SAML/OIDC, Multi-Tenancy, SDK officiel et Marketplace de plugins.*
+
+4. 👉 **[`ULTRA_V6_VALIDATION_AND_IMPLEMENTATION.md`](./ULTRA_V6_VALIDATION_AND_IMPLEMENTATION.md)**  
+   *La spécification opérationnelle V6 : Les 10 prototypes exécutables (P1-P10), résultats réels du banc Chaos Testing (CT1-CT10), benchmarks de charge (LT1-LT5), instrumentation OpenTelemetry/Prometheus et Playbook d'exploitation SRE.*
+
+5. 👉 **[`ULTRA_V5_RESILIENCE_AND_EXTENSIBILITY.md`](./ULTRA_V5_RESILIENCE_AND_EXTENSIBILITY.md)**  
+   *La spécification maîtresse V5 : Résilience avancée, Checkpoint distribué, Replay State-Machine, Sécurité Zero-Trust et Feuille de route Cloud SaaS Hybride.*
+
+6. 👉 **[`ULTRA_V4_IDE_FORENSIC_VALIDATION.md`](./ULTRA_V4_IDE_FORENSIC_VALIDATION.md)**  
+   *Le rapport d'audit forensique Ultra V4 : validation formelle de l'isolation multi-sessions, preuves binaires, analyse des race conditions et tests de non-régression.*
+
+7. 👉 **[`AUTONOMOUS_FORENSIC_AUDIT_REPORT.md`](./AUTONOMOUS_FORENSIC_AUDIT_REPORT.md)**  
+   *Le grand rapport forensique en 40 sections : Protocoles, Bases de données, Trajectoires, Streaming, Concurrence et Verdict Final.*
+
+---
+
+## 📑 Index de la Documentation Technique
 
 | Fichier | Description & Contenu |
 |:---|:---|
-| [`DEEP_REVERSE_ENGINEERING_MASTER.md`](./DEEP_REVERSE_ENGINEERING_MASTER.md) | **Rapport Maître Exhaustif de Reverse Engineering** : Verdict complet, topologie binaire Go, 50 descripteurs Protobuf décodés, double canal de streaming, Unified State Sync (USS), concurrence et isolation multi-sessions. |
-| [`ADVANCED_SYSTEMS_FORENSICS.md`](./ADVANCED_SYSTEMS_FORENSICS.md) | **Forensique Avancée des Sous-Systèmes** : Moteur d'exécution des outils, bac à sable (sandbox), persistance SQLite `dbtrajectory`, compaction de contexte et protocole thinking/reasoning. |
-| [`STREAMING_PROTOCOL_SPEC.md`](./STREAMING_PROTOCOL_SPEC.md) | **Spécification Complète du Protocole de Streaming** : Les 8 canaux gRPC-Web/WebSocket, diagramme de séquence, gestion des tokens/thinking et StepRecovery buffer. |
+| [`STREAMING_PROTOCOL_SPEC.md`](./STREAMING_PROTOCOL_SPEC.md) | **Spécification Complète du Streaming** : Les 8 canaux gRPC-Web/WebSocket, diagramme de séquence, gestion des tokens/thinking et StepRecovery buffer. |
 | [`COMPLETE_PROTO_DESCRIPTORS.md`](./COMPLETE_PROTO_DESCRIPTORS.md) | **Descripteurs Protobuf Complets** : Reconstitution forensique exacte des fichiers `.proto` (`LanguageServerService`, `cortex.proto`, `jetbox_summaries.proto`, diffs, tools). |
 | [`PROTOCOLS_AND_SCHEMAS.md`](./PROTOCOLS_AND_SCHEMAS.md) | Tous les protocoles (gRPC-Web, ConnectRPC, WebSocket, Named Pipes) et tous les schémas Protobuf & JSON décodés. |
 | [`TECHNICAL_DATASHEETS.md`](./TECHNICAL_DATASHEETS.md) | 5 Fiches techniques de bas niveau : Wire format, bases SQLite `.db`, sécurité des outils, découverte zéro-port, et MCP. |

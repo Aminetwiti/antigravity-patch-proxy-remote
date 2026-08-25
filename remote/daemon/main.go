@@ -95,10 +95,6 @@ func main() {
 		rpcClient.SetUseTLS(true)
 	}
 
-	// Lancement du Watchdog CSRF
-	watchdog := discovery.NewWatchdog(rpcClient, 10*time.Second)
-	watchdog.Start()
-	fmt.Println("🛡️ Watchdog CSRF démarré (vérification toutes les 10s)")
 
 	// Lancement asynchrone du Tunnel Distant (Cloudflare / Pinggy / Ngrok)
 	tunnelMgr := tunnel.NewManager(tunnelFlag)
@@ -153,6 +149,12 @@ func main() {
 	server.SetPairingManager(pairingMgr)
 	server.SetApprovalTimeout(time.Duration(approvalTimeoutMin) * time.Minute)
 	server.SetAllowRemoteTerminal(enableRemoteTerminal)
+
+	// Lancement du Watchdog CSRF & Statut IDE
+	watchdog := discovery.NewWatchdog(rpcClient, 5*time.Second)
+	watchdog.OnStatusChange = server.SetIDERunning
+	watchdog.Start()
+	fmt.Println("🛡️ Watchdog CSRF & Statut IDE démarré (vérification toutes les 5s)")
 	// Flux temps réel Jetbox : la sidebar mobile est alimentée par le stream
 	// JetboxSubscribeToSummaries (snapshot initial + updates incrémentaux) au
 	// lieu de GetAllCascades (~9,5 s). Reconnecte automatiquement en boucle.

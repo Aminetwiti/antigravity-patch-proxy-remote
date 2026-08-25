@@ -64,6 +64,7 @@ class SessionParser {
               hasUnread: hasUnread,
               isPinned: sMap['isPinned'] == true || sMap['pinned'] == true,
               isArchived: sMap['isArchived'] == true,
+              isIde: sMap['isIde'] == true || sMap['clientType'] == 'ide' || sMap['source'] == 'ide',
             );
             if (session.isAvailable || (includeArchived && session.isArchived)) {
               entries.add((session, updatedMs));

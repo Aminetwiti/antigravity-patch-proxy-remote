@@ -9,22 +9,25 @@ import (
 )
 
 type Watchdog struct {
-	Client   *connectrpc.Client
-	Interval time.Duration
-	stopChan chan struct{}
-	stopOnce sync.Once
-	discover func() (*LocalHarnessInfo, error)
+	Client         *connectrpc.Client
+	Interval       time.Duration
+	OnStatusChange func(running bool, port int, info *LocalHarnessInfo)
+	stopChan       chan struct{}
+	stopOnce       sync.Once
+	discover       func() (*LocalHarnessInfo, error)
+	lastRunning    bool
 }
 
 func NewWatchdog(client *connectrpc.Client, interval time.Duration) *Watchdog {
 	if interval <= 0 {
-		interval = 10 * time.Second
+		interval = 5 * time.Second
 	}
 	return &Watchdog{
-		Client:   client,
-		Interval: interval,
-		stopChan: make(chan struct{}),
-		discover: Discover,
+		Client:      client,
+		Interval:    interval,
+		stopChan:    make(chan struct{}),
+		discover:    Discover,
+		lastRunning: true,
 	}
 }
 
@@ -36,14 +39,27 @@ func (w *Watchdog) Start() {
 			case <-ticker.C:
 				info, err := w.discover()
 				if err != nil {
-					log.Printf("[Watchdog] Avertissement découverte hub: %v", err)
+					if w.lastRunning {
+						w.lastRunning = false
+						log.Printf("[Watchdog] Antigravity IDE / language_server fermé ou introuvable : %v", err)
+						if w.OnStatusChange != nil {
+							w.OnStatusChange(false, 0, nil)
+						}
+					}
 					continue
 				}
+
 				port, token := w.Client.Endpoint()
-				if info.ConnectRPCPort != port || info.ExtensionCSRF != token {
-					log.Printf("[Watchdog] Hub redémarré détecté ! Mise à jour du port (%d -> %d) et du jeton CSRF", port, info.ConnectRPCPort)
+				wasDown := !w.lastRunning
+				w.lastRunning = true
+
+				if info.ConnectRPCPort != port || info.ExtensionCSRF != token || wasDown {
+					log.Printf("[Watchdog] Hub actif/redémarré détecté ! Port: %d (TLS: %v)", info.ConnectRPCPort, info.UseTLS)
 					w.Client.UpdateEndpoint(info.ConnectRPCPort, info.ExtensionCSRF)
 					w.Client.SetUseTLS(info.UseTLS)
+					if w.OnStatusChange != nil {
+						w.OnStatusChange(true, info.ConnectRPCPort, info)
+					}
 				}
 			case <-w.stopChan:
 				ticker.Stop()
