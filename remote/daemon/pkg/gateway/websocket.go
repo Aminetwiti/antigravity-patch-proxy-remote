@@ -436,7 +436,10 @@ func (s *Server) SetIDERunning(running bool, port int, info *discovery.LocalHarn
 		},
 	})
 	if changed && running {
-		s.broadcastSessions()
+		s.broadcast(OutgoingMessage{
+			Type: "sessions_updated",
+			Data: s.sessionsFromSummaries(s.snapshotSummaries()),
+		})
 	}
 }
 
@@ -508,7 +511,7 @@ func (s *Server) cachedSessionsOptsLocked(includeArchived bool) ([]byte, bool) {
 	if ttl <= 0 {
 		ttl = sessionsCacheTTL
 	}
-	if len(s.sessionsCache) > 0 && time.Since(s.sessionsCachedAt) < ttl {
+	if s.sessionsCache != nil && time.Since(s.sessionsCachedAt) < ttl {
 		return s.sessionsCache, true
 	}
 	return nil, false
@@ -674,6 +677,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		if isArchived {
 			st = "CASCADE_STATUS_ARCHIVED"
 		}
+		isIde := strings.Contains(sum.Workspace, "antigravity-ide") || strings.Contains(wsPath, "antigravity-ide")
 		items = append(items, map[string]interface{}{
 			"cascadeId":     sum.CascadeID,
 			"title":         title,
@@ -684,6 +688,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 			"updatedAt":     sum.UpdatedAt,
 			"isPinned":      isPinned,
 			"isArchived":    isArchived,
+			"isIde":         isIde,
 		})
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -3189,6 +3194,7 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		if home != "" {
 			isPinned = isSessionPinned(home, sum.CascadeID)
 		}
+		isIde := strings.Contains(sum.Workspace, "antigravity-ide") || strings.Contains(wsPath, "antigravity-ide")
 		items = append(items, sessionWithTime{
 			data: map[string]interface{}{
 				"cascadeId":     sum.CascadeID,
@@ -3200,7 +3206,7 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 				"updatedAt":     sum.UpdatedAt,
 				"isPinned":      isPinned,
 				"isArchived":    isArchived,
-				"isIde":         false,
+				"isIde":         isIde,
 			},
 			updatedAt: sum.UpdatedAt,
 			isActive:  status == "CASCADE_STATUS_RUNNING" || status == "CASCADE_STATUS_WAITING_FOR_USER_ACTION",
@@ -3214,9 +3220,9 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 			seenIDs[cid] = true
 		}
 	}
-	localIDE := ListLocalSessionsOpts(includeArchived)
-	for _, loc := range localIDE {
-		if isIde, _ := loc["isIde"].(bool); isIde {
+	if s != nil && s.IsIDERunning() {
+		localIDE := ListIdeSessions(projects, includeArchived)
+		for _, loc := range localIDE {
 			cid, _ := loc["cascadeId"].(string)
 			if cid != "" && !seenIDs[cid] {
 				st, _ := loc["status"].(string)
@@ -3392,16 +3398,6 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.writeLock(conn)
 
 	logJSON.Info("client_connected", "remote", conn.RemoteAddr().String())
-
-	s.mu.Lock()
-	ideRunning := s.isIDERunning
-	s.mu.Unlock()
-	s.writeJSON(conn, OutgoingMessage{
-		Type: "ide_status",
-		Data: map[string]interface{}{
-			"running": ideRunning,
-		},
-	})
 
 	done := make(chan struct{})
 	defer close(done)

@@ -15,9 +15,6 @@ import android.content.Intent
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action ?: return
-        if (action == Intent.ACTION_BOOT_COMPLETED || action == "android.intent.action.QUICKBOOT_POWERON") {
-            ConnectionKeepAliveService.start(context)
-        }
+        // Keep-alive permanent notification disabled
     }
 }

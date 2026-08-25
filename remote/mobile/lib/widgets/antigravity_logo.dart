@@ -46,6 +46,9 @@ class AntigravityLogo extends StatelessWidget {
     String title = 'Antigravity',
     String subtitle = 'REMOTE',
     bool showGlow = true,
+    bool? isDaemonConnected,
+    bool? isIdeConnected,
+    bool showDualStatus = false,
     TextStyle? titleStyle,
     TextStyle? subtitleStyle,
     VoidCallback? onTap,
@@ -56,6 +59,9 @@ class AntigravityLogo extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       showGlow: showGlow,
+      isDaemonConnected: isDaemonConnected,
+      isIdeConnected: isIdeConnected,
+      showDualStatus: showDualStatus,
       titleStyle: titleStyle,
       subtitleStyle: subtitleStyle,
       onTap: onTap,
@@ -155,6 +161,9 @@ class _AntigravityWordmark extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool showGlow;
+  final bool? isDaemonConnected;
+  final bool? isIdeConnected;
+  final bool showDualStatus;
   final TextStyle? titleStyle;
   final TextStyle? subtitleStyle;
   final VoidCallback? onTap;
@@ -165,6 +174,9 @@ class _AntigravityWordmark extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.showGlow,
+    this.isDaemonConnected,
+    this.isIdeConnected,
+    this.showDualStatus = false,
     this.titleStyle,
     this.subtitleStyle,
     this.onTap,
@@ -198,7 +210,93 @@ class _AntigravityWordmark extends StatelessWidget {
                     color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                   ),
             ),
-            if (subtitle.isNotEmpty)
+            if (showDualStatus)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Badge 2.0
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 0.8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E222A) : scheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(3.5),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF323846) : scheme.outlineVariant.withValues(alpha: 0.5),
+                          width: 0.6,
+                        ),
+                      ),
+                      child: Text(
+                        '2.0',
+                        style: TextStyle(
+                          fontSize: (iconSize * 0.28).clamp(8.5, 10.5),
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                          color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 3.5),
+                    // Point coloré 2.0
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: (isDaemonConnected ?? true) ? AppColors.positive : AppColors.danger,
+                        boxShadow: [
+                          BoxShadow(
+                            color: ((isDaemonConnected ?? true) ? AppColors.positive : AppColors.danger).withValues(alpha: 0.55),
+                            blurRadius: 3,
+                            spreadRadius: 0.5,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Badge IDE
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 0.8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E222A) : scheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(3.5),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF323846) : scheme.outlineVariant.withValues(alpha: 0.5),
+                          width: 0.6,
+                        ),
+                      ),
+                      child: Text(
+                        'IDE',
+                        style: TextStyle(
+                          fontSize: (iconSize * 0.28).clamp(8.5, 10.5),
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                          color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 3.5),
+                    // Point coloré IDE
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: (isIdeConnected ?? true) ? AppColors.positive : AppColors.danger,
+                        boxShadow: [
+                          BoxShadow(
+                            color: ((isIdeConnected ?? true) ? AppColors.positive : AppColors.danger).withValues(alpha: 0.55),
+                            blurRadius: 3,
+                            spreadRadius: 0.5,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (subtitle.isNotEmpty)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

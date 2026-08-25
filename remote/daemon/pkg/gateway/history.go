@@ -654,6 +654,76 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 	return sessions
 }
 
+// ListIdeSessions retourne rapidement uniquement les sessions créées dans Antigravity IDE
+// (~/.gemini/antigravity-ide/brain) sans reparcourir le répertoire volumineux d'Antigravity 2.0.
+func ListIdeSessions(officialProjs []ProjectSummary, includeArchived bool) []map[string]interface{} {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	ideRoot := filepath.Join(home, ".gemini", "antigravity-ide", "brain")
+	entries, err := os.ReadDir(ideRoot)
+	if err != nil {
+		return nil
+	}
+	var res []map[string]interface{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		cascadeID := e.Name()
+		archived := isSessionArchived(home, cascadeID)
+		if archived && (!includeArchived || isSessionDeleted(home, cascadeID)) {
+			continue
+		}
+		transcriptPath := findTranscriptPath(cascadeID)
+		if transcriptPath == "" {
+			continue
+		}
+		title, workspacePath, modTime := extractSessionMetadata(transcriptPath, cascadeID)
+		if isSubagentTitle(title) || (isJunkSessionTitle(title) && !includeArchived) || modTime.IsZero() {
+			continue
+		}
+		if workspacePath == "" {
+			workspacePath = extractWorkspace(ideRoot, cascadeID)
+		}
+		cleanWs := normalizeWorkspace(workspacePath)
+		matchedProjectName, matchedProjectPath, matchedProjectID := matchOfficialProject(
+			"",
+			workspacePath,
+			cleanWs,
+			officialProjs,
+		)
+		if len(officialProjs) == 0 || matchedProjectName == "" {
+			continue
+		}
+		if strings.HasPrefix(title, "C:\\") || strings.HasPrefix(title, "c:\\") || strings.HasPrefix(title, "file://") {
+			base := filepath.Base(cleanWs)
+			if base != "" && base != "." && base != "/" && base != "\\" {
+				title = base
+			}
+		}
+		pinned := isSessionPinned(home, cascadeID)
+		status := "idle"
+		if archived {
+			status = "CASCADE_STATUS_ARCHIVED"
+		}
+		res = append(res, map[string]interface{}{
+			"cascadeId":     cascadeID,
+			"title":         title,
+			"workspace":     matchedProjectName,
+			"workspacePath": matchedProjectPath,
+			"projectId":     matchedProjectID,
+			"status":        status,
+			"updatedAt":     modTime.Format(time.RFC3339),
+			"isPinned":      pinned,
+			"isArchived":    archived,
+			"isIde":         true,
+		})
+	}
+	return res
+}
+
 func extractSessionMetadata(transcriptPath, cascadeID string) (title string, workspacePath string, modTime time.Time) {
 	stat, errStat := os.Stat(transcriptPath)
 	if errStat != nil {

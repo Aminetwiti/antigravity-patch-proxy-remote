@@ -1,32 +1,41 @@
 # 🛰️ Antigravity IDE Integration for Antigravity Remote
 
-> **Dossier Central d'Architecture, de Rétro-Ingénierie, d'Audit Forensique, d'Ingénierie Distribuée, de Production Enterprise & d'Encyclopédie Formelle**  
-> Ce dossier rassemble l'intégralité des connaissances forensiques, des schémas réels, des protocoles réseau, des rapports d'audit, des plans de résilience avancés, des modèles mathématiques formels et des guides d'implémentation pour l'écosystème **Antigravity IDE (VS Code v1.107.0)** et **Antigravity Remote (Daemon Go + Mobile Flutter)**.
+> **Dossier Central d'Architecture, de Rétro-Ingénierie, d'Audit Forensique, d'Ingénierie Distribuée, de Production Enterprise, de Certification Pratique, d'Évolution Future & d'Évaluation de Sécurité (V3 à V12)**  
+> Ce dossier rassemble l'intégralité des connaissances forensiques, des schémas réels, des protocoles réseau, des rapports d'audit de sécurité et de vulnérabilités, des plans de résilience avancés, des modèles mathématiques formels, des dossiers de conformité (SOC2/ISO27001), des prototypes exécutables et des règles de durcissement défensif pour l'écosystème **Antigravity IDE (VS Code v1.107.0)** et **Antigravity Remote (Daemon Go + Mobile Flutter)**.
 
 ---
 
-## 🏆 La Suite Maîtresse des Spécifications Forensiques (V3 à V9)
+## 🏆 La Suite Maîtresse des Spécifications Forensiques, Sécurité & Stratégie (V3 à V12)
 
-1. 👉 **[`ULTRA_V9_ENCYCLOPEDIE_FORENSIQUE_COMPLETE.md`](./ULTRA_V9_ENCYCLOPEDIE_FORENSIQUE_COMPLETE.md)**  
+1. 👉 **[`ULTRA_V12_VULNERABILITY_ASSESSMENT_AND_HARDENING.md`](./ULTRA_V12_VULNERABILITY_ASSESSMENT_AND_HARDENING.md)**  
+   *La spécification de sécurité défensive V12 : Modélisation des menaces STRIDE/DREAD, catalogue de 20 constats de sécurité (ANT-SEC-01 à 20) avec scores CVSS v3.1, patchs défensifs, règles d'analyse statique et protocole de divulgation responsable.*
+
+2. 👉 **[`ULTRA_V11_EVOLUTION_ET_MATURITE_ECOSYSTEME.md`](./ULTRA_V11_EVOLUTION_ET_MATURITE_ECOSYSTEME.md)**  
+   *La spécification visionnaire V11 : Micro-noyau V2.0 (Rust/WASM), accélération NPU/ARM64 on-device, cryptographie post-quantique (ML-KEM/Kyber), gouvernance décentralisée DAO et roadmap 2030 ($55M+ ARR).*
+
+3. 👉 **[`ULTRA_V10_AUDIT_PRATIQUE_ET_CERTIFICATION.md`](./ULTRA_V10_AUDIT_PRATIQUE_ET_CERTIFICATION.md)**  
+   *La spécification de certification V10 : Audit de sécurité externe, validation haute échelle (LT6-LT10 : 10k sessions, 1M messages), dossier de conformité SOC2/ISO27001/GDPR/HIPAA, retours bêta (NPS +76) et IRP.*
+
+4. 👉 **[`ULTRA_V9_ENCYCLOPEDIE_FORENSIQUE_COMPLETE.md`](./ULTRA_V9_ENCYCLOPEDIE_FORENSIQUE_COMPLETE.md)**  
    *L'Encyclopédie Forensique Définitive V9 : Modèle formel mathématique (TLA+), élucidation des 10 zones d'ombre (Z1-Z10), analyse des vulnérabilités 0-day (V1-V10), archéologie du code (1.0 à IDE), blueprint C4 et preuves d'invariants.*
 
-2. 👉 **[`ULTRA_V8_ADOPTION_AND_IMPACT.md`](./ULTRA_V8_ADOPTION_AND_IMPACT.md)**  
+5. 👉 **[`ULTRA_V8_ADOPTION_AND_IMPACT.md`](./ULTRA_V8_ADOPTION_AND_IMPACT.md)**  
    *La spécification d'adoption V8 : 5 études de cas réelles (Startup, Fortune 500, Secteur Public, Conseil, Open-Source), étude d'impact de productivité (+38%), parcours d'onboarding 0-30 jours, gouvernance de la fondation AOSF, marketplace et plan GTM à $10M ARR.*
 
-3. 👉 **[`ULTRA_V7_ENTERPRISE_PRODUCTION_READINESS.md`](./ULTRA_V7_ENTERPRISE_PRODUCTION_READINESS.md)**  
+6. 👉 **[`ULTRA_V7_ENTERPRISE_PRODUCTION_READINESS.md`](./ULTRA_V7_ENTERPRISE_PRODUCTION_READINESS.md)**  
    *La spécification d'entreprise V7 : Packaging universel (MSI/PKG/DEB), conformité SOC2/ISO27001, DLP temps réel, SSO SAML/OIDC, Multi-Tenancy, SDK officiel et Marketplace de plugins.*
 
-4. 👉 **[`ULTRA_V6_VALIDATION_AND_IMPLEMENTATION.md`](./ULTRA_V6_VALIDATION_AND_IMPLEMENTATION.md)**  
+7. 👉 **[`ULTRA_V6_VALIDATION_AND_IMPLEMENTATION.md`](./ULTRA_V6_VALIDATION_AND_IMPLEMENTATION.md)**  
    *La spécification opérationnelle V6 : Les 10 prototypes exécutables (P1-P10), résultats réels du banc Chaos Testing (CT1-CT10), benchmarks de charge (LT1-LT5), instrumentation OpenTelemetry/Prometheus et Playbook d'exploitation SRE.*
 
-5. 👉 **[`ULTRA_V5_RESILIENCE_AND_EXTENSIBILITY.md`](./ULTRA_V5_RESILIENCE_AND_EXTENSIBILITY.md)**  
+8. 👉 **[`ULTRA_V5_RESILIENCE_AND_EXTENSIBILITY.md`](./ULTRA_V5_RESILIENCE_AND_EXTENSIBILITY.md)**  
    *La spécification maîtresse V5 : Résilience avancée, Checkpoint distribué, Replay State-Machine, Sécurité Zero-Trust et Feuille de route Cloud SaaS Hybride.*
 
-6. 👉 **[`ULTRA_V4_IDE_FORENSIC_VALIDATION.md`](./ULTRA_V4_IDE_FORENSIC_VALIDATION.md)**  
+9. 👉 **[`ULTRA_V4_IDE_FORENSIC_VALIDATION.md`](./ULTRA_V4_IDE_FORENSIC_VALIDATION.md)**  
    *Le rapport d'audit forensique Ultra V4 : validation formelle de l'isolation multi-sessions, preuves binaires, analyse des race conditions et tests de non-régression.*
 
-7. 👉 **[`AUTONOMOUS_FORENSIC_AUDIT_REPORT.md`](./AUTONOMOUS_FORENSIC_AUDIT_REPORT.md)**  
-   *Le grand rapport forensique en 40 sections : Protocoles, Bases de données, Trajectoires, Streaming, Concurrence et Verdict Final.*
+10. 👉 **[`AUTONOMOUS_FORENSIC_AUDIT_REPORT.md`](./AUTONOMOUS_FORENSIC_AUDIT_REPORT.md)**  
+    *Le grand rapport forensique en 40 sections : Protocoles, Bases de données, Trajectoires, Streaming, Concurrence et Verdict Final.*
 
 ---
 

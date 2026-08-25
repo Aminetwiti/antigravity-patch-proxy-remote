@@ -129,6 +129,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
 
   List<CascadeSession> _sessions = const [];
   List<ProjectItem> _projects = const [];
+  bool _isIdeConnected = true;
   // Bug #15 : guard pour éviter le double fetch concurrent de sessions.
   bool _sessionsFetching = false;
   int _lastStateVersion = 0;
@@ -885,6 +886,19 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         }
         return;
       }
+
+      if (type == 'ide_status') {
+        final data = msg['data'];
+        if (data is Map) {
+          final running = data['running'] == true;
+          if (_isIdeConnected != running) {
+            setState(() {
+              _isIdeConnected = running;
+            });
+          }
+        }
+        return;
+      }
     });
   }
 
@@ -1128,6 +1142,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       sessions: _sessions,
       projects: _projects,
       isConnected: isConnected,
+      isIdeConnected: _isIdeConnected,
       onToggleConnection: () {
         if (isConnected) {
           _wsClient.disconnect();

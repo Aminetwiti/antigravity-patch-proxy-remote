@@ -137,6 +137,7 @@ class LeftSidebarDrawer extends StatefulWidget {
   final List<CascadeSession>? sessions;
   final List<ProjectItem>? projects;
   final bool isConnected;
+  final bool isIdeConnected;
   final VoidCallback onToggleConnection;
   final Function(String id)? onDeleteSession;
   final Function(String id)? onArchiveSession;
@@ -159,6 +160,7 @@ class LeftSidebarDrawer extends StatefulWidget {
     this.sessions,
     this.projects,
     this.isConnected = false,
+    this.isIdeConnected = true,
     required this.onToggleConnection,
     this.onDeleteSession,
     this.onArchiveSession,
@@ -507,8 +509,10 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                   AntigravityLogo.wordmark(
                     iconSize: 24,
                     title: 'Antigravity',
-                    subtitle: 'REMOTE',
                     showGlow: true,
+                    showDualStatus: true,
+                    isDaemonConnected: widget.isConnected,
+                    isIdeConnected: widget.isIdeConnected,
                   ),
                   const Spacer(),
                   _HeaderIconBtn(
@@ -1320,24 +1324,38 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                         children: [
                           if (widget.session.isIde) ...[
                             Container(
-                              margin: const EdgeInsets.only(right: 5),
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              margin: const EdgeInsets.only(right: 5.5),
+                              padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 0.8),
                               decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-                                borderRadius: BorderRadius.circular(3),
+                                color: isDark ? const Color(0xFF1E222A) : scheme.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(3.5),
                                 border: Border.all(
-                                  color: isDark ? const Color(0xFF38BDF8).withValues(alpha: 0.4) : const Color(0xFF0284C7).withValues(alpha: 0.4),
-                                  width: 0.8,
+                                  color: isDark ? const Color(0xFF38BDF8).withValues(alpha: 0.5) : const Color(0xFF0284C7).withValues(alpha: 0.4),
+                                  width: 0.6,
                                 ),
                               ),
-                              child: Text(
-                                'IDE',
-                                style: TextStyle(
-                                  fontSize: 8.5,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.4,
-                                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
-                                ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'IDE',
+                                    style: TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.4,
+                                      color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Container(
+                                    width: 4,
+                                    height: 4,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Color(0xFF38BDF8),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],

@@ -42,11 +42,6 @@ class ApprovalNotifier {
   String? _lastCallId;
   DateTime? _lastShownAt;
 
-  /// Notification « tâche démarrée » déjà montrée pour cette cascade — évite
-  /// de re-sonner quand le broadcast stream_start arrive sur plusieurs surfaces.
-  String? _lastTaskStartedCascade;
-  DateTime? _lastTaskStartedAt;
-
   /// Notification « tâche terminée » déjà montrée pour cette cascade — évite
   /// de re-sonner quand le broadcast stream_end arrive sur plusieurs surfaces.
   String? _lastTaskDoneCascade;
@@ -72,10 +67,6 @@ class ApprovalNotifier {
   void setEnabled(bool enabled) => _enabled = enabled;
 
   bool get isEnabled => _enabled;
-
-  /// ID stable de la notification « perte/rétablissement de connexion » :
-  /// le rétablissement remplace la perte (même id) au lieu d'empiler.
-  static const int _connectionNotificationId = 0x41C0EE; // 'CONNECT'
 
   Future<void> init() async {
     if (_initialized) return;
@@ -239,63 +230,13 @@ class ApprovalNotifier {
     debugPrint('[Notifier] approval notification -> $callId ($toolName)');
   }
 
-  /// Notifie le démarrage d'une tâche (stream_start / scheduled_task_event).
-  /// Discrète : canal d'importance par défaut, auto-annulée après 5 s.
-  /// Dédupliquée par cascade sur 30 s (même pattern que [notifyTaskEnded]).
+  /// Notifie le démarrage d'une tâche. (Désactivé : ne garder que les fins de travail).
   Future<void> notifyTaskStarted({
     required String cascadeId,
     required String prompt,
   }) async {
-    if (!_initialized || !_enabled) return;
-    final now = DateTime.now();
-    if (cascadeId == _lastTaskStartedCascade &&
-        _lastTaskStartedAt != null &&
-        now.difference(_lastTaskStartedAt!) < const Duration(seconds: 30)) {
-      return;
-    }
-    _lastTaskStartedCascade = cascadeId;
-    _lastTaskStartedAt = now;
-
-    const androidDetails = AndroidNotificationDetails(
-      'task_done',
-      'Tâches distantes',
-      channelDescription: 'Démarrage des tâches exécutées sur le PC hôte',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      visibility: NotificationVisibility.public,
-      playSound: true,
-      enableVibration: true,
-      icon: 'ic_service_notification',
-      color: Color(0xFF00B95C),
-      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
-    );
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-    final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
-
-    final plugin = _plugin;
-    if (plugin == null) return;
-
-    await plugin.show(
-      cascadeId.hashCode,
-      '🚀 Tâche démarrée',
-      prompt.length > 120 ? '${prompt.substring(0, 120)}…' : prompt,
-      details,
-      payload: payloadForTask(cascadeId),
-    );
-    debugPrint('[Notifier] task started notification -> $cascadeId');
-
-    // Auto-annulation différée (5 s) : c'est un démarrage, pas un événement
-    // critique — la notification ne doit pas s'accumuler dans le tiroir.
-    final notifId = cascadeId.hashCode;
-    _autoCancelTimers[notifId]?.cancel();
-    _autoCancelTimers[notifId] = Timer(const Duration(seconds: 5), () {
-      plugin.cancel(notifId);
-      _autoCancelTimers.remove(notifId);
-    });
+    // Désactivé : seule la notification de fin de travail de l'agent est conservée.
+    return;
   }
 
   /// Notifie la fin d'une tâche (stream_end) : terminée, erreur ou action
@@ -405,74 +346,16 @@ class ApprovalNotifier {
     });
   }
 
-  /// Notifie la perte de connexion au daemon (l'utilisateur n'est peut-être
-  /// pas sur l'app). Dédupliquée : on ne sonne qu'une fois par coupure.
+  /// Notifie la perte de connexion au daemon. (Désactivé : ne garder que les fins de travail de l'agent).
   Future<void> notifyConnectionLost() async {
-    if (!_initialized || !_enabled) return;
-
-    const androidDetails = AndroidNotificationDetails(
-      'connection_events',
-      'Connexion au PC hôte',
-      channelDescription: 'Perte et rétablissement de la connexion au daemon',
-      importance: Importance.high,
-      priority: Priority.high,
-      visibility: NotificationVisibility.public,
-      icon: 'ic_service_notification',
-      color: Color(0xFFFF5252),
-      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
-    );
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-    final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
-
-    final plugin = _plugin;
-    if (plugin == null) return;
-
-    await plugin.show(
-      _connectionNotificationId,
-      'Connexion perdue',
-      "L'application se reconnecte automatiquement au PC hôte…",
-      details,
-    );
-    debugPrint('[Notifier] connection lost notification');
+    // Désactivé : seule la notification de fin de travail de l'agent est conservée.
+    return;
   }
 
-  /// Notifie le rétablissement de la connexion (remplace la notification
-  /// « Connexion perdue » par un état rétabli).
+  /// Notifie le rétablissement de la connexion. (Désactivé : ne garder que les fins de travail de l'agent).
   Future<void> notifyConnectionRestored() async {
-    if (!_initialized || !_enabled) return;
-
-    const androidDetails = AndroidNotificationDetails(
-      'connection_events',
-      'Connexion au PC hôte',
-      channelDescription: 'Perte et rétablissement de la connexion au daemon',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      visibility: NotificationVisibility.public,
-      icon: 'ic_service_notification',
-      color: Color(0xFF00B95C),
-      largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
-    );
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-    final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
-
-    final plugin = _plugin;
-    if (plugin == null) return;
-
-    await plugin.show(
-      _connectionNotificationId,
-      'Connexion rétablie',
-      'Vous êtes de nouveau connecté au PC hôte.',
-      details,
-    );
-    debugPrint('[Notifier] connection restored notification');
+    // Désactivé : seule la notification de fin de travail de l'agent est conservée.
+    return;
   }
 
   /// Notifie l'utilisateur lorsqu'une question interactive (AskQuestion / QCM) requiert son choix.
