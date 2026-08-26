@@ -1,7 +1,7 @@
 {
   "name": "antigravity-patch-proxy",
   "productName": "Antigravity Patch Proxy",
-  "version": "3.4.1",
+  "version": "3.4.2",
 
   "description": "Antigravity Patch Proxy — Multi-Provider AI Model Proxy for Google Antigravity",
   "homepage": "https://antigravity.google",
@@ -21,6 +21,11 @@
     "doctor:repair": "node ag-doctor/bin/ag-doctor.js repair --yes",
     "doctor:models": "node ag-doctor/bin/ag-doctor.js models list",
     "doctor:logs": "node ag-doctor/bin/ag-doctor.js logs -f -n 100",
+    "doctor:ui:build": "cd ag-doctor-ui && npm run build",
+    "doctor:ui:installer": "cd ag-doctor-ui && npm run dist:installer",
+    "doctor:ui:portable": "cd ag-doctor-ui && npm run dist:portable",
+    "doctor:ui:dist": "cd ag-doctor-ui && npm run dist:all",
+
     "patch:version": "node scripts/patch-version.js",
     "patch:2.2": "node scripts/patch_2_2_1.js",
     "patch:2.3": "node scripts/patch_2_3.js",

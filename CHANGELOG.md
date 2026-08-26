@@ -5,6 +5,17 @@ All notable changes to Antigravity will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.2] - 2026-08-26
+
+### Fixed
+- **ag-doctor proxy stub self-heal**: the doctor's proxy check now resolves the real stub location (`ag-doctor/scripts/proxy/proxy-stub.js`); the documented stub auto-start silently never worked (it looked for a repo-root path that does not exist), so a closed Antigravity always reported *"proxy stub could not be started"*.
+- **`ag-doctor --help`**: prints usage and exits 0 instead of running the full diagnostics (flag parser consumed `--help` before the command switch saw it).
+- **Stale backup guard in `patch-version.js`**: surgery now version-checks `app.asar.bak` against the current asar; mismatched backups are refreshed from the current asar (official-update case) or surgery is refused with guidance when the current asar already carries the overlay — prevents rebuilding the overlay from a wrong-version base.
+
+### Changed
+- **Overlay fingerprint is version-aware**: `ag-doctor patch status` on a patched 2.3+ install now reports *"Patched overlay detected … injected by ag-doctor"* instead of mislabeling it as stock "2.2 family".
+- **MITM dead-proxy remediation**: when the system proxy points at a port that is not listening, the doctor recommends clearing it (`netsh winhttp reset proxy` / `ag-doctor mitm proxy-off`) before suggesting the MITM repoint, so WinHTTP system traffic is not routed through a dead or unintended proxy.
+
 ## [3.4.1] - 2026-08-24
 
 ### Added

@@ -7,11 +7,15 @@ import { DEFAULT_MITM_PORT } from '../core/config';
 
 /**
  * Locate the standalone proxy stub shipped with this repo.
- * ag-doctor/dist/checks → ../../../proxy-stub.js (repo layout); also accept
- * a proxy-stub.js in the current working directory as a fallback.
+ * The stub lives at ag-doctor/scripts/proxy/proxy-stub.js (same location
+ * `ag-doctor proxy start` uses). The old repo-root and cwd candidates never
+ * matched, so the doctor's stub self-heal silently always failed — keep them
+ * only as legacy fallbacks.
  */
-function findProxyStubScript(): string | null {
+export function findProxyStubScript(): string | null {
   const candidates = [
+    // ag-doctor/dist/checks → up 2 → ag-doctor/scripts/proxy/proxy-stub.js
+    path.resolve(__dirname, '..', '..', 'scripts', 'proxy', 'proxy-stub.js'),
     path.resolve(__dirname, '..', '..', '..', 'proxy-stub.js'),
     path.resolve(process.cwd(), 'proxy-stub.js'),
   ];

@@ -43,8 +43,10 @@ The `ag-doctor` tool checks three aspects of the MITM proxy:
 
 - **System proxy is on port 443 but MITM proxy listens on ${AG_PROXY_PORT:-51074}**
   *Status:* Error
-  *Meaning:* Your system proxy is pointing to the wrong port. The Antigravity binary patch bypasses this, but other apps on your system will fail to connect to the internet.
-  *Fix:* Run an elevated PowerShell and execute `netsh winhttp set proxy proxy-server="127.0.0.1:${AG_PROXY_PORT:-51074}"` (or use the `repair-all` script in the UI).
+  *Meaning:* Your system proxy is pointing to the wrong port. The Antigravity binary patch bypasses this, but other apps on your system will route through the misconfigured port.
+  *Fix:*
+  - If the configured proxy port is **dead** (interception test failed — the doctor's hint now says so), clear it: elevated `netsh winhttp reset proxy`, or `ag-doctor mitm proxy-off`. With the binary patch active, MITM is bypassed by design, so no system proxy is needed.
+  - If you actually intend HTTPS interception, repoint instead: elevated `netsh winhttp set proxy proxy-server="127.0.0.1:${AG_PROXY_PORT:-51074}"` (or use the `repair-all` script in the UI).
 
 ## Repair Scripts
 
