@@ -260,6 +260,30 @@ export function inspectOverlayPatchFingerprint(installDir?: string): OverlayFing
       signals.push('overlay-helper-modules-missing');
     }
 
+    // App version (from the asar's own package.json) disambiguates a patched
+    // overlay from genuine stock 2.2: our surgery injects the exact same
+    // proxy tree + proxy-runner footprint that stock 2.2 ships, so without
+    // the version a patched 2.5+/2.6+/2.10+ install is mislabeled "2.2 family".
+    let appVersion: string | null = null;
+    try {
+      const raw = asar.extractFile(asarPath, 'package.json');
+      const pkg = JSON.parse(raw.toString('utf8'));
+      if (pkg && typeof pkg.version === 'string') appVersion = pkg.version;
+    } catch {
+      // Version read failed — fall back to the tree-only heuristic below.
+    }
+    const isGenuine22 = appVersion !== null && appVersion.startsWith('2.2.');
+
+    if ((hasProxyTree || hasProxyModelLoader || hasProxyRegistry) && !isGenuine22 && appVersion !== null) {
+      return {
+        detected: true,
+        range: '2.3.0+',
+        confidence: 'high',
+        reason: `Patched overlay detected (app v${appVersion}): proxy tree and proxy-runner present — these modules are injected by ag-doctor, not stock ${appVersion}.`,
+        signals: [...signals, 'patched-overlay-present'],
+      };
+    }
+
     if (hasProxyTree || hasProxyModelLoader || hasProxyRegistry) {
       return {
         detected: true,
