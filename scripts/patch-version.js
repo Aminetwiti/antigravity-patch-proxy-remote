@@ -52,6 +52,60 @@ if (!fs.existsSync(actualAsarIn)) {
   process.exit(1);
 }
 
+/** Cheaply read the Antigravity version from an asar's package.json. */
+function readAsarVersion(asarFile) {
+  try {
+    const raw = asar.extractFile(asarFile, 'package.json');
+    const pkg = JSON.parse(raw.toString('utf8'));
+    return pkg && typeof pkg.version === 'string' ? pkg.version : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** True when the asar already contains the injected proxy-runner overlay. */
+function asarHasOverlay(asarFile) {
+  try {
+    const listFn = asar.listPackage ?? (asar.default || {}).listPackage;
+    if (typeof listFn !== 'function') return false;
+    // @electron/asar v4 lists entries with backslashes on Windows (e.g.
+    // "\proxy-runner.js") — normalize to forward slashes like ag-doctor's
+    // normalizeAsarEntry before matching.
+    return (listFn(asarFile) || []).some((e) =>
+      String(e).replace(/\\/g, '/').replace(/^\//, '').startsWith('proxy-runner.js'),
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Guard: when surgery mode in==out falls back to `.bak`, the backup must be
+// from the SAME Antigravity version as the current asar. An official update
+// replaces app.asar but can leave an old `.bak` behind — rebuilding the
+// overlay from that stale base would produce a wrong-version app.asar.
+if (actualAsarIn !== asarIn) {
+  const currentVersion = readAsarVersion(asarIn);
+  const bakVersion = readAsarVersion(actualAsarIn);
+  if (currentVersion && bakVersion && currentVersion !== bakVersion) {
+    if (asarHasOverlay(asarIn)) {
+      console.error(`[patch-version] app.asar.bak is from Antigravity ${bakVersion} but the current ` +
+        `${path.basename(asarIn)} is ${currentVersion} AND already contains the proxy overlay.`);
+      console.error(`[patch-version] Refusing to overwrite the backup. Restore a pristine ` +
+        `${currentVersion} asar (e.g. reinstall or ag-doctor patch restore) and re-run.`);
+      process.exit(1);
+    }
+    console.warn(`[patch-version] app.asar.bak is from Antigravity ${bakVersion} but the current ` +
+      `${path.basename(asarIn)} is ${currentVersion} (official update?). Refreshing the backup from ` +
+      `the current asar so the overlay uses the right base...`);
+    fs.copyFileSync(asarIn, actualAsarIn);
+    const curUnpacked = `${asarIn}.unpacked`;
+    const bakUnpacked = `${actualAsarIn}.unpacked`;
+    if (fs.existsSync(bakUnpacked)) fs.rmSync(bakUnpacked, { recursive: true, force: true });
+    if (fs.existsSync(curUnpacked)) fs.cpSync(curUnpacked, bakUnpacked, { recursive: true });
+    console.warn(`[patch-version] refreshed ${actualAsarIn} from current asar (v${currentVersion}).`);
+  }
+}
+
 // Ensure .unpacked folder exists for actualAsarIn if app.asar.unpacked exists
 const unpackedForIn = `${actualAsarIn}.unpacked`;
 if (!fs.existsSync(unpackedForIn)) {
