@@ -1,6 +1,6 @@
 {
   "name": "ag-doctor-ui",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "description": "Premium Electron UI for the ag-doctor CLI",
   "main": "dist/main.js",
   "scripts": {
