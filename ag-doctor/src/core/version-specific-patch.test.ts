@@ -5,11 +5,13 @@ const {
   mockReadFileSync,
   mockGetAppAsarPath,
   mockListPackage,
+  mockExtractFile,
 } = vi.hoisted(() => ({
   mockExistsSync: vi.fn(),
   mockReadFileSync: vi.fn(),
   mockGetAppAsarPath: vi.fn(),
   mockListPackage: vi.fn(),
+  mockExtractFile: vi.fn(),
 }));
 
 vi.mock('fs', () => ({
@@ -46,6 +48,7 @@ require.cache[electronAsarPath] = {
   exports: {
     ...electronAsarReal,
     listPackage: (...args: any[]) => mockListPackage(...args),
+    extractFile: (...args: any[]) => mockExtractFile(...args),
   },
   // @ts-ignore
   children: [],
@@ -68,6 +71,10 @@ describe('inspectOverlayPatchFingerprint', () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(Buffer.from(''));
     mockListPackage.mockReturnValue([]);
+    // Default: package.json unreadable → version unknown → tree-only heuristic.
+    mockExtractFile.mockImplementation(() => {
+      throw new Error('no package.json');
+    });
   });
 
   it('returns unavailable when app.asar is missing', () => {
@@ -163,6 +170,42 @@ describe('inspectOverlayPatchFingerprint', () => {
       reason: 'JS overlay fingerprint is inconclusive for this installation.',
       signals: ['proxy-runner-present'],
     });
+  });
+
+  it('labels a patched overlay on a 2.3+ install as injected, not stock 2.2', () => {
+    mockListPackage.mockReturnValue([
+      'dist/proxy/modelLoader.js',
+      'dist/proxy/registry.js',
+      'proxy-runner.js',
+      'dist/cryptoStore.js',
+    ]);
+    mockExtractFile.mockReturnValue(Buffer.from(JSON.stringify({ name: 'antigravity', version: '2.10.0' })));
+
+    const result = inspectOverlayPatchFingerprint('C:\\Antigravity');
+
+    expect(result.detected).toBe(true);
+    expect(result.range).toBe('2.3.0+');
+    expect(result.confidence).toBe('high');
+    expect(result.reason).toContain('injected by ag-doctor');
+    expect(result.signals).toEqual(
+      expect.arrayContaining(['proxy-tree-present', 'proxy-runner-present', 'patched-overlay-present']),
+    );
+  });
+
+  it('keeps the stock 2.2 label when the app version really is 2.2.x', () => {
+    mockListPackage.mockReturnValue([
+      'dist/proxy/modelLoader.js',
+      'dist/proxy/registry.js',
+      'proxy-runner.js',
+    ]);
+    mockExtractFile.mockReturnValue(Buffer.from(JSON.stringify({ name: 'antigravity', version: '2.2.5' })));
+
+    const result = inspectOverlayPatchFingerprint('C:\\Antigravity');
+
+    expect(result.detected).toBe(true);
+    expect(result.range).toBe('2.2.0 - 2.2.x');
+    expect(result.reason).toContain('proxy tree and proxy-runner are present');
+    expect(result.signals).not.toContain('patched-overlay-present');
   });
 
   it('returns a low-confidence error when app.asar inspection throws', () => {

@@ -203,12 +203,12 @@ jobs:
           npm install
           npm run build
 
-      - name: Package ag-doctor-ui Windows Executable
+      - name: Package ag-doctor-ui Windows Executables (Installer & Portable)
         working-directory: ag-doctor-ui
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx electron-builder --win portable --publish never
+          npx electron-builder --win nsis portable --publish never
 
       - name: Build & Package Antigravity Remote Daemon
         working-directory: remote/antigravity-remote-daemon
@@ -224,7 +224,15 @@ jobs:
         run: |
           mkdir -p release-artifacts/desktop
           cp ag-doctor-ui/release/*.exe release-artifacts/desktop/ || true
-          PORTABLE_EXE=$(ls ag-doctor-ui/release/*.exe 2>/dev/null | head -1)
+          # Create direct ag-doctor-installer.exe and ag-doctor-ui.exe aliases
+          SETUP_EXE=$(ls ag-doctor-ui/release/*Setup*.exe 2>/dev/null | head -1)
+          if [ -f "$SETUP_EXE" ]; then
+            cp "$SETUP_EXE" release-artifacts/desktop/ag-doctor-installer.exe
+          fi
+          PORTABLE_EXE=$(ls ag-doctor-ui/release/*portable*.exe 2>/dev/null | head -1)
+          if [ -z "$PORTABLE_EXE" ]; then
+            PORTABLE_EXE=$(ls ag-doctor-ui/release/*.exe 2>/dev/null | head -1)
+          fi
           if [ -f "$PORTABLE_EXE" ]; then
             cp "$PORTABLE_EXE" release-artifacts/desktop/ag-doctor-ui.exe
           fi
@@ -233,6 +241,8 @@ jobs:
           if [ -f "$DAEMON_EXE" ]; then
             cp "$DAEMON_EXE" release-artifacts/desktop/antigravity-remote-daemon.exe
           fi
+
+
 
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4

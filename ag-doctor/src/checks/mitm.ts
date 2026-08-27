@@ -88,16 +88,28 @@ export async function checkMitm(): Promise<CheckResult> {
       };
     }
     if (portMismatch) {
+      // The system proxy points at a port that is NOT the MITM port. If the
+      // interception test failed (nothing listening there), pointing it at the
+      // MITM port would route ALL WinHTTP system traffic (Windows Update etc.)
+      // through the local proxy — the safe fix is to clear it, which is also
+      // the correct end-state for binary-patched setups (MITM is bypassed).
+      const proxyIsDead = s.interceptionOk === false;
+      const hint = proxyIsDead
+        ? `\n\nThe configured proxy port is NOT listening (interception test failed), so the\n` +
+          `system proxy is dead weight. With the binary patch, MITM is not required — clear it:\n` +
+          `  netsh winhttp reset proxy\n` +
+          `(or run: ag-doctor mitm proxy-off)\n` +
+          `Point it at the MITM port only if you actually intend HTTPS interception:\n` +
+          `  netsh winhttp set proxy proxy-server="127.0.0.1:${DEFAULT_MITM_PORT}"`
+        : `\n\nFix: run an elevated PowerShell and execute:\n` +
+          `  netsh winhttp set proxy proxy-server="127.0.0.1:${DEFAULT_MITM_PORT}"`;
       return {
         id: 'mitm',
         title: 'MITM (HTTPS interception)',
         status: 'error',
         message: `System proxy is on port ${s.proxyPort} but MITM proxy listens on ${DEFAULT_MITM_PORT}`,
-        details:
-          details +
-          `\n\nFix: run an elevated PowerShell and execute:\n` +
-          `  netsh winhttp set proxy proxy-server="127.0.0.1:${DEFAULT_MITM_PORT}"`,
-        fixable: false,
+        details: details + hint,
+        fixable: proxyIsDead ? 'run `ag-doctor mitm proxy-off` to clear the dead system proxy' : false,
         data: s,
       };
     }

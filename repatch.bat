@@ -119,11 +119,15 @@ if errorlevel 1 (
 REM -- Launch the detected app
 echo.
 echo ============================================================
-if "%TARGET%"=="IDE" (
+REM TARGET is set inside the if-exist block above, and the else-branch
+REM echo must not contain unescaped parentheses (cmd parses both branches
+REM of an if/else as one block -- "(classic)" caused "... was unexpected
+REM at this time." and broke the launch step).
+if "!TARGET!"=="IDE" (
   echo  Launching Antigravity IDE...
   start "" "%AG_IDE_EXE%"
 ) else (
-  echo  Launching Antigravity (classic)...
+  echo  Launching Antigravity classic...
   start "" "%AG_CLASSIC_EXE%"
 )
 

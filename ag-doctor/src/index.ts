@@ -188,6 +188,14 @@ export async function main(argv: string[]): Promise<number> {
   const ctx = buildContext(parsed);
   const [cmd, sub, ...rest] = parsed.command;
 
+  // `--help` / `-h` are parsed as option flags (parser.ts), so they never
+  // reach the `case 'help'` branch below. Handle them before anything else —
+  // otherwise `ag-doctor --help` runs the full doctor.
+  if (parsed.options.help || parsed.options.h) {
+    console.log(USAGE);
+    return 0;
+  }
+
   // Auto-elevate: if --auto-elevate is set and we're not admin, re-launch
   const wantElevate = Boolean(parsed.options['auto-elevate'] || parsed.options.E);
   if (wantElevate && !isAdmin()) {

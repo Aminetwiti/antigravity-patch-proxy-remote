@@ -1,6 +1,6 @@
 {
   "name": "ag-doctor-ui",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "description": "Premium Electron UI for the ag-doctor CLI",
   "main": "dist/main.js",
   "scripts": {
@@ -11,8 +11,10 @@
     "start": "npm run build && electron .",
     "dev": "tsc -p tsconfig.json --watch & electron .",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --win nsis portable",
+    "dist:installer": "npm run build && electron-builder --win nsis",
     "dist:portable": "npm run build && electron-builder --win portable",
+    "dist:all": "npm run build && electron-builder --win nsis portable",
     "dist:dir": "npm run build && electron-builder --dir",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -38,7 +40,7 @@
   },
   "build": {
     "appId": "dev.antigravity.doctor-ui",
-    "productName": "ag-doctor",
+    "productName": "Antigravity Doctor",
     "publish": {
       "provider": "github",
       "owner": "Aminetwiti",
@@ -64,15 +66,28 @@
       },
       {
         "from": "../ag-doctor/node_modules",
-        "to": "ag-doctor/node_modules"
+        "to": "ag-doctor/node_modules",
+        "filter": [
+          "**/*",
+          "!**/.bin",
+          "!**/.bin/**/*",
+          "!**/*.map"
+        ]
       },
       {
         "from": "../ag-doctor/package.json",
         "to": "ag-doctor/package.json"
       }
     ],
+
     "win": {
       "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
         {
           "target": "portable",
           "arch": [
@@ -80,6 +95,18 @@
           ]
         }
       ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Antigravity Doctor",
+      "artifactName": "ag-doctor-${version}-Setup.${ext}"
+    },
+    "portable": {
       "artifactName": "ag-doctor-${version}-portable.${ext}"
     },
     "mac": {
