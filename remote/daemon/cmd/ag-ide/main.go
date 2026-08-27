@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -55,6 +56,8 @@ func main() {
 		cascadeID := os.Args[2]
 		prompt := os.Args[3]
 		handleChat(cascadeID, prompt)
+	case "doctor", "health", "check":
+		handleDoctor()
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -67,6 +70,7 @@ func main() {
 func printUsage() {
 	fmt.Println("🛰️  ag-ide — Contrôleur CLI Universel pour Antigravity IDE")
 	fmt.Println("\nUsage:")
+	fmt.Println("  ag-ide doctor                    Diagnostiquer l'état complet (IDE, LS, Proxy, Daemon)")
 	fmt.Println("  ag-ide instances                 Lister les instances Language Server actives et leurs ports")
 	fmt.Println("  ag-ide workspaces                Lister les espaces de travail ouverts (storage.json)")
 	fmt.Println("  ag-ide sessions                  Lister les sessions de chat et leurs métadonnées")
@@ -74,6 +78,57 @@ func printUsage() {
 	fmt.Println("  ag-ide focus <cascade-id>        Ouvrir et afficher la session dans la fenêtre Antigravity IDE")
 	fmt.Println("  ag-ide create [ws-path] [model]  Créer une nouvelle session de chat pour un projet")
 	fmt.Println("  ag-ide chat <cascade-id> <text>  Envoyer un prompt et streamer la réponse en direct")
+}
+
+func handleDoctor() {
+	fmt.Println("🩺 Exécution du diagnostic Antigravity IDE & Remote...")
+	fmt.Println(strings.Repeat("─", 60))
+
+	// 1. Détection Language Server
+	instances, err := ide.DiscoverInstances()
+	if err == nil && len(instances) > 0 {
+		fmt.Printf("✅ Language Server : %d instance(s) active(s)\n", len(instances))
+		for _, inst := range instances {
+			fmt.Printf("   • PID: %d | Port ConnectRPC: :%d | AppDir: %s\n", inst.PID, inst.Port, inst.AppDataDir)
+		}
+	} else {
+		fmt.Println("⚠️  Language Server : Aucune instance IDE active détectée")
+	}
+
+	// 2. Workspaces
+	workspaces, err := ide.ListWorkspaces()
+	if err == nil && len(workspaces) > 0 {
+		fmt.Printf("✅ Workspaces : %d configuré(s)\n", len(workspaces))
+		for _, ws := range workspaces {
+			if ws.IsActive {
+				fmt.Printf("   👉 Actif: %s (%s)\n", ws.Name, ws.Path)
+			}
+		}
+	} else {
+		fmt.Println("ℹ️  Workspaces : Aucun workspace ouvert")
+	}
+
+	// 3. Sessions SQLite
+	sessions, err := ide.ListSessions()
+	if err == nil {
+		fmt.Printf("✅ Trajectoires SQLite : %d session(s) persistée(s)\n", len(sessions))
+	} else {
+		fmt.Printf("⚠️  Trajectoires SQLite : Erreur (%v)\n", err)
+	}
+
+	// 4. Test Connectivité Proxy Local :51074
+	fmt.Print("🔍 Test Patch Proxy (:51074)... ")
+	client := &http.Client{Timeout: 1 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:51074/metrics")
+	if err == nil && resp.StatusCode == 200 {
+		resp.Body.Close()
+		fmt.Println("✅ En ligne (:51074)")
+	} else {
+		fmt.Println("ℹ️  Hors ligne ou non démarré (optionnel)")
+	}
+
+	fmt.Println(strings.Repeat("─", 60))
+	fmt.Println("🎯 Diagnostic terminé.")
 }
 
 func handleInstances() {

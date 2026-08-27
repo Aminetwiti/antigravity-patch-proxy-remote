@@ -76,3 +76,76 @@ class StatusDotBadge extends StatelessWidget {
     return badge;
   }
 }
+
+/// Animated 3-dots indicator representing an agent waiting / background task running / pending user action.
+class ThreeDotsWaiting extends StatefulWidget {
+  final Color? color;
+  final double size;
+  final double spacing;
+
+  const ThreeDotsWaiting({
+    super.key,
+    this.color,
+    this.size = 3.5,
+    this.spacing = 2.0,
+  });
+
+  @override
+  State<ThreeDotsWaiting> createState() => _ThreeDotsWaitingState();
+}
+
+class _ThreeDotsWaitingState extends State<ThreeDotsWaiting>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dotColor = widget.color ?? const Color(0xFFE5A93C);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(3, (index) {
+        return AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final progress = (_controller.value - (index * 0.18)) % 1.0;
+            final normalized = (progress < 0 ? progress + 1.0 : progress);
+            final wave = (0.5 - (normalized - 0.5).abs()) * 2; // 0.0 -> 1.0 -> 0.0
+            final alpha = 0.35 + 0.65 * wave;
+            final scale = 0.75 + 0.35 * wave;
+
+            return Container(
+              margin: EdgeInsets.symmetric(horizontal: widget.spacing / 2),
+              child: Transform.scale(
+                scale: scale,
+                child: Container(
+                  width: widget.size,
+                  height: widget.size,
+                  decoration: BoxDecoration(
+                    color: dotColor.withValues(alpha: alpha.clamp(0.2, 1.0)),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: dotColor.withValues(alpha: (alpha * 0.4).clamp(0.0, 0.6)),
+                        blurRadius: 2,
+                        spreadRadius: 0.2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      }),
+    );
+  }
+}

@@ -4707,6 +4707,7 @@ class _MessageBubble extends StatelessWidget {
                     initiallyExpanded: isThoughtExpanded,
                     onToggleExpand: onToggleThought,
                     onOpenArtifact: onOpenArtifact,
+                    onStop: onStop,
                   ),
                 ] else if (message.segments[segIdx].type == ChatSegmentType.text &&
                     message.segments[segIdx].content.trim().isNotEmpty) ...[
@@ -4765,6 +4766,7 @@ class _MessageBubble extends StatelessWidget {
                   initiallyExpanded: isThoughtExpanded,
                   onToggleExpand: onToggleThought,
                   onOpenArtifact: onOpenArtifact,
+                  onStop: onStop,
                 ),
               ],
               if (hasContent || (message.isStreaming && message.text.isNotEmpty))

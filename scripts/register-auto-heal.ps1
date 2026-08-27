@@ -24,5 +24,17 @@ WshShell.Run "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Byp
 "@
 [System.IO.File]::WriteAllText($vbsPath, $vbsContent, [System.Text.Encoding]::ASCII)
 
+$watchdogScript = Join-Path $scriptDir "supervise-proxy.ps1"
+if (Test-Path $watchdogScript) {
+    $watchdogVbs = Join-Path $startupDir "AntigravityProxyWatchdog.vbs"
+    $watchdogVbsContent = @"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File " & Chr(34) & "$watchdogScript" & Chr(34) & " -Loop", 0, False
+"@
+    [System.IO.File]::WriteAllText($watchdogVbs, $watchdogVbsContent, [System.Text.Encoding]::ASCII)
+    Write-Host "Proxy watchdog enregistré: $watchdogVbs" -ForegroundColor Green
+}
+
 Write-Host "Auto-healer enregistré: $vbsPath" -ForegroundColor Green
-Write-Host "  -> scripts/auto-heal.ps1 sera lancé à chaque ouverture de session."
+Write-Host "  -> scripts/auto-heal.ps1 & supervise-proxy.ps1 seront lancés à chaque ouverture de session."
+

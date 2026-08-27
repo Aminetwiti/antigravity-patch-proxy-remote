@@ -8,6 +8,7 @@ import '../../core/protocol/daemon_api.dart';
 import '../../widgets/project_selector_bottom_sheet.dart';
 import '../../widgets/antigravity_logo.dart';
 import '../../widgets/antigravity_spinning_arc.dart';
+import '../../widgets/status_dot_badge.dart';
 import 'package:mobile/theme/app_colors.dart';
 import 'display_options.dart';
 
@@ -1264,8 +1265,9 @@ class _SessionRowItemState extends State<_SessionRowItem> {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = widget.isSelected;
-    final isRunning = widget.session.isRunning;
-    final isUnread = (widget.isUnread || widget.session.hasUnread) && !isSelected && !isRunning;
+    final isWaiting = widget.session.isWaiting;
+    final isRunning = widget.session.isRunning && !isWaiting;
+    final isUnread = (widget.isUnread || widget.session.hasUnread) && !isSelected && !isRunning && !isWaiting;
     final rawTitle = widget.session.title.trim().isNotEmpty
         ? widget.session.title.trim()
         : 'Nouvelle conversation';
@@ -1430,31 +1432,15 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                 : (isDark ? const Color(0xFF8E929E) : scheme.outline),
                           ),
                         )
-                      : widget.session.isBackgroundTask
+                      : isWaiting
                           ? Tooltip(
-                              key: const ValueKey('background_task'),
-                              message: 'Tâche d\'arrière-plan en cours',
-                              child: AntigravitySpinningArc(
-                                size: 13.5,
-                                color: isSelected
-                                    ? const Color(0xFF8AB4F8)
-                                    : const Color(0xFF669DF6),
-                              ),
+                              key: const ValueKey('waiting'),
+                              message: widget.session.isBackgroundTask
+                                  ? 'Tâche d\'arrière-plan en cours (en attente)'
+                                  : 'En attente…',
+                              child: const ThreeDotsWaiting(),
                             )
-                          : widget.session.isWaitingAction
-                              ? Tooltip(
-                                  key: const ValueKey('waiting'),
-                                  message: 'Action ou approbation requise',
-                                  child: Container(
-                                    width: 6,
-                                    height: 6,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFFE5A93C),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                )
-                              : widget.session.isError
+                      : widget.session.isError
                                   ? Tooltip(
                                       key: const ValueKey('error'),
                                       message: 'Erreur',

@@ -140,6 +140,18 @@ class CascadeSession {
     return st.contains('WAIT') || st.contains('APPROVAL') || st.contains('QUESTION') || st.contains('USER_ACTION');
   }
 
+  bool get isWaiting {
+    final st = status.toUpperCase();
+    return isWaitingAction ||
+        isBackgroundTask ||
+        st.contains('WAIT') ||
+        st.contains('APPROVAL') ||
+        st.contains('QUESTION') ||
+        st.contains('USER_ACTION') ||
+        st.contains('PAUSE') ||
+        st.contains('PENDING');
+  }
+
   bool get isError {
     final st = status.toUpperCase();
     return st.contains('ERROR') || st.contains('FAIL');

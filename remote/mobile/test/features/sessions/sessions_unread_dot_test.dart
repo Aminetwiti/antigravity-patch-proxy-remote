@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/protocol/messages.dart';
 import 'package:mobile/features/sessions/sessions_list.dart';
 import 'package:mobile/features/sessions/conversation_history_screen.dart';
+import 'package:mobile/widgets/status_dot_badge.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -101,5 +102,46 @@ void main() {
     expect(find.byTooltip('Session terminée — non lue'), findsOneWidget);
     // The read session sess-2 shows its relative time
     expect(find.text('2d'), findsOneWidget);
+  });
+
+  testWidgets('LeftSidebarDrawer and ConversationHistoryScreen render ThreeDotsWaiting for waiting / background task sessions', (WidgetTester tester) async {
+    final sessions = [
+      const CascadeSession(
+        id: 'sess-waiting-1',
+        workspacePath: 'c:\\repo',
+        title: 'Task Running in Background',
+        status: 'CASCADE_STATUS_WAITING_FOR_USER_ACTION',
+        time: 'just now',
+        stepCount: 3,
+        hasUnread: false,
+      ),
+      const CascadeSession(
+        id: 'sess-waiting-2',
+        workspacePath: 'c:\\repo',
+        title: 'Background Runner Session',
+        status: 'CASCADE_STATUS_BACKGROUND_TASK',
+        time: '2m',
+        stepCount: 1,
+        hasUnread: false,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LeftSidebarDrawer(
+            activeSessionId: 'other-session',
+            sessions: sessions,
+            onSessionSelected: (_) {},
+            onNewConversation: () {},
+            onToggleConnection: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Both waiting sessions render ThreeDotsWaiting
+    expect(find.byType(ThreeDotsWaiting), findsNWidgets(2));
   });
 }

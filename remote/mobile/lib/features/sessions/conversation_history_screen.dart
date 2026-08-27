@@ -8,6 +8,7 @@ import 'package:mobile/core/protocol/session_parser.dart';
 import 'package:mobile/core/protocol/workspace_path.dart';
 import 'package:mobile/theme/app_colors.dart';
 import '../../widgets/antigravity_spinning_arc.dart';
+import '../../widgets/status_dot_badge.dart';
 import 'display_options.dart';
 
 /// Écran Conversation History (Antigravity 2.0)
@@ -757,14 +758,19 @@ class _ConversationHistoryRow extends StatelessWidget {
                   const SizedBox(width: 8),
                 ],
 
-                // Trailing Status: Active blue dot, Spinner, or relative time
-                if (isRunning)
+                // Trailing Status: Active blue dot, Spinner, 3 dots waiting, or relative time
+                if (isRunning && !session.isWaiting)
                   Tooltip(
                     message: 'En cours d\'exécution',
                     child: AntigravitySpinningArc(
                       size: 13.5,
                       color: isActive ? scheme.primary : (isDark ? const Color(0xFF8E929E) : scheme.outline),
                     ),
+                  )
+                else if (session.isWaiting)
+                  const Tooltip(
+                    message: 'En attente…',
+                    child: ThreeDotsWaiting(),
                   )
                 else if (session.hasUnread && !isActive)
                   Tooltip(

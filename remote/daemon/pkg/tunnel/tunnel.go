@@ -252,7 +252,7 @@ func (m *Manager) tryPinggy(localPort int) (string, error) {
 
 func (m *Manager) startCloudflare(binPath string, localPort int) (string, error) {
 	targetURL := fmt.Sprintf("http://127.0.0.1:%d", localPort)
-	cmd := execCommand(binPath, "tunnel", "--url", targetURL)
+	cmd := execCommand(binPath, "tunnel", "--no-autoupdate", "--url", targetURL)
 	m.cmd = cmd
 
 	stdout, err := cmd.StdoutPipe()
@@ -288,6 +288,7 @@ func (m *Manager) startCloudflare(binPath string, localPort int) (string, error)
 
 	select {
 	case url := <-urlChan:
+		m.supervise(cmd, localPort)
 		return url, nil
 	case <-time.After(30 * time.Second):
 		cmd.Process.Kill()
@@ -299,7 +300,10 @@ func (m *Manager) startPinggy(binPath string, localPort int) (string, error) {
 	args := []string{
 		"-p", "443",
 		"-o", "StrictHostKeyChecking=no",
-		"-o", "ServerAliveInterval=30",
+		"-o", "ServerAliveInterval=15",
+		"-o", "ServerAliveCountMax=3",
+		"-o", "ExitOnForwardFailure=yes",
+		"-o", "TCPKeepAlive=yes",
 		"-R", fmt.Sprintf("0:127.0.0.1:%d", localPort),
 		"a.pinggy.io",
 	}
@@ -341,11 +345,40 @@ func (m *Manager) startPinggy(binPath string, localPort int) (string, error) {
 
 	select {
 	case url := <-urlChan:
+		m.supervise(cmd, localPort)
 		return url, nil
 	case <-time.After(15 * time.Second):
 		cmd.Process.Kill()
 		return "", fmt.Errorf("timeout d'attente de l'URL Pinggy")
 	}
+}
+
+func (m *Manager) supervise(cmd *exec.Cmd, localPort int) {
+	go func() {
+		_ = cmd.Wait()
+		m.mu.Lock()
+		select {
+		case <-m.stopChan:
+			m.mu.Unlock()
+			return
+		default:
+		}
+		m.cmd = nil
+		m.mu.Unlock()
+
+		time.Sleep(3 * time.Second)
+
+		m.mu.Lock()
+		select {
+		case <-m.stopChan:
+			m.mu.Unlock()
+			return
+		default:
+		}
+		m.mu.Unlock()
+
+		_, _ = m.StartAutoTunnel(localPort)
+	}()
 }
 
 func (m *Manager) startPangolin(binPath string, localPort int) (string, error) {

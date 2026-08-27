@@ -663,13 +663,13 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
   Widget _buildLiveAgentHeader(ColorScheme scheme, bool isDark) {
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6.5),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF14171F) : scheme.primaryContainer.withValues(alpha: 0.25),
+        color: isDark ? const Color(0xFF12151D) : scheme.primaryContainer.withValues(alpha: 0.25),
         gradient: AppGradients.cardCool(isDark: isDark),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isDark ? const Color(0xFF3186FF).withValues(alpha: 0.3) : scheme.primary.withValues(alpha: 0.25),
+          color: isDark ? const Color(0xFF3186FF).withValues(alpha: 0.35) : scheme.primary.withValues(alpha: 0.25),
           width: 0.8,
         ),
       ),
@@ -693,17 +693,21 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                 ),
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1F2430) : scheme.surfaceContainerHighest,
+                    color: isDark ? const Color(0xFF1C2230) : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF2E3A52) : scheme.outlineVariant.withValues(alpha: 0.5),
+                      width: 0.5,
+                    ),
                   ),
                   child: Text(
                     _formatDuration(_secondsElapsed),
                     style: TextStyle(
                       fontSize: 10.5,
                       fontFamily: 'monospace',
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                       color: isDark ? const Color(0xFF9E9FA8) : scheme.onSurfaceVariant,
                     ),
                   ),
@@ -726,6 +730,49 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
               ],
             ),
           ),
+          if (widget.isStreaming && widget.onStop != null) ...[
+            const SizedBox(width: 6),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  widget.onStop?.call();
+                },
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF3B181E) : const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFFEF4444).withValues(alpha: 0.5) : const Color(0xFFDC2626).withValues(alpha: 0.4),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.stop_rounded,
+                        size: 11,
+                        color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Stop',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1127,9 +1174,28 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     const SizedBox(width: 5),
                   ],
 
-                  // File Icon Badge (Desktop 🔵 icon) for file actions
-                  if (item.type == ExecutionStepType.fileEdit ||
-                      item.type == ExecutionStepType.fileAnalysis) ...[
+                  // File Edit Badge (🟢 emerald pencil icon)
+                  if (item.type == ExecutionStepType.fileEdit) ...[
+                    Container(
+                      margin: const EdgeInsets.only(right: 5),
+                      width: 13,
+                      height: 13,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF10B981),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.edit_note_rounded,
+                          size: 9,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // File Read Badge (🔵 sky blue document icon)
+                  if (item.type == ExecutionStepType.fileAnalysis) ...[
                     Container(
                       margin: const EdgeInsets.only(right: 5),
                       width: 13,
@@ -1168,7 +1234,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     ),
                   ],
 
-                  // Subagent Icon Badge (🟣 purple icon)
+                  // Subagent Icon Badge (🟣 purple agent icon)
                   if (item.type == ExecutionStepType.subagent) ...[
                     Container(
                       margin: const EdgeInsets.only(right: 5),
@@ -1180,7 +1246,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       ),
                       child: const Center(
                         child: Icon(
-                          Icons.hub_rounded,
+                          Icons.smart_toy_rounded,
                           size: 8.5,
                           color: Colors.white,
                         ),
@@ -1201,6 +1267,46 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       child: const Center(
                         child: Icon(
                           Icons.terminal_rounded,
+                          size: 8.5,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // Timer Icon Badge (🟠 amber timer icon)
+                  if (item.type == ExecutionStepType.timer) ...[
+                    Container(
+                      margin: const EdgeInsets.only(right: 5),
+                      width: 13,
+                      height: 13,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEA580C),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.timer_outlined,
+                          size: 8.5,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // Thought / Reasoning Icon Badge (🟡 gold lightbulb icon)
+                  if (item.type == ExecutionStepType.thought) ...[
+                    Container(
+                      margin: const EdgeInsets.only(right: 5),
+                      width: 13,
+                      height: 13,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF59E0B),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.lightbulb_rounded,
                           size: 8.5,
                           color: Colors.white,
                         ),

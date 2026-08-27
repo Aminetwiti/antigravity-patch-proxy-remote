@@ -37,13 +37,18 @@ class SessionParser {
           if (id is String && id.isNotEmpty) {
             final stepCount = (sMap['stepCount'] as num?)?.toInt() ?? 0;
             final status = (sMap['status'] as String? ?? '').toUpperCase();
-            final isRunning = status.contains('RUNNING') ||
+            final isWaiting = status.contains('WAIT') ||
+                status.contains('APPROVAL') ||
+                status.contains('QUESTION') ||
+                status.contains('USER_ACTION') ||
+                status.contains('BACKGROUND') ||
+                status.contains('TASK') ||
+                status.contains('PENDING');
+            final isRunning = (status.contains('RUNNING') ||
                 status.contains('BUSY') ||
                 status.contains('STREAMING') ||
-                status.contains('TASK') ||
-                status.contains('EXECUTING') ||
-                status.contains('BACKGROUND');
-            final hasUnread = stepCount >= 1 && !isRunning;
+                status.contains('EXECUTING')) && !isWaiting;
+            final hasUnread = stepCount >= 1 && !isRunning && !isWaiting;
             final updatedParsed = sMap['updatedAt'] is String
                 ? DateTime.tryParse(sMap['updatedAt'] as String)
                 : null;

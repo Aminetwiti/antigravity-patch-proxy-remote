@@ -5,6 +5,13 @@
 
 ---
 
+## ⚡ Accès Rapide & Commandes Immédiates
+
+👉 **[`QUICKSTART_DEVELOPER_GUIDE.md`](./QUICKSTART_DEVELOPER_GUIDE.md)**  
+*Guide pratique et Cheat Sheet pour utiliser le CLI `ag-ide.exe`, lancer le Daemon Go Bridge et exécuter les suites de tests sur les 3 piles (Go, Dart, TypeScript).*
+
+---
+
 ## 🏆 La Suite Maîtresse des Spécifications Forensiques, Sécurité & Stratégie (V3 à V12)
 
 1. 👉 **[`ULTRA_V12_VULNERABILITY_ASSESSMENT_AND_HARDENING.md`](./ULTRA_V12_VULNERABILITY_ASSESSMENT_AND_HARDENING.md)**  

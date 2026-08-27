@@ -109,9 +109,11 @@ class DaemonWebSocketClient {
   Future<void> connect({String? customUrl, String? authToken}) async {
     if (customUrl != null && customUrl.isNotEmpty) {
       _targetUrl = customUrl;
+      _reconnectAttempts = 0;
     }
     if (authToken != null) {
       _authToken = authToken;
+      _reconnectAttempts = 0;
     }
 
     if (_disposed) return;
@@ -331,12 +333,25 @@ class DaemonWebSocketClient {
       _socket = null;
       return;
     }
-    statusNotifier.value = ConnectionStatus.disconnected;
-    latencyMsNotifier.value = null;
     _socket?.close();
     _socket = null;
     _stopKeepAlive();
+    latencyMsNotifier.value = null;
     _reconnectAttempts++;
+
+    // Après 5 échecs consécutifs, on bascule en état Erreur pour éviter de marteler le réseau.
+    if (_reconnectAttempts >= 5) {
+      _stopRetryCountdown();
+      _reconnectTimer?.cancel();
+      statusNotifier.value = ConnectionStatus.error;
+      retryInfo.value = retryInfo.value.copyWith(
+        attempt: _reconnectAttempts,
+        nextRetryIn: Duration.zero,
+      );
+      return;
+    }
+
+    statusNotifier.value = ConnectionStatus.disconnected;
     retryInfo.value = retryInfo.value.copyWith(attempt: _reconnectAttempts);
     _scheduleReconnect();
   }
