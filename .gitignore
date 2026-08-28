@@ -13,6 +13,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Simulation / test artifacts (not repo content)
+UsersAdminAppDataLocalTemppv-test-*
+
 # Development logs & diagnostic dumps
 *.log
 npm-debug.log*

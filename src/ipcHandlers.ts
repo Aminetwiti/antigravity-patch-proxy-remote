@@ -16,7 +16,7 @@ import * as customModelStore from './customModelStore';
 // Avoid TS2440 name clash with customModelStore's own CustomModelFileEntry.
 import type { CustomModelFileEntry as CustomModelFileEntryFromTypes } from './proxy/types';
 import { WELL_KNOWN_PRESETS } from './presets';
-import * as configExchange from './configExchange';
+import * as configExchange from './services/configExchange';
 import { DEFAULT_PROXY_PORT } from './constants';
 
 

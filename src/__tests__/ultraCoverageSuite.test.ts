@@ -25,7 +25,7 @@ import { PROVIDERS, PROVIDER_DEFAULT_URLS, ALL_PROVIDERS, OPENAI_COMPATIBLE_PROV
 import { getProviderHeaders, supportsStreaming } from '../proxy/registry';
 import { getProviderColor, prefersReducedMotion } from '../preload/model-fetcher';
 import { PROVIDER_PRESETS } from '../preload/types';
-import { exportProvidersToBase64, parseProvidersFromBase64, mergeProviderConfigs } from '../configExchange';
+import { exportProvidersToBase64, parseProvidersFromBase64, mergeProviderConfigs } from '../services/configExchange';
 import { maskApiKey, isMaskedApiKey } from '../services/modelStore';
 import type { ProviderFileEntry, ProviderModelEntry } from '../preload/types';
 

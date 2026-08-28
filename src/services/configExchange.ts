@@ -4,7 +4,7 @@
  * with conflict resolution strategies (overwrite, merge, skip).
  */
 
-import type { ProviderFileEntry } from './customModelStore';
+import type { ProviderFileEntry } from '../customModelStore';
 
 export type MergeStrategy = 'overwrite' | 'merge' | 'skip';
 

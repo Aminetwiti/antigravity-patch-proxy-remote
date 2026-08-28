@@ -1,0 +1,46 @@
+version: "3"
+
+tasks:
+  lint:
+    desc: Type-check all TS packages (root proxy, ag-doctor, ag-doctor-ui, remote CLI)
+    cmds:
+      - tsc --noEmit
+      - cd ag-doctor && tsc --noEmit
+      - cd ag-doctor-ui && tsc --noEmit
+      - cd remote/cli && tsc --noEmit
+
+  test:
+    desc: Run all test suites
+    cmds:
+      - npm test
+      - cd ag-doctor && npm test
+      - cd ag-doctor-ui && npm test
+      - cd remote/daemon && go test ./...
+      - cd remote/mobile && flutter test --exclude-tags=live
+
+  doctor:
+    desc: Run ag-doctor diagnostics
+    cmds:
+      - node ag-doctor/bin/ag-doctor.js doctor
+
+  build:
+    desc: Build root proxy (tsc)
+    cmds:
+      - npm run build
+
+  daemon:
+    desc: Build Go daemon
+    cmds:
+      - cd remote/daemon && go build -o daemon.exe .
+
+  remote-ui:
+    desc: Build remote Electron UI
+    cmds:
+      - cd remote/antigravity-remote-daemon && npm run build
+
+  mobile-check:
+    desc: Flutter static analysis
+    cmds:
+      - cd remote/mobile && flutter analyze
+
+  all: [lint, test, doctor, daemon, remote-ui, mobile-check]

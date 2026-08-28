@@ -223,7 +223,7 @@ declare module 'electron' {
       addChildView(view: unknown): void;
       removeChildView(view: unknown): void;
     };
-    getContentSize(): [number, number];
+    getContentSize(): number[];
     webContents: WebContentsType;
     destroy(): void;
     close(): void;
@@ -242,7 +242,7 @@ declare module 'electron' {
 
   export interface WebContentsType {
     send(channel: string, ...args: unknown[]): void;
-    openDevTools(options?: Record<string, unknown>): void;
+    openDevTools(options?: { mode?: 'left' | 'right' | 'bottom' | 'undocked' | 'detach' }): void;
     closeDevTools(): void;
     toggleDevTools(): void;
     loadURL(url: string): Promise<void>;

@@ -12,15 +12,15 @@ antigravity-add-model-main/
 ├── AGENTS.md                        # This file — master system map & developer guide
 ├── package.json                     # Entry: dist/main.js | Scripts: build/test/lint/doctor/repack/patch
 ├── tsconfig.json                    # ES2020, commonjs, strict: partial
-├── vitest.config.ts                 # Vitest, node env, electron stubbed
+├── vitest.config.mjs               # Vitest, node env, electron stubbed
 │
 ├── src/                             # Desktop Electron Patch Proxy
 │   ├── main.ts                      # Electron lifecycle, LS startup, proxy boot
 │   ├── proxy.ts                     # HTTP proxy server orchestration
 │   ├── preload.ts                   # contextBridge → window.* APIs (10 domains)
-│   ├── ipcHandlers.ts               # Legacy IPC — migrating to src/ipc/
+│   ├── ipcHandlers.ts               # Canonical IPC registry (src/ipc/ = channels only; migration pending)
 │   ├── constants.ts                 # PROVIDERS, ports, timeouts — source of truth
-│   ├── configExchange.ts            # Provider config import/export + AES-256-GCM
+│   ├── services/configExchange.ts   # Provider config import/export + AES-256-GCM
 │   ├── schemaValidator.ts           # Runtime response validation
 │   ├── proxy/                       # Translators & proxy resilience (circuit breaker, retry budget, etc.)
 │   ├── services/                    # CryptoStore (safeStorage), ModelStore, SettingsService
@@ -211,7 +211,7 @@ Determine for each change:
 | `src/proxy/` | Proxy internals (resilience, routing, injection) | IPC, UI, main process |
 | `src/services/` | Data persistence, encryption | HTTP handling, translation |
 | `src/` root | Main process, IPC, preload, config | Proxy internals (put in proxy/) |
-| `src/ipc/handlers/` | New IPC handlers (migration target) | Legacy ipcHandlers.ts stays until fully migrated |
+| `src/ipc/` | IPC channel constants + types | Canonical handlers remain in `src/ipcHandlers.ts` |
 | `src/__tests__/` | All tests | Production code |
 | `scripts/`, `ag-doctor/` | Build, deploy, diagnostic tooling | Runtime proxy logic |
 
