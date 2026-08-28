@@ -61,8 +61,8 @@ function forwardToProxy(clientReq, clientRes) {
   // when it knows the upstream. Otherwise we mark it 'unknown' so the UI can
   // still group and count, and the dashboard can refine later.
   const translatedProvider =
-    (clientReq.headers['x-ag-target-provider'] as string | undefined) ??
-    (clientReq.headers['x-ag-provider'] as string | undefined) ??
+    (clientReq.headers['x-ag-target-provider']) ??
+    (clientReq.headers['x-ag-provider']) ??
     'unknown';
 
   const fwdOptions = {
