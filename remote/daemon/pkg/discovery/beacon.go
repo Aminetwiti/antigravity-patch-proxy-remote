@@ -154,6 +154,7 @@ func (b *LANBeacon) listenResponder(hostname string) {
 		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		n, remoteAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 

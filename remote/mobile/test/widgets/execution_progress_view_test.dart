@@ -175,5 +175,48 @@ Task 838 finished
       await tester.pump();
       expect(find.textContaining('00:02 +2: All tests passed!'), findsOneWidget);
     });
+
+    testWidgets('Groups multiple consecutive commands into a commandGroup accordion', (tester) async {
+      const multiCmdThought = '''
+Ran Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine }
+```console
+> Get-CimInstance Win32_Process
+ProcessId CommandLine
+1234      powershell.exe
+```
+Ran Stop-Process -Id 32896 -Force -ErrorAction SilentlyContinue
+Ran Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine }
+''';
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: ExecutionProgressView(
+                messageId: 'msg-cmd-group',
+                thoughtText: multiCmdThought,
+                isStreaming: true,
+                initiallyExpanded: true,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      // Vérification du groupement en accordéon "Running 3 commands"
+      expect(find.text('3 commands'), findsOneWidget);
+      expect(find.text('Running'), findsOneWidget);
+
+      // Dépliage du sous-élément de commande pour afficher la boîte terminal
+      expect(find.text('Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine }'), findsWidgets);
+      expect(find.text('Stop-Process -Id 32896 -Force -ErrorAction SilentlyContinue'), findsOneWidget);
+
+      await tester.tap(find.text('Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine }').first);
+      await tester.pump();
+      expect(find.textContaining('powershell.exe'), findsOneWidget);
+    });
   });
 }

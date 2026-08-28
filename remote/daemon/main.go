@@ -232,6 +232,8 @@ func main() {
 
 	fmt.Printf("🌐 Daemon listening on ws://%s:%d/ws\n", host, listenPort)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("❌ Server error: %v", err)
+		fmt.Fprintf(os.Stderr, "❌ Server error: %v\n", err)
+		os.Exit(1)
 	}
+
 }

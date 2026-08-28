@@ -56,11 +56,30 @@ function Test-TunnelOk {
     } catch { return $false }
 }
 
-# Tue tout daemon/cloudflared (mauvais token ou orphelins) puis relance proprement
-# en arrière-plan sans ouvrir de fenêtre cmd/terminal.
+# Tue le daemon qui écoute sur $Port (et son cloudflared associé) puis relance.
+# N'interfère PAS avec un daemon lancé manuellement sur un port différent.
 function Start-Daemon {
-    Get-CimInstance Win32_Process -Filter "Name='daemon.exe'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-    Get-CimInstance Win32_Process -Filter "Name='cloudflared.exe'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+    # Trouver le PID qui écoute sur $Port et tuer seulement lui
+    $lis = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($lis) {
+        $owner = $lis.OwningProcess
+        $proc  = Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue
+        if ($proc -and $proc.Name -like "daemon*") {
+            Stop-Process -Id $owner -Force -ErrorAction SilentlyContinue
+            # Tuer le cloudflared enfant s'il existe (Parent = $owner)
+            Get-CimInstance Win32_Process -Filter "Name='cloudflared.exe'" |
+                Where-Object { $_.ParentProcessId -eq $owner } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        }
+    }
+    # Tuer aussi les cloudflared orphelins (sans parent daemon)
+    Get-CimInstance Win32_Process -Filter "Name='cloudflared.exe'" |
+        ForEach-Object {
+            $parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.ParentProcessId)" -ErrorAction SilentlyContinue)
+            if (-not $parent -or $parent.Name -notlike "daemon*") {
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+        }
     Start-Sleep -Seconds 1
     $proc = Start-Process -FilePath $DaemonExe -ArgumentList "--port $Port --tunnel cloudflare --auth-token $Token" -WorkingDirectory $DaemonDir -WindowStyle Hidden -PassThru
     if ($proc) {

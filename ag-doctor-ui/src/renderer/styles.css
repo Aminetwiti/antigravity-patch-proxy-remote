@@ -115,6 +115,7 @@ html, body { margin: 0; padding: 0; height: 100%; }
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; padding: 0; }
 ul { list-style: none; margin: 0; padding: 0; }
 h1, h2, h3, p { margin: 0; }
+h1, h2, h3 { text-wrap: balance; }
 [hidden] { display: none !important; }
 
 :focus-visible {
@@ -235,7 +236,6 @@ body {
   display: flex; flex-direction: column;
   padding: 18px 12px 14px;
   gap: 18px;
-  contain: layout style;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
@@ -452,14 +452,9 @@ body {
 
 .view {
   display: none;
-  animation: view-in var(--t-base) var(--ease-out);
-  /* Isolate each view's layout/paint from the rest of the page */
-  contain: layout style;
 }
-.view.active { display: block; will-change: opacity, transform; }
-@keyframes view-in {
-  from { opacity: 0; transform: translate3d(0, 4px, 0); }
-  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+.view.active {
+  display: block;
 }
 /* Honor user's reduced-motion preference */
 @media (prefers-reduced-motion: reduce) {
@@ -648,7 +643,6 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   overflow: hidden;
-  contain: content;
 }
 .panel-header {
   display: flex; align-items: center; justify-content: space-between;

@@ -33,10 +33,8 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 const activeStreams = new Map<string, ChildProcess>();
 
-// Disable GPU sandbox in packaged builds to avoid startup crashes on some Windows setups
-app.commandLine.appendSwitch('disable-gpu');
+// Sandbox setup for packaged builds
 app.commandLine.appendSwitch('no-sandbox');
-app.commandLine.appendSwitch('disable-software-rasterizer');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cached paths (computed once)
@@ -357,7 +355,7 @@ function createWindow(): void {
     return { action: 'deny' };
   });
 
-  if (isDev && process.env.OPEN_DEVTOOLS === '1') {
+  if (isDev) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
@@ -622,9 +620,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.NETWORK_GENERATE_QR, async (_event, text: str
 
 let daemonProcess: any = null;
 
-function killOrphanDaemonProcesses(): void {
+function killOrphanDaemonProcesses(port?: number): void {
   try {
-    execSync('taskkill /F /IM daemon.exe /T 2>nul & taskkill /F /IM cloudflared.exe /T 2>nul', { stdio: 'ignore', windowsHide: true });
+    // If a port is specified, only kill the daemon.exe listening on that port.
+    // Otherwise kill orphaned cloudflared processes (no specific daemon to preserve).
+    if (port) {
+      execSync(
+        `for /f "tokens=5" %a in ('netstat -ano ^| findstr ":${port}" ^| findstr LISTENING') do taskkill /F /PID %a 2>nul`,
+        { stdio: 'ignore', windowsHide: true, shell: 'cmd.exe' }
+      );
+    }
+    execSync('taskkill /F /IM cloudflared.exe /T 2>nul', { stdio: 'ignore', windowsHide: true });
   } catch { /* ignore */ }
 }
 
@@ -679,7 +685,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.NETWORK_START_DAEMON, async (event, options: 
     daemonProcess = null;
   }
 
-  killOrphanDaemonProcesses();
+  killOrphanDaemonProcesses(port);
 
   const daemonExePath = path.join(__dirname, '..', '..', 'remote', 'daemon', 'daemon.exe');
   const args = ['--port', port.toString()];

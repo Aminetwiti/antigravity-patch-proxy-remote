@@ -4166,10 +4166,40 @@ const remoteSessionsCount = $('#remoteSessionsCount');
 const remoteUptimeDisplay = $('#remoteUptimeDisplay');
 const remoteCheckHealthBtn = $('#remoteCheckHealthBtn');
 const remoteCopyWsUrlBtn = $('#remoteCopyWsUrlBtn');
+const remoteIdeStatusBanner = $('#remoteIdeStatusBanner');
+const remoteIdeDot = $('#remoteIdeDot');
+const remoteIdeText = $('#remoteIdeText');
+const remoteLaunchIdeBtn = $('#remoteLaunchIdeBtn');
+const remoteClearConsoleBtn = $('#remoteClearConsoleBtn');
+const remoteCopyLogsBtn = $('#remoteCopyLogsBtn');
 
 let isDaemonRunning = false;
 let tokenBadgeTimeout: any = null;
 let currentActiveWsUrl = '';
+
+async function syncIdeStatus() {
+  try {
+    const status = await window.ag?.antigravityStatus?.();
+    if (status && status.ok) {
+      if (remoteIdeDot) {
+        remoteIdeDot.style.background = 'var(--accent-green, #22c55e)';
+        remoteIdeDot.style.boxShadow = '0 0 6px rgba(34, 197, 94, 0.6)';
+      }
+      if (remoteIdeText) remoteIdeText.textContent = 'IDE Antigravity Détecté';
+      if (remoteLaunchIdeBtn) remoteLaunchIdeBtn.style.display = 'none';
+    } else {
+      if (remoteIdeDot) {
+        remoteIdeDot.style.background = 'var(--accent-amber, #f59e0b)';
+        remoteIdeDot.style.boxShadow = 'none';
+      }
+      if (remoteIdeText) remoteIdeText.textContent = 'IDE Non Détecté';
+      if (remoteLaunchIdeBtn) remoteLaunchIdeBtn.style.display = 'inline-block';
+    }
+  } catch {
+    if (remoteIdeDot) remoteIdeDot.style.background = 'var(--text-2)';
+    if (remoteIdeText) remoteIdeText.textContent = 'Statut IDE Inconnu';
+  }
+}
 
 function flashTokenSavedBadge() {
   if (tokenSavedBadge) {
@@ -4366,6 +4396,37 @@ async function syncDaemonUiStatus(port?: number) {
   } catch { /* ignore */ }
 }
 
+remoteLaunchIdeBtn?.addEventListener('click', async () => {
+  try {
+    toast('Lancement d\'Antigravity...', 'ok');
+    await window.ag?.antigravityLaunch?.();
+    setTimeout(() => {
+      void syncIdeStatus();
+    }, 2500);
+  } catch (err: any) {
+    toast(`Erreur lancement IDE: ${err.message}`, 'err');
+  }
+});
+
+remoteClearConsoleBtn?.addEventListener('click', () => {
+  if (remoteConsole) {
+    remoteConsole.value = '';
+    toast('Console effacée', 'ok');
+  }
+});
+
+remoteCopyLogsBtn?.addEventListener('click', () => {
+  if (remoteConsole && remoteConsole.value) {
+    navigator.clipboard.writeText(remoteConsole.value).then(() => {
+      toast('Logs de la console copiés !', 'ok');
+    }).catch(() => {
+      toast('Impossible de copier les logs', 'warn');
+    });
+  } else {
+    toast('Console vide', 'warn');
+  }
+});
+
 if (window.ag && window.ag.onDaemonLog) {
   window.ag.onDaemonLog((data: string) => {
     if (remoteConsole) {
@@ -4378,12 +4439,32 @@ if (window.ag && window.ag.onDaemonLog) {
         remotePinDisplay.textContent = pinMatch[1];
       }
 
-      // Extract tunnel URL (Pinggy or Cloudflare or wss://) from logs to generate QR Code dynamically!
-      let wsUrl = '';
-      const token = remoteAuthToken?.value?.trim() || localStorage.getItem('ag_remote_auth_token') || '11';
       const cleanData = data
         .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
         .replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+
+      // Détection de l'arrêt inopiné du daemon
+      if (cleanData.includes('[Daemon terminé')) {
+        isDaemonRunning = false;
+        if (startRemoteBtn) {
+          startRemoteBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Remote Server';
+          startRemoteBtn.classList.remove('btn-danger');
+          startRemoteBtn.removeAttribute('disabled');
+        }
+        if (remoteTelemetryBadge) {
+          remoteTelemetryBadge.textContent = 'Arrêté';
+          remoteTelemetryBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+          remoteTelemetryBadge.style.color = '#ef4444';
+        }
+        if (remoteStatusText) {
+          remoteStatusText.innerHTML = '<span style="color: var(--accent-amber, #f59e0b);">Le serveur distant est arrêté. Cliquez sur "Start Remote Server" pour relancer.</span>';
+        }
+        void syncIdeStatus();
+      }
+
+      // Extract tunnel URL (Pinggy or Cloudflare or wss://) from logs to generate QR Code dynamically!
+      let wsUrl = '';
+      const token = remoteAuthToken?.value?.trim() || localStorage.getItem('ag_remote_auth_token') || '11';
 
       const wssMatch = cleanData.match(/wss:\/\/[^\s"'<>|┌┐└┘│+]+/);
       if (wssMatch) {
@@ -4512,10 +4593,13 @@ if (startRemoteBtn) {
   });
 }
 
-// Auto-détection de l'état du daemon au chargement et rafraîchissement périodique
+// Auto-détection de l'état du daemon et de l'IDE au chargement et rafraîchissement périodique
 void syncDaemonUiStatus();
+void syncIdeStatus();
 setInterval(() => {
   if (isDaemonRunning) {
     void syncDaemonUiStatus();
   }
-}, 5000);
+  void syncIdeStatus();
+}, 4000);
+

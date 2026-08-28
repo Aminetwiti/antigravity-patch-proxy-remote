@@ -7,6 +7,7 @@ import '../../../theme/app_colors.dart';
 enum ExecutionStepType {
   header,
   command,
+  commandGroup,
   fileEdit,
   fileAnalysis,
   exploredGroup,
@@ -90,6 +91,7 @@ class ExecutionProgressView extends StatefulWidget {
 class _ExecutionProgressViewState extends State<ExecutionProgressView>
     with SingleTickerProviderStateMixin {
   final Set<int> _expandedIndices = {};
+  final Set<String> _expandedSubIndices = {};
   int _secondsElapsed = 0;
   Timer? _timer;
   late AnimationController _pulseAnim;
@@ -555,29 +557,30 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         }
       }
 
-      final durationStr = widget.isStreaming
+      final displayTitle = thoughtTitle ?? (widget.isStreaming
           ? (_secondsElapsed > 0 ? 'for ${_formatDuration(_secondsElapsed)}' : '')
-          : (_secondsElapsed > 0 ? 'for ${_formatDuration(_secondsElapsed)}' : 'for 1s');
+          : 'Reasoning');
 
       items.add(ExecutionStepItem(
         type: ExecutionStepType.thought,
         action: widget.isStreaming ? 'Thinking' : 'Thought',
-        title: durationStr.isNotEmpty ? durationStr : 'for 1s',
-        thoughtTitle: thoughtTitle ?? 'Reasoning',
+        title: displayTitle.isNotEmpty ? displayTitle : 'Reasoning',
+        thoughtTitle: thoughtTitle,
         rawDetail: body.isNotEmpty ? body : thoughtContent,
         isExpandable: true,
         isRunning: widget.isStreaming,
       ));
     }
 
-    return _groupExplorationSteps(items);
+    return _groupSteps(items);
   }
 
-  List<ExecutionStepItem> _groupExplorationSteps(List<ExecutionStepItem> source) {
+  List<ExecutionStepItem> _groupSteps(List<ExecutionStepItem> source) {
     if (source.isEmpty) return source;
 
     final result = <ExecutionStepItem>[];
     final explorationGroup = <ExecutionStepItem>[];
+    final commandGroup = <ExecutionStepItem>[];
 
     bool isExplorationStep(ExecutionStepType type) {
       return type == ExecutionStepType.fileAnalysis ||
@@ -622,16 +625,48 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       explorationGroup.clear();
     }
 
+    void flushCommands(bool isLastGroup) {
+      if (commandGroup.isEmpty) return;
+
+      if (commandGroup.length == 1) {
+        result.add(commandGroup.first);
+        commandGroup.clear();
+        return;
+      }
+
+      final bool isRunning = widget.isStreaming && isLastGroup;
+      final action = isRunning ? 'Running' : 'Ran';
+      final title = '${commandGroup.length} commands';
+
+      result.add(ExecutionStepItem(
+        type: ExecutionStepType.commandGroup,
+        action: action,
+        title: title,
+        subItems: List.from(commandGroup),
+        isExpandable: true,
+        isRunning: isRunning,
+      ));
+
+      commandGroup.clear();
+    }
+
     for (int i = 0; i < source.length; i++) {
       final item = source[i];
+
       if (isExplorationStep(item.type)) {
+        flushCommands(false);
         explorationGroup.add(item);
+      } else if (item.type == ExecutionStepType.command) {
+        flushExploration(false);
+        commandGroup.add(item);
       } else {
         flushExploration(false);
+        flushCommands(false);
         result.add(item);
       }
     }
     flushExploration(true);
+    flushCommands(true);
 
     return result;
   }
@@ -1123,13 +1158,15 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
     }
 
     final isExploredGroup = item.type == ExecutionStepType.exploredGroup;
+    final isCommandGroup = item.type == ExecutionStepType.commandGroup;
     final isExpanded = _expandedIndices.contains(index) ||
-        (isExploredGroup && item.isRunning) ||
+        ((isExploredGroup || isCommandGroup) && item.isRunning) ||
         (widget.initiallyExpanded &&
             (item.type == ExecutionStepType.thought ||
              item.type == ExecutionStepType.timer ||
              item.type == ExecutionStepType.processingGroup ||
-             item.type == ExecutionStepType.exploredGroup));
+             item.type == ExecutionStepType.exploredGroup ||
+             item.type == ExecutionStepType.commandGroup));
 
     final isThoughtType = item.type == ExecutionStepType.thought || item.type == ExecutionStepType.workedDuration;
 
@@ -1426,7 +1463,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
             ),
           ),
 
-          // Sub-items for Explored Group (Indented Children)
+          // Sub-items for Explored Group and Command Group (Indented Children)
           AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.fastOutSlowIn,
@@ -1437,114 +1474,214 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (final sub in item.subItems!)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  sub.action,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF9E9FA8),
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                                const SizedBox(width: 5),
-                                if (sub.type == ExecutionStepType.search) ...[
-                                  Container(
-                                    margin: const EdgeInsets.only(right: 5),
-                                    width: 13,
-                                    height: 13,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF0D9488),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.search_rounded,
-                                        size: 8.5,
-                                        color: Colors.white,
+                        for (int subIdx = 0; subIdx < item.subItems!.length; subIdx++) ...[
+                          Builder(
+                            builder: (context) {
+                              final sub = item.subItems![subIdx];
+                              final subKey = '$index-$subIdx';
+                              final isSubExpanded = _expandedSubIndices.contains(subKey);
+                              final isSubCommand = sub.type == ExecutionStepType.command;
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  InkWell(
+                                    onTap: isSubCommand
+                                        ? () {
+                                            HapticFeedback.selectionClick();
+                                            setState(() {
+                                              if (_expandedSubIndices.contains(subKey)) {
+                                                _expandedSubIndices.remove(subKey);
+                                              } else {
+                                                _expandedSubIndices.add(subKey);
+                                              }
+                                            });
+                                          }
+                                        : null,
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 2.5, horizontal: 2),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (sub.action.isNotEmpty) ...[
+                                            Text(
+                                              sub.action,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Color(0xFF9E9FA8),
+                                                fontWeight: FontWeight.w400,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 5),
+                                          ],
+                                          if (sub.type == ExecutionStepType.search) ...[
+                                            Container(
+                                              margin: const EdgeInsets.only(right: 5),
+                                              width: 13,
+                                              height: 13,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFF0D9488),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Center(
+                                                child: Icon(
+                                                  Icons.search_rounded,
+                                                  size: 8.5,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ] else if (sub.type == ExecutionStepType.fileAnalysis || sub.type == ExecutionStepType.fileEdit) ...[
+                                            Container(
+                                              margin: const EdgeInsets.only(right: 5),
+                                              width: 13,
+                                              height: 13,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFF0284C7),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Center(
+                                                child: Icon(
+                                                  Icons.description_rounded,
+                                                  size: 8.5,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ] else if (isSubCommand) ...[
+                                            Container(
+                                              margin: const EdgeInsets.only(right: 5),
+                                              width: 13,
+                                              height: 13,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFF3F3F46),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Center(
+                                                child: Icon(
+                                                  Icons.terminal_rounded,
+                                                  size: 8.5,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                          Flexible(
+                                            child: Text(
+                                              sub.title,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontFamily: (sub.type == ExecutionStepType.fileAnalysis ||
+                                                        sub.type == ExecutionStepType.fileEdit ||
+                                                        isSubCommand)
+                                                    ? 'monospace'
+                                                    : null,
+                                                fontWeight: FontWeight.w500,
+                                                color: const Color(0xFFF4F4F5),
+                                              ),
+                                            ),
+                                          ),
+                                          if (sub.lineRange != null) ...[
+                                            const SizedBox(width: 5),
+                                            Text(
+                                              sub.lineRange!,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontFamily: 'monospace',
+                                                color: Color(0xFF71717A),
+                                              ),
+                                            ),
+                                          ],
+                                          if (sub.diffAdded != null && sub.type == ExecutionStepType.search) ...[
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              sub.diffAdded!,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFF71717A),
+                                              ),
+                                            ),
+                                          ] else if (sub.diffAdded != null) ...[
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              sub.diffAdded!,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontFamily: 'monospace',
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFF4ADE80),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              sub.diffRemoved ?? '-0',
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontFamily: 'monospace',
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFFF87171),
+                                              ),
+                                            ),
+                                          ],
+                                          if (isSubCommand) ...[
+                                            const SizedBox(width: 4),
+                                            Icon(
+                                              isSubExpanded
+                                                  ? Icons.keyboard_arrow_down_rounded
+                                                  : Icons.chevron_right_rounded,
+                                              size: 13,
+                                              color: const Color(0xFF71717A),
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                     ),
                                   ),
-                                ] else if (sub.type == ExecutionStepType.fileAnalysis || sub.type == ExecutionStepType.fileEdit) ...[
-                                  Container(
-                                    margin: const EdgeInsets.only(right: 5),
-                                    width: 13,
-                                    height: 13,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF0284C7),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.description_rounded,
-                                        size: 8.5,
-                                        color: Colors.white,
+                                  if (isSubCommand && isSubExpanded)
+                                    Container(
+                                      width: double.infinity,
+                                      margin: const EdgeInsets.only(top: 3, bottom: 6, left: 4),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0E0F12),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: const Color(0xFF27272A), width: 0.8),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          if (sub.consolePrompt != null && sub.consolePrompt!.isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(bottom: 6),
+                                              child: SelectableText(
+                                                sub.consolePrompt!,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontFamily: 'monospace',
+                                                  color: Color(0xFF71717A),
+                                                  height: 1.35,
+                                                ),
+                                              ),
+                                            ),
+                                          if (sub.consoleOutput != null && sub.consoleOutput!.isNotEmpty)
+                                            SelectableText(
+                                              sub.consoleOutput!,
+                                              style: const TextStyle(
+                                                fontSize: 11.5,
+                                                fontFamily: 'monospace',
+                                                color: Color(0xFFD4D4D8),
+                                                height: 1.35,
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ),
-                                  ),
                                 ],
-                                Flexible(
-                                  child: Text(
-                                    sub.title,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontFamily: (sub.type == ExecutionStepType.fileAnalysis || sub.type == ExecutionStepType.fileEdit)
-                                          ? 'monospace'
-                                          : null,
-                                      fontWeight: FontWeight.w500,
-                                      color: const Color(0xFFF4F4F5),
-                                    ),
-                                  ),
-                                ),
-                                if (sub.lineRange != null) ...[
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    sub.lineRange!,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      fontFamily: 'monospace',
-                                      color: Color(0xFF71717A),
-                                    ),
-                                  ),
-                                ],
-                                if (sub.diffAdded != null && sub.type == ExecutionStepType.search) ...[
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    sub.diffAdded!,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Color(0xFF71717A),
-                                    ),
-                                  ),
-                                ] else if (sub.diffAdded != null) ...[
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    sub.diffAdded!,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      fontFamily: 'monospace',
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF4ADE80),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    sub.diffRemoved ?? '-0',
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      fontFamily: 'monospace',
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFFF87171),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
+                              );
+                            },
                           ),
+                        ],
                       ],
                     ),
                   )
@@ -1661,8 +1798,18 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
 
           // Thought Reasoned Detail Block (with Header & Token Highlights)
           if (isExpanded && isThoughtType && item.rawDetail != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, top: 4, bottom: 6),
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(left: 4, top: 4, bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0E0F12) : scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2E2415) : const Color(0xFFF59E0B).withValues(alpha: 0.3),
+                  width: 0.8,
+                ),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
