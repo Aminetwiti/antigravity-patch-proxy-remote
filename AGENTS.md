@@ -12,7 +12,7 @@ antigravity-add-model-main/
 ├── AGENTS.md                        # This file — master system map & developer guide
 ├── package.json                     # Entry: dist/main.js | Scripts: build/test/lint/doctor/repack/patch
 ├── tsconfig.json                    # ES2020, commonjs, strict: partial
-├── vitest.config.ts                 # Vitest, node env, electron stubbed
+├── vitest.config.mjs               # Vitest, node env, electron stubbed
 │
 ├── src/                             # Desktop Electron Patch Proxy
 │   ├── main.ts                      # Electron lifecycle, LS startup, proxy boot
