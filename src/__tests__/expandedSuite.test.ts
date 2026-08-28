@@ -23,7 +23,7 @@ import { PROVIDERS, PROVIDER_DEFAULT_URLS } from '../constants';
 import { getProviderHeaders, supportsStreaming } from '../proxy/registry';
 import { getProviderColor } from '../preload/model-fetcher';
 import { PROVIDER_PRESETS } from '../preload/types';
-import { exportProvidersToBase64, parseProvidersFromBase64, mergeProviderConfigs } from '../configExchange';
+import { exportProvidersToBase64, parseProvidersFromBase64, mergeProviderConfigs } from '../services/configExchange';
 import { maskApiKey, isMaskedApiKey } from '../services/modelStore';
 import { fixParamTypes, normalizeToolArgs, translateToolCallToNative, formatTranslatedResponse } from '../proxy/translators/utils';
 import { calculateBackoffDelay } from '../proxy/backoff';
