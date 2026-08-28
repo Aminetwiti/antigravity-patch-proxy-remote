@@ -9,7 +9,7 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": false,
     "sourceMap": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "node"]
   },
   "include": ["src/renderer/**/*"],
   "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
