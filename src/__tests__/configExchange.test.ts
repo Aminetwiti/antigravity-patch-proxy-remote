@@ -3,7 +3,7 @@ import {
   exportProvidersToBase64,
   parseProvidersFromBase64,
   mergeProviderConfigs,
-} from '../configExchange';
+} from '../services/configExchange';
 import type { ProviderFileEntry } from '../customModelStore';
 
 const mockProviders: ProviderFileEntry[] = [

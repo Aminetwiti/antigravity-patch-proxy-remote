@@ -2,13 +2,18 @@
   "name": "antigravity-patch-proxy",
   "productName": "Antigravity Patch Proxy",
   "version": "3.4.2",
-
   "description": "Antigravity Patch Proxy — Multi-Provider AI Model Proxy for Google Antigravity",
   "homepage": "https://antigravity.google",
   "author": {
     "name": "Amine Twiti"
   },
   "license": "Apache-2.0",
+  "workspaces": [
+    "ag-doctor",
+    "ag-doctor-ui",
+    "remote/antigravity-remote-daemon",
+    "remote/cli"
+  ],
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
@@ -25,7 +30,6 @@
     "doctor:ui:installer": "cd ag-doctor-ui && npm run dist:installer",
     "doctor:ui:portable": "cd ag-doctor-ui && npm run dist:portable",
     "doctor:ui:dist": "cd ag-doctor-ui && npm run dist:all",
-
     "patch:version": "node scripts/patch-version.js",
     "patch:2.2": "node scripts/patch_2_2_1.js",
     "patch:2.3": "node scripts/patch_2_3.js",
@@ -42,16 +46,16 @@
     "remote:build": "npm --prefix remote/antigravity-remote-daemon run build"
   },
   "dependencies": {
-    "chrome-devtools-mcp": "^0.23.0",
-    "electron-log": "^5.4.3",
-    "electron-updater": "^6.8.3",
+    "chrome-devtools-mcp": "^1.8.0",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9",
     "shell-env": "^4.0.3"
   },
   "devDependencies": {
-    "@electron/asar": "^3.4.1",
-    "@types/node": "^20.10.0",
+    "@electron/asar": "^4.3.0",
+    "@types/node": "^26.4.0",
     "patch-package": "^8.0.1",
-    "typescript": "^5.3.0",
-    "vitest": "^4.1.10"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
   }
 }

@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { telemetryStore } from '../services/telemetryStore';
-import { exportEncryptedConfig, importEncryptedConfig } from '../configExchange';
+import { exportEncryptedConfig, importEncryptedConfig } from '../services/configExchange';
 import type { ProviderFileEntry } from '../preload/types';
 
 describe('Telemetry & Metrics Store', () => {

@@ -223,7 +223,7 @@ declare module 'electron' {
       addChildView(view: unknown): void;
       removeChildView(view: unknown): void;
     };
-    getContentSize(): [number, number];
+    getContentSize(): number[];
     webContents: WebContentsType;
     destroy(): void;
     close(): void;
