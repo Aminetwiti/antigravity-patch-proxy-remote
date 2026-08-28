@@ -9,7 +9,6 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": false,
     "sourceMap": true,
-    "downlevelIteration": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": ["src/renderer/**/*"],

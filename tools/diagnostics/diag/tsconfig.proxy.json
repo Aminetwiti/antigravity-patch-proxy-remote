@@ -8,7 +8,6 @@
         "strict": false,
         "esModuleInterop": true,
         "skipLibCheck": true,
-        "moduleResolution": "node",
         "declaration": false,
         "declarationMap": false,
         "sourceMap": false
