@@ -21,9 +21,18 @@ class MentionAutocompleteOverlay extends StatelessWidget {
   });
 
   List<MentionItem> get _filteredItems {
-    final clean = query.startsWith('@') ? query.substring(1).trim().toLowerCase() : query.trim().toLowerCase();
-    if (clean.isEmpty) return items;
+    final isSlash = query.startsWith('/');
+    final clean = (query.startsWith('@') || query.startsWith('/'))
+        ? query.substring(1).trim().toLowerCase()
+        : query.trim().toLowerCase();
+    if (clean.isEmpty) {
+      if (isSlash) {
+        return items.where((item) => item.type == MentionType.command).toList();
+      }
+      return items;
+    }
     return items.where((item) {
+      if (isSlash && item.type != MentionType.command) return false;
       return item.label.toLowerCase().contains(clean) ||
           item.detail.toLowerCase().contains(clean) ||
           item.type.name.toLowerCase().contains(clean) ||
@@ -48,6 +57,8 @@ class MentionAutocompleteOverlay extends StatelessWidget {
         return Icons.chat_bubble_outline_rounded;
       case MentionType.terminal:
         return Icons.terminal_outlined;
+      case MentionType.command:
+        return Icons.bolt_rounded;
     }
   }
 
@@ -64,6 +75,8 @@ class MentionAutocompleteOverlay extends StatelessWidget {
         return scheme.tertiary;
       case MentionType.terminal:
         return scheme.outline;
+      case MentionType.command:
+        return const Color(0xFFF59E0B);
     }
   }
 
@@ -71,6 +84,10 @@ class MentionAutocompleteOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final filtered = _filteredItems;
     final scheme = Theme.of(context).colorScheme;
+    final isSlash = query.startsWith('/') || (filtered.isNotEmpty && filtered.every((i) => i.type == MentionType.command));
+    final headerIcon = isSlash ? Icons.bolt_rounded : Icons.alternate_email;
+    final headerTitle = isSlash ? 'Commandes rapides (/) (${filtered.length})' : 'Mentions (${filtered.length})';
+    final emptyTitle = isSlash ? 'Aucune commande correspondant à "$query"' : 'No matching mentions for "$query"';
 
     return Container(
       constraints: BoxConstraints(maxHeight: maxHeight),
@@ -96,10 +113,10 @@ class MentionAutocompleteOverlay extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(
                 children: [
-                  Icon(Icons.alternate_email, size: 14, color: scheme.primary),
+                  Icon(headerIcon, size: 14, color: isSlash ? const Color(0xFFF59E0B) : scheme.primary),
                   const SizedBox(width: 6),
                   Text(
-                    'Mentions (${filtered.length})',
+                    headerTitle,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -114,7 +131,7 @@ class MentionAutocompleteOverlay extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Text(
-                  'No matching mentions for "$query"',
+                  emptyTitle,
                   style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                 ),
               )

@@ -1,4 +1,4 @@
-enum MentionType { file, rule, mcp, conversation, terminal, folder }
+enum MentionType { file, rule, mcp, conversation, terminal, folder, command }
 
 class MentionItem {
   final MentionType type;
@@ -15,6 +15,6 @@ class MentionItem {
     this.isDirectory = false,
   });
 
-  String get tag => '@${type.name}:$label';
+  String get tag => type == MentionType.command ? label : '@${type.name}:$label';
 }
 

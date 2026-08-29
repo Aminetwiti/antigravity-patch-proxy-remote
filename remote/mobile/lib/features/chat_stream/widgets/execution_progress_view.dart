@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../theme/app_colors.dart';
 import '../../../widgets/md3_spinner.dart';
+import '../../../widgets/antigravity_spinning_arc.dart';
 import '../../../widgets/resolved_ask_question_card.dart';
 
 /// Type d'étape d'exécution fidèle à Antigravity 2.0 Desktop.
@@ -744,7 +745,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       ),
       child: Row(
         children: [
-          _buildPulsingDot(),
+          if (widget.isStreaming)
+            const AntigravitySpinningArc(size: 13, color: AppColors.accentBlueBright)
+          else
+            _buildPulsingDot(),
           const SizedBox(width: 8),
           Expanded(
             child: Row(
@@ -1064,6 +1068,13 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (widget.isStreaming) ...[
+                  AntigravitySpinningArc(
+                    size: 11.5,
+                    color: isDark ? AppColors.accentBlueBright : scheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 Text(
                   title,
                   style: TextStyle(
