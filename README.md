@@ -583,6 +583,21 @@ To add support for a new LLM provider format:
 
 ---
 
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `AG_PROXY_PORT` | `51074` | Local proxy listen port |
+| `AG_BIND_HOST` | `127.0.0.1` | Bind interface for the proxy, MITM, stub, and daemon probes |
+| `AG_MITM_PORT` | `443` | MITM HTTPS listener port |
+| `AG_STUB_PORT` | `51999` | Emergency proxy stub port |
+| `AG_DAEMON_PORT` | `8090` | Remote daemon WebSocket port |
+| `AG_DAEMON_TOKEN` | — | Auth token for daemon remote access |
+
+Setting `AG_BIND_HOST` to `0.0.0.0` exposes the proxy on all interfaces (required for WSL2 or LAN access).
+
+---
+
 ## Troubleshooting & Diagnostics
 
 | Symptom | Cause | Solution |

@@ -69,7 +69,7 @@ antigravity-add-model-main/
 ## 2. Architecture
 
 ```
-IDE Chat UI ↔ Language Server (Go Binary, patched) ↔ Local Proxy :${AG_PROXY_PORT:-51074}
+IDE Chat UI ↔ Language Server (Go Binary, patched) ↔ Local Proxy ${AG_BIND_HOST:-127.0.0.1}:${AG_PROXY_PORT:-51074}
                                                            │
                                               ┌────────────┴────────────┐
                                          Translator Registry   Protobuf Injector
@@ -86,7 +86,7 @@ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go (:8090 / Cloudf
 ```
 
 **Three core mechanisms:**
-1. **Binary Patching** — Go binary string tables: `daily-cloudcode-pa.googleapis.com` → `127.0.0.1:${AG_PROXY_PORT:-51074}`
+1. **Binary Patching** — Go binary string tables: `daily-cloudcode-pa.googleapis.com` → `${AG_BIND_HOST:-127.0.0.1}:${AG_PROXY_PORT:-51074}`
 2. **HTTP Interception** — `session.defaultSession.webRequest.onBeforeRequest` + proxy server
 3. **Protobuf Injection** — Parse gRPC-Web `GetAvailableModels` response → append custom models → re-encode
 4. **Remote Daemon Bridge** — Automatic PID discovery, CSRF watchdog, gRPC-Web framing, and WebSocket multiplexing with StepRecovery buffer

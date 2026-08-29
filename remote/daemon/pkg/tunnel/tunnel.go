@@ -248,7 +248,11 @@ func (m *Manager) tryPinggy(localPort int) (string, error) {
 }
 
 func (m *Manager) startCloudflare(binPath string, localPort int) (string, error) {
-	targetURL := fmt.Sprintf("http://127.0.0.1:%d", localPort)
+	bind := os.Getenv("AG_BIND_HOST")
+	if bind == "" {
+		bind = "127.0.0.1"
+	}
+	targetURL := fmt.Sprintf("http://%s:%d", bind, localPort)
 	cmd := execCommand(binPath, "tunnel", "--url", targetURL)
 	m.cmd = cmd
 
@@ -293,11 +297,15 @@ func (m *Manager) startCloudflare(binPath string, localPort int) (string, error)
 }
 
 func (m *Manager) startPinggy(binPath string, localPort int) (string, error) {
+	bind := os.Getenv("AG_BIND_HOST")
+	if bind == "" {
+		bind = "127.0.0.1"
+	}
 	args := []string{
 		"-p", "443",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "ServerAliveInterval=30",
-		"-R", fmt.Sprintf("0:127.0.0.1:%d", localPort),
+		"-R", fmt.Sprintf("0:%s:%d", bind, localPort),
 		"a.pinggy.io",
 	}
 	cmd := execCommand(binPath, args...)
