@@ -249,8 +249,8 @@ export async function probeWithProxy(
       (proxyRes) => {
         if (settled) return;
         if (proxyRes.statusCode !== 200) {
-          // Destroy the socket so we don't leak it.
           proxyRes.socket?.destroy();
+          proxyRes.destroy();
           settle({
             url,
             ok: false,

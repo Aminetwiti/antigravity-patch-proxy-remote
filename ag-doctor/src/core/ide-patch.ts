@@ -213,7 +213,8 @@ const IDE_MAIN_HOOK_SIG = '// Antigravity IDE Proxy Auto-Starter Hook';
 const IDE_MAIN_HOOK = `// Antigravity IDE Proxy Auto-Starter Hook
 try {
   const _net = require('net');
-  const _s = _net.connect({ port: 51074, host: '127.0.0.1' }, () => { _s.destroy(); });
+  const _proxyPort = ${DEFAULT_MITM_PORT};
+  const _s = _net.connect({ port: _proxyPort, host: '127.0.0.1' }, () => { _s.destroy(); });
   _s.on('error', () => {
     try {
       const _path = require('path');
@@ -226,7 +227,7 @@ try {
           detached: true,
           stdio: 'ignore',
           windowsHide: true,
-          env: Object.assign({}, process.env, { AG_PROXY_PORT: '51074' })
+          env: Object.assign({}, process.env, { AG_PROXY_PORT: String(_proxyPort) })
         }).unref();
       }
     } catch (_) {}
