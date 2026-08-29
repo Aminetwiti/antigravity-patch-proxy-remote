@@ -599,6 +599,32 @@ func (c *wsTestClient) recvSafe() (map[string]interface{}, error) {
 	return out, nil
 }
 
+// recvWithRetry lit un message en réessayant jusqu'à ce que le timeout total
+// soit atteint. Utile pour les broadcasts asynchrones qui peuvent être
+// retardés par la charge du scheduler lors de tests parallèles.
+func (c *wsTestClient) recvWithRetry(t *testing.T, timeout time.Duration, retries int) (map[string]interface{}, error) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for i := 0; i < retries; i++ {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		_ = c.conn.SetReadDeadline(time.Now().Add(remaining))
+		_, b, err := c.conn.ReadMessage()
+		if err == nil {
+			var out map[string]interface{}
+			if err := json.Unmarshal(b, &out); err == nil {
+				return out, nil
+			}
+		}
+		if i < retries-1 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	return nil, fmt.Errorf("timeout après %v et %d tentatives", timeout, retries)
+}
+
 func newTestServer(client RPCClient) *httptest.Server {
 	ts, _ := newTestServerWithGW(client)
 	return ts

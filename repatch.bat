@@ -6,12 +6,12 @@ REM  Auto-detects the installed product and applies the correct
 REM  patch:
 REM
 REM    A) Antigravity IDE (v1.107.0+, VS Code-based)
-REM         - settings override: jetski.cloudCodeUrl -> localhost:%AG_PROXY_PORT%
+REM         - settings override: jetski.cloudCodeUrl -> %DEFAULT_BIND_HOST%:%AG_PROXY_PORT%
 REM         - starts the local proxy (real proxy via bundled Electron)
 REM
 REM    B) Classic Antigravity (2.x shell)
 REM         - version-aware asar surgery (2.2.x / 2.3.x / ...)
-REM         - binary patch: language_server URL -> localhost:%AG_PROXY_PORT%
+REM         - binary patch: language_server URL -> %DEFAULT_BIND_HOST%:%AG_PROXY_PORT%
 REM         - asar cache + auto-heal registration (survives official updates)
 REM
 REM  Pipeline:

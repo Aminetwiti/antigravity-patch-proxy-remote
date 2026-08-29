@@ -20,6 +20,7 @@ type fakeJetboxStreamer struct {
 	onF     func(updates map[string]connectrpc.JetboxSummary, deletes []string)
 	closed  chan struct{}
 	pending []jetboxFrameCall
+	ready   chan struct{}
 }
 
 type jetboxFrameCall struct {
@@ -28,7 +29,7 @@ type jetboxFrameCall struct {
 }
 
 func newFakeJetboxStreamer() *fakeJetboxStreamer {
-	return &fakeJetboxStreamer{closed: make(chan struct{})}
+	return &fakeJetboxStreamer{closed: make(chan struct{}), ready: make(chan struct{})}
 }
 
 func (f *fakeJetboxStreamer) RunJetboxSubscription(onSummary func(updates map[string]connectrpc.JetboxSummary, deletes []string)) error {
@@ -39,6 +40,9 @@ func (f *fakeJetboxStreamer) RunJetboxSubscription(onSummary func(updates map[st
 	}
 	f.mu.Lock()
 	f.onF = onSummary
+	if f.ready != nil {
+		close(f.ready)
+	}
 	pending := f.pending
 	f.pending = nil
 	f.mu.Unlock()
@@ -79,6 +83,7 @@ func TestJetboxFeedsListSessions(t *testing.T) {
 	jetbox := newFakeJetboxStreamer()
 	defer jetbox.closeStream()
 	gw.RunJetboxSubscription(jetbox)
+	<-jetbox.ready
 
 	// Snapshot initial du stream : une session.
 	jetbox.push(map[string]connectrpc.JetboxSummary{
@@ -128,6 +133,7 @@ func TestJetboxSyncBroadcasts(t *testing.T) {
 	jetbox := newFakeJetboxStreamer()
 	defer jetbox.closeStream()
 	gw.RunJetboxSubscription(jetbox)
+	<-jetbox.ready
 
 	client := dialWS(t, "ws"+strings.TrimPrefix(ts.URL, "http")+"/ws")
 	defer client.conn.Close()
@@ -184,6 +190,7 @@ func TestSessionFocusChangedBroadcast(t *testing.T) {
 	jetbox := newFakeJetboxStreamer()
 	defer jetbox.closeStream()
 	gw.RunJetboxSubscription(jetbox)
+	<-jetbox.ready
 
 	client := dialWS(t, "ws"+strings.TrimPrefix(ts.URL, "http")+"/ws")
 	defer client.conn.Close()
@@ -198,11 +205,12 @@ func TestSessionFocusChangedBroadcast(t *testing.T) {
 	// On attend session_focus_changed (envoyé avant sessions_updated).
 	var focusMsg map[string]interface{}
 	for i := 0; i < 10; i++ {
-		msg := client.recv(t)
-		if msg["type"] == "session_focus_changed" {
+		msg, err := client.recvSafe()
+		if err == nil && msg["type"] == "session_focus_changed" {
 			focusMsg = msg
 			break
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	if focusMsg == nil {
 		t.Fatal("session_focus_changed non reçu après le premier push Jetbox")
@@ -218,11 +226,12 @@ func TestSessionFocusChangedBroadcast(t *testing.T) {
 	}, nil)
 
 	for i := 0; i < 10; i++ {
-		msg := client.recv(t)
-		if msg["type"] == "session_focus_changed" {
+		msg, err := client.recvSafe()
+		if err == nil && msg["type"] == "session_focus_changed" {
 			focusMsg = msg
 			break
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	data, _ = focusMsg["data"].(map[string]interface{})
 	if data["cascadeId"] != "casc-old" {

@@ -92,7 +92,10 @@ func TestSchedulerQuotaPush(t *testing.T) {
 	// Forcer un push immédiat (horodatage zéro = jamais poussé).
 	scheduler.maybePushQuota(time.Now())
 
-	msg := client.recv(t)
+	msg, err := client.recvWithRetry(t, 2*time.Second, 20)
+	if err != nil {
+		t.Fatalf("Attendu broadcast quota_update, non reçu: %v", err)
+	}
 	if msg["type"] != "quota_update" {
 		t.Fatalf("Attendu broadcast quota_update, reçu %v", msg)
 	}

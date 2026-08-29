@@ -22,6 +22,21 @@ function generateCert() {
   const notBefore = now.toISOString();
   const notAfter = new Date(now.getTime() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
 
+  const defaultSANs = [
+    { type: 'IPAddress', value: '127.0.0.1' },
+    { type: 'IPAddress', value: '::1' },
+    { type: 'DNS', value: 'localhost' },
+  ];
+
+  const bindHost = process.env.AG_BIND_HOST || '';
+  const extraSANs = bindHost
+    ? [{ type: 'IPAddress', value: bindHost }]
+    : [];
+
+  const altNames = [...defaultSANs, ...extraSANs.filter(
+    (san) => !defaultSANs.some((d) => d.value === san.value)
+  )];
+
   const cert = crypto.createX509Certificate({
     subject: [{ value: 'CN=Antigravity MITM', type: 'commonName' }],
     issuer: [{ value: 'CN=Antigravity MITM', type: 'commonName' }],
@@ -42,11 +57,7 @@ function generateCert() {
       },
       {
         name: 'subjectAltName',
-        altNames: [
-          { type: 'IPAddress', value: '127.0.0.1' },
-          { type: 'IPAddress', value: '::1' },
-          { type: 'DNS', value: 'localhost' },
-        ],
+        altNames,
       },
     ],
     signingAlgorithm: 'SHA256WITHRSA',
