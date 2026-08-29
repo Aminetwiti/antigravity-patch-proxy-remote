@@ -8,8 +8,8 @@
     "build:cli": "cd ../ag-doctor && npm install && npm run build",
     "prepack": "npm run build && cd ../ag-doctor && npm install && npm run build && npm prune --omit=dev",
     "watch": "tsc -p tsconfig.json --watch",
-    "start": "npm run build && electron . --disable-gpu",
-    "dev": "tsc -p tsconfig.json --watch & electron . --disable-gpu",
+    "start": "npm run build && node dist/launch.js",
+    "dev": "tsc -p tsconfig.json --watch & node dist/launch.js",
     "pack": "npm run build && electron-builder --dir",
 
     "dist": "npm run build && electron-builder --win nsis portable",

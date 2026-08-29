@@ -33,14 +33,18 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 const activeStreams = new Map<string, ChildProcess>();
 
-// Disable GPU sandbox and hardware acceleration in packaged builds to avoid
+// Disable hardware acceleration and GPU-dependent paths to avoid
 // startup crashes and noisy GLES3/GLES2 fallback warnings on some Windows setups
-if (app.isPackaged) {
-  app.disableHardwareAcceleration();
-}
+app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-gpu-compositing');
 app.commandLine.appendSwitch('disable-software-rasterizer');
+app.commandLine.appendSwitch('disable-3d-apis');
+app.commandLine.appendSwitch('in-process-gpu');
+app.commandLine.appendSwitch('disable-gpu-rasterization');
+app.commandLine.appendSwitch('disable-zero-copy');
+app.commandLine.appendSwitch('disable-gpu-vsync');
+app.commandLine.appendSwitch('no-sandbox');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cached paths (computed once)
