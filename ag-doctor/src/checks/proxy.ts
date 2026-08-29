@@ -27,8 +27,12 @@ export function findProxyStubScript(): string | null {
  * This is the documented fallback when Antigravity is not running — it makes
  * the configured proxy port answer so the patched language server can initialise. The real
  * proxy (inside the repacked app.asar) takes over when Antigravity launches.
+ *
+ * Returns true only if the stub process was spawned AND the health endpoint
+ * responds within the timeout. A spawn success alone is not enough — the
+ * stub can crash immediately (port in use, bad args, etc.).
  */
-function startProxyStub(port: number): boolean {
+async function startProxyStub(port: number): Promise<boolean> {
   try {
     const script = findProxyStubScript();
     if (!script) return false;
@@ -38,7 +42,10 @@ function startProxyStub(port: number): boolean {
       windowsHide: true,
     });
     child.unref();
-    return true;
+    await new Promise((r) => setTimeout(r, 1500));
+    const health = `http://127.0.0.1:${port}/health`;
+    const result = await probe(health, 2000);
+    return result.ok;
   } catch {
     return false;
   }
@@ -59,27 +66,22 @@ export async function checkProxy(port = DEFAULT_MITM_PORT): Promise<CheckResult>
     // Antigravity is closed, without requiring the user to run the stub
     // manually (the check itself used to instruct them to do exactly that).
     if (isRefusedError(result.error)) {
-      const started = startProxyStub(port);
+      const started = await startProxyStub(port);
       if (started) {
-        await new Promise((r) => setTimeout(r, 1500));
-        const retry = await probe(health, 2000);
-        if (retry.ok) {
-          return {
-            id: 'proxy',
-            title: 'Local proxy',
-            status: 'ok',
-            message: `Reachable on http://127.0.0.1:${port} (${retry.latencyMs}ms) — stub auto-started by ag-doctor`,
-            details: [
-              'Antigravity is not running, so ag-doctor started the emergency proxy stub.',
-              `The stub keeps port ${DEFAULT_MITM_PORT} answering so the patched language server can initialise.`,
-              `NOTE: the stub does not inject custom models, and it will block the real proxy`,
-              `from binding ${DEFAULT_MITM_PORT}. Before launching Antigravity, replace it with the real proxy:`,
-              '  ag-doctor proxy start   (kills the stub and starts the real proxy)',
-            ].join('\n'),
-            fixable: false,
-            data: retry,
-          };
-        }
+        return {
+          id: 'proxy',
+          title: 'Local proxy',
+          status: 'ok',
+          message: `Reachable on http://127.0.0.1:${port} — stub auto-started by ag-doctor`,
+          details: [
+            'Antigravity is not running, so ag-doctor started the emergency proxy stub.',
+            `The stub keeps port ${DEFAULT_MITM_PORT} answering so the patched language server can initialise.`,
+            `NOTE: the stub does not inject custom models, and it will block the real proxy`,
+            `from binding ${DEFAULT_MITM_PORT}. Before launching Antigravity, replace it with the real proxy:`,
+            '  ag-doctor proxy start   (kills the stub and starts the real proxy)',
+          ].join('\n'),
+          fixable: false,
+        };
       }
     }
 

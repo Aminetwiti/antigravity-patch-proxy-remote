@@ -4,14 +4,14 @@ const {
   mockExistsSync,
   mockReadFileSync,
   mockGetAppAsarPath,
-  mockListPackage,
-  mockExtractFile,
+  mockListAsarPaths,
+  mockReadAsarFile,
 } = vi.hoisted(() => ({
   mockExistsSync: vi.fn(),
   mockReadFileSync: vi.fn(),
   mockGetAppAsarPath: vi.fn(),
-  mockListPackage: vi.fn(),
-  mockExtractFile: vi.fn(),
+  mockListAsarPaths: vi.fn(),
+  mockReadAsarFile: vi.fn(),
 }));
 
 vi.mock('fs', () => ({
@@ -27,6 +27,11 @@ vi.mock('./paths', () => ({
   getLanguageServerBackup: vi.fn(),
 }));
 
+vi.mock('./asar-reader', () => ({
+  listAsarPaths: (...args: any[]) => mockListAsarPaths(...args),
+  readAsarFile: (...args: any[]) => mockReadAsarFile(...args),
+}));
+
 vi.mock('./antigravity', () => ({
   detectAntigravityVersion: vi.fn(),
 }));
@@ -35,31 +40,6 @@ vi.mock('./config', () => ({
   getPatchVersionOverride: vi.fn(() => ({ range: null, reason: null, setAt: null })),
   DEFAULT_MITM_PORT: 51074,
 }));
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const electronAsarPath = require.resolve('@electron/asar');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const electronAsarReal = require('@electron/asar');
-// @ts-ignore
-require.cache[electronAsarPath] = {
-  id: electronAsarPath,
-  filename: electronAsarPath,
-  loaded: true,
-  exports: {
-    ...electronAsarReal,
-    listPackage: (...args: any[]) => mockListPackage(...args),
-    extractFile: (...args: any[]) => mockExtractFile(...args),
-  },
-  // @ts-ignore
-  children: [],
-  // @ts-ignore
-  paths: [],
-};
-
-(globalThis as any).__hoistedAsarSpy__ = {
-  listPackage: mockListPackage,
-  extractFile: vi.fn(),
-};
 
 import fs from 'fs';
 import { inspectOverlayPatchFingerprint } from './version-specific-patch';
@@ -70,9 +50,8 @@ describe('inspectOverlayPatchFingerprint', () => {
     mockGetAppAsarPath.mockReturnValue('C:\\Antigravity\\resources\\app.asar');
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(Buffer.from(''));
-    mockListPackage.mockReturnValue([]);
-    // Default: package.json unreadable → version unknown → tree-only heuristic.
-    mockExtractFile.mockImplementation(() => {
+    mockListAsarPaths.mockReturnValue([]);
+    mockReadAsarFile.mockImplementation(() => {
       throw new Error('no package.json');
     });
   });
@@ -92,7 +71,7 @@ describe('inspectOverlayPatchFingerprint', () => {
   });
 
   it('detects the 2.2 family with high confidence when proxy tree and proxy-runner exist', () => {
-    mockListPackage.mockReturnValue([
+    mockListAsarPaths.mockReturnValue([
       'dist/proxy/modelLoader.js',
       'dist/proxy/registry.js',
       'proxy-runner.js',
@@ -109,7 +88,7 @@ describe('inspectOverlayPatchFingerprint', () => {
   });
 
   it('detects the 2.2 family with medium confidence when only the proxy tree exists', () => {
-    mockListPackage.mockReturnValue([
+    mockListAsarPaths.mockReturnValue([
       'dist/proxy/modelLoader.js',
       'dist/proxy/registry.js',
     ]);
@@ -125,7 +104,7 @@ describe('inspectOverlayPatchFingerprint', () => {
   });
 
   it('detects the 2.3 family with high confidence when proxy tree, proxy-runner, and helper modules are all absent', () => {
-    mockListPackage.mockReturnValue([
+    mockListAsarPaths.mockReturnValue([
       'dist/main.js',
       'dist/ipcHandlers.js',
     ]);
@@ -140,7 +119,7 @@ describe('inspectOverlayPatchFingerprint', () => {
   });
 
   it('detects the 2.3 family with medium confidence when proxy tree and proxy-runner are absent but helper modules remain', () => {
-    mockListPackage.mockReturnValue([
+    mockListAsarPaths.mockReturnValue([
       'dist/cryptoStore.js',
       'dist/customModelStore.js',
       'dist/schemaValidator.js',
@@ -156,7 +135,7 @@ describe('inspectOverlayPatchFingerprint', () => {
   });
 
   it('returns inconclusive when signals conflict', () => {
-    mockListPackage.mockReturnValue([
+    mockListAsarPaths.mockReturnValue([
       'proxy-runner.js',
       'dist/customModelStore.js',
     ]);
@@ -173,13 +152,13 @@ describe('inspectOverlayPatchFingerprint', () => {
   });
 
   it('labels a patched overlay on a 2.3+ install as injected, not stock 2.2', () => {
-    mockListPackage.mockReturnValue([
+    mockListAsarPaths.mockReturnValue([
       'dist/proxy/modelLoader.js',
       'dist/proxy/registry.js',
       'proxy-runner.js',
       'dist/cryptoStore.js',
     ]);
-    mockExtractFile.mockReturnValue(Buffer.from(JSON.stringify({ name: 'antigravity', version: '2.10.0' })));
+    mockReadAsarFile.mockReturnValue(Buffer.from(JSON.stringify({ name: 'antigravity', version: '2.10.0' })));
 
     const result = inspectOverlayPatchFingerprint('C:\\Antigravity');
 
@@ -193,12 +172,12 @@ describe('inspectOverlayPatchFingerprint', () => {
   });
 
   it('keeps the stock 2.2 label when the app version really is 2.2.x', () => {
-    mockListPackage.mockReturnValue([
+    mockListAsarPaths.mockReturnValue([
       'dist/proxy/modelLoader.js',
       'dist/proxy/registry.js',
       'proxy-runner.js',
     ]);
-    mockExtractFile.mockReturnValue(Buffer.from(JSON.stringify({ name: 'antigravity', version: '2.2.5' })));
+    mockReadAsarFile.mockReturnValue(Buffer.from(JSON.stringify({ name: 'antigravity', version: '2.2.5' })));
 
     const result = inspectOverlayPatchFingerprint('C:\\Antigravity');
 
@@ -209,7 +188,7 @@ describe('inspectOverlayPatchFingerprint', () => {
   });
 
   it('returns a low-confidence error when app.asar inspection throws', () => {
-    mockListPackage.mockImplementation(() => {
+    mockListAsarPaths.mockImplementation(() => {
       throw new Error('corrupt asar');
     });
 

@@ -39,6 +39,19 @@ import { getProfilePath } from './profile';
 import { DEFAULT_MITM_PORT } from './config';
 import type { CheckResult } from '../types';
 
+const hasNativeFetch = typeof globalThis.fetch === 'function';
+
+async function fetchWithTimeout(url: string, timeoutMs = 5000): Promise<Response | null> {
+  if (!hasNativeFetch) {
+    return null;
+  }
+  try {
+    return await fetch(url, { signal: AbortSignal.timeout(timeoutMs) }).catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
 export interface RecoveryRule {
   id: string;
   checkId: string;
@@ -212,9 +225,7 @@ async function restartProxy(rule: RecoveryRule): Promise<RecoveryActionResult> {
     // The proxy is started by the parent process (Antigravity). We can ping it
     // and try to trigger a restart by sending a signal to the parent PID.
     const port = DEFAULT_MITM_PORT;
-    const pingRes = await fetch(`http://127.0.0.1:${port}/health`, {
-      signal: AbortSignal.timeout(2000),
-    }).catch(() => null);
+    const pingRes = await fetchWithTimeout(`http://127.0.0.1:${port}/health`, 2000);
 
     if (pingRes && pingRes.ok) {
       return {
@@ -640,16 +651,11 @@ export async function runRecovery(
 }
 
 async function notifyWebhook(url: string, payload: unknown): Promise<void> {
-  await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      source: 'ag-doctor',
-      timestamp: new Date().toISOString(),
-      payload,
-    }),
-    signal: AbortSignal.timeout(5000),
-  });
+  if (!hasNativeFetch) return;
+  await fetchWithTimeout(url, 5000).then(async (res) => {
+    if (!res || !res.ok) return;
+    await res.text().catch(() => undefined);
+  }).catch(() => undefined);
 }
 
 /** Reset cooldown tracker (useful for tests). */

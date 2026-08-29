@@ -71,7 +71,7 @@ export interface AntigravityStatus {
 function readWindowsFileVersion(exePath: string): string | null {
   try {
     const buf = fs.readFileSync(exePath);
-    const sig = Buffer.from('VS_VERSION_INFO', 'binary');
+    const sig = Buffer.from('VS_VERSION_INFO', 'utf-8');
     const idx = buf.indexOf(sig);
     if (idx === -1) return null;
     const fixedSig = Buffer.from([0xbd, 0x04, 0xef, 0xce]); // VS_FIXEDFILEINFO magic

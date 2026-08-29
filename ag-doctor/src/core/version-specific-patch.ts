@@ -17,6 +17,7 @@ import { detectAntigravityVersion } from './antigravity';
 import { getPatchVersionOverride } from './config';
 import { DEFAULT_MITM_PORT } from './config';
 import type { PatchStatus } from '../types';
+import { listAsarPaths, readAsarFile } from './asar-reader';
 
 /**
  * Patch definitions for different Antigravity version ranges.
@@ -238,12 +239,10 @@ export function inspectOverlayPatchFingerprint(installDir?: string): OverlayFing
   }
 
   try {
-    const asar = require('@electron/asar');
-    const listFn = asar.listPackage ?? (asar.default as any)?.listPackage;
-    if (typeof listFn !== 'function') {
-      throw new Error('@electron/asar listPackage method is unavailable');
+    const entries: string[] = listAsarPaths(asarPath).map(normalizeAsarEntry);
+    if (entries.length === 0 && !fs.existsSync(asarPath)) {
+      throw new Error('app.asar not found or empty');
     }
-    const entries: string[] = (listFn(asarPath) as string[]).map(normalizeAsarEntry);
 
     const hasProxyTree = hasAsarPrefix(entries, '/dist/proxy');
     const hasProxyModelLoader = hasAsarEntry(entries, '/dist/proxy/modelLoader.js');
@@ -266,9 +265,11 @@ export function inspectOverlayPatchFingerprint(installDir?: string): OverlayFing
     // the version a patched 2.5+/2.6+/2.10+ install is mislabeled "2.2 family".
     let appVersion: string | null = null;
     try {
-      const raw = asar.extractFile(asarPath, 'package.json');
-      const pkg = JSON.parse(raw.toString('utf8'));
-      if (pkg && typeof pkg.version === 'string') appVersion = pkg.version;
+      const raw = readAsarFile(asarPath, 'package.json');
+      if (raw) {
+        const pkg = JSON.parse(raw.toString('utf8'));
+        if (pkg && typeof pkg.version === 'string') appVersion = pkg.version;
+      }
     } catch {
       // Version read failed — fall back to the tree-only heuristic below.
     }
@@ -587,8 +588,23 @@ export function applyVersionSpecificPatch(installDir?: string): { ok: boolean; m
   const patch = status.recommendedPatch;
   const source = status.overrideActive ? 'user override' : 'auto-detect';
 
-  // Check if already patched
-  const buf = fs.readFileSync(binaryPath);
+  let buf: Buffer;
+  try {
+    const stat = fs.statSync(binaryPath);
+    if (stat.size > 200 * 1024 * 1024) {
+      return {
+        ok: false,
+        message: `Binary too large to patch safely (${(stat.size / 1024 / 1024).toFixed(1)} MB). Please report this.`,
+      };
+    }
+    buf = fs.readFileSync(binaryPath);
+  } catch (e) {
+    return {
+      ok: false,
+      message: `Failed to read binary: ${(e as Error).message}`,
+    };
+  }
+
   const haystack = buf.toString('binary');
 
   if (haystack.includes(patch.patchedUrl)) {
