@@ -21,6 +21,7 @@ class SessionBreadcrumb extends StatelessWidget {
   final bool hasRunningTasks;
   final bool hasWaitingApproval;
   final bool isError;
+  final int? quotaPercent;
 
   const SessionBreadcrumb({
     super.key,
@@ -38,6 +39,7 @@ class SessionBreadcrumb extends StatelessWidget {
     this.hasRunningTasks = false,
     this.hasWaitingApproval = false,
     this.isError = false,
+    this.quotaPercent,
   });
 
   @override
@@ -199,6 +201,49 @@ class SessionBreadcrumb extends StatelessWidget {
               ],
             ),
           ),
+          if (quotaPercent != null) ...[
+            const SizedBox(width: 4),
+            Tooltip(
+              message: 'Quota restant : $quotaPercent%',
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: quotaPercent! < 20
+                        ? (isDark ? AppColors.danger : scheme.error)
+                        : (isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4)),
+                    width: 0.6,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.pie_chart_outline_rounded,
+                      size: 11,
+                      color: quotaPercent! < 20
+                          ? (isDark ? AppColors.danger : scheme.error)
+                          : (isDark ? AppColors.accentBlue : scheme.primary),
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      '$quotaPercent%',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w600,
+                        color: quotaPercent! < 20
+                            ? (isDark ? AppColors.danger : scheme.error)
+                            : (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           if (onToggleSearch != null) ...[
             const SizedBox(width: 4),
             InkWell(

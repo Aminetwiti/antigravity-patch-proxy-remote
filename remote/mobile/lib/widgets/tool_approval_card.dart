@@ -35,11 +35,14 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
   bool _isSubmitting = false;
   // Guard timeout : si le daemon ne répond pas en 5 s, on débloque le bouton.
   Timer? _submitTimeout;
+  Timer? _countdownTimer;
+  int _remainingSeconds = 60;
   final TextEditingController _denyReasonController = TextEditingController();
 
   bool _showMcpArgs = false;
   bool _destructiveConfirmed = false;
 
+  bool get _isEffectiveExpired => widget.isExpired || _remainingSeconds <= 0;
   bool get _isUrlApproval => widget.request.isUrlApproval;
   bool get _isFileApproval => widget.request.isFileApproval;
   bool get _isScopedApproval =>
@@ -120,10 +123,31 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
   void initState() {
     super.initState();
     _triggerArrivalHaptic();
+    _startCountdown();
+  }
+
+  void _startCountdown() {
+    _countdownTimer?.cancel();
+    if (!widget.isExpired) {
+      _remainingSeconds = 60;
+      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        setState(() {
+          if (_remainingSeconds > 0) {
+            _remainingSeconds--;
+          } else {
+            timer.cancel();
+          }
+        });
+      });
+    }
   }
 
   void _triggerArrivalHaptic() {
-    if (!widget.isExpired) {
+    if (!_isEffectiveExpired) {
       if (_isDestructive) {
         HapticFeedback.heavyImpact();
       } else {
@@ -138,6 +162,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
     if (oldWidget.request.callId != widget.request.callId) {
       _isSubmitting = false;
       _selectedOption = 1;
+      _startCountdown();
       _alwaysAllow = false;
       _showDenyReason = false;
       _showMcpArgs = false;
@@ -210,6 +235,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _submitTimeout?.cancel();
     _denyReasonController.dispose();
     super.dispose();
@@ -231,7 +257,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
         label: label,
         child: InkWell(
           key: Key('approval-option-$index'),
-          onTap: widget.isExpired || _isSubmitting
+          onTap: _isEffectiveExpired || _isSubmitting
               ? null
               : () {
                   HapticFeedback.selectionClick();
@@ -259,26 +285,27 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
               children: [
                 // Numéro badge
                 Container(
-                  width: 20,
-                  height: 20,
-                  alignment: Alignment.center,
+                  width: 18,
+                  height: 18,
                   decoration: BoxDecoration(
                     color: isSelected
                         ? (isDark ? AppColors.accentBlue : scheme.primary)
-                        : (isDark ? AppColors.surfaceHover : scheme.surfaceContainerHighest),
-                    shape: BoxShape.circle,
+                        : (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest),
+                    borderRadius: BorderRadius.circular(4),
                   ),
+                  alignment: Alignment.center,
                   child: Text(
                     '$index',
                     style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      color: isSelected ? Colors.white : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
+                      color: isSelected
+                          ? AppColors.onAccent
+                          : (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Libellé de l'option
                 Expanded(
                   child: Text(
                     label,
@@ -291,14 +318,12 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                     ),
                   ),
                 ),
-                // Indicateur Radio
-                Icon(
-                  isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-                  size: 16,
-                  color: isSelected
-                      ? (isDark ? AppColors.accentBlueBright : scheme.primary)
-                      : (isDark ? AppColors.inkMuted.withValues(alpha: 0.5) : scheme.outline),
-                ),
+                if (isSelected)
+                  Icon(
+                    Icons.check_rounded,
+                    size: 14,
+                    color: isDark ? AppColors.accentBlueBright : scheme.primary,
+                  ),
               ],
             ),
           ),
@@ -309,49 +334,47 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
 
   @override
   Widget build(BuildContext context) {
-    final request = widget.request;
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final targetDisplay = _extractTargetDisplay(request.url ?? request.command);
+    final request = widget.request;
+    final targetDisplay = _extractTargetDisplay(request.command);
 
-    return RepaintBoundary(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOutCubic,
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: widget.isExpired
-                ? scheme.error.withValues(alpha: 0.7)
-                : _isSubmitting
-                    ? (isDark ? AppColors.accentBlue : scheme.primary)
-                    : (isDark ? AppColors.borderStrong : scheme.outlineVariant),
-            width: 1.5,
-          ),
-          boxShadow: _isSubmitting
-              ? [
-                  BoxShadow(
-                    color: (isDark ? AppColors.accentBlue : scheme.primary).withValues(alpha: 0.2),
-                    blurRadius: 10,
-                    spreadRadius: 1,
-                  )
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceRaised : scheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _isDestructive
+              ? (isDark ? AppColors.danger : scheme.error)
+              : (_isEffectiveExpired
+                  ? (isDark ? AppColors.borderSubtle : scheme.outlineVariant)
+                  : (isDark ? AppColors.accentBlue : scheme.primary)),
+          width: _isDestructive ? 1.5 : 1.0,
         ),
+        boxShadow: _isDestructive
+            ? [
+                BoxShadow(
+                  color: (isDark ? AppColors.danger : scheme.error).withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  spreadRadius: 1,
+                )
+              ]
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── En-tête : Cadenas / Outil + Titre
+            // ── En-tête : Cadenas / Outil + Titre + Countdown Badge
             Row(
               children: [
                 Icon(
@@ -373,6 +396,63 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                     ),
                   ),
                 ),
+                if (!_isEffectiveExpired) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _remainingSeconds <= 10
+                            ? (isDark ? AppColors.danger : scheme.error)
+                            : (isDark ? AppColors.borderSubtle : scheme.outlineVariant),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.timer_outlined,
+                          size: 11,
+                          color: _remainingSeconds <= 10
+                              ? (isDark ? AppColors.danger : scheme.error)
+                              : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${_remainingSeconds}s',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w600,
+                            color: _remainingSeconds <= 10
+                                ? (isDark ? AppColors.danger : scheme.error)
+                                : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF3A2423) : const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFFEF4444).withValues(alpha: 0.5) : const Color(0xFFDC2626),
+                      ),
+                    ),
+                    child: Text(
+                      'Expiré',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 8),

@@ -25,6 +25,8 @@ class SubagentItem {
     this.inheritCustomizations = true,
   });
 
+  String? get type => typeName;
+
   String get displayWorkedFor {
     if (workedFor != null && workedFor!.isNotEmpty) {
       return workedFor!.startsWith('Worked for') ? workedFor! : 'Worked for $workedFor';

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../theme/app_colors.dart';
+import '../../../widgets/md3_spinner.dart';
+import '../../../widgets/resolved_ask_question_card.dart';
 
 /// Type d'étape d'exécution fidèle à Antigravity 2.0 Desktop.
 enum ExecutionStepType {
@@ -21,6 +23,7 @@ enum ExecutionStepType {
   thought,
   search,
   processingGroup,
+  question,
 }
 
 class ExecutionStepItem {
@@ -497,7 +500,38 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         continue;
       }
 
-      // 12. Narrative text from agent (e.g. "Vérification globale...", "Attente des résultats...")
+      // 12. Question block: [?] 1 question or Question: ...
+      if (line.startsWith('[?]') || line.startsWith('❓') || lower.startsWith('question:')) {
+        String qTitle = line;
+        String? ansText;
+        int nextI = i + 1;
+        while (nextI < lines.length) {
+          final nextLine = lines[nextI].trim();
+          if (nextLine.isEmpty) {
+            nextI++;
+            continue;
+          }
+          if (nextLine.startsWith('✓') || nextLine.startsWith('-') || nextLine.startsWith('*') || nextLine.toLowerCase().startsWith('answer:')) {
+            ansText = nextLine.replaceFirst(RegExp(r'^[✓\-\*\s]+'), '').trim();
+            nextI++;
+          } else {
+            break;
+          }
+        }
+        if (ansText != null) {
+          i = nextI - 1;
+        }
+        rawItems.add(ExecutionStepItem(
+          type: ExecutionStepType.question,
+          action: '1 question',
+          title: qTitle.replaceAll('[?]', '').replaceAll('❓', '').trim(),
+          rawDetail: ansText ?? '',
+          isExpandable: false,
+        ));
+        continue;
+      }
+
+      // 13. Narrative text from agent (e.g. "Vérification globale...", "Attente des résultats...")
       if (line.endsWith('...') || line.endsWith('…') || (!line.startsWith('#') && line.length < 100 && !line.contains('`'))) {
         rawItems.add(ExecutionStepItem(
           type: ExecutionStepType.narrativeText,
@@ -508,7 +542,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         continue;
       }
 
-      // 13. Output / thought text
+      // 14. Output / thought text
       currentThoughtBuffer.writeln(lines[i]);
     }
 
@@ -1157,6 +1191,16 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       );
     }
 
+    // 3. Cas particulier : Question résolue (AskQuestion) inline
+    if (item.type == ExecutionStepType.question) {
+      return ResolvedAskQuestionCard(
+        question: item.title,
+        selectedAnswer: item.rawDetail ?? '',
+        questionCountLabel: item.action.isNotEmpty ? item.action : '1 question',
+        isWriteIn: (item.rawDetail ?? '').contains('write-in'),
+      );
+    }
+
     final isExploredGroup = item.type == ExecutionStepType.exploredGroup;
     final isCommandGroup = item.type == ExecutionStepType.commandGroup;
     final isExpanded = _expandedIndices.contains(index) ||
@@ -1440,12 +1484,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     ),
                   ],
 
-                  // Running Spinner / Pulse or Expand Chevron
+                  // Running Spinner (MD3 double-track fluid spinner) or Expand Chevron
                   if (item.isRunning) ...[
                     const SizedBox(width: 6),
-                    const SizedBox(
-                      width: 10,
-                    ),
+                    const Md3DoubleTrackSpinner(size: 12, strokeWidth: 1.5),
                   ],
 
                   if (item.isExpandable) ...[
@@ -1877,6 +1919,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
   }
 }
 
+
 /// Indicateur en direct "Working.." avec ellipse animée (. -> .. -> ...)
 class _LiveWorkingIndicator extends StatefulWidget {
   const _LiveWorkingIndicator();
@@ -1910,17 +1953,21 @@ class _LiveWorkingIndicatorState extends State<_LiveWorkingIndicator> {
   @override
   Widget build(BuildContext context) {
     final dots = '.' * _dotCount;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 4, left: 2),
+      padding: const EdgeInsets.only(top: 4, bottom: 4, left: 4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          const Md3DoubleTrackSpinner(size: 13, strokeWidth: 1.6),
+          const SizedBox(width: 7),
           Text(
             'Working$dots',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w400,
-              color: Color(0xFF9E9FA8),
+              color: isDark ? const Color(0xFF9E9FA8) : const Color(0xFF5F6368),
               letterSpacing: -0.1,
             ),
           ),

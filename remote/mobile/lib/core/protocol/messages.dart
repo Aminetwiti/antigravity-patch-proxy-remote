@@ -250,9 +250,10 @@ class ProjectItem {
 
 /// Type de segment pour le flux chronologique entrelacé d'Antigravity 2.0.
 enum ChatSegmentType {
-  thought, // Pensées, outils, diffs, minuteurs
-  text,    // Paragraphe de texte émis par l'assistant
-  error,   // Message d'erreur d'exécution de l'agent
+  thought,  // Pensées, outils, diffs, minuteurs
+  text,     // Paragraphe de texte émis par l'assistant
+  error,    // Message d'erreur d'exécution de l'agent
+  question, // Question résolue (AskQuestion) avec options et réponse sélectionnée
 }
 
 /// Segment unitaire dans une bulle de message pour le rendu chronologique séquentiel.
@@ -294,7 +295,11 @@ class ChatSegment {
     final typeStr = json['type']?.toString();
     final type = typeStr == 'thought'
         ? ChatSegmentType.thought
-        : (typeStr == 'error' ? ChatSegmentType.error : ChatSegmentType.text);
+        : (typeStr == 'error'
+            ? ChatSegmentType.error
+            : (typeStr == 'question'
+                ? ChatSegmentType.question
+                : ChatSegmentType.text));
     return ChatSegment(
       type: type,
       content: json['content']?.toString() ?? '',

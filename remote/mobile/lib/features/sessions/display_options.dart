@@ -6,6 +6,7 @@ import '../../theme/app_colors.dart';
 enum SessionGroupBy {
   project,
   workspace,
+  date,
   status,
   none,
 }
@@ -17,6 +18,8 @@ extension SessionGroupByX on SessionGroupBy {
         return 'Project';
       case SessionGroupBy.workspace:
         return 'Workspace';
+      case SessionGroupBy.date:
+        return 'Date';
       case SessionGroupBy.status:
         return 'Status';
       case SessionGroupBy.none:
@@ -90,6 +93,32 @@ Map<String, List<CascadeSession>> groupSessions({
         statusGroup = 'Idle';
       }
       grouped.putIfAbsent(statusGroup, () => []).add(s);
+    }
+    return grouped;
+  }
+
+  if (groupBy == SessionGroupBy.date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final sevenDaysAgo = today.subtract(const Duration(days: 7));
+    final thirtyDaysAgo = today.subtract(const Duration(days: 30));
+
+    for (final s in sessions) {
+      final date = s.updatedAt;
+      String dateGroup = 'Plus ancien';
+      if (date != null) {
+        if (date.isAfter(today)) {
+          dateGroup = 'Aujourd\'hui';
+        } else if (date.isAfter(yesterday)) {
+          dateGroup = 'Hier';
+        } else if (date.isAfter(sevenDaysAgo)) {
+          dateGroup = '7 derniers jours';
+        } else if (date.isAfter(thirtyDaysAgo)) {
+          dateGroup = '30 derniers jours';
+        }
+      }
+      grouped.putIfAbsent(dateGroup, () => []).add(s);
     }
     return grouped;
   }

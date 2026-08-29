@@ -57,6 +57,8 @@ const List<_SlashCommand> _slashCommands = [
   _SlashCommand(Icons.quiz_outlined, '/grill-me', 'Interactive planning interview'),
   _SlashCommand(Icons.flag_outlined, '/goal', 'Autonomous goal until fully achieved'),
   _SlashCommand(Icons.schedule_outlined, '/schedule', 'Set recurring timer / background cron'),
+  _SlashCommand(Icons.school_outlined, '/learn', 'Persist guidelines & instructions for future tasks'),
+  _SlashCommand(Icons.medical_services_outlined, '/doctor', 'Diagnostics, health checks & self-repair'),
   _SlashCommand(Icons.rate_review_outlined, '/review', 'Audit code diffs and complexity'),
   _SlashCommand(Icons.edit_note_rounded, '/plan', 'Draft technical implementation plan'),
   _SlashCommand(Icons.design_services, '/design', 'Generate UI components & screens'),
@@ -104,6 +106,10 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback? onProceedPlan;
   final VoidCallback? onRunTests;
   final VoidCallback? onViewDiff;
+  final VoidCallback? onOpenFiles;
+  final VoidCallback? onOpenTerminal;
+  final VoidCallback? onOpenBrowser;
+  final Set<String>? activeSubsystems;
 
   const ChatInputBar({
     super.key,
@@ -123,6 +129,10 @@ class ChatInputBar extends StatefulWidget {
     this.onProceedPlan,
     this.onRunTests,
     this.onViewDiff,
+    this.onOpenFiles,
+    this.onOpenTerminal,
+    this.onOpenBrowser,
+    this.activeSubsystems,
   });
 
   @override
@@ -182,6 +192,8 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     _controller.text = text;
     _controller.selection = TextSelection.collapsed(offset: text.length);
   }
+
+  String get text => _controller.text;
 
   String get selectedModel => _selectedModel;
 
@@ -2448,6 +2460,8 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                         ],
                       ),
                     ),
+                  // Badges de sous-systèmes actifs (Files, Terminal, Window/Review, Browser CDP)
+                  _buildCapabilityIcons(scheme, isDark),
 
                   // Input TextField avec raccourci Cmd+L / Ctrl+L (autofocus: false pour éviter l'ouverture du clavier au chargement)
                   CallbackShortcuts(
@@ -2863,6 +2877,52 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCapabilityIcons(ColorScheme scheme, bool isDark) {
+    final active = widget.activeSubsystems ?? const {'files', 'terminal', 'window', 'browser'};
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6, left: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _CapabilityIconBadge(
+            icon: Icons.insert_drive_file_outlined,
+            tooltip: 'Fichiers du Workspace (Files)',
+            isActive: active.contains('files'),
+            onTap: widget.onOpenFiles,
+          ),
+          const SizedBox(width: 8),
+          _CapabilityIconBadge(
+            icon: Icons.terminal_rounded,
+            tooltip: 'Terminal distant (PTY / CLI)',
+            isActive: active.contains('terminal'),
+            onTap: widget.onOpenTerminal,
+          ),
+          const SizedBox(width: 8),
+          _CapabilityIconBadge(
+            icon: Icons.web_asset_outlined,
+            tooltip: 'Diffs & Fenêtres de travail',
+            isActive: active.contains('window') || widget.onViewDiff != null,
+            onTap: widget.onViewDiff,
+          ),
+          const SizedBox(width: 8),
+          _CapabilityIconBadge(
+            icon: Icons.travel_explore_rounded,
+            tooltip: 'Exploration Navigateur CDP & Web',
+            isActive: active.contains('browser'),
+            onTap: widget.onOpenBrowser ??
+                () {
+                  final cur = _controller.text;
+                  if (!cur.contains('@browser')) {
+                    _controller.text = cur.isEmpty ? '@browser ' : '$cur @browser ';
+                    _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
+                  }
+                },
+          ),
+        ],
       ),
     );
   }
@@ -3503,6 +3563,47 @@ class _ModelDropdownMenuContentState extends State<_ModelDropdownMenuContent> {
   String _capitalize(String s) {
     if (s.isEmpty) return s;
     return s[0].toUpperCase() + s.substring(1);
+  }
+}
+
+class _CapabilityIconBadge extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final bool isActive;
+  final VoidCallback? onTap;
+
+  const _CapabilityIconBadge({
+    required this.icon,
+    required this.tooltip,
+    this.isActive = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap?.call();
+        },
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+          child: Icon(
+            icon,
+            size: 15.5,
+            color: isActive
+                ? (isDark ? const Color(0xFFC4C7C5) : scheme.onSurface)
+                : (isDark ? const Color(0xFF5F6368) : scheme.outlineVariant),
+          ),
+        ),
+      ),
+    );
   }
 }
 

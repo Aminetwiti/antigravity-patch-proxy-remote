@@ -24,10 +24,12 @@ import '../../widgets/artifact_cards.dart';
 import '../../widgets/side_question_card.dart';
 import '../../widgets/background_tasks_bar.dart';
 import '../../widgets/background_task_output_sheet.dart';
+import '../../widgets/remote_terminal_sheet.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/unified_diff_viewer.dart';
 import '../../widgets/artifact_viewer_modal.dart';
 import '../../widgets/agent_error_card.dart';
+import '../../widgets/resolved_ask_question_card.dart';
 import '../../widgets/project_selector_bottom_sheet.dart';
 import '../../widgets/session_breadcrumb.dart';
 import 'widgets/execution_progress_view.dart';
@@ -1541,11 +1543,39 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     String? customAnswer,
   ) async {
     try {
+      final ansSummary = [
+        ...selectedAnswers,
+        if (customAnswer != null && customAnswer.trim().isNotEmpty)
+          customAnswer.trim(),
+      ].join(', ');
+
       final targetCascadeId = q.cascadeId.isNotEmpty
           ? q.cascadeId
           : (widget.activeSessionId.isNotEmpty
               ? widget.activeSessionId
               : 'cascade-${DateTime.now().millisecondsSinceEpoch}');
+
+      final now = DateTime.now();
+      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      final resolvedMsg = ChatMessage(
+        id: 'q-resolved-${q.requestId}-${DateTime.now().millisecondsSinceEpoch}',
+        sender: 'assistant',
+        text: '',
+        timestamp: timeStr,
+        segments: [
+          ChatSegment(
+            type: ChatSegmentType.question,
+            title: q.question,
+            content: ansSummary,
+          ),
+        ],
+      );
+
+      final buf = _sessionMessages.putIfAbsent(targetCascadeId, () => []);
+      setState(() {
+        buf.add(resolvedMsg);
+      });
+
       await widget.api?.submitQuestionResponse(
         cascadeId: targetCascadeId,
         trajectoryId: q.trajectoryId.isNotEmpty ? q.trajectoryId : null,
@@ -3207,6 +3237,27 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             onProceedPlan: () => _handleSendMessage('proceed'),
             onRunTests: () => _handleSendMessage('Exécute les tests unitaires du projet'),
             onViewDiff: () => setState(() => _currentTab = SessionTabType.review),
+            onOpenFiles: () => Scaffold.maybeOf(context)?.openEndDrawer(),
+            onOpenTerminal: () {
+              RemoteTerminalSheet.show(
+                context,
+                api: widget.api,
+                workspacePath: widget.activeProjectName,
+              );
+            },
+            onOpenBrowser: () {
+              final cur = _chatInputKey.currentState?.text ?? '';
+              _chatInputKey.currentState?.setText(
+                  cur.contains('@browser') ? cur : (cur.isEmpty ? '@browser ' : '$cur @browser '));
+            },
+            activeSubsystems: {
+              'files',
+              if (widget.api != null) 'terminal',
+              'window',
+              if (_subagents.any((s) => (s.typeName ?? s.role).toLowerCase().contains('browser')) ||
+                  _hasCurrentActiveStream)
+                'browser',
+            },
           ),
         ],
       ),
@@ -4724,6 +4775,12 @@ class _MessageBubble extends StatelessWidget {
                     errorText: message.segments[segIdx].content,
                     title: message.segments[segIdx].title,
                     onRetry: onRetryTask,
+                  ),
+                ] else if (message.segments[segIdx].type == ChatSegmentType.question) ...[
+                  ResolvedAskQuestionCard(
+                    question: message.segments[segIdx].title ?? 'Clarification',
+                    selectedAnswer: message.segments[segIdx].content,
+                    isWriteIn: message.segments[segIdx].content.contains('write-in'),
                   ),
                 ],
               ],
