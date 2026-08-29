@@ -868,7 +868,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
     }
 
     return new Promise((resolve) => {
-      const req = net.request({ url, method: 'GET' });
+      const req = net.request({ url: url.toString(), method: 'GET' });
       if (params.apiKey && !params.apiKey.startsWith('enc:')) {
         req.setHeader('Authorization', 'Bearer ' + params.apiKey);
       }
@@ -908,9 +908,10 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMainInvokeEvent, params: { apiUrl: string; apiKey: string; id?: string; modelId?: string }) => {
    try {
-      const { net } = require('electron') as typeof import('electron');
-      const baseUrl = params.apiUrl.replace(/\/+$/, '');
-      const parsedBase = new URL(baseUrl);
+       const { net } = require('electron') as typeof import('electron');
+       const baseUrl = params.apiUrl.replace(/\/+$/, '');
+
+       const parsedBase = new URL(baseUrl);
       if (!['http:', 'https:'].includes(parsedBase.protocol)) {
         return { success: false, healthStatus: 'offline' as const, error: `Unsupported URL scheme: ${parsedBase.protocol}` };
       }
@@ -942,8 +943,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
        });
      };
 
-     const baseUrl = params.apiUrl.replace(/\/+$/, '');
-     let statusCode = 500;
+      let statusCode = 500;
      let responseData = '';
      let latencyMs = 0;
 
