@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,10 @@ type Client struct {
 }
 
 func NewClient(port int, csrfToken string) *Client {
+	bindHost := "127.0.0.1"
+	if h := os.Getenv("AG_BIND_HOST"); h != "" {
+		bindHost = h
+	}
 	transport := &http.Transport{
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 20,
@@ -43,7 +48,7 @@ func NewClient(port int, csrfToken string) *Client {
 	return &Client{
 		port:      port,
 		csrfToken: csrfToken,
-		Host:      "127.0.0.1",
+		Host:      bindHost,
 		InsecureSkipVerify: true,
 		HTTP: &http.Client{
 			Timeout:   60 * time.Second,
