@@ -23,7 +23,7 @@ export interface ProxyServerStatus {
 
 class ProxyManager {
   private proxyProcess: ChildProcess | null = null;
-  private port: number = EnvironmentConfig.proxyPort;
+  private port: number = EnvironmentConfig.mitmPort;
   private host: string = EnvironmentConfig.bindHost;
   private scriptPath: string;
   

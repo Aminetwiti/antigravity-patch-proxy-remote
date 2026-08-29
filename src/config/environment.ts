@@ -3,7 +3,7 @@
  * Allows overriding all network ports, host bindings, and upstream targets via process.env.
  */
 
-import { DEFAULT_PROXY_PORT, GOOGLE_HOSTS } from '../constants';
+import { DEFAULT_PROXY_PORT, GOOGLE_HOSTS, DEFAULT_BIND_HOST } from '../constants';
 
 export interface AppEnvironmentConfig {
   /** Local proxy listen port. Defaults to DEFAULT_PROXY_PORT (50999). */
@@ -29,7 +29,7 @@ export function loadEnvironmentConfig(): AppEnvironmentConfig {
     proxyPort: env.AG_PROXY_PORT ? parseInt(env.AG_PROXY_PORT, 10) : DEFAULT_PROXY_PORT,
     daemonPort: env.AG_DAEMON_PORT ? parseInt(env.AG_DAEMON_PORT, 10) : 8090,
     lsHubPort: env.AG_LS_HUB_PORT ? parseInt(env.AG_LS_HUB_PORT, 10) : 55256,
-    bindHost: env.AG_BIND_HOST || '127.0.0.1',
+    bindHost: env.AG_BIND_HOST || DEFAULT_BIND_HOST,
     upstreamHost: env.AG_UPSTREAM_HOST || GOOGLE_HOSTS.CLOUD_CODE,
     logLevel: env.AG_LOG_LEVEL || 'info',
     isDev: env.NODE_ENV === 'development' || !!env.AG_DEBUG,

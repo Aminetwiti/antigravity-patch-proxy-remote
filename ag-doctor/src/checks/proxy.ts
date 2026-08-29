@@ -3,7 +3,7 @@ import path from 'path';
 import { spawn } from 'child_process';
 import type { CheckResult } from '../types';
 import { probe } from '../core/probe';
-import { DEFAULT_MITM_PORT } from '../core/config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from '../core/config';
 
 /**
  * Locate the standalone proxy stub shipped with this repo.
@@ -43,7 +43,7 @@ async function startProxyStub(port: number): Promise<boolean> {
     });
     child.unref();
     await new Promise((r) => setTimeout(r, 1500));
-    const health = `http://127.0.0.1:${port}/health`;
+    const health = `http://${DEFAULT_BIND_HOST}:${port}/health`;
     const result = await probe(health, 2000);
     return result.ok;
   } catch {
@@ -57,7 +57,7 @@ function isRefusedError(error: string | undefined): boolean {
 }
 
 export async function checkProxy(port = DEFAULT_MITM_PORT): Promise<CheckResult> {
-  const health = `http://127.0.0.1:${port}/health`;
+  const health = `http://${DEFAULT_BIND_HOST}:${port}/health`;
   const result = await probe(health, 2000);
 
   if (!result.ok) {
@@ -72,7 +72,7 @@ export async function checkProxy(port = DEFAULT_MITM_PORT): Promise<CheckResult>
           id: 'proxy',
           title: 'Local proxy',
           status: 'ok',
-          message: `Reachable on http://127.0.0.1:${port} — stub auto-started by ag-doctor`,
+          message: `Reachable on http://${DEFAULT_BIND_HOST}:${port} — stub auto-started by ag-doctor`,
           details: [
             'Antigravity is not running, so ag-doctor started the emergency proxy stub.',
             `The stub keeps port ${DEFAULT_MITM_PORT} answering so the patched language server can initialise.`,
@@ -106,7 +106,7 @@ export async function checkProxy(port = DEFAULT_MITM_PORT): Promise<CheckResult>
       id: 'proxy',
       title: 'Local proxy',
       status: 'ok',
-      message: `Reachable on http://127.0.0.1:${port} (${result.latencyMs}ms) — stub fallback active`,
+          message: `Reachable on http://${DEFAULT_BIND_HOST}:${port} (${result.latencyMs}ms) — stub fallback active`,
       details: [
         `The proxy stub is serving on port ${DEFAULT_MITM_PORT} (emergency fallback; no model injection).`,
         'To enable full proxy support, run repack.ps1 to update the bundled app.asar:',
@@ -122,7 +122,7 @@ export async function checkProxy(port = DEFAULT_MITM_PORT): Promise<CheckResult>
     id: 'proxy',
     title: 'Local proxy',
     status: 'ok',
-    message: `Reachable on http://127.0.0.1:${port} (${result.latencyMs}ms)`,
+    message: `Reachable on http://${DEFAULT_BIND_HOST}:${port} (${result.latencyMs}ms)`,
     data: result,
   };
 }

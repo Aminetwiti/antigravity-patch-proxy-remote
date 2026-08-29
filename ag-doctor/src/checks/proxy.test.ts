@@ -8,7 +8,7 @@ const { mockProbe, mockSpawn } = vi.hoisted(() => ({
 }));
 
 vi.mock('../core/probe', () => ({ probe: mockProbe }));
-vi.mock('../core/config', () => ({ DEFAULT_MITM_PORT: 51074 }));
+vi.mock('../core/config', () => ({ DEFAULT_MITM_PORT: 443 }));
 vi.mock('child_process', () => ({ spawn: mockSpawn }));
 
 import { checkProxy, findProxyStubScript } from './proxy';

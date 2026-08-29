@@ -31,8 +31,9 @@ foreach ($domain in $domains) {
 
 # 2. Verification du proxy local
 $proxyPort = $env:AG_PROXY_PORT; if (-not $proxyPort) { $proxyPort = '51074' }
+$bindHost = $env:AG_BIND_HOST; if (-not $bindHost) { $bindHost = '127.0.0.1' }
 Write-Host "`n[2/4] Verification du proxy local (Port $proxyPort)..." -ForegroundColor Yellow
-$proxy = Test-NetConnection -ComputerName localhost -Port $proxyPort -WarningAction SilentlyContinue
+$proxy = Test-NetConnection -ComputerName $bindHost -Port $proxyPort -WarningAction SilentlyContinue
 if ($proxy.TcpTestSucceeded) {
     Write-Host "  OK Proxy local (Port $proxyPort) actif et ecoute." -ForegroundColor Green
 } else {

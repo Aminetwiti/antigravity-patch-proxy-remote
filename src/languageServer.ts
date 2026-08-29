@@ -7,7 +7,7 @@ import path from 'path';
 import * as readline from 'readline';
 import { PassThrough } from 'stream';
 import { getLsLogPath, getAppDataDirName, getActivePortFilePath } from './paths';
-import { LS_CERT_FINGERPRINT } from './constants';
+import { LS_CERT_FINGERPRINT, LOOPBACK_HOSTS, GOOGLE_HOSTS } from './constants';
 import { setupNodeWrapper } from './utils';
 import { startProxy, stopProxy } from './proxy';
 
@@ -216,7 +216,7 @@ export function startLanguageServer(port: number, csrf: string, headless?: boole
       console.error('[LanguageServer] Failed to start local proxy:', err);
     }
 
-    const apiServerUrl = proxyPort ? `http://localhost:${proxyPort}` : 'https://generativelanguage.googleapis.com';
+    const apiServerUrl = proxyPort ? `http://${LOOPBACK_HOSTS[0]}:${proxyPort}` : `https://${GOOGLE_HOSTS.GENERATIVE_LANGUAGE}`;
 
     // We need to pass the override flags because the LS is running in standalone mode
     const args: string[] = [
@@ -465,7 +465,7 @@ export async function killLanguageServer(): Promise<void> {
 export function setupLocalCertTrust(): void {
   session.defaultSession.setCertificateVerifyProc((request, callback) => {
     if (
-      (request.hostname === '127.0.0.1' || request.hostname === 'localhost') &&
+      (LOOPBACK_HOSTS.includes(request.hostname as typeof LOOPBACK_HOSTS[number])) &&
       request.certificate.fingerprint === LS_CERT_FINGERPRINT
     ) {
       callback(0); // Accept

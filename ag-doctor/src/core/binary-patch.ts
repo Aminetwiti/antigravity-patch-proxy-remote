@@ -2,7 +2,7 @@
  * Binary patch for the Antigravity language_server.
  *
  * Replaces the hardcoded URL `https://daily-cloudcode-pa.googleapis.com`
- * (41 bytes) with `http://localhost:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx` (41 bytes)
+ * (41 bytes) with `http://${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx` (41 bytes)
  * so that all Cloud Code calls are routed through the local proxy.
  *
  * A backup of the original binary is automatically created at <binary>.bak
@@ -10,11 +10,11 @@
  */
 import fs from 'fs';
 import { getLanguageServerBinary, getLanguageServerBackup } from './paths';
-import { DEFAULT_MITM_PORT } from './config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 import type { PatchStatus } from '../types';
 
 export const ORIGINAL_URL = 'https://daily-cloudcode-pa.googleapis.com';
-export const PATCHED_URL = `http://localhost:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx`;
+export const PATCHED_URL = `http://${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx`;
 
 if (ORIGINAL_URL.length !== PATCHED_URL.length) {
   throw new Error(

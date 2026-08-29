@@ -20,7 +20,7 @@ import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 import type { CommandContext } from '../types';
 import { c, header, ok, warn, error, info } from '../cli/output';
-import { loadConfig } from '../core/config';
+import { loadConfig, DEFAULT_BIND_HOST } from '../core/config';
 import { isPortInUse, killAntigravityProcesses, resolveProxyRuntime, proxySpawnEnv } from '../core/process';
 import { probe } from '../core/probe';
 import { Spinner } from '../cli/spinner';
@@ -240,7 +240,7 @@ export async function getProxyStatus(port: number): Promise<ProxyStatus> {
   };
 
   // Probe the port (use /health to detect stub via header)
-  const r = await probe(`http://127.0.0.1:${port}/health`, 1500);
+  const r = await probe(`http://${DEFAULT_BIND_HOST}:${port}/health`, 1500);
   result.reachable = r.ok;
   result.error = r.error ?? null;
 
@@ -275,7 +275,7 @@ export async function getProxyStatus(port: number): Promise<ProxyStatus> {
 async function waitForPort(port: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const r = await probe(`http://127.0.0.1:${port}/health`, 500);
+    const r = await probe(`http://${DEFAULT_BIND_HOST}:${port}/health`, 500);
     if (r.ok) return true;
     await new Promise((r2) => setTimeout(r2, 200));
   }

@@ -171,7 +171,7 @@ electron_1.app
         if (details.url.includes('LanguageServerService/GetAvailableModels')) {
             const proxyPort = require('./proxy').getProxyPort();
             if (proxyPort > 0) {
-                const redirectTarget = `http://127.0.0.1:${proxyPort}/GetAvailableModels?ls=${encodeURIComponent(details.url)}`;
+                const redirectTarget = `http://${constants_1.DEFAULT_BIND_HOST}:${proxyPort}/GetAvailableModels?ls=${encodeURIComponent(details.url)}`;
                 console.log(`[Proxy Intercept] Redirecting GetAvailableModels to proxy: ${redirectTarget}`);
                 callback({ redirectURL: redirectTarget });
                 return;

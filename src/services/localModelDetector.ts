@@ -5,6 +5,7 @@
  * non-blocking HTTP probes (800ms timeout) to discover locally running models.
  */
 
+import { LOOPBACK_HOSTS, LOCAL_SERVICES } from '../constants';
 import * as http from 'http';
 import log from 'electron-log';
 
@@ -73,7 +74,7 @@ function probeEndpoint(
  * Detects locally running Ollama instance on http://127.0.0.1:11434
  */
 export async function detectOllama(
-  baseUrl: string = 'http://127.0.0.1:11434'
+  baseUrl: string = LOCAL_SERVICES.OLLAMA
 ): Promise<LocalRunnerInfo | null> {
   try {
     const res = await probeEndpoint(`${baseUrl}/api/tags`);
@@ -104,7 +105,7 @@ export async function detectOllama(
  * Detects locally running LM Studio instance on http://127.0.0.1:1234
  */
 export async function detectLMStudio(
-  baseUrl: string = 'http://127.0.0.1:1234'
+  baseUrl: string = LOCAL_SERVICES.LMSTUDIO
 ): Promise<LocalRunnerInfo | null> {
   try {
     const res = await probeEndpoint(`${baseUrl}/v1/models`);

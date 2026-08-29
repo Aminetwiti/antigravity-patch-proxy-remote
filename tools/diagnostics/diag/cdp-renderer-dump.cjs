@@ -5,6 +5,7 @@ const path = require('path');
 
 const activePortFile = path.join(process.env.APPDATA || '', 'Antigravity', 'DevToolsActivePort');
 const port = process.argv[2] || fs.readFileSync(activePortFile, 'utf8').split(/\r?\n/)[0].trim();
+const HOST = process.env.AG_BIND_HOST || '127.0.0.1';
 
 function getJson(url) {
   return new Promise((resolve, reject) => {
@@ -19,7 +20,7 @@ function getJson(url) {
 }
 
 async function main() {
-  const targets = await getJson(`http://127.0.0.1:${port}/json/list`);
+  const targets = await getJson(`http://${HOST}:${port}/json/list`);
   const page = targets.find(t => t.type === 'page') || targets[0];
   if (!page) throw new Error('No CDP page target found');
   console.log('CDP port:', port);

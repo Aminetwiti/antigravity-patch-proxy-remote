@@ -1,12 +1,13 @@
 $ErrorActionPreference = 'Continue'
 $proxyPort = if ($env:AG_PROXY_PORT) { $env:AG_PROXY_PORT } else { '51074' }
-Write-Host "== Waiting for 127.0.0.1:${proxyPort} (up to 90s) ==" -ForegroundColor Cyan
+$bindHost = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { '127.0.0.1' }
+Write-Host "== Waiting for ${bindHost}:${proxyPort} (up to 90s) ==" -ForegroundColor Cyan
 $ready = $false
 for ($i = 1; $i -le 90; $i++) {
   $tcp = $null
   try {
     $tcp = New-Object System.Net.Sockets.TcpClient
-    $iar = $tcp.BeginConnect('127.0.0.1', [int]$proxyPort, $null, $null)
+    $iar = $tcp.BeginConnect($bindHost, [int]$proxyPort, $null, $null)
     $ok = $iar.AsyncWaitHandle.WaitOne(1000, $false)
     if ($ok) {
       $tcp.EndConnect($iar)

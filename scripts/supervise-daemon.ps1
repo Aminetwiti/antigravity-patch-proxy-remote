@@ -21,6 +21,7 @@ $DaemonDir = Join-Path $RepoRoot "remote\daemon"
 $DaemonExe = Join-Path $DaemonDir "daemon.exe"
 $Token     = if ($env:AG_DAEMON_AUTH_TOKEN) { $env:AG_DAEMON_AUTH_TOKEN } else { "11" }
 $Port      = if ($env:AG_DAEMON_PORT) { [int]$env:AG_DAEMON_PORT } else { 8090 }
+$BindHost  = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { "127.0.0.1" }
 $SupLog    = Join-Path $DaemonDir "daemon_supervisor.log"
 $DmnLog    = Join-Path $DaemonDir "daemon_watch.log"
 $PatchSig  = "MODEL_PLACEHOLDER_"
@@ -38,7 +39,7 @@ function Test-DaemonOk {
     $lis = Get-NetTCPConnection -LocalPort $Port -State Listen
     if (-not $lis) { return $false }
     try {
-        $d = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/health/diagnostic" -TimeoutSec 2
+        $d = Invoke-RestMethod -Uri "http://${BindHost}:$Port/health/diagnostic" -TimeoutSec 2
         return ($d.status -eq "ok" -or $d.status -eq "degraded" -or $d.rpcPort -ne 0)
     } catch {
         $owner = ($lis | Select-Object -First 1).OwningProcess
@@ -50,7 +51,7 @@ function Test-DaemonOk {
 # Vrai si le daemon est sain et son tunnel configuré (ou en mode local).
 function Test-TunnelOk {
     try {
-        $d = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/health/diagnostic" -TimeoutSec 3
+        $d = Invoke-RestMethod -Uri "http://${BindHost}:$Port/health/diagnostic" -TimeoutSec 3
         if ($d.tunnelProvider -eq "" -or $d.tunnelProvider -eq "none") { return $true }
         return ($d.publicUrl -ne "")
     } catch { return $false }

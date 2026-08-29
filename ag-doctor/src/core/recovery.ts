@@ -36,7 +36,7 @@ import fs from 'fs';
 import path from 'path';
 import { getAntigravityDataDir } from './paths';
 import { getProfilePath } from './profile';
-import { DEFAULT_MITM_PORT } from './config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 import type { CheckResult } from '../types';
 
 const hasNativeFetch = typeof globalThis.fetch === 'function';
@@ -225,7 +225,7 @@ async function restartProxy(rule: RecoveryRule): Promise<RecoveryActionResult> {
     // The proxy is started by the parent process (Antigravity). We can ping it
     // and try to trigger a restart by sending a signal to the parent PID.
     const port = DEFAULT_MITM_PORT;
-    const pingRes = await fetchWithTimeout(`http://127.0.0.1:${port}/health`, 2000);
+    const pingRes = await fetchWithTimeout(`http://${DEFAULT_BIND_HOST}:${port}/health`, 2000);
 
     if (pingRes && pingRes.ok) {
       return {

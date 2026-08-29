@@ -12,12 +12,13 @@ type DaemonConfig struct {
 	Host                 string        `json:"host"`
 	Port                 int           `json:"port"`
 	LanguageServerPort   int           `json:"language_server_port"`
+	ProxyPort            int           `json:"proxy_port"`
 	TunnelProvider       string        `json:"tunnel_provider"`
 	WriteTimeout         time.Duration `json:"write_timeout"`
 	PongWait             time.Duration `json:"pong_wait"`
 	PingPeriod           time.Duration `json:"ping_period"`
 	MaxWSMessageSize     int64         `json:"max_ws_message_size"`
-	HistoryMaxBufferSize int           `json:"history_max_buffer_size"`
+	HistoryMaxBufferSize int64         `json:"history_max_buffer_size"`
 	QuotaPollInterval    time.Duration `json:"quota_poll_interval"`
 	ApprovalTimeout      time.Duration `json:"approval_timeout"`
 	DiscoveryPort        int           `json:"discovery_port"`
@@ -33,11 +34,12 @@ func LoadConfig() *DaemonConfig {
 		Host:                 getEnvString("AG_DAEMON_HOST", "0.0.0.0"),
 		Port:                 getEnvInt("AG_DAEMON_PORT", 8090),
 		LanguageServerPort:   getEnvInt("AG_LS_PORT", 55256),
+		ProxyPort:            getEnvInt("AG_PROXY_PORT", 51074),
 		TunnelProvider:       getEnvString("AG_TUNNEL_PROVIDER", ""),
 		WriteTimeout:         getEnvDuration("AG_WS_WRITE_TIMEOUT", 10*time.Second),
 		PongWait:             getEnvDuration("AG_WS_PONG_WAIT", 60*time.Second),
 		MaxWSMessageSize:     getEnvInt64("AG_WS_MAX_MSG_SIZE", 10*1024*1024),
-		HistoryMaxBufferSize: getEnvInt("AG_HISTORY_BUFFER_SIZE", 10*1024*1024),
+		HistoryMaxBufferSize: getEnvInt64("AG_HISTORY_BUFFER_SIZE", 10*1024*1024),
 		QuotaPollInterval:    getEnvDuration("AG_QUOTA_INTERVAL", 60*time.Second),
 		ApprovalTimeout:      getEnvDuration("AG_APPROVAL_TIMEOUT", 5*time.Minute),
 		DiscoveryPort:        getEnvInt("AG_DISCOVERY_PORT", 41234),

@@ -39,7 +39,7 @@ function makeGrpcCall(port, csrfToken, service, method, payloadBytes = Buffer.al
     payloadBytes.copy(frame, 5);
 
     const options = {
-      hostname: '127.0.0.1',
+      hostname: constants_1.DEFAULT_BIND_HOST,
       port: port,
       path: `/${service}/${method}`,
       method: 'POST',
@@ -141,7 +141,7 @@ async function main() {
     return;
   }
 
-  console.log(`\n[+] ACTIVE HUB TARGET: 127.0.0.1:${activePort} (PID ${activeHub.pid})`);
+  console.log(`\n[+] ACTIVE HUB TARGET: ${constants_1.DEFAULT_BIND_HOST}:${activePort} (PID ${activeHub.pid})`);
 
   // Define comprehensive suite of Read-Only / Safe probe RPCs
   const testRpcList = [

@@ -24,7 +24,7 @@ export class ConnectRpcClient {
   constructor(
     private port: number,
     private csrfToken: string,
-    private host = '127.0.0.1'
+    private host = process.env.AG_BIND_HOST || '127.0.0.1'
   ) {}
 
   private getHeaders(): Record<string, string> {

@@ -4,9 +4,13 @@
 
 export const DEFAULT_PROXY_PORT = 51074;
 export const DEFAULT_STUB_PORT = 51999;
+export const DEFAULT_MITM_PORT = 443;
 export const DEFAULT_DAEMON_PORT = 8090;
 export const DEFAULT_BIND_HOST = '127.0.0.1';
-export const DEFAULT_UPSTREAM_TARGET = 'http://127.0.0.1:50999';
+export const DEFAULT_UPSTREAM_TARGET = 'http://127.0.0.1:51074';
+export const DEFAULT_UPSTREAM_PROTOCOL = 'http:';
+export const DEFAULT_UPSTREAM_HOST = '127.0.0.1';
+export const DEFAULT_UPSTREAM_PORT = 51074;
 
 // Timeouts & Debounce intervals (in milliseconds)
 export const WORKER_CMD_TIMEOUT_MS = 60_000;

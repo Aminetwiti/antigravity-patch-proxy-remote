@@ -3,7 +3,8 @@
 $ErrorActionPreference = 'Stop'
 $ws = [System.Net.WebSockets.ClientWebSocket]::new()
 $ct = [System.Threading.CancellationToken]::None
-$uri = 'ws://127.0.0.1:8090/ws?token=demo123'
+$bindHost = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { '127.0.0.1' }
+$uri = "ws://${bindHost}:8090/ws?token=demo123"
 Write-Output "== Connexion Ã  $uri"
 $ws.ConnectAsync([Uri]$uri, $ct).GetAwaiter().GetResult()
 Write-Output "== ConnectÃ© (State: $($ws.State))"

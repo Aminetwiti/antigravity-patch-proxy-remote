@@ -15,7 +15,7 @@ import {
   getLsProcess,
 } from './languageServer';
 import { initAutoUpdater } from './updater';
-import { WINDOW_ORIGIN, DYNAMIC_PORT } from './constants';
+import { WINDOW_ORIGIN, DYNAMIC_PORT, LOOPBACK_HOSTS } from './constants';
 import { createTray } from './tray';
 import { StorageManager } from './storage';
 import { getAppStoragePath, getLsLogPath } from './paths';
@@ -162,7 +162,7 @@ app
       if (details.url.includes('LanguageServerService/GetAvailableModels')) {
         const proxyPort = (require('./proxy').getProxyPort as () => number)();
         if (proxyPort > 0) {
-          const redirectTarget = `http://127.0.0.1:${proxyPort}/GetAvailableModels?ls=${encodeURIComponent(details.url)}`;
+          const redirectTarget = `http://${LOOPBACK_HOSTS[0]}:${proxyPort}/GetAvailableModels?ls=${encodeURIComponent(details.url)}`;
           console.log(`[Proxy Intercept] Redirecting GetAvailableModels to proxy: ${redirectTarget}`);
           (callback as (opts: { cancel?: boolean; redirectURL?: string }) => void)({ redirectURL: redirectTarget });
           return;

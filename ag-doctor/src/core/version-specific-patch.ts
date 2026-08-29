@@ -14,8 +14,7 @@
 import fs from 'fs';
 import { getAppAsarPath, getLanguageServerBinary, getLanguageServerBackup } from './paths';
 import { detectAntigravityVersion } from './antigravity';
-import { getPatchVersionOverride } from './config';
-import { DEFAULT_MITM_PORT } from './config';
+import { getPatchVersionOverride, DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 import type { PatchStatus } from '../types';
 import { listAsarPaths, readAsarFile } from './asar-reader';
 
@@ -65,7 +64,7 @@ export const PATCH_REGISTRY: PatchDefinition[] = [
     minVersion: '2.6.0',
     maxVersion: null,
     originalUrl: 'https://cloudcode-pa.googleapis.com',
-    patchedUrl: `http://localhost:${DEFAULT_MITM_PORT}/v1internal/x`,
+    patchedUrl: `http://${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}/v1internal/x`,
     description: 'Patch for Antigravity 2.6.0+ (35 bytes; binary URL shortened)',
   },
   {
@@ -73,7 +72,7 @@ export const PATCH_REGISTRY: PatchDefinition[] = [
     minVersion: '2.3.0',
     maxVersion: '2.5.99',
     originalUrl: 'https://daily-cloudcode-pa.googleapis.com',
-    patchedUrl: `http://localhost:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx`,
+    patchedUrl: `http://${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx`,
     description: 'Patch for Antigravity 2.3.0+ (41 bytes; binary URL unchanged — JS overlay required)',
     extraInstructions: {
       scriptName: 'patch_2_3.js',
@@ -100,7 +99,7 @@ export const PATCH_REGISTRY: PatchDefinition[] = [
     minVersion: '2.2.0',
     maxVersion: '2.2.99',
     originalUrl: 'https://daily-cloudcode-pa.googleapis.com',
-    patchedUrl: `http://localhost:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx`,
+    patchedUrl: `http://${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx`,
     description: 'Patch for Antigravity 2.2.0+ (41 bytes; 3 modules missing)',
     extraInstructions: {
       scriptName: 'patch_2_2_1.js',
@@ -114,7 +113,7 @@ export const PATCH_REGISTRY: PatchDefinition[] = [
     minVersion: '2.0.1',
     maxVersion: '2.1.99',
     originalUrl: 'https://daily-cloudcode-pa.googleapis.com',
-    patchedUrl: `http://localhost:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx`,
+    patchedUrl: `http://${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}/v1internal/xxxxxxx`,
     description: 'Patch for Antigravity 2.0.1 to 2.1.x (41 bytes; full overlay OK)',
   },
 ];

@@ -23,7 +23,7 @@ import {
 } from './paths';
 import { isWsl } from './platform';
 import { findAntigravityProcesses, killAntigravityProcesses } from './process';
-import { DEFAULT_MITM_PORT } from './config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 
 const execFileAsync = promisify(execFile);
 
@@ -228,8 +228,8 @@ export function detectAntigravityVersion(installDir?: string): AntigravityVersio
   return { version: 'unknown', source: 'unknown' };
 }
 
-/** Check if a TCP port is reachable on localhost. */
-async function isPortReachable(port: number, host = '127.0.0.1'): Promise<boolean> {
+/** Check if a TCP port is reachable on the default bind host. */
+async function isPortReachable(port: number, host = DEFAULT_BIND_HOST): Promise<boolean> {
   const net = await import('net');
   return new Promise((resolve) => {
     const sock = net.createConnection({ port, host });

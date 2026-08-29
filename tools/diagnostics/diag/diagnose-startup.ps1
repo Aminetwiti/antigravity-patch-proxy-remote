@@ -82,7 +82,8 @@ if (Test-Path $LsBinary) {
     $content = [System.IO.File]::ReadAllText($LsBinary, [System.Text.Encoding]::ASCII)
     $originalUrl = "https://daily-cloudcode-pa.googleapis.com"
     $proxyPort = if ($env:AG_PROXY_PORT) { $env:AG_PROXY_PORT } else { '51074' }
-    $patchedUrl = "http://localhost:${proxyPort}/v1internal/xxxxxxx"
+    $bindHost = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { '127.0.0.1' }
+    $patchedUrl = "http://${bindHost}:${proxyPort}/v1internal/xxxxxxx"
     if ($content.Contains($patchedUrl)) {
         Add-Report "  Binary is patched with $patchedUrl"
     } elseif ($content.Contains($originalUrl)) {

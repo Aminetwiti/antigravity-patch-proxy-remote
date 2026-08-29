@@ -3,9 +3,12 @@
 const WebSocket = require('ws');
 const http = require('http');
 
+const HOST = process.env.AG_BIND_HOST || '127.0.0.1';
+const PORT = 9229;
+
 function getJson(path) {
   return new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port: 9229, path }, (res) => {
+    http.get({ host: HOST, port: PORT, path }, (res) => {
       let body = '';
       res.on('data', (c) => (body += c));
       res.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
