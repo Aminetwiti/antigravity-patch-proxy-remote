@@ -2,7 +2,7 @@
  * Infrastructure constants and default configurations for ag-doctor-ui.
  */
 
-export const DEFAULT_PROXY_PORT = 50999;
+export const DEFAULT_PROXY_PORT = 51074;
 export const DEFAULT_STUB_PORT = 51999;
 export const DEFAULT_DAEMON_PORT = 8090;
 export const DEFAULT_BIND_HOST = '127.0.0.1';

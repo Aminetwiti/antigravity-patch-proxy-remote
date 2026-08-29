@@ -13,6 +13,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import log from 'electron-log';
+import { OPENAI_COMPAT, ANTHROPIC_COMPAT } from '../constants';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -74,17 +75,9 @@ function loadTranslators(): void {
 }
 
 // Providers grouped by transport compatibility.
-// Source of truth: src/constants.ts (PROVIDERS + ALL_PROVIDERS).
+// Source of truth: src/constants.ts (OPENAI_COMPAT + ANTHROPIC_COMPAT).
 // To add a provider: add it to PROVIDERS in constants.ts, then place it in
 // the appropriate compat set below.
-const OPENAI_COMPAT: ReadonlySet<string> = new Set<string>([
-  'openai', 'ollama', 'openrouter', 'custom', 'groq', 'mistral',
-  'cerebras', 'nvidia', 'opencode', 'codestral',
-]);
-const ANTHROPIC_COMPAT: ReadonlySet<string> = new Set<string>([
-  'anthropic', 'deepseek', 'kimi', 'fireworks', 'lmstudio', 'llamacpp',
-  'wafer', 'zai',
-]);
 
 // ─── Public API ───────────────────────────────────────────────────────────
 

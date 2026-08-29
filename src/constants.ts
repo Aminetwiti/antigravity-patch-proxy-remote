@@ -221,6 +221,32 @@ export const OPENAI_COMPATIBLE_PROVIDERS = [
   PROVIDERS.OPENROUTER,
 ] as const;
 
+/** Providers that use OpenAI-compatible transport (expanded set for registry). */
+export const OPENAI_COMPAT = new Set<string>([
+  PROVIDERS.OPENAI,
+  PROVIDERS.OLLAMA,
+  PROVIDERS.OPENROUTER,
+  PROVIDERS.CUSTOM,
+  PROVIDERS.GROQ,
+  PROVIDERS.MISTRAL,
+  PROVIDERS.CEREBRAS,
+  PROVIDERS.NVIDIA,
+  PROVIDERS.OPENCODE,
+  PROVIDERS.CODESTRAL,
+]);
+
+/** Providers that use Anthropic-compatible transport. */
+export const ANTHROPIC_COMPAT = new Set<string>([
+  PROVIDERS.ANTHROPIC,
+  PROVIDERS.DEEPSEEK,
+  PROVIDERS.KIMI,
+  PROVIDERS.FIREWORKS,
+  PROVIDERS.LMSTUDIO,
+  PROVIDERS.LLAMACPP,
+  PROVIDERS.WAFER,
+  PROVIDERS.ZAI,
+]);
+
 /** Providers that require an API key for authentication. */
 export const PROVIDERS_REQUIRING_API_KEY: readonly ProviderName[] = [
   PROVIDERS.OPENAI,

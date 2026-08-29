@@ -187,7 +187,6 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         };
       }
       (result as Record<string, unknown>)[slug] = entry;
-      m._slug = slug;
       log.info(
         `[Proxy] Custom model "${m.displayName}" => slug: ${slug} => model: ${generateModelPlaceholderId(m)} => thinking: ${cap.isThinking} => images: ${cap.supportsImages}`,
       );
