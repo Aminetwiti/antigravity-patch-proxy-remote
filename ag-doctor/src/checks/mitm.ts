@@ -9,7 +9,7 @@
  */
 import type { CheckResult } from '../types';
 import { getMitmStatus, MITM_FORWARDER_PORTS } from '../core/mitm';
-import { DEFAULT_MITM_PORT } from '../core/config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from '../core/config';
 import { getPatchStatus } from '../core/binary-patch';
 
 export async function checkMitm(): Promise<CheckResult> {
@@ -100,9 +100,9 @@ export async function checkMitm(): Promise<CheckResult> {
           `  netsh winhttp reset proxy\n` +
           `(or run: ag-doctor mitm proxy-off)\n` +
           `Point it at the MITM port only if you actually intend HTTPS interception:\n` +
-          `  netsh winhttp set proxy proxy-server="127.0.0.1:${DEFAULT_MITM_PORT}"`
+          `  netsh winhttp set proxy proxy-server="${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}"`
         : `\n\nFix: run an elevated PowerShell and execute:\n` +
-          `  netsh winhttp set proxy proxy-server="127.0.0.1:${DEFAULT_MITM_PORT}"`;
+          `  netsh winhttp set proxy proxy-server="${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}"`;
       return {
         id: 'mitm',
         title: 'MITM (HTTPS interception)',

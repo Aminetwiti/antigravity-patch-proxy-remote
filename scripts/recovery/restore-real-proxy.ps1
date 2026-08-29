@@ -8,6 +8,7 @@ $StubJs = Join-Path $ScriptDir 'proxy-stub.js'
 $LogFile = Join-Path $env:TEMP 'ag-proxy-stub.log'
 $OutFile = Join-Path $env:TEMP 'ag-proxy-stub.out'
 $ErrFile = Join-Path $env:TEMP 'ag-proxy-stub.err'
+$BIND_HOST = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { '127.0.0.1' }
 $PROXY_PORT = if ($env:AG_PROXY_PORT) { $env:AG_PROXY_PORT } else { '51074' }
 
 # 1. Kill the stub so port $PROXY_PORT is free for the real proxy
@@ -64,13 +65,13 @@ if (Test-Path $exe) { Start-Process -FilePath $exe; Write-Host '  launched.' } e
 
 # 6. Poll $PROXY_PORT
 Write-Host ''
-Write-Host "== [6] Wait for 127.0.0.1:${PROXY_PORT} (up to 60s) ==" -ForegroundColor Cyan
+Write-Host "== [6] Wait for ${BIND_HOST}:${PROXY_PORT} (up to 60s) ==" -ForegroundColor Cyan
 $ready = $false
 for ($i = 1; $i -le 60; $i++) {
   $tcp = $null
   try {
     $tcp = New-Object System.Net.Sockets.TcpClient
-    $iar = $tcp.BeginConnect('127.0.0.1', [int]$PROXY_PORT, $null, $null)
+    $iar = $tcp.BeginConnect($BIND_HOST, [int]$PROXY_PORT, $null, $null)
     if ($iar.AsyncWaitHandle.WaitOne(1000, $false)) { $tcp.EndConnect($iar); $ready = $true; Write-Host ("  OPEN after {0}s" -f $i) -ForegroundColor Green; break }
   } catch {} finally { if ($tcp) { $tcp.Close() } }
   if ($i % 10 -eq 0) { Write-Host ("  waiting... {0}s" -f $i) -ForegroundColor Yellow }
@@ -81,7 +82,7 @@ for ($i = 1; $i -le 60; $i++) {
 $stub = $false
 if ($ready) {
   try {
-    $r = Invoke-WebRequest -Uri "http://127.0.0.1:${PROXY_PORT}/health" -UseBasicParsing -TimeoutSec 3
+    $r = Invoke-WebRequest -Uri "http://${BIND_HOST}:${PROXY_PORT}/health" -UseBasicParsing -TimeoutSec 3
     Write-Host ("  /health -> " + $r.StatusCode + " " + $r.Content)
     if ($r.Content -match '"stub":true') { $stub = $true }
   } catch { Write-Host "  /health probe failed: $($_.Exception.Message)" -ForegroundColor Yellow }

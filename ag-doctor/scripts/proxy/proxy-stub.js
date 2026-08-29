@@ -3,7 +3,7 @@
 //
 // Usage:  node proxy-stub.js [port]
 // Env:    AG_PROXY_STUB_PORT (default STUB_PORT_DEFAULT)
-//         AG_PROXY_STUB_HOST (default 127.0.0.1)
+//         AG_PROXY_STUB_HOST (default from AG_BIND_HOST or 127.0.0.1)
 //         AG_PROXY_STUB_LOG  (default os.tmpdir()/ag-proxy-stub.log)
 
 'use strict';
@@ -19,7 +19,7 @@ dns.setDefaultResultOrder('ipv4first');
 
 const LOG  = process.env.AG_PROXY_STUB_LOG  || path.join(os.tmpdir(), 'ag-proxy-stub.log');
 const PORT = parseInt(process.argv[2] || process.env.AG_PROXY_STUB_PORT || '51999', 10);
-const HOST = process.env.AG_PROXY_STUB_HOST || '127.0.0.1';
+const HOST = process.env.AG_PROXY_STUB_HOST || process.env.AG_BIND_HOST || '127.0.0.1';
 
 function log(line) {
   const ts = new Date().toISOString();

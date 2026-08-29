@@ -57,7 +57,7 @@ export interface AgDoctorConfig {
 }
 
 export const DEFAULT_CONFIG: AgDoctorConfig = {
-  mitmPort: 51074,
+  mitmPort: 443,
   logLines: 100,
   doctorInterval: 5000,
   ui: {
@@ -79,6 +79,8 @@ export const DEFAULT_CONFIG: AgDoctorConfig = {
 };
 
 export const DEFAULT_MITM_PORT = DEFAULT_CONFIG.mitmPort;
+
+export const DEFAULT_BIND_HOST = '127.0.0.1';
 
 /** Type guard for a string that is one of the known patch ranges. */
 export function isKnownPatchRange(s: unknown): s is KnownPatchRange {

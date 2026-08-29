@@ -8,6 +8,10 @@ import qrcode from 'qrcode';
 let mainWindow: BrowserWindow | null = null;
 let daemonProcess: ChildProcess | null = null;
 
+function getBindHost(): string {
+  return process.env.AG_BIND_HOST || '127.0.0.1';
+}
+
 function resolveDaemonPath(): { exePath: string; isGoRun: boolean } {
   // Check compiled exe first
   const candidates = [
@@ -95,7 +99,7 @@ ipcMain.handle('remote:getLocalIp', async () => {
       }
     }
   }
-  return '127.0.0.1';
+  return process.env.AG_BIND_HOST || '127.0.0.1';
 });
 
 ipcMain.handle('remote:generateQr', async (_event, text: string) => {
@@ -119,7 +123,7 @@ ipcMain.handle('remote:getDaemonStatus', async (_event, customPort?: number, tok
   let healthData: any = {};
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health/diagnostic?token=${encodeURIComponent(authToken)}`, {
+    const res = await fetch(`http://${getBindHost()}:${port}/health/diagnostic?token=${encodeURIComponent(authToken)}`, {
       signal: AbortSignal.timeout(1500),
     });
     if (res.ok) {
@@ -131,7 +135,7 @@ ipcMain.handle('remote:getDaemonStatus', async (_event, customPort?: number, tok
   }
 
   try {
-    const hRes = await fetch(`http://127.0.0.1:${port}/health`, {
+    const hRes = await fetch(`http://${getBindHost()}:${port}/health`, {
       headers: { Authorization: `Bearer ${authToken}` },
       signal: AbortSignal.timeout(1500),
     });
@@ -152,7 +156,7 @@ ipcMain.handle('remote:startDaemon', async (event, options: { port: number; tunn
 
   // Check if daemon is already active on this port
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health/diagnostic?token=${encodeURIComponent(token)}`, {
+    const res = await fetch(`http://${getBindHost()}:${port}/health/diagnostic?token=${encodeURIComponent(token)}`, {
       signal: AbortSignal.timeout(1500),
     });
     if (res.ok) {
@@ -187,6 +191,7 @@ ipcMain.handle('remote:startDaemon', async (event, options: { port: number; tunn
   }
 
   cliArgs.push('--port', port.toString());
+  cliArgs.push('--host', getBindHost());
   if (options.tunnel && options.tunnel !== 'none') {
     cliArgs.push('--tunnel', options.tunnel);
   }

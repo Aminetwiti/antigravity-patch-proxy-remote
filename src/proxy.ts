@@ -20,6 +20,7 @@ function traceLog(...args: unknown[]): void {
 }
 import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from './metrics';
 import { randomBytes } from 'crypto';
+import { GOOGLE_HOSTS, DEFAULT_PROXY_PORT, WINDOW_ORIGIN, LOOPBACK_HOSTS } from './constants';
 
 const proxyLog = createLogger('Proxy');
 
@@ -35,7 +36,6 @@ import {
   GOOGLE_PROXY_TIMEOUT_MS,
   FILE_DOWNLOAD_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
-  DEFAULT_PROXY_PORT,
   ACTIVE_PORT_FILE,
 } from './constants';
 
@@ -213,7 +213,7 @@ import { mergeModels, getMappedCustomModels, getCustomModelsList } from './proxy
 async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse, reqBody: Buffer): Promise<void> {
   const traceId = newTraceId();
   const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode');
-  const targetHost = isCloudCodeUrl ? 'daily-cloudcode-pa.googleapis.com' : 'generativelanguage.googleapis.com';
+  const targetHost = isCloudCodeUrl ? GOOGLE_HOSTS.CLOUD_CODE : GOOGLE_HOSTS.GENERATIVE_LANGUAGE;
   const targetUrl = `https://${targetHost}`;
   const parsedUrl = new URL(req.url!, targetUrl);
   const endTimer = metricTimer('proxy_request_ms', { upstream: targetHost });
@@ -1228,7 +1228,7 @@ function handleGetAvailableModelsProxy(
       ...(reqHeaders['Connect-Protocol-Version'] ? { 'Connect-Protocol-Version': String(reqHeaders['Connect-Protocol-Version']) } : {}),
       ...(reqHeaders['X-Grpc-Web'] ? { 'X-Grpc-Web': String(reqHeaders['X-Grpc-Web']) } : {}),
     },
-    rejectUnauthorized: !['localhost', '127.0.0.1', '::1'].includes(lsParsed.hostname),
+    rejectUnauthorized: !LOOPBACK_HOSTS.includes(lsParsed.hostname as typeof LOOPBACK_HOSTS[number]),
   };
 
   const lsReq = client.request(options, (lsRes) => {
@@ -1305,8 +1305,7 @@ function isAllowedOrigin(req: http.IncomingMessage): boolean {
   const origin = ((req.headers.origin || req.headers.referer || '') as string).toLowerCase();
 
   // 1. Validate Host header — local loopback or googleapis upstream
-  const allowedHostPrefixes = ['127.0.0.1', 'localhost', '::1'];
-  const isHostAllowed = allowedHostPrefixes.some((h) => host.startsWith(h)) || host.endsWith('.googleapis.com');
+  const isHostAllowed = LOOPBACK_HOSTS.some((h) => host.startsWith(h)) || host.endsWith('.googleapis.com');
   if (!isHostAllowed) return false;
 
   // 2. Direct requests without Origin/Referer (Language Server Go, internal gRPC/HTTP)
@@ -1317,9 +1316,7 @@ function isAllowedOrigin(req: http.IncomingMessage): boolean {
     const parsed = new URL(origin);
     const h = parsed.hostname.toLowerCase();
     return (
-      h === '127.0.0.1' ||
-      h === 'localhost' ||
-      h === '::1' ||
+      LOOPBACK_HOSTS.includes(h as typeof LOOPBACK_HOSTS[number]) ||
       h === 'googleapis.com' ||
       h.endsWith('.googleapis.com')
     );
@@ -1521,7 +1518,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
     // 0. Intercept GetAvailableModels (redirected from Electron webRequest)
     if (req.url!.startsWith('/GetAvailableModels')) {
-      const gavParsed = new URL(req.url!, 'http://127.0.0.1');
+      const gavParsed = new URL(req.url!, `http://${LOOPBACK_HOSTS[0]}`);
       const lsUrl = gavParsed.searchParams.get('ls');
       if (lsUrl) {
         handleGetAvailableModelsProxy(res, fullBody, lsUrl, req.headers as Record<string, string | string[] | undefined>);
@@ -1545,7 +1542,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         });
       }
 
-      const targetHost = 'daily-cloudcode-pa.googleapis.com';
+      const targetHost = GOOGLE_HOSTS.CLOUD_CODE;
       const targetUrl = `https://${targetHost}`;
       let parsedUrl: URL;
       try {
@@ -1764,7 +1761,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (req.method === 'GET' && (req.url!.endsWith('/models') || req.url!.includes('/models?'))) {
       log.info('[Proxy] Intercepting models list request');
 
-      const targetHost = 'generativelanguage.googleapis.com';
+      const targetHost = GOOGLE_HOSTS.GENERATIVE_LANGUAGE;
       const targetUrl = `https://${targetHost}`;
       let parsedUrl: URL;
       try {
@@ -2065,7 +2062,7 @@ export function startProxy(): Promise<number> {
       // tuned per-machine without recompiling. Defaults preserve legacy behavior.
       const envPort = parseInt(process.env.AG_PROXY_PORT || '', 10);
       const defaultPort = Number.isFinite(envPort) && envPort > 0 ? envPort : DEFAULT_PROXY_PORT;
-      const defaultHost = process.env.AG_PROXY_HOST || '127.0.0.1';
+      const defaultHost = process.env.AG_PROXY_HOST || LOOPBACK_HOSTS[0];
 
       let primaryPort = defaultPort;
       let primaryHost = defaultHost;

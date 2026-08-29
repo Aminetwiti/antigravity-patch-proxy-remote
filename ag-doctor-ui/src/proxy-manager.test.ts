@@ -31,7 +31,7 @@ describe('ProxyManager Status Evaluation (15 Tests)', () => {
     const mgr = getProxyManager();
     const status: ProxyServerStatus = await mgr.getStatus();
     expect(status.running).toBe(false);
-    expect(status.port).toBe(EnvironmentConfig.proxyPort);
+    expect(status.port).toBe(EnvironmentConfig.mitmPort);
     expect(status.pid).toBeUndefined();
     expect(status.error).toBeUndefined();
   });
@@ -55,12 +55,12 @@ describe('ProxyManager Environment Variables Contract (15 Tests)', () => {
         ...process.env,
         AG_MITM_PORT: String(port),
         AG_MITM_HOST: host,
-        AG_PROXY_TARGET: `http://127.0.0.1:${port}`,
+        AG_PROXY_TARGET: `http://127.0.0.1:51074`,
       };
 
       expect(env.AG_MITM_PORT).toBe(String(port));
       expect(env.AG_MITM_HOST).toBe('127.0.0.1');
-      expect(env.AG_PROXY_TARGET).toBe(`http://127.0.0.1:${port}`);
+      expect(env.AG_PROXY_TARGET).toBe(`http://127.0.0.1:51074`);
     });
   }
 });

@@ -25,8 +25,8 @@ const path = require('path');
 
 const CERT_DIR = path.resolve(__dirname, '..', '..');
 const proxyPort = process.env.AG_PROXY_PORT || '51074';
-const PROXY_TARGET = process.env.AG_PROXY_TARGET || `http://127.0.0.1:${proxyPort}`;
-const LISTEN_HOST = process.env.AG_MITM_HOST || '127.0.0.1';
+const PROXY_TARGET = process.env.AG_PROXY_TARGET || `http://${process.env.AG_BIND_HOST || '127.0.0.1'}:${proxyPort}`;
+const LISTEN_HOST = process.env.AG_MITM_HOST || process.env.AG_BIND_HOST || '127.0.0.1';
 const LISTEN_PORT = parseInt(process.env.AG_MITM_PORT || '443', 10);
 
 const serverKey = fs.readFileSync(path.join(CERT_DIR, 'certs', 'server-key.pem'));
@@ -229,7 +229,7 @@ const tcpServer = net.createServer((socket) => {
     if (method === 'CONNECT') {
       // target is "host:port"
       const [host, port] = targetStr.split(':');
-      handleConnect(socket, host || '127.0.0.1', port || '443');
+      handleConnect(socket, host || LISTEN_HOST, port || '443');
     } else if (/^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s/.test(reqLine)) {
       // Non-CONNECT HTTP request — respond with 400 (we only support CONNECT)
       socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n');

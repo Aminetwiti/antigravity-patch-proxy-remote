@@ -660,7 +660,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.NETWORK_GET_DAEMON_STATUS, async (_event, cus
   let healthData: any = {};
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health/diagnostic?token=${encodeURIComponent(authToken)}`, { signal: AbortSignal.timeout(1500) });
+    const res = await fetch(`http://${EnvironmentConfig.bindHost}:${port}/health/diagnostic?token=${encodeURIComponent(authToken)}`, { signal: AbortSignal.timeout(1500) });
     if (res.ok) {
       diagData = await res.json();
       running = true;
@@ -668,7 +668,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.NETWORK_GET_DAEMON_STATUS, async (_event, cus
   } catch { /* offline */ }
 
   try {
-    const hRes = await fetch(`http://127.0.0.1:${port}/health`, {
+    const hRes = await fetch(`http://${EnvironmentConfig.bindHost}:${port}/health`, {
       headers: { Authorization: `Bearer ${authToken}` },
       signal: AbortSignal.timeout(1500),
     });
@@ -690,7 +690,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.NETWORK_START_DAEMON, async (event, options: 
 
   // Vérifie si un daemon est déjà actif et répond sur ce port (évite conflits et double-lancement)
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health/diagnostic?token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(1500) });
+    const res = await fetch(`http://${EnvironmentConfig.bindHost}:${port}/health/diagnostic?token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(1500) });
     if (res.ok) {
       const data: any = await res.json();
       event.sender.send(DOCTOR_IPC_CHANNELS.NETWORK_DAEMON_LOG, `> Daemon déjà actif et opérationnel sur le port ${port} (PID ${data.pid || 'actif'})\n`);

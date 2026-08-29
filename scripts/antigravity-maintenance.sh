@@ -36,8 +36,9 @@ health_check() {
     done
     
     # 2. Vérification Proxy Local
+    BIND_HOST=${AG_BIND_HOST:-127.0.0.1}
     echo -e "\n${YELLOW}[2/3] Vérification du Proxy Local (Port ${AG_PROXY_PORT:-51074})...${NC}"
-    if nc -z -w 2 localhost ${AG_PROXY_PORT:-51074} 2>/dev/null; then
+    if nc -z -w 2 "$BIND_HOST" ${AG_PROXY_PORT:-51074} 2>/dev/null; then
         echo -e "  ${GREEN}✅ Proxy local (Port ${AG_PROXY_PORT:-51074}) actif et à l'écoute.${NC}"
     else
         echo -e "  ${RED}❌ Proxy local (Port ${AG_PROXY_PORT:-51074}) inactif ou inaccessible.${NC}"

@@ -16,7 +16,7 @@ import { ensureCa, readCa, getCaCertPath, CA_NAME } from './cert';
 import { probeWithProxy } from './probe';
 import { isPortInUse } from './process';
 import { runElevated } from './elevation';
-import { DEFAULT_MITM_PORT } from './config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 
 const execFileAsync = promisify(execFile);
 
@@ -297,7 +297,7 @@ function getCaInstallDest(): string {
 }
 
 /** Set the system HTTP/HTTPS proxy to point at the local MITM proxy. */
-export async function setSystemProxy(host = '127.0.0.1', port = DEFAULT_MITM_PORT): Promise<{ ok: boolean; message: string }> {
+export async function setSystemProxy(host = DEFAULT_BIND_HOST, port = DEFAULT_MITM_PORT): Promise<{ ok: boolean; message: string }> {
   const platform = getPlatform();
   try {
     if (platform === 'win32') {

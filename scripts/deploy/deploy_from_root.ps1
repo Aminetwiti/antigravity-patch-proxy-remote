@@ -98,7 +98,8 @@ Write-Host "[6/7] Language Server binary patch uygulaniyor..." -ForegroundColor 
 $LsBinary = "$env:LOCALAPPDATA\Programs\antigravity\resources\bin\language_server.exe"
 $OriginalUrl = "https://daily-cloudcode-pa.googleapis.com"
 $proxyPort = if ($env:AG_PROXY_PORT) { $env:AG_PROXY_PORT } else { '51074' }
-$PatchedUrl = "http://localhost:${proxyPort}/v1internal/xxxxxxx"
+$bindHost = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { '127.0.0.1' }
+$PatchedUrl = "http://${bindHost}:${proxyPort}/v1internal/xxxxxxx"
 
 if (Test-Path $LsBinary) {
     $content = [System.IO.File]::ReadAllText($LsBinary, [System.Text.Encoding]::ASCII)

@@ -17,6 +17,7 @@ import {
   closeAntigravity,
   restartAntigravity,
 } from '../core/antigravity';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from '../core/config';
 import { runLogs } from './logs';
 
 export async function runAntigravity(ctx: CommandContext, sub: string[], rest: string[]): Promise<number> {
@@ -105,9 +106,9 @@ async function cmdStatus(ctx: CommandContext): Promise<number> {
   }
 
   if (status.proxyReachable) {
-    ok(`Proxy: reachable on 127.0.0.1:${status.proxyPort}`);
+    ok(`Proxy: reachable on ${DEFAULT_BIND_HOST}:${status.proxyPort}`);
   } else {
-    warn(`Proxy: NOT reachable on 127.0.0.1:${status.proxyPort}`);
+    warn(`Proxy: NOT reachable on ${DEFAULT_BIND_HOST}:${status.proxyPort}`);
   }
 
   return 0;

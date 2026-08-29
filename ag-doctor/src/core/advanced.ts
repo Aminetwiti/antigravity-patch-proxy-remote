@@ -21,7 +21,7 @@ import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { getPlatform } from './platform';
 import { getAppAsarPath, getLanguageServerBinary, getLanguageServerBackup } from './paths';
-import { DEFAULT_MITM_PORT } from './config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 
 const execFileAsync = promisify(execFile);
 
@@ -91,7 +91,7 @@ export async function getProcessStats(pid: number): Promise<MemoryStats | null> 
       const http = await import('http');
       const heap = await new Promise<{ used: number; total: number }>((resolve, reject) => {
         const req = http.request({
-          hostname: '127.0.0.1',
+          hostname: DEFAULT_BIND_HOST,
           port: DEFAULT_MITM_PORT,
           path: '/health',
           method: 'GET',

@@ -37,11 +37,11 @@ import { checkConnectivity } from '../checks/connectivity';
 import { checkMitm } from '../checks/mitm';
 import { loadPlugins, runPlugin } from '../core/plugins';
 import { listHistory } from '../core/history';
-import { loadConfig } from '../core/config';
+import { loadConfig, DEFAULT_BIND_HOST } from '../core/config';
 import { ok, info, warn, error, header, c } from '../cli/output';
 
 export const DEFAULT_SERVE_PORT = 51000;
-export const DEFAULT_SERVE_HOST = '127.0.0.1';
+export const DEFAULT_SERVE_HOST = DEFAULT_BIND_HOST;
 
 interface CachedResult {
   results: any[];

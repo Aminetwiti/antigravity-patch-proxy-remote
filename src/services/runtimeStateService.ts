@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import { DEFAULT_PROXY_PORT } from '../constants';
 
 export interface RuntimeState {
   proxyPort: number;
@@ -22,7 +23,7 @@ export class RuntimeStateService {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       const current = await this.readState();
       const merged: RuntimeState = {
-        proxyPort: state.proxyPort ?? current?.proxyPort ?? 50999,
+        proxyPort: state.proxyPort ?? current?.proxyPort ?? DEFAULT_PROXY_PORT,
         daemonPort: state.daemonPort ?? current?.daemonPort,
         pid: state.pid ?? process.pid,
         timestamp: new Date().toISOString(),

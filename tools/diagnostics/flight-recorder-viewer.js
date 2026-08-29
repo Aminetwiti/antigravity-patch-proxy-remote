@@ -43,7 +43,7 @@ function discoverLanguageServer() {
 }
 
 function dumpFlightRecorder(port = 55256, csrfToken = 'dca42d6a-3d87-4a6b-a620-dde9bc7ce40e', outDir = path.resolve(__dirname, '../scratch')) {
-  console.log(`[*] Connecting to Language Server at 127.0.0.1:${port}...`);
+  console.log(`[*] Connecting to Language Server at ${constants_1.DEFAULT_BIND_HOST}:${port}...`);
 
   // Build gRPC-Web 5-byte frame for empty request (0x00 flags, 0x00 length)
   const reqFrame = Buffer.alloc(5);
@@ -51,7 +51,7 @@ function dumpFlightRecorder(port = 55256, csrfToken = 'dca42d6a-3d87-4a6b-a620-d
   reqFrame.writeUInt32BE(0, 1); // 0 bytes payload
 
   const options = {
-    hostname: '127.0.0.1',
+    hostname: constants_1.DEFAULT_BIND_HOST,
     port: port,
     path: '/exa.language_server_pb.LanguageServerService/DumpFlightRecorder',
     method: 'POST',

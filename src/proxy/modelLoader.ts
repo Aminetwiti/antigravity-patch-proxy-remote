@@ -9,7 +9,7 @@ import { app } from 'electron';
 import log from 'electron-log';
 import * as cryptoStore from '../cryptoStore';
 import { validateCustomModel } from '../schemaValidator';
-import { ALL_PROVIDERS, type ProviderName } from '../constants';
+import { ALL_PROVIDERS, type ProviderName, LOCAL_SERVICES } from '../constants';
 import { generateModelPlaceholderId } from './idGenerator';
 import type { CustomModel } from './types';
 
@@ -84,7 +84,7 @@ function getDefaultCustomModels(): CustomModel[] {
       description: 'Local Ollama Llama 3 model run on your machine',
       provider: 'ollama',
       apiKey: '',
-      apiUrl: 'http://localhost:11434/v1/chat/completions',
+      apiUrl: `${LOCAL_SERVICES.OLLAMA}/v1/chat/completions`,
       externalModelName: 'llama3',
     },
   ];
