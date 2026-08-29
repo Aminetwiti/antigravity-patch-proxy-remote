@@ -1760,15 +1760,6 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       return;
     }
 
-    // 1.1. Pass-through for other v1internal endpoints (loadCodeAssist, onboardUser, listExperiments, etc.)
-    if (req.url!.includes('/v1internal:') && !req.url!.includes('/v1internal:fetchAvailableModels')) {
-      log.info(`[Proxy] Pass-through v1internal endpoint: ${req.url}`);
-      if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
-        safeEnd(res, '{}');
-      }
-      return;
-    }
-
     // 2. Intercept /v1beta/models or /v1/models list request
     if (req.method === 'GET' && (req.url!.endsWith('/models') || req.url!.includes('/models?'))) {
       log.info('[Proxy] Intercepting models list request');
