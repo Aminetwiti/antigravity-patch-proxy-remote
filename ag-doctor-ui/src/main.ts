@@ -33,7 +33,11 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 const activeStreams = new Map<string, ChildProcess>();
 
-// Disable GPU sandbox in packaged builds to avoid startup crashes on some Windows setups
+// Disable GPU sandbox and hardware acceleration in packaged builds to avoid
+// startup crashes and noisy GLES3/GLES2 fallback warnings on some Windows setups
+if (app.isPackaged) {
+  app.disableHardwareAcceleration();
+}
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('no-sandbox');
 app.commandLine.appendSwitch('disable-software-rasterizer');
