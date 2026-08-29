@@ -1210,6 +1210,7 @@ function handleGetAvailableModelsProxy(
   res: http.ServerResponse,
   reqBody: Buffer,
   lsUrl: string,
+  reqHeaders: Record<string, string | string[] | undefined>,
 ): void {
   const lsParsed = new URL(lsUrl);
   const client = lsParsed.protocol === 'https:' ? https : http;
@@ -1223,6 +1224,9 @@ function handleGetAvailableModelsProxy(
       'Content-Type': 'application/grpc-web+proto',
       'Accept': 'application/grpc-web+proto',
       'Content-Length': String(reqBody.length),
+      ...(reqHeaders['x-codeium-csrf-token'] ? { 'x-codeium-csrf-token': String(reqHeaders['x-codeium-csrf-token']) } : {}),
+      ...(reqHeaders['Connect-Protocol-Version'] ? { 'Connect-Protocol-Version': String(reqHeaders['Connect-Protocol-Version']) } : {}),
+      ...(reqHeaders['X-Grpc-Web'] ? { 'X-Grpc-Web': String(reqHeaders['X-Grpc-Web']) } : {}),
     },
     rejectUnauthorized: !['localhost', '127.0.0.1', '::1'].includes(lsParsed.hostname),
   };
@@ -1520,7 +1524,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       const gavParsed = new URL(req.url!, 'http://127.0.0.1');
       const lsUrl = gavParsed.searchParams.get('ls');
       if (lsUrl) {
-        handleGetAvailableModelsProxy(res, fullBody, lsUrl);
+        handleGetAvailableModelsProxy(res, fullBody, lsUrl, req.headers as Record<string, string | string[] | undefined>);
         return;
       }
       if (safeWriteHead(res, 400, { 'Content-Type': 'application/json' })) {
