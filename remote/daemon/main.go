@@ -231,8 +231,19 @@ func main() {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
+	// Durcissement TCP Keepalive sur le listener pour préserver les connexions mobiles
+	listenConfig := net.ListenConfig{
+		KeepAlive: 30 * time.Second,
+	}
+	listener, err := listenConfig.Listen(context.Background(), "tcp", net.JoinHostPort(host, strconv.Itoa(listenPort)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Server listen error: %v\n", err)
+		os.Exit(1)
+	}
+	defer listener.Close()
+
 	fmt.Printf("🌐 Daemon listening on ws://%s:%d/ws\n", host, listenPort)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "❌ Server error: %v\n", err)
 		os.Exit(1)
 	}

@@ -12,8 +12,9 @@ if (-not (Test-Path $logPath)) {
     exit
 }
 
-# Récupérer les fichiers logs
-$logFiles = Get-ChildItem $logPath -Filter "*.log"
+# Récupérer les fichiers logs et sauvegardes
+$logFiles = Get-ChildItem $logPath -File | Where-Object { $_.Name -like "*.log*" -or $_.Name -like "*.bak" }
+$logDirs = Get-ChildItem $logPath -Directory
 
 $deletedCount = 0
 $savedSpace = 0
@@ -30,6 +31,20 @@ foreach ($file in $logFiles) {
             $savedSpace += $size
         } catch {
             Write-Host "  ⚠️ Impossible de supprimer : $($file.Name) (Fichier probablement verrouillé)" -ForegroundColor Yellow
+        }
+    }
+}
+
+foreach ($dir in $logDirs) {
+    if ($dir.LastWriteTime -lt $limitDate) {
+        try {
+            $dirSize = (Get-ChildItem $dir.FullName -Recurse -File | Measure-Object -Property Length -Sum).Sum
+            Remove-Item $dir.FullName -Recurse -Force -ErrorAction Stop
+            Write-Host "  🗑️ Dossier supprimé : $($dir.Name) ($([math]::Round($dirSize / 1KB, 2)) KB)" -ForegroundColor Gray
+            $deletedCount++
+            $savedSpace += $dirSize
+        } catch {
+            Write-Host "  ⚠️ Impossible de supprimer dossier : $($dir.Name)" -ForegroundColor Yellow
         }
     }
 }

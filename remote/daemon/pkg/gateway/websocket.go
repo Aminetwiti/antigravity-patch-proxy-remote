@@ -437,6 +437,17 @@ func (s *Server) SetIDERunning(running bool, port int, info *discovery.LocalHarn
 		},
 	})
 	if changed && running {
+		pid := 0
+		if info != nil {
+			pid = info.PID
+		}
+		s.broadcast(OutgoingMessage{
+			Type: "hub_reattached",
+			Data: map[string]interface{}{
+				"port": port,
+				"pid":  pid,
+			},
+		})
 		s.broadcast(OutgoingMessage{
 			Type: "sessions_updated",
 			Data: s.sessionsFromSummaries(s.snapshotSummaries()),

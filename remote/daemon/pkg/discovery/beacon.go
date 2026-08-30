@@ -24,6 +24,7 @@ type BeaconPayload struct {
 	Protocol   string   `json:"protocol"`
 	Hostname   string   `json:"hostname"`
 	Port       int      `json:"port"`
+	LanIP      string   `json:"lanIp,omitempty"`
 	PublicURL  string   `json:"publicUrl,omitempty"`
 	Workspaces []string `json:"workspaces,omitempty"`
 	Timestamp  int64    `json:"timestamp"`
@@ -97,6 +98,7 @@ func (b *LANBeacon) buildPayload(hostname string) []byte {
 		Protocol:   DiscoveryProtocol,
 		Hostname:   hostname,
 		Port:       b.port,
+		LanIP:      GetPhysicalLANIP(),
 		PublicURL:  pubURL,
 		Workspaces: wsList,
 		Timestamp:  time.Now().Unix(),

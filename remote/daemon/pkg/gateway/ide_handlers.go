@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/antigravity/remote-daemon/pkg/connectrpc"
 	"github.com/antigravity/remote-daemon/pkg/ide"
@@ -11,7 +12,8 @@ import (
 // IsIDESupportedAction indique si une action concerne les services Antigravity IDE.
 func (s *Server) IsIDESupportedAction(action string) bool {
 	switch action {
-	case "ide.list_workspaces", "ide.list_sessions", "ide.create_session", "ide.send_prompt", "ide.focus", "ide.status":
+	case "ide.list_workspaces", "ide.list_sessions", "ide.create_session", "ide.send_prompt", "ide.focus", "ide.status",
+		"ide.launch", "ide.restart", "ide.kill", "ide_launch", "ide_restart", "ide_kill", "emergency_stop":
 		return true
 	default:
 		return false
@@ -20,7 +22,98 @@ func (s *Server) IsIDESupportedAction(action string) bool {
 
 // handleIDEMessage route et traite les requêtes WebSocket destinées à Antigravity IDE.
 func (s *Server) handleIDEMessage(conn *websocket.Conn, msg IncomingMessage) {
+	launcher := ide.NewLauncher()
+
 	switch msg.Type {
+	case "ide.launch", "ide_launch":
+		cmd, err := launcher.Launch()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec du lancement d'Antigravity: %v", err),
+			})
+			return
+		}
+		pid := 0
+		if cmd.Process != nil {
+			pid = cmd.Process.Pid
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":  "launched",
+				"pid":     pid,
+				"success": true,
+			},
+		})
+
+	case "ide.restart", "ide_restart":
+		cmd, err := launcher.Restart()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec du redémarrage d'Antigravity: %v", err),
+			})
+			return
+		}
+		pid := 0
+		if cmd.Process != nil {
+			pid = cmd.Process.Pid
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":  "restarted",
+				"pid":     pid,
+				"success": true,
+			},
+		})
+
+	case "ide.kill", "ide_kill":
+		err := launcher.KillAll()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec de l'arrêt d'Antigravity: %v", err),
+			})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":  "killed",
+				"success": true,
+			},
+		})
+
+	case "emergency_stop":
+		if msg.CascadeID != "" {
+			s.CancelGeneration(msg.CascadeID)
+		}
+		// Interruption de tous les streams et terminaux actifs
+		s.terminals.killAllFor(conn)
+		s.broadcast(OutgoingMessage{
+			Type: "emergency_stop_triggered",
+			Data: map[string]interface{}{
+				"cascadeId": msg.CascadeID,
+				"timestamp": time.Now().Unix(),
+			},
+		})
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":    "stopped",
+				"emergency": true,
+				"success":   true,
+			},
+		})
 	case "ide.list_workspaces":
 		workspaces, err := ide.ListWorkspaces()
 		if err != nil {

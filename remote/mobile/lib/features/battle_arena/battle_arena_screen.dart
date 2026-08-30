@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/protocol/daemon_api.dart';
+import '../../core/protocol/model_catalog.dart';
 import '../../theme/app_colors.dart';
 
 /// Écran Colosseum Battle Arena : Duel multi-modèles et arbitrage de branches.
@@ -26,12 +27,34 @@ class _BattleArenaScreenState extends State<BattleArenaScreen> {
   String? _winningArm;
   String? _statusMessage;
 
-  final List<Map<String, dynamic>> _availableModels = [
-    {'uid': 'claude-3-7-sonnet', 'enum': 312, 'name': 'Claude 3.7 Sonnet', 'badge': 'Anthropic'},
-    {'uid': 'gemini-2-5-pro', 'enum': 246, 'name': 'Gemini 2.5 Pro', 'badge': 'Google'},
-    {'uid': 'gpt-4o', 'enum': 101, 'name': 'GPT-4o', 'badge': 'OpenAI'},
-    {'uid': 'deepseek-r1', 'enum': 405, 'name': 'DeepSeek R1', 'badge': 'Reasoning'},
-  ];
+  late List<Map<String, dynamic>> _availableModels;
+
+  @override
+  void initState() {
+    super.initState();
+    _availableModels = ModelCatalog.standardModels.map((m) {
+      final name = m.displayName;
+      final badge = name.contains('Claude')
+          ? 'Anthropic'
+          : name.contains('Gemini')
+              ? 'Google'
+              : name.contains('GPT')
+                  ? 'OpenAI'
+                  : 'Reasoning';
+      return {
+        'uid': m.id,
+        'enum': m.modelEnum ?? 0,
+        'name': name,
+        'badge': badge,
+      };
+    }).toList();
+    if (_availableModels.isNotEmpty) {
+      _modelA = _availableModels[0]['uid'] as String;
+      if (_availableModels.length > 1) {
+        _modelB = _availableModels[1]['uid'] as String;
+      }
+    }
+  }
 
   @override
   void dispose() {

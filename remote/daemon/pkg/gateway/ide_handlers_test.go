@@ -17,6 +17,13 @@ func TestIsIDESupportedAction(t *testing.T) {
 		"ide.send_prompt",
 		"ide.focus",
 		"ide.status",
+		"ide.launch",
+		"ide.restart",
+		"ide.kill",
+		"ide_launch",
+		"ide_restart",
+		"ide_kill",
+		"emergency_stop",
 	}
 
 	for _, act := range supported {
