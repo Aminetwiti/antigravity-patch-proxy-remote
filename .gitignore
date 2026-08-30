@@ -68,3 +68,4 @@ remote/daemon/*.crt
 remote/daemon/*.key
 remote/insperer/*
 tools/*
+remote/tools1/*

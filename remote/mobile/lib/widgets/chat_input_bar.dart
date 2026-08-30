@@ -1583,6 +1583,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
   void _showAttachmentMenu() {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    int selectedTab = 0; // 0: Media, 1: Mentions, 2: Actions
 
     showModalBottomSheet(
       context: context,
@@ -1592,84 +1593,208 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
                   ),
                 ),
-              ),
-              ListTile(
-                leading: Icon(Icons.camera_alt_outlined, color: scheme.primary),
-                title: Text(
-                  'Prendre une photo',
-                  style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500),
+                // Tri-Modal Segmented Header
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setSheetState(() => selectedTab = 0),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            decoration: BoxDecoration(
+                              color: selectedTab == 0
+                                  ? (isDark ? AppColors.surfaceHover : scheme.surface)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.perm_media_outlined, size: 14, color: selectedTab == 0 ? scheme.primary : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant)),
+                                const SizedBox(width: 5),
+                                Text('Media', style: TextStyle(fontSize: 12, fontWeight: selectedTab == 0 ? FontWeight.w600 : FontWeight.w400, color: selectedTab == 0 ? (isDark ? AppColors.inkPrimary : scheme.onSurface) : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant))),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setSheetState(() => selectedTab = 1),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            decoration: BoxDecoration(
+                              color: selectedTab == 1
+                                  ? (isDark ? AppColors.surfaceHover : scheme.surface)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.alternate_email_rounded, size: 14, color: selectedTab == 1 ? scheme.primary : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant)),
+                                const SizedBox(width: 5),
+                                Text('Mentions', style: TextStyle(fontSize: 12, fontWeight: selectedTab == 1 ? FontWeight.w600 : FontWeight.w400, color: selectedTab == 1 ? (isDark ? AppColors.inkPrimary : scheme.onSurface) : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant))),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setSheetState(() => selectedTab = 2),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            decoration: BoxDecoration(
+                              color: selectedTab == 2
+                                  ? (isDark ? AppColors.surfaceHover : scheme.surface)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.bolt_rounded, size: 14, color: selectedTab == 2 ? scheme.primary : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant)),
+                                const SizedBox(width: 5),
+                                Text('Actions', style: TextStyle(fontSize: 12, fontWeight: selectedTab == 2 ? FontWeight.w600 : FontWeight.w400, color: selectedTab == 2 ? (isDark ? AppColors.inkPrimary : scheme.onSurface) : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant))),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                subtitle: Text('Appareil photo en direct', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _pickImageFromCamera();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.photo_library_outlined, color: scheme.primary),
-                title: Text(
-                  'Choisir des images',
-                  style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500),
-                ),
-                subtitle: Text('Galerie photos multi-sélection (PNG, JPEG, WebP, GIF)', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _pickImageFromGallery();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.file_present_outlined, color: scheme.primary),
-                title: Text(
-                  'Sélectionner des fichiers',
-                  style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500),
-                ),
-                subtitle: Text('Code, JSON, Markdown, texte, PDF...', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _pickFileNative();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.content_paste_rounded, color: scheme.primary),
-                title: Text(
-                  'Coller depuis le presse-papier',
-                  style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500),
-                ),
-                subtitle: Text('Image Base64, JSON, texte ou extrait de code', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _pasteFromClipboard();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.edit_note_outlined, color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
-                title: Text(
-                  'Saisie manuelle (Base64 / Texte)',
-                  style: TextStyle(color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant, fontSize: 13),
-                ),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _pickTextFile();
-                },
-              ),
-            ],
+                if (selectedTab == 0) ...[
+                  ListTile(
+                    leading: Icon(Icons.camera_alt_outlined, color: scheme.primary),
+                    title: Text('Prendre une photo', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500)),
+                    subtitle: Text('Appareil photo en direct', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _pickImageFromCamera();
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.photo_library_outlined, color: scheme.primary),
+                    title: Text('Choisir des images', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500)),
+                    subtitle: Text('Galerie photos multi-sélection (PNG, JPEG, WebP, GIF)', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _pickImageFromGallery();
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.file_present_outlined, color: scheme.primary),
+                    title: Text('Sélectionner des fichiers', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500)),
+                    subtitle: Text('Code, JSON, Markdown, texte, PDF...', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _pickFileNative();
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.content_paste_rounded, color: scheme.primary),
+                    title: Text('Coller depuis le presse-papier', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500)),
+                    subtitle: Text('Image Base64, JSON, texte ou extrait de code', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _pasteFromClipboard();
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.edit_note_outlined, color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
+                    title: Text(
+                      'Saisie manuelle (Base64 / Texte)',
+                      style: TextStyle(color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant, fontSize: 13),
+                    ),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _pickTextFile();
+                    },
+                  ),
+                ] else if (selectedTab == 1) ...[
+                  ListTile(
+                    leading: Icon(Icons.insert_drive_file_outlined, color: scheme.primary),
+                    title: Text('@file', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                    subtitle: Text('Mentionner un fichier spécifique du workspace', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _insertTextAtCursor('@');
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.folder_outlined, color: scheme.primary),
+                    title: Text('@folder', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                    subtitle: Text('Mentionner un répertoire ou sous-arbre', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _insertTextAtCursor('@');
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.code_rounded, color: scheme.primary),
+                    title: Text('@symbol', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                    subtitle: Text('Mentionner une classe, fonction ou méthode', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _insertTextAtCursor('@');
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.account_tree_outlined, color: scheme.primary),
+                    title: Text('@git', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                    subtitle: Text('Injecter les diffs git ou worktree actif', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _insertTextAtCursor('@git ');
+                    },
+                  ),
+                ] else ...[
+                  ..._slashCommands.take(6).map((cmd) => ListTile(
+                    leading: Icon(cmd.icon, color: scheme.primary, size: 20),
+                    title: Text(cmd.title, style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                    subtitle: Text(cmd.subtitle, style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _insertTextAtCursor('${cmd.title} ');
+                    },
+                  )),
+                ],
+              ],
+            ),
           ),
         ),
       ),

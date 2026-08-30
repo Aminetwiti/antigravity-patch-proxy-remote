@@ -139,11 +139,25 @@ abstract class AppMotion {
 
   static const Curve easeOut = Curves.easeOutCubic;
   static const Curve easeStandard = Curves.easeInOut;
+  /// Google Antigravity Remote official exponential easing curve
+  static const Curve expoOut = Cubic(0.16, 1.0, 0.3, 1.0);
+  /// Google Antigravity Remote official cubic easing curve
+  static const Curve cubicOut = Cubic(0.23, 1.0, 0.32, 1.0);
 
   /// Vérifie si les animations système sont actives (support Reduce Motion / Accessibility).
   static bool shouldAnimate(BuildContext context) {
     return !MediaQuery.disableAnimationsOf(context);
   }
+}
+
+/// Layout and dimension constraints (Antigravity Remote official metrics)
+abstract class AppDimensions {
+  /// Maximum width for trajectory/chat conversation reading area (48rem / 768px)
+  static const double maxConversationWidth = 768.0;
+  /// Narrow reading width
+  static const double narrowConversationWidth = 600.0;
+  /// Composer floating box max width
+  static const double composerMaxWidth = 768.0;
 }
 
 /// Atmospheric background gradients — Antigravity 2.0 logo palette

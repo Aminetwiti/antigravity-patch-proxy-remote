@@ -3034,7 +3034,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     final content = ZenithalCanvas(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 920),
+          constraints: const BoxConstraints(maxWidth: AppDimensions.maxConversationWidth),
           child: Column(
             children: [
               connectivityBanner,
@@ -5260,24 +5260,29 @@ class _WelcomeEmptyState extends StatelessWidget {
           alignment: WrapAlignment.center,
           children: [
             _SuggestionChip(
-              icon: Icons.edit_note_rounded,
-              label: '/plan Concevoir une fonctionnalité',
-              onTap: () => onSuggestionTap('/plan '),
+              icon: Icons.flag_rounded,
+              label: '/goal Exécuter et valider une tâche',
+              onTap: () => onSuggestionTap('/goal '),
+            ),
+            _SuggestionChip(
+              icon: Icons.medical_services_outlined,
+              label: '/doctor Vérifier la santé du système',
+              onTap: () => onSuggestionTap('/doctor '),
             ),
             _SuggestionChip(
               icon: Icons.rate_review_outlined,
-              label: '/review Auditer le code',
+              label: '/review Auditer les diffs et le code',
               onTap: () => onSuggestionTap('/review '),
             ),
             _SuggestionChip(
-              icon: Icons.quiz_outlined,
-              label: '/grill-me Cadrer l\'architecture',
-              onTap: () => onSuggestionTap('/grill-me '),
+              icon: Icons.schedule_rounded,
+              label: '/schedule Planifier une surveillance',
+              onTap: () => onSuggestionTap('/schedule '),
             ),
             _SuggestionChip(
-              icon: Icons.search,
-              label: 'Rechercher dans le codebase',
-              onTap: () => onSuggestionTap('Recherche dans le codebase : '),
+              icon: Icons.psychology_outlined,
+              label: '/learn Enregistrer des règles & learnings',
+              onTap: () => onSuggestionTap('/learn '),
             ),
           ],
         ),
