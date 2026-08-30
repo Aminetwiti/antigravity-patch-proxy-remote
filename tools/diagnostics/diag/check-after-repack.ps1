@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Continue'
 $nodeExe = (Get-Command node.exe).Source
 
 $proxyPort = if ($env:AG_PROXY_PORT) { $env:AG_PROXY_PORT } else { '51074' }
+$bindHost = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { '127.0.0.1' }
 Write-Host "== Port $proxyPort status ==" -ForegroundColor Cyan
 $conn = Get-NetTCPConnection -LocalPort $proxyPort -State Listen -ErrorAction SilentlyContinue
 if ($conn) { Write-Host ("  LISTENING (PID " + $conn.OwningProcess + ")") -ForegroundColor Green } else { Write-Host '  NOT listening' -ForegroundColor Red }
@@ -13,13 +14,13 @@ Get-Process | Where-Object { $_.Name -like 'Antigravity*' -or $_.Name -like 'lan
 
 Write-Host '== Quick TCP probe ==' -ForegroundColor Cyan
 $tcp = New-Object System.Net.Sockets.TcpClient
-try { $tcp.BeginConnect('127.0.0.1', [int]$proxyPort, $null, $null).AsyncWaitHandle.WaitOne(2000) | Out-Null; $tcp.Close(); Write-Host '  TCP connect OK' -ForegroundColor Green }
+try { $tcp.BeginConnect($bindHost, [int]$proxyPort, $null, $null).AsyncWaitHandle.WaitOne(2000) | Out-Null; $tcp.Close(); Write-Host '  TCP connect OK' -ForegroundColor Green }
 catch { Write-Host '  TCP connect FAILED: ' + $_.Exception.Message -ForegroundColor Red }
 
 Write-Host ''
 Write-Host '== /health probe (identify real proxy vs stub) ==' -ForegroundColor Cyan
 try {
-  $r = Invoke-WebRequest -Uri "http://127.0.0.1:${proxyPort}/health" -UseBasicParsing -TimeoutSec 3
+  $r = Invoke-WebRequest -Uri "http://${bindHost}:${proxyPort}/health" -UseBasicParsing -TimeoutSec 3
   Write-Host ("  status=" + $r.StatusCode + " body=" + $r.Content)
   if ($r.Content -match '"stub":true') { Write-Host '  -> STUB is answering' -ForegroundColor Yellow }
   else { Write-Host '  -> REAL proxy is answering' -ForegroundColor Green }

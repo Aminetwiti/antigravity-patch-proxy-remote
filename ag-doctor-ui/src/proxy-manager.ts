@@ -12,6 +12,7 @@ import { ChildProcess, spawn } from 'child_process';
 import path from 'path';
 import net from 'net';
 import { EnvironmentConfig } from './config/environment';
+import log from 'electron-log';
 
 export interface ProxyServerStatus {
   running: boolean;
@@ -22,7 +23,7 @@ export interface ProxyServerStatus {
 
 class ProxyManager {
   private proxyProcess: ChildProcess | null = null;
-  private port: number = EnvironmentConfig.proxyPort;
+  private port: number = EnvironmentConfig.mitmPort;
   private host: string = EnvironmentConfig.bindHost;
   private scriptPath: string;
   
@@ -77,7 +78,7 @@ class ProxyManager {
    * Start the proxy server
    */
   async start(): Promise<{ ok: boolean; message: string; pid?: number }> {
-    console.log('[ProxyManager] Starting proxy server...');
+    log.info('[ProxyManager] Starting proxy server...');
     
     // Check if already running
     if (this.proxyProcess && this.proxyProcess.exitCode === null) {
@@ -93,7 +94,7 @@ class ProxyManager {
 
     return new Promise((resolve) => {
       try {
-        console.log(`[ProxyManager] Spawning: node "${this.scriptPath}"`);
+        log.info(`[ProxyManager] Spawning: node "${this.scriptPath}"`);
         
         // Environment variables for the proxy script
         const env = {
@@ -112,7 +113,7 @@ class ProxyManager {
         });
 
         const pid = this.proxyProcess.pid;
-        console.log(`[ProxyManager] Spawned proxy process with PID: ${pid}`);
+        log.info(`[ProxyManager] Spawned proxy process with PID: ${pid}`);
 
         // Capture stdout — MITM uses this channel to emit one JSON line per
         // intercepted request (`kind: 'mitm:traffic'`). We fan it out to every
@@ -136,7 +137,7 @@ class ProxyManager {
                 // Not valid JSON — fall through to the console log below.
               }
             }
-            console.log(`[ProxyServer] ${trimmed}`);
+            log.info(`[ProxyServer] ${trimmed}`);
           }
         });
 
@@ -144,7 +145,7 @@ class ProxyManager {
         // JSON proxy errors (one per line) so the tray/renderer can react.
         this.proxyProcess.stderr?.on('data', (data) => {
           const output = data.toString().trim();
-          console.error(`[ProxyServer] ERROR: ${output}`);
+          log.error(`[ProxyServer] ERROR: ${output}`);
           for (const line of output.split('\n')) {
             if (!line.startsWith('{')) continue;
             try {
@@ -162,13 +163,13 @@ class ProxyManager {
 
         // Handle process exit
         this.proxyProcess.on('exit', (code, signal) => {
-          console.log(`[ProxyManager] Proxy process exited with code ${code}, signal ${signal}`);
+          log.info(`[ProxyManager] Proxy process exited with code ${code}, signal ${signal}`);
           this.proxyProcess = null;
         });
 
         // Handle process errors
         this.proxyProcess.on('error', (err) => {
-          console.error('[ProxyManager] Failed to start proxy process:', err);
+          log.error('[ProxyManager] Failed to start proxy process:', err);
           this.proxyProcess = null;
           resolve({ 
             ok: false, 
@@ -194,7 +195,7 @@ class ProxyManager {
         }, 1500);
 
       } catch (err) {
-        console.error('[ProxyManager] Exception starting proxy:', err);
+        log.error('[ProxyManager] Exception starting proxy:', err);
         resolve({ 
           ok: false, 
           message: `Failed to start proxy: ${(err as Error).message}` 
@@ -207,7 +208,7 @@ class ProxyManager {
    * Stop the proxy server
    */
   async stop(): Promise<{ ok: boolean; message: string }> {
-    console.log('[ProxyManager] Stopping proxy server...');
+    log.info('[ProxyManager] Stopping proxy server...');
     
     if (!this.proxyProcess || this.proxyProcess.exitCode !== null) {
       return { ok: true, message: 'Proxy server not running' };
@@ -217,7 +218,7 @@ class ProxyManager {
       const timeout = setTimeout(() => {
         // Force kill if graceful shutdown takes too long
         if (this.proxyProcess && this.proxyProcess.exitCode === null) {
-          console.log('[ProxyManager] Force killing proxy process');
+          log.info('[ProxyManager] Force killing proxy process');
           this.proxyProcess.kill('SIGKILL');
         }
         resolve({ ok: true, message: 'Proxy server force stopped' });
@@ -226,7 +227,7 @@ class ProxyManager {
       this.proxyProcess!.once('exit', () => {
         clearTimeout(timeout);
         this.proxyProcess = null;
-        console.log('[ProxyManager] Proxy server stopped gracefully');
+        log.info('[ProxyManager] Proxy server stopped gracefully');
         resolve({ ok: true, message: 'Proxy server stopped' });
       });
 
@@ -239,7 +240,7 @@ class ProxyManager {
    * Restart the proxy server
    */
   async restart(): Promise<{ ok: boolean; message: string }> {
-    console.log('[ProxyManager] Restarting proxy server...');
+    log.info('[ProxyManager] Restarting proxy server...');
     const stopResult = await this.stop();
     if (!stopResult.ok) {
       return stopResult;
@@ -256,7 +257,7 @@ class ProxyManager {
    */
   cleanup(): void {
     if (this.proxyProcess && this.proxyProcess.exitCode === null) {
-      console.log('[ProxyManager] Cleanup: killing proxy process');
+      log.info('[ProxyManager] Cleanup: killing proxy process');
       this.proxyProcess.kill('SIGKILL');
       this.proxyProcess = null;
     }

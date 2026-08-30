@@ -1124,10 +1124,26 @@ func (s *Server) noTools() bool {
 }
 
 // mcpProxyBase est le point d'entr├®e HTTP du proxy MCP Antigravity desktop
-// (antigravity-patch-proxy, ├®coute sur 127.0.0.1:50999). Le daemon y route
+// (antigravity-patch-proxy, ├®coute sur AG_BIND_HOST:AG_PROXY_PORT). Le daemon y route
 // les appels d'outils MCP venus du mobile ÔÇö la session du PC fait foi pour
 // l'authentification et l'allowlist des serveurs MCP.
-const mcpProxyBase = "http://127.0.0.1:50999"
+var (
+	mcpProxyHost = "127.0.0.1"
+	mcpProxyPort = 51074
+)
+
+func SetMcpProxyBase(host string, port int) {
+	if host != "" {
+		mcpProxyHost = host
+	}
+	if port > 0 {
+		mcpProxyPort = port
+	}
+}
+
+func mcpProxyBase() string {
+	return fmt.Sprintf("http://%s:%d", mcpProxyHost, mcpProxyPort)
+}
 
 // CancelGeneration interrompt une cascade active et diffuse stream_end(cancelled).
 func (s *Server) CancelGeneration(cascadeID string) {
@@ -1509,7 +1525,7 @@ const mcpTimeout = 30 * time.Second
 
 // handleMcpAction relaie call_mcp_tool / connect_mcp_server /
 // refresh_mcp_oauth_token / list_mcp_servers vers le proxy MCP Antigravity
-// desktop (127.0.0.1:50999). Le mobile n'a ni les identifiants ni l'allowlist
+// desktop (AG_BIND_HOST:AG_PROXY_PORT). Le mobile n'a ni les identifiants ni l'allowlist
 // MCP : la session du PC est le seul détenteur légitime — le daemon n'est
 // qu'un tunnel. La réponse JSON du proxy est relayée telle quelle dans Data.
 func (s *Server) handleMcpAction(conn *websocket.Conn, msg IncomingMessage) {
@@ -1541,14 +1557,14 @@ func (s *Server) handleMcpAction(conn *websocket.Conn, msg IncomingMessage) {
 	var resp *http.Response
 	var err error
 	if msg.Type == "list_mcp_servers" {
-		resp, err = client.Get(mcpProxyBase + "/list_mcp_servers")
+		resp, err = client.Get(mcpProxyBase() + "/list_mcp_servers")
 	} else {
 		body, errMarshal := json.Marshal(payload)
 		if errMarshal != nil {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "erreur d'encodage: " + errMarshal.Error()})
 			return
 		}
-		resp, err = client.Post(mcpProxyBase+"/"+msg.Type, "application/json", bytes.NewReader(body))
+		resp, err = client.Post(mcpProxyBase()+"/"+msg.Type, "application/json", bytes.NewReader(body))
 	}
 	if err != nil {
 		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "proxy MCP injoignable: " + err.Error()})
@@ -1757,7 +1773,7 @@ type IncomingMessage struct {
 	ConversationID string  `json:"conversationId,omitempty"`
 	StepIndices    []int64 `json:"stepIndices,omitempty"`
 	// Champs MCP (call_mcp_tool / connect_mcp_server / refresh_mcp_oauth_token) :
-	// relay├®s au proxy Antigravity desktop (127.0.0.1:50999).
+	// relay├®s au proxy Antigravity desktop (AG_BIND_HOST:AG_PROXY_PORT).
 	ServerName string                 `json:"serverName,omitempty"`
 	ToolName   string                 `json:"toolName,omitempty"`
 	Arguments  map[string]interface{} `json:"arguments,omitempty"`
@@ -6426,7 +6442,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 
 	case "call_mcp_tool", "connect_mcp_server", "refresh_mcp_oauth_token", "list_mcp_servers":
 		// Route les actions MCP vers le proxy Antigravity desktop
-		// (127.0.0.1:50999). Le mobile n'a pas les identifiants MCP :
+		// (AG_BIND_HOST:AG_PROXY_PORT). Le mobile n'a pas les identifiants MCP :
 		// la session du PC est le seul détenteur des jetons OAuth et de
 		// l'allowlist stricte. Réponse unary relayée telle quelle.
 		s.handleMcpAction(conn, msg)
@@ -8347,3 +8363,4 @@ func isRunningTests() bool {
 		strings.HasSuffix(os.Args[0], ".test.exe") ||
 		strings.Contains(os.Args[0], "__debug_bin")
 }
+

@@ -23,7 +23,7 @@ export class GrpcWebClient {
     private port: number,
     private csrfToken: string,
     private useTls = false,
-    private host = '127.0.0.1'
+    private host = process.env.AG_BIND_HOST || '127.0.0.1'
   ) {}
 
   private frame(payload: Buffer): Buffer {

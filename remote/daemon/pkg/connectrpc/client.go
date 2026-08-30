@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -25,31 +26,30 @@ type Client struct {
 	Host      string
 	UseTLS    bool
 	HTTP      *http.Client
-	// APIKey est la clé d'API envoyée au Language Server (champ metadata 3).
-	// Sans elle le LS répond « untrusted workspace ».
+	InsecureSkipVerify bool
 	APIKey string
-	// SessionID stable sur la session — le LS associe l'état du panneau à
-	// cette valeur (voir buildMetadata champ 10).
 	SessionID string
-	// ModelUID / ModelEnum : modèle demandé pour les messages cascade
-	// (cascade_config requested_model_uid/id). Renseigné au démarrage.
 	ModelUID  string
 	ModelEnum uint64
 }
 
 func NewClient(port int, csrfToken string) *Client {
+	bindHost := "127.0.0.1"
+	if h := os.Getenv("AG_BIND_HOST"); h != "" {
+		bindHost = h
+	}
 	transport := &http.Transport{
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 20,
 		IdleConnTimeout:     90 * time.Second,
 		DisableKeepAlives:   false,
 		ForceAttemptHTTP2:   true,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // #nosec G402 — certificat auto-signé LS
 	}
 	return &Client{
 		port:      port,
 		csrfToken: csrfToken,
-		Host:      "127.0.0.1",
+		Host:      bindHost,
+		InsecureSkipVerify: true,
 		HTTP: &http.Client{
 			Timeout:   60 * time.Second,
 			Transport: transport,
@@ -72,6 +72,15 @@ func (c *Client) SetUseTLS(useTLS bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.UseTLS = useTLS
+}
+
+func (c *Client) updateTransportTLS() {
+	c.mu.RLock()
+	skipVerify := c.InsecureSkipVerify
+	c.mu.RUnlock()
+	if transport, ok := c.HTTP.Transport.(*http.Transport); ok {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: skipVerify}
+	}
 }
 
 // Endpoint retourne le port et le jeton CSRF de maniÃ¨re thread-safe.
@@ -100,6 +109,7 @@ func Frame(payload []byte) []byte {
 
 // Call exécute une méthode RPC et retourne les messages protobuf bruts.
 func (c *Client) Call(method string, payload []byte) ([]byte, error) {
+	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
 	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)

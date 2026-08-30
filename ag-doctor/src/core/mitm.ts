@@ -14,8 +14,9 @@ import crypto from 'crypto';
 import { getPlatform } from './platform';
 import { ensureCa, readCa, getCaCertPath, CA_NAME } from './cert';
 import { probeWithProxy } from './probe';
+import { isPortInUse } from './process';
 import { runElevated } from './elevation';
-import { DEFAULT_MITM_PORT } from './config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 
 const execFileAsync = promisify(execFile);
 
@@ -222,28 +223,8 @@ export async function installCaCert(): Promise<{ ok: boolean; message: string }>
   const platform = getPlatform();
   try {
     if (platform === 'win32') {
-      // `runElevated` checks `net session` first; if not elevated it spawns
-      // `Start-Process -Verb RunAs` which triggers a UAC prompt. This is
-      // more reliable than the previous try/catch-on-stderr pattern, because
-      // Windows does not always populate `err.stderr` on access-denied
-      // failures of certutil.exe.
-      console.log(`[DEBUG] Installing CA: ${ca.certPath}`);
-      console.log(`[DEBUG] Calling runElevated('certutil', ['-addstore', '-f', 'ROOT', '${ca.certPath}'])`);
-      
       const r = await runElevated('certutil', ['-addstore', '-f', 'ROOT', ca.certPath]);
-      
-      console.log(`[DEBUG] runElevated result:`, {
-        ok: r.ok,
-        code: r.code,
-        elevated: r.elevated,
-        stderr: r.stderr.substring(0, 200),
-        stdout: r.stdout.substring(0, 200),
-        message: r.message
-      });
-      
       if (!r.ok) {
-        // Defensive: surface a friendly message for the very common
-        // "certutil missing" case instead of an opaque OS error.
         const text = (r.stderr + ' ' + r.stdout).toLowerCase();
         if (text.includes('cannot find the file') || (text.includes('certutil') && text.includes('not found'))) {
           return { ok: false, message: 'Failed to install CA: certutil.exe not found in PATH' };
@@ -266,8 +247,7 @@ export async function installCaCert(): Promise<{ ok: boolean; message: string }>
       ]);
       if (!r.ok) return { ok: false, message: `Failed to install CA: ${describe(r)}` };
     } else {
-      // Linux: copy to /usr/local/share/ca-certificates and update.
-      const dest = '/usr/local/share/ca-certificates/antigravity-mitm.crt';
+      const dest = getCaInstallDest();
       fs.copyFileSync(ca.certPath, dest);
       const r = await runElevated('update-ca-certificates', []);
       if (!r.ok) return { ok: false, message: `Failed to install CA: ${describe(r)}` };
@@ -295,7 +275,7 @@ export async function uninstallCaCert(): Promise<{ ok: boolean; message: string 
       ]);
       if (!r.ok) return { ok: false, message: `Failed to remove CA: ${describe(r)}` };
     } else {
-      const dest = '/usr/local/share/ca-certificates/antigravity-mitm.crt';
+      const dest = getCaInstallDest();
       if (fs.existsSync(dest)) fs.unlinkSync(dest);
       const r = await runElevated('update-ca-certificates', ['--fresh']);
       if (!r.ok) return { ok: false, message: `Failed to remove CA: ${describe(r)}` };
@@ -306,33 +286,32 @@ export async function uninstallCaCert(): Promise<{ ok: boolean; message: string 
   }
 }
 
+function getCaInstallDest(): string {
+  if (fs.existsSync('/usr/local/share/ca-certificates')) {
+    return '/usr/local/share/ca-certificates/antigravity-mitm.crt';
+  }
+  if (fs.existsSync('/usr/share/ca-certificates')) {
+    return '/usr/share/ca-certificates/antigravity-mitm.crt';
+  }
+  return '/usr/local/share/ca-certificates/antigravity-mitm.crt';
+}
+
 /** Set the system HTTP/HTTPS proxy to point at the local MITM proxy. */
-export async function setSystemProxy(host = '127.0.0.1', port = DEFAULT_MITM_PORT): Promise<{ ok: boolean; message: string }> {
+export async function setSystemProxy(host = DEFAULT_BIND_HOST, port = DEFAULT_MITM_PORT): Promise<{ ok: boolean; message: string }> {
   const platform = getPlatform();
   try {
     if (platform === 'win32') {
-      // `netsh winhttp set proxy` requires Admin. `runElevated` proactively
-      // detects elevation via `net session` and re-launches via UAC when
-      // needed. This is more reliable than the previous try/catch-on-stderr
-      // approach because the failure exit code is 1 with no useful stderr
-      // on Windows, so the regex fallback never matched.
-      console.log(`[DEBUG] Setting system proxy to ${host}:${port}`);
-      console.log(`[DEBUG] Calling runElevated('netsh', ['winhttp', 'set', 'proxy', 'proxy-server=${host}:${port}'])`);
-      
       const r = await runElevated('netsh', [
         'winhttp', 'set', 'proxy', `proxy-server=${host}:${port}`,
       ]);
-      
-      console.log(`[DEBUG] runElevated result:`, {
-        ok: r.ok,
-        code: r.code,
-        elevated: r.elevated,
-        stderr: r.stderr.substring(0, 200),
-        stdout: r.stdout.substring(0, 200),
-        message: r.message
-      });
-      
       if (!r.ok) return { ok: false, message: `Failed to set proxy: ${describe(r)}` };
+      const listening = await isPortInUse(port, host, 1500);
+      if (!listening) {
+        return {
+          ok: false,
+          message: `Proxy set to ${host}:${port}, but nothing is listening on that port. Start Antigravity or the local proxy first.`,
+        };
+      }
       return {
         ok: true,
         message: r.elevated
@@ -351,18 +330,17 @@ export async function setSystemProxy(host = '127.0.0.1', port = DEFAULT_MITM_POR
         await execFileAsync('networksetup', ['-setsecurewebproxystate', svc, 'on']);
       }
     } else {
-      // Linux: set gsettings for GNOME (best-effort)
-      try {
-        await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'manual']);
-        await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.http', 'host', host]);
-        await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.http', 'port', String(port)]);
-        await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.https', 'host', host]);
-        await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.https', 'port', String(port)]);
-      } catch {
-        // No gsettings (headless / non-GNOME) — fall back to env vars only
-        process.env.http_proxy = `http://${host}:${port}`;
-        process.env.https_proxy = `http://${host}:${port}`;
-      }
+    // Linux: try gsettings for GNOME, fall back to env vars
+    try {
+      await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'manual']);
+      await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.http', 'host', host]);
+      await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.http', 'port', String(port)]);
+      await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.https', 'host', host]);
+      await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.https', 'port', String(port)]);
+    } catch {
+      process.env.http_proxy = `http://${host}:${port}`;
+      process.env.https_proxy = `http://${host}:${port}`;
+    }
     }
     return { ok: true, message: `Proxy set to ${host}:${port}` };
   } catch (e) {
@@ -496,7 +474,7 @@ export async function isCaInstalled(fingerprint: string): Promise<boolean> {
       return stdout.includes(fingerprint.replace(/:/g, '').toUpperCase()) || stdout.length > 0;
     }
     // Linux
-    const dest = '/usr/local/share/ca-certificates/antigravity-mitm.crt';
+    const dest = getCaInstallDest();
     return fs.existsSync(dest);
   } catch {
     return false;

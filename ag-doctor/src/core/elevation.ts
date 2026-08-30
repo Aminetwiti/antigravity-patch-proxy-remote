@@ -94,24 +94,13 @@ export async function runElevated(
   const platform = getPlatform();
   const elevated = await isElevated();
 
-  console.log(`[DEBUG] runElevated('${command}', [${args.map(a => `'${a}'`).join(', ')}])`);
-  console.log(`[DEBUG] Platform: ${platform}, Already elevated: ${elevated}`);
-
   // Helper: run directly, capture stdout/stderr even on non-zero exit.
   const runDirect = async (): Promise<ElevatedResult> => {
     try {
-      console.log(`[DEBUG] Running directly: ${command} ${args.join(' ')}`);
       const { stdout, stderr } = await execFileAsync(command, args, { windowsHide: true });
-      console.log(`[DEBUG] Direct execution success`);
       return { ok: true, message: 'ok', stdout, stderr, code: 0, elevated: false };
     } catch (e) {
       const err = e as Error & { stdout?: string; stderr?: string; code?: number };
-      console.log(`[DEBUG] Direct execution failed:`, {
-        code: err.code,
-        message: err.message,
-        stderr: err.stderr?.substring(0, 100),
-        stdout: err.stdout?.substring(0, 100)
-      });
       return {
         ok: false,
         message: err.message,
@@ -124,17 +113,14 @@ export async function runElevated(
   };
 
   if (elevated) {
-    console.log(`[DEBUG] Process is already elevated, running directly`);
     return runDirect();
   }
 
   // Non-elevated: route through the platform's elevation mechanism.
   if (platform === 'win32') {
-    console.log(`[DEBUG] Requesting Windows UAC elevation...`);
     return runElevatedWindows(command, args);
   }
   if (platform === 'darwin' || platform === 'linux') {
-    console.log(`[DEBUG] Requesting POSIX sudo elevation...`);
     return runElevatedPosix(command, args);
   }
   return runDirect();
@@ -160,22 +146,14 @@ async function runElevatedWindows(command: string, args: string[]): Promise<Elev
     `-Verb RunAs -Wait -WindowStyle Hidden -PassThru; ` +
     `Write-Output ("EXITCODE=" + $p.ExitCode)`;
 
-  console.log(`[DEBUG] PowerShell script:`, psScript);
-
   try {
-    console.log(`[DEBUG] Launching PowerShell with UAC elevation...`);
     const { stdout, stderr } = await execFileAsync(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-Command', psScript],
       { windowsHide: true },
     );
-    console.log(`[DEBUG] PowerShell completed. stdout:`, stdout.substring(0, 200));
-    console.log(`[DEBUG] PowerShell stderr:`, stderr.substring(0, 200));
-    
     const m = stdout.match(/EXITCODE=(\d+)/);
     const code = m ? parseInt(m[1], 10) : 0;
-    console.log(`[DEBUG] Extracted exit code: ${code}`);
-    
     return {
       ok: code === 0,
       message: code === 0 ? 'ok' : `elevated command exited with code ${code}`,
@@ -186,12 +164,6 @@ async function runElevatedWindows(command: string, args: string[]): Promise<Elev
     };
   } catch (e) {
     const err = e as Error & { stdout?: string; stderr?: string; code?: number };
-    console.log(`[DEBUG] PowerShell execution failed:`, {
-      code: err.code,
-      message: err.message,
-      stderr: err.stderr?.substring(0, 200),
-      stdout: err.stdout?.substring(0, 200)
-    });
     // UAC declined, or powershell not available — surface the original
     // message but make it actionable.
     const stderrText = err.stderr ?? err.stdout ?? err.message;

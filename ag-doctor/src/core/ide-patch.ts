@@ -26,7 +26,7 @@
 import fs from 'fs';
 import path from 'path';
 import { findAntigravityIdeInstallDir, getIdeSettingsJson } from './paths';
-import { DEFAULT_MITM_PORT } from './config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 
 /** Read the IDE product version from resources/app/package.json (best-effort). */
 export function getIdeVersion(installDir?: string): string | null {
@@ -45,7 +45,7 @@ export function getIdeVersion(installDir?: string): string | null {
 /** The VS Code setting key that overrides the Cloud Code endpoint. */
 export const IDE_ENDPOINT_SETTING = 'jetski.cloudCodeUrl';
 /** The value the patch writes (the local proxy). */
-export const IDE_PATCHED_ENDPOINT = `http://localhost:${DEFAULT_MITM_PORT}`;
+export const IDE_PATCHED_ENDPOINT = `http://${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}`;
 
 export interface IdePatchStatus {
   /** IDE install directory, or null if the IDE is not installed. */
@@ -213,7 +213,8 @@ const IDE_MAIN_HOOK_SIG = '// Antigravity IDE Proxy Auto-Starter Hook';
 const IDE_MAIN_HOOK = `// Antigravity IDE Proxy Auto-Starter Hook
 try {
   const _net = require('net');
-  const _s = _net.connect({ port: 51074, host: '127.0.0.1' }, () => { _s.destroy(); });
+  const _proxyPort = ${DEFAULT_MITM_PORT};
+  const _s = _net.connect({ port: _proxyPort, host: DEFAULT_BIND_HOST }, () => { _s.destroy(); });
   _s.on('error', () => {
     try {
       const _path = require('path');
@@ -226,7 +227,7 @@ try {
           detached: true,
           stdio: 'ignore',
           windowsHide: true,
-          env: Object.assign({}, process.env, { AG_PROXY_PORT: '51074' })
+          env: Object.assign({}, process.env, { AG_PROXY_PORT: String(_proxyPort) })
         }).unref();
       }
     } catch (_) {}

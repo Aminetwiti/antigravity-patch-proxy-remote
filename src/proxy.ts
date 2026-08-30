@@ -20,6 +20,7 @@ function traceLog(...args: unknown[]): void {
 }
 import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from './metrics';
 import { randomBytes } from 'crypto';
+import { GOOGLE_HOSTS, DEFAULT_PROXY_PORT, WINDOW_ORIGIN, LOOPBACK_HOSTS } from './constants';
 
 const proxyLog = createLogger('Proxy');
 
@@ -35,7 +36,6 @@ import {
   GOOGLE_PROXY_TIMEOUT_MS,
   FILE_DOWNLOAD_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
-  DEFAULT_PROXY_PORT,
   ACTIVE_PORT_FILE,
 } from './constants';
 
@@ -213,11 +213,10 @@ import { mergeModels, getMappedCustomModels, getCustomModelsList } from './proxy
 async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse, reqBody: Buffer): Promise<void> {
   const traceId = newTraceId();
   const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode');
-  const targetHost = isCloudCodeUrl ? 'daily-cloudcode-pa.googleapis.com' : 'generativelanguage.googleapis.com';
+  const targetHost = isCloudCodeUrl ? GOOGLE_HOSTS.CLOUD_CODE : GOOGLE_HOSTS.GENERATIVE_LANGUAGE;
   const targetUrl = `https://${targetHost}`;
   const parsedUrl = new URL(req.url!, targetUrl);
   const endTimer = metricTimer('proxy_request_ms', { upstream: targetHost });
-  const traceLog = proxyLog;
   proxyLog.debug('req', traceId, req.method, req.url, '→', targetHost);
 
   try {
@@ -226,7 +225,7 @@ async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse
   } catch (e) {
     metricInc('proxy_errors_total', { upstream: targetHost, stage: 'dns', trace_id: traceId });
     const ms = endTimer();
-    traceLog.error('DNS resolution failed for', targetHost, 'traceId=', traceId, '(in', ms, 'ms)');
+    proxyLog.error('DNS resolution failed for', targetHost, 'traceId=', traceId, '(in', ms, 'ms)');
     log.error(`[Proxy] Could not resolve upstream IP for ${targetHost}:`, e);
     if (safeWriteHead(res, 500, { 'Content-Type': 'application/json' })) {
       safeEnd(res, JSON.stringify({ error: { message: 'DNS resolution failed for ' + targetHost, traceId } }));
@@ -325,7 +324,7 @@ async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse
   proxyReq.on('error', (err) => {
     metricInc('proxy_errors_total', { upstream: targetHost, stage: 'forward', trace_id: traceId });
     const ms = endTimer();
-    traceLog.error('Google forwarding error traceId=', traceId, 'after', ms, 'ms:', err.message);
+    proxyLog.error('Google forwarding error traceId=', traceId, 'after', ms, 'ms:', err.message);
     log.error('[Proxy] Google Forwarding Error:', err);
     if (safeWriteHead(res, 500, { 'Content-Type': 'application/json' })) {
       safeEnd(res, JSON.stringify({ error: { message: 'Proxy forwarding failed: ' + err.message, traceId } }));
@@ -335,7 +334,7 @@ async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse
   proxyReq.on('close', () => {
     const ms = endTimer();
     metricObserve('proxy_upstream_ms', ms, { upstream: targetHost, trace_id: traceId });
-    traceLog.debug('Upstream request closed traceId=', traceId, 'after', ms, 'ms');
+    proxyLog.debug('Upstream request closed traceId=', traceId, 'after', ms, 'ms');
   });
 
   if (reqBody) {
@@ -356,13 +355,17 @@ async function resolveFileData(body: GeminiRequestBody, reqHeaders: Record<strin
       const p = item.parts[i] as Record<string, unknown>;
       const fd = p.fileData as { mimeType?: string; fileUri?: string } | undefined;
       if (!fd?.fileUri) continue;
-      // Keep image fileData intact so provider translators can map it natively.
       if (fd.mimeType?.startsWith('image/')) continue;
       try {
         const uri = fd.fileUri; let fileContent = '';
         if (uri.startsWith('file://')) {
           const fp = uri.replace('file://', '').replace(/\//g, path.sep);
-          if (fs.existsSync(fp)) fileContent = fs.readFileSync(fp, 'utf-8');
+          try {
+            await fs.promises.access(fp);
+            fileContent = await fs.promises.readFile(fp, 'utf-8');
+          } catch {
+            fileContent = '';
+          }
         } else if (authHeader && uri.startsWith('https://')) {
           fileContent = await downloadFileContent(uri, authHeader);
         }
@@ -700,7 +703,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
     res.end();
     const pId = model.name.includes('-') ? model.name.split('-')[0] : model.provider;
-    void recordProviderUsage(pId, 100, 150);
+    void recordProviderUsage(pId);
   });
 }
 
@@ -1170,9 +1173,9 @@ function handleCustomModelRequest(
     // Common causes: missing API key, wrong header name, expired token,
     // wrong endpoint URL, account suspended.
     if (status === 401) {
-      // S-2: Never log actual key material â€” only presence and length bucket.
+      // S-2: Never log actual key material — only presence and length bucket.
       const apiKeyInfo = model.apiKey && model.apiKey !== 'none'
-        ? `<set, len=${model.apiKey.length > 50 ? '>50' : model.apiKey.length <= 20 ? 'â‰¤20' : '21-50'}>`
+        ? `<set, len=${model.apiKey.length > 50 ? '>50' : model.apiKey.length <= 20 ? '≤20' : '21-50'}>`
         : '<empty or none>';
       log.error(`[Proxy] 401 Unauthorized from ${model.name} (${model.provider})`);
       log.error(`[Proxy]   URL: ${finalUrlStr}`);
@@ -1207,6 +1210,7 @@ function handleGetAvailableModelsProxy(
   res: http.ServerResponse,
   reqBody: Buffer,
   lsUrl: string,
+  reqHeaders: Record<string, string | string[] | undefined>,
 ): void {
   const lsParsed = new URL(lsUrl);
   const client = lsParsed.protocol === 'https:' ? https : http;
@@ -1220,8 +1224,11 @@ function handleGetAvailableModelsProxy(
       'Content-Type': 'application/grpc-web+proto',
       'Accept': 'application/grpc-web+proto',
       'Content-Length': String(reqBody.length),
+      ...(reqHeaders['x-codeium-csrf-token'] ? { 'x-codeium-csrf-token': String(reqHeaders['x-codeium-csrf-token']) } : {}),
+      ...(reqHeaders['Connect-Protocol-Version'] ? { 'Connect-Protocol-Version': String(reqHeaders['Connect-Protocol-Version']) } : {}),
+      ...(reqHeaders['X-Grpc-Web'] ? { 'X-Grpc-Web': String(reqHeaders['X-Grpc-Web']) } : {}),
     },
-    rejectUnauthorized: false,
+    rejectUnauthorized: !LOOPBACK_HOSTS.includes(lsParsed.hostname as typeof LOOPBACK_HOSTS[number]),
   };
 
   const lsReq = client.request(options, (lsRes) => {
@@ -1298,8 +1305,7 @@ function isAllowedOrigin(req: http.IncomingMessage): boolean {
   const origin = ((req.headers.origin || req.headers.referer || '') as string).toLowerCase();
 
   // 1. Validate Host header — local loopback or googleapis upstream
-  const allowedHostPrefixes = ['127.0.0.1', 'localhost', '::1'];
-  const isHostAllowed = allowedHostPrefixes.some((h) => host.startsWith(h)) || host.endsWith('.googleapis.com');
+  const isHostAllowed = LOOPBACK_HOSTS.some((h) => host.startsWith(h)) || host.endsWith('.googleapis.com');
   if (!isHostAllowed) return false;
 
   // 2. Direct requests without Origin/Referer (Language Server Go, internal gRPC/HTTP)
@@ -1310,9 +1316,7 @@ function isAllowedOrigin(req: http.IncomingMessage): boolean {
     const parsed = new URL(origin);
     const h = parsed.hostname.toLowerCase();
     return (
-      h === '127.0.0.1' ||
-      h === 'localhost' ||
-      h === '::1' ||
+      LOOPBACK_HOSTS.includes(h as typeof LOOPBACK_HOSTS[number]) ||
       h === 'googleapis.com' ||
       h.endsWith('.googleapis.com')
     );
@@ -1514,10 +1518,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
     // 0. Intercept GetAvailableModels (redirected from Electron webRequest)
     if (req.url!.startsWith('/GetAvailableModels')) {
-      const gavParsed = new URL(req.url!, 'http://127.0.0.1');
+      const gavParsed = new URL(req.url!, `http://${LOOPBACK_HOSTS[0]}`);
       const lsUrl = gavParsed.searchParams.get('ls');
       if (lsUrl) {
-        handleGetAvailableModelsProxy(res, fullBody, lsUrl);
+        handleGetAvailableModelsProxy(res, fullBody, lsUrl, req.headers as Record<string, string | string[] | undefined>);
         return;
       }
       if (safeWriteHead(res, 400, { 'Content-Type': 'application/json' })) {
@@ -1546,7 +1550,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         });
       }
 
-      const targetHost = 'daily-cloudcode-pa.googleapis.com';
+      const targetHost = GOOGLE_HOSTS.CLOUD_CODE;
       const targetUrl = `https://${targetHost}`;
       let parsedUrl: URL;
       try {
@@ -1765,7 +1769,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (req.method === 'GET' && (req.url!.endsWith('/models') || req.url!.includes('/models?'))) {
       log.info('[Proxy] Intercepting models list request');
 
-      const targetHost = 'generativelanguage.googleapis.com';
+      const targetHost = GOOGLE_HOSTS.GENERATIVE_LANGUAGE;
       const targetUrl = `https://${targetHost}`;
       let parsedUrl: URL;
       try {
@@ -2066,7 +2070,7 @@ export function startProxy(): Promise<number> {
       // tuned per-machine without recompiling. Defaults preserve legacy behavior.
       const envPort = parseInt(process.env.AG_PROXY_PORT || '', 10);
       const defaultPort = Number.isFinite(envPort) && envPort > 0 ? envPort : DEFAULT_PROXY_PORT;
-      const defaultHost = process.env.AG_PROXY_HOST || '127.0.0.1';
+      const defaultHost = process.env.AG_PROXY_HOST || LOOPBACK_HOSTS[0];
 
       let primaryPort = defaultPort;
       let primaryHost = defaultHost;

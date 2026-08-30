@@ -5,8 +5,10 @@
 
 // ─── App Constants (used by main.ts, languageServer.ts, paths.ts) ─────────
 
+export const DEFAULT_BIND_HOST = '127.0.0.1';
+
 /** Origin used by the main BrowserWindow. */
-export const WINDOW_ORIGIN = 'https://127.0.0.1';
+export const WINDOW_ORIGIN = `https://${DEFAULT_BIND_HOST}`;
 
 /** Pass 0 to the LS so the OS assigns an available port automatically. */
 export const DYNAMIC_PORT = 0;
@@ -173,6 +175,18 @@ export const GOOGLE_HOSTS = {
   GENERATIVE_LANGUAGE: 'generativelanguage.googleapis.com',
 } as const;
 
+// ─── Loopback Hosts ───────────────────────────────────────────────────────
+
+export const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'] as const;
+
+// ─── Local Service Defaults ────────────────────────────────────────────────
+
+export const LOCAL_SERVICES = {
+  OLLAMA: `http://${DEFAULT_BIND_HOST}:11434`,
+  LMSTUDIO: `http://${DEFAULT_BIND_HOST}:1234`,
+  LLAMACPP: `http://${DEFAULT_BIND_HOST}:8080`,
+} as const;
+
 // ─── Content Types ────────────────────────────────────────────────────────
 
 export const CONTENT_TYPES = {
@@ -220,6 +234,32 @@ export const OPENAI_COMPATIBLE_PROVIDERS = [
   PROVIDERS.CUSTOM,
   PROVIDERS.OPENROUTER,
 ] as const;
+
+/** Providers that use OpenAI-compatible transport (expanded set for registry). */
+export const OPENAI_COMPAT = new Set<string>([
+  PROVIDERS.OPENAI,
+  PROVIDERS.OLLAMA,
+  PROVIDERS.OPENROUTER,
+  PROVIDERS.CUSTOM,
+  PROVIDERS.GROQ,
+  PROVIDERS.MISTRAL,
+  PROVIDERS.CEREBRAS,
+  PROVIDERS.NVIDIA,
+  PROVIDERS.OPENCODE,
+  PROVIDERS.CODESTRAL,
+]);
+
+/** Providers that use Anthropic-compatible transport. */
+export const ANTHROPIC_COMPAT = new Set<string>([
+  PROVIDERS.ANTHROPIC,
+  PROVIDERS.DEEPSEEK,
+  PROVIDERS.KIMI,
+  PROVIDERS.FIREWORKS,
+  PROVIDERS.LMSTUDIO,
+  PROVIDERS.LLAMACPP,
+  PROVIDERS.WAFER,
+  PROVIDERS.ZAI,
+]);
 
 /** Providers that require an API key for authentication. */
 export const PROVIDERS_REQUIRING_API_KEY: readonly ProviderName[] = [

@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const http = require('http');
 const net = require('net');
+const constants_1 = require('../../../constants');
 
 console.log('=== Check active_port file ===');
 const candidates = [
@@ -27,7 +28,7 @@ for (let p = 50995; p <= 51015; p++) {
   sock.on('connect', () => { console.log('  PORT ' + p + ' OPEN'); sock.destroy(); });
   sock.on('timeout', () => sock.destroy());
   sock.on('error', () => {});
-  sock.connect(p, '127.0.0.1');
+  sock.connect(p, constants_1.DEFAULT_BIND_HOST);
 }
 
 setTimeout(() => {
@@ -38,7 +39,7 @@ setTimeout(() => {
   function tryNext() {
     if (i >= tryPorts.length) { console.log('  No proxy found'); process.exit(0); }
     const p = tryPorts[i++];
-    const req = http.get({ host: '127.0.0.1', port: p, path: '/health', timeout: 1500 }, (res) => {
+    const req = http.get({ host: constants_1.DEFAULT_BIND_HOST, port: p, path: '/health', timeout: 1500 }, (res) => {
       let body = '';
       res.on('data', d => body += d);
       res.on('end', () => {

@@ -11,6 +11,7 @@ import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 import { getPlatform, isWsl } from './platform';
+import { DEFAULT_BIND_HOST } from './config';
 
 const execFileAsync = promisify(execFile);
 
@@ -126,7 +127,7 @@ export async function killAntigravityProcesses(): Promise<{ killed: number }> {
  *
  * Has a hard timeout (default 1500ms) so callers never hang on firewalled hosts.
  */
-export async function isPortInUse(port: number, host = '127.0.0.1', timeoutMs = 1500): Promise<boolean> {
+export async function isPortInUse(port: number, host = DEFAULT_BIND_HOST, timeoutMs = 1500): Promise<boolean> {
   const net = await import('net');
   return new Promise((resolve) => {
     const sock = net.createConnection({ port, host });

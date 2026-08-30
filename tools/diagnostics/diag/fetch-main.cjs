@@ -3,7 +3,7 @@
 // and print lines around a given line number.
 
 const https = require('https');
-const url = process.argv[2] || 'https://127.0.0.1:59521/main.js';
+const url = process.argv[2] || `https://${process.env.AG_BIND_HOST || '127.0.0.1'}:59521/main.js`;
 const targetLine = parseInt(process.argv[3] || '11214', 10);
 const context = parseInt(process.argv[4] || '8', 10);
 

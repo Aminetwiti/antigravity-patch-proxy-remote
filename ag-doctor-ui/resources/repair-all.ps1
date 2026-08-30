@@ -24,9 +24,10 @@ $Result = @{
 # 1. Set WinHTTP Proxy (port ${AG_STUB_PORT:-51999} for the ag-doctor-ui stub proxy,
 #    NOT ${AG_PROXY_PORT:-51074} which is reserved for the main Antigravity proxy)
 $stubPort = if ($env:AG_STUB_PORT) { $env:AG_STUB_PORT } else { '51999' }
-Write-Host "Setting WinHTTP proxy to 127.0.0.1:${stubPort}..."
+$stubHost = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { '127.0.0.1' }
+Write-Host "Setting WinHTTP proxy to ${stubHost}:${stubPort}..."
 try {
-    netsh winhttp set proxy proxy-server="127.0.0.1:${stubPort}" | Out-Null
+    netsh winhttp set proxy proxy-server="${stubHost}:${stubPort}" | Out-Null
     $Result.proxy = $true
     Write-Host "WinHTTP proxy set successfully." -ForegroundColor Green
 } catch {

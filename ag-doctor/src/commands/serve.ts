@@ -37,11 +37,11 @@ import { checkConnectivity } from '../checks/connectivity';
 import { checkMitm } from '../checks/mitm';
 import { loadPlugins, runPlugin } from '../core/plugins';
 import { listHistory } from '../core/history';
-import { loadConfig } from '../core/config';
+import { loadConfig, DEFAULT_BIND_HOST } from '../core/config';
 import { ok, info, warn, error, header, c } from '../cli/output';
 
 export const DEFAULT_SERVE_PORT = 51000;
-export const DEFAULT_SERVE_HOST = '127.0.0.1';
+export const DEFAULT_SERVE_HOST = DEFAULT_BIND_HOST;
 
 interface CachedResult {
   results: any[];
@@ -59,6 +59,7 @@ interface ServeOptions {
 }
 
 let cache: CachedResult | null = null;
+let cacheConfigMtime = 0;
 let serverInstance: http.Server | null = null;
 
 async function runAllChecks(): Promise<any[]> {
@@ -117,7 +118,8 @@ function summarize(results: any[]): CachedResult['summary'] {
 
 async function getCachedDoctor(opts: ServeOptions, force = false): Promise<CachedResult> {
   const now = Date.now();
-  if (!force && cache && now - new Date(cache.ranAt).getTime() < opts.cacheTtlMs) {
+  const configMtime = getConfigMtime();
+  if (!force && cache && now - new Date(cache.ranAt).getTime() < opts.cacheTtlMs && cacheConfigMtime === configMtime) {
     return cache;
   }
   const start = Date.now();
@@ -129,7 +131,25 @@ async function getCachedDoctor(opts: ServeOptions, force = false): Promise<Cache
     ranAt: new Date().toISOString(),
     durationMs: Date.now() - start,
   };
+  cacheConfigMtime = configMtime;
   return cache;
+}
+
+function getConfigMtime(): number {
+  try {
+    const stat = fs.statSync(getConfigPath());
+    return stat.mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+function getConfigPath(): string {
+  try {
+    return require('path').join(require('os').homedir(), '.gemini', 'antigravity', 'config.json');
+  } catch {
+    return '';
+  }
 }
 
 function renderPrometheusMetrics(c: CachedResult, uptimeSec: number): string {
@@ -158,7 +178,9 @@ function renderPrometheusMetrics(c: CachedResult, uptimeSec: number): string {
   const statusMap: Record<string, number> = { ok: 1, warn: 2, error: 3, info: 0 };
   for (const r of c.results) {
     const safeId = (r.id || 'unknown').replace(/[^a-zA-Z0-9_]/g, '_');
-    lines.push(`ag_doctor_check_status{id="${safeId}",title="${(r.title || '').replace(/"/g, '\\"')}"} ${statusMap[r.status] ?? 0}`);
+    const title = (r.title || '').replace(/"/g, '\\"');
+    const status = typeof r.status === 'string' ? r.status : 'info';
+    lines.push(`ag_doctor_check_status{id="${safeId}",title="${title}"} ${statusMap[status] ?? 0}`);
   }
   lines.push('');
   lines.push('# HELP ag_doctor_last_duration_ms Duration of the last doctor run in ms');

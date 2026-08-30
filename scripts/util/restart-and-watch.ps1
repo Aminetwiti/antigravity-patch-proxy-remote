@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Continue'
 $ScriptDir = $PSScriptRoot
 $AgDoctor = Join-Path $ScriptDir 'ag-doctor\bin\ag-doctor.js'
 $PROXY_PORT = if ($env:AG_PROXY_PORT) { $env:AG_PROXY_PORT } else { '51074' }
+$BIND_HOST = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { '127.0.0.1' }
 
 Write-Host '== [1] Kill Antigravity processes ==' -ForegroundColor Cyan
 Get-Process | Where-Object { $_.Name -like 'Antigravity*' -or $_.Name -like 'language_server*' } | ForEach-Object {
@@ -43,7 +44,7 @@ for ($i = 1; $i -le 45; $i++) {
   $tcp = $null
   try {
     $tcp = New-Object System.Net.Sockets.TcpClient
-    $iar = $tcp.BeginConnect('127.0.0.1', [int]$PROXY_PORT, $null, $null)
+    $iar = $tcp.BeginConnect($BIND_HOST, [int]$PROXY_PORT, $null, $null)
     if ($iar.AsyncWaitHandle.WaitOne(1000, $false)) {
       $tcp.EndConnect($iar)
       Write-Host ("  Port $PROXY_PORT OPEN after {0}s" -f $i) -ForegroundColor Green

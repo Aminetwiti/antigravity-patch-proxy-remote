@@ -5,7 +5,7 @@
 const WebSocket = require('ws');
 const http = require('http');
 
-const HOST = '127.0.0.1';
+const HOST = process.env.AG_BIND_HOST || '127.0.0.1';
 const PORT = 9229;
 
 function getJson(path) {

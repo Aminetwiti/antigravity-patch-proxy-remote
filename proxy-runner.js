@@ -13,6 +13,8 @@ const path = require('path');
 const net = require('net');
 const { spawn } = require('child_process');
 
+const constants_1 = require('./constants');
+
 const MITM_443_PROBE_TIMEOUT_MS = 500;
 
 // Portable log paths — derived from OS conventions, never hardcoded.
@@ -51,14 +53,14 @@ function spawnAntigravityMitm443() {
       w('runner: MITM-443 script missing at ' + ps1 + ' — skipping (re-run npm run patch:2.3)');
       return;
     }
-    // Probe 127.0.0.1:443 with a short timeout. If a server answers, MITM is up.
-    const probe = net.connect({ host: '127.0.0.1', port: 443 });
+    // Probe ${constants_1.DEFAULT_BIND_HOST}:443 with a short timeout. If a server answers, MITM is up.
+    const probe = net.connect({ host: constants_1.DEFAULT_BIND_HOST, port: 443 });
     let decided = false;
     const skip = (reason) => {
       if (decided) return;
       decided = true;
       probe.destroy();
-      w('runner: MITM-443 already listening on 127.0.0.1:443 (' + reason + '), skipping spawn');
+      w('runner: MITM-443 already listening on ' + constants_1.DEFAULT_BIND_HOST + ':443 (' + reason + '), skipping spawn');
     };
     const spawnElevated = () => {
       if (decided) return;
@@ -137,7 +139,7 @@ app.whenReady().then(async () => {
     const proxyMod = require('./dist/proxy');
     w('runner: proxy module loaded; calling startProxy()');
     const port = await proxyMod.startProxy();
-    w('runner: Proxy listening on http://127.0.0.1:' + port);
+    w('runner: Proxy listening on http://' + constants_1.DEFAULT_BIND_HOST + ':' + port);
     try { fs.writeFileSync(PORT_FILE, String(port)); } catch (_) {}
   } catch (e) {
     w('runner: startProxy FAILED: ' + (e && e.stack || e));

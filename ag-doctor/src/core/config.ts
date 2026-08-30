@@ -57,7 +57,7 @@ export interface AgDoctorConfig {
 }
 
 export const DEFAULT_CONFIG: AgDoctorConfig = {
-  mitmPort: 51074,
+  mitmPort: 443,
   logLines: 100,
   doctorInterval: 5000,
   ui: {
@@ -79,6 +79,8 @@ export const DEFAULT_CONFIG: AgDoctorConfig = {
 };
 
 export const DEFAULT_MITM_PORT = DEFAULT_CONFIG.mitmPort;
+
+export const DEFAULT_BIND_HOST = '127.0.0.1';
 
 /** Type guard for a string that is one of the known patch ranges. */
 export function isKnownPatchRange(s: unknown): s is KnownPatchRange {
@@ -146,16 +148,23 @@ export function setConfigValue(path: string, value: string | number | boolean): 
     cursor = cursor[seg] as Record<string, unknown>;
   }
   const last = segments[segments.length - 1];
-  // Coerce known numeric fields
-  if (last === 'mitmPort' || last === 'logLines' || last === 'doctorInterval' || last === 'maxSnapshots' || last === 'maxRuns') {
+  const fullPath = segments.join('.');
+
+  if (fullPath === 'mitmPort' || fullPath === 'logLines' || fullPath === 'doctorInterval' || fullPath === 'snapshot.maxSnapshots' || fullPath === 'history.maxRuns') {
     const n = Number(value);
     if (!Number.isFinite(n)) throw new Error(`Invalid number for ${path}: ${value}`);
     cursor[last] = n;
-  } else if (last === 'enabled') {
+  } else if (fullPath === 'snapshot.enabled') {
     cursor[last] = Boolean(value) && value !== 'false' && value !== '0';
-  } else if (last === 'theme') {
+  } else if (fullPath === 'ui.theme') {
     if (value !== 'dark' && value !== 'light') throw new Error(`theme must be 'dark' or 'light'`);
     cursor[last] = value;
+  } else if (fullPath === 'patch.versionOverride') {
+    const s = String(value);
+    if (s && !isKnownPatchRange(s)) throw new Error(`Invalid patch range "${s}". Known: ${KNOWN_PATCH_RANGES.join(', ')}`);
+    cursor[last] = s || null;
+  } else if (fullPath === 'patch.overrideReason' || fullPath === 'patch.overrideSetAt') {
+    cursor[last] = String(value);
   } else {
     cursor[last] = String(value);
   }

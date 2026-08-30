@@ -93,6 +93,7 @@ export interface ProviderFileEntry {
 
 let _providersCache: ProviderFileEntry[] | null = null;
 let _providersCacheTime = 0;
+let _providersCacheMtime = 0;
 const CACHE_TTL_MS = 60_000;
 
 export function invalidateModelStoreCache(): void {
@@ -161,11 +162,18 @@ export async function saveCustomModels(models: CustomModelFileEntry[]): Promise<
 
 export async function loadProviders(): Promise<ProviderFileEntry[]> {
   const now = Date.now();
+  const filePath = getCustomModelsPath();
+  try {
+    const stat = await fs.stat(filePath);
+    if (_providersCache && stat.mtimeMs > _providersCacheMtime) {
+      _providersCache = null;
+    }
+  } catch {
+    _providersCache = null;
+  }
   if (!process.env.VITEST && _providersCache && now - _providersCacheTime < CACHE_TTL_MS) {
     return _providersCache;
   }
-
-  const filePath = getCustomModelsPath();
   try {
     const content = await fs.readFile(filePath, 'utf-8');
     const parsed = JSON.parse(stripBom(content)) as { models?: CustomModelFileEntry[], providers?: ProviderFileEntry[] };
@@ -173,6 +181,12 @@ export async function loadProviders(): Promise<ProviderFileEntry[]> {
     if (parsed.providers) {
       _providersCache = parsed.providers;
       _providersCacheTime = now;
+      try {
+        const s = await fs.stat(filePath);
+        _providersCacheMtime = s.mtimeMs;
+      } catch {
+        _providersCacheMtime = now;
+      }
       return _providersCache;
     }
 

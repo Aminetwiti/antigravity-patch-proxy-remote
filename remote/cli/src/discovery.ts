@@ -64,7 +64,7 @@ function argValue(commandLine: string, name: string): string {
   return m ? m[1] : '';
 }
 
-export function checkPort(port: number, host = '127.0.0.1', timeoutMs = 200): Promise<boolean> {
+export function checkPort(port: number, host = process.env.AG_BIND_HOST || '127.0.0.1', timeoutMs = 200): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = new net.Socket();
     socket.setTimeout(timeoutMs);
@@ -86,7 +86,8 @@ export function checkPort(port: number, host = '127.0.0.1', timeoutMs = 200): Pr
 
 /** Envoie un Heartbeat gRPC-Web (frame vide) — seul critère fiable. */
 async function probeService(port: number, csrfToken: string): Promise<boolean> {
-  const url = `http://127.0.0.1:${port}/exa.language_server_pb.LanguageServerService/Heartbeat`;
+  const host = process.env.AG_BIND_HOST || '127.0.0.1';
+  const url = `http://${host}:${port}/exa.language_server_pb.LanguageServerService/Heartbeat`;
   try {
     const resp = await fetch(url, {
       method: 'POST',

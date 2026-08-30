@@ -1,5 +1,6 @@
 const http = require('http');
-const req = http.request({ hostname: '127.0.0.1', port: 51074, path: '/__diag__', method: 'GET' }, (res) => {
+const constants_1 = require('../../constants');
+const req = http.request({ hostname: constants_1.DEFAULT_BIND_HOST, port: 51074, path: '/__diag__', method: 'GET' }, (res) => {
   let d = '';
   res.on('data', (c) => (d += c));
   res.on('end', () => {

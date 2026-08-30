@@ -136,6 +136,7 @@ func main() {
 	}
 
 	server := gateway.NewServer(rpcClient, resolvedToken)
+	gateway.SetMcpProxyBase(os.Getenv("AG_BIND_HOST"), cfg.ProxyPort)
 	if !authMgr.IsDisabled() {
 		server.SetTokenValidator(func(t string) bool {
 			return authMgr.Validate(t) || pairingMgr.ValidateToken(t)

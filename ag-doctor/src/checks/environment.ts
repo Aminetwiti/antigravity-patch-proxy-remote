@@ -7,7 +7,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import type { CheckResult } from '../types';
 import { getNodeMajor, getSystemInfo } from '../core/platform';
-import { DEFAULT_MITM_PORT } from '../core/config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from '../core/config';
 
 /** Detect if running inside WSL2 (Linux process, Windows host). */
 function isWsl(): boolean {
@@ -73,7 +73,7 @@ export function checkEnvironment(): CheckResult {
       message: `Node ${info.nodeVersion}, npm ${npmVersion}, ${info.platform}/${info.arch} — WSL2 detected`,
       details: [
         'Running inside WSL2: proxy-stub.js and ag-doctor-ui (Electron) cannot serve',
-        `Windows 127.0.0.1:${DEFAULT_MITM_PORT}. The language_server.exe will still get ECONNREFUSED.`,
+        `Windows ${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}. The language_server.exe will still get ECONNREFUSED.`,
         'Fix: launch proxy-stub.js from a native Windows terminal (PowerShell / CMD),',
         'not from a WSL shell.',
       ].join('\n'),

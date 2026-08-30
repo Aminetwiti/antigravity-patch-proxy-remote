@@ -23,7 +23,7 @@ import {
 } from './paths';
 import { isWsl } from './platform';
 import { findAntigravityProcesses, killAntigravityProcesses } from './process';
-import { DEFAULT_MITM_PORT } from './config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 
 const execFileAsync = promisify(execFile);
 
@@ -71,7 +71,7 @@ export interface AntigravityStatus {
 function readWindowsFileVersion(exePath: string): string | null {
   try {
     const buf = fs.readFileSync(exePath);
-    const sig = Buffer.from('VS_VERSION_INFO', 'binary');
+    const sig = Buffer.from('VS_VERSION_INFO', 'utf-8');
     const idx = buf.indexOf(sig);
     if (idx === -1) return null;
     const fixedSig = Buffer.from([0xbd, 0x04, 0xef, 0xce]); // VS_FIXEDFILEINFO magic
@@ -228,8 +228,8 @@ export function detectAntigravityVersion(installDir?: string): AntigravityVersio
   return { version: 'unknown', source: 'unknown' };
 }
 
-/** Check if a TCP port is reachable on localhost. */
-async function isPortReachable(port: number, host = '127.0.0.1'): Promise<boolean> {
+/** Check if a TCP port is reachable on the default bind host. */
+async function isPortReachable(port: number, host = DEFAULT_BIND_HOST): Promise<boolean> {
   const net = await import('net');
   return new Promise((resolve) => {
     const sock = net.createConnection({ port, host });

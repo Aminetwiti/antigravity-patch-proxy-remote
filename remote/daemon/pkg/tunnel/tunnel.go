@@ -73,7 +73,6 @@ func resolveBinaryPath(name string) (string, error) {
 		}
 	}
 
-
 	if home, err := os.UserHomeDir(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(home, ".gemini", "antigravity", "bin", name),
@@ -251,8 +250,12 @@ func (m *Manager) tryPinggy(localPort int) (string, error) {
 }
 
 func (m *Manager) startCloudflare(binPath string, localPort int) (string, error) {
-	targetURL := fmt.Sprintf("http://127.0.0.1:%d", localPort)
-	cmd := execCommand(binPath, "tunnel", "--no-autoupdate", "--url", targetURL)
+	bind := os.Getenv("AG_BIND_HOST")
+	if bind == "" {
+		bind = "127.0.0.1"
+	}
+	targetURL := fmt.Sprintf("http://%s:%d", bind, localPort)
+	cmd := execCommand(binPath, "tunnel", "--url", targetURL)
 	m.cmd = cmd
 
 	stdout, err := cmd.StdoutPipe()
@@ -297,14 +300,18 @@ func (m *Manager) startCloudflare(binPath string, localPort int) (string, error)
 }
 
 func (m *Manager) startPinggy(binPath string, localPort int) (string, error) {
+	bind := os.Getenv("AG_BIND_HOST")
+	if bind == "" {
+		bind = "127.0.0.1"
+	}
 	args := []string{
 		"-p", "443",
 		"-o", "StrictHostKeyChecking=no",
-		"-o", "ServerAliveInterval=15",
 		"-o", "ServerAliveCountMax=3",
 		"-o", "ExitOnForwardFailure=yes",
 		"-o", "TCPKeepAlive=yes",
-		"-R", fmt.Sprintf("0:127.0.0.1:%d", localPort),
+		"-o", "ServerAliveInterval=30",
+		"-R", fmt.Sprintf("0:%s:%d", bind, localPort),
 		"a.pinggy.io",
 	}
 	cmd := execCommand(binPath, args...)

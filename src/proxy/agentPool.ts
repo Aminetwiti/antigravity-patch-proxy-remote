@@ -111,8 +111,8 @@ export function getHttpsAgent(opts: AgentOptions): https.Agent {
     keepAlive: true,
     maxSockets: DEFAULT_MAX_SOCKETS,
     maxFreeSockets: DEFAULT_MAX_FREE_SOCKETS,
-    // Node uses `keepAliveMsecs` as the free-socket timeout (ms).
     keepAliveMsecs: DEFAULT_FREE_SOCKET_TIMEOUT_MS,
+    rejectUnauthorized: !allowUnauthorized,
   });
 
   httpsCache.set(key, agent);

@@ -37,6 +37,13 @@ type procEntry struct {
 	commandLine string
 }
 
+func bindHost() string {
+	if h := os.Getenv("AG_BIND_HOST"); h != "" {
+		return h
+	}
+	return "127.0.0.1"
+}
+
 func Discover() (*LocalHarnessInfo, error) {
 	procs, err := getProcesses()
 	if err != nil {
@@ -231,7 +238,7 @@ func listeningPortsForPID(pid int) []int {
 		if !strings.Contains(fields[3], "LISTEN") {
 			continue
 		}
-		// format : TCP 127.0.0.1:60656 ... -> extraire le port après le ':'
+		// format : TCP <AG_BIND_HOST>:<port> ... -> extraire le port après le ':'
 		addr := fields[1]
 		idx := strings.LastIndex(addr, ":")
 		if idx < 0 {
@@ -263,7 +270,7 @@ func probeService(port int, csrfToken string) (bool, bool) {
 }
 
 func probeHTTPHeartbeat(port int, csrfToken string) bool {
-	url := fmt.Sprintf("http://127.0.0.1:%d/exa.language_server_pb.LanguageServerService/Heartbeat", port)
+	url := fmt.Sprintf("http://%s:%d/exa.language_server_pb.LanguageServerService/Heartbeat", bindHost(), port)
 	body := make([]byte, 5) // frame gRPC-Web vide
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
@@ -286,7 +293,7 @@ func probeHTTPHeartbeat(port int, csrfToken string) bool {
 }
 
 func probeHTTPSHeartbeat(port int, csrfToken string) bool {
-	url := fmt.Sprintf("https://127.0.0.1:%d/exa.language_server_pb.LanguageServerService/Heartbeat", port)
+	url := fmt.Sprintf("https://%s:%d/exa.language_server_pb.LanguageServerService/Heartbeat", bindHost(), port)
 	body := make([]byte, 5) // frame gRPC-Web vide
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
@@ -315,7 +322,7 @@ func probeHTTPSHeartbeat(port int, csrfToken string) bool {
 
 func probeHTTPSGetUserStatus(port int, csrfToken string) bool {
 	body := []byte(`{"metadata":{"ideName":"antigravity"}}`)
-	req, err := http.NewRequest("POST", fmt.Sprintf("https://127.0.0.1:%d/exa.language_server_pb.LanguageServerService/GetUserStatus", port), bytes.NewReader(body))
+	req, err := http.NewRequest("POST", fmt.Sprintf("https://%s:%d/exa.language_server_pb.LanguageServerService/GetUserStatus", bindHost(), port), bytes.NewReader(body))
 	if err != nil {
 		return false
 	}

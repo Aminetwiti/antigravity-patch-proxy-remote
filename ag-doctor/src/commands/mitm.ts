@@ -19,10 +19,9 @@ import {
   setSystemProxy,
   clearSystemProxy,
 } from '../core/mitm';
-import { DEFAULT_MITM_PORT } from '../core/config';
+import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST, loadConfig } from '../core/config';
 import { ensureCa, getCaCertPath } from '../core/cert';
 import { c, header, ok, warn, error, info, table } from '../cli/output';
-import { loadConfig } from '../core/config';
 import { confirm } from '../cli/prompts';
 
 const USAGE = `ag-doctor mitm — manage MITM CA cert and system proxy
@@ -113,8 +112,8 @@ async function runInstall(ctx: CommandContext): Promise<number> {
   }
   ok(r1.message);
 
-  info(`Setting system proxy to 127.0.0.1:${loadConfig().mitmPort}...`);
-  const r2 = await setSystemProxy('127.0.0.1', loadConfig().mitmPort);
+  info(`Setting system proxy to ${DEFAULT_BIND_HOST}:${loadConfig().mitmPort}...`);
+  const r2 = await setSystemProxy(DEFAULT_BIND_HOST, loadConfig().mitmPort);
   if (!r2.ok) {
     warn(r2.message);
   } else {
@@ -150,8 +149,8 @@ async function runUninstall(ctx: CommandContext): Promise<number> {
 
 async function runProxyOn(ctx: CommandContext): Promise<number> {
   const port = loadConfig().mitmPort;
-  if (!ctx.json) info(`Setting system proxy to 127.0.0.1:${port}...`);
-  const r = await setSystemProxy('127.0.0.1', port);
+  if (!ctx.json) info(`Setting system proxy to ${DEFAULT_BIND_HOST}:${port}...`);
+  const r = await setSystemProxy(DEFAULT_BIND_HOST, port);
   if (!r.ok) {
     error(r.message);
     return 2;

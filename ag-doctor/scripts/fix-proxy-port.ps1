@@ -21,7 +21,8 @@
 
 $ErrorActionPreference = 'Stop'
 $ExpectedPort = if ($env:AG_PROXY_PORT) { [int]$env:AG_PROXY_PORT } else { 51074 }
-$ProxyValue  = "127.0.0.1:$ExpectedPort"
+$BindHost = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { '127.0.0.1' }
+$ProxyValue  = "${BindHost}:$ExpectedPort"
 
 function Is-Elevated {
     $id = [System.Security.Principal.WindowsIdentity]::GetCurrent()

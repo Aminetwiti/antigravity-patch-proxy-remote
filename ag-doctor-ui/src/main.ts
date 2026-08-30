@@ -33,7 +33,17 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 const activeStreams = new Map<string, ChildProcess>();
 
-// Sandbox setup for packaged builds
+// Disable hardware acceleration and GPU-dependent paths to avoid
+// startup crashes and noisy GLES3/GLES2 fallback warnings on some Windows setups
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-gpu-compositing');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+app.commandLine.appendSwitch('disable-3d-apis');
+app.commandLine.appendSwitch('in-process-gpu');
+app.commandLine.appendSwitch('disable-gpu-rasterization');
+app.commandLine.appendSwitch('disable-zero-copy');
+app.commandLine.appendSwitch('disable-gpu-vsync');
 app.commandLine.appendSwitch('no-sandbox');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,11 +125,23 @@ function getInfoPayload() {
 }
 
 let configCache: Record<string, unknown> | null = null;
+let configCacheMtime = 0;
 function getConfigPayload(): Record<string, unknown> {
+  const cfgPath = getConfigPath();
+  try {
+    const stat = fs.statSync(cfgPath);
+    if (configCache && stat.mtimeMs > configCacheMtime) {
+      configCache = null;
+    }
+  } catch {
+    configCache = null;
+  }
   if (configCache) return configCache;
   try {
-    const raw = fs.readFileSync(getConfigPath(), 'utf-8');
+    const raw = fs.readFileSync(cfgPath, 'utf-8');
     configCache = JSON.parse(raw) as Record<string, unknown>;
+    const s = fs.statSync(cfgPath);
+    configCacheMtime = s.mtimeMs;
   } catch {
     configCache = { ui: { theme: 'dark' } };
   }
@@ -128,6 +150,7 @@ function getConfigPayload(): Record<string, unknown> {
 
 function invalidateConfigCache(): void {
   configCache = null;
+  configCacheMtime = 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -636,13 +659,16 @@ function killOrphanDaemonProcesses(port?: number): void {
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.NETWORK_GET_DAEMON_STATUS, async (_event, customPort?: number, token?: string) => {
   const port = customPort || EnvironmentConfig.daemonPort || 8090;
-  const authToken = token || '11';
+  const authToken = token || EnvironmentConfig.daemonToken;
+  if (!authToken) {
+    return { running: false, port, error: 'Daemon auth token is required' };
+  }
   let running = false;
   let diagData: any = {};
   let healthData: any = {};
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health/diagnostic?token=${encodeURIComponent(authToken)}`, { signal: AbortSignal.timeout(1500) });
+    const res = await fetch(`http://${EnvironmentConfig.bindHost}:${port}/health/diagnostic?token=${encodeURIComponent(authToken)}`, { signal: AbortSignal.timeout(1500) });
     if (res.ok) {
       diagData = await res.json();
       running = true;
@@ -650,7 +676,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.NETWORK_GET_DAEMON_STATUS, async (_event, cus
   } catch { /* offline */ }
 
   try {
-    const hRes = await fetch(`http://127.0.0.1:${port}/health`, {
+    const hRes = await fetch(`http://${EnvironmentConfig.bindHost}:${port}/health`, {
       headers: { Authorization: `Bearer ${authToken}` },
       signal: AbortSignal.timeout(1500),
     });
@@ -665,11 +691,14 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.NETWORK_GET_DAEMON_STATUS, async (_event, cus
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.NETWORK_START_DAEMON, async (event, options: { port: number; tunnel: string; token: string; allowFirstAdmin?: boolean }) => {
   const port = options.port || EnvironmentConfig.daemonPort || 8090;
-  const token = (options.token && options.token.trim().length > 0) ? options.token.trim() : '11';
+  const token = (options.token && options.token.trim().length > 0) ? options.token.trim() : EnvironmentConfig.daemonToken;
+  if (!token) {
+    return { success: false, error: 'Daemon auth token is required' };
+  }
 
   // Vérifie si un daemon est déjà actif et répond sur ce port (évite conflits et double-lancement)
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health/diagnostic?token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(1500) });
+    const res = await fetch(`http://${EnvironmentConfig.bindHost}:${port}/health/diagnostic?token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(1500) });
     if (res.ok) {
       const data: any = await res.json();
       event.sender.send(DOCTOR_IPC_CHANNELS.NETWORK_DAEMON_LOG, `> Daemon déjà actif et opérationnel sur le port ${port} (PID ${data.pid || 'actif'})\n`);
@@ -845,10 +874,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
   try {
     const { net } = require('electron') as typeof import('electron');
     const baseUrl = params.apiUrl.replace(/\/+$/, '');
-    const url = baseUrl.endsWith('/models') ? baseUrl : `${baseUrl}/models`;
+    const url = new URL(baseUrl.endsWith('/models') ? baseUrl : `${baseUrl}/models`);
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return { success: false, error: `Unsupported URL scheme: ${url.protocol}` };
+    }
+    const blockedHosts = ['169.254.169.254', 'metadata.google.internal', 'metadata.internal', 'metadata'];
+    if (blockedHosts.includes(url.hostname.toLowerCase())) {
+      return { success: false, error: 'Blocked: metadata endpoint' };
+    }
 
     return new Promise((resolve) => {
-      const req = net.request({ url, method: 'GET' });
+      const req = net.request({ url: url.toString(), method: 'GET' });
       if (params.apiKey && !params.apiKey.startsWith('enc:')) {
         req.setHeader('Authorization', 'Bearer ' + params.apiKey);
       }
@@ -888,8 +924,18 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMainInvokeEvent, params: { apiUrl: string; apiKey: string; id?: string; modelId?: string }) => {
    try {
-     const { net } = require('electron') as typeof import('electron');
-     const startTime = Date.now();
+       const { net } = require('electron') as typeof import('electron');
+       const baseUrl = params.apiUrl.replace(/\/+$/, '');
+
+       const parsedBase = new URL(baseUrl);
+      if (!['http:', 'https:'].includes(parsedBase.protocol)) {
+        return { success: false, healthStatus: 'offline' as const, error: `Unsupported URL scheme: ${parsedBase.protocol}` };
+      }
+      const blockedHosts = ['169.254.169.254', 'metadata.google.internal', 'metadata.internal', 'metadata'];
+      if (blockedHosts.includes(parsedBase.hostname.toLowerCase())) {
+        return { success: false, healthStatus: 'offline' as const, error: 'Blocked: metadata endpoint' };
+      }
+      const startTime = Date.now();
 
      const doRequest = (targetUrl: string, method: string, body?: string): Promise<{ statusCode: number; data: string; latencyMs: number }> => {
        return new Promise((resolve, reject) => {
@@ -913,8 +959,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
        });
      };
 
-     const baseUrl = params.apiUrl.replace(/\/+$/, '');
-     let statusCode = 500;
+      let statusCode = 500;
      let responseData = '';
      let latencyMs = 0;
 
@@ -1359,7 +1404,7 @@ async function isPortInUse(port: number, host = EnvironmentConfig.bindHost): Pro
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.PROXY_START_STUB, async () => {
   try {
-    const stubPath = path.join(getCliPath(), '..', '..', '..', 'proxy-stub.js');
+    const stubPath = path.join(getCliPath(), '..', '..', 'scripts', 'proxy', 'proxy-stub.js');
     const resolved = path.resolve(stubPath);
     if (!fs.existsSync(resolved)) {
       return { ok: false, error: `proxy-stub.js not found at ${resolved}` };
@@ -1384,7 +1429,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROXY_START_STUB, async () => {
       });
       if (alive) return { ok: true, pid: child.pid, port: EnvironmentConfig.stubPort };
     }
-    return { ok: true, pid: child.pid, port: EnvironmentConfig.stubPort, note: 'started but port not yet open' };
+    return { ok: false, pid: child.pid, port: EnvironmentConfig.stubPort, error: 'started but port not yet open' };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
