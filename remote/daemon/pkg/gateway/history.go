@@ -2703,6 +2703,105 @@ type SubagentSummary struct {
 	LastMessage     string `json:"lastMessage,omitempty"`
 }
 
+var conversationUUIDRe = regexp.MustCompile(`[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}`)
+
+// enrichSubagentFromBrain enrichit un sous-agent avec les données réelles de son transcript.
+func enrichSubagentFromBrain(sub *SubagentSummary) {
+	if sub.ID == "" || strings.HasPrefix(sub.ID, "subagent-") {
+		return
+	}
+	subTranscript := findTranscriptPath(sub.ID)
+	if subTranscript == "" {
+		return
+	}
+	f, err := os.Open(subTranscript)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	hBuf := AcquireHistoryBuffer()
+	defer ReleaseHistoryBuffer(hBuf)
+	scanner.Buffer(*hBuf, len(*hBuf))
+
+	var firstTime, lastTime time.Time
+	var userPrompt string
+	var lastAssistantMsg string
+	var hasSteps bool
+	var isDone bool
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		var entry struct {
+			Type      string `json:"type"`
+			Source    string `json:"source"`
+			Status    string `json:"status"`
+			CreatedAt string `json:"created_at"`
+			Content   string `json:"content"`
+			StepIndex int64  `json:"step_index"`
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue
+		}
+		hasSteps = true
+		if entry.CreatedAt != "" {
+			if t, err := time.Parse(time.RFC3339, entry.CreatedAt); err == nil {
+				if firstTime.IsZero() {
+					firstTime = t
+				}
+				lastTime = t
+			}
+		}
+		if entry.Type == "USER_INPUT" && userPrompt == "" {
+			cleanPrompt := cleanRawContent(entry.Content)
+			if cleanPrompt != "" {
+				userPrompt = cleanPrompt
+			}
+		}
+		if entry.Source == "MODEL" && entry.Content != "" && !strings.HasPrefix(entry.Content, "Created At:") && !strings.HasPrefix(entry.Content, "File Path:") {
+			lastAssistantMsg = entry.Content
+		}
+		if entry.Status == "DONE" {
+			isDone = true
+		}
+	}
+
+	if sub.Prompt == "" && userPrompt != "" {
+		sub.Prompt = userPrompt
+	}
+	if sub.LastMessage == "" && lastAssistantMsg != "" {
+		sub.LastMessage = lastAssistantMsg
+	}
+	if !firstTime.IsZero() {
+		sub.CreatedAt = firstTime.UnixMilli()
+		if !lastTime.IsZero() && lastTime.After(firstTime) {
+			durSec := int64(lastTime.Sub(firstTime).Seconds())
+			if durSec > 0 {
+				sub.DurationSeconds = durSec
+				if durSec < 60 {
+					sub.WorkedFor = fmt.Sprintf("%ds", durSec)
+				} else {
+					mins := durSec / 60
+					secs := durSec % 60
+					if secs > 0 {
+						sub.WorkedFor = fmt.Sprintf("%dm %ds", mins, secs)
+					} else {
+						sub.WorkedFor = fmt.Sprintf("%dm", mins)
+					}
+				}
+			}
+		}
+	}
+	if hasSteps && (sub.State == "" || sub.State == "idle") {
+		if isDone {
+			sub.State = "completed"
+		} else {
+			sub.State = "running"
+		}
+	}
+}
+
 // ExtractSubagents parcourt le transcript d'une cascade et extrait la liste
 // ordonnée des sous-agents invoqués (DAG / arborescence).
 func ExtractSubagents(cascadeID string) []SubagentSummary {
@@ -2723,6 +2822,8 @@ func ExtractSubagents(cascadeID string) []SubagentSummary {
 	scanner.Buffer(*hBuf, len(*hBuf))
 
 	seen := make(map[string]int) // id -> index in results
+	var pendingInvocations []SubagentSummary
+	allStopped := false
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -2730,12 +2831,22 @@ func ExtractSubagents(cascadeID string) []SubagentSummary {
 			Type      string          `json:"type"`
 			Source    string          `json:"source"`
 			Content   string          `json:"content"`
+			CreatedAt string          `json:"created_at"`
 			ToolCalls json.RawMessage `json:"tool_calls"`
 			StepIndex int64           `json:"step_index"`
 			Timestamp int64           `json:"timestamp"`
 		}
 		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
+		}
+
+		var entryTimestamp int64
+		if entry.Timestamp > 0 {
+			entryTimestamp = entry.Timestamp
+		} else if entry.CreatedAt != "" {
+			if t, err := time.Parse(time.RFC3339, entry.CreatedAt); err == nil {
+				entryTimestamp = t.UnixMilli()
+			}
 		}
 
 		// Détection dans tool_calls JSON array (support args et arguments)
@@ -2779,24 +2890,29 @@ func ExtractSubagents(cascadeID string) []SubagentSummary {
 							if subID == "" {
 								subID, _ = smap["id"].(string)
 							}
-							if subID == "" {
-								subID = fmt.Sprintf("subagent-%s-%d", typeName, len(results)+1)
+
+							item := SubagentSummary{
+								ID:        subID,
+								ParentID:  cascadeID,
+								TypeName:  typeName,
+								Role:      role,
+								Prompt:    prompt,
+								State:     "running",
+								CreatedAt: entryTimestamp,
 							}
-							if idx, exists := seen[subID]; exists {
-								results[idx].State = "running"
+
+							if subID != "" {
+								if idx, exists := seen[subID]; exists {
+									results[idx].Role = role
+									if prompt != "" {
+										results[idx].Prompt = prompt
+									}
+								} else {
+									seen[subID] = len(results)
+									results = append(results, item)
+								}
 							} else {
-								seen[subID] = len(results)
-								results = append(results, SubagentSummary{
-									ID:              subID,
-									ParentID:        cascadeID,
-									TypeName:        typeName,
-									Role:            role,
-									Prompt:          prompt,
-									State:           "completed",
-									CreatedAt:       entry.Timestamp,
-									DurationSeconds: 14,
-									WorkedFor:       "14s",
-								})
+								pendingInvocations = append(pendingInvocations, item)
 							}
 						}
 					}
@@ -2804,66 +2920,120 @@ func ExtractSubagents(cascadeID string) []SubagentSummary {
 			}
 		}
 
-		// Détection dans Content texte si stringifié
-		if strings.Contains(entry.Content, "invoke_subagent") || strings.Contains(entry.Content, "manage_subagents") {
-			var tc struct {
-				Name      string                 `json:"name"`
-				Args      map[string]interface{} `json:"args"`
-				Arguments map[string]interface{} `json:"arguments"`
+		// Détection dans Content texte si création ou réponse
+		if entry.Content != "" {
+			lowerContent := strings.ToLower(entry.Content)
+			if strings.Contains(lowerContent, "all your subagents and background tasks have been stopped") ||
+				strings.Contains(lowerContent, "stopped all subagents") {
+				allStopped = true
 			}
-			if json.Unmarshal([]byte(entry.Content), &tc) == nil && (tc.Name == "invoke_subagent" || tc.Name == "define_subagent") {
-				args := tc.Args
-				if args == nil {
-					args = tc.Arguments
+
+			// Cas 1: Message "Created the following subagents:\n{\n  \"conversationId\": \"...\"\n}"
+			if strings.Contains(entry.Content, "Created the following subagents") || strings.Contains(entry.Content, "conversationId") {
+				uuids := conversationUUIDRe.FindAllString(entry.Content, -1)
+				for _, uid := range uuids {
+					if uid == cascadeID {
+						continue
+					}
+					if _, exists := seen[uid]; !exists {
+						if len(pendingInvocations) > 0 {
+							item := pendingInvocations[0]
+							pendingInvocations = pendingInvocations[1:]
+							item.ID = uid
+							seen[uid] = len(results)
+							results = append(results, item)
+						} else {
+							item := SubagentSummary{
+								ID:        uid,
+								ParentID:  cascadeID,
+								Role:      "Subagent",
+								TypeName:  "subagent",
+								State:     "running",
+								CreatedAt: entryTimestamp,
+							}
+							seen[uid] = len(results)
+							results = append(results, item)
+						}
+					}
 				}
-				subList := extractRawSubagentEntries(args)
-				for _, smap := range subList {
-					typeName, _ := smap["TypeName"].(string)
-					if typeName == "" {
-						typeName, _ = smap["typeName"].(string)
+			}
+
+			// Cas 2: manage_subagents response list: [{"role":"...", "conversationId":"...", "state":"..."}]
+			if strings.Contains(entry.Content, "active subagent(s)") || (strings.Contains(entry.Content, "conversationId") && strings.Contains(entry.Content, "role")) {
+				startBracket := strings.Index(entry.Content, "[")
+				endBracket := strings.LastIndex(entry.Content, "]")
+				if startBracket >= 0 && endBracket > startBracket {
+					jsonSlice := entry.Content[startBracket : endBracket+1]
+					var subMaps []map[string]interface{}
+					if json.Unmarshal([]byte(jsonSlice), &subMaps) == nil {
+						for _, smap := range subMaps {
+							cid, _ := smap["conversationId"].(string)
+							if cid == "" {
+								cid, _ = smap["id"].(string)
+							}
+							if cid == "" {
+								continue
+							}
+							role, _ := smap["role"].(string)
+							typ, _ := smap["type"].(string)
+							st, _ := smap["state"].(string)
+							if st == "idle" {
+								st = "completed"
+							}
+							if idx, exists := seen[cid]; exists {
+								if role != "" {
+									results[idx].Role = role
+								}
+								if typ != "" {
+									results[idx].TypeName = typ
+								}
+								if st != "" {
+									results[idx].State = st
+								}
+							} else {
+								seen[cid] = len(results)
+								results = append(results, SubagentSummary{
+									ID:        cid,
+									ParentID:  cascadeID,
+									TypeName:  typ,
+									Role:      role,
+									State:     st,
+									CreatedAt: entryTimestamp,
+								})
+							}
+						}
 					}
-					role, _ := smap["Role"].(string)
-					if role == "" {
-						role, _ = smap["role"].(string)
-					}
-					if role == "" {
-						role = typeName
-					}
-					if role == "" {
-						role = "Subagent"
-					}
-					prompt, _ := smap["Prompt"].(string)
-					if prompt == "" {
-						prompt, _ = smap["prompt"].(string)
-					}
-					subID, _ := smap["ConversationId"].(string)
-					if subID == "" {
-						subID, _ = smap["conversationId"].(string)
-					}
-					if subID == "" {
-						subID, _ = smap["id"].(string)
-					}
-					if subID == "" {
-						subID = fmt.Sprintf("subagent-%s-%d", typeName, len(results)+1)
-					}
-					if _, exists := seen[subID]; !exists {
-						seen[subID] = len(results)
-						results = append(results, SubagentSummary{
-							ID:              subID,
-							ParentID:        cascadeID,
-							TypeName:        typeName,
-							Role:            role,
-							Prompt:          prompt,
-							State:           "completed",
-							CreatedAt:       entry.Timestamp,
-							DurationSeconds: 14,
-							WorkedFor:       "14s",
-						})
+				}
+			}
+
+			// Cas 3: Message reçu d'un sous-agent: <SYSTEM_MESSAGE> ... sender=<uid>
+			if strings.Contains(entry.Content, "<SYSTEM_MESSAGE>") && strings.Contains(entry.Content, "sender=") {
+				m := conversationUUIDRe.FindString(entry.Content)
+				if m != "" && m != cascadeID {
+					if idx, exists := seen[m]; exists {
+						results[idx].State = "completed"
 					}
 				}
 			}
 		}
 	}
+
+	// Si des invocations n'ont pas eu de UUID associé, on les ajoute avec ID synthétique
+	for _, item := range pendingInvocations {
+		subID := fmt.Sprintf("subagent-%s-%d", item.TypeName, len(results)+1)
+		item.ID = subID
+		seen[subID] = len(results)
+		results = append(results, item)
+	}
+
+	// Enrichissement avec les données réelles de chaque brain sous-agent
+	for i := range results {
+		enrichSubagentFromBrain(&results[i])
+		if allStopped {
+			results[i].State = "killed"
+		}
+	}
+
 	return results
 }
 

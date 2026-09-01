@@ -130,6 +130,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
   List<CascadeSession> _sessions = const [];
   List<ProjectItem> _projects = const [];
   bool _isIdeConnected = true;
+  bool _activeSessionIsArchived = false;
   // Bug #15 : guard pour éviter le double fetch concurrent de sessions.
   bool _sessionsFetching = false;
   int _lastStateVersion = 0;
@@ -921,22 +922,31 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           projects: _projects,
           activeSessionId: _activeSessionId,
           onRefresh: _refreshSessions,
-          onSessionSelected: (id) {
+          onRestoreSession: _restoreSession,
+          onSessionSelected: (id) async {
+            CascadeSession? target;
+            final existing = _sessions.where((s) => s.id == id);
+            if (existing.isNotEmpty) {
+              target = existing.first;
+            } else {
+              try {
+                final allRes = await _api?.listAllSessions();
+                if (allRes != null) {
+                  final parsed = SessionParser.parseListSessions(allRes, includeArchived: true);
+                  final match = parsed.where((s) => s.id == id);
+                  if (match.isNotEmpty) target = match.first;
+                }
+              } catch (_) {}
+            }
+            final isArchived = target?.isArchived == true || target?.status == 'CASCADE_STATUS_ARCHIVED';
             setState(() {
               _activeSessionId = id;
+              _activeSessionIsArchived = isArchived;
               _activeMissingSince = null;
               _contextStats = {};
-              final s = _sessions.firstWhere(
-                (s) => s.id == id,
-                orElse: () => const CascadeSession(
-                  id: '',
-                  workspacePath: '',
-                  title: 'Session',
-                  status: '',
-                  time: '',
-                ),
-              );
-              _activeSessionTitle = s.title;
+              if (target != null) {
+                _activeSessionTitle = target.title;
+              }
             });
             _refreshContext();
             SettingsStore.saveSession(
@@ -949,6 +959,41 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _restoreSession(String id) async {
+    final api = _api;
+    if (api == null) return;
+    try {
+      await api.unarchiveCascade(id);
+      if (mounted) {
+        setState(() {
+          if (_activeSessionId == id) {
+            _activeSessionIsArchived = false;
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Conversation restaurée'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      await _refreshSessions();
+      if (_activeSessionId == id) {
+        await _refreshContext();
+      }
+    } catch (e) {
+      debugPrint('Failed to unarchive cascade: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la restauration: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _deleteSession(String id) async {
@@ -997,13 +1042,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         setState(() {
           _sessions = _sessions.where((s) => s.id != id).toList();
           if (wasActive) {
-            if (_sessions.isNotEmpty) {
-              _activeSessionId = _sessions.first.id;
-              _activeSessionTitle = _sessions.first.title;
-            } else {
-              _activeSessionId = '';
-              _activeSessionTitle = 'Nouvelle conversation';
-            }
+            _activeSessionIsArchived = true;
           }
         });
       }
@@ -1354,6 +1393,8 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       onNewConversation: _createNewConversation,
       onOpenSessionsDrawer: () => _scaffoldKey.currentState?.openDrawer(),
       isConnected: isConnected,
+      isArchived: _activeSessionIsArchived,
+      onRestoreSession: () => _restoreSession(_activeSessionId),
       wsClient: _wsClient,
       onStreamingSessionChanged: (sessionId, isStreaming) {
         if (!mounted) return;

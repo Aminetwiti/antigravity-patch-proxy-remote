@@ -32,9 +32,20 @@ class SubagentItem {
       return workedFor!.startsWith('Worked for') ? workedFor! : 'Worked for $workedFor';
     }
     if (durationSeconds != null && durationSeconds! > 0) {
-      return 'Worked for ${durationSeconds}s';
+      if (durationSeconds! < 60) {
+        return 'Worked for ${durationSeconds}s';
+      }
+      final mins = durationSeconds! ~/ 60;
+      final secs = durationSeconds! % 60;
+      return secs > 0 ? 'Worked for ${mins}m ${secs}s' : 'Worked for ${mins}m';
     }
-    return status.toLowerCase() == 'running' ? 'Working...' : 'Worked for 14s';
+    if (status.toLowerCase() == 'running') {
+      return 'Working...';
+    }
+    if (status.toLowerCase() == 'killed') {
+      return 'Killed';
+    }
+    return 'Done';
   }
 
   factory SubagentItem.fromJson(Map<String, dynamic> json) {

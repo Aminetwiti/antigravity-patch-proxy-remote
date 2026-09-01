@@ -530,16 +530,25 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         continue;
       }
 
-      // 11. Error messages
-      if (lower.startsWith('error')) {
+      // 11. Error messages (e.g. "Error Individual quota reached... Resets in 3h57m11s. >")
+      if (lower.startsWith('error') || lower.startsWith('resource_exhausted')) {
         var clean = line;
         if (clean.endsWith('>')) clean = clean.substring(0, clean.length - 1).trim();
+        String? errId;
+        int nextI = i + 1;
+        if (nextI < lines.length &&
+            (lines[nextI].trim().toLowerCase().startsWith('error id:') ||
+             lines[nextI].trim().toLowerCase().startsWith('id:'))) {
+          errId = lines[nextI].trim();
+          i = nextI;
+        }
         addRawItem(ExecutionStepItem(
           type: ExecutionStepType.task,
           action: '',
           title: clean,
           isExpandable: true,
-          rawDetail: clean,
+          rawDetail: errId != null ? '$clean\n$errId' : clean,
+          consolePrompt: errId,
         ));
         continue;
       }
@@ -607,7 +616,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
           }
           j++;
         }
-        if (sub.isNotEmpty) {
+        if (sub.isNotEmpty && (current.title.isEmpty || RegExp(r'^\d+\s+(file|task|item)', caseSensitive: false).hasMatch(current.title))) {
           int fCount = 0;
           int sCount = 0;
           for (final s in sub) {
@@ -1420,33 +1429,52 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     ),
                   ],
 
-                  // Step title (Filename / Duration / Command / Task status)
+                  // Step title (Filename / Duration / Command / Task status / Error)
                   Flexible(
-                    child: Text(
-                      isExpanded && item.rawDetail != null && !isThoughtType && item.type != ExecutionStepType.timer
-                          ? item.rawDetail!
-                          : item.title,
-                      key: (isFirstThought && isThoughtType && widget.messageId != null)
-                          ? Key('thought-${widget.messageId}')
-                          : null,
-                      maxLines: isExpanded ? null : 1,
-                      overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontFamily: (item.type == ExecutionStepType.command ||
-                                item.type == ExecutionStepType.fileEdit ||
-                                item.type == ExecutionStepType.fileAnalysis)
-                            ? 'monospace'
-                            : null,
-                        fontWeight: isThoughtType
-                            ? FontWeight.w400
-                            : FontWeight.w500,
-                        color: isThoughtType
-                            ? const Color(0xFF9E9FA8)
-                            : (item.type == ExecutionStepType.taskFinished
-                                ? const Color(0xFF9E9FA8)
-                                : const Color(0xFFF4F4F5)),
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          isExpanded && item.rawDetail != null && !isThoughtType && item.type != ExecutionStepType.timer && !item.title.toLowerCase().startsWith('error')
+                              ? item.rawDetail!
+                              : item.title,
+                          key: (isFirstThought && isThoughtType && widget.messageId != null)
+                              ? Key('thought-${widget.messageId}')
+                              : null,
+                          maxLines: isExpanded ? null : 1,
+                          overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: (item.type == ExecutionStepType.command ||
+                                    item.type == ExecutionStepType.fileEdit ||
+                                    item.type == ExecutionStepType.fileAnalysis)
+                                ? 'monospace'
+                                : null,
+                            fontWeight: isThoughtType
+                                ? FontWeight.w400
+                                : FontWeight.w500,
+                            color: item.title.toLowerCase().startsWith('error')
+                                ? const Color(0xFFF87171)
+                                : (isThoughtType
+                                    ? const Color(0xFF9E9FA8)
+                                    : (item.type == ExecutionStepType.taskFinished
+                                        ? const Color(0xFF9E9FA8)
+                                        : const Color(0xFFF4F4F5))),
+                          ),
+                        ),
+                        if (item.consolePrompt != null && item.title.toLowerCase().startsWith('error')) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            item.consolePrompt!,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontFamily: 'monospace',
+                              color: Color(0xFF71717A),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
 

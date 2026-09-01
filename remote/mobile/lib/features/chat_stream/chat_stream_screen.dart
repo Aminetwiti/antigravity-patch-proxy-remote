@@ -85,7 +85,13 @@ class ChatStreamScreen extends StatefulWidget {
   final List<ProjectItem>? projects;
 
   /// Callback de changement de projet workspace
-  final void Function(ProjectItem project)? onSelectProject;
+  final ValueChanged<ProjectItem>? onSelectProject;
+
+  /// Indique si la session active est archivée
+  final bool isArchived;
+
+  /// Callback déclenché lors de la restauration d'une session archivée
+  final VoidCallback? onRestoreSession;
 
   const ChatStreamScreen({
     super.key,
@@ -97,6 +103,8 @@ class ChatStreamScreen extends StatefulWidget {
     this.projects,
     this.onSelectProject,
     this.isConnected = true,
+    this.isArchived = false,
+    this.onRestoreSession,
     this.wsClient,
     this.onStreamingSessionChanged,
     this.onStreamingStateChanged,
@@ -116,6 +124,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   // disque (session restart repart de zéro, ce qui est le comportement voulu).
   final Map<String, List<ChatMessage>> _sessionMessages = {};
   final Map<String, List<Map<String, dynamic>>> _sessionMessageQueues = {};
+  final Map<String, bool> _sessionArchivedState = {};
+
+  bool get isCurrentSessionArchived =>
+      _sessionArchivedState[widget.activeSessionId] ?? widget.isArchived;
 
   List<ChatMessage> get _messages {
     return _sessionMessages.putIfAbsent(widget.activeSessionId, () => []);
@@ -951,6 +963,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       widget.api?.getSessionHistory(targetSession).then((data) {
         _loadingHistorySessions.remove(targetSession);
         if (!mounted) return;
+        if (data.containsKey('isArchived')) {
+          _sessionArchivedState[targetSession] = data['isArchived'] == true;
+        }
         final rawMessages = data['messages'] as List?;
         final parsed = <ChatMessage>[];
         if (rawMessages != null && rawMessages.isNotEmpty) {
@@ -987,9 +1002,20 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               if (msg.sender == 'assistant') {
                 final txt = msg.text.toLowerCase();
                 final thought = (msg.thought ?? '').toLowerCase();
-                if (txt.contains('quota') || thought.contains('quota')) {
+                final segError = msg.segments
+                    .where((s) => s.type == ChatSegmentType.error)
+                    .map((s) => s.content)
+                    .join('\n')
+                    .toLowerCase();
+                final fullError = '$txt\n$thought\n$segError';
+                if (fullError.contains('quota') ||
+                    fullError.contains('resource_exhausted') ||
+                    fullError.contains('429') ||
+                    fullError.contains('insufficient_quota')) {
                   final banner = BannerClassifier.classifyError(
-                    msg.text.isNotEmpty ? msg.text : (msg.thought ?? ''),
+                    msg.text.isNotEmpty
+                        ? msg.text
+                        : (segError.isNotEmpty ? segError : (msg.thought ?? '')),
                     onDismiss: () => _dismissBanner('quota-exceeded'),
                     onSwitchModel: _showModelSelector,
                     onSeePlans: _showPlansOrLimitsSheet,
@@ -1980,6 +2006,16 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               type: ChatSegmentType.error,
               content: errorDelta,
             ));
+            final banner = BannerClassifier.classifyError(
+              errorDelta,
+              onDismiss: () => _dismissBanner('quota-exceeded'),
+              onSwitchModel: _showModelSelector,
+              onSeePlans: _showPlansOrLimitsSheet,
+            );
+            if (banner != null) {
+              _activeBanners[banner.id] = banner;
+              _dismissedBannerIds.remove(banner.id);
+            }
           }
 
           buf[idx] = current.copyWith(
@@ -2728,7 +2764,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   /// Carte d'approbation épinglée au-dessus de la barre de saisie (audit UX
   /// P0-2) : toujours visible, même en fin de longue conversation. Navigable
   /// ◀ ▶ quand plusieurs demandes sont empilées.
-  Widget _buildApprovalArea() {
+  Widget _buildApprovalArea([bool hasKeyboard = false]) {
     final questions = _currentSessionQuestions;
     if (questions.isNotEmpty) {
       final q = questions.first;
@@ -2736,7 +2772,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: (MediaQuery.sizeOf(context).height * 0.42).clamp(160.0, 420.0),
+            maxHeight: hasKeyboard
+                ? 110.0
+                : (MediaQuery.sizeOf(context).height * 0.35).clamp(120.0, 360.0),
           ),
           child: SingleChildScrollView(
             physics: const ClampingScrollPhysics(),
@@ -2778,7 +2816,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: (MediaQuery.sizeOf(context).height * 0.42).clamp(160.0, 420.0),
+          maxHeight: hasKeyboard
+              ? 110.0
+              : (MediaQuery.sizeOf(context).height * 0.35).clamp(120.0, 360.0),
         ),
         child: SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
@@ -3183,8 +3223,8 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             ),
           ),
           Flexible(
-            flex: 0,
-            child: _buildApprovalArea(),
+            fit: FlexFit.loose,
+            child: _buildApprovalArea(hasKeyboard),
           ),
           if (_sideQuestion != null ||
               _runningBackgroundTasks.isNotEmpty ||
@@ -3192,7 +3232,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
               _topActiveBanner != null)
             Flexible(
-              flex: 0,
+              fit: FlexFit.loose,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxHeight: hasKeyboard ? 110 : 200),
                 child: SingleChildScrollView(
@@ -3230,6 +3270,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                               context,
                               api: widget.api,
                               cascadeId: widget.activeSessionId,
+                              projectName: widget.activeProjectName,
                               sessionTitle: widget.activeSessionTitle,
                             );
                           },
@@ -3262,34 +3303,37 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 ),
               ),
             ),
-          ChatInputBar(
-            key: _chatInputKey,
-            onSend: _handleSendMessage,
-            isConnected: isConnected,
-            hasActiveStream: _hasCurrentActiveStream,
-            onStop: _handleStopGeneration,
-            api: widget.api,
-            cascadeId: widget.activeSessionId,
-            initialText: currentDraft,
-            onDraftChanged: setDraft,
-            hasPlan: _latestPlanText != null,
-            onProceedPlan: () => _handleSendMessage('proceed'),
-            onRunTests: () => _handleSendMessage('Exécute les tests unitaires du projet'),
-            onViewDiff: () => setState(() => _currentTab = SessionTabType.review),
-            onOpenFiles: () => Scaffold.maybeOf(context)?.openEndDrawer(),
-            onOpenTerminal: () {
-              RemoteTerminalSheet.show(
-                context,
-                api: widget.api,
-                workspacePath: widget.activeProjectName,
-              );
-            },
-            onOpenBrowser: () {
-              final cur = _chatInputKey.currentState?.text ?? '';
-              _chatInputKey.currentState?.setText(
-                  cur.contains('@browser') ? cur : (cur.isEmpty ? '@browser ' : '$cur @browser '));
-            },
-          ),
+          if (isCurrentSessionArchived)
+            _buildArchivedChatBar(scheme, Theme.of(context).brightness == Brightness.dark)
+          else
+            ChatInputBar(
+              key: _chatInputKey,
+              onSend: _handleSendMessage,
+              isConnected: isConnected,
+              hasActiveStream: _hasCurrentActiveStream,
+              onStop: _handleStopGeneration,
+              api: widget.api,
+              cascadeId: widget.activeSessionId,
+              initialText: currentDraft,
+              onDraftChanged: setDraft,
+              hasPlan: _latestPlanText != null,
+              onProceedPlan: () => _handleSendMessage('proceed'),
+              onRunTests: () => _handleSendMessage('Exécute les tests unitaires du projet'),
+              onViewDiff: () => setState(() => _currentTab = SessionTabType.review),
+              onOpenFiles: () => Scaffold.maybeOf(context)?.openEndDrawer(),
+              onOpenTerminal: () {
+                RemoteTerminalSheet.show(
+                  context,
+                  api: widget.api,
+                  workspacePath: widget.activeProjectName,
+                );
+              },
+              onOpenBrowser: () {
+                final cur = _chatInputKey.currentState?.text ?? '';
+                _chatInputKey.currentState?.setText(
+                    cur.contains('@browser') ? cur : (cur.isEmpty ? '@browser ' : '$cur @browser '));
+              },
+            ),
         ],
       ),
     ),
@@ -3338,6 +3382,94 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         child: Focus(
           autofocus: false,
           child: content,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleRestoreActiveSession() async {
+    final sessionId = widget.activeSessionId;
+    if (sessionId.isEmpty) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _sessionArchivedState[sessionId] = false;
+    });
+    try {
+      await widget.api?.unarchiveCascade(sessionId);
+    } catch (_) {}
+    widget.onRestoreSession?.call();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Conversation restaurée'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Widget _buildArchivedChatBar(ColorScheme scheme, bool isDark) {
+    return SafeArea(
+      top: false,
+      bottom: true,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.6),
+            width: 0.8,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'This chat is archived.',
+              style: TextStyle(
+                fontSize: 13.5,
+                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const SizedBox(width: 12),
+            BouncingTap(
+              hapticType: BouncingHapticType.selection,
+              onTap: _handleRestoreActiveSession,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(
+                    color: isDark ? AppColors.borderDefault : scheme.outline.withValues(alpha: 0.5),
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.unarchive_outlined,
+                      size: 14,
+                      color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Restore',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -3397,6 +3529,8 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               context,
               api: widget.api,
               cascadeId: widget.activeSessionId,
+              projectName: widget.activeProjectName,
+              sessionTitle: widget.activeSessionTitle,
             );
           },
         );

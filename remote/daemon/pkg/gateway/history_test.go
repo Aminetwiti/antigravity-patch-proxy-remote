@@ -284,6 +284,17 @@ func TestExtractSubagentsEmpty(t *testing.T) {
 	}
 }
 
+func TestExtractSubagentsRealSession(t *testing.T) {
+	subs := ExtractSubagents("6864e4e0-2f88-4781-9472-5d26fd68dbac")
+	t.Logf("Extracted %d subagents", len(subs))
+	for i, s := range subs {
+		t.Logf("[%d] ID=%s Role=%s Type=%s State=%s WorkedFor=%s PromptLen=%d", i, s.ID, s.Role, s.TypeName, s.State, s.WorkedFor, len(s.Prompt))
+	}
+	if len(subs) != 5 {
+		t.Errorf("expected 5 subagents, got %d", len(subs))
+	}
+}
+
 func TestCoalesceHistoryMessages(t *testing.T) {
 	raw := []HistoryMessage{
 		{ID: "h-0", Sender: "user", Text: "Hello", Timestamp: "10:00"},

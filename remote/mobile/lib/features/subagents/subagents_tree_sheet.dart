@@ -10,6 +10,7 @@ import 'widgets/subagent_detail_modal.dart';
 class SubagentsTreeSheet extends StatefulWidget {
   final DaemonApi? api;
   final String cascadeId;
+  final String? projectName;
   final String? sessionTitle;
   final ValueChanged<SubagentItem>? onSelectSubagent;
 
@@ -17,6 +18,7 @@ class SubagentsTreeSheet extends StatefulWidget {
     super.key,
     this.api,
     required this.cascadeId,
+    this.projectName,
     this.sessionTitle,
     this.onSelectSubagent,
   });
@@ -25,6 +27,7 @@ class SubagentsTreeSheet extends StatefulWidget {
     BuildContext context, {
     DaemonApi? api,
     required String cascadeId,
+    String? projectName,
     String? sessionTitle,
     ValueChanged<SubagentItem>? onSelectSubagent,
   }) {
@@ -40,6 +43,7 @@ class SubagentsTreeSheet extends StatefulWidget {
       builder: (ctx) => SubagentsTreeSheet(
         api: api,
         cascadeId: cascadeId,
+        projectName: projectName,
         sessionTitle: sessionTitle,
         onSelectSubagent: onSelectSubagent,
       ),
@@ -106,6 +110,8 @@ class _SubagentsTreeSheetState extends State<SubagentsTreeSheet> {
         return scheme.error;
       case 'completed':
         return AppColors.positive;
+      case 'killed':
+        return scheme.outline;
       case 'idle':
       default:
         return scheme.outline;
@@ -120,6 +126,8 @@ class _SubagentsTreeSheetState extends State<SubagentsTreeSheet> {
         return 'En attente';
       case 'completed':
         return 'Terminé';
+      case 'killed':
+        return 'Killed';
       case 'errored':
         return 'Erreur';
       case 'idle':
@@ -354,6 +362,8 @@ class _SubagentsTreeSheetState extends State<SubagentsTreeSheet> {
                                                     agent: agent,
                                                     api: widget.api,
                                                     cascadeId: widget.cascadeId,
+                                                    projectName: widget.projectName,
+                                                    sessionTitle: widget.sessionTitle,
                                                     onKill: () => _loadSubagents(),
                                                   );
                                                 }
@@ -435,7 +445,9 @@ class _SubagentsTreeSheetState extends State<SubagentsTreeSheet> {
                                                         ),
                                                         const SizedBox(width: 4),
                                                         Icon(
-                                                          Icons.chevron_right_rounded,
+                                                          agent.status.toLowerCase() == 'killed'
+                                                              ? Icons.block_outlined
+                                                              : Icons.chevron_right_rounded,
                                                           size: 16,
                                                           color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
                                                         ),

@@ -83,16 +83,43 @@ export function checkEnvironment(): CheckResult {
 
   // F-27: RDP session warning — safeStorage (DPAPI) may be unavailable
   const rdp = isRdp();
-  const details = rdp
-    ? 'RDP session detected — safeStorage (DPAPI) may be unavailable. API keys might be stored unencrypted. Connect locally and re-enter API keys if needed.'
-    : undefined;
+  let searchToolWarning: string | undefined;
+  if (info.platform === 'win32') {
+    let hasGrep = false;
+    let hasRg = false;
+    try {
+      execSync('where grep', { stdio: ['ignore', 'ignore', 'ignore'] });
+      hasGrep = true;
+    } catch {
+      // no grep in PATH
+    }
+    try {
+      execSync('where rg', { stdio: ['ignore', 'ignore', 'ignore'] });
+      hasRg = true;
+    } catch {
+      // no rg in PATH
+    }
+    if (!hasGrep && !hasRg) {
+      searchToolWarning = 'Windows PATH missing grep.exe and rg.exe. Add Git bin (e.g. C:\\Program Files\\Git\\usr\\bin) or ripgrep to %PATH% to support workspace search.';
+    }
+  }
+
+  const detailsList: string[] = [];
+  if (rdp) {
+    detailsList.push('RDP session detected — safeStorage (DPAPI) may be unavailable. API keys might be stored unencrypted. Connect locally and re-enter API keys if needed.');
+  }
+  if (searchToolWarning) {
+    detailsList.push(searchToolWarning);
+  }
+  const details = detailsList.length > 0 ? detailsList.join('\n') : undefined;
 
   return {
     id: 'env',
     title: 'Environment',
-    status: rdp ? 'warn' : 'ok',
-    message: `Node ${info.nodeVersion}, npm ${npmVersion}, ${info.platform}/${info.arch}${rdp ? ' — RDP session' : ''}`,
+    status: rdp || searchToolWarning ? 'warn' : 'ok',
+    message: `Node ${info.nodeVersion}, npm ${npmVersion}, ${info.platform}/${info.arch}${rdp ? ' — RDP session' : ''}${searchToolWarning ? ' (grep/rg missing)' : ''}`,
     details,
-    data: { ...info, wsl: false, rdp },
+    data: { ...info, wsl: false, rdp, searchToolMissing: Boolean(searchToolWarning) },
   };
 }
+

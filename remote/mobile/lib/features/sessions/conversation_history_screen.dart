@@ -22,6 +22,7 @@ class ConversationHistoryScreen extends StatefulWidget {
   final Function(String sessionId) onSessionSelected;
   final VoidCallback? onRefresh;
   final Function(String sessionId)? onDeleteSession;
+  final Future<void> Function(String sessionId)? onRestoreSession;
 
   const ConversationHistoryScreen({
     super.key,
@@ -32,6 +33,7 @@ class ConversationHistoryScreen extends StatefulWidget {
     required this.onSessionSelected,
     this.onRefresh,
     this.onDeleteSession,
+    this.onRestoreSession,
   });
 
   @override
@@ -457,6 +459,14 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
                           onDelete: widget.onDeleteSession != null
                               ? () => widget.onDeleteSession!(session.id)
                               : null,
+                          onRestore: () async {
+                            if (widget.onRestoreSession != null) {
+                              await widget.onRestoreSession!(session.id);
+                            } else if (widget.api != null) {
+                              await widget.api!.unarchiveCascade(session.id);
+                            }
+                            _loadAllSessions();
+                          },
                         );
                       },
                     ),
@@ -530,6 +540,7 @@ class _ConversationHistoryRow extends StatelessWidget {
   final bool showSubtitle;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onRestore;
 
   const _ConversationHistoryRow({
     required this.session,
@@ -539,6 +550,7 @@ class _ConversationHistoryRow extends StatelessWidget {
     this.showSubtitle = true,
     required this.onTap,
     this.onDelete,
+    this.onRestore,
   });
 
   void _showContextMenu(BuildContext context) {
@@ -609,6 +621,15 @@ class _ConversationHistoryRow extends StatelessWidget {
                   );
                 },
               ),
+              if (session.isArchived && onRestore != null)
+                ListTile(
+                  leading: Icon(Icons.unarchive_outlined, size: 18, color: scheme.primary),
+                  title: Text('Restaurer la conversation', style: TextStyle(fontSize: 13, color: scheme.primary)),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    onRestore?.call();
+                  },
+                ),
               if (onDelete != null)
                 ListTile(
                   leading: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.danger),
@@ -729,30 +750,38 @@ class _ConversationHistoryRow extends StatelessWidget {
 
                 const SizedBox(width: 12),
 
-                // Badge « Archivée » : les sessions archivées n'apparaissent
-                // que dans cet écran d'historique, jamais dans la sidebar.
+                // Badge « Archivée » avec action Restaurer directe
                 if (session.isArchived) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.archive_outlined, size: 11, color: scheme.onSurfaceVariant),
-                        const SizedBox(width: 3),
-                        Text(
-                          'Archivée',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onSurfaceVariant,
+                  InkWell(
+                    onTap: onRestore != null
+                        ? () {
+                            HapticFeedback.selectionClick();
+                            onRestore!();
+                          }
+                        : null,
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.unarchive_outlined, size: 11, color: scheme.primary),
+                          const SizedBox(width: 3),
+                          Text(
+                            'Restaurer',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.primary,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),

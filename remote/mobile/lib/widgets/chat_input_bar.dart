@@ -2704,7 +2704,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                         child: LayoutBuilder(
                           builder: (context, constraints) {
                             final maxTextWidth = constraints.maxWidth.isFinite
-                                ? (constraints.maxWidth - 44.0).clamp(0.0, 260.0)
+                                ? (constraints.maxWidth - 50.0).clamp(0.0, 260.0)
                                 : 180.0;
                             return BouncingTap(
                               key: _modelButtonKey,

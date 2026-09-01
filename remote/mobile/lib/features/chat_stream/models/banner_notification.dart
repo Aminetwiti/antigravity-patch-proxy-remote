@@ -83,11 +83,13 @@ class BannerClassifier {
   }) {
     final lower = errorText.toLowerCase();
 
-    // 1. Quota Exceeded (Individual quota reached, baseline model quota reached, 402, insufficient_quota)
+    // 1. Quota Exceeded (Individual quota reached, baseline model quota reached, RESOURCE_EXHAUSTED, 429, 402, insufficient_quota)
     if (lower.contains('individual quota reached') ||
         lower.contains('baseline model quota reached') ||
+        lower.contains('resource_exhausted') ||
         lower.contains('insufficient_quota') ||
         lower.contains('quota exceeded') ||
+        lower.contains('429') ||
         lower.contains('402 payment required') ||
         lower.contains('http 402') ||
         (lower.contains('resets in') && lower.contains('quota')) ||
@@ -95,14 +97,14 @@ class BannerClassifier {
       
       // Extraction de la date/heure de réinitialisation
       final resetMatch = RegExp(
-        r'(?:resets in|refresh on)\s+([0-9a-zA-Z\s/:\-]+?)(?:\.|\n|$)',
+        r'(?:resets in|refresh on)\s+([0-9a-zA-Z\s/:\-]+?)(?:\.|\n|\)|$)',
         caseSensitive: false,
       ).firstMatch(errorText);
       final resetStr = resetMatch?.group(1)?.trim();
 
       // Extraction de l'Error ID
       final errorIdMatch = RegExp(
-        r'error\s*id:\s*([0-9a-fA-F\-]+)',
+        r'(?:error\s*id|id):\s*([0-9a-fA-F\-]+)',
         caseSensitive: false,
       ).firstMatch(errorText);
       final errorId = errorIdMatch?.group(1)?.trim();
@@ -123,7 +125,7 @@ class BannerClassifier {
         title: 'Baseline model quota reached',
         message: resetStr != null
             ? "Your plan's baseline quota will refresh on $resetStr. You can upgrade to a Google AI Ultra plan to receive higher rate limits. See plans."
-            : "Your plan's baseline quota has been reached. You can upgrade to a Google AI Ultra plan to receive higher rate limits or switch to another model.",
+            : "Your plan's baseline quota has been reached. You can upgrade to a Google AI Ultra plan to receive higher rate limits. See plans.",
         resetTime: resetStr,
         errorId: errorId,
         actions: actions,

@@ -187,9 +187,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
 
   // P4 : sessions épinglées — synchronisées localement et avec le daemon.
   final Set<String> _pinnedIds = {};
-
-  // Top-level sections collapsible states
-  bool _quickNavExpanded = true;
+  bool _pinnedExpanded = true;
 
   // Suivi des sessions consultées pour afficher le point bleu (activité terminée non lue)
   final Set<String> _readSessionIds = {};
@@ -388,14 +386,12 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
       sortBy: _sortBy,
     );
 
-    // P4 : épinglées d'abord (ordre stable — le tri interne est conservé).
-    final pinnedFirst = [
-      ...sortedSessions.where((s) => _pinnedIds.contains(s.id)),
-      ...sortedSessions.where((s) => !_pinnedIds.contains(s.id)),
-    ];
+    // Dans l'arbre des projets, on affiche les sessions non épinglées
+    // (les épinglées sont déjà affichées dans la section Pinned Conversations dédiée au sommet).
+    final nonPinnedSessions = sortedSessions.where((s) => !_pinnedIds.contains(s.id)).toList();
 
     final result = groupSessions(
-      sessions: pinnedFirst,
+      sessions: nonPinnedSessions,
       groupBy: _groupBy,
       projects: projects,
     );
@@ -723,57 +719,109 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
               ),
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
 
-            // ── Quick Navigation Section (Collapsible)
-            InkWell(
-              onTap: () => setState(() => _quickNavExpanded = !_quickNavExpanded),
-              borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
-                child: Row(
+            // ── Action Items: Conversation History & Scheduled Tasks
+            _SidebarActionItem(
+              icon: Icons.history_rounded,
+              label: 'Conversation History',
+              isSelected: false,
+              onTap: () {
+                Navigator.of(context).pop();
+                widget.onConversationHistory?.call();
+              },
+            ),
+            _SidebarActionItem(
+              icon: Icons.access_time_rounded,
+              label: 'Scheduled Tasks',
+              isSelected: false,
+              onTap: () {
+                Navigator.of(context).pop();
+                widget.onScheduledTasks?.call();
+              },
+            ),
+
+            const SizedBox(height: 6),
+
+            // ── Pinned Conversations Section (Desktop 1:1)
+            Builder(
+              builder: (context) {
+                final pinnedSessions = (widget.sessions ?? const <CascadeSession>[])
+                    .where((s) => s.isAvailable && s.id.isNotEmpty && _pinnedIds.contains(s.id))
+                    .toList();
+                if (pinnedSessions.isEmpty) return const SizedBox.shrink();
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Navigation',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                      child: InkWell(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _pinnedExpanded = !_pinnedExpanded);
+                        },
+                        borderRadius: BorderRadius.circular(4),
+                        child: Row(
+                          children: [
+                            const Text(
+                              'Pinned Conversations',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF5B94F6),
+                              ),
+                            ),
+                            const Spacer(),
+                            Icon(
+                              _pinnedExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                              size: 16,
+                              color: const Color(0xFF5B94F6),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const Spacer(),
-                    Icon(
-                      _quickNavExpanded ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_right_rounded,
-                      size: 16,
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                    ),
+                    if (_pinnedExpanded) ...[
+                      for (final s in pinnedSessions)
+                        _SessionRowItem(
+                          key: ValueKey('pinned_${s.id}'),
+                          session: s,
+                          isSelected: s.id == widget.activeSessionId,
+                          showSubtitle: false,
+                          isUnread: (s.hasUnread || (s.stepCount >= 1 && !s.isRunning)) &&
+                              !_readSessionIds.contains(s.id) &&
+                              s.id != widget.activeSessionId,
+                          onTap: () {
+                            _markSessionAsRead(s.id);
+                            if (Navigator.of(context).canPop()) {
+                              Navigator.of(context).pop();
+                            }
+                            widget.onSessionSelected(s.id);
+                          },
+                          onDelete: widget.onDeleteSession != null
+                              ? () => widget.onDeleteSession!(s.id)
+                              : null,
+                          onArchive: widget.onArchiveSession != null
+                              ? () => widget.onArchiveSession!(s.id)
+                              : null,
+                          onRename: widget.onRenameSession != null
+                              ? (newTitle) => widget.onRenameSession!(s.id, newTitle)
+                              : null,
+                          onExport: widget.onExportSession != null
+                              ? () => widget.onExportSession!(s)
+                              : null,
+                          isPinned: true,
+                          isPinnedSection: true,
+                          onTogglePin: () => _togglePin(s.id),
+                        ),
+                      const SizedBox(height: 6),
+                    ],
                   ],
-                ),
-              ),
+                );
+              },
             ),
-            if (_quickNavExpanded) ...[
-              _SidebarActionItem(
-                icon: Icons.history_rounded,
-                label: 'Conversation History',
-                isSelected: false,
-                onTap: () {
-                  Navigator.of(context).pop();
-                  widget.onConversationHistory?.call();
-                },
-              ),
-              _SidebarActionItem(
-                icon: Icons.schedule_outlined,
-                label: 'Scheduled Tasks',
-                isSelected: false,
-                onTap: () {
-                  Navigator.of(context).pop();
-                  widget.onScheduledTasks?.call();
-                },
-              ),
-            ],
-
-            const SizedBox(height: 8),
 
             // ── Section Header: Projects [display options] [new folder]
             Padding(
@@ -1164,6 +1212,7 @@ class _SessionRowItem extends StatefulWidget {
 
   // P4 : épinglage local
   final bool isPinned;
+  final bool isPinnedSection;
   final VoidCallback? onTogglePin;
 
   const _SessionRowItem({
@@ -1178,6 +1227,7 @@ class _SessionRowItem extends StatefulWidget {
     this.onRename,
     this.onExport,
     this.isPinned = false,
+    this.isPinnedSection = false,
     this.onTogglePin,
   });
 
@@ -1660,7 +1710,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                               )
                                             : const SizedBox.shrink(key: ValueKey('empty')),
               ),
-              if (widget.isPinned)
+              if (widget.isPinned && !widget.isPinnedSection)
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
                   child: Icon(
