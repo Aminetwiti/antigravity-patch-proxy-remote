@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,11 +38,15 @@ type SessionLineageStore struct {
 
 func NewSessionLineageStore(stateDir string) *SessionLineageStore {
 	if stateDir == "" {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			stateDir = filepath.Join(home, ".gemini", "antigravity-remote")
+		if flag.Lookup("test.v") != nil {
+			stateDir = filepath.Join(os.TempDir(), fmt.Sprintf("ag-test-lineage-%d", time.Now().UnixNano()))
 		} else {
-			stateDir = "."
+			home, err := os.UserHomeDir()
+			if err == nil {
+				stateDir = filepath.Join(home, ".gemini", "antigravity-remote")
+			} else {
+				stateDir = "."
+			}
 		}
 	}
 	return &SessionLineageStore{

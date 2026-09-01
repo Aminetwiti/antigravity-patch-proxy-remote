@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,11 +58,15 @@ func NewSessionOperationLedger(stateDir string, maxCapacity ...int) *SessionOper
 		cap = maxCapacity[0]
 	}
 	if stateDir == "" {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			stateDir = filepath.Join(home, ".gemini", "antigravity-remote")
+		if flag.Lookup("test.v") != nil {
+			stateDir = filepath.Join(os.TempDir(), fmt.Sprintf("ag-test-ledger-%d", time.Now().UnixNano()))
 		} else {
-			stateDir = "."
+			home, err := os.UserHomeDir()
+			if err == nil {
+				stateDir = filepath.Join(home, ".gemini", "antigravity-remote")
+			} else {
+				stateDir = "."
+			}
 		}
 	}
 	return &SessionOperationLedger{

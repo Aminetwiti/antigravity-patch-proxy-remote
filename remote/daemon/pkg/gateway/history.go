@@ -95,6 +95,8 @@ func isSubagentTitle(title string) bool {
 		return false
 	}
 	return strings.HasPrefix(lowerTitle, "system:") ||
+		strings.HasPrefix(lowerTitle, "<system_") ||
+		strings.HasPrefix(lowerTitle, "@[subagent") ||
 		strings.HasPrefix(lowerTitle, "@[") ||
 		strings.HasPrefix(lowerTitle, "# mission") ||
 		strings.HasPrefix(lowerTitle, "# role") ||
@@ -104,15 +106,7 @@ func isSubagentTitle(title string) bool {
 		strings.HasPrefix(lowerTitle, "subagent_") ||
 		strings.Contains(lowerTitle, "subagent-") ||
 		strings.Contains(lowerTitle, "subagent_") ||
-		strings.Contains(lowerTitle, "claim verification") ||
-		strings.HasPrefix(lowerTitle, "to begin the") ||
-		strings.HasPrefix(lowerTitle, "explore le projet") ||
-		strings.HasPrefix(lowerTitle, "analyze the backend") ||
-		strings.HasPrefix(lowerTitle, "analyze the flutter") ||
-		strings.HasPrefix(lowerTitle, "audit api contract") ||
-		strings.HasPrefix(lowerTitle, "you are a senior") ||
-		strings.HasPrefix(lowerTitle, "i need to understand") ||
-		strings.HasPrefix(lowerTitle, "deep security audit")
+		strings.Contains(lowerTitle, "claim verification")
 }
 
 // isSessionArchived vérifie si la session est archivée dans ~/.gemini/antigravity/annotations/<cascadeID>.pbtxt ou antigravity-ide

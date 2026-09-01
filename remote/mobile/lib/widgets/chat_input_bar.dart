@@ -222,6 +222,16 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     if (name.contains('/')) {
       name = name.split('/').last.trim();
     }
+    if (_reasoningEffort.isNotEmpty) {
+      final effortLabel = _reasoningEffort == 'Élevé'
+          ? 'High'
+          : (_reasoningEffort == 'Faible'
+              ? 'Low'
+              : (_reasoningEffort == 'Moyen' ? 'Medium' : _reasoningEffort));
+      if (!name.toLowerCase().contains(effortLabel.toLowerCase())) {
+        return '$name $effortLabel';
+      }
+    }
     return name;
   }
 
@@ -2749,6 +2759,27 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                       ),
 
                       const Spacer(),
+
+                      // P0-09: Dynamic Prompt Token Counter Badge
+                      if (_controller.text.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (isDark ? AppColors.surfaceHover : scheme.surfaceContainerHigh).withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(AppRadius.xs),
+                            ),
+                            child: Text(
+                              '~${(_controller.text.trim().length / 4).ceil()} tok',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontFamily: 'monospace',
+                                color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ),
 
                       // Clear text button (when text is typed)
                       if (_controller.text.isNotEmpty)

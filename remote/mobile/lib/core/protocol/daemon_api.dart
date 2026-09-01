@@ -74,10 +74,16 @@ class DaemonApi {
   /// Broadcast de chaque message daemon décodé (UI listeners, logging).
   Stream<Map<String, dynamic>> get events => _events.stream;
 
+  /// Télémétrie matérielle hôte en temps réel (CPU / RAM).
+  final ValueNotifier<HostTelemetry?> hostTelemetryNotifier =
+      ValueNotifier<HostTelemetry?>(null);
+
   /// Retourne les messages broadcast en attente d'émission par le batch 100 ms
   /// (utile aux tests pour forcer le flush).
   @visibleForTesting
   int get pendingBatchCount => _batch.length;
+
+  final String host;
 
   DaemonApi({
     Stream<dynamic>? incoming,
@@ -85,6 +91,7 @@ class DaemonApi {
     void Function(ClientMessage)? sendRaw,
     Duration timeout = const Duration(seconds: 15),
     OutboxQueue? outbox,
+    this.host = 'localhost',
   }) : _incoming = incoming ?? const Stream.empty(),
        _send = send ?? ((_) {}),
        _sendRaw = sendRaw,
@@ -702,6 +709,21 @@ class DaemonApi {
 
   /// Vérifie l'état et la présence des instances actives d'Antigravity IDE.
   Future<Map<String, dynamic>> getIdeStatus() => rpc('ide.status');
+
+  /// Démarre l'IDE Antigravity à distance via le Launcher du Daemon.
+  Future<Map<String, dynamic>> launchIde() => rpc('ide.launch');
+
+  /// Redémarre proprement l'IDE Antigravity et les Language Servers.
+  Future<Map<String, dynamic>> restartIde() => rpc('ide.restart');
+
+  /// Arrête tous les processus Antigravity sur la machine hôte.
+  Future<Map<String, dynamic>> killIde() => rpc('ide.kill');
+
+  /// Arrêt d'urgence matériel : interrompt la génération et tous les PTY.
+  Future<Map<String, dynamic>> emergencyStop({String? cascadeId}) =>
+      rpc('emergency_stop', {
+        if (cascadeId != null) 'cascadeId': cascadeId,
+      });
 
   /// Upload d'une image vers le dossier scratch de la cascade.
   Future<Map<String, dynamic>> uploadImage({
@@ -1471,6 +1493,19 @@ class DaemonApi {
     return await rpc('dump_flight_recorder', {});
   }
 
+  /// Récupère les logs d'exécution du daemon avec filtrage optionnel par sévérité.
+  Future<List<Map<String, dynamic>>> getLogs({String? level, int limit = 100}) async {
+    final res = await rpc('get_logs', {
+      if (level != null) 'level': level,
+      'limit': limit,
+    });
+    final raw = res['logs'] ?? (res['data'] is Map ? res['data']['logs'] : null);
+    if (raw is List) {
+      return raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+    }
+    return [];
+  }
+
   /// Recharge à chaud la configuration des serveurs MCP.
   Future<Map<String, dynamic>> refreshMcpServers() async {
     return await rpc('refresh_mcp_servers', {});
@@ -1667,6 +1702,14 @@ class DaemonApi {
     // Sortie de terminal PTY poussée par le daemon (P3) : pas de requestId
     // local — les terminaux sont des sessions poussées, corrélées par id.
     if (type == 'terminal_output') {
+      _emitBatched({...msg, 'broadcast': true});
+      return;
+    }
+
+    if (type == 'host_telemetry') {
+      try {
+        hostTelemetryNotifier.value = HostTelemetry.fromJson(data);
+      } catch (_) {}
       _emitBatched({...msg, 'broadcast': true});
       return;
     }

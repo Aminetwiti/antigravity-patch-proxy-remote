@@ -415,6 +415,30 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       onTap: () async {
                         Navigator.of(ctx).pop();
                         if (isCurrent || widget.api == null) return;
+
+                        if (_fileGitStatuses.isNotEmpty) {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (dCtx) => AlertDialog(
+                              title: const Text('Modifications non commitées'),
+                              content: Text(
+                                'Vous avez ${_fileGitStatuses.length} fichier(s) modifié(s). Basculer vers "$branch" risque d\'échouer ou d\'écraser ces modifications.\n\nVoulez-vous continuer quand même ?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(dCtx).pop(false),
+                                  child: const Text('Annuler'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.of(dCtx).pop(true),
+                                  child: const Text('Basculer quand même'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm != true) return;
+                        }
+
                         final messenger = ScaffoldMessenger.of(context);
                         try {
                           await widget.api!.sendCommand(

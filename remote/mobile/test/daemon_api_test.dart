@@ -753,6 +753,78 @@ void main() {
       await controller.close();
       api.dispose();
     });
+
+    test('IDE lifecycle methods send correct RPC types', () async {
+      final outgoing = <Map<String, dynamic>>[];
+      final controller = StreamController<dynamic>();
+      final api = DaemonApi(
+        incoming: controller.stream,
+        send: (data) => outgoing.add(data as Map<String, dynamic>),
+      );
+
+      // 1. launchIde
+      final f1 = api.launchIde();
+      await Future<void>.delayed(Duration.zero);
+      expect(outgoing.last['type'], 'ide.launch');
+      controller.add(jsonEncode({'type': 'response', 'requestId': outgoing.last['requestId'], 'data': {'status': 'launched'}}));
+      await f1;
+
+      // 2. restartIde
+      final f2 = api.restartIde();
+      await Future<void>.delayed(Duration.zero);
+      expect(outgoing.last['type'], 'ide.restart');
+      controller.add(jsonEncode({'type': 'response', 'requestId': outgoing.last['requestId'], 'data': {'status': 'restarted'}}));
+      await f2;
+
+      // 3. killIde
+      final f3 = api.killIde();
+      await Future<void>.delayed(Duration.zero);
+      expect(outgoing.last['type'], 'ide.kill');
+      controller.add(jsonEncode({'type': 'response', 'requestId': outgoing.last['requestId'], 'data': {'status': 'killed'}}));
+      await f3;
+
+      // 4. emergencyStop
+      final f4 = api.emergencyStop(cascadeId: 'cas-1');
+      await Future<void>.delayed(Duration.zero);
+      expect(outgoing.last['type'], 'emergency_stop');
+      expect(outgoing.last['cascadeId'], 'cas-1');
+      controller.add(jsonEncode({'type': 'response', 'requestId': outgoing.last['requestId'], 'data': {'status': 'stopped'}}));
+      await f4;
+
+      await controller.close();
+      api.dispose();
+    });
+
+    test('HostTelemetry broadcast updates hostTelemetryNotifier', () async {
+      final controller = StreamController<dynamic>();
+      final api = DaemonApi(incoming: controller.stream);
+
+      expect(api.hostTelemetryNotifier.value, isNull);
+
+      controller.add(
+        jsonEncode({
+          'type': 'host_telemetry',
+          'data': {
+            'cpuPercent': 25,
+            'ramUsedMb': 4096,
+            'ramTotalMb': 16384,
+            'uptimeSeconds': 3600,
+          },
+        }),
+      );
+
+      await Future<void>.delayed(Duration.zero);
+
+      final telemetry = api.hostTelemetryNotifier.value;
+      expect(telemetry, isNotNull);
+      expect(telemetry!.cpuPercent, 25);
+      expect(telemetry.ramUsedMb, 4096);
+      expect(telemetry.ramTotalMb, 16384);
+      expect(telemetry.uptimeSeconds, 3600);
+
+      await controller.close();
+      api.dispose();
+    });
   });
 }
 

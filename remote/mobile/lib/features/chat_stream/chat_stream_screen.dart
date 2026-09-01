@@ -4006,6 +4006,27 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     }
 
     if (!mounted) return;
+
+    List<MultiFileDiffItem>? multiFiles;
+    int initialIdx = 0;
+    if (_modifiedFileList.isNotEmpty) {
+      multiFiles = _modifiedFileList.map((f) {
+        final fName = f.path.split('/').last.split('\\').last;
+        return MultiFileDiffItem(
+          fileName: fName,
+          filePath: f.path,
+          diffContent: f.diffContent ?? '',
+          additions: f.additions,
+          deletions: f.deletions,
+        );
+      }).toList();
+
+      if (effectivePath != null) {
+        final match = multiFiles.indexWhere((f) => _pathsMatch(f.filePath, effectivePath));
+        if (match >= 0) initialIdx = match;
+      }
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -4017,6 +4038,8 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           diffContent: diff,
           fileName: effectiveName,
           filePath: effectivePath,
+          files: multiFiles,
+          initialFileIndex: initialIdx,
           onClose: () => Navigator.of(ctx).pop(),
           onSendReview: (comments) {
             Navigator.of(ctx).pop();

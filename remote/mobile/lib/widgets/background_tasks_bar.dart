@@ -18,7 +18,7 @@ class BackgroundTasksBar extends StatefulWidget {
     this.onTapTask,
     this.onStopTask,
     this.onViewTasks,
-    this.initiallyExpanded = false,
+    this.initiallyExpanded = true,
   });
 
   @override
@@ -69,80 +69,71 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
 
     Widget buildTaskItem(String task) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2.5),
+        padding: const EdgeInsets.symmetric(vertical: 3),
         child: InkWell(
           borderRadius: BorderRadius.circular(6),
           onTap: () {
             HapticFeedback.selectionClick();
             widget.onTapTask?.call(task);
           },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? const Color(0xFF262930)
-                  : scheme.surfaceContainerHigh.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: isDark
-                    ? const Color(0xFF33363F)
-                    : scheme.outlineVariant.withValues(alpha: 0.3),
-                width: 0.8,
+          child: Row(
+            children: [
+              RotationTransition(
+                turns: _spinController,
+                child: Container(
+                  width: 11,
+                  height: 11,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF8AB4F8) : scheme.primary,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                RotationTransition(
-                  turns: _spinController,
-                  child: Icon(
-                    Icons.sync,
-                    size: 13,
-                    color: isDark ? const Color(0xFF8AB4F8) : scheme.primary,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  task,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    color: isDark ? const Color(0xFFD4D4D4) : scheme.onSurface,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+              ),
+              if (widget.onStopTask != null) ...[
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    task,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontFamily: 'monospace',
-                      color: isDark ? const Color(0xFFD4D4D4) : scheme.onSurface,
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    widget.onStopTask!(task);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: AppColors.danger.withValues(alpha: 0.3),
+                        width: 0.8,
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    child: Text(
+                      'Stop',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.danger.withValues(alpha: 0.9),
+                      ),
+                    ),
                   ),
                 ),
-                if (widget.onStopTask != null) ...[
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      HapticFeedback.mediumImpact();
-                      widget.onStopTask!(task);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.danger.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: AppColors.danger.withValues(alpha: 0.3),
-                          width: 0.8,
-                        ),
-                      ),
-                      child: Text(
-                        'Stop',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.danger.withValues(alpha: 0.9),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
               ],
-            ),
+            ],
           ),
         ),
       );
@@ -151,30 +142,23 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
     return Container(
       margin: EdgeInsets.symmetric(horizontal: 12, vertical: hasKeyboard ? 2 : 4),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E2024) : scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        color: isDark ? const Color(0xFF16191E) : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isDark
-              ? const Color(0xFF2C2F36)
+              ? const Color(0xFF262932)
               : scheme.outlineVariant.withValues(alpha: 0.5),
           width: 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       padding: EdgeInsets.fromLTRB(12, hasKeyboard ? 5 : 8, 12, hasKeyboard ? 5 : 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // En-tête : "N tasks running" + chevron cliquable pour ouvrir/fermer
+          // En-tête : "1 task running" + chevron cliquable
           InkWell(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
             onTap: () {
               HapticFeedback.selectionClick();
               setState(() => _expanded = !_expanded);
@@ -183,57 +167,22 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 children: [
-                  RotationTransition(
-                    turns: _spinController,
-                    child: Icon(
-                      Icons.sync,
-                      size: 13.5,
-                      color: isDark ? const Color(0xFF8AB4F8) : scheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 7),
                   Text(
                     taskLabel,
                     style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFFE2E2E8) : scheme.onSurface,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
                       letterSpacing: -0.1,
                     ),
                   ),
                   const Spacer(),
-                  if (widget.onViewTasks != null) ...[
-                    IconButton(
-                      icon: const Icon(Icons.open_in_new, size: 14),
-                      onPressed: () {
-                        HapticFeedback.selectionClick();
-                        widget.onViewTasks!();
-                      },
-                      tooltip: 'Afficher les détails',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                      color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                  Tooltip(
-                    message: isActuallyExpanded ? 'Réduire les tâches' : 'Afficher les tâches',
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.05)
-                            : Colors.black.withValues(alpha: 0.04),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Icon(
-                        isActuallyExpanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        size: 16,
-                        color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
-                      ),
-                    ),
+                  Icon(
+                    isActuallyExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 16,
+                    color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
                   ),
                 ],
               ),

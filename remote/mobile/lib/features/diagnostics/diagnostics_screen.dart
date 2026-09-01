@@ -16,6 +16,47 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   bool _isDumping = false;
   Map<String, dynamic>? _lastTraceResult;
   String? _statusMessage;
+  List<Map<String, dynamic>> _logs = [];
+  bool _isLoadingLogs = false;
+  String _selectedSeverity = 'ALL';
+  final TextEditingController _logSearchController = TextEditingController();
+  String _logSearchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLogs();
+  }
+
+  @override
+  void dispose() {
+    _logSearchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadLogs() async {
+    setState(() => _isLoadingLogs = true);
+    try {
+      final logs = await widget.api.getLogs();
+      if (!mounted) return;
+      setState(() {
+        _logs = logs;
+        _isLoadingLogs = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingLogs = false);
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredLogs {
+    return _logs.where((l) {
+      final level = (l['level'] as String? ?? 'INFO').toUpperCase();
+      final msg = (l['message'] as String? ?? '').toLowerCase();
+      final matchesSeverity = _selectedSeverity == 'ALL' || level == _selectedSeverity;
+      final matchesSearch = _logSearchQuery.isEmpty || msg.contains(_logSearchQuery.toLowerCase());
+      return matchesSeverity && matchesSearch;
+    }).toList();
+  }
 
   Future<void> _dumpTrace() async {
     setState(() {
@@ -161,6 +202,146 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   _buildMetricRow('Protocole Wire', 'ConnectRPC / gRPC-Web', AppColors.info, scheme),
                   Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
                   _buildMetricRow('Framing Protobuf', 'Manuel Zéro-Allocation', AppColors.codeGold, scheme),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Section Log Viewer Interactif (P2-35)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.receipt_long_rounded, color: scheme.primary, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Journaux & Logs Système',
+                        style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        tooltip: 'Actualiser les logs',
+                        onPressed: _isLoadingLogs ? null : _loadLogs,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Barre de recherche
+                  TextField(
+                    controller: _logSearchController,
+                    onChanged: (val) => setState(() => _logSearchQuery = val),
+                    style: const TextStyle(fontSize: 12),
+                    decoration: InputDecoration(
+                      hintText: 'Rechercher dans les logs...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 16),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      filled: true,
+                      fillColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Filtres de sévérité
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: ['ALL', 'INFO', 'WARN', 'ERROR', 'DEBUG'].map((sev) {
+                        final isSelected = _selectedSeverity == sev;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: FilterChip(
+                            label: Text(sev, style: TextStyle(fontSize: 10.5, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                            selected: isSelected,
+                            onSelected: (_) => setState(() => _selectedSeverity = sev),
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Liste des logs
+                  if (_isLoadingLogs)
+                    const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+                  else if (_filteredLogs.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Center(
+                        child: Text(
+                          'Aucun log correspondant aux filtres',
+                          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _filteredLogs.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (ctx, idx) {
+                          final log = _filteredLogs[idx];
+                          final level = (log['level'] as String? ?? 'INFO').toUpperCase();
+                          final msg = log['message'] as String? ?? '';
+                          final ts = log['timestamp'] as String? ?? '';
+                          Color badgeColor = AppColors.info;
+                          if (level == 'ERROR') badgeColor = AppColors.danger;
+                          if (level == 'WARN') badgeColor = AppColors.warning;
+                          if (level == 'DEBUG') badgeColor = AppColors.inkMuted;
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: badgeColor.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        level,
+                                        style: TextStyle(color: badgeColor, fontSize: 9.5, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      ts.length > 19 ? ts.substring(11, 19) : ts,
+                                      style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.outline, fontSize: 10, fontFamily: 'monospace'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  msg,
+                                  style: TextStyle(color: scheme.onSurface, fontSize: 11.5, fontFamily: 'monospace'),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                 ],
               ),
             ),

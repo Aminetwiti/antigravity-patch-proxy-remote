@@ -1558,9 +1558,26 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         parsedUrl = new URL(req.url!, targetUrl);
         parsedUrl.hostname = realIp;
       } catch (e) {
-        log.error(`[Proxy] Could not resolve upstream IP for ${targetHost}:`, e);
-        if (safeWriteHead(res, 500, { 'Content-Type': 'application/json' })) {
-          safeEnd(res, JSON.stringify({ error: { message: 'DNS resolution failed for ' + targetHost } }));
+        log.warn(`[Proxy] DNS resolution failed for ${targetHost}, serving offline custom models:`, e);
+        if (!res.headersSent && !res.writableEnded) {
+          const customModels = loadCustomModels();
+          const mappedCustom: Record<string, unknown> = {};
+          customModels.forEach((m) => {
+            const slug = toSlug(m);
+            const pid = generateModelPlaceholderId(m);
+            mappedCustom[slug] = {
+              displayName: m.displayName,
+              maxTokens: 1048576,
+              maxOutputTokens: 4096,
+              model: pid,
+              planModel: pid,
+              requestedModel: pid,
+              apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+              modelProvider: 'MODEL_PROVIDER_GOOGLE',
+            };
+          });
+          safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
+          safeEnd(res, JSON.stringify({ models: mappedCustom }));
         }
         return;
       }

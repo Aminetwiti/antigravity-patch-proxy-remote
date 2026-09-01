@@ -179,6 +179,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
   final Set<String> _collapsedFolders = {};
   bool _isFilterOpen = false;
   final TextEditingController _filterController = TextEditingController();
+  final TextEditingController _quickPromptController = TextEditingController();
   String _filterQuery = '';
 
   SessionGroupBy _groupBy = SessionGroupBy.project;
@@ -293,6 +294,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
   void dispose() {
     _scrollController.dispose();
     _filterController.dispose();
+    _quickPromptController.dispose();
     super.dispose();
   }
 
@@ -481,7 +483,245 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     return entries;
   }
 
+  Widget _buildHostSwitcherPill(BuildContext context, ColorScheme scheme, bool isDark) {
+    final host = widget.api?.host ?? 'localhost';
+    final isConnected = widget.isConnected;
 
+    return InkWell(
+      onTap: () {
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: isDark ? const Color(0xFF14171C) : scheme.surface,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (ctx) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isConnected ? const Color(0xFF22C55E) : scheme.error,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Hôte distant : $host',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        isConnected ? 'Connecté' : 'Déconnecté',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isConnected ? const Color(0xFF22C55E) : scheme.error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Machine active pour les sessions et commandes terminal.',
+                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            widget.onToggleConnection();
+                          },
+                          icon: Icon(isConnected ? Icons.link_off : Icons.link, size: 16),
+                          label: Text(isConnected ? 'Déconnecter' : 'Reconnecter'),
+                        ),
+                      ),
+                      if (widget.onDiscover != null) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () {
+                              Navigator.of(ctx).pop();
+                              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+                              widget.onDiscover!();
+                            },
+                            icon: const Icon(Icons.qr_code_scanner, size: 16),
+                            label: const Text('Changer d\'hôte'),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(
+            color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant.withValues(alpha: 0.5),
+            width: 0.8,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isConnected ? const Color(0xFF22C55E) : scheme.error,
+              ),
+            ),
+            const SizedBox(width: 5),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 100),
+              child: Text(
+                host,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 13,
+              color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickPromptDock(BuildContext context, ColorScheme scheme, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 6),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF14171C) : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF262932) : scheme.outlineVariant.withValues(alpha: 0.5),
+          width: 0.8,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _quickPromptController,
+            style: TextStyle(fontSize: 13, color: isDark ? AppColors.inkPrimary : scheme.onSurface),
+            decoration: InputDecoration(
+              hintText: 'Ask anything, @ to mention, / for actions',
+              hintStyle: TextStyle(
+                fontSize: 12,
+                color: isDark ? const Color(0xFF6B7280) : scheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+              isDense: true,
+              contentPadding: EdgeInsets.zero,
+              border: InputBorder.none,
+            ),
+            onSubmitted: (val) {
+              final text = val.trim();
+              if (text.isNotEmpty) {
+                _quickPromptController.clear();
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                }
+                final projs = widget.projects ?? [];
+                _callNewConversation(projs.isNotEmpty ? projs.first : null);
+              }
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.add, size: 16, color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1F232B) : scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF2E333D) : scheme.outlineVariant.withValues(alpha: 0.4),
+                    width: 0.6,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Gemini 3.7 Flash High',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(Icons.keyboard_arrow_up_rounded, size: 12, color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              InkWell(
+                onTap: () {
+                  final text = _quickPromptController.text.trim();
+                  if (text.isNotEmpty) {
+                    _quickPromptController.clear();
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    }
+                    final projs = widget.projects ?? [];
+                    _callNewConversation(projs.isNotEmpty ? projs.first : null);
+                  }
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isDark ? const Color(0xFF262932) : scheme.surfaceContainerHighest,
+                  ),
+                  child: Icon(Icons.arrow_forward_rounded, size: 14, color: isDark ? const Color(0xFF9CA3AF) : scheme.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -502,7 +742,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
           children: [
             const SizedBox(height: 6),
 
-            // ── Top Navigation Bar: Antigravity Brand Lockup + Action Buttons
+            // ── Top Navigation Bar: Antigravity Brand Lockup + Host Switcher + Action Buttons
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               child: Row(
@@ -515,6 +755,8 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                     isDaemonConnected: widget.isConnected,
                     isIdeConnected: widget.isIdeConnected,
                   ),
+                  const SizedBox(width: 8),
+                  _buildHostSwitcherPill(context, scheme, isDark),
                   const Spacer(),
                   _HeaderIconBtn(
                     icon: Icons.history,
@@ -878,11 +1120,14 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
               ),
             ),
 
+            // ── Persistent Quick Prompt Dock (Antigravity 2.0 Fidelity)
+            _buildQuickPromptDock(context, scheme, isDark),
+
             const _Divider(),
 
             // ── Bottom: Settings + Connection status
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+              padding: const EdgeInsets.fromLTRB(8, 2, 8, 4),
               child: Column(
                 children: [
                   _SidebarActionItem(

@@ -4,6 +4,23 @@ import 'package:mobile/features/code_review/models/code_comment.dart';
 import 'package:mobile/features/code_review/widgets/add_comment_dialog.dart';
 import '../theme/app_colors.dart';
 
+/// Élément de diff unifié pour le carrousel multi-fichiers
+class MultiFileDiffItem {
+  final String fileName;
+  final String filePath;
+  final String diffContent;
+  final int additions;
+  final int deletions;
+
+  const MultiFileDiffItem({
+    required this.fileName,
+    required this.filePath,
+    required this.diffContent,
+    this.additions = 0,
+    this.deletions = 0,
+  });
+}
+
 /// Unifié et interactif : affiche un diff de code et permet d'annoter
 /// des lignes spécifiques pour envoyer une revue de code groupée à l'agent.
 /// Inspiré du Code Review Antigravity 2.0.
@@ -11,6 +28,8 @@ class UnifiedDiffViewer extends StatefulWidget {
   final String diffContent;
   final String? fileName;
   final String? filePath;
+  final List<MultiFileDiffItem>? files;
+  final int initialFileIndex;
   final VoidCallback? onClose;
   final Function(String reviewComments)? onSendReview;
   final Function(String patchContent, List<int> selectedHunkIndices)? onApplySelectedHunks;
@@ -21,6 +40,8 @@ class UnifiedDiffViewer extends StatefulWidget {
     required this.diffContent,
     this.fileName,
     this.filePath,
+    this.files,
+    this.initialFileIndex = 0,
     this.onClose,
     this.onSendReview,
     this.onApplySelectedHunks,
@@ -33,6 +54,10 @@ class UnifiedDiffViewer extends StatefulWidget {
 
 class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
   static final RegExp _hunkHeaderRe = RegExp(r'@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@');
+  int _currentFileIndex = 0;
+  String _activeDiffContent = '';
+  String? _activeFileName;
+  String? _activeFilePath;
   int _additions = 0;
   int _deletions = 0;
   List<_DiffLine> _lines = [];
@@ -43,7 +68,7 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
   bool _showSideBySideImage = true;
 
   bool get _isImageOrSvg {
-    final name = (widget.fileName ?? widget.filePath ?? '').toLowerCase();
+    final name = (_activeFileName ?? _activeFilePath ?? widget.fileName ?? widget.filePath ?? '').toLowerCase();
     return name.endsWith('.png') ||
         name.endsWith('.jpg') ||
         name.endsWith('.jpeg') ||
@@ -55,13 +80,38 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
   @override
   void initState() {
     super.initState();
+    _currentFileIndex = widget.initialFileIndex;
+    _updateActiveFile();
     _parseDiff();
+  }
+
+  void _updateActiveFile() {
+    if (widget.files != null && widget.files!.isNotEmpty) {
+      final safeIdx = _currentFileIndex.clamp(0, widget.files!.length - 1);
+      _activeDiffContent = widget.files![safeIdx].diffContent;
+      _activeFileName = widget.files![safeIdx].fileName;
+      _activeFilePath = widget.files![safeIdx].filePath;
+    } else {
+      _activeDiffContent = widget.diffContent;
+      _activeFileName = widget.fileName;
+      _activeFilePath = widget.filePath;
+    }
+  }
+
+  void _switchToFile(int index) {
+    if (widget.files == null || index < 0 || index >= widget.files!.length) return;
+    setState(() {
+      _currentFileIndex = index;
+      _updateActiveFile();
+      _parseDiff();
+    });
   }
 
   @override
   void didUpdateWidget(UnifiedDiffViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.diffContent != widget.diffContent) {
+    if (oldWidget.diffContent != widget.diffContent || oldWidget.files != widget.files) {
+      _updateActiveFile();
       _parseDiff();
     }
   }
@@ -75,7 +125,8 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
     int oldLineNum = 0;
     int newLineNum = 0;
 
-    final trimmed = widget.diffContent.trim();
+    final contentToParse = _activeDiffContent.isNotEmpty ? _activeDiffContent : widget.diffContent;
+    final trimmed = contentToParse.trim();
     if (trimmed.isEmpty || trimmed.contains('// Aucun diff disponible pour ce fichier')) {
       setState(() {
         _additions = 0;
@@ -87,7 +138,7 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
       return;
     }
 
-    final rawLines = widget.diffContent.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+    final rawLines = contentToParse.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
     for (final raw in rawLines) {
       if (raw.startsWith('@@')) {
         final hunkIndex = _hunks.length;
@@ -346,8 +397,9 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final displayName = widget.fileName ?? 'Code Changes';
-    final subPath = widget.filePath != null && widget.filePath != widget.fileName ? widget.filePath! : '';
+    final displayName = _activeFileName ?? widget.fileName ?? 'Code Changes';
+    final effectivePath = _activeFilePath ?? widget.filePath;
+    final subPath = effectivePath != null && effectivePath != displayName ? effectivePath : '';
 
     return SafeArea(
       top: false,
@@ -526,6 +578,66 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                 ],
               ),
             ),
+
+            // Carrousel horizontal multi-fichiers
+            if (widget.files != null && widget.files!.length > 1) ...[
+              Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF181A20) : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  border: Border(bottom: BorderSide(color: isDark ? const Color(0xFF23262D) : scheme.outlineVariant)),
+                ),
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: widget.files!.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 6),
+                  itemBuilder: (ctx, idx) {
+                    final f = widget.files![idx];
+                    final isCurrent = idx == _currentFileIndex;
+                    return InkWell(
+                      key: Key('diff-carousel-file-$idx'),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        _switchToFile(idx);
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isCurrent
+                              ? (isDark ? AppColors.accentBlue.withValues(alpha: 0.2) : scheme.primaryContainer)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isCurrent
+                                ? (isDark ? AppColors.accentBlue : scheme.primary)
+                                : (isDark ? AppColors.borderSubtle : scheme.outlineVariant),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(_iconForName(f.fileName), size: 12, color: _colorForName(f.fileName)),
+                            const SizedBox(width: 4),
+                            Text(
+                              f.fileName,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
+                                color: isCurrent
+                                    ? (isDark ? Colors.white : scheme.onPrimaryContainer)
+                                    : (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
 
             // Diff content or Empty State
             Expanded(

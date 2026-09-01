@@ -147,6 +147,85 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
     }
   }
 
+  Future<void> _exportProfile() async {
+    final s = await SettingsStore.load();
+    final profile = {
+      'version': '1.0',
+      'exportedAt': DateTime.now().toIso8601String(),
+      'settings': s,
+    };
+    final jsonStr = const JsonEncoder.withIndent('  ').convert(profile);
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/antigravity_profile_${DateTime.now().millisecondsSinceEpoch}.json');
+    await file.writeAsString(jsonStr);
+
+    await Share.shareXFiles(
+      [XFile(file.path, mimeType: 'application/json')],
+      subject: 'Antigravity Configuration Profile',
+    );
+  }
+
+  void _promptImportProfile() {
+    final textController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Importer un profil de configuration'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Collez le JSON exporté pour restaurer vos paramètres :',
+              style: TextStyle(fontSize: 12.5),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: textController,
+              maxLines: 6,
+              style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace'),
+              decoration: const InputDecoration(
+                hintText: '{\n  "version": "1.0",\n  "settings": { ... }\n}',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () async {
+              final raw = textController.text.trim();
+              Navigator.of(ctx).pop();
+              if (raw.isNotEmpty) {
+                try {
+                  final decoded = jsonDecode(raw);
+                  if (decoded is Map && decoded['settings'] is Map) {
+                    final newSettings = Map<String, dynamic>.from(decoded['settings'] as Map);
+                    await SettingsStore.save(newSettings);
+                    await _loadSettings();
+                    widget.onDaemonSaved?.call(newSettings);
+                    if (mounted) {
+                      AppToast.show(context, message: 'Profil importé avec succès !', icon: Icons.check_circle);
+                    }
+                  } else {
+                    throw const FormatException('Format de profil invalide');
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    AppToast.show(context, message: 'Erreur import profil: $e', icon: Icons.error_outline, type: ToastType.error);
+                  }
+                }
+              }
+            },
+            child: const Text('Importer'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -389,6 +468,28 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                           ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator.adaptive(strokeWidth: 2))
                           : const Icon(Icons.share_outlined, size: 16),
                       label: const Text('Exporter le rapport JSON', style: TextStyle(fontSize: 12)),
+                    ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: scheme.onSurface,
+                        side: BorderSide(color: isDark ? const Color(0xFF383B44) : scheme.outline),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+                      ),
+                      onPressed: _exportProfile,
+                      icon: const Icon(Icons.file_upload_outlined, size: 16),
+                      label: const Text('Exporter le profil', style: TextStyle(fontSize: 12)),
+                    ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: scheme.onSurface,
+                        side: BorderSide(color: isDark ? const Color(0xFF383B44) : scheme.outline),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+                      ),
+                      onPressed: _promptImportProfile,
+                      icon: const Icon(Icons.file_download_outlined, size: 16),
+                      label: const Text('Importer un profil', style: TextStyle(fontSize: 12)),
                     ),
                     if (widget.api != null)
                       ElevatedButton.icon(

@@ -41,6 +41,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
 
   bool _showMcpArgs = false;
   bool _destructiveConfirmed = false;
+  bool _isCollapsed = false;
 
   bool get _isEffectiveExpired => widget.isExpired || _remainingSeconds <= 0;
   bool get _isUrlApproval => widget.request.isUrlApproval;
@@ -374,88 +375,104 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── En-tête : Cadenas / Outil + Titre + Countdown Badge
-            Row(
-              children: [
-                Icon(
-                  _iconForTool(request.toolName),
-                  size: 16,
-                  color: _isUrlApproval
-                      ? (isDark ? AppColors.accentBlueBright : scheme.primary)
-                      : (isDark ? AppColors.warning : scheme.tertiary),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    _titleForTool(),
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? AppColors.inkPrimary : scheme.onSurface,
-                      letterSpacing: -0.2,
-                    ),
+            // ── En-tête : Cadenas / Outil + Titre + Countdown Badge / Pliable
+            InkWell(
+              onTap: _isEffectiveExpired
+                  ? () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _isCollapsed = !_isCollapsed);
+                    }
+                  : null,
+              borderRadius: BorderRadius.circular(4),
+              child: Row(
+                children: [
+                  Icon(
+                    _iconForTool(request.toolName),
+                    size: 16,
+                    color: _isUrlApproval
+                        ? (isDark ? AppColors.accentBlueBright : scheme.primary)
+                        : (isDark ? AppColors.warning : scheme.tertiary),
                   ),
-                ),
-                if (!_isEffectiveExpired) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: _remainingSeconds <= 10
-                            ? (isDark ? AppColors.danger : scheme.error)
-                            : (isDark ? AppColors.borderSubtle : scheme.outlineVariant),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _titleForTool(),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                        letterSpacing: -0.2,
                       ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.timer_outlined,
-                          size: 11,
+                  ),
+                  if (!_isEffectiveExpired) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
                           color: _remainingSeconds <= 10
                               ? (isDark ? AppColors.danger : scheme.error)
-                              : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
+                              : (isDark ? AppColors.borderSubtle : scheme.outlineVariant),
                         ),
-                        const SizedBox(width: 3),
-                        Text(
-                          '${_remainingSeconds}s',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w600,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.timer_outlined,
+                            size: 11,
                             color: _remainingSeconds <= 10
                                 ? (isDark ? AppColors.danger : scheme.error)
                                 : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
                           ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${_remainingSeconds}s',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w600,
+                              color: _remainingSeconds <= 10
+                                  ? (isDark ? AppColors.danger : scheme.error)
+                                  : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF3A2423) : const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFFEF4444).withValues(alpha: 0.5) : const Color(0xFFDC2626),
                         ),
-                      ],
-                    ),
-                  ),
-                ] else ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF3A2423) : const Color(0xFFFEE2E2),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isDark ? const Color(0xFFEF4444).withValues(alpha: 0.5) : const Color(0xFFDC2626),
+                      ),
+                      child: Text(
+                        'Expiré',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                        ),
                       ),
                     ),
-                    child: Text(
-                      'Expiré',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
-                      ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      _isCollapsed ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_up_rounded,
+                      size: 16,
+                      color: isDark ? AppColors.inkMuted : scheme.outline,
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
-            const SizedBox(height: 8),
+            if (!_isCollapsed || !_isEffectiveExpired) ...[
+              const SizedBox(height: 8),
 
             // ── Cible : Encadré Domaine / URL / Commande
             Container(
@@ -940,9 +957,10 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
               ],
             ),
           ],
-        ),
+        ],
       ),
-    );
+    ),
+  );
   }
 }
 
