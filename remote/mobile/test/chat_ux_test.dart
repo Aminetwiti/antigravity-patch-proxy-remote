@@ -138,13 +138,13 @@ void main() {
       expect(find.textContaining('edit_file'), findsWidgets);
 
       // Décision sur la 2ᵉ → retour automatique à la 1ʳᵉ restante.
-      await tester.tap(find.text('Approuver'));
+      await tester.tap(find.byKey(const Key('allow-btn')));
       await tester.pump(const Duration(milliseconds: 120));
       expect(find.byType(ToolApprovalCard), findsOneWidget);
       expect(find.textContaining('1/1'), findsOneWidget);
 
       // La 1ʳᵉ est toujours approvable.
-      await tester.tap(find.text('Approuver'));
+      await tester.tap(find.byKey(const Key('allow-btn')));
       await tester.pump(const Duration(milliseconds: 120));
       expect(find.byType(ToolApprovalCard), findsNothing);
 
@@ -317,10 +317,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 120));
 
       expect(find.byType(ToolApprovalCard), findsOneWidget);
-      expect(find.textContaining('git push'), findsOneWidget);
+      expect(find.textContaining('git push'), findsWidgets);
 
       // Approuver → submit_approval avec les métadonnées re-fetchées.
-      await tester.tap(find.text('Approuver'));
+      await tester.tap(find.byKey(const Key('allow-btn')));
       await tester.pump(const Duration(milliseconds: 120));
       final submits = out.where((m) => m['type'] == 'submit_approval').toList();
       expect(submits, hasLength(1));

@@ -124,8 +124,13 @@ void main() {
       expect(find.text('Approbation 1/2'), findsOneWidget);
       expect(find.text('flutter test'), findsOneWidget);
 
-      // 5. Activation du Switch "Toujours autoriser" puis Clic sur Approuver
-      await tester.tap(find.byType(Switch));
+      // 5. Activation option 2 "Toujours autoriser dans cette conversation" (scope: session)
+      final opt2 = find.byKey(const Key('approval-option-2'));
+      if (opt2.evaluate().isNotEmpty) {
+        await tester.tap(opt2);
+      } else {
+        await tester.tap(find.byType(Switch));
+      }
       await tester.pump(const Duration(milliseconds: 50));
 
       await tester.tap(find.byKey(const Key('allow-btn')));

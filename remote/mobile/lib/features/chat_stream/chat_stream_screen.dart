@@ -3177,8 +3177,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                   ),
               ],
             ),
+          Flexible(
+            flex: 0,
+            child: _buildApprovalArea(),
           ),
-          _buildApprovalArea(),
           if (_sideQuestion != null ||
               _runningBackgroundTasks.isNotEmpty ||
               _subagents.isNotEmpty ||

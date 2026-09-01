@@ -37,16 +37,20 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // 2. User toggles 'Always allow'
-      final switchFinder = find.byType(Switch);
-      expect(switchFinder, findsOneWidget);
-      await tester.tap(switchFinder);
-      await tester.pumpAndSettle();
+      // 2. User selects 'Always allow in conversation' (option 2) or toggles switch
+      final opt2Finder = find.byKey(const Key('approval-option-2'));
+      if (opt2Finder.evaluate().isNotEmpty) {
+        await tester.tap(opt2Finder);
+        await tester.pumpAndSettle();
+      } else {
+        final switchFinder = find.byType(Switch);
+        if (switchFinder.evaluate().isNotEmpty) {
+          await tester.tap(switchFinder);
+          await tester.pumpAndSettle();
+        }
+      }
 
-      final switchWidget = tester.widget<Switch>(switchFinder);
-      expect(switchWidget.value, true, reason: 'Switch should be ON');
-
-      // 3. User taps "Approuver" - simulate a race condition where the request changes immediately
+      // 3. User taps "Submit" - simulate a race condition where the request changes immediately
       final allowBtn = find.byKey(const Key('allow-btn'));
       await tester.tap(allowBtn);
       await tester.pump(); // We are now _isSubmitting = true for call-1

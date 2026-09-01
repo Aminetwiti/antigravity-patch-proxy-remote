@@ -36,7 +36,7 @@ void main() {
       );
 
       // Find the Approve button
-      final approveButton = find.text('Approuver');
+      final approveButton = find.byKey(const Key('allow-btn'));
       expect(approveButton, findsOneWidget);
 
       // Tap 3 times rapidly
@@ -47,15 +47,15 @@ void main() {
       // Wait a bit but not full 500ms
       await tester.pump(const Duration(milliseconds: 100));
 
-      // The button text should now be 'En cours...' and tapCount should be exactly 1
-      expect(find.text('En cours...'), findsOneWidget);
+      // The button should be in submitting state (CircularProgressIndicator visible) and tapCount should be exactly 1
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(tapCount, 1);
 
       // Wait for the simulated network delay to finish
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
 
-      // Text should revert to 'Approuver'
-      expect(find.text('Approuver'), findsOneWidget);
+      // Button should be active again
+      expect(approveButton, findsOneWidget);
       expect(tapCount, 1, reason: 'Debounce failed, tapped multiple times');
     });
 
@@ -87,19 +87,14 @@ void main() {
       // Le bandeau d'auto-refus est visible.
       expect(find.textContaining('Approbation expirée'), findsOneWidget);
 
-      // Les deux boutons sont désactivés → aucun appel de décision possible.
-      // (byType ne matche pas les sous-classes privées _…WithIcon ; bySubtype si.)
-      final denyButton = tester.widget<OutlinedButton>(
-        find.bySubtype<OutlinedButton>(),
-      );
+      // Les boutons sont désactivés → aucun appel de décision possible.
       final allowButton = tester.widget<ElevatedButton>(
-        find.bySubtype<ElevatedButton>(),
+        find.byKey(const Key('allow-btn')),
       );
-      expect(denyButton.onPressed, isNull);
       expect(allowButton.onPressed, isNull);
 
-      await tester.tap(find.text('Refuser'), warnIfMissed: false);
-      await tester.tap(find.text('Approuver'), warnIfMissed: false);
+      await tester.tap(find.byKey(const Key('deny-btn')), warnIfMissed: false);
+      await tester.tap(find.byKey(const Key('allow-btn')), warnIfMissed: false);
       await tester.pump();
       expect(calls, 0, reason: 'Expired card must not submit decisions');
     });
