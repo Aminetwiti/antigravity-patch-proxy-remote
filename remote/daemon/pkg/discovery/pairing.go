@@ -69,6 +69,8 @@ type PairingManager struct {
 	// Internet qui devine le PIN sur le tunnel public ne gagne donc PAS les
 	// droits Admin (shell/PTY/révocation).
 	AllowFirstAdmin bool
+	// OnPaired est invoqué lorsqu'un nouvel appairage réussit
+	OnPaired func(info SessionInfo)
 }
 
 func NewPairingManager() *PairingManager {
@@ -207,7 +209,7 @@ func (pm *PairingManager) VerifyPIN(remoteAddr, pin, deviceID string, allowedPro
 		isAdmin = pm.hasAdminSessionLocked(deviceID)
 	}
 
-	pm.sessions[token] = SessionInfo{
+	sessInfo := SessionInfo{
 		DeviceID:        deviceID,
 		Name:            "",
 		AllowedProjects: allowed,
@@ -216,9 +218,15 @@ func (pm *PairingManager) VerifyPIN(remoteAddr, pin, deviceID string, allowedPro
 		Admin:           isAdmin,
 		IP:              ip,
 	}
+	pm.sessions[token] = sessInfo
 
 	// Régénérer un nouveau PIN immédiatement après un appairage réussi
 	pm.regeneratePINLocked()
+
+	onPaired := pm.OnPaired
+	if onPaired != nil {
+		go onPaired(sessInfo)
+	}
 
 	return token, expiresAt, nil
 }

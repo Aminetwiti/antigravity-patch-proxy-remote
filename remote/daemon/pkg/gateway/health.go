@@ -143,6 +143,7 @@ func (s *Server) HTTPHandler(w http.ResponseWriter, r *http.Request) {
 // DiagnosticHandler : endpoint /health/diagnostic exportant les métadonnées système.
 func (s *Server) DiagnosticHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	hostStats := GetLatestHostStats()
 	diag := map[string]interface{}{
 		"process": map[string]interface{}{
 			"pid": os.Getpid(),
@@ -151,7 +152,8 @@ func (s *Server) DiagnosticHandler(w http.ResponseWriter, r *http.Request) {
 			"goVersion": "go",
 			"os":        "windows",
 		},
-		"stats": s.Stats(),
+		"hostStats": hostStats,
+		"stats":     s.Stats(),
 	}
 	json.NewEncoder(w).Encode(diag)
 }

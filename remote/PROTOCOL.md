@@ -215,6 +215,23 @@ Retourne la télémétrie complète du Daemon et de sa liaison avec le Language 
 }
 ```
 
+#### 7b. `emergency_stop` (Arrêt d'urgence matériel & interruption OS)
+```json
+{
+  "type": "emergency_stop",
+  "requestId": "req_107b",
+  "cascadeId": "cas_abc123"
+}
+```
+
+#### 7c. Contrôle Processus IDE (`ide_launch`, `ide_restart`, `ide_kill`)
+```json
+{
+  "type": "ide_launch",
+  "requestId": "req_107c"
+}
+```
+
 ---
 
 ### B. Approbations d'Outils & Politiques de Sécurité

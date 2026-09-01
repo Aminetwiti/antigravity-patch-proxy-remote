@@ -336,6 +336,9 @@ type Server struct {
 	isIDERunning bool
 	scheduler    *Scheduler
 	stateVersion int64
+	ledger       *SessionOperationLedger
+	streamHub    *StreamHub
+	lineageStore *SessionLineageStore
 }
 
 // ScheduledTask repr├®sente une t├óche planifi├®e / cron job g├®r├®e par le daemon.
@@ -401,7 +404,10 @@ func NewServer(client RPCClient, authToken string) *Server {
 		terminals:           newTerminalPtyManager(),
 		runningTasks:        newRunningTaskManager(),
 		clientSessions:      make(map[*websocket.Conn]discovery.SessionInfo),
+		ledger:              NewSessionOperationLedger(""),
+		lineageStore:        NewSessionLineageStore(""),
 	}
+	s.streamHub = NewStreamHub(s.streamBuffer, s.ledger)
 	s.scheduler = NewScheduler(s)
 	s.terminals.onBroadcast = s.broadcast
 	s.terminals.onSendToOwner = s.writeJSON

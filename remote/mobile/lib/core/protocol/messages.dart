@@ -657,3 +657,27 @@ class ClientMessage {
   };
 }
 
+/// Télémétrie matérielle hôte (CPU / RAM / Uptime)
+class HostTelemetry {
+  final int cpuPercent;
+  final int ramUsedMb;
+  final int ramTotalMb;
+  final int uptimeSeconds;
+
+  const HostTelemetry({
+    required this.cpuPercent,
+    required this.ramUsedMb,
+    required this.ramTotalMb,
+    required this.uptimeSeconds,
+  });
+
+  factory HostTelemetry.fromJson(Map<String, dynamic> json) {
+    return HostTelemetry(
+      cpuPercent: (json['cpuPercent'] as num?)?.toInt() ?? 0,
+      ramUsedMb: (json['ramUsedMb'] as num?)?.toInt() ?? 0,
+      ramTotalMb: (json['ramTotalMb'] as num?)?.toInt() ?? 0,
+      uptimeSeconds: (json['uptimeSeconds'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+

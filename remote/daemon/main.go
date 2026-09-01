@@ -21,7 +21,9 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/connectrpc"
 	"github.com/antigravity/remote-daemon/pkg/discovery"
 	"github.com/antigravity/remote-daemon/pkg/gateway"
+	"github.com/antigravity/remote-daemon/pkg/notification"
 	"github.com/antigravity/remote-daemon/pkg/tunnel"
+	"github.com/antigravity/remote-daemon/pkg/web"
 )
 
 // maskToken affiche un préfixe du jeton sans paniquer sur les jetons courts.
@@ -129,6 +131,13 @@ func main() {
 	// P4 : Pairing PIN éphémère + anti-brute-force
 	pairingMgr := discovery.NewPairingManager()
 	pairingMgr.AllowFirstAdmin = allowFirstAdmin
+	pairingMgr.OnPaired = func(info discovery.SessionInfo) {
+		name := info.Name
+		if name == "" {
+			name = info.DeviceID
+		}
+		notification.SendNotification("Antigravity Remote", fmt.Sprintf("📱 Nouvel appareil appairé : %s", name))
+	}
 	pin, _ := pairingMgr.CurrentPIN()
 	fmt.Printf("🔑 Code PIN d'appairage mobile : %s (valable 60s — saisissez ce code sur votre téléphone)\n", pin)
 	if !allowFirstAdmin {
@@ -166,11 +175,14 @@ func main() {
 	server.RunReactiveSubscription(rpcClient)
 	sched := gateway.NewScheduler(server)
 	sched.Start()
+	server.StartHostTelemetryPoller(5 * time.Second)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", server.HandleWebSocket)
 	mux.HandleFunc("/pair", pairingMgr.HTTPHandler())
 	mux.HandleFunc("/health", server.HTTPHandler)
+	mux.Handle("/web/", http.StripPrefix("/web", web.Handler()))
+	mux.Handle("/web", http.RedirectHandler("/web/", http.StatusPermanentRedirect))
 	mux.HandleFunc("/health/diagnostic", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if !authMgr.IsDisabled() {
