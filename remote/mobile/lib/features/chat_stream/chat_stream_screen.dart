@@ -2735,7 +2735,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 450),
+          constraints: BoxConstraints(
+            maxHeight: (MediaQuery.sizeOf(context).height * 0.42).clamp(160.0, 420.0),
+          ),
           child: SingleChildScrollView(
             physics: const ClampingScrollPhysics(),
             child: Column(
@@ -2775,7 +2777,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 450),
+        constraints: BoxConstraints(
+          maxHeight: (MediaQuery.sizeOf(context).height * 0.42).clamp(160.0, 420.0),
+        ),
         child: SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
           child: Column(
@@ -3177,6 +3181,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                   ),
               ],
             ),
+          ),
           Flexible(
             flex: 0,
             child: _buildApprovalArea(),
@@ -3283,14 +3288,6 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               final cur = _chatInputKey.currentState?.text ?? '';
               _chatInputKey.currentState?.setText(
                   cur.contains('@browser') ? cur : (cur.isEmpty ? '@browser ' : '$cur @browser '));
-            },
-            activeSubsystems: {
-              'files',
-              if (widget.api != null) 'terminal',
-              'window',
-              if (_subagents.any((s) => (s.typeName ?? s.role).toLowerCase().contains('browser')) ||
-                  _hasCurrentActiveStream)
-                'browser',
             },
           ),
         ],
@@ -3681,9 +3678,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       if (ctxFiles is List && ctxFiles.isNotEmpty) {
         for (final item in ctxFiles) {
           if (item is! String || item.isEmpty) continue;
-          var clean = item.replaceAll('\\', '/');
+          var clean = item.replaceAll('"', '').replaceAll("'", '').trim().replaceAll('\\', '/');
           if (clean.startsWith('file:///')) clean = clean.substring(8);
           if (clean.startsWith('file://')) clean = clean.substring(7);
+          if (clean.startsWith('./')) clean = clean.substring(2);
           if (!targetModFiles.contains(clean)) targetModFiles.add(clean);
           if (!list.any((f) => f.path == clean)) {
             list.add(SessionModifiedFile(path: clean, additions: 1, deletions: 0));
@@ -3800,8 +3798,8 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
   bool _pathsMatch(String a, String b) {
     if (a.isEmpty || b.isEmpty) return false;
-    final cleanA = a.replaceAll('\\', '/').toLowerCase();
-    final cleanB = b.replaceAll('\\', '/').toLowerCase();
+    final cleanA = a.replaceAll('"', '').replaceAll("'", '').trim().replaceAll('\\', '/').toLowerCase();
+    final cleanB = b.replaceAll('"', '').replaceAll("'", '').trim().replaceAll('\\', '/').toLowerCase();
     if (cleanA == cleanB) return true;
     if (cleanA.endsWith('/$cleanB') || cleanB.endsWith('/$cleanA')) return true;
     final nameA = cleanA.split('/').last;
@@ -5362,6 +5360,7 @@ class _SuggestionChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -5376,14 +5375,17 @@ class _SuggestionChip extends StatelessWidget {
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest,
+            color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: scheme.outlineVariant),
+            border: Border.all(
+              color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.6),
+              width: 0.8,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 14, color: scheme.primary),
+              Icon(icon, size: 14, color: isDark ? AppColors.accentBlue : scheme.primary),
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
@@ -5391,7 +5393,7 @@ class _SuggestionChip extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: scheme.onSurface,
+                    color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

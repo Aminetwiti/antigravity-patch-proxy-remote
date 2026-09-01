@@ -85,14 +85,19 @@ class StreamDeltaParser {
               if (start >= 0 && end > start) {
                 final jsonMap = json.decode(detail.substring(start, end + 1));
                 if (jsonMap is Map) {
-                  final fp = (jsonMap['targetFile'] ??
+                  var fp = (jsonMap['targetFile'] ??
                           jsonMap['TargetFile'] ??
                           jsonMap['filePath'] ??
                           jsonMap['file_path'] ??
                           jsonMap['AbsolutePath'] ??
                           jsonMap['path'] ??
                           '')
-                      .toString();
+                      .toString()
+                      .trim();
+                  fp = fp.replaceAll('"', '').replaceAll("'", '').trim();
+                  if (fp.startsWith('./') || fp.startsWith('.\\')) {
+                    fp = fp.substring(2);
+                  }
                   if (fp.isNotEmpty && !files.contains(fp)) {
                     files.add(fp);
                   }
@@ -173,17 +178,18 @@ class StreamDeltaParser {
       }
     }
     if (lowerTool != 'run_command' && lowerTool != 'command' && lowerTool != 'bash' && lowerTool != 'terminal' && lowerTool != 'runner') {
+      arg = arg.replaceAll('"', '').replaceAll("'", '').trim();
       if (arg.contains('/') || arg.contains('\\')) {
         arg = arg.replaceAll(_filePrefixWinRe, '');
         arg = arg.replaceAll(_winDrivePrefixRe, '');
-        if (arg.length > 50) {
-          final segments = arg.split(_pathSplitRe);
-          final base = segments.lastWhere((s) => s.trim().isNotEmpty, orElse: () => arg);
-          if (base.isNotEmpty) {
-            arg = base;
-          }
+        final segments = arg.split(_pathSplitRe);
+        final base = segments.lastWhere((s) => s.trim().isNotEmpty, orElse: () => arg);
+        if (base.isNotEmpty) {
+          arg = base;
         }
       }
+    } else {
+      arg = arg.trim();
     }
     if (arg.length > 70) {
       arg = '${arg.substring(0, 67)}…';
@@ -226,7 +232,6 @@ class StreamDeltaParser {
       case 'search_files':
       case 'grep':
       case 'grep_search':
-        return arg.isNotEmpty ? 'Searched $arg' : 'Searched codebase';
       case 'search':
       case 'find_by_name':
         return arg.isNotEmpty ? 'Searched $arg' : 'Searched codebase';

@@ -43,6 +43,7 @@ class ExecutionStepItem {
   final List<ExecutionStepItem>? subItems; // Indented child items (e.g. Analyzed under Explored)
   final bool isExpandable;
   final bool isRunning;
+  final bool isImage;
 
   const ExecutionStepItem({
     required this.type,
@@ -60,6 +61,7 @@ class ExecutionStepItem {
     this.subItems,
     this.isExpandable = false,
     this.isRunning = false,
+    this.isImage = false,
   });
 }
 
@@ -180,10 +182,25 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
     String currentCmdPrompt = '';
     final consoleBuffer = StringBuffer();
 
+    void addRawItem(ExecutionStepItem item) {
+      if (rawItems.isNotEmpty) {
+        final last = rawItems.last;
+        if (last.type == item.type &&
+            last.action == item.action &&
+            last.title == item.title &&
+            last.lineRange == item.lineRange &&
+            last.diffAdded == item.diffAdded &&
+            last.diffRemoved == item.diffRemoved) {
+          return; // Skip duplicate consecutive item
+        }
+      }
+      rawItems.add(item);
+    }
+
     void flushConsole() {
       if (currentCmdTitle.isNotEmpty) {
         final out = consoleBuffer.toString().trim();
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.command,
           action: 'Run',
           title: currentCmdTitle,
@@ -232,8 +249,8 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                 ? 'auto proceeded with'
                 : 'auto-proceed with');
         var planName = line.substring(prefix.length).trim();
-        planName = planName.replaceAll('📄', '').replaceAll('`', '').trim();
-        rawItems.add(ExecutionStepItem(
+        planName = planName.replaceAll('📄', '').replaceAll('`', '').replaceAll('"', '').replaceAll("'", '').trim();
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.autoProceed,
           action: 'Auto-proceeded with',
           title: planName.isNotEmpty ? planName : 'Implementation Plan',
@@ -285,7 +302,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
           i = nextI - 1;
         }
 
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.timer,
           action: action,
           title: title,
@@ -301,7 +318,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
           (lower.contains('finished') || lower.contains('completed') || lower.contains('done'))) {
         var clean = line;
         if (clean.endsWith('>')) clean = clean.substring(0, clean.length - 1).trim();
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.taskFinished,
           action: '',
           title: clean,
@@ -321,7 +338,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
             ? 'Worked'
             : (lower.startsWith('thinking for ') ? 'Thinking' : 'Thought');
         final dur = clean.substring(action.length).trim();
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.workedDuration,
           action: action,
           title: dur,
@@ -341,7 +358,8 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
             : (lower.startsWith('wrote ')
                 ? 6
                 : (lower.startsWith('writing to file') ? 15 : 12));
-        final rest = line.substring(prefixLen).trim();
+        var rest = line.substring(prefixLen).trim();
+        rest = rest.replaceAll('"', '').replaceAll("'", '').trim();
         final parts = rest.split(RegExp(r'\s+'));
         String fileName = rest;
         String? add;
@@ -353,7 +371,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
           idx = 1;
         }
         if (idx < parts.length) {
-          fileName = parts[idx];
+          fileName = parts[idx].replaceAll('"', '').replaceAll("'", '').trim();
           idx++;
         }
         while (idx < parts.length) {
@@ -365,7 +383,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
           }
           idx++;
         }
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.fileEdit,
           action: isEdit ? 'Edited' : 'Wrote',
           title: extTag != null ? '$extTag $fileName' : fileName,
@@ -386,30 +404,54 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
             : (lower.startsWith('viewed ')
                 ? 7
                 : (lower.startsWith('reading file') ? 12 : 12));
-        final rest = line.substring(prefixLen).trim();
+        var rest = line.substring(prefixLen).trim();
+        rest = rest.replaceAll('"', '').replaceAll("'", '').trim();
         final match = RegExp(r'^(?:(TS|JS|Dart|Go|Py|>_|JSON|MD|HTML|CSS|YAML|SQL)\s+)?(\S+)(?:\s+(#L\d+(?:-\d+)?))?', caseSensitive: false).firstMatch(rest);
         final extTag = match?.group(1);
-        final fileName = match?.group(2) ?? rest;
+        var fileName = match?.group(2) ?? rest;
         final lineRange = match?.group(3);
-        rawItems.add(ExecutionStepItem(
+        fileName = fileName.replaceAll('"', '').replaceAll("'", '').trim();
+
+        // Humanize scaled image names: scaled_1000134685.png -> Scaled 1000134685
+        final lowerFile = fileName.toLowerCase();
+        final isImg = lowerFile.endsWith('.png') ||
+            lowerFile.endsWith('.jpg') ||
+            lowerFile.endsWith('.jpeg') ||
+            lowerFile.endsWith('.webp') ||
+            lowerFile.endsWith('.gif') ||
+            lowerFile.startsWith('scaled_') ||
+            lowerFile.startsWith('scaled ');
+
+        if (lowerFile.startsWith('scaled_') || lowerFile.startsWith('scaled ')) {
+          final parts = fileName.split(RegExp(r'[_.]'));
+          if (parts.length >= 2 && parts[0].toLowerCase() == 'scaled') {
+            fileName = 'Scaled ${parts[1]}';
+          }
+        }
+
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.fileAnalysis,
           action: isAnalyzed ? 'Analyzed' : 'Viewed',
           title: extTag != null ? '$extTag $fileName' : fileName,
           lineRange: lineRange,
+          isImage: isImg,
         ));
         continue;
       }
 
       // 6b. Searched / Search <query> <count> results
-      if (lower.startsWith('searched ') || lower.startsWith('search ')) {
-        final prefixLen = lower.startsWith('searched ') ? 9 : 7;
-        final rest = line.substring(prefixLen).trim();
+      if (lower.startsWith('searched ') || lower.startsWith('search ') || lower.startsWith('searching ')) {
+        final prefixLen = lower.startsWith('searched ')
+            ? 9
+            : (lower.startsWith('searching ') ? 10 : 7);
+        var rest = line.substring(prefixLen).trim();
+        rest = rest.replaceAll('"', '').replaceAll("'", '').trim();
         final match = RegExp(r'^(.*?)(?:\s+(\d+)\s+results?)?$', caseSensitive: false).firstMatch(rest);
         final query = match?.group(1)?.trim() ?? rest;
         final count = match?.group(2);
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.search,
-          action: 'Search',
+          action: 'Searched',
           title: query,
           diffAdded: count != null ? '$count results' : null,
           isExpandable: true,
@@ -421,7 +463,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       if (lower.startsWith('explored ')) {
         var title = line.substring(9).trim();
         if (title.endsWith('>')) title = title.substring(0, title.length - 1).trim();
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.exploredGroup,
           action: 'Explored',
           title: title.isNotEmpty ? title : '1 file',
@@ -437,7 +479,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
           lower.startsWith('sub-agent')) {
         final clean = line.replaceFirst(
             RegExp(r'^(invoking subagent|spawned subagent|subagent|sub-agent)[:\s]*', caseSensitive: false), '').trim();
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.subagent,
           action: 'Subagent',
           title: clean.isNotEmpty ? clean : 'Agent',
@@ -466,27 +508,20 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         continue;
       }
 
-      // 10. Checked task / Search / Task
-      if (lower.startsWith('checked task ') ||
-          lower.startsWith('search ') ||
-          lower.startsWith('task ') ||
-          lower.startsWith('searching ')) {
+      // 10. Checked task / Task
+      if (lower.startsWith('checked task ') || lower.startsWith('task ')) {
         final isChecked = lower.startsWith('checked task ');
-        final isSearch = lower.startsWith('search ') || lower.startsWith('searching ');
         String action = 'Task';
         String title = line.substring(5).trim();
         if (isChecked) {
           action = 'Checked task';
           title = line.substring(13).trim();
-        } else if (isSearch) {
-          action = 'Search';
-          title = lower.startsWith('searching ') ? line.substring(10).trim() : line.substring(7).trim();
         }
         if ((title.startsWith('"') && title.endsWith('"')) ||
             (title.startsWith("'") && title.endsWith("'"))) {
           title = title.substring(1, title.length - 1).trim();
         }
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.task,
           action: action,
           title: title,
@@ -499,7 +534,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       if (lower.startsWith('error')) {
         var clean = line;
         if (clean.endsWith('>')) clean = clean.substring(0, clean.length - 1).trim();
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.task,
           action: '',
           title: clean,
@@ -530,7 +565,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         if (ansText != null) {
           i = nextI - 1;
         }
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.question,
           action: '1 question',
           title: qTitle.replaceAll('[?]', '').replaceAll('❓', '').trim(),
@@ -542,7 +577,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
 
       // 13. Narrative text from agent (e.g. "Vérification globale...", "Attente des résultats...")
       if (line.endsWith('...') || line.endsWith('…') || (!line.startsWith('#') && line.length < 100 && !line.contains('`'))) {
-        rawItems.add(ExecutionStepItem(
+        addRawItem(ExecutionStepItem(
           type: ExecutionStepType.narrativeText,
           action: '',
           title: line,
@@ -563,16 +598,33 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       final current = rawItems[i];
       if (current.type == ExecutionStepType.exploredGroup) {
         final sub = <ExecutionStepItem>[];
+        final seenSubKeys = <String>{};
         int j = i + 1;
-        while (j < rawItems.length && rawItems[j].type == ExecutionStepType.fileAnalysis) {
-          sub.add(rawItems[j]);
+        while (j < rawItems.length && (rawItems[j].type == ExecutionStepType.fileAnalysis || rawItems[j].type == ExecutionStepType.search)) {
+          final sKey = '${rawItems[j].type}:${rawItems[j].action}:${rawItems[j].title}:${rawItems[j].lineRange}';
+          if (seenSubKeys.add(sKey)) {
+            sub.add(rawItems[j]);
+          }
           j++;
         }
         if (sub.isNotEmpty) {
+          int fCount = 0;
+          int sCount = 0;
+          for (final s in sub) {
+            if (s.type == ExecutionStepType.search) {
+              sCount++;
+            } else {
+              fCount++;
+            }
+          }
+          final pList = <String>[];
+          if (fCount > 0) pList.add(fCount == 1 ? '1 file' : '$fCount files');
+          if (sCount > 0) pList.add(sCount == 1 ? '1 search' : '$sCount searches');
+
           items.add(ExecutionStepItem(
             type: ExecutionStepType.exploredGroup,
             action: current.action,
-            title: sub.length == 1 ? '1 file' : '${sub.length} files',
+            title: pList.isNotEmpty ? pList.join(', ') : (sub.length == 1 ? '1 file' : '${sub.length} files'),
             subItems: sub,
             isExpandable: true,
           ));
@@ -634,9 +686,19 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
     void flushExploration(bool isLastGroup) {
       if (explorationGroup.isEmpty) return;
 
+      // Deduplicate explorationGroup items by unique signature
+      final uniqueExploration = <ExecutionStepItem>[];
+      final seen = <String>{};
+      for (final item in explorationGroup) {
+        final key = '${item.type}:${item.action}:${item.title}:${item.lineRange}';
+        if (seen.add(key)) {
+          uniqueExploration.add(item);
+        }
+      }
+
       int fileCount = 0;
       int searchCount = 0;
-      for (final item in explorationGroup) {
+      for (final item in uniqueExploration) {
         if (item.type == ExecutionStepType.search) {
           searchCount++;
         } else {
@@ -660,7 +722,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         type: ExecutionStepType.exploredGroup,
         action: action,
         title: title.isNotEmpty ? title : 'files',
-        subItems: List.from(explorationGroup),
+        subItems: uniqueExploration,
         isExpandable: true,
         isRunning: isRunning,
       ));
@@ -1274,142 +1336,86 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     const SizedBox(width: 5),
                   ],
 
-                  // File Edit Badge (🟢 emerald pencil icon)
+                  // File Edit Badge (emerald pencil icon)
                   if (item.type == ExecutionStepType.fileEdit) ...[
-                    Container(
-                      margin: const EdgeInsets.only(right: 5),
-                      width: 13,
-                      height: 13,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF10B981),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.edit_note_rounded,
-                          size: 9,
-                          color: Colors.white,
-                        ),
+                    const Padding(
+                      padding: EdgeInsets.only(right: 5),
+                      child: Icon(
+                        Icons.edit_note_rounded,
+                        size: 14,
+                        color: Color(0xFF34D399),
                       ),
                     ),
                   ],
 
-                  // File Read Badge (🔵 sky blue document icon)
+                  // File Read Badge (Image photo icon or Document icon)
                   if (item.type == ExecutionStepType.fileAnalysis) ...[
-                    Container(
-                      margin: const EdgeInsets.only(right: 5),
-                      width: 13,
-                      height: 13,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF0284C7),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.description_rounded,
-                          size: 8.5,
-                          color: Colors.white,
-                        ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 5),
+                      child: Icon(
+                        item.isImage ? Icons.photo_outlined : Icons.insert_drive_file_outlined,
+                        size: item.isImage ? 14 : 13.5,
+                        color: item.isImage ? const Color(0xFF9E9FA8) : const Color(0xFF38BDF8),
                       ),
                     ),
                   ],
 
-                  // Search Icon Badge (🔍 teal/cyan icon)
+                  // Search Icon Badge (teal search icon)
                   if (item.type == ExecutionStepType.search) ...[
-                    Container(
-                      margin: const EdgeInsets.only(right: 5),
-                      width: 13,
-                      height: 13,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF0D9488),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.search_rounded,
-                          size: 8.5,
-                          color: Colors.white,
-                        ),
+                    const Padding(
+                      padding: EdgeInsets.only(right: 5),
+                      child: Icon(
+                        Icons.search_rounded,
+                        size: 13.5,
+                        color: Color(0xFF2DD4BF),
                       ),
                     ),
                   ],
 
-                  // Subagent Icon Badge (🟣 purple agent icon)
+                  // Subagent Icon Badge (purple agent icon)
                   if (item.type == ExecutionStepType.subagent) ...[
-                    Container(
-                      margin: const EdgeInsets.only(right: 5),
-                      width: 13,
-                      height: 13,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF7C3AED),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.smart_toy_rounded,
-                          size: 8.5,
-                          color: Colors.white,
-                        ),
+                    const Padding(
+                      padding: EdgeInsets.only(right: 5),
+                      child: Icon(
+                        Icons.smart_toy_outlined,
+                        size: 13.5,
+                        color: Color(0xFFA78BFA),
                       ),
                     ),
                   ],
 
-                  // Command / Task Finished Icon Badge (⬛ dark terminal icon)
+                  // Command / Task Finished Icon Badge (terminal icon)
                   if (item.type == ExecutionStepType.command || item.type == ExecutionStepType.taskFinished) ...[
-                    Container(
-                      margin: const EdgeInsets.only(right: 5),
-                      width: 13,
-                      height: 13,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF3F3F46),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.terminal_rounded,
-                          size: 8.5,
-                          color: Colors.white,
-                        ),
+                    const Padding(
+                      padding: EdgeInsets.only(right: 5),
+                      child: Icon(
+                        Icons.terminal_rounded,
+                        size: 13.5,
+                        color: Color(0xFF9CA3AF),
                       ),
                     ),
                   ],
 
-                  // Timer Icon Badge (🟠 amber timer icon)
+                  // Timer Icon Badge (amber timer icon)
                   if (item.type == ExecutionStepType.timer) ...[
-                    Container(
-                      margin: const EdgeInsets.only(right: 5),
-                      width: 13,
-                      height: 13,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFEA580C),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.timer_outlined,
-                          size: 8.5,
-                          color: Colors.white,
-                        ),
+                    const Padding(
+                      padding: EdgeInsets.only(right: 5),
+                      child: Icon(
+                        Icons.timer_outlined,
+                        size: 13.5,
+                        color: Color(0xFFFB923C),
                       ),
                     ),
                   ],
 
-                  // Thought / Reasoning Icon Badge (🟡 gold lightbulb icon)
+                  // Thought / Reasoning Icon Badge (gold lightbulb icon)
                   if (item.type == ExecutionStepType.thought) ...[
-                    Container(
-                      margin: const EdgeInsets.only(right: 5),
-                      width: 13,
-                      height: 13,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF59E0B),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.lightbulb_rounded,
-                          size: 8.5,
-                          color: Colors.white,
-                        ),
+                    const Padding(
+                      padding: EdgeInsets.only(right: 5),
+                      child: Icon(
+                        Icons.lightbulb_outline_rounded,
+                        size: 13.5,
+                        color: Color(0xFFFBBF24),
                       ),
                     ),
                   ],
@@ -1577,54 +1583,39 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                             const SizedBox(width: 5),
                                           ],
                                           if (sub.type == ExecutionStepType.search) ...[
-                                            Container(
-                                              margin: const EdgeInsets.only(right: 5),
-                                              width: 13,
-                                              height: 13,
-                                              decoration: const BoxDecoration(
-                                                color: Color(0xFF0D9488),
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: const Center(
-                                                child: Icon(
-                                                  Icons.search_rounded,
-                                                  size: 8.5,
-                                                  color: Colors.white,
-                                                ),
+                                            const Padding(
+                                              padding: EdgeInsets.only(right: 5),
+                                              child: Icon(
+                                                Icons.search_rounded,
+                                                size: 13.5,
+                                                color: Color(0xFF2DD4BF),
                                               ),
                                             ),
-                                          ] else if (sub.type == ExecutionStepType.fileAnalysis || sub.type == ExecutionStepType.fileEdit) ...[
-                                            Container(
-                                              margin: const EdgeInsets.only(right: 5),
-                                              width: 13,
-                                              height: 13,
-                                              decoration: const BoxDecoration(
-                                                color: Color(0xFF0284C7),
-                                                shape: BoxShape.circle,
+                                          ] else if (sub.type == ExecutionStepType.fileAnalysis) ...[
+                                            Padding(
+                                              padding: const EdgeInsets.only(right: 5),
+                                              child: Icon(
+                                                sub.isImage ? Icons.photo_outlined : Icons.insert_drive_file_outlined,
+                                                size: sub.isImage ? 14 : 13.5,
+                                                color: sub.isImage ? const Color(0xFF9E9FA8) : const Color(0xFF38BDF8),
                                               ),
-                                              child: const Center(
-                                                child: Icon(
-                                                  Icons.description_rounded,
-                                                  size: 8.5,
-                                                  color: Colors.white,
-                                                ),
+                                            ),
+                                          ] else if (sub.type == ExecutionStepType.fileEdit) ...[
+                                            const Padding(
+                                              padding: EdgeInsets.only(right: 5),
+                                              child: Icon(
+                                                Icons.edit_note_rounded,
+                                                size: 14,
+                                                color: Color(0xFF34D399),
                                               ),
                                             ),
                                           ] else if (isSubCommand) ...[
-                                            Container(
-                                              margin: const EdgeInsets.only(right: 5),
-                                              width: 13,
-                                              height: 13,
-                                              decoration: const BoxDecoration(
-                                                color: Color(0xFF3F3F46),
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: const Center(
-                                                child: Icon(
-                                                  Icons.terminal_rounded,
-                                                  size: 8.5,
-                                                  color: Colors.white,
-                                                ),
+                                            const Padding(
+                                              padding: EdgeInsets.only(right: 5),
+                                              child: Icon(
+                                                Icons.terminal_rounded,
+                                                size: 13.5,
+                                                color: Color(0xFF9CA3AF),
                                               ),
                                             ),
                                           ],
@@ -1656,11 +1647,21 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                           ],
                                           if (sub.diffAdded != null && sub.type == ExecutionStepType.search) ...[
                                             const SizedBox(width: 6),
-                                            Text(
-                                              sub.diffAdded!,
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                color: Color(0xFF71717A),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF1F2430),
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(color: const Color(0xFF2E3345), width: 0.5),
+                                              ),
+                                              child: Text(
+                                                sub.diffAdded!,
+                                                style: const TextStyle(
+                                                  fontSize: 10.5,
+                                                  fontFamily: 'monospace',
+                                                  fontWeight: FontWeight.w500,
+                                                  color: Color(0xFF9E9FA8),
+                                                ),
                                               ),
                                             ),
                                           ] else if (sub.diffAdded != null) ...[

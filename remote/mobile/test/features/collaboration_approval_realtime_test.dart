@@ -133,6 +133,7 @@ void main() {
       }
       await tester.pump(const Duration(milliseconds: 50));
 
+      await tester.ensureVisible(find.byKey(const Key('allow-btn')));
       await tester.tap(find.byKey(const Key('allow-btn')));
       await tester.pump(const Duration(milliseconds: 100));
 

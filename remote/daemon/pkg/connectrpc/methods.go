@@ -1,6 +1,7 @@
 package connectrpc
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -37,7 +38,12 @@ func (c *Client) SendMessageStreamModel(cascadeID, text, modelUID string, modelE
 
 // SendMessageStreamModelWithMedia transmet un prompt avec pièces jointes (media/images) au Language Server.
 func (c *Client) SendMessageStreamModelWithMedia(cascadeID, text, modelUID string, modelEnum uint64, media []MediaAttachment, onFrame func([]byte) error, noTools ...bool) error {
-	return c.CallStream("SendUserCascadeMessage", BuildSendMessageWithMedia(cascadeID, text, c.APIKey, c.SessionID, modelUID, modelEnum, media, noTools...), 120*time.Second, onFrame)
+	return c.SendMessageStreamModelWithMediaContext(context.Background(), cascadeID, text, modelUID, modelEnum, media, onFrame, noTools...)
+}
+
+// SendMessageStreamModelWithMediaContext transmet un prompt avec pièces jointes et support d'annulation contextuelle au Language Server.
+func (c *Client) SendMessageStreamModelWithMediaContext(ctx context.Context, cascadeID, text, modelUID string, modelEnum uint64, media []MediaAttachment, onFrame func([]byte) error, noTools ...bool) error {
+	return c.CallStreamWithContext(ctx, "SendUserCascadeMessage", BuildSendMessageWithMedia(cascadeID, text, c.APIKey, c.SessionID, modelUID, modelEnum, media, noTools...), 120*time.Second, onFrame)
 }
 
 // SubmitToolApproval approuve/refuse une interaction d'outil via le RPC officiel

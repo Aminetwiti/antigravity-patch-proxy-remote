@@ -112,6 +112,38 @@ func Discover() (*LocalHarnessInfo, error) {
 	return nil, fmt.Errorf("aucun port ne répond au service RPC parmi les %d processus testés", len(sortedProcs))
 }
 
+// DiscoverAll découvre tous les processus language_server actifs et retourne leurs informations de connexion RPC.
+func DiscoverAll() ([]*LocalHarnessInfo, error) {
+	procs, err := getProcesses()
+	if err != nil {
+		return nil, err
+	}
+	var results []*LocalHarnessInfo
+	for _, pick := range procs {
+		info := &LocalHarnessInfo{
+			PID:             pick.pid,
+			ProcessName:     pick.name,
+			CSRFToken:       extractArg(pick.commandLine, "csrf_token"),
+			ExtensionCSRF:   extractArg(pick.commandLine, "extension_server_csrf_token"),
+			ExtensionPort:   atoi(extractArg(pick.commandLine, "extension_server_port")),
+			HTTPSServerPort: atoi(extractArg(pick.commandLine, "https_server_port")),
+			WorkspaceID:     extractArg(pick.commandLine, "workspace_id"),
+			SubclientType:   extractArg(pick.commandLine, "subclient_type"),
+		}
+		if info.ExtensionCSRF == "" {
+			info.ExtensionCSRF = info.CSRFToken
+		}
+		candidates := candidatePorts(info, &pick)
+		token := info.ExtensionCSRF
+		if port, useTLS := probePorts(candidates, token); port > 0 {
+			info.ConnectRPCPort = port
+			info.UseTLS = useTLS
+			results = append(results, info)
+		}
+	}
+	return results, nil
+}
+
 type probeResult struct {
 	port   int
 	useTLS bool

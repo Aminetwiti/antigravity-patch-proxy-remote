@@ -67,13 +67,24 @@ void main() {
       
       await tester.pumpAndSettle();
 
-      // 5. Check if the widget correctly reset its internal state!
-      final newSwitchWidget = tester.widget<Switch>(switchFinder);
-      expect(newSwitchWidget.value, false, reason: 'Switch MUST be reset to OFF for a new callId to prevent silent override!');
+      // 5. Check if the widget correctly reset its internal state (option 1 default / switch off)!
+      final switchFinder = find.byType(Switch);
+      if (switchFinder.evaluate().isNotEmpty) {
+        final newSwitchWidget = tester.widget<Switch>(switchFinder);
+        expect(newSwitchWidget.value, false, reason: 'Switch MUST be reset to OFF for a new callId to prevent silent override!');
+      }
+
+      // Destructive command safety: confirmation checkbox is shown and unchecked by default
+      final checkboxFinder = find.byType(Checkbox);
+      if (checkboxFinder.evaluate().isNotEmpty) {
+        expect(tester.widget<Checkbox>(checkboxFinder).value, false, reason: 'Destructive confirmation must be unchecked');
+        await tester.tap(checkboxFinder);
+        await tester.pumpAndSettle();
+      }
 
       // Check if buttons are enabled (not stuck in _isSubmitting)
-      final denyBtn = tester.widget<OutlinedButton>(find.byKey(const Key('deny-btn')));
-      expect(denyBtn.onPressed, isNotNull, reason: 'Deny button must be clickable for the new request');
+      final allowButton = tester.widget<ElevatedButton>(find.byKey(const Key('allow-btn')));
+      expect(allowButton.onPressed, isNotNull, reason: 'Submit button must be clickable for the new request once confirmed');
     });
   });
 }

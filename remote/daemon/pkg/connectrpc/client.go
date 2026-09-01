@@ -2,6 +2,7 @@ package connectrpc
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
@@ -44,6 +45,7 @@ func NewClient(port int, csrfToken string) *Client {
 		IdleConnTimeout:     90 * time.Second,
 		DisableKeepAlives:   false,
 		ForceAttemptHTTP2:   true,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 	}
 	return &Client{
 		port:      port,
@@ -189,6 +191,7 @@ func (c *Client) Call(method string, payload []byte) ([]byte, error) {
 
 // CallJSON exécute une méthode RPC en ConnectRPC JSON direct (Content-Type: application/json).
 func (c *Client) CallJSON(method string, payload []byte) ([]byte, error) {
+	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
 	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
@@ -226,12 +229,21 @@ func (c *Client) CallJSON(method string, payload []byte) ([]byte, error) {
 
 // CallStream exécute une méthode RPC en streaming gRPC-Web et invoque onFrame pour chaque frame protobuf reçue.
 func (c *Client) CallStream(method string, payload []byte, timeout time.Duration, onFrame func([]byte) error) error {
+	return c.CallStreamWithContext(context.Background(), method, payload, timeout, onFrame)
+}
+
+// CallStreamWithContext exécute une méthode RPC en streaming gRPC-Web avec support d'annulation contextuelle immédiate.
+func (c *Client) CallStreamWithContext(ctx context.Context, method string, payload []byte, timeout time.Duration, onFrame func([]byte) error) error {
+	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
 	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
 	body := Frame(payload)
 
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -253,7 +265,7 @@ func (c *Client) CallStream(method string, payload []byte, timeout time.Duration
 		rawStr := string(raw)
 		if scheme == "http" && strings.Contains(rawStr, "HTTPS server") {
 			c.SetUseTLS(true)
-			return c.CallStream(method, payload, timeout, onFrame)
+			return c.CallStreamWithContext(ctx, method, payload, timeout, onFrame)
 		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(rawStr, 200))
 	}
@@ -262,6 +274,11 @@ func (c *Client) CallStream(method string, payload []byte, timeout time.Duration
 	var accumulated []byte
 
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
 			accumulated = append(accumulated, buf[:n]...)
@@ -303,21 +320,21 @@ func splitFrames(buf []byte) ([][]byte, []byte) {
 }
 
 // CallStreamJSON exécute une méthode RPC en server-streaming Connect JSON
-// (Content-Type: application/connect+json, requête et frames en JSON brut,
-// pas de protobuf). Utilisé par les flux Jetbox (JetboxSubscribeToSummaries,
-// ProjectUpdatesStream) — même framing gRPC-Web (1 octet flags + 4 octets BE
-// longueur + payload JSON), cf. jetbox.js du projet Deck.
-//
-// Le body de la requête est déjà une frame encodée (encodeEnvelope côté
-// vendor) : {flags=0}{len BE}{json}. timeout = durée maximale de la requête
-// HTTP ; un flux long doit passer par une valeur généreuse (le LS pousse des
-// frames au fil de l'eau, la connexion reste ouverte).
 func (c *Client) CallStreamJSON(method string, body []byte, timeout time.Duration, onFrame func([]byte) error) error {
+	return c.CallStreamJSONWithContext(context.Background(), method, body, timeout, onFrame)
+}
+
+// CallStreamJSONWithContext exécute une méthode RPC en server-streaming Connect JSON avec contexte d'annulation.
+func (c *Client) CallStreamJSONWithContext(ctx context.Context, method string, body []byte, timeout time.Duration, onFrame func([]byte) error) error {
+	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
 	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
 
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -337,7 +354,7 @@ func (c *Client) CallStreamJSON(method string, body []byte, timeout time.Duratio
 		rawStr := string(raw)
 		if scheme == "http" && strings.Contains(rawStr, "HTTPS server") {
 			c.SetUseTLS(true)
-			return c.CallStreamJSON(method, body, timeout, onFrame)
+			return c.CallStreamJSONWithContext(ctx, method, body, timeout, onFrame)
 		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(rawStr, 200))
 	}
@@ -345,6 +362,11 @@ func (c *Client) CallStreamJSON(method string, body []byte, timeout time.Duratio
 	buf := make([]byte, 32768)
 	var accumulated []byte
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
 			accumulated = append(accumulated, buf[:n]...)

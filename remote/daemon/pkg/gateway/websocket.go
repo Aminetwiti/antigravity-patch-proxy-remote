@@ -149,6 +149,11 @@ type RPCClient interface {
 	CheckoutWorktree(worktreeDirURI, targetWorkspaceURI string, deleteAfterCheckout bool, mergeStrategy uint64) ([]byte, error)
 }
 
+// RPCStreamContextClient permet la coupure immédiate du socket HTTP de stream sur annulation contextuelle.
+type RPCStreamContextClient interface {
+	SendMessageStreamModelWithMediaContext(ctx context.Context, cascadeID, text, modelUID string, modelEnum uint64, media []connectrpc.MediaAttachment, onFrame func([]byte) error, noTools ...bool) error
+}
+
 // JetboxStreamer est la portion minimale du client LS n├®cessaire au flux
 // temps r├®el des r├®sum├®s de sessions (JetboxSubscribeToSummaries). Interface
 // ├®troite : les tests injectent un faux sans r├®impl├®menter RPCClient.
@@ -1176,8 +1181,8 @@ func (s *Server) CancelGeneration(cascadeID string) {
 	}
 
 	// 1. Appel RPC direct vers le Language Server pour interrompre réellement l'agent hôte
-	if s.RPCClient != nil {
-		go func(cid string) {
+	go func(cid string) {
+		if s.RPCClient != nil {
 			_, errInv := s.RPCClient.CancelCascadeInvocation(cid, true)
 			if errInv != nil {
 				logJSON.Warn("cancel_cascade_invocation_error", "cascadeId", cid, "err", errInv.Error())
@@ -1186,8 +1191,25 @@ func (s *Server) CancelGeneration(cascadeID string) {
 			if errTree != nil {
 				logJSON.Warn("force_stop_cascade_tree_error", "cascadeId", cid, "err", errTree.Error())
 			}
-		}(cascadeID)
-	}
+		}
+		// Coupure multi-instances (si la cascade tourne sur une instance IDE enfant)
+		if instances, err := discovery.DiscoverAll(); err == nil {
+			for _, inst := range instances {
+				tok := inst.ExtensionCSRF
+				if tok == "" {
+					tok = inst.CSRFToken
+				}
+				if inst.ConnectRPCPort > 0 && tok != "" {
+					c := connectrpc.NewClient(inst.ConnectRPCPort, tok)
+					if inst.UseTLS {
+						c.SetUseTLS(true)
+					}
+					_, _ = c.CancelCascadeInvocation(cid, true)
+					_, _ = c.ForceStopCascadeTree(cid)
+				}
+			}
+		}
+	}(cascadeID)
 
 	s.mu.Lock()
 	cancels := make([]context.CancelFunc, 0)
@@ -4085,7 +4107,17 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			history = []HistoryMessage{}
 		}
 		respData := map[string]interface{}{"messages": history}
+		home, _ := os.UserHomeDir()
+		isArch := home != "" && isSessionArchived(home, msg.CascadeID)
 		s.mu.Lock()
+		if !isArch && s.jetboxSummaries != nil {
+			if sum, ok := s.jetboxSummaries[msg.CascadeID]; ok && sum.Archived {
+				isArch = true
+			}
+		}
+		if isArch {
+			respData["isArchived"] = true
+		}
 		reqID, isActive := s.activeRequestIDs[msg.CascadeID]
 		if !isActive {
 			isActive = s.activeCascades[msg.CascadeID]
@@ -4671,7 +4703,11 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			promptText = strings.TrimSpace(promptText) + metaBlock
 		}
 
-		err = s.RPCClient.SendMessageStreamModelWithMedia(msg.CascadeID, promptText, modelUID, modelEnum, nonImageMedia, onFrameHandler, noTools)
+		if ctxClient, ok := s.RPCClient.(RPCStreamContextClient); ok {
+			err = ctxClient.SendMessageStreamModelWithMediaContext(ctx, msg.CascadeID, promptText, modelUID, modelEnum, nonImageMedia, onFrameHandler, noTools)
+		} else {
+			err = s.RPCClient.SendMessageStreamModelWithMedia(msg.CascadeID, promptText, modelUID, modelEnum, nonImageMedia, onFrameHandler, noTools)
+		}
 
 		if err != nil {
 			cancelWatcher()

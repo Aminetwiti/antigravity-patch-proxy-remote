@@ -877,93 +877,99 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
             const SizedBox(height: 10),
 
             // ── Boutons d'action : Refuser & Approuver
-            Row(
-              children: [
-                // Bouton Refuser
-                OutlinedButton(
-                  key: const Key('deny-btn'),
-                  onPressed: _isSubmitting || widget.isExpired
-                      ? null
-                      : () {
-                          HapticFeedback.lightImpact();
-                          _handleDecision(
-                            ToolDecision.deny,
-                            denyReason: _denyReasonController.text.trim(),
-                          );
-                        },
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(
-                      color: isDark ? AppColors.borderStrong : scheme.outlineVariant,
+            LayoutBuilder(
+              builder: (context, btnConstraints) {
+                final isCompact = btnConstraints.maxWidth < 290;
+                return Row(
+                  children: [
+                    // Bouton Refuser
+                    OutlinedButton(
+                      key: const Key('deny-btn'),
+                      onPressed: _isSubmitting || widget.isExpired
+                          ? null
+                          : () {
+                              HapticFeedback.lightImpact();
+                              _handleDecision(
+                                ToolDecision.deny,
+                                denyReason: _denyReasonController.text.trim(),
+                              );
+                            },
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                          color: isDark ? AppColors.borderStrong : scheme.outlineVariant,
+                        ),
+                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 16, vertical: 10),
+                        minimumSize: const Size(0, 38),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      child: Text(
+                        'Refuser',
+                        style: TextStyle(
+                          color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    minimumSize: const Size(0, 38),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
-                  child: Text(
-                    'Refuser',
-                    style: TextStyle(
-                      color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                // Bouton Approuver / Submit
-                ElevatedButton.icon(
-                  key: const Key('allow-btn'),
-                  onPressed: _isSubmitting ||
-                          widget.isExpired ||
-                          (_isDestructive && !_destructiveConfirmed && !(_selectedOption == 5))
-                      ? null
-                      : _handleSubmitSelected,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: (_selectedOption == 5)
-                        ? (isDark ? AppColors.danger : scheme.error)
-                        : (isDark ? const Color(0xFF0B57D0) : scheme.primary),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    minimumSize: const Size(0, 38),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    elevation: 0,
-                  ),
-                  icon: _isSubmitting
-                      ? const SizedBox(
-                          width: 13,
-                          height: 13,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Icon(
-                          _selectedOption == 5 ? Icons.close : Icons.keyboard_return,
-                          size: 14,
+                    const SizedBox(width: 8),
+                    const Spacer(),
+                    // Bouton Approuver / Submit
+                    ElevatedButton.icon(
+                      key: const Key('allow-btn'),
+                      onPressed: _isSubmitting ||
+                              widget.isExpired ||
+                              (_isDestructive && !_destructiveConfirmed && !(_selectedOption == 5))
+                          ? null
+                          : _handleSubmitSelected,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: (_selectedOption == 5)
+                            ? (isDark ? AppColors.danger : scheme.error)
+                            : (isDark ? const Color(0xFF0B57D0) : scheme.primary),
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 16, vertical: 10),
+                        minimumSize: const Size(0, 38),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        elevation: 0,
+                      ),
+                      icon: _isSubmitting
+                          ? const SizedBox(
+                              width: 13,
+                              height: 13,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              _selectedOption == 5 ? Icons.close : Icons.keyboard_return,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                      label: Text(
+                        _isSubmitting
+                            ? 'En cours...'
+                            : (_selectedOption == 5 ? 'Refuser' : 'Approuver'),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
-                  label: Text(
-                    _isSubmitting
-                        ? 'En cours...'
-                        : (_selectedOption == 5 ? 'Refuser' : 'Approuver'),
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                      ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             ),
           ],
         ],
       ),
     ),
   );
-  }
+}
 }
 
 /// Modal "Poser une question" : sélection d'option claire + bouton "Continuer" désactivé tant qu'aucune option n'est choisie.

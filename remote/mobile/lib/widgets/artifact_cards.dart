@@ -143,22 +143,39 @@ class WalkthroughCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.menu_book_outlined,
-                  size: 16,
-                  color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                Row(
+                  children: [
+                    Icon(
+                      Icons.menu_book_outlined,
+                      size: 16,
+                      color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                if (summary != null && summary!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    summary!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: isDark ? const Color(0xFF9CA3AF) : scheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

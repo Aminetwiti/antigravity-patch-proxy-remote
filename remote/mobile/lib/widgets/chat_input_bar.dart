@@ -115,6 +115,7 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback? onOpenTerminal;
   final VoidCallback? onOpenBrowser;
   final Set<String>? activeSubsystems;
+  final bool showCapabilityIcons;
 
   const ChatInputBar({
     super.key,
@@ -138,6 +139,7 @@ class ChatInputBar extends StatefulWidget {
     this.onOpenTerminal,
     this.onOpenBrowser,
     this.activeSubsystems,
+    this.showCapabilityIcons = false,
   });
 
   @override
@@ -1793,8 +1795,17 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                     },
                   ),
                 ] else ...[
-                  ..._slashCommands.take(6).map((cmd) => ListTile(
-                    leading: Icon(cmd.icon, color: scheme.primary, size: 20),
+                  ListTile(
+                    leading: Icon(Icons.history_rounded, color: scheme.primary),
+                    title: Text('Historique des prompts', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500)),
+                    subtitle: Text('Recharger un prompt envoyé précédemment', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _showPromptHistoryMenu(context);
+                    },
+                  ),
+                  ..._slashCommands.map((cmd) => ListTile(
+                    leading: Icon(cmd.icon, color: scheme.primary),
                     title: Text(cmd.title, style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
                     subtitle: Text(cmd.subtitle, style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
                     onTap: () {
@@ -2446,9 +2457,6 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
         : (viewPadding.bottom > 0 ? 4.0 : 8.0);
 
     final providerColor = _getModelProviderColor(_selectedModel, scheme);
-    final isThinking = _selectedModel.toLowerCase().contains('thinking') ||
-        _selectedModel.toLowerCase().contains('high') ||
-        _reasoningEffort == 'Élevé';
 
     return SafeArea(
       top: false,
@@ -2645,7 +2653,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                 widget.isConnected
                                     ? (isQueued
                                         ? "Message en file d'attente (envoi automatique)..."
-                                        : 'Poser une question, @ pour mentionner...')
+                                        : 'Ask anything, @ to mention, / for actions')
                                     : 'Hors ligne — message mis en attente locale',
                             hintStyle: TextStyle(
                               color:
@@ -2674,8 +2682,8 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                         hapticType: BouncingHapticType.selection,
                         onTap: _showAttachmentMenu,
                         child: Container(
-                          width: 32,
-                          height: 32,
+                          width: 30,
+                          height: 30,
                           decoration: BoxDecoration(
                             color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh,
                             shape: BoxShape.circle,
@@ -2683,80 +2691,75 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                           alignment: Alignment.center,
                           child: Icon(
                             Icons.add,
-                            size: 20,
+                            size: 19,
                             color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
 
-                      // Model & Reasoning Effort Pill with Brand Dot & Thinking Badge
+                      // Model & Reasoning Effort Pill with Brand Dot
                       Flexible(
                         fit: FlexFit.loose,
-                        child: BouncingTap(
-                          key: _modelButtonKey,
-                          hapticType: BouncingHapticType.selection,
-                          onTap: () => _showModelDropdown(context),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4.5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh,
-                              borderRadius: BorderRadius.circular(AppRadius.pill),
-                              border: Border.all(
-                                color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.5),
-                                width: 0.8,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 7,
-                                  height: 7,
-                                  decoration: BoxDecoration(
-                                    color: isQueued ? scheme.primary : providerColor,
-                                    shape: BoxShape.circle,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final maxTextWidth = constraints.maxWidth.isFinite
+                                ? (constraints.maxWidth - 44.0).clamp(0.0, 260.0)
+                                : 180.0;
+                            return BouncingTap(
+                              key: _modelButtonKey,
+                              hapticType: BouncingHapticType.selection,
+                              onTap: () => _showModelDropdown(context),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4.5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh,
+                                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                                  border: Border.all(
+                                    color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.5),
+                                    width: 0.8,
                                   ),
                                 ),
-                                const SizedBox(width: 5),
-                                Flexible(
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      maxWidth: MediaQuery.of(context).size.width * 0.72,
-                                    ),
-                                    child: Text(
-                                      _displayModelName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      softWrap: false,
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
-                                        fontWeight: FontWeight.w600,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: BoxDecoration(
+                                        color: isQueued ? scheme.primary : providerColor,
+                                        shape: BoxShape.circle,
                                       ),
                                     ),
-                                  ),
+                                    const SizedBox(width: 5),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(maxWidth: maxTextWidth),
+                                      child: Text(
+                                        _displayModelName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        softWrap: false,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Icon(
+                                      Icons.keyboard_arrow_up_rounded,
+                                      size: 15,
+                                      color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+                                    ),
+                                  ],
                                 ),
-                                if (isThinking) ...[
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    Icons.psychology_outlined,
-                                    size: 13,
-                                    color: isDark ? AppColors.accentBlue : scheme.primary,
-                                  ),
-                                ],
-                                const SizedBox(width: 2),
-                                Icon(
-                                  Icons.keyboard_arrow_up_rounded,
-                                  size: 14,
-                                  color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
-                                ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         ),
                       ),
 
@@ -2834,27 +2837,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                           ),
                         ),
                       ),
-                      const SizedBox(width: 2),
-
-                      // Historique des messages envoyés
-                      if (_promptHistory.isNotEmpty &&
-                          (MediaQuery.of(context).size.width >= 360 || _controller.text.isEmpty)) ...[
-                        BouncingTap(
-                          hapticType: BouncingHapticType.selection,
-                          onTap: () => _showPromptHistoryMenu(context),
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            alignment: Alignment.center,
-                            child: Icon(
-                              Icons.history_rounded,
-                              size: 19,
-                              color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 2),
-                      ],
+                      const SizedBox(width: 4),
 
                       // If streaming and user has typed text, show both Stop and Queue/Send buttons
                       if (widget.hasActiveStream && _controller.text.trim().isNotEmpty) ...[
@@ -3045,6 +3028,9 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
   }
 
   Widget _buildCapabilityIcons(ColorScheme scheme, bool isDark) {
+    if (!widget.showCapabilityIcons && widget.activeSubsystems == null) {
+      return const SizedBox.shrink();
+    }
     final active = widget.activeSubsystems ?? const {'files', 'terminal', 'window', 'browser'};
     return Padding(
       padding: const EdgeInsets.only(bottom: 6, left: 2),

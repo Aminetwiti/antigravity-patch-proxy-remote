@@ -381,7 +381,35 @@ export function normalizeToolArgs(
     }
   }
 
+  sanitizePathProperties(normalized);
   return normalized;
+}
+
+/**
+ * Cleans malformed file path arguments from model tool calls (e.g. leading slashes before drive letters, wrapping quotes, file:// URIs).
+ */
+export function cleanFilePath(rawPath: unknown): unknown {
+  if (typeof rawPath !== 'string') return rawPath;
+  let p = rawPath.trim();
+  // Strip surrounding quotes: "c:/foo" -> c:/foo
+  p = p.replace(/^["']+|["']+$/g, '');
+  // Strip file:// protocol: file:///c:/foo -> c:/foo
+  p = p.replace(/^file:\/\/\/?/i, '');
+  // Strip leading slashes/quotes before Windows drive letter: /"c:/foo -> c:/foo or /c:/foo -> c:/foo
+  p = p.replace(/^["'/\\]+([a-zA-Z]:)/, '$1');
+  // Strip any trailing quotes
+  p = p.replace(/["']+$/, '');
+  return p;
+}
+
+const PATH_PROP_KEYS = ['AbsolutePath', 'DirectoryPath', 'TargetFile', 'SearchPath', 'SourcePath', 'DestinationPath', 'Cwd'];
+
+function sanitizePathProperties(obj: Record<string, unknown>): void {
+  for (const pk of PATH_PROP_KEYS) {
+    if (typeof obj[pk] === 'string') {
+      obj[pk] = cleanFilePath(obj[pk]);
+    }
+  }
 }
 
 function applyUniversalPathFallback(args: Record<string, unknown>): Record<string, unknown> {
@@ -412,6 +440,7 @@ function applyUniversalPathFallback(args: Record<string, unknown>): Record<strin
     if (mappedKey) {
       result[mappedKey] = value;
       delete result[key];
+      sanitizePathProperties(result);
       return result;
     }
   }
@@ -419,10 +448,12 @@ function applyUniversalPathFallback(args: Record<string, unknown>): Record<strin
   for (const [, value] of Object.entries(args)) {
     if (typeof value === 'string' && (value.includes('/') || value.includes('\\') || value.includes('.'))) {
       result['AbsolutePath'] = value;
+      sanitizePathProperties(result);
       return result;
     }
   }
 
+  sanitizePathProperties(result);
   return result;
 }
 

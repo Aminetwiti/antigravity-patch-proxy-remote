@@ -363,14 +363,13 @@ func findTranscriptPath(cascadeID string) string {
 		return ""
 	}
 	candidates := []string{
-		// 1. transcript.jsonl ÔÇö layout principal (antigravity + IDE)
-		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "transcript.jsonl"),
-		filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID, ".system_generated", "logs", "transcript.jsonl"),
-		// 2. transcript_full.jsonl ÔÇö repli quand seul le transcript complet existe
+		// 1. transcript_full.jsonl — version complète non-tronquée (prioritaire pour éviter <truncated ...>)
 		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "transcript_full.jsonl"),
 		filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID, ".system_generated", "logs", "transcript_full.jsonl"),
-		// 3. chunks/transcript ÔÇö layout observ├® sur cette machine (IDE brain /
-		//    AGY brain avec transcript d├®coup├® en chunks num├®rot├®s)
+		// 2. transcript.jsonl — repli standard
+		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "transcript.jsonl"),
+		filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID, ".system_generated", "logs", "transcript.jsonl"),
+		// 3. chunks/transcript — layout avec transcript découpé en chunks
 		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "chunks", "transcript", "00000000.jsonl"),
 		filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID, ".system_generated", "logs", "chunks", "transcript", "00000000.jsonl"),
 	}

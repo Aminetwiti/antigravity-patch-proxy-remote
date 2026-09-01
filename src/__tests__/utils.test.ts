@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import {
   fixParamTypes,
   normalizeToolArgs,
+  cleanFilePath,
   translateToolCallToNative,
   formatTranslatedResponse,
 } from '../proxy/translators/utils';
@@ -274,5 +275,32 @@ describe('formatTranslatedResponse', () => {
   it('should fallback to string for string inputs', () => {
     const result = formatTranslatedResponse(info, 'plain text');
     expect(result).toBe('plain text');
+  });
+});
+
+// ─── cleanFilePath ─────────────────────────────────────────────────────────
+
+describe('cleanFilePath', () => {
+  it('should strip leading slashes and quotes before Windows drive letters', () => {
+    expect(cleanFilePath('/"c:/Users/test/file.go"')).toBe('c:/Users/test/file.go');
+    expect(cleanFilePath('/c:/Users/test/file.go')).toBe('c:/Users/test/file.go');
+    expect(cleanFilePath('//C:/Users/test/file.go')).toBe('C:/Users/test/file.go');
+  });
+
+  it('should strip surrounding quotes', () => {
+    expect(cleanFilePath('"C:\\foo\\bar.txt"')).toBe('C:\\foo\\bar.txt');
+    expect(cleanFilePath('\'/home/user/file.ts\'')).toBe('/home/user/file.ts');
+  });
+
+  it('should strip file:// URIs', () => {
+    expect(cleanFilePath('file:///c:/Users/test/project')).toBe('c:/Users/test/project');
+    expect(cleanFilePath('file://c:/Users/test/project')).toBe('c:/Users/test/project');
+  });
+
+  it('should sanitize paths in normalizeToolArgs', () => {
+    const result = normalizeToolArgs('view_file', {
+      file_path: '/"c:/Users/amine/Downloads/antigravity/main.go"',
+    });
+    expect(result).toEqual({ AbsolutePath: 'c:/Users/amine/Downloads/antigravity/main.go' });
   });
 });

@@ -179,8 +179,8 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
                   const Spacer(),
                   Icon(
                     isActuallyExpanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
+                        ? Icons.keyboard_arrow_down_rounded
+                        : Icons.keyboard_arrow_right_rounded,
                     size: 16,
                     color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
                   ),
