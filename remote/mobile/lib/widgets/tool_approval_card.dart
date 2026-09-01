@@ -46,8 +46,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
   bool get _isEffectiveExpired => widget.isExpired || _remainingSeconds <= 0;
   bool get _isUrlApproval => widget.request.isUrlApproval;
   bool get _isFileApproval => widget.request.isFileApproval;
-  bool get _isScopedApproval =>
-      _isUrlApproval || _isFileApproval || widget.request.approvalType == 'permission';
+  bool get _isScopedApproval => !widget.request.isStdinApproval;
   bool get _isDestructive => widget.request.checkDestructive;
 
   String _extractTargetDisplay(String raw) {
@@ -111,8 +110,8 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
       return 'Allow cloud deployment?';
     }
     final lower = widget.request.toolName.toLowerCase();
-    if (lower.contains('run') || lower.contains('command')) {
-      return 'Allow executing this command?';
+    if (lower.contains('run') || lower.contains('command') || lower.contains('bash') || lower.contains('exec')) {
+      return 'Allow running this command?';
     }
     if (lower.contains('file') || lower.contains('write')) {
       return 'Allow file modification?';
@@ -339,6 +338,19 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final request = widget.request;
     final targetDisplay = _extractTargetDisplay(request.command);
+    final target = targetDisplay.trim();
+    final shortTarget = (!_isUrlApproval && !_isFileApproval && target.isNotEmpty)
+        ? (target.length > 35 ? "'${target.substring(0, 32)}...'" : "'$target'")
+        : '';
+    final conversationLabel = shortTarget.isNotEmpty
+        ? 'Yes, and always allow $shortTarget in this conversation'
+        : 'Yes, and always allow in this conversation';
+    final projectLabel = shortTarget.isNotEmpty
+        ? 'Yes, and always allow $shortTarget in this project'
+        : 'Yes, and always allow in this project';
+    final globalLabel = shortTarget.isNotEmpty
+        ? 'Yes, and always allow $shortTarget'
+        : 'Yes, and always allow';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -684,7 +696,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
               ),
             ],
 
-            // ── Choix d'approbation (5 options si Scoped/URL/File, switch si Commande standard)
+            // ── Choix d'approbation (5 options unifiées 1:1 IDE Antigravity)
             if (_isScopedApproval) ...[
               _buildOptionRow(
                 index: 1,
@@ -693,17 +705,17 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
               ),
               _buildOptionRow(
                 index: 2,
-                label: 'Yes, and always allow in this conversation',
+                label: conversationLabel,
                 scheme: scheme,
               ),
               _buildOptionRow(
                 index: 3,
-                label: 'Yes, and always allow in this project',
+                label: projectLabel,
                 scheme: scheme,
               ),
               _buildOptionRow(
                 index: 4,
-                label: 'Yes, and always allow',
+                label: globalLabel,
                 scheme: scheme,
               ),
               _buildOptionRow(
@@ -874,30 +886,23 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                       ? null
                       : () {
                           HapticFeedback.lightImpact();
-                          if (!_isUrlApproval && !_showDenyReason) {
-                            // Premier clic sur une commande standard : afficher champ d'instruction
-                            setState(() => _showDenyReason = true);
-                          } else {
-                            _handleDecision(
-                              ToolDecision.deny,
-                              denyReason: _denyReasonController.text.trim(),
-                            );
-                          }
+                          _handleDecision(
+                            ToolDecision.deny,
+                            denyReason: _denyReasonController.text.trim(),
+                          );
                         },
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(
                       color: isDark ? AppColors.borderStrong : scheme.outlineVariant,
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    minimumSize: const Size(0, 40),
+                    minimumSize: const Size(0, 38),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),
                   child: Text(
                     'Refuser',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                       fontSize: 12.5,
@@ -905,52 +910,49 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const Spacer(),
                 // Bouton Approuver / Submit
-                Expanded(
-                  child: ElevatedButton.icon(
-                    key: const Key('allow-btn'),
-                    onPressed: _isSubmitting ||
-                            widget.isExpired ||
-                            (_isDestructive && !_destructiveConfirmed && !(_isUrlApproval && _selectedOption == 5))
-                        ? null
-                        : _handleSubmitSelected,
-                    icon: _isSubmitting
-                        ? SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: isDark ? AppColors.onAccent : scheme.onPrimary,
-                            ),
-                          )
-                        : Icon(
-                            (_isUrlApproval && _selectedOption == 5) ? Icons.close : Icons.keyboard_return,
-                            size: 15,
-                            color: isDark ? AppColors.onAccent : scheme.onPrimary,
-                          ),
-                    label: Text(
-                      _isSubmitting
-                          ? 'En cours...'
-                          : ((_isUrlApproval && _selectedOption == 5) ? 'Refuser' : 'Approuver'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? AppColors.onAccent : scheme.onPrimary,
-                      ),
+                ElevatedButton.icon(
+                  key: const Key('allow-btn'),
+                  onPressed: _isSubmitting ||
+                          widget.isExpired ||
+                          (_isDestructive && !_destructiveConfirmed && !(_selectedOption == 5))
+                      ? null
+                      : _handleSubmitSelected,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: (_selectedOption == 5)
+                        ? (isDark ? AppColors.danger : scheme.error)
+                        : (isDark ? const Color(0xFF0B57D0) : scheme.primary),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    minimumSize: const Size(0, 38),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: (_isUrlApproval && _selectedOption == 5)
-                          ? (isDark ? AppColors.danger : scheme.error)
-                          : (isDark ? AppColors.accentBlue : scheme.primary),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      minimumSize: const Size(0, 40),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      elevation: 0,
+                    elevation: 0,
+                  ),
+                  icon: _isSubmitting
+                      ? const SizedBox(
+                          width: 13,
+                          height: 13,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Icon(
+                          _selectedOption == 5 ? Icons.close : Icons.keyboard_return,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                  label: Text(
+                    _isSubmitting
+                        ? 'En cours...'
+                        : (_selectedOption == 5 ? 'Refuser' : 'Approuver'),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
                   ),
                 ),

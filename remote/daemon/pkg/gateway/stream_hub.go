@@ -104,6 +104,22 @@ func (h *StreamHub) Unsubscribe(cascadeID string, subID string) {
 	}
 }
 
+// UnsubscribeFromAll désabonne un client de tous les streams actifs.
+func (h *StreamHub) UnsubscribeFromAll(subID string) {
+	if subID == "" {
+		return
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for _, stream := range h.activeStreams {
+		stream.mu.Lock()
+		delete(stream.subscribers, subID)
+		stream.mu.Unlock()
+	}
+}
+
 // BroadcastDelta enregistre une frame dans StepRecovery et la diffuse à tous les abonnés.
 func (h *StreamHub) BroadcastDelta(cascadeID string, msg OutgoingMessage) int64 {
 	var stepIndex int64
@@ -166,4 +182,35 @@ func (h *StreamHub) IsActive(cascadeID string) bool {
 	defer h.mu.RUnlock()
 	_, exists := h.activeStreams[cascadeID]
 	return exists
+}
+
+// SubscriberCount retourne le nombre de clients connectés à un stream.
+func (h *StreamHub) SubscriberCount(cascadeID string) int {
+	h.mu.RLock()
+	stream, exists := h.activeStreams[cascadeID]
+	h.mu.RUnlock()
+	if !exists {
+		return 0
+	}
+	stream.mu.RLock()
+	defer stream.mu.RUnlock()
+	return len(stream.subscribers)
+}
+
+// CleanupStaleStreams nettoie les streams inactifs depuis plus de maxAge (ex: 60s sans activité)
+// et retourne la liste des cascadeID nettoyés.
+func (h *StreamHub) CleanupStaleStreams(maxAge time.Duration) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	now := time.Now()
+	var cleaned []string
+	for cascadeID, stream := range h.activeStreams {
+		if now.Sub(stream.StartedAt) >= maxAge && len(stream.subscribers) == 0 {
+			stream.Cancel()
+			delete(h.activeStreams, cascadeID)
+			cleaned = append(cleaned, cascadeID)
+		}
+	}
+	return cleaned
 }

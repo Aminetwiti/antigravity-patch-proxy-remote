@@ -353,6 +353,15 @@ func (l *loadRPCClient) SearchCode(query, workspaceURI string, maxResults, lines
 func (l *loadRPCClient) CheckoutWorktree(worktreeDirURI, targetWorkspaceURI string, deleteAfterCheckout bool, mergeStrategy uint64) ([]byte, error) {
 	return connectrpc.Frame(pbTextFrame("worktree-checked-out")), nil
 }
+func (l *loadRPCClient) CancelCascadeInvocation(cascadeID string, killBackgroundTasks bool) ([]byte, error) {
+	return connectrpc.Frame(pbTextFrame("cancelled")), nil
+}
+func (l *loadRPCClient) ForceStopCascadeTree(cascadeID string) ([]byte, error) {
+	return connectrpc.Frame(pbTextFrame("force-stopped")), nil
+}
+func (l *loadRPCClient) CancelCascadeSteps(cascadeID string, stepIndices []uint32) ([]byte, error) {
+	return connectrpc.Frame(pbTextFrame("steps-cancelled")), nil
+}
 
 
 

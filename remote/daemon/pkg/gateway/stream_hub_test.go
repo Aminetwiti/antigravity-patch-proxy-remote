@@ -104,3 +104,28 @@ func TestStreamHub_Cancel(t *testing.T) {
 		t.Fatalf("context was not cancelled after CancelStream")
 	}
 }
+
+func TestStreamHub_CleanupStaleStreams(t *testing.T) {
+	hub := NewStreamHub(nil, nil)
+	cascadeID := "cas_stale"
+	requestID := "req_stale"
+
+	_, _, err := hub.StartStream(context.Background(), cascadeID, requestID)
+	if err != nil {
+		t.Fatalf("start stream failed: %v", err)
+	}
+
+	if hub.SubscriberCount(cascadeID) != 0 {
+		t.Errorf("expected 0 subscribers, got %d", hub.SubscriberCount(cascadeID))
+	}
+
+	// Stale cleanup with 0 duration will immediately clean streams without subscribers
+	cleaned := hub.CleanupStaleStreams(0)
+	if len(cleaned) != 1 || cleaned[0] != cascadeID {
+		t.Errorf("expected [%s] cleaned, got %v", cascadeID, cleaned)
+	}
+
+	if hub.IsActive(cascadeID) {
+		t.Errorf("expected stream to be removed after cleanup")
+	}
+}

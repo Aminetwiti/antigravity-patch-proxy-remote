@@ -255,6 +255,18 @@ func (f *failingRPC) CheckoutWorktree(worktreeDirURI, targetWorkspaceURI string,
 	return nil, errFailing
 }
 
+func (f *failingRPC) CancelCascadeInvocation(cascadeID string, killBackgroundTasks bool) ([]byte, error) {
+	return nil, errFailing
+}
+
+func (f *failingRPC) ForceStopCascadeTree(cascadeID string) ([]byte, error) {
+	return nil, errFailing
+}
+
+func (f *failingRPC) CancelCascadeSteps(cascadeID string, stepIndices []uint32) ([]byte, error) {
+	return nil, errFailing
+}
+
 // errFailing : erreur sentinelle.
 var errFailing = &failingError{}
 

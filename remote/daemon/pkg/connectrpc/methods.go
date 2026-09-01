@@ -282,4 +282,19 @@ func (c *Client) CheckoutWorktree(worktreeDirURI, targetWorkspaceURI string, del
 	return c.Call("CheckoutWorktree", BuildCheckoutWorktree(worktreeDirURI, targetWorkspaceURI, deleteAfterCheckout, mergeStrategy))
 }
 
+// CancelCascadeInvocation demande au Language Server d'annuler immédiatement l'invocation active d'une cascade.
+func (c *Client) CancelCascadeInvocation(cascadeID string, killBackgroundTasks bool) ([]byte, error) {
+	return c.Call("CancelCascadeInvocation", BuildCancelCascadeInvocation(cascadeID, killBackgroundTasks))
+}
+
+// ForceStopCascadeTree force l'arrêt complet de l'arbre d'exécution de la cascade dans Antigravity.
+func (c *Client) ForceStopCascadeTree(cascadeID string) ([]byte, error) {
+	return c.Call("ForceStopCascadeTree", BuildForceStopCascadeTree(cascadeID))
+}
+
+// CancelCascadeSteps annule une série d'étapes en cours d'exécution dans Antigravity.
+func (c *Client) CancelCascadeSteps(cascadeID string, stepIndices []uint32) ([]byte, error) {
+	return c.Call("CancelCascadeSteps", BuildCancelCascadeSteps(cascadeID, stepIndices))
+}
+
 

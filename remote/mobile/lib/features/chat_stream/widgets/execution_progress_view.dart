@@ -452,8 +452,12 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
           lower.startsWith('run ') ||
           lower.startsWith('running command:') ||
           lower.startsWith('executed:')) {
-        final cleanTitle = line.replaceFirst(
-            RegExp(r'^(ran|run|running command:|executed:)\s*', caseSensitive: false), '');
+        var cleanTitle = line.replaceFirst(
+            RegExp(r'^(ran|run|running command:|executed:)\s*', caseSensitive: false), '').trim();
+        if ((cleanTitle.startsWith('"') && cleanTitle.endsWith('"')) ||
+            (cleanTitle.startsWith("'") && cleanTitle.endsWith("'"))) {
+          cleanTitle = cleanTitle.substring(1, cleanTitle.length - 1).trim();
+        }
         currentCmdTitle = cleanTitle;
         currentCmdPrompt = '> $cleanTitle';
         if (i + 1 >= lines.length || !lines[i + 1].trim().startsWith('```')) {
@@ -477,6 +481,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         } else if (isSearch) {
           action = 'Search';
           title = lower.startsWith('searching ') ? line.substring(10).trim() : line.substring(7).trim();
+        }
+        if ((title.startsWith('"') && title.endsWith('"')) ||
+            (title.startsWith("'") && title.endsWith("'"))) {
+          title = title.substring(1, title.length - 1).trim();
         }
         rawItems.add(ExecutionStepItem(
           type: ExecutionStepType.task,

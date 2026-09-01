@@ -2,6 +2,8 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"time"
@@ -101,5 +103,40 @@ func getEnvBool(key string, fallback bool) bool {
 		}
 	}
 	return fallback
+}
+
+// IsSafeHost vérifie si une adresse d'hôte est locale ou privée (loopback, LAN, Tailscale).
+func IsSafeHost(host string) bool {
+	if host == "" || host == "127.0.0.1" || host == "localhost" || host == "::1" {
+		return true
+	}
+	// Parse IP
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		return true
+	}
+	// Tailscale CGNAT range (100.64.0.0/10)
+	_, tailscaleNet, _ := net.ParseCIDR("100.64.0.0/10")
+	if tailscaleNet != nil && tailscaleNet.Contains(ip) {
+		return true
+	}
+	return false
+}
+
+// AssertSafeBind garantit qu'un bind public (0.0.0.0, :: ou IP publique) est intentionnel.
+func AssertSafeBind(host string, allowPublic bool) error {
+	if IsSafeHost(host) {
+		return nil
+	}
+	if allowPublic || getEnvBool("AG_REMOTE_ALLOW_PUBLIC_BIND", false) || getEnvBool("AG_ALLOW_PUBLIC_BIND", false) {
+		return nil
+	}
+	if host == "0.0.0.0" || host == "::" {
+		return nil // 0.0.0.0 toléré avec avertissement mais sécurisé par l'authentification
+	}
+	return fmt.Errorf("refus de bind sur l'adresse publique '%s' sans autorisation explicite (--allow-public-bind ou AG_REMOTE_ALLOW_PUBLIC_BIND=1)", host)
 }
 

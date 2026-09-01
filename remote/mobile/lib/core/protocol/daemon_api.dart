@@ -673,6 +673,17 @@ class DaemonApi {
   }) => rpc('sync_session', {
     'cascadeId': cascadeId,
     'lastStepIndex': lastStepIndex,
+    'lastSeq': lastStepIndex,
+  });
+
+  /// Reprise rapide de séquence (alias direct supporté par le daemon).
+  Future<Map<String, dynamic>> resume({
+    required String cascadeId,
+    required int lastSeq,
+  }) => rpc('resume', {
+    'cascadeId': cascadeId,
+    'lastSeq': lastSeq,
+    'lastStepIndex': lastSeq,
   });
 
   /// Synchronise la session active (StepRecovery) et renvoie la liste des
@@ -1061,6 +1072,7 @@ class DaemonApi {
     String? modelUID,
     int? modelEnum,
     List<Map<String, dynamic>>? media,
+    bool? omitThinking,
   }) {
     final id = _newRequestId();
     final controller = StreamController<Map<String, dynamic>>();
@@ -1076,6 +1088,7 @@ class DaemonApi {
       if (modelUID != null && modelUID.isNotEmpty) 'modelUID': modelUID,
       if (modelEnum != null && modelEnum > 0) 'modelEnum': modelEnum,
       if (media != null && media.isNotEmpty) 'media': media,
+      if (omitThinking == true) 'omitThinking': true,
     };
     final outbox = _outbox;
     if (outbox != null) {

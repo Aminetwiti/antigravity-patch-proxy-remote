@@ -70,6 +70,12 @@ type RPCClient interface {
 	ListModels() ([]byte, error)
 	// DeleteCascade supprime une session (DeleteCascadeTrajectory).
 	DeleteCascade(cascadeID string) ([]byte, error)
+	// CancelCascadeInvocation demande au Language Server d'annuler immédiatement l'invocation active.
+	CancelCascadeInvocation(cascadeID string, killBackgroundTasks bool) ([]byte, error)
+	// ForceStopCascadeTree force l'arrêt complet de l'arbre d'exécution de la cascade dans Antigravity.
+	ForceStopCascadeTree(cascadeID string) ([]byte, error)
+	// CancelCascadeSteps annule une série d'étapes en cours d'exécution dans Antigravity.
+	CancelCascadeSteps(cascadeID string, stepIndices []uint32) ([]byte, error)
 	// ReadFile lit un fichier via le RPC officiel du LS (ReadFile).
 	ReadFile(uri string) ([]byte, error)
 	// WriteFile ├®crit un fichier via le RPC officiel du LS (WriteFile).
@@ -1162,8 +1168,27 @@ func mcpProxyBase() string {
 	return fmt.Sprintf("http://%s:%d", mcpProxyHost, mcpProxyPort)
 }
 
-// CancelGeneration interrompt une cascade active et diffuse stream_end(cancelled).
+// CancelGeneration interrompt une cascade active, appelle le Language Server pour
+// couper l'exécution hôte dans Antigravity, et diffuse stream_end(cancelled).
 func (s *Server) CancelGeneration(cascadeID string) {
+	if s == nil || cascadeID == "" {
+		return
+	}
+
+	// 1. Appel RPC direct vers le Language Server pour interrompre réellement l'agent hôte
+	if s.RPCClient != nil {
+		go func(cid string) {
+			_, errInv := s.RPCClient.CancelCascadeInvocation(cid, true)
+			if errInv != nil {
+				logJSON.Warn("cancel_cascade_invocation_error", "cascadeId", cid, "err", errInv.Error())
+			}
+			_, errTree := s.RPCClient.ForceStopCascadeTree(cid)
+			if errTree != nil {
+				logJSON.Warn("force_stop_cascade_tree_error", "cascadeId", cid, "err", errTree.Error())
+			}
+		}(cascadeID)
+	}
+
 	s.mu.Lock()
 	cancels := make([]context.CancelFunc, 0)
 	if m, ok := s.activeCancels[cascadeID]; ok {
@@ -1182,6 +1207,7 @@ func (s *Server) CancelGeneration(cascadeID string) {
 	if s.jetboxSummaries != nil {
 		if sum, ok := s.jetboxSummaries[cascadeID]; ok {
 			sum.Status = "CASCADE_STATUS_READY"
+			sum.Waiting = false
 			s.jetboxSummaries[cascadeID] = sum
 		}
 	}
@@ -1201,6 +1227,14 @@ func (s *Server) CancelGeneration(cascadeID string) {
 			"outcome":    "cancelled",
 			"message":    "Generation stopped by user",
 			"hostActive": false,
+		},
+	})
+
+	s.broadcast(OutgoingMessage{
+		Type:      "session_status_update",
+		CascadeID: cascadeID,
+		Data: map[string]interface{}{
+			"status": "CASCADE_STATUS_READY",
 		},
 	})
 
@@ -1763,6 +1797,8 @@ type IncomingMessage struct {
 	StreamCount     int                    `json:"streamCount,omitempty"`
 	Command         string                 `json:"command,omitempty"`
 	LastStepIndex   int64                  `json:"lastStepIndex,omitempty"`
+	LastSeq         int64                  `json:"lastSeq,omitempty"`
+	OmitThinking    bool                   `json:"omitThinking,omitempty"`
 	SelectedAnswers []string               `json:"selectedAnswers,omitempty"`
 	CustomAnswer    string                 `json:"customAnswer,omitempty"`
 	TaskID          string                 `json:"taskId,omitempty"`
@@ -3445,6 +3481,9 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		// CLIENT. Multi-surface : un autre téléphone connecté garde les
 		// siennes (l'ancien killAll() global les tuait toutes).
 		s.terminals.killAllFor(conn)
+		if s.streamHub != nil {
+			s.streamHub.UnsubscribeFromAll(conn.RemoteAddr().String())
+		}
 		logJSON.Info("client_disconnected", "remote", conn.RemoteAddr().String(), "clients", clients)
 	}()
 
@@ -4075,12 +4114,16 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: respData})
 		return
 
-	case "sync_session":
+	case "sync_session", "resume":
 		if msg.CascadeID == "" {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis"})
 			return
 		}
-		missed, currentSeq := s.streamBuffer.GetEventsSince(msg.CascadeID, msg.LastStepIndex)
+		fromSeq := msg.LastStepIndex
+		if fromSeq == 0 && msg.LastSeq > 0 {
+			fromSeq = msg.LastSeq
+		}
+		missed, currentSeq := s.streamBuffer.GetEventsSince(msg.CascadeID, fromSeq)
 		data := map[string]interface{}{
 			"cascadeId":        msg.CascadeID,
 			"missedEvents":     missed,
@@ -7877,7 +7920,7 @@ func extractCmdFromArgs(raw []byte) string {
 // nouvelles étapes (tool calls, commandes exécutées, lectures/écritures de fichiers,
 // recherches, thinking, tokens de texte) et les diffuse immédiatement au mobile via stream_delta.
 // Il signale doneChan lorsque la génération est complètement terminée ou nécessite une approbation.
-func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID string, frameIndex *int64, hasTextDelivered *bool, doneChan chan struct{}) {
+func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID string, frameIndex *int64, hasTextDelivered *bool, doneChan chan struct{}, omitThinkingOption ...bool) {
 	var closeOnce sync.Once
 	signalDone := func() {
 		closeOnce.Do(func() {
@@ -7885,6 +7928,11 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 		})
 	}
 	defer signalDone()
+
+	omitThinking := false
+	if len(omitThinkingOption) > 0 {
+		omitThinking = omitThinkingOption[0]
+	}
 
 	transcriptPath := findTranscriptPath(cascadeID)
 	var lastOffset int64
@@ -7993,6 +8041,8 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 													s.runningTasks.startTask(fmt.Sprintf("%s-%d", cascadeID, entry.StepIndex), cmdText, cascadeID, nil)
 												} else if strings.Contains(lowerTool, "grep") || strings.Contains(lowerTool, "search") || strings.Contains(lowerTool, "find_by_name") || strings.Contains(lowerTool, "list_dir") || strings.Contains(lowerTool, "list_files") {
 													kind = "search_started"
+												} else if strings.Contains(lowerTool, "browser") || strings.Contains(lowerTool, "playwright") || strings.Contains(lowerTool, "read_page") {
+													kind = "browser_action"
 												}
 												events = append(events, map[string]interface{}{
 													"kind":   kind,
@@ -8005,7 +8055,7 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 								}
 
 								// 2b. Tool Results
-								if entry.Type == "VIEW_FILE" || entry.Type == "RUN_COMMAND" || entry.Type == "GREP_SEARCH" || entry.Type == "FIND_BY_NAME" || entry.Type == "WRITE_TO_FILE" || entry.Type == "REPLACE_FILE_CONTENT" || entry.Type == "TOOL_RESULT" {
+								if entry.Type == "VIEW_FILE" || entry.Type == "RUN_COMMAND" || entry.Type == "GREP_SEARCH" || entry.Type == "FIND_BY_NAME" || entry.Type == "WRITE_TO_FILE" || entry.Type == "REPLACE_FILE_CONTENT" || entry.Type == "TOOL_RESULT" || strings.Contains(entry.Type, "BROWSER") {
 									preview := entry.Content
 									kind := "tool_output"
 									if entry.Type == "RUN_COMMAND" {
@@ -8020,6 +8070,11 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 										if len(preview) > 1000 {
 											preview = preview[:997] + "…"
 										}
+									} else if strings.Contains(entry.Type, "BROWSER") {
+										kind = "browser_action"
+										if len(preview) > 1000 {
+											preview = preview[:997] + "…"
+										}
 									} else if len(preview) > 800 {
 										preview = preview[:797] + "…"
 									}
@@ -8031,8 +8086,8 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 									})
 								}
 
-								// 2c. Thinking
-								if len(entry.Thinking) > 0 {
+								// 2c. Thinking (Mode Éco : filtré si omitThinking est activé)
+								if len(entry.Thinking) > 0 && !omitThinking {
 									events = append(events, map[string]interface{}{
 										"kind":  "thinking",
 										"delta": entry.Thinking,

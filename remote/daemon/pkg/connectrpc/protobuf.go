@@ -1029,4 +1029,53 @@ func BuildCheckoutWorktree(worktreeDirURI, targetWorkspaceURI string, deleteAfte
 	return w.b
 }
 
+// BuildCancelCascadeInvocation construit un CancelCascadeInvocationRequest protobuf :
+// field 1 = cascade_id (string)
+// field 2 = kill_background_tasks (bool/varint)
+// field 3 = notify_parent (bool/varint)
+func BuildCancelCascadeInvocation(cascadeID string, killBackgroundTasks bool) []byte {
+	w := getWriter()
+	defer putWriter(w)
+	if cascadeID != "" {
+		w.stringField(1, cascadeID)
+	}
+	if killBackgroundTasks {
+		w.varintField(2, 1)
+	}
+	w.varintField(3, 1)
+	res := make([]byte, len(w.b))
+	copy(res, w.b)
+	return res
+}
+
+// BuildForceStopCascadeTree construit un ForceStopCascadeTreeRequest protobuf :
+// field 1 = conversation_id (string)
+func BuildForceStopCascadeTree(conversationID string) []byte {
+	w := getWriter()
+	defer putWriter(w)
+	if conversationID != "" {
+		w.stringField(1, conversationID)
+	}
+	res := make([]byte, len(w.b))
+	copy(res, w.b)
+	return res
+}
+
+// BuildCancelCascadeSteps construit un CancelCascadeStepsRequest protobuf :
+// field 1 = cascade_id (string)
+// field 2 = step_indices (repeated uint32)
+func BuildCancelCascadeSteps(cascadeID string, stepIndices []uint32) []byte {
+	w := getWriter()
+	defer putWriter(w)
+	if cascadeID != "" {
+		w.stringField(1, cascadeID)
+	}
+	for _, idx := range stepIndices {
+		w.varintField(2, uint64(idx))
+	}
+	res := make([]byte, len(w.b))
+	copy(res, w.b)
+	return res
+}
+
 

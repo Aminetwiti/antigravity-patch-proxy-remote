@@ -526,6 +526,18 @@ func (f *fakeRPCClient) CheckoutWorktree(worktreeDirURI, targetWorkspaceURI stri
 	return connectrpc.Frame(pbTextFrame("worktree-checked-out")), nil
 }
 
+func (f *fakeRPCClient) CancelCascadeInvocation(cascadeID string, killBackgroundTasks bool) ([]byte, error) {
+	return connectrpc.Frame(pbTextFrame("cancelled")), nil
+}
+
+func (f *fakeRPCClient) ForceStopCascadeTree(cascadeID string) ([]byte, error) {
+	return connectrpc.Frame(pbTextFrame("force-stopped")), nil
+}
+
+func (f *fakeRPCClient) CancelCascadeSteps(cascadeID string, stepIndices []uint32) ([]byte, error) {
+	return connectrpc.Frame(pbTextFrame("steps-cancelled")), nil
+}
+
 
 
 

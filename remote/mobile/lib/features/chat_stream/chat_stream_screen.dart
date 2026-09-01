@@ -2735,13 +2735,32 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 280),
+          constraints: const BoxConstraints(maxHeight: 450),
           child: SingleChildScrollView(
             physics: const ClampingScrollPhysics(),
-            child: AskQuestionChoiceCard(
-              request: q,
-              onSubmit: (selected, custom) =>
-                  _handleQuestionSubmit(q, selected, custom),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 6),
+                  child: Text(
+                    'Waiting for user input.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFF9CA3AF)
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+                AskQuestionChoiceCard(
+                  request: q,
+                  onSubmit: (selected, custom) =>
+                      _handleQuestionSubmit(q, selected, custom),
+                ),
+              ],
             ),
           ),
         ),
@@ -2756,13 +2775,26 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 280),
+        constraints: const BoxConstraints(maxHeight: 450),
         child: SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 6, bottom: 6),
+                child: Text(
+                  'Waiting for user input.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF9CA3AF)
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
               Row(
                 children: [
                   if (total > 1)

@@ -44,6 +44,7 @@ void main() {
           home: Scaffold(
             body: BackgroundTasksBar(
               runningTasks: ['task 1', 'task 2'],
+              initiallyExpanded: false,
             ),
           ),
         ),
@@ -51,7 +52,7 @@ void main() {
 
       expect(find.text('2 tasks running'), findsOneWidget);
       await tester.tap(find.byType(InkWell).first);
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
       expect(find.text('task 1'), findsWidgets);

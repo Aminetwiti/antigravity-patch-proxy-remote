@@ -45,6 +45,7 @@ func main() {
 	var approvalTimeoutMin int
 	var enableRemoteTerminal bool
 	var allowFirstAdmin bool
+	var allowPublicBind bool
 
 	flag.IntVar(&listenPort, "port", cfg.Port, "Port for the WebSocket server")
 	flag.StringVar(&host, "host", cfg.Host, "Host for the WebSocket server")
@@ -54,7 +55,13 @@ func main() {
 	flag.IntVar(&approvalTimeoutMin, "approval-timeout", int(cfg.ApprovalTimeout.Minutes()), "Auto-deny timeout for pending approvals in minutes (0 = disabled)")
 	flag.BoolVar(&enableRemoteTerminal, "enable-remote-terminal", cfg.AllowRemoteTerminal, "Allow remote interactive PTY terminal creation")
 	flag.BoolVar(&allowFirstAdmin, "allow-first-admin", false, "Let the FIRST paired device become Admin (default: promote via host console with 'promote <deviceId>')")
+	flag.BoolVar(&allowPublicBind, "allow-public-bind", false, "Allow binding to public interfaces without restriction")
 	flag.Parse()
+
+	if err := config.AssertSafeBind(host, allowPublicBind); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Security assertion failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Silencer le logger standard Go pour éliminer le spam brut de gorilla/websocket (qui échappe à slog)
 	log.SetOutput(io.Discard)
