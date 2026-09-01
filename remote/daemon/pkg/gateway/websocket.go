@@ -661,10 +661,10 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		if sum.Killed || sum.Source == 16 || sum.IsSubagent {
 			continue
 		}
-		pbArchived := home != "" && isSessionArchived(home, sum.CascadeID)
-		if pbArchived && home != "" && isSessionDeleted(home, sum.CascadeID) {
+		if home != "" && isSessionDeleted(home, sum.CascadeID) {
 			continue // supprimée : ni sidebar ni historique
 		}
+		pbArchived := home != "" && isSessionArchived(home, sum.CascadeID)
 		isArchived := sum.Archived || pbArchived || sum.Status == "CASCADE_STATUS_ARCHIVED" || strings.EqualFold(sum.Status, "archived")
 		if isArchived && !includeArchived {
 			continue

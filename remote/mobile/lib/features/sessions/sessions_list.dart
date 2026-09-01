@@ -179,7 +179,6 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
   final Set<String> _collapsedFolders = {};
   bool _isFilterOpen = false;
   final TextEditingController _filterController = TextEditingController();
-  final TextEditingController _quickPromptController = TextEditingController();
   String _filterQuery = '';
 
   SessionGroupBy _groupBy = SessionGroupBy.project;
@@ -294,7 +293,6 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
   void dispose() {
     _scrollController.dispose();
     _filterController.dispose();
-    _quickPromptController.dispose();
     super.dispose();
   }
 
@@ -620,109 +618,6 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     );
   }
 
-  Widget _buildQuickPromptDock(BuildContext context, ColorScheme scheme, bool isDark) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF14171C) : scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark ? const Color(0xFF262932) : scheme.outlineVariant.withValues(alpha: 0.5),
-          width: 0.8,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _quickPromptController,
-            style: TextStyle(fontSize: 13, color: isDark ? AppColors.inkPrimary : scheme.onSurface),
-            decoration: InputDecoration(
-              hintText: 'Ask anything, @ to mention, / for actions',
-              hintStyle: TextStyle(
-                fontSize: 12,
-                color: isDark ? const Color(0xFF6B7280) : scheme.onSurfaceVariant.withValues(alpha: 0.7),
-              ),
-              isDense: true,
-              contentPadding: EdgeInsets.zero,
-              border: InputBorder.none,
-            ),
-            onSubmitted: (val) {
-              final text = val.trim();
-              if (text.isNotEmpty) {
-                _quickPromptController.clear();
-                if (Navigator.of(context).canPop()) {
-                  Navigator.of(context).pop();
-                }
-                final projs = widget.projects ?? [];
-                _callNewConversation(projs.isNotEmpty ? projs.first : null);
-              }
-            },
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.add, size: 16, color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1F232B) : scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF2E333D) : scheme.outlineVariant.withValues(alpha: 0.4),
-                    width: 0.6,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Gemini 3.7 Flash High',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Icon(Icons.keyboard_arrow_up_rounded, size: 12, color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              InkWell(
-                onTap: () {
-                  final text = _quickPromptController.text.trim();
-                  if (text.isNotEmpty) {
-                    _quickPromptController.clear();
-                    if (Navigator.of(context).canPop()) {
-                      Navigator.of(context).pop();
-                    }
-                    final projs = widget.projects ?? [];
-                    _callNewConversation(projs.isNotEmpty ? projs.first : null);
-                  }
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDark ? const Color(0xFF262932) : scheme.surfaceContainerHighest,
-                  ),
-                  child: Icon(Icons.arrow_forward_rounded, size: 14, color: isDark ? const Color(0xFF9CA3AF) : scheme.onSurfaceVariant),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -747,17 +642,19 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               child: Row(
                 children: [
-                  AntigravityLogo.wordmark(
-                    iconSize: 24,
-                    title: 'Antigravity',
-                    showGlow: true,
-                    showDualStatus: true,
-                    isDaemonConnected: widget.isConnected,
-                    isIdeConnected: widget.isIdeConnected,
+                  Expanded(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const AntigravityLogo(
+                          size: 22,
+                          showGlow: true,
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(child: _buildHostSwitcherPill(context, scheme, isDark)),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  _buildHostSwitcherPill(context, scheme, isDark),
-                  const Spacer(),
                   _HeaderIconBtn(
                     icon: Icons.history,
                     tooltip: 'Historique des conversations',
@@ -770,7 +667,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                       }
                     },
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 4),
                   _HeaderIconBtn(
                     icon: Icons.dock_outlined,
                     tooltip: 'Masquer la barre',
@@ -1119,9 +1016,6 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                       ),
               ),
             ),
-
-            // ── Persistent Quick Prompt Dock (Antigravity 2.0 Fidelity)
-            _buildQuickPromptDock(context, scheme, isDark),
 
             const _Divider(),
 

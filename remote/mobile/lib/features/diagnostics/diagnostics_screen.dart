@@ -25,7 +25,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadLogs();
   }
 
   @override
@@ -37,7 +36,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   Future<void> _loadLogs() async {
     setState(() => _isLoadingLogs = true);
     try {
-      final logs = await widget.api.getLogs();
+      final logs = await widget.api.getLogs().timeout(const Duration(milliseconds: 500));
       if (!mounted) return;
       setState(() {
         _logs = logs;

@@ -69,3 +69,5 @@ remote/daemon/*.key
 remote/insperer/*
 tools/*
 remote/tools1/*
+remote/tools2/*
+remote/tools3/*

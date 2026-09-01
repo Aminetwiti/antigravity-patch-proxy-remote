@@ -367,7 +367,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
       final matched = ModelCatalog.findModel(widget.initialModel!, customModels: models);
       if (mounted) {
         setState(() {
-          _selectedModel = matched.shortName;
+          _selectedModel = matched.displayName.isNotEmpty ? matched.displayName : matched.id;
           _selectedModelId = matched.id;
           _selectedModelEnum = matched.modelEnum;
         });
@@ -383,7 +383,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
         if (sessionModel != null && sessionModel.isNotEmpty && mounted) {
           final matched = ModelCatalog.findModel(sessionModel, customModels: models);
           setState(() {
-            _selectedModel = matched.shortName;
+            _selectedModel = matched.displayName.isNotEmpty ? matched.displayName : matched.id;
             _selectedModelId = matched.id;
             _selectedModelEnum = matched.modelEnum;
           });
@@ -398,7 +398,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
       if (savedModel != null && savedModel.isNotEmpty && mounted) {
         final matched = ModelCatalog.findModel(savedModel, customModels: models);
         setState(() {
-          _selectedModel = matched.shortName;
+          _selectedModel = matched.displayName.isNotEmpty ? matched.displayName : matched.id;
           _selectedModelId = matched.id;
           _selectedModelEnum = matched.modelEnum;
         });
@@ -2182,9 +2182,11 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
   Future<void> _selectModelWithEffort(AntigravityModel model, String? effort) async {
     HapticFeedback.selectionClick();
     final effectiveModel = effort != null ? model.withEffort(effort) : model;
-    final short = effectiveModel.shortName;
+    final fullName = effectiveModel.displayName.isNotEmpty
+        ? effectiveModel.displayName
+        : effectiveModel.id;
     setState(() {
-      _selectedModel = short;
+      _selectedModel = fullName;
       _selectedModelId = effectiveModel.id;
       _selectedModelEnum = effectiveModel.modelEnum;
       if (effort != null) {
@@ -2723,7 +2725,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                 Flexible(
                                   child: ConstrainedBox(
                                     constraints: BoxConstraints(
-                                      maxWidth: MediaQuery.of(context).size.width * 0.55,
+                                      maxWidth: MediaQuery.of(context).size.width * 0.72,
                                     ),
                                     child: Text(
                                       _displayModelName,

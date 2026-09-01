@@ -121,13 +121,19 @@ func isSessionArchived(home, cascadeID string) bool {
 			continue
 		}
 		s := strings.ToLower(string(data))
-		if strings.Contains(s, "deleted: true") || strings.Contains(s, "deleted:true") {
+		if strings.Contains(s, "deleted: true") || strings.Contains(s, "deleted:true") ||
+			strings.Contains(s, "is_deleted: true") || strings.Contains(s, "is_deleted:true") ||
+			strings.Contains(s, "cascade_status_deleted") || strings.Contains(s, "cascade_status_killed") {
 			return true
 		}
-		if strings.Contains(s, "archived: false") || strings.Contains(s, "archived:false") {
+		if strings.Contains(s, "archived: false") || strings.Contains(s, "archived:false") ||
+			strings.Contains(s, "is_archived: false") || strings.Contains(s, "is_archived:false") {
 			continue
 		}
-		if strings.Contains(s, "archived: true") || strings.Contains(s, "archived:true") || strings.Contains(s, "archival_status_timestamp") {
+		if strings.Contains(s, "archived: true") || strings.Contains(s, "archived:true") ||
+			strings.Contains(s, "is_archived: true") || strings.Contains(s, "is_archived:true") ||
+			strings.Contains(s, "archival_status_timestamp") || strings.Contains(s, "archived_at") ||
+			strings.Contains(s, "cascade_status_archived") {
 			return true
 		}
 	}
@@ -148,7 +154,9 @@ func isSessionDeleted(home, cascadeID string) bool {
 			continue
 		}
 		s := strings.ToLower(string(data))
-		if strings.Contains(s, "deleted: true") || strings.Contains(s, "deleted:true") {
+		if strings.Contains(s, "deleted: true") || strings.Contains(s, "deleted:true") ||
+			strings.Contains(s, "is_deleted: true") || strings.Contains(s, "is_deleted:true") ||
+			strings.Contains(s, "cascade_status_deleted") || strings.Contains(s, "cascade_status_killed") {
 			return true
 		}
 	}
@@ -532,12 +540,11 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 				continue
 			}
 
-			// Antigravity 2.0 : v├®rifier si la session est archiv├®e dans ~/.gemini/antigravity/annotations/
+			if isSessionDeleted(home, cascadeID) {
+				continue
+			}
 			archived := isSessionArchived(home, cascadeID)
-			if archived && (!includeArchived || isSessionDeleted(home, cascadeID)) {
-				// Sidebar : archivée/supprimée masquée. Historique
-				// (includeArchived) : l'archivée est conservée ci-dessous,
-				// la supprimée reste toujours exclue.
+			if archived && !includeArchived {
 				continue
 			}
 
@@ -666,8 +673,11 @@ func ListIdeSessions(officialProjs []ProjectSummary, includeArchived bool) []map
 			continue
 		}
 		cascadeID := e.Name()
+		if isSessionDeleted(home, cascadeID) {
+			continue
+		}
 		archived := isSessionArchived(home, cascadeID)
-		if archived && (!includeArchived || isSessionDeleted(home, cascadeID)) {
+		if archived && !includeArchived {
 			continue
 		}
 		transcriptPath := findTranscriptPath(cascadeID)

@@ -1936,7 +1936,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
         if (candidateNames.length > 0) {
           const customModels = expandModelsWithEffort(loadCustomModels());
-          const matchedCustomModel = customModels.find((m) => {
+          let matchedCustomModel = customModels.find((m) => {
             const enumName = generateModelPlaceholderId(m);
             return candidateNames.some(
               (cn) =>
@@ -1947,6 +1947,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 cn.endsWith(enumName),
             );
           });
+          // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298)
+          if (!matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
+            matchedCustomModel = customModels[0];
+          }
           if (matchedCustomModel) {
             log.info(
               `[Proxy] Intercepting Cloud Code generation for custom model: ${matchedCustomModel.displayName}`,
@@ -1975,7 +1979,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (req.method === 'POST' && (isGenerate || isStandardStream)) {
       const matchedModelName = isGenerate ? generateMatch![1] : streamMatch![1];
       const customModels = expandModelsWithEffort(loadCustomModels());
-      const matchedCustomModel = customModels.find((m) => {
+      let matchedCustomModel = customModels.find((m) => {
         const enumName = generateModelPlaceholderId(m);
         return (
           m.name === matchedModelName ||
@@ -1984,6 +1988,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           'models/' + enumName === matchedModelName
         );
       });
+      if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
+        matchedCustomModel = customModels[0];
+      }
 
       if (matchedCustomModel) {
         try {

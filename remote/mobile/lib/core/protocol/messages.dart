@@ -47,11 +47,19 @@ class CascadeSession {
       parsedDate = DateTime.fromMillisecondsSinceEpoch((json['updatedAt'] as num).toInt());
     }
 
+    final statusStr = (json['status'] ?? 'CASCADE_STATUS_READY').toString();
+    final upperStatus = statusStr.toUpperCase();
+    final isArchivedVal = json['isArchived'] == true ||
+        json['archived'] == true ||
+        upperStatus.contains('ARCHIV') ||
+        upperStatus.contains('DELET') ||
+        upperStatus.contains('KILLED');
+
     return CascadeSession(
       id: json['cascadeId'] ?? json['id'] ?? '',
       workspacePath: json['workspacePath'] ?? json['workspace'] ?? '',
       title: json['title'] ?? 'Cascade Session',
-      status: json['status'] ?? 'CASCADE_STATUS_READY',
+      status: statusStr,
       time: json['time'] ?? (parsedDate != null ? formatRelativeTime(parsedDate, now) : _relativeTime(json['updatedAt'], now)),
       updatedAt: parsedDate,
       lastPrompt: json['lastPrompt']?.toString(),
@@ -60,7 +68,7 @@ class CascadeSession {
       stepCount: (json['stepCount'] as num?)?.toInt() ?? 0,
       hasUnread: json['hasUnread'] == true,
       isPinned: json['isPinned'] == true || json['pinned'] == true,
-      isArchived: json['isArchived'] == true,
+      isArchived: isArchivedVal,
       isIde: json['isIde'] == true || json['clientType'] == 'ide' || json['source'] == 'ide',
     );
   }
