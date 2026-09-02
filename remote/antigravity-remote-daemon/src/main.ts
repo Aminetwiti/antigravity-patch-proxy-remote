@@ -115,9 +115,43 @@ ipcMain.handle('remote:generateQr', async (_event, text: string) => {
   }
 });
 
+import * as crypto from 'crypto';
+
+function getStoredTokenPath(): string {
+  const home = os.homedir();
+  const dir = path.join(home, '.gemini', 'antigravity');
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch { /* ignore */ }
+  }
+  return path.join(dir, 'daemon.token');
+}
+
+function resolveAuthToken(provided?: string): string {
+  if (provided && provided.trim().length > 0) {
+    return provided.trim();
+  }
+  if (process.env.AG_DAEMON_AUTH_TOKEN && process.env.AG_DAEMON_AUTH_TOKEN.trim().length > 0) {
+    return process.env.AG_DAEMON_AUTH_TOKEN.trim();
+  }
+  const tokenFile = getStoredTokenPath();
+  if (fs.existsSync(tokenFile)) {
+    try {
+      const saved = fs.readFileSync(tokenFile, 'utf-8').trim();
+      if (saved.length > 0) return saved;
+    } catch { /* ignore */ }
+  }
+  const generated = crypto.randomBytes(16).toString('hex');
+  try {
+    fs.writeFileSync(tokenFile, generated, { encoding: 'utf-8', mode: 0o600 });
+  } catch { /* ignore */ }
+  return generated;
+}
+
 ipcMain.handle('remote:getDaemonStatus', async (_event, customPort?: number, token?: string) => {
   const port = customPort || 8090;
-  const authToken = token || '11';
+  const authToken = resolveAuthToken(token);
   let running = false;
   let diagData: any = {};
   let healthData: any = {};
@@ -152,7 +186,7 @@ ipcMain.handle('remote:getDaemonStatus', async (_event, customPort?: number, tok
 
 ipcMain.handle('remote:startDaemon', async (event, options: { port: number; tunnel: string; token: string; allowFirstAdmin?: boolean }) => {
   const port = options.port || 8090;
-  const token = options.token && options.token.trim().length > 0 ? options.token.trim() : '11';
+  const token = resolveAuthToken(options.token);
 
   // Check if daemon is already active on this port
   try {

@@ -18,8 +18,20 @@ $ErrorActionPreference = "SilentlyContinue"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $DaemonDir = Join-Path $RepoRoot "remote\daemon"
-$DaemonExe = Join-Path $DaemonDir "daemon.exe"
-$Token     = if ($env:AG_DAEMON_AUTH_TOKEN) { $env:AG_DAEMON_AUTH_TOKEN } else { "11" }
+$TokenFile = Join-Path $env:USERPROFILE ".gemini\antigravity\daemon.token"
+$Token = if ($env:AG_DAEMON_AUTH_TOKEN) {
+    $env:AG_DAEMON_AUTH_TOKEN
+} elseif (Test-Path $TokenFile) {
+    (Get-Content $TokenFile -Raw).Trim()
+} else {
+    $bytes = New-Object byte[] 16
+    (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes)
+    $gen = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
+    $tokenDir = Split-Path -Parent $TokenFile
+    if (-not (Test-Path $tokenDir)) { New-Item -ItemType Directory -Path $tokenDir -Force | Out-Null }
+    Set-Content -Path $TokenFile -Value $gen -NoNewline
+    $gen
+}
 $Port      = if ($env:AG_DAEMON_PORT) { [int]$env:AG_DAEMON_PORT } else { 8090 }
 $BindHost  = if ($env:AG_BIND_HOST) { $env:AG_BIND_HOST } else { "127.0.0.1" }
 $SupLog    = Join-Path $DaemonDir "daemon_supervisor.log"
@@ -137,7 +149,7 @@ if ($Loop) {
         exit 0
     }
     if (Test-DaemonOk) {
-        Write-Host "deja OK: daemon fix99token sur :$Port"
+        Write-Host "deja OK: daemon actif sur :$Port"
     } else {
         Start-Daemon
     }

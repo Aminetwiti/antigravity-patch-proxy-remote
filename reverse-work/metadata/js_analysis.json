@@ -1,0 +1,348 @@
+{
+  "stock_asar": {
+    "ipc_handlers_count": 26,
+    "ipc_handlers": [
+      {
+        "type": "handle",
+        "channel": "dialog:open-workspace"
+      },
+      {
+        "type": "handle",
+        "channel": "dialog:open-workspaces"
+      },
+      {
+        "type": "handle",
+        "channel": "updater:apply"
+      },
+      {
+        "type": "handle",
+        "channel": "updater:quit-and-install"
+      },
+      {
+        "type": "handle",
+        "channel": "updater:get-state"
+      },
+      {
+        "type": "handle",
+        "channel": "notification:send"
+      },
+      {
+        "type": "handle",
+        "channel": "notification:open-system-preferences"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:get-items"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:update-items"
+      },
+      {
+        "type": "handle",
+        "channel": "logs:electron"
+      },
+      {
+        "type": "handle",
+        "channel": "extensions:send-authorities"
+      },
+      {
+        "type": "handle",
+        "channel": "agent:update-active-count"
+      },
+      {
+        "type": "handle",
+        "channel": "window:set-title-bar-overlay"
+      },
+      {
+        "type": "handle",
+        "channel": "window:minimize"
+      },
+      {
+        "type": "handle",
+        "channel": "window:maximize"
+      },
+      {
+        "type": "handle",
+        "channel": "window:unmaximize"
+      },
+      {
+        "type": "handle",
+        "channel": "window:is-maximized"
+      },
+      {
+        "type": "handle",
+        "channel": "window:close"
+      },
+      {
+        "type": "handle",
+        "channel": "window:toggle-devtools"
+      },
+      {
+        "type": "handle",
+        "channel": "window:zoom-in"
+      },
+      {
+        "type": "handle",
+        "channel": "window:zoom-out"
+      },
+      {
+        "type": "handle",
+        "channel": "window:reset-zoom"
+      },
+      {
+        "type": "handle",
+        "channel": "updater:check-for-updates"
+      },
+      {
+        "type": "handle",
+        "channel": "shell:open-external"
+      },
+      {
+        "type": "handle",
+        "channel": "shell:reveal-in-file-picker"
+      },
+      {
+        "type": "handle",
+        "channel": "ide:is-installed"
+      }
+    ],
+    "preload_exposed_apis": [
+      "electronUpdater",
+      "dialog",
+      "nativeNotifications",
+      "nativeStorage",
+      "logs",
+      "extensions",
+      "deepLink",
+      "agent",
+      "electronNative",
+      "ide"
+    ],
+    "network_endpoints": [
+      "https://127.0.0.1",
+      "http://localhost",
+      "https://generativelanguage.googleapis.com",
+      "https://daily-cloudcode-pa.googleapis.com",
+      "https://antigravity.google/docs');"
+    ]
+  },
+  "patched_asar": {
+    "ipc_handlers_count": 37,
+    "ipc_handlers": [
+      {
+        "type": "handle",
+        "channel": "dialog:open-workspace"
+      },
+      {
+        "type": "handle",
+        "channel": "updater:apply"
+      },
+      {
+        "type": "handle",
+        "channel": "updater:quit-and-install"
+      },
+      {
+        "type": "handle",
+        "channel": "ide:is-installed"
+      },
+      {
+        "type": "handle",
+        "channel": "notification:send"
+      },
+      {
+        "type": "handle",
+        "channel": "notification:open-system-preferences"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:get-items"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:update-items"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:get-custom-models"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:get-providers"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:get-well-known-presets"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:test-provider-health"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:export-providers-base64"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:import-providers-base64"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:save-provider"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:delete-provider"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:export-providers"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:import-providers"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:get-doctor-diagnostics"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:save-custom-model"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:delete-custom-model"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:test-model-connection"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:fetch-models"
+      },
+      {
+        "type": "handle",
+        "channel": "logs:electron"
+      },
+      {
+        "type": "handle",
+        "channel": "extensions:send-authorities"
+      },
+      {
+        "type": "handle",
+        "channel": "agent:update-active-count"
+      },
+      {
+        "type": "handle",
+        "channel": "window:set-title-bar-overlay"
+      },
+      {
+        "type": "handle",
+        "channel": "window:minimize"
+      },
+      {
+        "type": "handle",
+        "channel": "window:maximize"
+      },
+      {
+        "type": "handle",
+        "channel": "window:unmaximize"
+      },
+      {
+        "type": "handle",
+        "channel": "window:is-maximized"
+      },
+      {
+        "type": "handle",
+        "channel": "window:close"
+      },
+      {
+        "type": "handle",
+        "channel": "window:toggle-devtools"
+      },
+      {
+        "type": "handle",
+        "channel": "updater:get-state"
+      },
+      {
+        "type": "handle",
+        "channel": "updater:check-for-updates"
+      },
+      {
+        "type": "handle",
+        "channel": "shell:open-external"
+      },
+      {
+        "type": "handle",
+        "channel": "storage:fetch-provider-models"
+      }
+    ],
+    "preload_exposed_apis": [
+      "electronUpdater",
+      "dialog",
+      "nativeNotifications",
+      "nativeStorage",
+      "logs",
+      "extensions",
+      "deepLink",
+      "agent",
+      "electronNative",
+      "ide"
+    ],
+    "network_endpoints": [
+      "https://127.0.0.1",
+      "https://api.openai.com/v1/chat/completions',",
+      "https://api.anthropic.com/v1/messages',",
+      "https://openrouter.ai/api/v1/chat/completions',",
+      "http://localhost:11434/v1/chat/completions',",
+      "https://generativelanguage.googleapis.com/v1beta/models/',",
+      "https://api.deepseek.com/v1',",
+      "https://api.groq.com/openai/v1',",
+      "https://api.mistral.ai/v1',",
+      "https://api.cerebras.ai/v1',",
+      "https://api.moonshot.ai/v1',",
+      "https://api.fireworks.ai/inference/v1',",
+      "http://localhost:1234/v1',",
+      "http://localhost:8080/v1',",
+      "https://integrate.api.nvidia.com/v1',",
+      "https://codestral.mistral.ai/v1',",
+      "https://api.minimaxi.chat/v1/chat/completions',",
+      "https://api.openai.com/v1',",
+      "https://openrouter.ai/api/v1',",
+      "http://localhost:11434/v1',",
+      "https://api.anthropic.com/v1',",
+      "http://localhost",
+      "https://api.openai.com/v1/chat/completions",
+      "https://api.anthropic.com/v1/messages",
+      "http://localhost:11434/v1/chat/completions",
+      "https://generativelanguage.googleapis.com",
+      "http://127.0.0.1",
+      "https://antigravity.google/docs');",
+      "https://platform.openai.com/billing',",
+      "https://console.anthropic.com/settings/billing',",
+      "https://openrouter.ai/credits',",
+      "https://console.mistral.ai/billing/',",
+      "https://console.groq.com/billing',",
+      "https://platform.deepseek.com/top_up'",
+      "https://platform.openai.com",
+      "https://console.anthropic.com",
+      "https://openrouter.ai",
+      "https://api.deepseek.com/v1/chat/completions',",
+      "https://platform.deepseek.com",
+      "https://api.groq.com/openai/v1/chat/completions',",
+      "https://console.groq.com",
+      "https://aistudio.google.com",
+      "https://ollama.com",
+      "https://api.x.ai/v1/chat/completions',",
+      "https://docs.x.ai",
+      "https://api.moonshot.cn/v1/chat/completions',",
+      "https://platform.moonshot.cn",
+      "https://api.mistral.ai/v1/chat/completions',",
+      "https://docs.mistral.ai",
+      "https://api.cohere.com/v1/chat',",
+      "https://docs.cohere.com"
+    ]
+  }
+}

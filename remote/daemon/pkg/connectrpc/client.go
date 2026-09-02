@@ -114,7 +114,7 @@ func (c *Client) Call(method string, payload []byte) ([]byte, error) {
 	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
-	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
+	url := fmt.Sprintf("%s://%s:%d/%s/%s", scheme, c.Host, port, ServiceName, method)
 	body := Frame(payload)
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
@@ -194,7 +194,7 @@ func (c *Client) CallJSON(method string, payload []byte) ([]byte, error) {
 	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
-	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
+	url := fmt.Sprintf("%s://%s:%d/%s/%s", scheme, c.Host, port, ServiceName, method)
 	if len(payload) == 0 {
 		payload = []byte("{}")
 	}
@@ -237,7 +237,7 @@ func (c *Client) CallStreamWithContext(ctx context.Context, method string, paylo
 	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
-	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
+	url := fmt.Sprintf("%s://%s:%d/%s/%s", scheme, c.Host, port, ServiceName, method)
 	body := Frame(payload)
 
 	if ctx == nil {
@@ -329,7 +329,7 @@ func (c *Client) CallStreamJSONWithContext(ctx context.Context, method string, b
 	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
-	url := fmt.Sprintf("%s://%s:%d/exa.language_server_pb.LanguageServerService/%s", scheme, c.Host, port, method)
+	url := fmt.Sprintf("%s://%s:%d/%s/%s", scheme, c.Host, port, ServiceName, method)
 
 	if ctx == nil {
 		ctx = context.Background()

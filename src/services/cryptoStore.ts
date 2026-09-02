@@ -156,7 +156,10 @@ export function decryptModels(models: ModelWithKey[] | null): ModelWithKey[] {
   });
 }
 
-export function exportAgBoxPackage(payload: unknown, passphrase = 'default-secret'): string {
+export function exportAgBoxPackage(payload: unknown, passphrase: string): string {
+  if (!passphrase || typeof passphrase !== 'string' || passphrase.trim().length === 0) {
+    throw new Error('Passphrase is required for exporting .agbox package');
+  }
   const jsonStr = JSON.stringify(payload);
   const salt = crypto.randomBytes(16);
   const key = crypto.pbkdf2Sync(passphrase, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LEN, PBKDF2_DIGEST);
@@ -180,7 +183,7 @@ export function exportAgBoxPackage(payload: unknown, passphrase = 'default-secre
   return Buffer.from(JSON.stringify(boxed), 'utf-8').toString('base64');
 }
 
-export function importAgBoxPackage(base64Box: string, passphrase = 'default-secret'): { success: boolean; data?: unknown; error?: string } {
+export function importAgBoxPackage(base64Box: string, passphrase?: string): { success: boolean; data?: unknown; error?: string } {
   try {
     const rawBoxed = Buffer.from(base64Box, 'base64').toString('utf-8');
     const parsed = JSON.parse(rawBoxed);
@@ -190,6 +193,9 @@ export function importAgBoxPackage(base64Box: string, passphrase = 'default-secr
 
     // Version 2.0: AES-256-GCM authenticated encryption
     if (parsed.version === '2.0' && parsed.salt && parsed.iv && parsed.tag) {
+      if (!passphrase) {
+        return { success: false, error: 'Passphrase is required for decrypting .agbox package' };
+      }
       const salt = Buffer.from(parsed.salt, 'hex');
       const iv = Buffer.from(parsed.iv, 'hex');
       const tag = Buffer.from(parsed.tag, 'hex');

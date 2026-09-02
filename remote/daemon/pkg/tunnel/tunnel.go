@@ -60,9 +60,17 @@ func resolveBinaryPath(name string) (string, error) {
 			filepath.Join(".", "bin", name+".exe"),
 			filepath.Join("..", "bin", name+".exe"),
 			filepath.Join("..", "..", "bin", name+".exe"),
-			filepath.Join("C:\\Windows\\System32\\OpenSSH", name+".exe"),
-			filepath.Join("C:\\Program Files\\Git\\usr\\bin", name+".exe"),
 		)
+		if sysRoot := os.Getenv("SystemRoot"); sysRoot != "" {
+			candidates = append(candidates, filepath.Join(sysRoot, "System32", "OpenSSH", name+".exe"))
+		} else {
+			candidates = append(candidates, filepath.Join("C:\\Windows\\System32\\OpenSSH", name+".exe"))
+		}
+		if progFiles := os.Getenv("ProgramFiles"); progFiles != "" {
+			candidates = append(candidates, filepath.Join(progFiles, "Git", "usr", "bin", name+".exe"))
+		} else {
+			candidates = append(candidates, filepath.Join("C:\\Program Files\\Git\\usr\\bin", name+".exe"))
+		}
 		if exeDir != "" {
 			candidates = append(candidates,
 				filepath.Join(exeDir, name+".exe"),
@@ -306,7 +314,7 @@ func (m *Manager) startPinggy(binPath string, localPort int) (string, error) {
 	}
 	args := []string{
 		"-p", "443",
-		"-o", "StrictHostKeyChecking=no",
+		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ServerAliveCountMax=3",
 		"-o", "ExitOnForwardFailure=yes",
 		"-o", "TCPKeepAlive=yes",

@@ -27,6 +27,9 @@ dependencies:
   # SEC-04 : jetons daemon / PIN déplacés de SharedPreferences (XML en clair,
   # inclus dans les backups adb) vers le Keychain/Keystore système.
   flutter_secure_storage: ^9.2.2
+  flutter_localizations:
+    sdk: flutter
+  intl: any
 
 dev_dependencies:
   flutter_test:
@@ -37,6 +40,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
 
   assets:
     - assets/logo.png

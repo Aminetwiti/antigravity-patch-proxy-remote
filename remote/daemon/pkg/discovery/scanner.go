@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/antigravity/remote-daemon/pkg/connectrpc"
 )
 
 type LocalHarnessInfo struct {
@@ -302,7 +304,7 @@ func probeService(port int, csrfToken string) (bool, bool) {
 }
 
 func probeHTTPHeartbeat(port int, csrfToken string) bool {
-	url := fmt.Sprintf("http://%s:%d/exa.language_server_pb.LanguageServerService/Heartbeat", bindHost(), port)
+	url := fmt.Sprintf("http://%s:%d/%s/%s", bindHost(), port, connectrpc.ServiceName, connectrpc.MethodHeartbeat)
 	body := make([]byte, 5) // frame gRPC-Web vide
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
@@ -325,7 +327,7 @@ func probeHTTPHeartbeat(port int, csrfToken string) bool {
 }
 
 func probeHTTPSHeartbeat(port int, csrfToken string) bool {
-	url := fmt.Sprintf("https://%s:%d/exa.language_server_pb.LanguageServerService/Heartbeat", bindHost(), port)
+	url := fmt.Sprintf("https://%s:%d/%s/%s", bindHost(), port, connectrpc.ServiceName, connectrpc.MethodHeartbeat)
 	body := make([]byte, 5) // frame gRPC-Web vide
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
@@ -354,7 +356,7 @@ func probeHTTPSHeartbeat(port int, csrfToken string) bool {
 
 func probeHTTPSGetUserStatus(port int, csrfToken string) bool {
 	body := []byte(`{"metadata":{"ideName":"antigravity"}}`)
-	req, err := http.NewRequest("POST", fmt.Sprintf("https://%s:%d/exa.language_server_pb.LanguageServerService/GetUserStatus", bindHost(), port), bytes.NewReader(body))
+	req, err := http.NewRequest("POST", fmt.Sprintf("https://%s:%d/%s/%s", bindHost(), port, connectrpc.ServiceName, connectrpc.MethodGetUserStatus), bytes.NewReader(body))
 	if err != nil {
 		return false
 	}

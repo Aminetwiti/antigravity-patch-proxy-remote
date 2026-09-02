@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'config/env_config.dart';
 import 'core/network/outbox.dart';
 import 'core/network/websocket_client.dart';
@@ -88,6 +90,13 @@ class _AntigravityRemoteAppState extends State<AntigravityRemoteApp> {
     return MaterialApp(
       title: 'Antigravity Mobile',
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLocalizations.supportedLocales,
       // Feature #6 : respecter les préférences système (clair/sombre) au lieu
       // de forcer le dark mode. ThemeMode.system délègue à MediaQuery.
       theme: AppTheme.lightTheme,
@@ -459,9 +468,9 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       _isCreatingSession = false;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('⚠️ Non connecté au serveur daemon'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)?.notConnectedToDaemon ?? '⚠️ Non connecté au serveur daemon'),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -471,7 +480,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       HapticFeedback.lightImpact();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Row(
               children: [
                 SizedBox(
@@ -480,10 +489,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 ),
                 SizedBox(width: 12),
-                Text('Création de la nouvelle conversation...'),
+                Text(AppLocalizations.of(context)?.creatingNewConversation ?? 'Création de la nouvelle conversation...'),
               ],
             ),
-            duration: Duration(milliseconds: 1500),
+            duration: const Duration(milliseconds: 1500),
           ),
         );
       }
@@ -565,7 +574,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✨ Nouvelle conversation ouverte ($newId)'),
+            content: Text(AppLocalizations.of(context)?.newConversationOpened(newId) ?? '✨ Nouvelle conversation ouverte ($newId)'),
             backgroundColor: const Color(0xFF1E88E5),
             duration: const Duration(seconds: 2),
           ),
@@ -578,7 +587,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Échec création session: $e'),
+            content: Text(AppLocalizations.of(context)?.failedToCreateSession(e.toString()) ?? '❌ Échec création session: $e'),
             backgroundColor: Colors.red.shade800,
             duration: const Duration(seconds: 4),
           ),

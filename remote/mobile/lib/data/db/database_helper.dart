@@ -7,11 +7,34 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
 
+  // ── Constantes de Configuration & Schéma ──
+  static const String dbName = 'antigravity_remote.db';
+  static const int dbVersion = 1;
+
+  static const String tableSessions = 'sessions';
+  static const String tableSessionMessages = 'session_messages';
+  static const String tableSessionScrollState = 'session_scroll_state';
+
+  static const String colId = 'id';
+  static const String colTitle = 'title';
+  static const String colTime = 'time';
+  static const String colUpdatedAt = 'updated_at';
+
+  static const String colSessionId = 'session_id';
+  static const String colMessagesJson = 'messages_json';
+
+  static const String colScrollIndex = 'scroll_index';
+  static const String colScrollOffset = 'scroll_offset';
+
+  static const int gzipCompressionThresholdBytes = 512;
+  static const String gzipPrefix = 'gz:';
+  static const String defaultSessionTitle = 'Session';
+
   DatabaseHelper._init();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('antigravity_remote.db');
+    _database = await _initDB(dbName);
     return _database!;
   }
 
@@ -21,7 +44,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: dbVersion,
       onCreate: _createDB,
     );
   }
@@ -31,37 +54,37 @@ class DatabaseHelper {
     const textType = 'TEXT NOT NULL';
 
     await db.execute('''
-CREATE TABLE sessions (
-  id $idType,
-  title $textType,
-  time $textType,
-  updated_at INTEGER NOT NULL
+CREATE TABLE $tableSessions (
+  $colId $idType,
+  $colTitle $textType,
+  $colTime $textType,
+  $colUpdatedAt INTEGER NOT NULL
 )
 ''');
 
     await db.execute('''
-CREATE TABLE session_messages (
-  session_id TEXT NOT NULL,
-  messages_json TEXT NOT NULL,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (session_id)
+CREATE TABLE $tableSessionMessages (
+  $colSessionId TEXT NOT NULL,
+  $colMessagesJson TEXT NOT NULL,
+  $colUpdatedAt INTEGER NOT NULL,
+  PRIMARY KEY ($colSessionId)
 )
 ''');
 
     await db.execute('''
-CREATE TABLE IF NOT EXISTS session_scroll_state (
-  session_id TEXT PRIMARY KEY,
-  scroll_index INTEGER NOT NULL,
-  scroll_offset REAL NOT NULL,
-  updated_at INTEGER NOT NULL
+CREATE TABLE IF NOT EXISTS $tableSessionScrollState (
+  $colSessionId TEXT PRIMARY KEY,
+  $colScrollIndex INTEGER NOT NULL,
+  $colScrollOffset REAL NOT NULL,
+  $colUpdatedAt INTEGER NOT NULL
 )
 ''');
 
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions (updated_at DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON $tableSessions ($colUpdatedAt DESC)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_session_messages_updated_at ON session_messages (updated_at DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_session_messages_updated_at ON $tableSessionMessages ($colUpdatedAt DESC)',
     );
   }
 
@@ -73,15 +96,15 @@ CREATE TABLE IF NOT EXISTS session_scroll_state (
         if (session is Map) {
           final id = session['id']?.toString() ?? session['cascadeId']?.toString() ?? '';
           if (id.isEmpty) continue;
-          final title = session['title']?.toString() ?? 'Session';
+          final title = session['title']?.toString() ?? defaultSessionTitle;
           final time = session['time']?.toString() ?? session['updatedAt']?.toString() ?? '';
           batch.insert(
-            'sessions',
+            tableSessions,
             {
-              'id': id,
-              'title': title,
-              'time': time,
-              'updated_at': DateTime.now().millisecondsSinceEpoch,
+              colId: id,
+              colTitle: title,
+              colTime: time,
+              colUpdatedAt: DateTime.now().millisecondsSinceEpoch,
             },
             conflictAlgorithm: ConflictAlgorithm.replace,
           );
@@ -93,7 +116,7 @@ CREATE TABLE IF NOT EXISTS session_scroll_state (
 
   Future<List<Map<String, dynamic>>> getSessions() async {
     final db = await instance.database;
-    final result = await db.query('sessions', orderBy: 'updated_at DESC');
+    final result = await db.query(tableSessions, orderBy: '$colUpdatedAt DESC');
     return result;
   }
 
@@ -103,18 +126,18 @@ CREATE TABLE IF NOT EXISTS session_scroll_state (
     final rawJson = jsonEncode(messages);
     
     String payload = rawJson;
-    if (rawJson.length > 512) {
+    if (rawJson.length > gzipCompressionThresholdBytes) {
       final bytes = utf8.encode(rawJson);
       final compressed = gzip.encode(bytes);
-      payload = 'gz:${base64Encode(compressed)}';
+      payload = '$gzipPrefix${base64Encode(compressed)}';
     }
     
     await db.insert(
-      'session_messages',
+      tableSessionMessages,
       {
-        'session_id': sessionId,
-        'messages_json': payload,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
+        colSessionId: sessionId,
+        colMessagesJson: payload,
+        colUpdatedAt: DateTime.now().millisecondsSinceEpoch,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -124,16 +147,16 @@ CREATE TABLE IF NOT EXISTS session_scroll_state (
   Future<List<dynamic>?> getSessionMessages(String sessionId) async {
     final db = await instance.database;
     final maps = await db.query(
-      'session_messages',
-      columns: ['messages_json'],
-      where: 'session_id = ?',
+      tableSessionMessages,
+      columns: [colMessagesJson],
+      where: '$colSessionId = ?',
       whereArgs: [sessionId],
     );
 
     if (maps.isNotEmpty) {
-      final rawStr = maps.first['messages_json'] as String;
-      if (rawStr.startsWith('gz:')) {
-        final compressed = base64Decode(rawStr.substring(3));
+      final rawStr = maps.first[colMessagesJson] as String;
+      if (rawStr.startsWith(gzipPrefix)) {
+        final compressed = base64Decode(rawStr.substring(gzipPrefix.length));
         final decompressed = gzip.decode(compressed);
         return jsonDecode(utf8.decode(decompressed)) as List<dynamic>;
       }
@@ -145,21 +168,13 @@ CREATE TABLE IF NOT EXISTS session_scroll_state (
   /// Mémorise la position exacte de scroll d'une session.
   Future<void> saveScrollState(String sessionId, int index, double offset) async {
     final db = await instance.database;
-    await db.execute('''
-CREATE TABLE IF NOT EXISTS session_scroll_state (
-  session_id TEXT PRIMARY KEY,
-  scroll_index INTEGER NOT NULL,
-  scroll_offset REAL NOT NULL,
-  updated_at INTEGER NOT NULL
-)
-''');
     await db.insert(
-      'session_scroll_state',
+      tableSessionScrollState,
       {
-        'session_id': sessionId,
-        'scroll_index': index,
-        'scroll_offset': offset,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
+        colSessionId: sessionId,
+        colScrollIndex: index,
+        colScrollOffset: offset,
+        colUpdatedAt: DateTime.now().millisecondsSinceEpoch,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -168,17 +183,9 @@ CREATE TABLE IF NOT EXISTS session_scroll_state (
   /// Récupère la position de scroll mémorisée.
   Future<Map<String, dynamic>?> getScrollState(String sessionId) async {
     final db = await instance.database;
-    await db.execute('''
-CREATE TABLE IF NOT EXISTS session_scroll_state (
-  session_id TEXT PRIMARY KEY,
-  scroll_index INTEGER NOT NULL,
-  scroll_offset REAL NOT NULL,
-  updated_at INTEGER NOT NULL
-)
-''');
     final maps = await db.query(
-      'session_scroll_state',
-      where: 'session_id = ?',
+      tableSessionScrollState,
+      where: '$colSessionId = ?',
       whereArgs: [sessionId],
     );
     if (maps.isNotEmpty) {
@@ -192,4 +199,3 @@ CREATE TABLE IF NOT EXISTS session_scroll_state (
     db.close();
   }
 }
-

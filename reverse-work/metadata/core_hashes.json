@@ -1,0 +1,189 @@
+[
+  {
+    "file": "Antigravity.exe",
+    "size": 222848000,
+    "sha256": "e4b0a4077543627765a412ca4ac0e746ec670caa71ec8d56c69ac8d806743b83",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "d3dcompiler_47.dll",
+    "size": 4741480,
+    "sha256": "c8e25abd3d45dfb55966a74613258c39b4a83ea2ac77f2f80903499f4d5c03f0",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "dxcompiler.dll",
+    "size": 25664512,
+    "sha256": "1009efd7e76cd4811fc91c71a771ec9c4294a672c81409f4673c77ddcc8568e8",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "dxil.dll",
+    "size": 1503600,
+    "sha256": "436f128f22050ae27323da61321a469de0678def7a4e6d86f9ccad4858724f0a",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "ffmpeg.dll",
+    "size": 3094528,
+    "sha256": "2ee497a8d8917861683337c10cda719ee019f5483b509effc02a0390a52e8947",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "libEGL.dll",
+    "size": 520704,
+    "sha256": "73b958605cac8990e8c30ba9195b434627782b0cfa18b264e4b0297dd782259c",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "libGLESv2.dll",
+    "size": 7954432,
+    "sha256": "53ba62da3c940f38c757d6cbd6b42b00e9756ac223425768f434d6d0ee94d3c8",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "resources/app.asar",
+    "size": 22508253,
+    "sha256": "861b2b850dc82456f2c864b8a1df6c5fec027faddc36a43096ae7566e36960cc",
+    "format": "Unknown",
+    "arch": "N/A",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "resources/app.asar.bak",
+    "size": 4526306,
+    "sha256": "c21a013797376cf92cc2a821706e6af4d77f020aa233796c4f9e8ee066a29187",
+    "format": "Unknown",
+    "arch": "N/A",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "resources/bin/language_server.exe",
+    "size": 153057280,
+    "sha256": "8f904a875373330a5964fc06db15d0b9d4d4f2f3990f50be409589bf2815e11c",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "resources/bin/language_server.exe.bak",
+    "size": 153057280,
+    "sha256": "701d9a66ee57b272fd7961f1a2f380be6e11daa7819530af059bbc4b2e82337d",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "resources/bin/webm_encoder.exe",
+    "size": 13615104,
+    "sha256": "0467f9b88fbf709229e7cb0e7c87297a1be80ffdfadff852f3bd933a92432bc9",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "resources/elevate.exe",
+    "size": 107520,
+    "sha256": "9b1fbf0c11c520ae714af8aa9af12cfd48503eedecd7398d8992ee94d1b4dc37",
+    "format": "PE (Windows Executable)",
+    "arch": "x86 (i386)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "snapshot_blob.bin",
+    "size": 341312,
+    "sha256": "7fe061d4f516ae70d772f8ec2891d89dcd25368f1639e712d4148796335a4124",
+    "format": "V8 Snapshot Binary",
+    "arch": "x86_64",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "v8_context_snapshot.bin",
+    "size": 715208,
+    "sha256": "0ac67d268dc3d719d0b180bf5ee33fe501ec6be77fda41d4b40abb630e44e6bf",
+    "format": "V8 Snapshot Binary",
+    "arch": "x86_64",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "vk_swiftshader.dll",
+    "size": 5622784,
+    "sha256": "00173c2e5d3c1b9542a569f918aae271f31086aa4b2be3957e9502a8595dfe0f",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  },
+  {
+    "file": "vulkan-1.dll",
+    "size": 952320,
+    "sha256": "191f762ae32c93110daf18c5b2c39642fa086a408826c91ca232875219db077e",
+    "format": "PE (Windows Executable)",
+    "arch": "x86_64 (AMD64)",
+    "signature": "None",
+    "packing": "None",
+    "encryption_obfuscation": "None",
+    "analysis_status": "RECORDED"
+  }
+]

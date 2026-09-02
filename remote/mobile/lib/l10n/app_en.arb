@@ -1,0 +1,17 @@
+{
+  "@@locale": "en",
+  "appTitle": "Antigravity Remote",
+  "notConnectedToDaemon": "⚠️ Not connected to daemon server",
+  "creatingNewConversation": "Creating new conversation...",
+  "newConversationOpened": "✨ New conversation opened ({id})",
+  "failedToCreateSession": "❌ Failed to create session: {error}",
+  "conversationRestored": "Conversation restored",
+  "restoreError": "Error while restoring: {error}",
+  "conversationDeleted": "Conversation deleted",
+  "conversationArchived": "Conversation archived",
+  "conversationRenamed": "Conversation renamed",
+  "markdownCopied": "Conversation Markdown copied!",
+  "noContentToExport": "No content to export",
+  "lanSearchRestarted": "LAN discovery restarted…",
+  "defaultSessionTitle": "Session"
+}

@@ -1,0 +1,74 @@
+{
+  "@@locale": "fr",
+  "appTitle": "Antigravity Remote",
+  "@appTitle": {
+    "description": "Titre principal de l'application"
+  },
+  "notConnectedToDaemon": "⚠️ Non connecté au serveur daemon",
+  "@notConnectedToDaemon": {
+    "description": "Message affiché lorsque le client WebSocket n'est pas connecté"
+  },
+  "creatingNewConversation": "Création de la nouvelle conversation...",
+  "@creatingNewConversation": {
+    "description": "Message temporaire pendant la création d'une session"
+  },
+  "newConversationOpened": "✨ Nouvelle conversation ouverte ({id})",
+  "@newConversationOpened": {
+    "description": "Notification de nouvelle conversation",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "failedToCreateSession": "❌ Échec création session: {error}",
+  "@failedToCreateSession": {
+    "description": "Erreur lors de la création d'une session",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "conversationRestored": "Conversation restaurée",
+  "@conversationRestored": {
+    "description": "Message de restauration de conversation"
+  },
+  "restoreError": "Erreur lors de la restauration: {error}",
+  "@restoreError": {
+    "description": "Erreur de restauration de conversation",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "conversationDeleted": "Conversation supprimée",
+  "@conversationDeleted": {
+    "description": "Message de suppression de conversation"
+  },
+  "conversationArchived": "Conversation archivée",
+  "@conversationArchived": {
+    "description": "Message d'archivage de conversation"
+  },
+  "conversationRenamed": "Conversation renommée",
+  "@conversationRenamed": {
+    "description": "Message de renommage de conversation"
+  },
+  "markdownCopied": "Markdown de la conversation copié !",
+  "@markdownCopied": {
+    "description": "Confirmation de copie du Markdown"
+  },
+  "noContentToExport": "Aucun contenu à exporter",
+  "@noContentToExport": {
+    "description": "Avertissement export vide"
+  },
+  "lanSearchRestarted": "Recherche réseau relancée…",
+  "@lanSearchRestarted": {
+    "description": "Notification de redémarrage de la recherche LAN UDP"
+  },
+  "defaultSessionTitle": "Session",
+  "@defaultSessionTitle": {
+    "description": "Titre de session par défaut"
+  }
+}
