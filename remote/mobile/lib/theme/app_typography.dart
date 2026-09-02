@@ -47,4 +47,25 @@ abstract class AppTypography {
     fontSize: 12.0,
     fontWeight: FontWeight.w400,
   );
+
+  /// Section headers (uppercase, tracking 0.8px, Zinc-500)
+  static const TextStyle sectionHeader = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.8,
+  );
+
+  /// Monospace technical metadata (file paths, line numbers, IDs)
+  static const TextStyle monoMetadata = TextStyle(
+    fontSize: 11,
+    fontFamily: 'monospace',
+    fontWeight: FontWeight.w400,
+  );
+
+  /// Compact uppercase pill label
+  static const TextStyle pillLabel = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.5,
+  );
 }

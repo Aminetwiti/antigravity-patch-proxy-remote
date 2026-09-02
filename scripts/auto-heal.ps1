@@ -15,12 +15,13 @@
 
 $ErrorActionPreference = "SilentlyContinue"
 
-$appPath   = "$env:LOCALAPPDATA\Programs\Antigravity"
+$appPath   = if ($env:ANTIGRAVITY_APP_DIR) { $env:ANTIGRAVITY_APP_DIR } else { "$env:LOCALAPPDATA\Programs\Antigravity" }
 $asarPath  = "$appPath\resources\app.asar"
-$scratch   = "$env:USERPROFILE\.gemini\antigravity\scratch"
+$scratch   = if ($env:ANTIGRAVITY_CACHE_DIR) { $env:ANTIGRAVITY_CACHE_DIR } else { "$env:USERPROFILE\.gemini\antigravity\scratch" }
 $cached    = "$scratch\app.asar.patched"
 $cachedUn  = "$scratch\app.asar.unpacked"
 $destUn    = "$appPath\resources\app.asar.unpacked"
+$proxyPort = if ($env:AG_PROXY_PORT) { [int]$env:AG_PROXY_PORT } else { 51074 }
 
 # Signature du patch : chaque modèle custom injecté porte un ID
 # MODEL_PLACEHOLDER_<hash> (voir AGENTS.md §6). Absente de l'asar officiel.
@@ -68,7 +69,7 @@ try {
     $repoDir = Split-Path -Parent $PSScriptRoot
     $doctorJs = Join-Path $repoDir "ag-doctor\bin\ag-doctor.js"
     if (Test-Path $doctorJs) {
-        $lis = Get-NetTCPConnection -LocalPort 51074 -State Listen -ErrorAction SilentlyContinue
+        $lis = Get-NetTCPConnection -LocalPort $proxyPort -State Listen -ErrorAction SilentlyContinue
         if (-not $lis) {
             Start-Process -FilePath "node" -ArgumentList "`"$doctorJs`" proxy start" -WorkingDirectory $repoDir -WindowStyle Hidden
         }

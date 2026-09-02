@@ -5,6 +5,12 @@
  */
 
 import type { ProviderFileEntry } from '../customModelStore';
+import {
+  PBKDF2_ITERATIONS,
+  PBKDF2_LEGACY_ITERATIONS,
+  PBKDF2_KEY_LEN,
+  PBKDF2_DIGEST,
+} from '../constants';
 
 export type MergeStrategy = 'overwrite' | 'merge' | 'skip';
 
@@ -119,7 +125,7 @@ export function exportEncryptedConfig(providers: ProviderFileEntry[], password: 
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const crypto = require('crypto');
   const salt = crypto.randomBytes(16);
-  const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+  const key = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LEN, PBKDF2_DIGEST);
   const iv = crypto.randomBytes(12);
 
   const jsonStr = JSON.stringify({ version: 1, providers });
@@ -130,6 +136,7 @@ export function exportEncryptedConfig(providers: ProviderFileEntry[], password: 
 
   const payload = {
     encrypted: true,
+    iterations: PBKDF2_ITERATIONS,
     salt: salt.toString('hex'),
     iv: iv.toString('hex'),
     tag: tag.toString('hex'),
@@ -153,7 +160,7 @@ export function importEncryptedConfig(encryptedBase64: string, password: string)
     throw new Error('Invalid Base64 payload');
   }
 
-  let payload: { encrypted: boolean; salt: string; iv: string; tag: string; data: string };
+  let payload: { encrypted: boolean; iterations?: number; salt: string; iv: string; tag: string; data: string };
   try {
     payload = JSON.parse(rawJson);
   } catch {
@@ -169,14 +176,27 @@ export function importEncryptedConfig(encryptedBase64: string, password: string)
   const tag = Buffer.from(payload.tag, 'hex');
   const encryptedData = Buffer.from(payload.data, 'base64');
 
-  const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
+  // Try decoding with explicit iterations or current default, then fallback to legacy 100k if needed
+  const primaryIterations = payload.iterations || PBKDF2_ITERATIONS;
+  let decrypted: Buffer | null = null;
 
-  let decrypted: Buffer;
-  try {
-    decrypted = Buffer.concat([decipher.update(encryptedData), decipher.final()]);
-  } catch {
+  const tryDecrypt = (iterCount: number): Buffer | null => {
+    try {
+      const key = crypto.pbkdf2Sync(password, salt, iterCount, PBKDF2_KEY_LEN, PBKDF2_DIGEST);
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(encryptedData), decipher.final()]);
+    } catch {
+      return null;
+    }
+  };
+
+  decrypted = tryDecrypt(primaryIterations);
+  if (!decrypted && primaryIterations !== PBKDF2_LEGACY_ITERATIONS) {
+    decrypted = tryDecrypt(PBKDF2_LEGACY_ITERATIONS);
+  }
+
+  if (!decrypted) {
     throw new Error('Decryption failed. Incorrect password or corrupted payload.');
   }
 

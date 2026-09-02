@@ -2,6 +2,12 @@ import { safeStorage } from 'electron';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import log from 'electron-log';
+import {
+  PBKDF2_ITERATIONS,
+  PBKDF2_LEGACY_ITERATIONS,
+  PBKDF2_KEY_LEN,
+  PBKDF2_DIGEST,
+} from '../constants';
 
 /**
  * Creates a backup of the specified file with a .bak extension.
@@ -153,7 +159,7 @@ export function decryptModels(models: ModelWithKey[] | null): ModelWithKey[] {
 export function exportAgBoxPackage(payload: unknown, passphrase = 'default-secret'): string {
   const jsonStr = JSON.stringify(payload);
   const salt = crypto.randomBytes(16);
-  const key = crypto.pbkdf2Sync(passphrase, salt, 100000, 32, 'sha256');
+  const key = crypto.pbkdf2Sync(passphrase, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LEN, PBKDF2_DIGEST);
   const iv = crypto.randomBytes(12);
 
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -165,6 +171,7 @@ export function exportAgBoxPackage(payload: unknown, passphrase = 'default-secre
     format: 'agbox',
     timestamp: Date.now(),
     encrypted: true,
+    iterations: PBKDF2_ITERATIONS,
     salt: salt.toString('hex'),
     iv: iv.toString('hex'),
     tag: tag.toString('hex'),
@@ -183,22 +190,34 @@ export function importAgBoxPackage(base64Box: string, passphrase = 'default-secr
 
     // Version 2.0: AES-256-GCM authenticated encryption
     if (parsed.version === '2.0' && parsed.salt && parsed.iv && parsed.tag) {
-      try {
-        const salt = Buffer.from(parsed.salt, 'hex');
-        const iv = Buffer.from(parsed.iv, 'hex');
-        const tag = Buffer.from(parsed.tag, 'hex');
-        const encryptedData = Buffer.from(parsed.data, 'base64');
+      const salt = Buffer.from(parsed.salt, 'hex');
+      const iv = Buffer.from(parsed.iv, 'hex');
+      const tag = Buffer.from(parsed.tag, 'hex');
+      const encryptedData = Buffer.from(parsed.data, 'base64');
 
-        const key = crypto.pbkdf2Sync(passphrase, salt, 100000, 32, 'sha256');
-        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-        decipher.setAuthTag(tag);
+      const primaryIterations = parsed.iterations || PBKDF2_ITERATIONS;
 
-        const decrypted = Buffer.concat([decipher.update(encryptedData), decipher.final()]);
-        const data = JSON.parse(decrypted.toString('utf8'));
-        return { success: true, data };
-      } catch (err: any) {
-        return { success: false, error: 'Déchiffrement échoué : mot de passe incorrect ou données corrompues' };
+      const tryDecrypt = (iterCount: number): unknown | null => {
+        try {
+          const key = crypto.pbkdf2Sync(passphrase, salt, iterCount, PBKDF2_KEY_LEN, PBKDF2_DIGEST);
+          const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+          decipher.setAuthTag(tag);
+          const decrypted = Buffer.concat([decipher.update(encryptedData), decipher.final()]);
+          return JSON.parse(decrypted.toString('utf8'));
+        } catch {
+          return null;
+        }
+      };
+
+      let data = tryDecrypt(primaryIterations);
+      if (!data && primaryIterations !== PBKDF2_LEGACY_ITERATIONS) {
+        data = tryDecrypt(PBKDF2_LEGACY_ITERATIONS);
       }
+
+      if (data !== null) {
+        return { success: true, data };
+      }
+      return { success: false, error: 'Déchiffrement échoué : mot de passe incorrect ou données corrompues' };
     }
 
     // Version 1.0 legacy fallback (Base64)

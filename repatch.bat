@@ -25,8 +25,16 @@ REM ============================================================
 setlocal EnableDelayedExpansion
 
 set "SCRIPT_DIR=%~dp0"
-set "AG_IDE=%LOCALAPPDATA%\Programs\Antigravity IDE"
-set "AG_CLASSIC=%LOCALAPPDATA%\Programs\Antigravity"
+if "%ANTIGRAVITY_IDE_DIR%"=="" (
+  set "AG_IDE=%LOCALAPPDATA%\Programs\Antigravity IDE"
+) else (
+  set "AG_IDE=%ANTIGRAVITY_IDE_DIR%"
+)
+if "%ANTIGRAVITY_APP_DIR%"=="" (
+  set "AG_CLASSIC=%LOCALAPPDATA%\Programs\Antigravity"
+) else (
+  set "AG_CLASSIC=%ANTIGRAVITY_APP_DIR%"
+)
 set "AG_IDE_EXE=%AG_IDE%\Antigravity IDE.exe"
 set "AG_CLASSIC_EXE=%AG_CLASSIC%\Antigravity.exe"
 set "AG_ASAR=%AG_CLASSIC%\resources\app.asar"
@@ -34,7 +42,11 @@ set "AG_BIN_LS=%AG_CLASSIC%\resources\bin\language_server.exe"
 set "PROXY_PORT=%AG_PROXY_PORT%"
 if "!PROXY_PORT!"=="" set "PROXY_PORT=51074"
 set "STAGING_DIR=%TEMP%\antigravity-asar-staging-%RANDOM%"
-set "AG_SCRATCH=%USERPROFILE%\.gemini\antigravity\scratch"
+if "%ANTIGRAVITY_CACHE_DIR%"=="" (
+  set "AG_SCRATCH=%USERPROFILE%\.gemini\antigravity\scratch"
+) else (
+  set "AG_SCRATCH=%ANTIGRAVITY_CACHE_DIR%"
+)
 
 cd /d "%SCRIPT_DIR%"
 

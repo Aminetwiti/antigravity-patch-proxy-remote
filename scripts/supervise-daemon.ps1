@@ -92,7 +92,8 @@ function Start-Daemon {
 
 # Vrai si le asar actif a perdu la signature du patch (écrasé par un update officiel).
 function Test-PatchLost {
-    $asar = "$env:LOCALAPPDATA\Programs\Antigravity\resources\app.asar"
+    $appDir = if ($env:ANTIGRAVITY_APP_DIR) { $env:ANTIGRAVITY_APP_DIR } else { "$env:LOCALAPPDATA\Programs\Antigravity" }
+    $asar = "$appDir\resources\app.asar"
     if (-not (Test-Path $asar)) { return $false }
     $content = [System.IO.File]::ReadAllText($asar, [System.Text.Encoding]::GetEncoding('latin1'))
     return ($content -notlike "*$PatchSig*")

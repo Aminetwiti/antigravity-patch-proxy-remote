@@ -3,9 +3,23 @@
  * Centralizes magic numbers and configuration values to improve maintainability.
  */
 
+// ─── Environment Helpers ──────────────────────────────────────────────────
+function getEnvString(key: string, fallback: string): string {
+  return process.env[key] || fallback;
+}
+
+function getEnvInt(key: string, fallback: number): number {
+  const val = process.env[key];
+  if (val) {
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  return fallback;
+}
+
 // ─── App Constants (used by main.ts, languageServer.ts, paths.ts) ─────────
 
-export const DEFAULT_BIND_HOST = '127.0.0.1';
+export const DEFAULT_BIND_HOST = getEnvString('AG_BIND_HOST', '127.0.0.1');
 
 /** Origin used by the main BrowserWindow. */
 export const WINDOW_ORIGIN = `https://${DEFAULT_BIND_HOST}`;
@@ -16,8 +30,22 @@ export const DYNAMIC_PORT = 0;
 /** Log file name for the language server. */
 export const LS_LOG_FILE_NAME = 'language_server.log';
 
-/** SHA-256 fingerprint of the bundled language server certificate. */
-export const LS_CERT_FINGERPRINT = 'sha256/sTZpQemOWEytaZqa7P/y/dNXbHMdOAzMvzHEhUwHZXw=';
+/** SHA-256 fingerprint of the bundled language server certificate (overrideable via AG_LS_CERT_FINGERPRINT). */
+export const LS_CERT_FINGERPRINT =
+  process.env.AG_LS_CERT_FINGERPRINT || 'sha256/sTZpQemOWEytaZqa7P/y/dNXbHMdOAzMvzHEhUwHZXw=';
+
+// ─── Cryptography Constants ────────────────────────────────────────────────
+/** Standard OWASP PBKDF2 iteration count for password hashing/derivation. */
+export const PBKDF2_ITERATIONS = 600_000;
+
+/** Legacy PBKDF2 iteration count for backward-compatible decryption. */
+export const PBKDF2_LEGACY_ITERATIONS = 100_000;
+
+/** Derived key length in bytes for AES-256-GCM. */
+export const PBKDF2_KEY_LEN = 32;
+
+/** Hash algorithm for PBKDF2 key derivation. */
+export const PBKDF2_DIGEST = 'sha256';
 
 // ─── Network ───────────────────────────────────────────────────────────────
 
@@ -27,13 +55,13 @@ export const LS_CERT_FINGERPRINT = 'sha256/sTZpQemOWEytaZqa7P/y/dNXbHMdOAzMvzHEh
  * Override via the AG_PROXY_PORT environment variable. If the default is in
  * use, the proxy will bind to a random dynamic port as a last resort.
  */
-export const DEFAULT_PROXY_PORT = 51074;
+export const DEFAULT_PROXY_PORT = getEnvInt('AG_PROXY_PORT', 51074);
 
 /**
  * Default port for the ag-doctor-ui emergency proxy stub.
  * Kept separate from DEFAULT_PROXY_PORT to prevent conflicts.
  */
-export const STUB_PORT_DEFAULT = 51999;
+export const STUB_PORT_DEFAULT = getEnvInt('AG_STUB_PORT', 51999);
 
 /** Path (relative to home) where the active proxy port is persisted for IPC. */
 export const ACTIVE_PORT_FILE = '.gemini/antigravity/active_port';
@@ -41,12 +69,12 @@ export const ACTIVE_PORT_FILE = '.gemini/antigravity/active_port';
 
 
 /** Timeout for Google proxy requests (60 seconds). */
-export const GOOGLE_PROXY_TIMEOUT_MS = 60_000;
+export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 60_000);
 
 
 
 /** Timeout for downloading file content from external URIs (30 seconds). */
-export const FILE_DOWNLOAD_TIMEOUT_MS = 30_000;
+export const FILE_DOWNLOAD_TIMEOUT_MS = getEnvInt('AG_FILE_DOWNLOAD_TIMEOUT_MS', 30_000);
 
 /**
  * Per-chunk idle timeout for streaming upstream responses.
@@ -62,7 +90,7 @@ export const FILE_DOWNLOAD_TIMEOUT_MS = 30_000;
  * Default: 60 seconds — generous enough for slow reasoning models, short
  * enough that a stuck upstream doesn't tie up the proxy indefinitely.
  */
-export const STREAM_IDLE_TIMEOUT_MS = 60_000;
+export const STREAM_IDLE_TIMEOUT_MS = getEnvInt('AG_STREAM_IDLE_TIMEOUT_MS', 60_000);
 
 /**
  * Default request timeout for custom model requests.
@@ -73,7 +101,7 @@ export const STREAM_IDLE_TIMEOUT_MS = 60_000;
  * for at most 60s before giving up, freeing connections for the rest of
  * the dropdown models.
  */
-export const DEFAULT_MODEL_REQUEST_TIMEOUT_MS = 30_000;
+export const DEFAULT_MODEL_REQUEST_TIMEOUT_MS = getEnvInt('AG_MODEL_REQUEST_TIMEOUT_MS', 30_000);
 
 /** Default retry delay for streaming errors (1 second). */
 export const STREAM_RETRY_BASE_DELAY_MS = 1_000;
@@ -117,7 +145,7 @@ export const RETRY_BACKOFF_JITTER_FACTOR = 0.1;
  * across 8+ custom models and starved the rest of the dropdown.
  * With 1 retry, a fully-failing model gives up in ≤ 60s (2 × 30s).
  */
-export const DEFAULT_MAX_RETRIES = 1;
+export const DEFAULT_MAX_RETRIES = getEnvInt('AG_MAX_RETRIES', 1);
 
 /** Minimum allowed retry count. */
 export const MIN_MAX_RETRIES = 0;
@@ -128,27 +156,27 @@ export const MAX_MAX_RETRIES = 5;
 // ─── Circuit Breaker ──────────────────────────────────────────────────────
 
 /** Maximum consecutive cache refresh failures before backing off. */
-export const CACHE_REFRESH_MAX_FAILURES = 3;
+export const CACHE_REFRESH_MAX_FAILURES = getEnvInt('AG_CACHE_REFRESH_MAX_FAILURES', 3);
 
 /** Backoff duration after circuit breaker trips (5 minutes). */
-export const CACHE_REFRESH_BACKOFF_MS = 5 * 60 * 1000;
+export const CACHE_REFRESH_BACKOFF_MS = getEnvInt('AG_CACHE_REFRESH_BACKOFF_MS', 5 * 60 * 1000);
 
 // ─── Model Capabilities ────────────────────────────────────────────────────
 
 /** Maximum input tokens for custom models. */
-export const CUSTOM_MODEL_MAX_TOKENS = 1_048_576;
+export const CUSTOM_MODEL_MAX_TOKENS = getEnvInt('AG_CUSTOM_MODEL_MAX_TOKENS', 1_048_576);
 
 /** Maximum output tokens for custom models. */
-export const CUSTOM_MODEL_MAX_OUTPUT_TOKENS = 4_096;
+export const CUSTOM_MODEL_MAX_OUTPUT_TOKENS = getEnvInt('AG_CUSTOM_MODEL_MAX_OUTPUT_TOKENS', 4_096);
 
 /** Default sampling temperature for non-thinking models. */
-export const DEFAULT_TEMPERATURE = 0.7;
+export const DEFAULT_TEMPERATURE = parseFloat(process.env.AG_DEFAULT_TEMPERATURE || '0.7');
 
 /** Default top-P sampling parameter. */
-export const DEFAULT_TOP_P = 0.9;
+export const DEFAULT_TOP_P = parseFloat(process.env.AG_DEFAULT_TOP_P || '0.9');
 
 /** Default top-K sampling parameter. */
-export const DEFAULT_TOP_K = 40;
+export const DEFAULT_TOP_K = getEnvInt('AG_DEFAULT_TOP_K', 40);
 
 // ─── Model Placeholder ID Generation ──────────────────────────────────────
 
@@ -171,8 +199,8 @@ export const PUBLIC_DNS_SERVERS = ['8.8.8.8', '1.1.1.1', '8.8.4.4'];
 // ─── Google API Hosts ─────────────────────────────────────────────────────
 
 export const GOOGLE_HOSTS = {
-  CLOUD_CODE: 'daily-cloudcode-pa.googleapis.com',
-  GENERATIVE_LANGUAGE: 'generativelanguage.googleapis.com',
+  CLOUD_CODE: getEnvString('AG_GOOGLE_CLOUDCODE_HOST', 'daily-cloudcode-pa.googleapis.com'),
+  GENERATIVE_LANGUAGE: getEnvString('AG_GOOGLE_GENLANG_HOST', 'generativelanguage.googleapis.com'),
 } as const;
 
 // ─── Loopback Hosts ───────────────────────────────────────────────────────
@@ -182,9 +210,9 @@ export const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'] as const;
 // ─── Local Service Defaults ────────────────────────────────────────────────
 
 export const LOCAL_SERVICES = {
-  OLLAMA: `http://${DEFAULT_BIND_HOST}:11434`,
-  LMSTUDIO: `http://${DEFAULT_BIND_HOST}:1234`,
-  LLAMACPP: `http://${DEFAULT_BIND_HOST}:8080`,
+  OLLAMA: getEnvString('OLLAMA_HOST', `http://${DEFAULT_BIND_HOST}:11434`),
+  LMSTUDIO: getEnvString('LMSTUDIO_HOST', `http://${DEFAULT_BIND_HOST}:1234`),
+  LLAMACPP: getEnvString('LLAMACPP_HOST', `http://${DEFAULT_BIND_HOST}:8080`),
 } as const;
 
 // ─── Content Types ────────────────────────────────────────────────────────
@@ -280,28 +308,38 @@ export const PROVIDERS_REQUIRING_API_KEY: readonly ProviderName[] = [
   PROVIDERS.ZAI,
 ];
 
-/** Default API URLs per provider. Override per-model via apiUrl in custom_models.json. */
+/** Default API URLs per provider. Override per-model via apiUrl in custom_models.json or environment variables. */
 export const PROVIDER_DEFAULT_URLS: Record<ProviderName, string> = {
-  [PROVIDERS.OPENAI]: 'https://api.openai.com/v1/chat/completions',
-  [PROVIDERS.ANTHROPIC]: 'https://api.anthropic.com/v1/messages',
-  [PROVIDERS.OPENROUTER]: 'https://openrouter.ai/api/v1/chat/completions',
-  [PROVIDERS.OLLAMA]: 'http://localhost:11434/v1/chat/completions',
-  [PROVIDERS.GOOGLE]: 'https://generativelanguage.googleapis.com/v1beta/models/',
-  [PROVIDERS.CUSTOM]: '',
-  [PROVIDERS.DEEPSEEK]: 'https://api.deepseek.com/v1',
-  [PROVIDERS.GROQ]: 'https://api.groq.com/openai/v1',
-  [PROVIDERS.MISTRAL]: 'https://api.mistral.ai/v1',
-  [PROVIDERS.CEREBRAS]: 'https://api.cerebras.ai/v1',
-  [PROVIDERS.KIMI]: 'https://api.moonshot.ai/v1',
-  [PROVIDERS.FIREWORKS]: 'https://api.fireworks.ai/inference/v1',
-  [PROVIDERS.LMSTUDIO]: 'http://localhost:1234/v1',
-  [PROVIDERS.LLAMACPP]: 'http://localhost:8080/v1',
-  [PROVIDERS.NVIDIA]: 'https://integrate.api.nvidia.com/v1',
-  [PROVIDERS.OPENCODE]: '',
-  [PROVIDERS.CODESTRAL]: 'https://codestral.mistral.ai/v1',
-  [PROVIDERS.WAFER]: '',
-  [PROVIDERS.ZAI]: '',
-  [PROVIDERS.MINIMAX]: 'https://api.minimaxi.chat/v1/chat/completions',
+  [PROVIDERS.OPENAI]: process.env.OPENAI_BASE_URL
+    ? `${process.env.OPENAI_BASE_URL.replace(/\/$/, '')}/chat/completions`
+    : 'https://api.openai.com/v1/chat/completions',
+  [PROVIDERS.ANTHROPIC]: process.env.ANTHROPIC_BASE_URL
+    ? `${process.env.ANTHROPIC_BASE_URL.replace(/\/$/, '')}/messages`
+    : 'https://api.anthropic.com/v1/messages',
+  [PROVIDERS.OPENROUTER]: process.env.OPENROUTER_BASE_URL
+    ? `${process.env.OPENROUTER_BASE_URL.replace(/\/$/, '')}/chat/completions`
+    : 'https://openrouter.ai/api/v1/chat/completions',
+  [PROVIDERS.OLLAMA]: process.env.OLLAMA_BASE_URL
+    ? `${process.env.OLLAMA_BASE_URL.replace(/\/$/, '')}/chat/completions`
+    : process.env.OLLAMA_HOST
+      ? `${process.env.OLLAMA_HOST.replace(/\/$/, '')}/v1/chat/completions`
+      : 'http://localhost:11434/v1/chat/completions',
+  [PROVIDERS.GOOGLE]: process.env.GOOGLE_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/models/',
+  [PROVIDERS.CUSTOM]: process.env.CUSTOM_PROVIDER_URL || '',
+  [PROVIDERS.DEEPSEEK]: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
+  [PROVIDERS.GROQ]: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+  [PROVIDERS.MISTRAL]: process.env.MISTRAL_BASE_URL || 'https://api.mistral.ai/v1',
+  [PROVIDERS.CEREBRAS]: process.env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1',
+  [PROVIDERS.KIMI]: process.env.KIMI_BASE_URL || process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.ai/v1',
+  [PROVIDERS.FIREWORKS]: process.env.FIREWORKS_BASE_URL || 'https://api.fireworks.ai/inference/v1',
+  [PROVIDERS.LMSTUDIO]: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234/v1',
+  [PROVIDERS.LLAMACPP]: process.env.LLAMACPP_BASE_URL || 'http://localhost:8080/v1',
+  [PROVIDERS.NVIDIA]: process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1',
+  [PROVIDERS.OPENCODE]: process.env.OPENCODE_BASE_URL || '',
+  [PROVIDERS.CODESTRAL]: process.env.CODESTRAL_BASE_URL || 'https://codestral.mistral.ai/v1',
+  [PROVIDERS.WAFER]: process.env.WAFER_BASE_URL || '',
+  [PROVIDERS.ZAI]: process.env.ZAI_BASE_URL || '',
+  [PROVIDERS.MINIMAX]: process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.chat/v1/chat/completions',
 };
 
 export interface SuggestedModel {
@@ -320,7 +358,7 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
   {
     id: PROVIDERS.OPENAI,
     label: 'OpenAI',
-    defaultApiUrl: 'https://api.openai.com/v1',
+    defaultApiUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
     suggestedModels: [
       { id: 'gpt-4o', displayName: 'GPT-4o (Omni)' },
       { id: 'gpt-4o-mini', displayName: 'GPT-4o Mini' },
@@ -331,7 +369,7 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
   {
     id: PROVIDERS.DEEPSEEK,
     label: 'DeepSeek (Official)',
-    defaultApiUrl: 'https://api.deepseek.com/v1',
+    defaultApiUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
     suggestedModels: [
       { id: 'deepseek-chat', displayName: 'DeepSeek-V3 (Chat)' },
       { id: 'deepseek-reasoner', displayName: 'DeepSeek-R1 (Reasoner)' },
@@ -340,7 +378,7 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
   {
     id: PROVIDERS.OPENROUTER,
     label: 'OpenRouter',
-    defaultApiUrl: 'https://openrouter.ai/api/v1',
+    defaultApiUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
     suggestedModels: [
       { id: 'deepseek/deepseek-r1', displayName: 'DeepSeek R1 (OpenRouter)' },
       { id: 'anthropic/claude-3.5-sonnet', displayName: 'Claude 3.5 Sonnet' },
@@ -351,7 +389,7 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
   {
     id: PROVIDERS.GROQ,
     label: 'Groq (Ultra Fast)',
-    defaultApiUrl: 'https://api.groq.com/openai/v1',
+    defaultApiUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
     suggestedModels: [
       { id: 'llama-3.3-70b-versatile', displayName: 'Llama 3.3 70B Versatile' },
       { id: 'mixtral-8x7b-32768', displayName: 'Mixtral 8x7B (32k)' },
@@ -361,7 +399,7 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
   {
     id: PROVIDERS.OLLAMA,
     label: 'Ollama (Local)',
-    defaultApiUrl: 'http://localhost:11434/v1',
+    defaultApiUrl: process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST || 'http://localhost:11434/v1',
     suggestedModels: [
       { id: 'llama3', displayName: 'Llama 3 Local' },
       { id: 'deepseek-r1:8b', displayName: 'DeepSeek R1 8B Local' },
@@ -371,7 +409,7 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
   {
     id: PROVIDERS.ANTHROPIC,
     label: 'Anthropic Claude',
-    defaultApiUrl: 'https://api.anthropic.com/v1',
+    defaultApiUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1',
     suggestedModels: [
       { id: 'claude-3-5-sonnet-latest', displayName: 'Claude 3.5 Sonnet' },
       { id: 'claude-3-5-haiku-latest', displayName: 'Claude 3.5 Haiku' },
@@ -380,7 +418,7 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
   {
     id: PROVIDERS.MISTRAL,
     label: 'Mistral AI',
-    defaultApiUrl: 'https://api.mistral.ai/v1',
+    defaultApiUrl: process.env.MISTRAL_BASE_URL || 'https://api.mistral.ai/v1',
     suggestedModels: [
       { id: 'mistral-large-latest', displayName: 'Mistral Large' },
       { id: 'codestral-latest', displayName: 'Codestral (Code)' },
@@ -389,7 +427,7 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
   {
     id: PROVIDERS.KIMI,
     label: 'Moonshot (Kimi)',
-    defaultApiUrl: 'https://api.moonshot.ai/v1',
+    defaultApiUrl: process.env.KIMI_BASE_URL || process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.ai/v1',
     suggestedModels: [
       { id: 'moonshot-v1-8k', displayName: 'Kimi Moonshot 8k' },
       { id: 'moonshot-v1-32k', displayName: 'Kimi Moonshot 32k' },

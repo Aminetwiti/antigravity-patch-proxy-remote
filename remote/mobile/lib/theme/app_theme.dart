@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
 export 'app_colors.dart';
+export 'app_spacing.dart';
+export 'app_typography.dart';
 
 /// Antigravity 2.0 ThemeData builder
 /// Aligné sur le design system PC (ag-doctor-ui « The Quiet Console ») :
