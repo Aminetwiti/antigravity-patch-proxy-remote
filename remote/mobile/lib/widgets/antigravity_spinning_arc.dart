@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 /// Exact Antigravity 2.0 spinning arc activity indicator.
 class AntigravitySpinningArc extends StatefulWidget {
@@ -37,6 +38,16 @@ class _AntigravitySpinningArcState extends State<AntigravitySpinningArc>
 
   @override
   Widget build(BuildContext context) {
+    if (!AppMotion.shouldAnimate(context)) {
+      return SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: CustomPaint(
+          painter: _ArcPainter(color: widget.color),
+        ),
+      );
+    }
+
     return AnimatedBuilder(
       animation: _controller,
       builder: (_, __) => Transform.rotate(

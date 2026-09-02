@@ -815,11 +815,11 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6.5),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF12151D) : scheme.primaryContainer.withValues(alpha: 0.25),
+        color: isDark ? AppColors.surfaceRaised : scheme.primaryContainer.withValues(alpha: 0.25),
         gradient: AppGradients.cardCool(isDark: isDark),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF3186FF).withValues(alpha: 0.35) : scheme.primary.withValues(alpha: 0.25),
+          color: isDark ? AppColors.accentBlue.withValues(alpha: 0.35) : scheme.primary.withValues(alpha: 0.25),
           width: 0.8,
         ),
       ),
@@ -848,10 +848,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1C2230) : scheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(4),
+                    color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(AppRadius.xs),
                     border: Border.all(
-                      color: isDark ? const Color(0xFF2E3A52) : scheme.outlineVariant.withValues(alpha: 0.5),
+                      color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.5),
                       width: 0.5,
                     ),
                   ),
@@ -861,7 +861,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       fontSize: 10.5,
                       fontFamily: 'monospace',
                       fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFF9E9FA8) : scheme.onSurfaceVariant,
+                      color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -875,7 +875,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       style: TextStyle(
                         fontSize: 10.5,
                         fontFamily: 'monospace',
-                        color: isDark ? const Color(0xFF71717A) : scheme.outline,
+                        color: isDark ? AppColors.inkMuted : scheme.outline,
                       ),
                     ),
                   ),
@@ -892,35 +892,43 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                   HapticFeedback.mediumImpact();
                   widget.onStop?.call();
                 },
-                borderRadius: BorderRadius.circular(4),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF3B181E) : const Color(0xFFFEE2E2),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: isDark ? const Color(0xFFEF4444).withValues(alpha: 0.5) : const Color(0xFFDC2626).withValues(alpha: 0.4),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.stop_rounded,
-                        size: 11,
-                        color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        'Stop',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                borderRadius: BorderRadius.circular(AppRadius.xs),
+                child: Semantics(
+                  button: true,
+                  label: 'Arrêter l\'exécution de l\'agent',
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+                    alignment: Alignment.center,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.dangerSubtle : const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(AppRadius.xs),
+                        border: Border.all(
+                          color: AppColors.danger.withValues(alpha: 0.5),
+                          width: 0.8,
                         ),
                       ),
-                    ],
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.stop_rounded,
+                            size: 12,
+                            color: isDark ? AppColors.danger : const Color(0xFFDC2626),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Stop',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? AppColors.danger : const Color(0xFFDC2626),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),

@@ -406,9 +406,9 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
       bottom: true,
       child: Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF13151A) : scheme.surface,
+          color: isDark ? AppColors.surfaceBase : scheme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          border: Border.all(color: isDark ? const Color(0xFF272A30) : scheme.outlineVariant),
+          border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.15),
@@ -428,8 +428,8 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF3B3E47) : scheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+                  color: isDark ? AppColors.borderStrong : scheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(AppRadius.xs),
                 ),
               ),
             ),
@@ -440,7 +440,7 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: isDark ? const Color(0xFF23262D) : scheme.outlineVariant,
+                    color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                   ),
                 ),
               ),
@@ -480,7 +480,7 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                           Text(
                             subPath,
                             style: TextStyle(
-                              color: isDark ? const Color(0xFF7E808A) : scheme.onSurfaceVariant,
+                              color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                               fontSize: 11,
                             ),
                             maxLines: 1,
@@ -495,13 +495,13 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF22C55E).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
+                      color: AppColors.positive.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
                     ),
                     child: Text(
                       '+$_additions',
                       style: const TextStyle(
-                        color: Color(0xFF22C55E),
+                        color: AppColors.positive,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -511,13 +511,13 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
+                      color: AppColors.danger.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
                     ),
                     child: Text(
                       '-$_deletions',
                       style: const TextStyle(
-                        color: Color(0xFFEF4444),
+                        color: AppColors.danger,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -585,8 +585,8 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                 height: 38,
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF181A20) : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  border: Border(bottom: BorderSide(color: isDark ? const Color(0xFF23262D) : scheme.outlineVariant)),
+                  color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  border: Border(bottom: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant)),
                 ),
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
@@ -674,10 +674,10 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF181B20) : scheme.surfaceContainer,
+                  color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
                   border: Border(
                     top: BorderSide(
-                      color: isDark ? const Color(0xFF272A30) : scheme.outlineVariant,
+                      color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                     ),
                   ),
                 ),
@@ -728,10 +728,10 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
+                  color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
                   border: Border(
                     top: BorderSide(
-                      color: isDark ? const Color(0xFF272A30) : scheme.outlineVariant,
+                      color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                     ),
                   ),
                 ),
@@ -880,7 +880,7 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: hunk.isSelected ? const Color(0xFF22C55E) : scheme.outline,
+                    color: hunk.isSelected ? AppColors.positive : scheme.outline,
                   ),
                 ),
               ),
@@ -896,7 +896,7 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
 
     final contentWidget = InkWell(
       onTap: () => _addAnnotation(index),
-      hoverColor: isDark ? const Color(0xFF1E2128) : scheme.surfaceContainerHighest,
+      hoverColor: isDark ? AppColors.surfaceHover : scheme.surfaceContainerHighest,
       splashColor: scheme.primary.withValues(alpha: 0.12),
       highlightColor: scheme.primary.withValues(alpha: 0.08),
       onLongPress: () {
@@ -969,16 +969,16 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
     switch (line.type) {
       case _DiffLineType.addition:
         bg = isDark ? AppColors.diffInsertedLine : const Color(0x1816A34A);
-        textColor = isDark ? const Color(0xFF81C995) : const Color(0xFF15803D);
+        textColor = isDark ? AppColors.positive : const Color(0xFF15803D);
         prefix = '+';
         break;
       case _DiffLineType.deletion:
         bg = isDark ? AppColors.diffRemovedLine : const Color(0x18DC2626);
-        textColor = isDark ? const Color(0xFFF28B82) : const Color(0xFFB91C1C);
+        textColor = isDark ? AppColors.danger : const Color(0xFFB91C1C);
         prefix = '-';
         break;
       case _DiffLineType.hunkHeader:
-        bg = isDark ? const Color(0x228AB4F8) : scheme.primary.withValues(alpha: 0.10);
+        bg = isDark ? AppColors.accentSubtle : scheme.primary.withValues(alpha: 0.10);
         textColor = isDark ? AppColors.accentBlue : scheme.primary;
         prefix = ' ';
         break;
@@ -1124,10 +1124,10 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF16181D) : scheme.surface,
-                      borderRadius: BorderRadius.circular(8),
+                      color: isDark ? AppColors.surfaceBase : scheme.surface,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       border: Border.all(
-                        color: const Color(0xFFEF4444).withValues(alpha: 0.3),
+                        color: AppColors.danger.withValues(alpha: 0.3),
                       ),
                     ),
                     child: Column(
@@ -1138,15 +1138,15 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(4),
+                                color: AppColors.danger.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(AppRadius.xs),
                               ),
                               child: const Text(
                                 'ORIGINAL (AVANT)',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
-                                  color: Color(0xFFEF4444),
+                                  color: AppColors.danger,
                                 ),
                               ),
                             ),
@@ -1160,14 +1160,14 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                               Icon(
                                 isSvg ? Icons.polyline_outlined : Icons.image_not_supported_outlined,
                                 size: 36,
-                                color: isDark ? const Color(0xFF5A5D6A) : scheme.outline,
+                                color: isDark ? AppColors.inkMuted : scheme.outline,
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 'Version précédente',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: isDark ? const Color(0xFF8E909D) : scheme.onSurfaceVariant,
+                                  color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -1184,10 +1184,10 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF16181D) : scheme.surface,
-                      borderRadius: BorderRadius.circular(8),
+                      color: isDark ? AppColors.surfaceBase : scheme.surface,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       border: Border.all(
-                        color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                        color: AppColors.positive.withValues(alpha: 0.3),
                       ),
                     ),
                     child: Column(
@@ -1198,15 +1198,15 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF22C55E).withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(4),
+                                color: AppColors.positive.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(AppRadius.xs),
                               ),
                               child: const Text(
                                 'MODIFIÉ (APRÈS)',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
-                                  color: Color(0xFF22C55E),
+                                  color: AppColors.positive,
                                 ),
                               ),
                             ),

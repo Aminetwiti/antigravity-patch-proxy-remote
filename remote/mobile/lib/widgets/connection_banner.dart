@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/network/websocket_client.dart';
+import '../theme/app_colors.dart';
 
 /// Bannière premium de perte/reprise de connexion.
 ///
@@ -134,13 +135,18 @@ class _ConnectionBannerState extends State<ConnectionBanner> {
         tween: Tween(begin: 0.0, end: 1.0),
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,
-        builder: (context, value, child) => Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, -12 * (1 - value)),
-            child: child,
-          ),
-        ),
+        builder: (context, value, child) {
+          final shouldAnimate = AppMotion.shouldAnimate(context);
+          return Opacity(
+            opacity: value,
+            child: shouldAnimate
+                ? Transform.translate(
+                    offset: Offset(0, -12 * (1 - value)),
+                    child: child,
+                  )
+                : child,
+          );
+        },
         child: Container(
           width: double.infinity,
           padding: EdgeInsets.symmetric(

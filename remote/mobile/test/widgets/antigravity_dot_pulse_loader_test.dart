@@ -31,5 +31,34 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1500));
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('renders static dots without AnimatedBuilder when disableAnimations is true', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(disableAnimations: true),
+            child: Scaffold(
+              body: Center(
+                child: AntigravityDotPulseLoader(
+                  dotSize: 6.0,
+                  spacing: 4.0,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(AntigravityDotPulseLoader), findsOneWidget);
+      expect(find.byType(Row), findsOneWidget);
+      // AnimatedBuilder should not be descendant of AntigravityDotPulseLoader when disableAnimations is true
+      expect(
+        find.descendant(
+          of: find.byType(AntigravityDotPulseLoader),
+          matching: find.byType(AnimatedBuilder),
+        ),
+        findsNothing,
+      );
+    });
   });
 }

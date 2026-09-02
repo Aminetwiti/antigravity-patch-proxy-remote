@@ -25,10 +25,10 @@ class ImplementationPlanCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 4),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF14161B) : scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(10),
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF262930) : scheme.outlineVariant,
+          color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -47,7 +47,7 @@ class ImplementationPlanCard extends StatelessWidget {
                 Icon(
                   Icons.description_outlined,
                   size: 16,
-                  color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                  color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -56,7 +56,7 @@ class ImplementationPlanCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                      color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                     ),
                   ),
                 ),
@@ -71,8 +71,8 @@ class ImplementationPlanCard extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E2838) : scheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(6),
+                        color: isDark ? AppColors.accentSubtle : scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(AppRadius.xs),
                         border: Border.all(
                           color: scheme.primary.withValues(alpha: 0.5),
                           width: 0.8,
@@ -126,10 +126,10 @@ class WalkthroughCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 4),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF14161B) : scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(10),
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF262930) : scheme.outlineVariant,
+          color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -140,7 +140,7 @@ class WalkthroughCard extends StatelessWidget {
             HapticFeedback.selectionClick();
             onViewWalkthrough();
           },
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             child: Column(
@@ -152,7 +152,7 @@ class WalkthroughCard extends StatelessWidget {
                     Icon(
                       Icons.menu_book_outlined,
                       size: 16,
-                      color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                      color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -160,7 +160,7 @@ class WalkthroughCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                       ),
                     ),
                   ],
@@ -172,7 +172,7 @@ class WalkthroughCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.35,
-                      color: isDark ? const Color(0xFF9CA3AF) : scheme.onSurfaceVariant,
+                      color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -274,16 +274,13 @@ class _FilesChangedCardState extends State<FilesChangedCard>
     final count = widget.files.length;
     final label = '$count ${count > 1 ? 'files changed' : 'file changed'}';
 
-    const positiveColor = Color(0xFF22C55E);
-    const negativeColor = Color(0xFFEF4444);
-
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 4),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF14161B) : scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(10),
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF262930) : scheme.outlineVariant,
+          color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -311,7 +308,7 @@ class _FilesChangedCardState extends State<FilesChangedCard>
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                            color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                           ),
                         ),
                         // Additions & Deletions
@@ -323,7 +320,7 @@ class _FilesChangedCardState extends State<FilesChangedCard>
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: positiveColor,
+                                color: AppColors.positive,
                                 fontFamily: 'monospace',
                               ),
                             ),
@@ -335,7 +332,7 @@ class _FilesChangedCardState extends State<FilesChangedCard>
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: negativeColor,
+                                color: AppColors.danger,
                                 fontFamily: 'monospace',
                               ),
                             ),
@@ -359,17 +356,17 @@ class _FilesChangedCardState extends State<FilesChangedCard>
                 const Spacer(),
                 // Review button (Desktop Antigravity pill style)
                 Material(
-                  color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(6),
+                  color: isDark ? AppColors.surfaceHover : scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(AppRadius.xs),
                   child: InkWell(
                     onTap: widget.onReview,
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(AppRadius.xs),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(AppRadius.xs),
                         border: Border.all(
-                          color: isDark ? const Color(0xFF333742) : scheme.outlineVariant,
+                          color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                           width: 0.8,
                         ),
                       ),
@@ -379,7 +376,7 @@ class _FilesChangedCardState extends State<FilesChangedCard>
                           Icon(
                             Icons.difference_outlined,
                             size: 13,
-                            color: isDark ? const Color(0xFFB0B4C0) : scheme.onSurfaceVariant,
+                            color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                           ),
                           const SizedBox(width: 4.5),
                           Text(
@@ -387,7 +384,7 @@ class _FilesChangedCardState extends State<FilesChangedCard>
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w600,
-                              color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                              color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                             ),
                           ),
                         ],
@@ -441,7 +438,7 @@ class _FilesChangedCardState extends State<FilesChangedCard>
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
-                                        color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                                         fontFamily: 'monospace',
                                       ),
                                     ),
@@ -451,7 +448,7 @@ class _FilesChangedCardState extends State<FilesChangedCard>
                                         style: TextStyle(
                                           fontSize: 11,
                                           color: isDark
-                                              ? const Color(0xFF7E818D)
+                                              ? AppColors.inkMuted
                                               : scheme.onSurfaceVariant.withValues(alpha: 0.7),
                                           fontFamily: 'monospace',
                                         ),
@@ -783,10 +780,10 @@ class WorkspaceUrlArtifactCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF16191E) : scheme.surfaceContainer,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF282C36) : scheme.outlineVariant,
+          color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -825,8 +822,8 @@ class WorkspaceUrlArtifactCard extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF222630) : scheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(4),
+                              color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(AppRadius.xs),
                             ),
                             child: Text(
                               productLabel,

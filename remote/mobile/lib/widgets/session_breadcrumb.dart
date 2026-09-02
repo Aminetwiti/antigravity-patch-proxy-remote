@@ -161,27 +161,27 @@ class SessionBreadcrumb extends StatelessWidget {
                                 message: 'Tâche en cours d\'exécution...',
                                 child: AntigravitySpinningArc(
                                   size: 10.5,
-                                  color: isDark ? const Color(0xFF8AB4F8) : scheme.primary,
+                                  color: isDark ? AppColors.accentBlue : scheme.primary,
                                 ),
                               ),
                               const SizedBox(width: 4),
                             ] else if (hasWaitingApproval) ...[
-                              Tooltip(
+                              const Tooltip(
                                 message: 'Action ou approbation requise',
-                                child: const Icon(
+                                child: Icon(
                                   Icons.shield_outlined,
                                   size: 11.5,
-                                  color: Color(0xFFE5A93C),
+                                  color: AppColors.warning,
                                 ),
                               ),
                               const SizedBox(width: 4),
                             ] else if (isError) ...[
-                              Tooltip(
+                              const Tooltip(
                                 message: 'Erreur',
-                                child: const Icon(
+                                child: Icon(
                                   Icons.error_outline,
                                   size: 11.5,
-                                  color: Color(0xFFE5534B),
+                                  color: AppColors.danger,
                                 ),
                               ),
                               const SizedBox(width: 4),

@@ -2654,10 +2654,9 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                     ? (isQueued
                                         ? "Message en file d'attente (envoi automatique)..."
                                         : 'Ask anything, @ to mention, / for actions')
-                                    : 'Hors ligne — message mis en attente locale',
+                                    : 'Écrivez un message (envoi dès reconnexion)...',
                             hintStyle: TextStyle(
-                              color:
-                                  widget.isConnected ? scheme.onSurfaceVariant.withValues(alpha: 0.8) : scheme.error,
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                               fontSize: 13.5,
                             ),
                             border: InputBorder.none,
@@ -3767,8 +3766,8 @@ class _CapabilityIconBadge extends StatelessWidget {
             icon,
             size: 15.5,
             color: isActive
-                ? (isDark ? const Color(0xFFC4C7C5) : scheme.onSurface)
-                : (isDark ? const Color(0xFF5F6368) : scheme.outlineVariant),
+                ? (isDark ? AppColors.inkPrimary : scheme.onSurface)
+                : (isDark ? AppColors.inkMuted : scheme.outlineVariant),
           ),
         ),
       ),

@@ -258,6 +258,8 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   bool _showJumpToBottom = false;
   int _hiddenNewCount = 0;
   bool _userScrollLocked = false;
+  double _dragStartX = 0;
+  double _dragDeltaX = 0;
 
   // ── Session Top Tabs & Artifact state (isolé par session) ───────────
   final Map<String, SessionTabType> _sessionTabs = {};
@@ -2789,7 +2791,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                     style: TextStyle(
                       fontSize: 12.5,
                       color: Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF9CA3AF)
+                          ? AppColors.inkSecondary
                           : Theme.of(context).colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.w400,
                     ),
@@ -2833,7 +2835,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                   style: TextStyle(
                     fontSize: 12.5,
                     color: Theme.of(context).brightness == Brightness.dark
-                        ? const Color(0xFF9CA3AF)
+                        ? AppColors.inkSecondary
                         : Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w400,
                   ),
@@ -2933,7 +2935,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: StatusDotBadge(
         label: '$pendingCount message${pendingCount > 1 ? 's' : ''} en attente',
-        color: const Color(0xFFD29922),
+        color: AppColors.warning,
       ),
     );
   }
@@ -3169,42 +3171,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             child: Stack(
               children: [
                 Positioned.fill(
-                  // P6 : swipe horizontal gauche/droite pour changer d'onglet.
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragEnd: (details) {
-                      final velocity = details.primaryVelocity ?? 0;
-                      if (_activeArtifact != null) {
-                        if (velocity > 150) {
-                          // Swipe right dismisses active artifact and returns to chat
-                          setState(() {
-                            _activeArtifact = null;
-                            _currentTab = SessionTabType.chat;
-                          });
-                        }
-                        return;
-                      }
-                      final tabs = _swipeableTabs;
-                      if (tabs.length < 2) return;
-                      final idx = tabs.indexOf(_currentTab);
-                      if (idx < 0) return;
-                      final next = velocity < -200
-                          ? idx + 1
-                          : velocity > 200
-                              ? idx - 1
-                              : -1;
-                      if (next < 0 || next >= tabs.length) return;
-                      final nextTab = tabs[next];
-                      setState(() {
-                        _activeArtifact = null;
-                        _currentTab = nextTab;
-                      });
-                      if (nextTab == SessionTabType.review) {
-                        _fetchVcsChanges();
-                      }
-                    },
-                    child: _buildActiveTabContent(scheme, isConnected),
-                  ),
+                  child: _buildActiveTabContent(scheme, isConnected),
                 ),
                 // P1 : bouton flottant « retour en bas » — uniquement sur
                 // l'onglet chat, quand l'utilisateur s'est éloigné du bas.
@@ -3381,7 +3348,48 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         },
         child: Focus(
           autofocus: false,
-          child: content,
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (event) {
+              _dragStartX = event.position.dx;
+              _dragDeltaX = 0;
+            },
+            onPointerMove: (event) {
+              _dragDeltaX = event.position.dx - _dragStartX;
+            },
+            onPointerUp: (event) {
+              if (_activeArtifact != null) {
+                if (_dragDeltaX > 40) {
+                  setState(() {
+                    _activeArtifact = null;
+                    _currentTab = SessionTabType.chat;
+                  });
+                }
+                return;
+              }
+              final tabs = _swipeableTabs;
+              if (tabs.length < 2) return;
+              final idx = tabs.indexOf(_currentTab);
+              if (idx < 0) return;
+              final isSwipeLeft = _dragDeltaX < -40;
+              final isSwipeRight = _dragDeltaX > 40;
+              final next = isSwipeLeft
+                  ? idx + 1
+                  : isSwipeRight
+                      ? idx - 1
+                      : -1;
+              if (next < 0 || next >= tabs.length) return;
+              final nextTab = tabs[next];
+              setState(() {
+                _activeArtifact = null;
+                _currentTab = nextTab;
+              });
+              if (nextTab == SessionTabType.review) {
+                _fetchVcsChanges();
+              }
+            },
+            child: content,
+          ),
         ),
       ),
     );
@@ -4522,12 +4530,12 @@ class _UserMessageBubbleState extends State<_UserMessageBubble> {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
                       decoration: BoxDecoration(
                         color: isDark
-                            ? const Color(0xFF22242B)
+                            ? AppColors.surfaceRaised
                             : scheme.surfaceContainerHighest.withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(AppRadius.pill),
                         border: Border.all(
                           color: isDark
-                              ? const Color(0xFF323640)
+                              ? AppColors.borderSubtle
                               : scheme.outlineVariant.withValues(alpha: 0.6),
                           width: 0.8,
                         ),
@@ -4613,7 +4621,7 @@ class _UserMessageBubbleState extends State<_UserMessageBubble> {
                             widget.onRevertStep!(widget.message);
                           },
                           borderRadius: BorderRadius.circular(6),
-                          hoverColor: const Color(0xFFD97706).withValues(alpha: 0.1),
+                          hoverColor: AppColors.warning.withValues(alpha: 0.1),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                             child: Icon(
@@ -4764,10 +4772,10 @@ class _MessageBubble extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E1214) : scheme.errorContainer.withValues(alpha: 0.25),
+                  color: isDark ? AppColors.dangerSubtle : scheme.errorContainer.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: isDark ? const Color(0xFF5C1D24) : scheme.error.withValues(alpha: 0.4),
+                    color: isDark ? AppColors.danger.withValues(alpha: 0.35) : scheme.error.withValues(alpha: 0.4),
                     width: 0.8,
                   ),
                 ),
@@ -4806,7 +4814,7 @@ class _MessageBubble extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 12.5,
                                       height: 1.4,
-                                      color: isDark ? const Color(0xFFFCA5A5) : scheme.onErrorContainer,
+                                      color: isDark ? AppColors.danger : scheme.onErrorContainer,
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
@@ -4826,7 +4834,7 @@ class _MessageBubble extends StatelessWidget {
                                             Icon(
                                               Icons.copy_rounded,
                                               size: 11,
-                                              color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
+                                              color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                                             ),
                                             const SizedBox(width: 4),
                                             Text(
@@ -4834,7 +4842,7 @@ class _MessageBubble extends StatelessWidget {
                                               style: TextStyle(
                                                 fontSize: 11,
                                                 fontFamily: 'monospace',
-                                                color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
+                                                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                                               ),
                                             ),
                                           ],
@@ -4863,10 +4871,10 @@ class _MessageBubble extends StatelessWidget {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                               decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF2B3340) : scheme.surfaceContainerHighest,
+                                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                  color: isDark ? const Color(0xFF404B5E) : scheme.outlineVariant,
+                                  color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                                   width: 1,
                                 ),
                               ),
@@ -4876,7 +4884,7 @@ class _MessageBubble extends StatelessWidget {
                                   Icon(
                                     Icons.refresh_rounded,
                                     size: 13,
-                                    color: isDark ? const Color(0xFFE2E8F0) : scheme.onSurface,
+                                    color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
@@ -4884,7 +4892,7 @@ class _MessageBubble extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
-                                      color: isDark ? const Color(0xFFE2E8F0) : scheme.onSurface,
+                                      color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                                     ),
                                   ),
                                 ],
@@ -6111,7 +6119,7 @@ class _MediaThumbnailItemState extends State<_MediaThumbnailItem> {
             Container(
               width: 76,
               height: 76,
-              color: isDark ? const Color(0xFF141518) : scheme.surfaceContainerLow,
+              color: isDark ? AppColors.surfaceBase : scheme.surfaceContainerLow,
               child: _bytes != null
                   ? Image.memory(
                       _bytes!,

@@ -78,6 +78,19 @@ class _AntigravityDotPulseLoaderState extends State<AntigravityDotPulseLoader>
             ? AppColors.inkPrimary
             : AppColors.surfaceBase);
 
+    if (!AppMotion.shouldAnimate(context)) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildDot(0.5, effectiveColor),
+          SizedBox(width: widget.spacing),
+          _buildDot(0.5, effectiveColor),
+          SizedBox(width: widget.spacing),
+          _buildDot(0.5, effectiveColor),
+        ],
+      );
+    }
+
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {

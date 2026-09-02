@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/protocol/messages.dart';
 import 'package:mobile/core/protocol/stream_parser.dart';
 import 'package:mobile/features/chat_stream/widgets/execution_progress_view.dart';
+import 'package:mobile/widgets/antigravity_dot_pulse_loader.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -63,7 +64,7 @@ Thinking about next optimization
 
       expect(find.textContaining('Thinking'), findsOneWidget);
       expect(find.textContaining('…'), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(AntigravityDotPulseLoader), findsOneWidget);
     });
 
     test('StreamDeltaParser parses multi-part lifecycle events correctly', () {

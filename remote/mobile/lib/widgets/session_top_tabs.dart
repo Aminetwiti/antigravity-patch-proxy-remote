@@ -61,6 +61,13 @@ class SessionTopTabs extends StatelessWidget {
             width: 1,
           ),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -80,7 +87,7 @@ class SessionTopTabs extends StatelessWidget {
                   icon: Icons.difference_outlined,
                   label: 'Review',
                   badge: filesChangedCount > 0 ? '+$filesChangedCount' : null,
-                  badgeColor: isDark ? AppColors.positive : const Color(0xFF1A7F37),
+                  badgeColor: AppColors.positive,
                   isSelected: activeTab == SessionTabType.review && activeArtifact == null,
                   onTap: () => onTabChanged(SessionTabType.review),
                 ),
@@ -139,7 +146,7 @@ class SessionTopTabs extends StatelessWidget {
             Container(
               height: 20,
               width: 1,
-              color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant,
+              color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
             ),
             if (onNewTab != null)
               IconButton(

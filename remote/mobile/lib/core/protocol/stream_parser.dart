@@ -179,7 +179,7 @@ class StreamDeltaParser {
     }
     if (lowerTool != 'run_command' && lowerTool != 'command' && lowerTool != 'bash' && lowerTool != 'terminal' && lowerTool != 'runner') {
       arg = arg.replaceAll('"', '').replaceAll("'", '').trim();
-      if (arg.contains('/') || arg.contains('\\')) {
+      if (arg.startsWith('/') || arg.startsWith('\\') || _winDrivePrefixRe.hasMatch(arg) || _filePrefixWinRe.hasMatch(arg)) {
         arg = arg.replaceAll(_filePrefixWinRe, '');
         arg = arg.replaceAll(_winDrivePrefixRe, '');
         final segments = arg.split(_pathSplitRe);

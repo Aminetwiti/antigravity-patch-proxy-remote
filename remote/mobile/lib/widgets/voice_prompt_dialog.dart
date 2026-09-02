@@ -154,12 +154,12 @@ class _VoicePromptDialogState extends State<VoicePromptDialog> with SingleTicker
           // Speech Input Field
           Container(
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF161B22) : const Color(0xFFF6F8FA),
+              color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(
                 color: _isListening
                     ? AppColors.accent
-                    : (isDark ? const Color(0xFF30363D) : const Color(0xFFD0D7DE)),
+                    : (isDark ? AppColors.borderSubtle : scheme.outlineVariant),
                 width: _isListening ? 1.5 : 1,
               ),
             ),
@@ -241,11 +241,11 @@ class _VoicePromptDialogState extends State<VoicePromptDialog> with SingleTicker
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF14171F) : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 gradient: AppGradients.cardCool(isDark: isDark),
                 borderRadius: BorderRadius.circular(AppRadius.lg),
                 border: Border.all(
-                  color: const Color(0xFF3186FF).withValues(alpha: isDark ? 0.35 : 0.25),
+                  color: AppColors.accentBlue.withValues(alpha: isDark ? 0.35 : 0.25),
                   width: 0.8,
                 ),
               ),
@@ -258,7 +258,7 @@ class _VoicePromptDialogState extends State<VoicePromptDialog> with SingleTicker
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.8,
-                      color: Color(0xFF3186FF),
+                      color: AppColors.accentBlue,
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -276,13 +276,13 @@ class _VoicePromptDialogState extends State<VoicePromptDialog> with SingleTicker
                         8.0 + 10.0 * val,
                       ];
                       final colors = [
-                        const Color(0xFF3186FF),
-                        const Color(0xFF749BFF),
-                        const Color(0xFF00B95C),
-                        const Color(0xFFFBBC04),
-                        const Color(0xFFFC413D),
-                        const Color(0xFF00B95C),
-                        const Color(0xFF3186FF),
+                        AppColors.accentBlue,
+                        AppColors.accent,
+                        AppColors.positive,
+                        AppColors.warning,
+                        AppColors.danger,
+                        AppColors.positive,
+                        AppColors.accentBlue,
                       ];
 
                       return Row(
