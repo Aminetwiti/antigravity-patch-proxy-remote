@@ -1,17 +1,215 @@
 {
   "@@locale": "en",
   "appTitle": "Antigravity Remote",
+  "@appTitle": {
+    "description": "Main application title"
+  },
   "notConnectedToDaemon": "⚠️ Not connected to daemon server",
+  "@notConnectedToDaemon": {
+    "description": "Message shown when WebSocket client is disconnected"
+  },
   "creatingNewConversation": "Creating new conversation...",
+  "@creatingNewConversation": {
+    "description": "Transient message while session is being created"
+  },
   "newConversationOpened": "✨ New conversation opened ({id})",
+  "@newConversationOpened": {
+    "description": "Notification for newly opened conversation",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
   "failedToCreateSession": "❌ Failed to create session: {error}",
+  "@failedToCreateSession": {
+    "description": "Error notification when session creation fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "conversationRestored": "Conversation restored",
-  "restoreError": "Error while restoring: {error}",
+  "@conversationRestored": {
+    "description": "Confirmation message after session restore"
+  },
+  "restoreError": "Error during restoration: {error}",
+  "@restoreError": {
+    "description": "Error message when restoration fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "conversationDeleted": "Conversation deleted",
+  "@conversationDeleted": {
+    "description": "Confirmation message when session is deleted"
+  },
   "conversationArchived": "Conversation archived",
+  "@conversationArchived": {
+    "description": "Confirmation message when session is archived"
+  },
   "conversationRenamed": "Conversation renamed",
+  "@conversationRenamed": {
+    "description": "Confirmation message when session is renamed"
+  },
   "markdownCopied": "Conversation Markdown copied!",
+  "@markdownCopied": {
+    "description": "Confirmation message when markdown is copied"
+  },
   "noContentToExport": "No content to export",
+  "@noContentToExport": {
+    "description": "Warning message when export payload is empty"
+  },
   "lanSearchRestarted": "LAN discovery restarted…",
-  "defaultSessionTitle": "Session"
+  "@lanSearchRestarted": {
+    "description": "Notification when UDP LAN discovery restarts"
+  },
+  "defaultSessionTitle": "Session",
+  "@defaultSessionTitle": {
+    "description": "Default conversation title"
+  },
+  "discoverDaemonsTitle": "Discover Daemons",
+  "@discoverDaemonsTitle": {
+    "description": "Title of the discovery screen"
+  },
+  "oneTapConnect": "1-Tap Connect",
+  "@oneTapConnect": {
+    "description": "One tap connect button label"
+  },
+  "hostPcDomain": "Host PC / Domain",
+  "@hostPcDomain": {
+    "description": "Label for host or domain textfield"
+  },
+  "daemonPort": "Daemon Port",
+  "@daemonPort": {
+    "description": "Label for daemon port textfield"
+  },
+  "pinCodeLabel": "PIN Code (6 digits shown on PC)",
+  "@pinCodeLabel": {
+    "description": "Label for PIN code textfield"
+  },
+  "validatePin": "Validate PIN",
+  "@validatePin": {
+    "description": "Button to validate PIN code"
+  },
+  "authTokenLabel": "Auth Token (optional or obtained via PIN)",
+  "@authTokenLabel": {
+    "description": "Label for authentication token"
+  },
+  "manualConnection": "Manual Connection",
+  "@manualConnection": {
+    "description": "Tab or button for manual connection"
+  },
+  "savedConnections": "Saved Connections",
+  "@savedConnections": {
+    "description": "Title for saved connections section"
+  },
+  "noDaemonFound": "No daemon found on local network",
+  "@noDaemonFound": {
+    "description": "Message when no daemons are discovered on LAN"
+  },
+  "connect": "Connect",
+  "@connect": {
+    "description": "Connect button label"
+  },
+  "connecting": "Connecting...",
+  "@connecting": {
+    "description": "Connection in progress indicator"
+  },
+  "connectionError": "Connection Error",
+  "@connectionError": {
+    "description": "Generic connection error title"
+  },
+  "accessChat": "Access Chat",
+  "@accessChat": {
+    "description": "Button to navigate to chat view"
+  },
+  "scanQrCode": "Scan QR Code",
+  "@scanQrCode": {
+    "description": "Button to open QR code scanner"
+  },
+  "agentDeleted": "Agent \"{name}\" deleted.",
+  "@agentDeleted": {
+    "description": "Notification when an agent is deleted",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsTitle": "Settings",
+  "@settingsTitle": {
+    "description": "Settings screen title"
+  },
+  "shortcuts": "Shortcuts",
+  "@shortcuts": {
+    "description": "Shortcuts section title"
+  },
+  "provideFeedback": "Provide Feedback",
+  "@provideFeedback": {
+    "description": "Feedback button label"
+  },
+  "appearance": "Appearance",
+  "@appearance": {
+    "description": "Appearance section title"
+  },
+  "themeDark": "Dark",
+  "@themeDark": {
+    "description": "Dark theme option"
+  },
+  "themeLight": "Light",
+  "@themeLight": {
+    "description": "Light theme option"
+  },
+  "themeSystem": "System",
+  "@themeSystem": {
+    "description": "System theme option"
+  },
+  "language": "Language",
+  "@language": {
+    "description": "Language selection option"
+  },
+  "profile": "Profile",
+  "@profile": {
+    "description": "Profile section"
+  },
+  "diagnostics": "Diagnostics",
+  "@diagnostics": {
+    "description": "Diagnostics section title"
+  },
+  "exportDiagnostics": "Export Diagnostics",
+  "@exportDiagnostics": {
+    "description": "Button to export diagnostics"
+  },
+  "clearCache": "Clear Cache",
+  "@clearCache": {
+    "description": "Button to clear persistent cache"
+  },
+  "cacheCleared": "Cache cleared successfully",
+  "@cacheCleared": {
+    "description": "Confirmation when cache is cleared"
+  },
+  "close": "Close",
+  "@close": {
+    "description": "Close button label"
+  },
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel button label"
+  },
+  "save": "Save",
+  "@save": {
+    "description": "Save button label"
+  },
+  "delete": "Delete",
+  "@delete": {
+    "description": "Delete button label"
+  },
+  "confirm": "Confirm",
+  "@confirm": {
+    "description": "Confirm button label"
+  }
 }

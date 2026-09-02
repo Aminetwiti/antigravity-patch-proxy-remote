@@ -1,0 +1,72 @@
+{
+  "library": "Material Symbols Rounded",
+  "stroke": "1.5px / rounded",
+  "items": {
+    "fileEdit": {
+      "name": "edit_note_rounded",
+      "size": "14px",
+      "color": "#34D399"
+    },
+    "fileAnalysis": {
+      "name": "insert_drive_file_outlined",
+      "size": "13.5px",
+      "color": "#38BDF8"
+    },
+    "imageAnalysis": {
+      "name": "photo_outlined",
+      "size": "14px",
+      "color": "#9E9FA8"
+    },
+    "command": {
+      "name": "terminal_rounded",
+      "size": "13.5px",
+      "color": "#9CA3AF"
+    },
+    "search": {
+      "name": "search_rounded",
+      "size": "13.5px",
+      "color": "#2DD4BF"
+    },
+    "subagent": {
+      "name": "smart_toy_outlined",
+      "size": "13.5px",
+      "color": "#A78BFA"
+    },
+    "timer": {
+      "name": "timer_outlined",
+      "size": "13.5px",
+      "color": "#FB923C"
+    },
+    "thought": {
+      "name": "lightbulb_outline_rounded",
+      "size": "13.5px",
+      "color": "#FBBF24"
+    },
+    "autoProceed": {
+      "name": "check_circle_outline_rounded",
+      "size": "14px",
+      "color": "#9E9FA8"
+    },
+    "artifact": {
+      "name": "article_outlined",
+      "size": "13px",
+      "color": "#F4F4F5"
+    },
+    "expandDown": {
+      "name": "keyboard_arrow_down_rounded",
+      "size": "14px",
+      "color": "#71717A"
+    },
+    "expandRight": {
+      "name": "chevron_right_rounded",
+      "size": "14px",
+      "color": "#71717A"
+    },
+    "spinner": {
+      "name": "Md3DoubleTrackSpinner",
+      "size": "12px/13px",
+      "strokeWidth": "1.5px/1.6px",
+      "color": "#60A5FA"
+    }
+  }
+}

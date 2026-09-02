@@ -1,0 +1,66 @@
+{
+  "name": "ExecutionFeed",
+  "nativeName": "ExecutionProgressView",
+  "componentType": "Timeline / Feed",
+  "hierarchy": {
+    "root": {
+      "type": "Container / RepaintBoundary",
+      "wrapper": "AnimatedSize (duration: 260ms, curve: fastOutSlowIn)",
+      "children": [
+        {
+          "name": "Header",
+          "condition": "isStreaming",
+          "children": [
+            "AgentStatusPill",
+            "ModelLabel",
+            "StopButton"
+          ]
+        },
+        {
+          "name": "SummaryBar",
+          "condition": "!isStreaming && !_isExpanded",
+          "children": [
+            "MasterTitle",
+            "StepCount",
+            "ChevronToggle"
+          ]
+        },
+        {
+          "name": "TimelineList",
+          "condition": "_isExpanded || isStreaming",
+          "children": [
+            {
+              "name": "StepRow",
+              "repeats": true,
+              "children": [
+                "ActionVerb",
+                "BadgeIcon",
+                "StepTitle",
+                "LineRangeBadge",
+                "DiffBadges",
+                "StatusSpinner",
+                "ExpandChevron"
+              ],
+              "subTimeline": {
+                "indent": "14px",
+                "children": [
+                  "SubStepRow",
+                  "ConsoleOutputCard"
+                ]
+              }
+            },
+            {
+              "name": "LiveWorkingIndicator",
+              "condition": "isStreaming",
+              "children": [
+                "DoubleTrackSpinner",
+                "AnimatedEllipsisText"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "source": "remote/mobile/lib/features/chat_stream/widgets/execution_progress_view.dart: L68-1080"
+}

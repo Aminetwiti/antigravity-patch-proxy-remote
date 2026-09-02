@@ -8,10 +8,11 @@ on:
 
 env:
   NODE_VERSION: '22'
+  GO_VERSION: '1.24'
 
 jobs:
   typecheck:
-    name: Typecheck (tsc --noEmit)
+    name: Typecheck Desktop Proxy (tsc --noEmit)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,8 +30,8 @@ jobs:
       - name: Typecheck
         run: npm run lint
 
-  test:
-    name: Tests (vitest)
+  test-proxy:
+    name: Desktop Proxy Tests (vitest) (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -55,10 +56,60 @@ jobs:
       - name: Run tests
         run: npm test
 
-  build:
-    name: Build (tsc)
+  test-daemon:
+    name: Go Daemon Bridge Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: remote/daemon/go.sum
+
+      - name: Run Go Unit Tests
+        run: |
+          cd remote/daemon
+          go test -v ./...
+
+  test-mobile:
+    name: Flutter Mobile Tests & Analysis
     runs-on: ubuntu-latest
-    needs: [typecheck, test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter Dependencies
+        run: |
+          cd remote/mobile
+          flutter pub get
+
+      - name: Analyze Flutter
+        run: |
+          cd remote/mobile
+          flutter analyze
+
+      - name: Run Unit Tests
+        run: |
+          cd remote/mobile
+          flutter test --exclude-tags=live
+
+  build:
+    name: Build & Release Artifacts
+    runs-on: ubuntu-latest
+    needs: [typecheck, test-proxy, test-daemon, test-mobile]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

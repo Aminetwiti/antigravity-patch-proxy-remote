@@ -70,5 +70,146 @@
   "defaultSessionTitle": "Session",
   "@defaultSessionTitle": {
     "description": "Titre de session par défaut"
+  },
+  "discoverDaemonsTitle": "Découvrir les Daemons",
+  "@discoverDaemonsTitle": {
+    "description": "Titre de l'écran de découverte"
+  },
+  "oneTapConnect": "1-Tap Connect",
+  "@oneTapConnect": {
+    "description": "Bouton de connexion en un clic"
+  },
+  "hostPcDomain": "Hôte PC / Domaine",
+  "@hostPcDomain": {
+    "description": "Label du champ hôte ou domaine"
+  },
+  "daemonPort": "Port Daemon",
+  "@daemonPort": {
+    "description": "Label du champ port daemon"
+  },
+  "pinCodeLabel": "Code PIN (6 chiffres affichés sur PC)",
+  "@pinCodeLabel": {
+    "description": "Label du code PIN"
+  },
+  "validatePin": "Valider PIN",
+  "@validatePin": {
+    "description": "Bouton de validation du PIN"
+  },
+  "authTokenLabel": "Token Auth (optionnel ou obtenu via PIN)",
+  "@authTokenLabel": {
+    "description": "Label du token d'authentification"
+  },
+  "manualConnection": "Connexion Manuelle",
+  "@manualConnection": {
+    "description": "Onglet ou bouton de connexion manuelle"
+  },
+  "savedConnections": "Connexions Enregistrées",
+  "@savedConnections": {
+    "description": "Titre de la section des connexions enregistrées"
+  },
+  "noDaemonFound": "Aucun daemon détecté sur le réseau local",
+  "@noDaemonFound": {
+    "description": "Message lorsque aucun serveur n'est découvert"
+  },
+  "connect": "Connecter",
+  "@connect": {
+    "description": "Bouton pour lancer la connexion"
+  },
+  "connecting": "Connexion en cours...",
+  "@connecting": {
+    "description": "Indicateur de connexion en cours"
+  },
+  "connectionError": "Erreur de connexion",
+  "@connectionError": {
+    "description": "Erreur de connexion générique"
+  },
+  "accessChat": "Accéder au Chat",
+  "@accessChat": {
+    "description": "Bouton pour aller à l'interface de chat"
+  },
+  "scanQrCode": "Scanner QR Code",
+  "@scanQrCode": {
+    "description": "Bouton pour ouvrir le scanner de QR Code"
+  },
+  "agentDeleted": "Agent \"{name}\" supprimé.",
+  "@agentDeleted": {
+    "description": "Notification de suppression d'agent",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsTitle": "Paramètres",
+  "@settingsTitle": {
+    "description": "Titre de l'écran des paramètres"
+  },
+  "shortcuts": "Raccourcis",
+  "@shortcuts": {
+    "description": "Section raccourcis clavier"
+  },
+  "provideFeedback": "Donner un avis",
+  "@provideFeedback": {
+    "description": "Action pour envoyer un retour utilisateur"
+  },
+  "appearance": "Apparence",
+  "@appearance": {
+    "description": "Section apparence et thèmes"
+  },
+  "themeDark": "Sombre",
+  "@themeDark": {
+    "description": "Option thème sombre"
+  },
+  "themeLight": "Clair",
+  "@themeLight": {
+    "description": "Option thème clair"
+  },
+  "themeSystem": "Système",
+  "@themeSystem": {
+    "description": "Option thème automatique système"
+  },
+  "language": "Langue",
+  "@language": {
+    "description": "Option de sélection de langue"
+  },
+  "profile": "Profil",
+  "@profile": {
+    "description": "Section profil"
+  },
+  "diagnostics": "Diagnostics",
+  "@diagnostics": {
+    "description": "Section diagnostics et santé"
+  },
+  "exportDiagnostics": "Exporter les diagnostics",
+  "@exportDiagnostics": {
+    "description": "Bouton d'export des diagnostics"
+  },
+  "clearCache": "Vider le cache",
+  "@clearCache": {
+    "description": "Bouton pour vider le cache persistant"
+  },
+  "cacheCleared": "Cache vidé avec succès",
+  "@cacheCleared": {
+    "description": "Confirmation du vidage de cache"
+  },
+  "close": "Fermer",
+  "@close": {
+    "description": "Bouton fermer"
+  },
+  "cancel": "Annuler",
+  "@cancel": {
+    "description": "Bouton annuler"
+  },
+  "save": "Enregistrer",
+  "@save": {
+    "description": "Bouton enregistrer"
+  },
+  "delete": "Supprimer",
+  "@delete": {
+    "description": "Bouton supprimer"
+  },
+  "confirm": "Confirmer",
+  "@confirm": {
+    "description": "Bouton de confirmation"
   }
 }

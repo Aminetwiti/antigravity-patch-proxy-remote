@@ -1,0 +1,62 @@
+{
+  "root": {
+    "margin": "0 0 8px 0",
+    "display": "flex",
+    "flexDirection": "column"
+  },
+  "stepRow": {
+    "display": "flex",
+    "alignItems": "center",
+    "padding": "2.5px 2px",
+    "margin": "0 0 2.5px 0",
+    "cursor": "pointer on expandable"
+  },
+  "actionVerb": {
+    "color": "#9E9FA8",
+    "fontSize": "12px",
+    "fontWeight": 400,
+    "marginRight": "5px"
+  },
+  "stepTitle": {
+    "color": "#F4F4F5",
+    "fontSize": "12px",
+    "fontWeight": 500,
+    "fontFamily": "monospace on files/commands"
+  },
+  "diffBadgeAdded": {
+    "color": "#4ADE80",
+    "fontSize": "11px",
+    "fontWeight": 600,
+    "fontFamily": "monospace",
+    "marginLeft": "6px"
+  },
+  "diffBadgeRemoved": {
+    "color": "#F87171",
+    "fontSize": "11px",
+    "fontWeight": 600,
+    "fontFamily": "monospace",
+    "marginLeft": "4px"
+  },
+  "subItemsContainer": {
+    "paddingLeft": "14px",
+    "paddingTop": "2px",
+    "paddingBottom": "2px"
+  },
+  "terminalCard": {
+    "backgroundColor": "#0E0F12",
+    "border": "1px solid #27272A",
+    "borderRadius": "6px",
+    "padding": "8px 12px",
+    "marginTop": "3px",
+    "marginBottom": "6px",
+    "marginLeft": "4px",
+    "width": "100%"
+  },
+  "autoProceedCard": {
+    "backgroundColor": "#14171F",
+    "border": "0.8px solid #27272A",
+    "borderRadius": "8px",
+    "padding": "6px 10px",
+    "margin": "4px 0"
+  }
+}

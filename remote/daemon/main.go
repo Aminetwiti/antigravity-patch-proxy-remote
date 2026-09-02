@@ -166,6 +166,9 @@ func main() {
 	server.SetPairingManager(pairingMgr)
 	server.SetApprovalTimeout(time.Duration(approvalTimeoutMin) * time.Minute)
 	server.SetAllowRemoteTerminal(enableRemoteTerminal)
+	if cfg.SessionsCacheTTL > 0 {
+		server.SetSessionsCacheTTL(cfg.SessionsCacheTTL)
+	}
 
 	// Lancement du Watchdog CSRF & Statut IDE
 	watchdog := discovery.NewWatchdog(rpcClient, 5*time.Second)
