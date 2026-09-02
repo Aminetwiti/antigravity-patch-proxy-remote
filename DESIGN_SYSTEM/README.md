@@ -11,6 +11,30 @@
 
 ---
 
+## Index des Dossiers et Spécifications Forensic
+
+Tous les documents de reverse engineering du Design System Antigravity 2.0 sont rassemblés dans ce dossier :
+
+| Fichier Markdown | Thématique & Contenu |
+|---|---|
+| [DESIGN_SYSTEM_REVERSE_ENGINEERING.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/DESIGN_SYSTEM_REVERSE_ENGINEERING.md) | Spécification maîtresse d'Antigravity 2.0 ("The Quiet Console") |
+| [COLOR_PALETTE.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/COLOR_PALETTE.md) | Palette chromatique intégrale (surfaces, bordures, contrastes WCAG, badges IA) |
+| [ASAR_COLOR_PALETTE.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/ASAR_COLOR_PALETTE.md) | Palette extraite directement de l'archive binaire `app.asar` |
+| [ICON_INVENTORY.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/ICON_INVENTORY.md) | Inventaire des images, assets et Material Symbols avec échelles de taille |
+| [CODE_TO_UI_MAP.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/CODE_TO_UI_MAP.md) | Cartographie exhaustive du code source vers les éléments d'interface |
+| [CSS_TO_FLUTTER_DESIGN_SYSTEM.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/CSS_TO_FLUTTER_DESIGN_SYSTEM.md) | Transposition des 80 variables CSS vers le framework Flutter |
+| [EXECUTION_FEED_FORENSIC_REPORT.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/EXECUTION_FEED_FORENSIC_REPORT.md) | Rapport forensic détaillé du composant Fil d'Exécution / Agent Timeline |
+| [EXECUTION_FEED_CODE_MAP.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/EXECUTION_FEED_CODE_MAP.md) | Mappage fonctionnel du fil d'exécution vers l'arbre de composants Dart |
+| [EXECUTION_FEED_COMPARISON.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/EXECUTION_FEED_COMPARISON.md) | Comparatif d'alignement spécification vs implémentation Flutter |
+| [ASAR_UI_FORENSIC_REPORT.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/ASAR_UI_FORENSIC_REPORT.md) | Rapport forensic complet des composants UI extraits de l'ASAR |
+| [ASAR_FILE_TREE.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/ASAR_FILE_TREE.md) | Arborescence décompressée de l'archive `app.asar` |
+| [ASAR_TRUTH_AUDIT.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/ASAR_TRUTH_AUDIT.md) | Audit des sources de vérité (`ASAR_CONFIRMED`, `EXTERNAL_CONFIRMED`, `INFERRED`) |
+| [COMPARISON.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/COMPARISON.md) | Comparatif transversal du design system |
+| [REVERSE_ENGINEERING_REPORT.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/REVERSE_ENGINEERING_REPORT.md) | Rapport initial de décompilation et extraction binaire |
+| [TECHNICAL_DATASHEETS_ANTIGRAVITY_IDE.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/TECHNICAL_DATASHEETS_ANTIGRAVITY_IDE.md) | Fiches techniques d'ingénierie interne de l'IDE |
+| [ANTIGRAVITY_IDE_DEEP_DIVE.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/ANTIGRAVITY_IDE_DEEP_DIVE.md) | Analyse approfondie de l'architecture d'Antigravity IDE |
+| [REMOTE_ANTIGRAVITY_IDE_INTEGRATION_SPEC.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/REMOTE_ANTIGRAVITY_IDE_INTEGRATION_SPEC.md) | Spécification d'intégration gRPC / WebSocket / Daemon Bridge |
+
 ## 1. Design Philosophy
 
 ### Creative North Star : *"The Quiet Console"*

@@ -1068,13 +1068,69 @@ const doctorTpl = document.createElement('template');
 async function runDoctorView(): Promise<void> {
   setStatus('Running doctor…', 'busy');
   doctorOutput.textContent = '$ ag-doctor doctor\n';
+
+  const feedContainer = $('#doctorExecutionFeed') as HTMLElement | null;
+  const FeedRendererClass = (window as any).ExecutionFeedRenderer;
+  const feedRenderer = FeedRendererClass ? new FeedRendererClass() : null;
+
+  if (feedContainer && feedRenderer) {
+    feedContainer.innerHTML = feedRenderer.renderHtml({
+      isStreaming: true,
+      workingText: 'Running Antigravity diagnostic pipeline…',
+      steps: [
+        { id: 'step-1', type: 'command', verb: 'Ran', title: 'ag-doctor doctor', commandStr: 'ag-doctor doctor' },
+      ],
+    });
+  }
+
   try {
     const result = await window.ag.run(['doctor']);
     doctorTpl.innerHTML = ansiToHtml(result.stdout || result.stderr);
     doctorOutput.replaceChildren(doctorTpl.content);
+
+    if (feedContainer && feedRenderer) {
+      const isSuccess = !result.stderr || result.stderr.length === 0;
+      feedContainer.innerHTML = feedRenderer.renderHtml({
+        isStreaming: false,
+        isSummaryCollapsed: false,
+        steps: [
+          {
+            id: 'step-1',
+            type: 'command',
+            verb: 'Ran',
+            title: 'ag-doctor doctor',
+            commandStr: 'ag-doctor doctor',
+            outputStr: 'Execution finished successfully',
+          },
+          {
+            id: 'step-2',
+            type: isSuccess ? 'taskFinished' : 'command',
+            verb: isSuccess ? 'Task finished' : 'Failed',
+            title: isSuccess ? 'All system diagnostics completed' : 'Diagnostic completed with notices',
+          },
+        ],
+      });
+      feedRenderer.attachInteractiveListeners(feedContainer);
+    }
+
     setStatus('Ready');
   } catch (e) {
     doctorOutput.textContent = `Could not run doctor: ${(e as Error).message}`;
+
+    if (feedContainer && feedRenderer) {
+      feedContainer.innerHTML = feedRenderer.renderHtml({
+        isStreaming: false,
+        steps: [
+          {
+            id: 'step-1',
+            type: 'command',
+            verb: 'Failed',
+            title: `Error: ${(e as Error).message}`,
+          },
+        ],
+      });
+    }
+
     setStatus('Error', 'err');
   }
 }

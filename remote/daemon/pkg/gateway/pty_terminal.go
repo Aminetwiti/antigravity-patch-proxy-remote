@@ -1,4 +1,4 @@
-﻿package gateway
+package gateway
 
 import (
 	"fmt"
@@ -21,18 +21,18 @@ import (
 // est lue par une goroutine qui broadcast terminal_output.
 type terminalSession struct {
 	id    string
-	owner *websocket.Conn // client qui a cr├®├® la session (owner-scoping)
+	owner *websocket.Conn // client qui a créé la session (owner-scoping)
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
 	mu    sync.Mutex
-	// closed : kill() explicite a d├®j├á eu lieu ; closing : le processus est
+	// closed : kill() explicite a déjà eu lieu ; closing : le processus est
 	// en cours de terminaison (les pump cessent de broadcast la sortie).
 	closed  bool
 	closing bool
 }
 
-// terminalPtyManager poss├¿de toutes les sessions terminal du daemon.
-// La cl├® id est un identifiant opaque renvoy├® au mobile.
+// terminalPtyManager possède toutes les sessions terminal du daemon.
+// La clé id est un identifiant opaque renvoyé au mobile.
 type terminalPtyManager struct {
 	mu        sync.Mutex
 	sessions  map[string]*terminalSession
@@ -149,7 +149,7 @@ func (m *terminalPtyManager) broadcastOutput(sess *terminalSession, data []byte,
 		},
 	}
 	if m.onSendToOwner != nil && sess.owner != nil {
-		m.onSendToOwner(sess.owner, msg)
+		_ = m.onSendToOwner(sess.owner, msg)
 	} else if m.onBroadcast != nil {
 		m.onBroadcast(msg)
 	}
@@ -167,14 +167,14 @@ func (m *terminalPtyManager) broadcastExit(sess *terminalSession) {
 		},
 	}
 	if m.onSendToOwner != nil && sess.owner != nil {
-		m.onSendToOwner(sess.owner, msg)
+		_ = m.onSendToOwner(sess.owner, msg)
 	} else if m.onBroadcast != nil {
 		m.onBroadcast(msg)
 	}
 }
 
-// write injecte l'entr├®e clavier dans la session (owner-scoped : un client
-// ne peut ├®crire que dans SES sessions ÔÇö c'est un shell sur le PC h├┤te).
+// write injecte l'entrée clavier dans la session (owner-scoped : un client
+// ne peut écrire que dans SES sessions — c'est un shell sur le PC hôte).
 func (m *terminalPtyManager) write(owner *websocket.Conn, id, input string) error {
 	m.mu.Lock()
 	sess := m.sessions[id]
@@ -183,27 +183,27 @@ func (m *terminalPtyManager) write(owner *websocket.Conn, id, input string) erro
 		return fmt.Errorf("terminal %q inconnu", id)
 	}
 	if sess.owner != owner {
-		return fmt.Errorf("terminal %q non poss├®d├® par ce client", id)
+		return fmt.Errorf("terminal %q non possédé par ce client", id)
 	}
 	sess.mu.Lock()
 	closed := sess.closed
 	sess.mu.Unlock()
 	if closed {
-		return fmt.Errorf("terminal %q ferm├®", id)
+		return fmt.Errorf("terminal %q fermé", id)
 	}
 	_, err := io.WriteString(sess.stdin, input)
 	return err
 }
 
 // kill termine la session (le processus et la goroutine de lecture).
-// Owner-scoped : seul le client qui a cr├®├® la session peut la tuer.
+// Owner-scoped : seul le client qui a créé la session peut la tuer.
 func (m *terminalPtyManager) kill(owner *websocket.Conn, id string) error {
 	m.mu.Lock()
 	sess := m.sessions[id]
 	if sess != nil {
 		if sess.owner != owner {
 			m.mu.Unlock()
-			return fmt.Errorf("terminal %q non poss├®d├® par ce client", id)
+			return fmt.Errorf("terminal %q non possédé par ce client", id)
 		}
 		delete(m.sessions, id)
 	}
@@ -224,9 +224,9 @@ func (m *terminalPtyManager) kill(owner *websocket.Conn, id string) error {
 	return nil
 }
 
-// killAllFor ferme les sessions du client owner uniquement (appel├® ├á la
-// d├®connexion de CE client). Les sessions des autres clients connect├®s
-// survivent ÔÇö sinon un t├®l├®phone qui se d├®connecte tuerait le shell d'un autre.
+// killAllFor ferme les sessions du client owner uniquement (appelé à la
+// déconnexion de CE client). Les sessions des autres clients connectés
+// survivent — sinon un téléphone qui se déconnecte tuerait le shell d'un autre.
 func (m *terminalPtyManager) killAllFor(owner *websocket.Conn) {
 	m.mu.Lock()
 	ids := make([]string, 0, len(m.sessions))

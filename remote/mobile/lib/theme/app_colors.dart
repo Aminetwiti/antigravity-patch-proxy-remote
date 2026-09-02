@@ -75,13 +75,54 @@ abstract class AppColors {
   static const Color onAccent = Color(0xFF202020);       // #202020 (dark text over light blue accent)
   static const Color onDanger = Color(0xFF202020);       // #202020
 
-  // ── Provider Accent Badges
+  // ── Provider Accent Badges & Tinted Backgrounds (COLOR_PALETTE.md)
   static const Color providerOpenAI = Color(0xFF10A37F);
+  static const Color providerOpenAIBg = Color(0x2210A37F);
   static const Color providerAnthropic = Color(0xFFD97757);
+  static const Color providerAnthropicBg = Color(0x22D97757);
   static const Color providerGoogle = Color(0xFF4285F4);
+  static const Color providerGoogleBg = Color(0x224285F4);
   static const Color providerOllama = Color(0xFFF0F0F0);
+  static const Color providerOllamaBg = Color(0x22F0F0F0);
   static const Color providerOpenRouter = Color(0xFFFF7A45);
+  static const Color providerOpenRouterBg = Color(0x22FF7A45);
   static const Color providerCustom = Color(0xFFA855F7);
+  static const Color providerCustomBg = Color(0x22A855F7);
+
+  // ── Execution Feed Tokens (Antigravity 2.0 "The Quiet Console")
+  static const Color executionTerminalBg = Color(0xFF0E0F12);
+  static const Color executionCardBg = Color(0xFF14171F);
+  static const Color executionSearchBg = Color(0xFF1F2430);
+  static const Color executionSearchBorder = Color(0xFF2E3345);
+  static const Color executionBorder = Color(0xFF27272A);
+  static const Color executionFileEdit = Color(0xFF34D399);
+  static const Color executionFileAnalysis = Color(0xFF38BDF8);
+  static const Color executionSearch = Color(0xFF2DD4BF);
+  static const Color executionSubagent = Color(0xFFA78BFA);
+  static const Color executionTerminal = Color(0xFF9CA3AF);
+  static const Color executionThought = Color(0xFFFBBF24);
+  static const Color executionTimer = Color(0xFFFB923C);
+  static const Color executionDiffAdded = Color(0xFF4ADE80);
+  static const Color executionDiffRemoved = Color(0xFFF87171);
+
+  // ── Glass Tokens (Antigravity 2.0 Glassmorphism)
+  static const Color glassBg = Color(0xD918181B);             // rgba(24, 24, 27, 0.85)
+  static const Color glassBgTier1 = Color(0xE618181B);        // rgba(24, 24, 27, 0.90) (sidebar nav rail)
+  static const Color glassBgTier2 = Color(0xBF27272A);        // rgba(39, 39, 42, 0.75) (hero, panels)
+  static const Color glassBgStrong = Color(0xF227272A);       // rgba(39, 39, 42, 0.95)
+  static const Color glassBorder = Color(0x14FFFFFF);         // rgba(255, 255, 255, 0.08)
+  static const Color glassBorderStrong = Color(0x26FFFFFF);   // rgba(255, 255, 255, 0.15)
+  static const Color glassInnerHighlight = Color(0x08FFFFFF); // rgba(255, 255, 255, 0.03)
+
+  // ── Status Subtle Fills & Borders (PC --ok-bg, --warn-bg, --err-bg, --info-bg)
+  static const Color okBg = Color(0x1F22C55E);      // rgba(34, 197, 94, 0.12)
+  static const Color okBorder = Color(0x4022C55E);  // rgba(34, 197, 94, 0.25)
+  static const Color warnBg = Color(0x1FEAB308);    // rgba(234, 179, 8, 0.12)
+  static const Color warnBorder = Color(0x40EAB308);// rgba(234, 179, 8, 0.25)
+  static const Color errBg = Color(0x1FEF4444);     // rgba(239, 68, 68, 0.12)
+  static const Color errBorder = Color(0x40EF4444); // rgba(239, 68, 68, 0.25)
+  static const Color infoBg = Color(0x1F3B82F6);    // rgba(59, 130, 246, 0.12)
+  static const Color infoBorder = Color(0x403B82F6);// rgba(59, 130, 246, 0.25)
 
   // ── Dynamic Contextual Accessors (prevents Light/Dark mode conflicts)
   static Color canvas(BuildContext context) =>
@@ -158,6 +199,30 @@ abstract class AppDimensions {
   static const double narrowConversationWidth = 600.0;
   /// Composer floating box max width
   static const double composerMaxWidth = 768.0;
+}
+
+/// Antigravity 2.0 Border width scale (DESIGN_SYSTEM/borders.json)
+abstract class AppBorders {
+  /// Hairline subtle separation (0.5px)
+  static const double hairline = 0.5;
+  /// Standard container border (1.0px)
+  static const double standard = 1.0;
+  /// Emphasized active border (1.5px)
+  static const double strong = 1.5;
+  /// Accessibility focus ring (2.0px)
+  static const double focus = 2.0;
+}
+
+/// Antigravity 2.0 Responsive Breakpoints (DESIGN_SYSTEM/breakpoints.json)
+abstract class AppBreakpoints {
+  /// Mobile portrait viewport threshold (< 640px)
+  static const double mobile = 640.0;
+  /// Tablet / Foldable viewport threshold (>= 768px)
+  static const double tablet = 768.0;
+  /// Desktop compact viewport threshold (>= 1024px)
+  static const double desktop = 1024.0;
+  /// Wide / Ultra-wide viewport threshold (>= 1280px)
+  static const double wide = 1280.0;
 }
 
 /// Atmospheric background gradients — Antigravity 2.0 logo palette
@@ -247,18 +312,55 @@ abstract class AppGradients {
     colors: [_agyBlue, _agyAccent],
   );
 
-  // ── Branded shimmer sweep for skeleton loaders ──
+  // ── Antigravity 2.0 Brand Gradients (--gradient-primary, --gradient-accent, --gradient-header) ──
 
-  /// Shimmer with subtle AGY blue tint instead of neutral grey
-  static List<Color> shimmerColors({bool isDark = true}) => isDark
-      ? [
-          const Color(0xFF1B1F27),
-          _agyBlue.withValues(alpha: 0.08),
-          const Color(0xFF1B1F27),
-        ]
-      : [
-          const Color(0xFFEAEEF2),
-          _agyBlue.withValues(alpha: 0.06),
-          const Color(0xFFEAEEF2),
-        ];
+  /// Primary signature gradient (--gradient-primary)
+  static const LinearGradient primaryLinear = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+  );
+
+  /// Accent signature gradient (--gradient-accent)
+  static const LinearGradient accentLinear = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF2563EB), Color(0xFF3B82F6)],
+  );
+
+  /// Header surface gradient (--gradient-header)
+  static const LinearGradient headerLinear = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xFF18181B), Color(0xFF09090B)],
+  );
+
+  /// Shimmer colors for skeleton loaders
+  static List<Color> shimmerColors({bool isDark = true}) {
+    final base = isDark ? const Color(0xFF1B1F27) : const Color(0xFFEAEEF2);
+    final hl = isDark ? const Color(0xFF2E3440) : const Color(0xFFF6F8FA);
+    return [base, hl, base];
+  }
+}
+
+/// Antigravity 2.0 Elevation & Shadow scale (--shadow-sm, --shadow-md, --shadow-lg, --shadow-glass, --shadow-glow-blue)
+abstract class AppShadows {
+  static const List<BoxShadow> sm = [
+    BoxShadow(color: Color(0x66000000), offset: Offset(0, 1), blurRadius: 0),
+  ];
+  static const List<BoxShadow> md = [
+    BoxShadow(color: Color(0x66000000), offset: Offset(0, 3), blurRadius: 6),
+  ];
+  static const List<BoxShadow> lg = [
+    BoxShadow(color: Color(0x80000000), offset: Offset(0, 8), blurRadius: 24),
+  ];
+  static const List<BoxShadow> glass = [
+    BoxShadow(color: Color(0x73060910), offset: Offset(0, 8), blurRadius: 32),
+  ];
+  static const List<BoxShadow> glowBlue = [
+    BoxShadow(color: Color(0x4D3B82F6), offset: Offset(0, 0), blurRadius: 18, spreadRadius: 1),
+  ];
+  static const List<BoxShadow> railElevation = [
+    BoxShadow(color: Color(0x59060910), offset: Offset(8, 0), blurRadius: 24),
+  ];
 }

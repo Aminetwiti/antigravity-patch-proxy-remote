@@ -1233,10 +1233,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
           margin: const EdgeInsets.symmetric(vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF14171F) : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(8),
+            color: isDark ? AppColors.executionCardBg : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-              color: isDark ? const Color(0xFF27272A) : scheme.outlineVariant.withValues(alpha: 0.6),
+              color: isDark ? AppColors.executionBorder : scheme.outlineVariant.withValues(alpha: 0.6),
               width: 0.8,
             ),
           ),
@@ -1352,7 +1352,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       child: Icon(
                         Icons.edit_note_rounded,
                         size: 14,
-                        color: Color(0xFF34D399),
+                        color: AppColors.executionFileEdit,
                       ),
                     ),
                   ],
@@ -1364,7 +1364,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       child: Icon(
                         item.isImage ? Icons.photo_outlined : Icons.insert_drive_file_outlined,
                         size: item.isImage ? 14 : 13.5,
-                        color: item.isImage ? const Color(0xFF9E9FA8) : const Color(0xFF38BDF8),
+                        color: item.isImage ? const Color(0xFF9E9FA8) : AppColors.executionFileAnalysis,
                       ),
                     ),
                   ],
@@ -1376,7 +1376,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       child: Icon(
                         Icons.search_rounded,
                         size: 13.5,
-                        color: Color(0xFF2DD4BF),
+                        color: AppColors.executionSearch,
                       ),
                     ),
                   ],
@@ -1388,7 +1388,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       child: Icon(
                         Icons.smart_toy_outlined,
                         size: 13.5,
-                        color: Color(0xFFA78BFA),
+                        color: AppColors.executionSubagent,
                       ),
                     ),
                   ],
@@ -1400,7 +1400,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       child: Icon(
                         Icons.terminal_rounded,
                         size: 13.5,
-                        color: Color(0xFF9CA3AF),
+                        color: AppColors.executionTerminal,
                       ),
                     ),
                   ],
@@ -1412,7 +1412,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       child: Icon(
                         Icons.timer_outlined,
                         size: 13.5,
-                        color: Color(0xFFFB923C),
+                        color: AppColors.executionTimer,
                       ),
                     ),
                   ],
@@ -1424,7 +1424,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       child: Icon(
                         Icons.lightbulb_outline_rounded,
                         size: 13.5,
-                        color: Color(0xFFFBBF24),
+                        color: AppColors.executionThought,
                       ),
                     ),
                   ],
@@ -1497,10 +1497,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1F2430) : scheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4),
+                        color: isDark ? AppColors.executionSearchBg : scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(AppRadius.xs),
                         border: Border.all(
-                          color: isDark ? const Color(0xFF2E3345) : scheme.outlineVariant,
+                          color: isDark ? AppColors.executionSearchBorder : scheme.outlineVariant,
                           width: 0.5,
                         ),
                       ),
@@ -1522,7 +1522,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                         fontSize: 11,
                         fontFamily: 'monospace',
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF4ADE80),
+                        color: AppColors.executionDiffAdded,
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -1532,7 +1532,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                         fontSize: 11,
                         fontFamily: 'monospace',
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFFF87171),
+                        color: AppColors.executionDiffRemoved,
                       ),
                     ),
                   ],
@@ -1558,14 +1558,23 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
             ),
           ),
 
-          // Sub-items for Explored Group and Command Group (Indented Children)
+          // Sub-items for Explored Group and Command Group (Indented Children with Timeline Track)
           AnimatedSize(
-            duration: const Duration(milliseconds: 220),
+            duration: AppMotion.base,
             curve: Curves.fastOutSlowIn,
             alignment: Alignment.topLeft,
             child: (isExpanded && item.subItems != null && item.subItems!.isNotEmpty)
-                ? Padding(
-                    padding: const EdgeInsets.only(left: 14, top: 2, bottom: 2),
+                ? Container(
+                    margin: const EdgeInsets.only(left: 6),
+                    padding: const EdgeInsets.only(left: 12, top: 2, bottom: 2),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        left: BorderSide(
+                          color: isDark ? AppColors.executionBorder : scheme.outlineVariant.withValues(alpha: 0.4),
+                          width: 1.0,
+                        ),
+                      ),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1593,7 +1602,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                             });
                                           }
                                         : null,
-                                    borderRadius: BorderRadius.circular(4),
+                                    borderRadius: BorderRadius.circular(AppRadius.xs),
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(vertical: 2.5, horizontal: 2),
                                       child: Row(
@@ -1616,7 +1625,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                               child: Icon(
                                                 Icons.search_rounded,
                                                 size: 13.5,
-                                                color: Color(0xFF2DD4BF),
+                                                color: AppColors.executionSearch,
                                               ),
                                             ),
                                           ] else if (sub.type == ExecutionStepType.fileAnalysis) ...[
@@ -1625,7 +1634,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                               child: Icon(
                                                 sub.isImage ? Icons.photo_outlined : Icons.insert_drive_file_outlined,
                                                 size: sub.isImage ? 14 : 13.5,
-                                                color: sub.isImage ? const Color(0xFF9E9FA8) : const Color(0xFF38BDF8),
+                                                color: sub.isImage ? const Color(0xFF9E9FA8) : AppColors.executionFileAnalysis,
                                               ),
                                             ),
                                           ] else if (sub.type == ExecutionStepType.fileEdit) ...[
@@ -1634,7 +1643,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                               child: Icon(
                                                 Icons.edit_note_rounded,
                                                 size: 14,
-                                                color: Color(0xFF34D399),
+                                                color: AppColors.executionFileEdit,
                                               ),
                                             ),
                                           ] else if (isSubCommand) ...[
@@ -1643,7 +1652,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                               child: Icon(
                                                 Icons.terminal_rounded,
                                                 size: 13.5,
-                                                color: Color(0xFF9CA3AF),
+                                                color: AppColors.executionTerminal,
                                               ),
                                             ),
                                           ],
@@ -1678,9 +1687,12 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF1F2430),
-                                                borderRadius: BorderRadius.circular(4),
-                                                border: Border.all(color: const Color(0xFF2E3345), width: 0.5),
+                                                color: isDark ? AppColors.executionSearchBg : scheme.surfaceContainerHighest,
+                                                borderRadius: BorderRadius.circular(AppRadius.xs),
+                                                border: Border.all(
+                                                  color: isDark ? AppColors.executionSearchBorder : scheme.outlineVariant,
+                                                  width: 0.5,
+                                                ),
                                               ),
                                               child: Text(
                                                 sub.diffAdded!,
@@ -1700,7 +1712,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                                 fontSize: 11,
                                                 fontFamily: 'monospace',
                                                 fontWeight: FontWeight.w600,
-                                                color: Color(0xFF4ADE80),
+                                                color: AppColors.executionDiffAdded,
                                               ),
                                             ),
                                             const SizedBox(width: 4),
@@ -1710,7 +1722,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                                 fontSize: 11,
                                                 fontFamily: 'monospace',
                                                 fontWeight: FontWeight.w600,
-                                                color: Color(0xFFF87171),
+                                                color: AppColors.executionDiffRemoved,
                                               ),
                                             ),
                                           ],
@@ -1734,9 +1746,12 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                       margin: const EdgeInsets.only(top: 3, bottom: 6, left: 4),
                                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFF0E0F12),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: const Color(0xFF27272A), width: 0.8),
+                                        color: isDark ? AppColors.executionTerminalBg : scheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                                        border: Border.all(
+                                          color: isDark ? AppColors.executionBorder : scheme.outlineVariant,
+                                          width: 0.8,
+                                        ),
                                       ),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,

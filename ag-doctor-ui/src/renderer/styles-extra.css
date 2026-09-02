@@ -10,7 +10,7 @@
 }
 .install-card {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   padding: 14px;
   background: var(--bg-2);
   transition: all var(--t-base) var(--ease);
@@ -36,7 +36,7 @@
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -44,7 +44,7 @@
 .install-version-pill.v2 { background: var(--ok-bg); color: var(--ok); }
 .install-version-pill.v1 { background: var(--warn-bg); color: var(--warn); }
 .install-path {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-2);
   word-break: break-all;
@@ -97,7 +97,7 @@
   padding: 10px 12px;
   background: var(--bg-1);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 .proxy-stat-label {
   font-size: 10px;
