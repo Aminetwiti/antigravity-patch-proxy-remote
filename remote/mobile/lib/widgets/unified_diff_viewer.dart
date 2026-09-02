@@ -776,13 +776,13 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E2026) : scheme.surfaceContainerHighest,
+                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.difference_outlined,
                 size: 28,
-                color: isDark ? const Color(0xFF6B6E7B) : scheme.outline,
+                color: isDark ? AppColors.borderSubtle : scheme.outline,
               ),
             ),
             const SizedBox(height: 14),
@@ -799,7 +799,7 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
               'Ce fichier a été mentionné dans la session mais ne comporte aucun delta non validé ou son contenu n\'a pas pu être chargé.',
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? const Color(0xFF8F909A) : scheme.onSurfaceVariant,
+                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                 height: 1.4,
               ),
               textAlign: TextAlign.center,
@@ -1073,10 +1073,10 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E2128) : scheme.surfaceContainerHigh,
+              color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: isDark ? const Color(0xFF2C2F38) : scheme.outlineVariant.withValues(alpha: 0.6),
+                color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.6),
               ),
             ),
             child: Row(

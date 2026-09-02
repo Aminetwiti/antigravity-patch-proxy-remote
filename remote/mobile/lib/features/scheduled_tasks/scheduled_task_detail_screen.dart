@@ -121,7 +121,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
       const SnackBar(
         content: Text('Scheduled task saved'),
         duration: Duration(seconds: 2),
-        backgroundColor: Color(0xFF1B1D22),
+        backgroundColor: AppColors.surfaceInput,
       ),
     );
   }
@@ -217,7 +217,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.play_arrow_rounded, size: 22, color: isDark ? const Color(0xFF22C55E) : const Color(0xFF1A7F37)),
+            icon: Icon(Icons.play_arrow_rounded, size: 22, color: isDark ? AppColors.positive : AppColors.positive),
             onPressed: _triggerExecution,
             tooltip: 'Trigger Now',
           ),
@@ -330,7 +330,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF141518) : scheme.surfaceContainer,
+                  color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
                   borderRadius: BorderRadius.circular(AppRadius.lg),
                   border: Border.all(color: scheme.outlineVariant),
                 ),
@@ -347,13 +347,13 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                             height: 7,
                             decoration: BoxDecoration(
                               color: _task.isEnabled
-                                  ? (isDark ? const Color(0xFF22C55E) : const Color(0xFF1A7F37))
+                                  ? (isDark ? AppColors.positive : AppColors.positive)
                                   : scheme.onSurfaceVariant,
                               shape: BoxShape.circle,
                               boxShadow: _task.isEnabled
                                   ? [
                                       BoxShadow(
-                                        color: (isDark ? const Color(0xFF22C55E) : const Color(0xFF1A7F37)).withValues(alpha: 0.5),
+                                        color: (isDark ? AppColors.positive : AppColors.positive).withValues(alpha: 0.5),
                                         blurRadius: 4,
                                         spreadRadius: 1,
                                       ),
@@ -368,7 +368,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
                               color: _task.isEnabled
-                                  ? (isDark ? const Color(0xFF22C55E) : const Color(0xFF1A7F37))
+                                  ? (isDark ? AppColors.positive : AppColors.positive)
                                   : scheme.onSurfaceVariant,
                             ),
                           ),
@@ -407,7 +407,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
               const SizedBox(height: 8),
               Container(
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF141518) : scheme.surfaceContainer,
+                  color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
                   borderRadius: BorderRadius.circular(AppRadius.lg),
                   border: Border.all(color: scheme.outlineVariant),
                 ),
@@ -436,7 +436,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF141518) : scheme.surfaceContainer,
+                  color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
                   borderRadius: BorderRadius.circular(AppRadius.lg),
                   border: Border.all(color: scheme.outlineVariant),
                 ),
@@ -451,7 +451,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                         // Frequency dropdown (Daily ⌄)
                         Container(
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                            color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(AppRadius.md),
                             border: Border.all(color: scheme.outlineVariant),
                           ),
@@ -459,7 +459,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
                               value: _selectedFrequency,
-                              dropdownColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                              dropdownColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                               icon: Icon(Icons.keyboard_arrow_down_rounded, color: scheme.onSurfaceVariant, size: 16),
                               items: _frequencies
                                   .map((f) => DropdownMenuItem(
@@ -482,7 +482,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                         // Time dropdown (9:00 AM ⌄)
                         Container(
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                            color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(AppRadius.md),
                             border: Border.all(color: scheme.outlineVariant),
                           ),
@@ -490,7 +490,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
                               value: _selectedTime,
-                              dropdownColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                              dropdownColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                               icon: Icon(Icons.keyboard_arrow_down_rounded, color: scheme.onSurfaceVariant, size: 16),
                               items: _times
                                   .map((t) => DropdownMenuItem(
@@ -561,7 +561,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF141518) : scheme.surfaceContainer,
+                        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
                         borderRadius: BorderRadius.circular(AppRadius.md),
                         border: Border.all(color: scheme.outlineVariant),
                       ),
@@ -571,7 +571,7 @@ class _ScheduledTaskDetailScreenState extends State<ScheduledTaskDetailScreen> {
                             evt.outcome == 'done' ? Icons.check_circle_outline : Icons.error_outline,
                             size: 15,
                             color: evt.outcome == 'done'
-                                ? (isDark ? AppColors.positive : const Color(0xFF1A7F37))
+                                ? (isDark ? AppColors.positive : AppColors.positive)
                                 : scheme.error,
                           ),
                           const SizedBox(width: 8),

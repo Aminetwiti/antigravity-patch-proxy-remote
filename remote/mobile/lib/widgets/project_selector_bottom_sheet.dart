@@ -36,7 +36,7 @@ class ProjectSelectorBottomSheet extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
+      backgroundColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
@@ -264,7 +264,7 @@ class ProjectSelectorBottomSheet extends StatelessWidget {
       context: context,
       builder: (dialogCtx) => AlertDialog(
         scrollable: true,
-        backgroundColor: isDark ? const Color(0xFF1F2127) : scheme.surfaceContainerHighest,
+        backgroundColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
         title: Text(
           'Supprimer définitivement le projet ?',
           style: TextStyle(

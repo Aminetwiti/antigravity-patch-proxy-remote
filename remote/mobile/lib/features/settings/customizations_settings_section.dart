@@ -107,7 +107,7 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
                   'Learn more.',
                   style: TextStyle(
                     fontSize: 13,
-                    color: Color(0xFF007AFF),
+                    color: AppColors.accentBlue,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -146,22 +146,22 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
                         // Rules (Blue)
                         Flexible(
                           flex: (_rulesPercent * 10).toInt(),
-                          child: Container(color: const Color(0xFF007AFF)),
+                          child: Container(color: AppColors.accentBlue),
                         ),
                         // Skills (Green)
                         Flexible(
                           flex: (_skillsPercent * 10).toInt(),
-                          child: Container(color: const Color(0xFF34C759)),
+                          child: Container(color: AppColors.positive),
                         ),
                         // MCP Tools (Purple)
                         Flexible(
                           flex: (_mcpPercent * 10).toInt(),
-                          child: Container(color: const Color(0xFFAF52DE)),
+                          child: Container(color: AppColors.accentBlue),
                         ),
                         // Available Budget (Dark/Light Grey)
                         Flexible(
                           flex: (_availablePercent * 10).toInt(),
-                          child: Container(color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant),
+                          child: Container(color: isDark ? AppColors.surfaceInput : scheme.outlineVariant),
                         ),
                       ],
                     ),
@@ -171,7 +171,7 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
 
                 // Breakdowns lines
                 _buildBreakdownRow(
-                  color: const Color(0xFF007AFF),
+                  color: AppColors.accentBlue,
                   title: 'Rules',
                   percent: _rulesPercent,
                   tokens: _rulesTokens,
@@ -183,7 +183,7 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
                 ),
                 const SizedBox(height: 10),
                 _buildBreakdownRow(
-                  color: const Color(0xFF34C759),
+                  color: AppColors.positive,
                   title: 'Skills',
                   percent: _skillsPercent,
                   tokens: _skillsTokens,
@@ -195,7 +195,7 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
                 ),
                 const SizedBox(height: 10),
                 _buildBreakdownRow(
-                  color: const Color(0xFFAF52DE),
+                  color: AppColors.accentBlue,
                   title: 'Mcp Tools',
                   percent: _mcpPercent,
                   tokens: _mcpTokens,
@@ -443,10 +443,10 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+          color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -474,10 +474,10 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
+                        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant,
+                          color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                           width: 0.5,
                         ),
                       ),
@@ -552,7 +552,7 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF007AFF),
+              color: AppColors.accentBlue,
             ),
           ),
         ),
@@ -579,10 +579,10 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+          color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -601,10 +601,10 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF16181D) : scheme.surfaceContainer,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF262A35) : scheme.outlineVariant,
+          color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
           width: 0.8,
         ),
       ),
@@ -635,8 +635,8 @@ class _CustomizationsSettingsSectionState extends State<CustomizationsSettingsSe
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: inheritCustomizations
-                            ? (isDark ? const Color(0xFF16251E) : scheme.surfaceContainerHighest)
-                            : (isDark ? const Color(0xFF222630) : scheme.surfaceContainer),
+                            ? (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest)
+                            : (isDark ? AppColors.surfaceInput : scheme.surfaceContainer),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
                           color: inheritCustomizations

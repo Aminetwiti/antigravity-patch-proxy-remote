@@ -263,7 +263,7 @@ class _FilesChangedCardState extends State<FilesChangedCard>
       case 'json': case 'yaml': case 'yml': case 'toml': return const Color(0xFFA074C4);
       case 'md': case 'txt': return const Color(0xFF519ABA);
       case 'sh': case 'bat': case 'ps1': return const Color(0xFF4CAF50);
-      default: return isDark ? const Color(0xFF9E9FA9) : const Color(0xFF6E707A);
+      default: return isDark ? AppColors.inkSecondary : AppColors.inkMuted;
     }
   }
 
@@ -346,7 +346,7 @@ class _FilesChangedCardState extends State<FilesChangedCard>
                           child: Icon(
                             Icons.keyboard_arrow_down_rounded,
                             size: 16,
-                            color: isDark ? const Color(0xFF8E929E) : scheme.onSurfaceVariant,
+                            color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -514,8 +514,8 @@ class TaskTrackerCard extends StatelessWidget {
                     isComplete ? Icons.task_alt : Icons.checklist_rtl_outlined,
                     size: 16,
                     color: isComplete
-                        ? (isDark ? AppColors.positive : const Color(0xFF1A7F37))
-                        : (isDark ? AppColors.warning : const Color(0xFF9A6700)),
+                        ? AppColors.positive
+                        : AppColors.warning,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -532,15 +532,15 @@ class TaskTrackerCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: (isDark ? AppColors.positive : const Color(0xFF1A7F37)).withValues(alpha: 0.15),
+                        color: AppColors.positive.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Text(
+                      child: const Text(
                         'Complete',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? AppColors.positive : const Color(0xFF1A7F37),
+                          color: AppColors.positive,
                         ),
                       ),
                     ),

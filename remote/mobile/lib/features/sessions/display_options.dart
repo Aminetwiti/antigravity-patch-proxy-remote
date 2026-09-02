@@ -315,18 +315,18 @@ class DisplayOptionsMenuButton extends StatelessWidget {
 
     return PopupMenuButton<String>(
       tooltip: 'Display Options',
-      color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
+      color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
       surfaceTintColor: Colors.transparent,
       elevation: 8,
       offset: const Offset(0, 24),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        side: BorderSide(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant, width: 1),
+        side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, width: 1),
       ),
       icon: Container(
         padding: const EdgeInsets.all(5),
         decoration: BoxDecoration(
-          color: isFilterOpen ? (isDark ? const Color(0xFF26282E) : scheme.surfaceContainerHighest) : Colors.transparent,
+          color: isFilterOpen ? (isDark ? AppColors.surfaceHover : scheme.surfaceContainerHighest) : Colors.transparent,
           borderRadius: BorderRadius.circular(5),
         ),
         child: Icon(
@@ -444,7 +444,7 @@ class DisplayOptionsMenuButton extends StatelessWidget {
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: isDark ? const Color(0xFF6E707A) : scheme.onSurfaceVariant,
+            color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
             letterSpacing: 0.2,
           ),
         ),
@@ -466,7 +466,7 @@ class DisplayOptionsMenuButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         decoration: BoxDecoration(
           color: isSelected
-              ? (isDark ? const Color(0xFF26282E) : scheme.primary.withValues(alpha: 0.08))
+              ? (isDark ? AppColors.surfaceHover : scheme.primary.withValues(alpha: 0.08))
               : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),

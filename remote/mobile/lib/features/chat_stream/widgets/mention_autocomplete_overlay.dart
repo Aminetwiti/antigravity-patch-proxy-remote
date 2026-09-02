@@ -76,7 +76,7 @@ class MentionAutocompleteOverlay extends StatelessWidget {
       case MentionType.terminal:
         return scheme.outline;
       case MentionType.command:
-        return const Color(0xFFF59E0B);
+        return AppColors.warning;
     }
   }
 
@@ -113,7 +113,7 @@ class MentionAutocompleteOverlay extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(
                 children: [
-                  Icon(headerIcon, size: 14, color: isSlash ? const Color(0xFFF59E0B) : scheme.primary),
+                  Icon(headerIcon, size: 14, color: isSlash ? AppColors.warning : scheme.primary),
                   const SizedBox(width: 6),
                   Text(
                     headerTitle,

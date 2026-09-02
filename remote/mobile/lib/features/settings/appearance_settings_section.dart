@@ -168,7 +168,7 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
                     ),
                     Switch.adaptive(
                       value: _verboseAgentChat,
-                      activeColor: const Color(0xFF007AFF),
+                      activeColor: AppColors.accentBlue,
                       onChanged: _setVerboseAgentChat,
                     ),
                   ],
@@ -256,9 +256,9 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
                 );
                 final toggle = Container(
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
+                    color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
+                    border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
                   ),
                   padding: const EdgeInsets.all(2),
                   child: Row(
@@ -407,10 +407,10 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+          color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -434,7 +434,7 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? (isDark ? const Color(0xFF33363F) : scheme.surface) : Colors.transparent,
+          color: isSelected ? (isDark ? AppColors.borderSubtle : scheme.surface) : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
         ),
         child: Icon(
@@ -467,9 +467,9 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
+        border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -507,9 +507,9 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
+        border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(2),
       child: Wrap(
@@ -524,7 +524,7 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? (isDark ? const Color(0xFF33363F) : scheme.surface)
+                    ? (isDark ? AppColors.borderSubtle : scheme.surface)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(4),
               ),
@@ -553,14 +553,14 @@ class _AppearanceSettingsSectionState extends State<AppearanceSettingsSection> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
+        border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: items.contains(value) ? value : items.first,
-          dropdownColor: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHigh,
+          dropdownColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHigh,
           icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: scheme.onSurfaceVariant),
           style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: scheme.onSurface),
           isDense: true,

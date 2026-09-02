@@ -41,7 +41,7 @@ class AppNotificationBanner extends StatelessWidget {
     }
 
     final surfaceBg = isDark
-        ? const Color(0xFF15161A)
+        ? AppColors.surfaceRaised
         : scheme.surfaceContainerHighest.withValues(alpha: 0.95);
 
     final dismissAction = data.actions.where((a) => a.label.toLowerCase() == 'dismiss' || a.label.toLowerCase() == 'ignorer').firstOrNull;
@@ -57,7 +57,7 @@ class AppNotificationBanner extends StatelessWidget {
         color: surfaceBg,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isDark ? const Color(0xFF272A30) : scheme.outlineVariant.withValues(alpha: 0.7),
+          color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.7),
           width: 1.0,
         ),
         boxShadow: [
@@ -74,7 +74,7 @@ class AppNotificationBanner extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(iconData, size: 17, color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant),
+              Icon(iconData, size: 17, color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -122,7 +122,7 @@ class AppNotificationBanner extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12.5,
                 height: 1.45,
-                color: isDark ? const Color(0xFFB0B3BC) : scheme.onSurfaceVariant,
+                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -141,10 +141,10 @@ class AppNotificationBanner extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF26282E) : scheme.surfaceContainerHigh,
+                      color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                        color: isDark ? const Color(0xFF383A42) : scheme.outlineVariant.withValues(alpha: 0.5),
+                        color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.5),
                         width: 0.8,
                       ),
                     ),
@@ -153,7 +153,7 @@ class AppNotificationBanner extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: isDark ? const Color(0xFFD4D4D8) : scheme.onSurface,
+                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                       ),
                     ),
                   ),
@@ -177,13 +177,13 @@ class AppNotificationBanner extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                         decoration: BoxDecoration(
                           color: isPrimary
-                              ? const Color(0xFF007FFF)
-                              : (isDark ? const Color(0xFF26282E) : scheme.surfaceContainerHigh),
+                              ? AppColors.accentBlue
+                              : (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh),
                           borderRadius: BorderRadius.circular(6),
                           border: isPrimary
                               ? null
                               : Border.all(
-                                  color: isDark ? const Color(0xFF383A42) : scheme.outlineVariant.withValues(alpha: 0.5),
+                                  color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.5),
                                   width: 0.8,
                                 ),
                         ),
@@ -192,7 +192,7 @@ class AppNotificationBanner extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: isPrimary ? FontWeight.w600 : FontWeight.w500,
-                            color: isPrimary ? Colors.white : (isDark ? const Color(0xFFE0E0E0) : scheme.onSurface),
+                            color: isPrimary ? Colors.white : (isDark ? AppColors.inkPrimary : scheme.onSurface),
                           ),
                         ),
                       ),

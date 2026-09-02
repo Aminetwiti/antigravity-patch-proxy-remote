@@ -87,10 +87,10 @@ class _BrowserSettingsSectionState extends State<BrowserSettingsSection> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+              color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(
-                color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+                color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
                 width: 1,
               ),
             ),
@@ -102,10 +102,10 @@ class _BrowserSettingsSectionState extends State<BrowserSettingsSection> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF007AFF).withValues(alpha: 0.15),
+                        color: AppColors.accentBlue.withValues(alpha: 0.15),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.language_rounded, size: 20, color: Color(0xFF007AFF)),
+                      child: const Icon(Icons.language_rounded, size: 20, color: AppColors.accentBlue),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -150,7 +150,7 @@ class _BrowserSettingsSectionState extends State<BrowserSettingsSection> {
                     const SizedBox(width: 12),
                     Switch.adaptive(
                       value: _headlessMode,
-                      activeColor: const Color(0xFF007AFF),
+                      activeColor: AppColors.accentBlue,
                       onChanged: (val) {
                         setState(() => _headlessMode = val);
                         SettingsStore.save({'browserHeadlessMode': val});
@@ -180,7 +180,7 @@ class _BrowserSettingsSectionState extends State<BrowserSettingsSection> {
                     const SizedBox(width: 12),
                     Switch.adaptive(
                       value: _autoCapture,
-                      activeColor: const Color(0xFF007AFF),
+                      activeColor: AppColors.accentBlue,
                       onChanged: (val) {
                         setState(() => _autoCapture = val);
                         SettingsStore.save({'browserAutoCapture': val});
@@ -199,7 +199,7 @@ class _BrowserSettingsSectionState extends State<BrowserSettingsSection> {
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               foregroundColor: scheme.onSurface,
-              side: BorderSide(color: isDark ? const Color(0xFF383B44) : scheme.outline),
+              side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outline),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
             ),

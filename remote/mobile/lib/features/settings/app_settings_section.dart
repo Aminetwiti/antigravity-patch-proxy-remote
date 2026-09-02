@@ -260,10 +260,10 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+              color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(
-                color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+                color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
                 width: 1,
               ),
             ),
@@ -283,7 +283,7 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                     const SizedBox(width: 8),
                     TextButton.icon(
                       style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF007AFF),
+                        foregroundColor: AppColors.accentBlue,
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         visualDensity: VisualDensity.compact,
                       ),
@@ -310,8 +310,8 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF007AFF),
-                      side: BorderSide(color: isDark ? const Color(0xFF007AFF).withValues(alpha: 0.5) : const Color(0xFF007AFF)),
+                      foregroundColor: AppColors.accentBlue,
+                      side: BorderSide(color: isDark ? AppColors.accentBlue.withValues(alpha: 0.5) : AppColors.accentBlue),
                       padding: const EdgeInsets.symmetric(vertical: 11),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
                     ),
@@ -383,7 +383,7 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                               ),
                               Switch.adaptive(
                                 value: _useSsl,
-                                activeColor: const Color(0xFF007AFF),
+                                activeColor: AppColors.accentBlue,
                                 onChanged: (val) => setState(() => _useSsl = val),
                               ),
                             ],
@@ -412,7 +412,7 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF007AFF),
+                      backgroundColor: AppColors.accentBlue,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
@@ -432,10 +432,10 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+              color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(
-                color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+                color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
                 width: 1,
               ),
             ),
@@ -459,7 +459,7 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: scheme.onSurface,
-                        side: BorderSide(color: isDark ? const Color(0xFF383B44) : scheme.outline),
+                        side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outline),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
                       ),
@@ -472,7 +472,7 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: scheme.onSurface,
-                        side: BorderSide(color: isDark ? const Color(0xFF383B44) : scheme.outline),
+                        side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outline),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
                       ),
@@ -483,7 +483,7 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: scheme.onSurface,
-                        side: BorderSide(color: isDark ? const Color(0xFF383B44) : scheme.outline),
+                        side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outline),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
                       ),
@@ -494,13 +494,13 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                     if (widget.api != null)
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: isDark ? const Color(0xFF26282E) : scheme.surfaceContainerHighest,
+                          backgroundColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                           foregroundColor: scheme.onSurface,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(AppRadius.sm),
-                            side: BorderSide(color: isDark ? const Color(0xFF383B44) : scheme.outlineVariant),
+                            side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
                           ),
                         ),
                         onPressed: () {
@@ -510,7 +510,7 @@ class _AppSettingsSectionState extends State<AppSettingsSection> {
                             ),
                           );
                         },
-                        icon: const Icon(Icons.monitor_heart_outlined, size: 16, color: Color(0xFF4CAF50)),
+                        icon: const Icon(Icons.monitor_heart_outlined, size: 16, color: AppColors.positive),
                         label: const Text('FlightRecorder & Profiling 📊', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                       ),
                   ],

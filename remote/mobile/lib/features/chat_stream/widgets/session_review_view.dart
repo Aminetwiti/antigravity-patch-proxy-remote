@@ -158,8 +158,8 @@ class _SessionReviewViewState extends State<SessionReviewView> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF23262D) : scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(10),
+                  color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
                 child: Text(
                   '${widget.files.length}',
@@ -175,12 +175,12 @@ class _SessionReviewViewState extends State<SessionReviewView> {
               // ⋮ Options menu
               PopupMenuButton<String>(
                 tooltip: 'Options de revue',
-                color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
+                color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
                 surfaceTintColor: Colors.transparent,
                 elevation: 8,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AppRadius.md),
-                  side: BorderSide(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant, width: 1),
+                  side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, width: 1),
                 ),
                 icon: Icon(
                   Icons.more_vert_rounded,
@@ -288,9 +288,9 @@ class _SessionReviewViewState extends State<SessionReviewView> {
             child: Container(
               height: 34,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant, width: 1),
+                border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, width: 1),
               ),
               child: TextField(
                 controller: _searchController,
@@ -319,7 +319,7 @@ class _SessionReviewViewState extends State<SessionReviewView> {
             ),
           ),
 
-        const Divider(color: Color(0xFF212328), height: 1),
+        Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, height: 1),
 
         // ── Liste des fichiers modifiés
         Expanded(
@@ -328,14 +328,14 @@ class _SessionReviewViewState extends State<SessionReviewView> {
                   child: ListView(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     physics: const NeverScrollableScrollPhysics(),
-                    children: const [
-                      SkeletonDiffFileItem(),
-                      Divider(color: Color(0xFF1B1D22), height: 1, indent: 14, endIndent: 14),
-                      SkeletonDiffFileItem(),
-                      Divider(color: Color(0xFF1B1D22), height: 1, indent: 14, endIndent: 14),
-                      SkeletonDiffFileItem(),
-                      Divider(color: Color(0xFF1B1D22), height: 1, indent: 14, endIndent: 14),
-                      SkeletonDiffFileItem(),
+                    children: [
+                      const SkeletonDiffFileItem(),
+                      Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, height: 1, indent: 14, endIndent: 14),
+                      const SkeletonDiffFileItem(),
+                      Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, height: 1, indent: 14, endIndent: 14),
+                      const SkeletonDiffFileItem(),
+                      Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, height: 1, indent: 14, endIndent: 14),
+                      const SkeletonDiffFileItem(),
                     ],
                   ),
                 )
@@ -353,7 +353,7 @@ class _SessionReviewViewState extends State<SessionReviewView> {
                               Icon(
                                 _searchQuery.isNotEmpty ? Icons.search_off_rounded : Icons.check_circle_outline_rounded,
                                 size: 32,
-                                color: const Color(0xFF5E606A),
+                                color: AppColors.inkMuted,
                               ),
                               const SizedBox(height: 8),
                               Text(
@@ -373,8 +373,8 @@ class _SessionReviewViewState extends State<SessionReviewView> {
               : ListView.separated(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   itemCount: filtered.length,
-                  separatorBuilder: (context, index) => const Divider(
-                    color: Color(0xFF1B1D22),
+                  separatorBuilder: (context, index) => Divider(
+                    color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                     height: 1,
                     indent: 14,
                     endIndent: 14,
@@ -420,7 +420,7 @@ class _ChangedFileRow extends StatelessWidget {
         HapticFeedback.selectionClick();
         onTap();
       },
-      hoverColor: isDark ? const Color(0xFF1E2127) : scheme.surfaceContainerHighest,
+      hoverColor: isDark ? AppColors.surfaceHover : scheme.surfaceContainerHighest,
       splashColor: scheme.primary.withValues(alpha: 0.1),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -444,7 +444,7 @@ class _ChangedFileRow extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? const Color(0xFFE4E4E7) : scheme.onSurface,
+                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                         letterSpacing: -0.1,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -457,7 +457,7 @@ class _ChangedFileRow extends StatelessWidget {
                         file.directoryPath,
                         style: TextStyle(
                           fontSize: 11.5,
-                          color: isDark ? const Color(0xFF8F909A) : scheme.onSurfaceVariant,
+                          color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -488,7 +488,7 @@ class _ChangedFileRow extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF22C55E),
+                      color: AppColors.positive,
                     ),
                   ),
                 if (file.deletions > 0) ...[
@@ -498,7 +498,7 @@ class _ChangedFileRow extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFFEF4444),
+                      color: AppColors.danger,
                     ),
                   ),
                 ],
@@ -509,7 +509,7 @@ class _ChangedFileRow extends StatelessWidget {
             const Icon(
               Icons.chevron_right_rounded,
               size: 15,
-              color: Color(0xFF5E606A),
+              color: AppColors.inkMuted,
             ),
           ],
         ),

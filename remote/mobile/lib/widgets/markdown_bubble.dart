@@ -673,11 +673,11 @@ class _DiffLineRow extends StatelessWidget {
     FontWeight fontWeight = FontWeight.normal;
 
     if (line.startsWith('+') && !line.startsWith('+++')) {
-      bgColor = isDark ? const Color(0x339BB955) : const Color(0x221A7F37);
-      textColor = isDark ? const Color(0xFF4ADE80) : const Color(0xFF1A7F37);
+      bgColor = isDark ? AppColors.positive.withValues(alpha: 0.15) : const Color(0x221A7F37);
+      textColor = isDark ? AppColors.positive : const Color(0xFF1A7F37);
     } else if (line.startsWith('-') && !line.startsWith('---')) {
-      bgColor = isDark ? const Color(0x33FF0000) : const Color(0x22CF222E);
-      textColor = isDark ? const Color(0xFFF87171) : const Color(0xFFCF222E);
+      bgColor = isDark ? AppColors.danger.withValues(alpha: 0.15) : const Color(0x22CF222E);
+      textColor = isDark ? AppColors.danger : const Color(0xFFCF222E);
     } else if (line.startsWith('@@')) {
       bgColor = scheme.primary.withValues(alpha: 0.12);
       textColor = scheme.primary;
@@ -747,12 +747,12 @@ class _ToolCallPillState extends State<_ToolCallPill> {
   }
 
   Color get _badgeColor {
-    if (_isSubagent) return const Color(0xFF528BFF);
-    if (_isBrowser) return const Color(0xFF00B4D8);
+    if (_isSubagent) return AppColors.accentBlue;
+    if (_isBrowser) return AppColors.accentBlue;
     final t = widget.call.toolName.toLowerCase();
     if (t.contains('command') || t.contains('run')) return const Color(0xFFE07A5F);
     if (t.contains('file')) return const Color(0xFF81B29A);
-    return const Color(0xFFA1A1AA);
+    return AppColors.inkSecondary;
   }
 
   @override
@@ -766,16 +766,16 @@ class _ToolCallPillState extends State<_ToolCallPill> {
       margin: const EdgeInsets.symmetric(vertical: 2),
       decoration: BoxDecoration(
         color: _isSubagent
-            ? const Color(0xFF528BFF).withValues(alpha: 0.1)
+            ? AppColors.accentBlue.withValues(alpha: 0.1)
             : _isBrowser
-                ? const Color(0xFF00B4D8).withValues(alpha: 0.08)
+                ? AppColors.accentBlue.withValues(alpha: 0.08)
                 : scheme.secondaryContainer.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(
           color: _isSubagent
-              ? const Color(0xFF528BFF).withValues(alpha: 0.3)
+              ? AppColors.accentBlue.withValues(alpha: 0.3)
               : _isBrowser
-                  ? const Color(0xFF00B4D8).withValues(alpha: 0.25)
+                  ? AppColors.accentBlue.withValues(alpha: 0.25)
                   : scheme.secondary.withValues(alpha: 0.3),
         ),
       ),

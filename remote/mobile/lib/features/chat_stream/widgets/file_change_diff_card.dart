@@ -309,11 +309,11 @@ class _FileChangeDiffCardState extends State<FileChangeDiffCard> {
 
     if (line.type == DiffLineType.addition) {
       rowBg = AppColors.positive.withValues(alpha: isDark ? 0.12 : 0.08);
-      textColor = isDark ? const Color(0xFF86EFAC) : const Color(0xFF15803D);
+      textColor = isDark ? AppColors.positive : const Color(0xFF15803D);
       prefix = '+';
     } else if (line.type == DiffLineType.deletion) {
       rowBg = AppColors.danger.withValues(alpha: isDark ? 0.12 : 0.08);
-      textColor = isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C);
+      textColor = isDark ? AppColors.danger : const Color(0xFFB91C1C);
       prefix = '-';
     } else if (line.type == DiffLineType.header) {
       rowBg = AppColors.accentBlue.withValues(alpha: 0.08);

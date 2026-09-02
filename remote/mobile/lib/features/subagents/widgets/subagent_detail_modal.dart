@@ -354,8 +354,8 @@ class _SubagentDetailModalState extends State<SubagentDetailModal> {
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
                               color: widget.agent.inheritCustomizations
-                                  ? (isDark ? const Color(0xFF16251E) : scheme.surfaceContainerHighest)
-                                  : (isDark ? const Color(0xFF222630) : scheme.surfaceContainer),
+                                  ? (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest)
+                                  : (isDark ? AppColors.surfaceInput : scheme.surfaceContainer),
                               borderRadius: BorderRadius.circular(AppRadius.pill),
                               border: Border.all(
                                 color: widget.agent.inheritCustomizations
@@ -576,7 +576,7 @@ class _SubagentDetailModalState extends State<SubagentDetailModal> {
                               style: const TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF4ADE80),
+                                color: AppColors.positive,
                               ),
                             ),
                             Text(
@@ -584,7 +584,7 @@ class _SubagentDetailModalState extends State<SubagentDetailModal> {
                               style: const TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFFF87171),
+                                color: AppColors.danger,
                               ),
                             ),
                             const Spacer(),

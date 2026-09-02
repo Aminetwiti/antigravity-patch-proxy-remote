@@ -31,10 +31,10 @@ class ResolvedAskQuestionCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 6),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1C22) : scheme.surfaceContainer,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isDark ? const Color(0xFF2E303E) : scheme.outlineVariant.withValues(alpha: 0.7),
+          color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.7),
           width: 0.9,
         ),
       ),
@@ -49,7 +49,7 @@ class ResolvedAskQuestionCard extends StatelessWidget {
               Icon(
                 Icons.help_outline_rounded,
                 size: 14,
-                color: isDark ? const Color(0xFF8B8D98) : scheme.onSurfaceVariant,
+                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Text(
@@ -57,7 +57,7 @@ class ResolvedAskQuestionCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w400,
-                  color: isDark ? const Color(0xFF8B8D98) : scheme.onSurfaceVariant,
+                  color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -85,7 +85,7 @@ class ResolvedAskQuestionCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w400,
-                  color: isDark ? const Color(0xFF9E9FA8) : scheme.onSurfaceVariant,
+                  color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                 ),
               ),
             ],

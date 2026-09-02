@@ -180,9 +180,9 @@ class _ScheduledTasksScreenState extends State<ScheduledTasksScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F1117) : scheme.surface,
+      backgroundColor: isDark ? AppColors.surfaceBase : scheme.surface,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF13151B) : scheme.surfaceContainerLow,
+        backgroundColor: isDark ? AppColors.surfaceBase : scheme.surfaceContainerLow,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_rounded, size: 20, color: scheme.onSurface),
@@ -240,7 +240,7 @@ class _ScheduledTasksScreenState extends State<ScheduledTasksScreen> {
               child: Container(
                 height: 40,
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                  color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(AppRadius.lg),
                   border: Border.all(color: scheme.outlineVariant, width: 1),
                 ),
@@ -509,7 +509,7 @@ class _ScheduledTaskRow extends StatelessWidget {
             tooltip: 'Actions',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+            color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.md),
               side: BorderSide(color: scheme.outlineVariant, width: 1),
@@ -574,7 +574,7 @@ class _ScheduledTaskRow extends StatelessWidget {
               activeColor: scheme.primary,
               activeTrackColor: scheme.primary.withValues(alpha: 0.5),
               inactiveThumbColor: scheme.onSurfaceVariant,
-              inactiveTrackColor: isDark ? const Color(0xFF2C2F36) : scheme.surfaceContainerHighest,
+              inactiveTrackColor: isDark ? AppColors.borderSubtle : scheme.surfaceContainerHighest,
               onChanged: (val) {
                 HapticFeedback.selectionClick();
                 onToggle(val);
@@ -671,7 +671,7 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
       top: false,
       child: Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131416) : scheme.surfaceContainer,
+          color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           border: Border(top: BorderSide(color: scheme.outlineVariant, width: 1)),
         ),
@@ -718,7 +718,7 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
             const SizedBox(height: 6),
             Container(
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(color: scheme.outlineVariant),
               ),
@@ -748,7 +748,7 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
             const SizedBox(height: 6),
             Container(
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(color: scheme.outlineVariant),
               ),
@@ -756,7 +756,7 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: _selectedProject,
-                  dropdownColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                  dropdownColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                   icon: Icon(Icons.keyboard_arrow_down_rounded, color: scheme.onSurfaceVariant, size: 18),
                   isExpanded: true,
                   items: widget.workspaces
@@ -801,7 +801,7 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
                 // Frequency Dropdown (Daily ⌄)
                 Container(
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                    color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(AppRadius.md),
                     border: Border.all(color: scheme.outlineVariant),
                   ),
@@ -809,7 +809,7 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       value: _selectedFrequency,
-                      dropdownColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                      dropdownColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                       icon: Icon(Icons.keyboard_arrow_down_rounded, color: scheme.onSurfaceVariant, size: 16),
                       items: _frequencies
                           .map((f) => DropdownMenuItem(
@@ -832,7 +832,7 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
                 // Time Dropdown (9:00 AM ⌄)
                 Container(
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                    color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(AppRadius.md),
                     border: Border.all(color: scheme.outlineVariant),
                   ),
@@ -840,7 +840,7 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       value: _selectedTime,
-                      dropdownColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                      dropdownColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                       icon: Icon(Icons.keyboard_arrow_down_rounded, color: scheme.onSurfaceVariant, size: 16),
                       items: _times
                           .map((t) => DropdownMenuItem(
@@ -860,21 +860,21 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
               margin: const EdgeInsets.only(top: 8),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(AppRadius.sm),
                 border: Border.all(color: scheme.outlineVariant),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.schedule_rounded, size: 13, color: isDark ? const Color(0xFF22C55E) : const Color(0xFF1A7F37)),
+                  Icon(Icons.schedule_rounded, size: 13, color: isDark ? AppColors.positive : AppColors.positive),
                   const SizedBox(width: 6),
                   Text(
                     'Cron : ${_computeCronExpression()}',
                     style: TextStyle(
                       fontSize: 11,
                       fontFamily: 'monospace',
-                      color: isDark ? const Color(0xFF22C55E) : const Color(0xFF1A7F37),
+                      color: isDark ? AppColors.positive : AppColors.positive,
                     ),
                   ),
                 ],
@@ -895,7 +895,7 @@ class _NewScheduledTaskModalState extends State<_NewScheduledTaskModal> {
             const SizedBox(height: 6),
             Container(
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(color: scheme.outlineVariant),
               ),

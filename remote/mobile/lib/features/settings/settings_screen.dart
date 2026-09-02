@@ -111,9 +111,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final isWide = MediaQuery.of(context).size.width >= 640;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F1012) : scheme.surface,
+      backgroundColor: isDark ? AppColors.surfaceBase : scheme.surface,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF0F1012) : scheme.surfaceContainer,
+        backgroundColor: isDark ? AppColors.surfaceBase : scheme.surfaceContainer,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: scheme.onSurface),
@@ -157,10 +157,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Container(
           width: 240,
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+            color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
             border: Border(
               right: BorderSide(
-                color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+                color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
                 width: 1,
               ),
             ),
@@ -298,10 +298,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+          color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -312,10 +312,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           leading: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF007AFF).withValues(alpha: 0.12),
+              color: AppColors.accentBlue.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 18, color: const Color(0xFF007AFF)),
+            child: Icon(icon, size: 18, color: AppColors.accentBlue),
           ),
           title: Text(
             title,
@@ -330,9 +330,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (ctx) => Scaffold(
-                  backgroundColor: isDark ? const Color(0xFF0F1012) : scheme.surface,
+                  backgroundColor: isDark ? AppColors.surfaceBase : scheme.surface,
                   appBar: AppBar(
-                    backgroundColor: isDark ? const Color(0xFF0F1012) : scheme.surfaceContainer,
+                    backgroundColor: isDark ? AppColors.surfaceBase : scheme.surfaceContainer,
                     elevation: 0,
                     leading: IconButton(
                       icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: scheme.onSurface),
@@ -358,7 +358,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         style: const TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF8F909A),
+          color: AppColors.inkSecondary,
           letterSpacing: 0.8,
         ),
       ),
@@ -382,7 +382,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
             color: isSelected
-                ? (isDark ? const Color(0xFF24272E) : scheme.primaryContainer)
+                ? (isDark ? AppColors.surfaceInput : scheme.primaryContainer)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
@@ -391,7 +391,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Icon(
                 icon,
                 size: 16,
-                color: isSelected ? const Color(0xFF007AFF) : scheme.onSurfaceVariant,
+                color: isSelected ? AppColors.accentBlue : scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 10),
               Expanded(

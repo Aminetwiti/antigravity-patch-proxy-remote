@@ -188,7 +188,7 @@ class _ToastStackOverlayState extends State<_ToastStackOverlay> {
                             child: Container(
                               height: 38,
                               decoration: BoxDecoration(
-                                color: (isDark ? const Color(0xFF1E222B) : scheme.surfaceContainerHighest).withValues(alpha: 0.6),
+                                color: (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest).withValues(alpha: 0.6),
                                 borderRadius: BorderRadius.circular(AppRadius.pill),
                               ),
                             ),
@@ -201,7 +201,7 @@ class _ToastStackOverlayState extends State<_ToastStackOverlay> {
                             child: Container(
                               height: 38,
                               decoration: BoxDecoration(
-                                color: (isDark ? const Color(0xFF1E222B) : scheme.surfaceContainerHighest).withValues(alpha: 0.8),
+                                color: (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest).withValues(alpha: 0.8),
                                 borderRadius: BorderRadius.circular(AppRadius.pill),
                               ),
                             ),
@@ -235,25 +235,25 @@ class _ToastStackOverlayState extends State<_ToastStackOverlay> {
       ToastType.info => (
           Icons.info_outline,
           isDark ? AppColors.accentBlueBright : scheme.primary,
-          (isDark ? const Color(0xFF1B202B) : scheme.surfaceContainerHighest).withValues(alpha: isDark ? 0.88 : 0.94),
+          (isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest).withValues(alpha: isDark ? 0.88 : 0.94),
           (isDark ? AppColors.accentBlue : scheme.primary).withValues(alpha: 0.35),
         ),
       ToastType.success => (
           Icons.check_circle_outline,
           AppColors.positive,
-          (isDark ? const Color(0xFF14241B) : scheme.surfaceContainerHighest).withValues(alpha: isDark ? 0.88 : 0.94),
+          (isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest).withValues(alpha: isDark ? 0.88 : 0.94),
           AppColors.positive.withValues(alpha: 0.35),
         ),
       ToastType.warning => (
           Icons.warning_amber_rounded,
           AppColors.warning,
-          (isDark ? const Color(0xFF2B2114) : scheme.surfaceContainerHighest).withValues(alpha: isDark ? 0.88 : 0.94),
+          (isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest).withValues(alpha: isDark ? 0.88 : 0.94),
           AppColors.warning.withValues(alpha: 0.35),
         ),
       ToastType.error => (
           Icons.error_outline,
-          isDark ? const Color(0xFFFCA5A5) : scheme.error,
-          (isDark ? const Color(0xFF2C1417) : scheme.surfaceContainerHighest).withValues(alpha: isDark ? 0.88 : 0.94),
+          isDark ? AppColors.danger : scheme.error,
+          (isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest).withValues(alpha: isDark ? 0.88 : 0.94),
           (isDark ? AppColors.danger : scheme.error).withValues(alpha: 0.35),
         ),
     };
@@ -290,7 +290,7 @@ class _ToastStackOverlayState extends State<_ToastStackOverlay> {
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w500,
-                    color: isDark ? const Color(0xFFF0F4F8) : scheme.onSurface,
+                    color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -324,7 +324,7 @@ class _ToastStackOverlayState extends State<_ToastStackOverlay> {
                     child: Icon(
                       Icons.close_rounded,
                       size: 13,
-                      color: isDark ? const Color(0xFF8E929E) : scheme.onSurfaceVariant,
+                      color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
                     ),
                   ),
                 ),

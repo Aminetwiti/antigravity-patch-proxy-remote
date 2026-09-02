@@ -34,10 +34,10 @@ class ShortcutsModal extends StatelessWidget {
       insetPadding: EdgeInsets.symmetric(horizontal: 16, vertical: hasTightKeyboard ? 4 : 16),
       titlePadding: EdgeInsets.fromLTRB(16, hasTightKeyboard ? 8 : 18, 16, hasTightKeyboard ? 6 : 10),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      backgroundColor: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+      backgroundColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        side: BorderSide(color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant),
+        side: BorderSide(color: isDark ? AppColors.surfaceInput : scheme.outlineVariant),
       ),
       title: Row(
         children: [
@@ -65,9 +65,9 @@ class ShortcutsModal extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHigh,
+                        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHigh,
                         borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
+                        border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
                       ),
                       child: Text(
                         s['key']!,

@@ -127,10 +127,10 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF1E2025) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF2E313A) : const Color(0xFFE2E4E9);
-    final textPrimary = isDark ? Colors.white : const Color(0xFF18181B);
-    final textSecondary = isDark ? const Color(0xFF8F909A) : const Color(0xFF71717A);
+    final bg = isDark ? AppColors.surfaceRaised : Colors.white;
+    final borderColor = isDark ? AppColors.borderSubtle : const Color(0xFFE2E4E9);
+    final textPrimary = isDark ? AppColors.inkPrimary : const Color(0xFF18181B);
+    final textSecondary = isDark ? AppColors.inkSecondary : const Color(0xFF71717A);
 
     return Dialog(
       backgroundColor: bg,
@@ -151,12 +151,12 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE5A93C).withValues(alpha: 0.15),
+                      color: AppColors.warning.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                     child: const Icon(
                       Icons.history_rounded,
-                      color: Color(0xFFE5A93C),
+                      color: AppColors.warning,
                       size: 20,
                     ),
                   ),
@@ -209,13 +209,13 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
                   padding: const EdgeInsets.all(10),
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE5534B).withValues(alpha: 0.1),
+                    color: AppColors.danger.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(color: const Color(0xFFE5534B).withValues(alpha: 0.3)),
+                    border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
                   ),
                   child: Text(
                     _errorMessage!,
-                    style: const TextStyle(fontSize: 12, color: Color(0xFFE5534B)),
+                    style: const TextStyle(fontSize: 12, color: AppColors.danger),
                   ),
                 )
               else ...[
@@ -233,7 +233,7 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
                     constraints: const BoxConstraints(maxHeight: 90),
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF141518) : const Color(0xFFF4F4F6),
+                      color: isDark ? AppColors.surfaceInput : const Color(0xFFF4F4F6),
                       borderRadius: BorderRadius.circular(AppRadius.sm),
                     ),
                     child: ListView.builder(
@@ -243,7 +243,7 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
                         padding: const EdgeInsets.symmetric(vertical: 2),
                         child: Row(
                           children: [
-                            const Icon(Icons.description_outlined, size: 13, color: Color(0xFF8F909A)),
+                            const Icon(Icons.description_outlined, size: 13, color: AppColors.inkSecondary),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
@@ -268,7 +268,7 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF141518) : const Color(0xFFF4F4F6),
+                        color: isDark ? AppColors.surfaceInput : const Color(0xFFF4F4F6),
                         borderRadius: BorderRadius.circular(AppRadius.sm),
                         border: Border.all(color: borderColor),
                       ),
@@ -307,7 +307,7 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFD97706),
+                      backgroundColor: AppColors.warning,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       shape: RoundedRectangleBorder(
@@ -331,16 +331,16 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
       mainAxisSize: MainAxisSize.min,
       children: lines.map((line) {
         Color lineBg = Colors.transparent;
-        Color textColor = isDark ? const Color(0xFFD4D4D8) : const Color(0xFF27272A);
+        Color textColor = isDark ? AppColors.inkPrimary : const Color(0xFF27272A);
         if (line.startsWith('+') && !line.startsWith('+++')) {
-          textColor = isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A);
-          lineBg = (isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A)).withValues(alpha: 0.12);
+          textColor = isDark ? AppColors.positive : const Color(0xFF16A34A);
+          lineBg = (isDark ? AppColors.positive : const Color(0xFF16A34A)).withValues(alpha: 0.12);
         } else if (line.startsWith('-') && !line.startsWith('---')) {
-          textColor = isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
-          lineBg = (isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626)).withValues(alpha: 0.12);
+          textColor = isDark ? AppColors.danger : const Color(0xFFDC2626);
+          lineBg = (isDark ? AppColors.danger : const Color(0xFFDC2626)).withValues(alpha: 0.12);
         } else if (line.startsWith('@@')) {
-          textColor = isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
-          lineBg = (isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB)).withValues(alpha: 0.08);
+          textColor = isDark ? AppColors.accentBlue : const Color(0xFF2563EB);
+          lineBg = (isDark ? AppColors.accentBlue : const Color(0xFF2563EB)).withValues(alpha: 0.08);
         }
 
         return Container(

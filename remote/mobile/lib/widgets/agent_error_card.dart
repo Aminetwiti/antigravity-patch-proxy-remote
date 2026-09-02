@@ -63,13 +63,13 @@ class _AgentErrorCardState extends State<AgentErrorCard> {
     final title = _cleanErrorTitle(widget.errorText);
 
     final errorBg = isDark
-        ? const Color(0xFF1E1414)
+        ? AppColors.dangerSubtle
         : scheme.errorContainer.withValues(alpha: 0.25);
     final errorBorder = isDark
-        ? const Color(0xFF442424)
+        ? AppColors.borderSubtle
         : scheme.error.withValues(alpha: 0.35);
     final errorTextColor = isDark
-        ? const Color(0xFFF87171)
+        ? AppColors.danger
         : scheme.error;
 
     return Container(
@@ -136,7 +136,7 @@ class _AgentErrorCardState extends State<AgentErrorCard> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
-                            color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
+                            color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                           ),
                         ),
                         SelectableText(
@@ -144,7 +144,7 @@ class _AgentErrorCardState extends State<AgentErrorCard> {
                           style: TextStyle(
                             fontSize: 12,
                             fontFamily: 'monospace',
-                            color: isDark ? const Color(0xFFE0E0E0) : scheme.onSurface,
+                            color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -163,7 +163,7 @@ class _AgentErrorCardState extends State<AgentErrorCard> {
                             child: Icon(
                               _copied ? Icons.check_rounded : Icons.copy_rounded,
                               size: 13,
-                              color: _copied ? AppColors.positive : (isDark ? const Color(0xFF888888) : scheme.outline),
+                              color: _copied ? AppColors.positive : (isDark ? AppColors.inkMuted : scheme.outline),
                             ),
                           ),
                         ),
@@ -176,7 +176,7 @@ class _AgentErrorCardState extends State<AgentErrorCard> {
                     style: TextStyle(
                       fontSize: 12.5,
                       height: 1.4,
-                      color: isDark ? const Color(0xFFD4D4D8) : scheme.onSurface,
+                      color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                     ),
                   ),
                   if (widget.onRetry != null) ...[

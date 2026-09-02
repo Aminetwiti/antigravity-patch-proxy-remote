@@ -105,10 +105,10 @@ class _AccountSettingsSectionState extends State<AccountSettingsSection> {
 
           Container(
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+              color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(
-                color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+                color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
                 width: 1,
               ),
             ),
@@ -144,7 +144,7 @@ class _AccountSettingsSectionState extends State<AccountSettingsSection> {
                     const SizedBox(width: 12),
                     Switch.adaptive(
                       value: _telemetryEnabled,
-                      activeColor: const Color(0xFF007AFF),
+                      activeColor: AppColors.accentBlue,
                       onChanged: _toggleTelemetry,
                     ),
                   ],
@@ -179,7 +179,7 @@ class _AccountSettingsSectionState extends State<AccountSettingsSection> {
                     const SizedBox(width: 12),
                     Switch.adaptive(
                       value: _marketingEmails,
-                      activeColor: const Color(0xFF007AFF),
+                      activeColor: AppColors.accentBlue,
                       onChanged: _toggleMarketing,
                     ),
                   ],
@@ -203,10 +203,10 @@ class _AccountSettingsSectionState extends State<AccountSettingsSection> {
 
           Container(
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+              color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(
-                color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+                color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
                 width: 1,
               ),
             ),
@@ -242,7 +242,7 @@ class _AccountSettingsSectionState extends State<AccountSettingsSection> {
                     const SizedBox(width: 12),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF007AFF),
+                        backgroundColor: AppColors.accentBlue,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -292,7 +292,7 @@ class _AccountSettingsSectionState extends State<AccountSettingsSection> {
                     OutlinedButton(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: scheme.onSurface,
-                        side: BorderSide(color: isDark ? const Color(0xFF383B44) : scheme.outline),
+                        side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outline),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(AppRadius.sm),

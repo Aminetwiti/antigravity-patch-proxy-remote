@@ -363,6 +363,15 @@ class MarkdownRenderer {
   static String? _lastSearchQuery;
   static RegExp? _lastSearchPattern;
 
+  static String _sanitizeUtf16(String input) {
+    if (input.isEmpty) return input;
+    try {
+      return utf8.decode(utf8.encode(input), allowMalformed: true);
+    } catch (_) {
+      return input;
+    }
+  }
+
   /// Builds inline [TextSpan]s for a paragraph, resolving bold/italic/code.
   /// [onLocalFile] (P5) est appelé quand l'utilisateur tape un lien markdown
   /// vers un fichier local (file:///...) — le caller ouvre le fichier (ex.
@@ -374,7 +383,7 @@ class MarkdownRenderer {
     LocalFileTap? onLocalFile,
     String? searchQuery,
   }) {
-    final safeText = text.toWellFormed();
+    final safeText = _sanitizeUtf16(text);
     final bool canCache = searchQuery == null && onLocalFile == null;
     final String cacheKey = canCache
         ? '${safeText.hashCode}_${base.fontSize}_${base.color?.value}_${base.fontWeight}_${base.fontStyle}_${scheme.primary.value}'
@@ -399,7 +408,7 @@ class MarkdownRenderer {
             span.recognizer == null &&
             (spans.last as TextSpan).style == span.style) {
           final prev = spans.removeLast() as TextSpan;
-          spans.add(TextSpan(text: '${prev.text ?? ''}${span.text ?? ''}'.toWellFormed(), style: span.style));
+          spans.add(TextSpan(text: _sanitizeUtf16('${prev.text ?? ''}${span.text ?? ''}'), style: span.style));
         } else {
           spans.add(span);
         }
@@ -407,7 +416,7 @@ class MarkdownRenderer {
     }
 
     List<TextSpan> highlightText(String content, TextStyle style) {
-      final safeContent = content.toWellFormed();
+      final safeContent = _sanitizeUtf16(content);
       if (searchQuery == null || searchQuery.isEmpty) {
         return [TextSpan(text: safeContent, style: style)];
       }
@@ -420,10 +429,10 @@ class MarkdownRenderer {
       int cursor = 0;
       for (final match in pattern.allMatches(safeContent)) {
         if (match.start > cursor) {
-          res.add(TextSpan(text: safeContent.substring(cursor, match.start).toWellFormed(), style: style));
+          res.add(TextSpan(text: _sanitizeUtf16(safeContent.substring(cursor, match.start)), style: style));
         }
         res.add(TextSpan(
-          text: safeContent.substring(match.start, match.end).toWellFormed(),
+          text: _sanitizeUtf16(safeContent.substring(match.start, match.end)),
           style: style.copyWith(
             backgroundColor: Colors.amber.withValues(alpha: 0.35),
             fontWeight: FontWeight.bold,
@@ -432,7 +441,7 @@ class MarkdownRenderer {
         cursor = match.end;
       }
       if (cursor < safeContent.length) {
-        res.add(TextSpan(text: safeContent.substring(cursor).toWellFormed(), style: style));
+        res.add(TextSpan(text: _sanitizeUtf16(safeContent.substring(cursor)), style: style));
       }
       return res;
     }
@@ -464,7 +473,7 @@ class MarkdownRenderer {
       if (codeMatch != null && codeMatch.start == 0) {
         final isDark = scheme.brightness == Brightness.dark;
         spans.add(TextSpan(
-          text: codeMatch.group(1)?.toWellFormed(),
+          text: _sanitizeUtf16(codeMatch.group(1) ?? ''),
           style: base.copyWith(
             fontFamily: 'monospace',
             fontSize: (base.fontSize ?? 13) * 0.92,
@@ -731,7 +740,7 @@ class MarkdownRenderer {
       final boldMatch = _boldRe.firstMatch(remaining);
       if (boldMatch != null && boldMatch.start == 0) {
         spans.add(TextSpan(
-          text: boldMatch.group(1)?.toWellFormed(),
+          text: _sanitizeUtf16(boldMatch.group(1) ?? ''),
           style: base.copyWith(fontWeight: FontWeight.w700),
         ));
         remaining = remaining.substring(boldMatch.end);
@@ -742,7 +751,7 @@ class MarkdownRenderer {
       final italicMatch = _italicRe.firstMatch(remaining);
       if (italicMatch != null && italicMatch.start == 0) {
         spans.add(TextSpan(
-          text: italicMatch.group(1)?.toWellFormed(),
+          text: _sanitizeUtf16(italicMatch.group(1) ?? ''),
           style: base.copyWith(fontStyle: FontStyle.italic),
         ));
         remaining = remaining.substring(italicMatch.end);

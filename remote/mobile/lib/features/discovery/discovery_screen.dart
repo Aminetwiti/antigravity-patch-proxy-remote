@@ -296,14 +296,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: (isTunnel ? const Color(0xFF8B5CF6) : const Color(0xFF3B82F6))
+                        color: (isTunnel ? AppColors.accentBlueDeep : AppColors.accentBlue)
                             .withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
                         isTunnel ? Icons.cloud_done_outlined : Icons.computer_outlined,
                         size: 20,
-                        color: isTunnel ? const Color(0xFF8B5CF6) : const Color(0xFF3B82F6),
+                        color: isTunnel ? AppColors.accentBlueDeep : AppColors.accentBlue,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -363,7 +363,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w500,
-                                    color: Color(0xFF10B981),
+                                    color: AppColors.positive,
                                   ),
                                 ),
                               if (c.pin.isNotEmpty)
@@ -373,7 +373,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                   '• PIN: ••••••',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: Color(0xFF9CA3AF),
+                                    color: AppColors.inkMuted,
                                   ),
                                 ),
                               Text(
@@ -557,10 +557,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                color: AppColors.positive.withValues(alpha: 0.15),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.laptop_chromebook, size: 20, color: Color(0xFF10B981)),
+                              child: const Icon(Icons.laptop_chromebook, size: 20, color: AppColors.positive),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -792,21 +792,21 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                        color: AppColors.positive.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                        border: Border.all(color: AppColors.positive.withValues(alpha: 0.3)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF10B981)),
+                              const Icon(Icons.check_circle_rounded, size: 18, color: AppColors.positive),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   _successMessage!,
-                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF10B981)),
+                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.positive),
                                 ),
                               ),
                             ],
@@ -819,8 +819,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
                               label: const Text('Accéder au Chat', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF10B981),
-                                side: const BorderSide(color: Color(0xFF10B981)),
+                                foregroundColor: AppColors.positive,
+                                side: const BorderSide(color: AppColors.positive),
                                 padding: const EdgeInsets.symmetric(vertical: 8),
                               ),
                             ),

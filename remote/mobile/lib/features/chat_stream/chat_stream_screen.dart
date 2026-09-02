@@ -3116,7 +3116,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           child: Column(
             children: [
               connectivityBanner,
-          if (!hasKeyboard && (_isHeaderVisible || _isFullscreen)) breadcrumb,
+          if (!hasKeyboard) breadcrumb,
           AnimatedSize(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
@@ -3132,7 +3132,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                   )
                 : const SizedBox.shrink(),
           ),
-          if (!_isFullscreen && _isHeaderVisible) ...[
+          if (!_isFullscreen && !hasKeyboard) ...[
             SessionTopTabs(
               activeTab: _currentTab,
               onTabChanged: (tab) {

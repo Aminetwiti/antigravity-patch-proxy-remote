@@ -77,8 +77,8 @@ class _SkeletonLoaderState extends State<SkeletonLoader> with SingleTickerProvid
     final List<Color> shimmer;
     if (widget.baseColor != null || widget.highlightColor != null) {
       // Respect caller overrides (backward compat)
-      final base = widget.baseColor ?? (isDark ? const Color(0xFF1B1F27) : const Color(0xFFEAEEF2));
-      final hl = widget.highlightColor ?? (isDark ? const Color(0xFF2E3440) : const Color(0xFFF6F8FA));
+      final base = widget.baseColor ?? (isDark ? AppColors.surfaceInput : const Color(0xFFEAEEF2));
+      final hl = widget.highlightColor ?? (isDark ? AppColors.surfaceHover : const Color(0xFFF6F8FA));
       shimmer = [base, hl, base];
     } else {
       shimmer = AppGradients.shimmerColors(isDark: isDark);
@@ -134,7 +134,7 @@ class SkeletonLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final defaultColor = isDark ? const Color(0xFF21262D) : const Color(0xFFE5E7EB);
+    final defaultColor = isDark ? AppColors.surfaceInput : const Color(0xFFE5E7EB);
 
     return Container(
       width: width,
@@ -156,8 +156,8 @@ class SkeletonChatMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bubbleColor = isUser
-        ? (isDark ? const Color(0xFF1E2638) : const Color(0xFFE3EDFA))
-        : (isDark ? const Color(0xFF161B22) : const Color(0xFFF6F8FA));
+        ? (isDark ? AppColors.surfaceHover : const Color(0xFFE3EDFA))
+        : (isDark ? AppColors.surfaceInput : const Color(0xFFF6F8FA));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -171,7 +171,7 @@ class SkeletonChatMessage extends StatelessWidget {
               height: 24,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isDark ? const Color(0xFF262C36) : const Color(0xFFE0E3E8),
+                color: isDark ? AppColors.surfaceHover : const Color(0xFFE0E3E8),
               ),
             ),
             const SizedBox(width: 8),
@@ -183,7 +183,7 @@ class SkeletonChatMessage extends StatelessWidget {
                 color: bubbleColor,
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(
-                  color: isDark ? const Color(0xFF30363D) : const Color(0xFFD0D7DE),
+                  color: isDark ? AppColors.borderSubtle : const Color(0xFFD0D7DE),
                   width: 0.8,
                 ),
               ),
@@ -223,7 +223,7 @@ class SkeletonDiffFileItem extends StatelessWidget {
             width: 18,
             height: 18,
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF2A2E39) : const Color(0xFFE1E4E8),
+              color: isDark ? AppColors.surfaceHover : const Color(0xFFE1E4E8),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -263,7 +263,7 @@ class SkeletonSubagentItem extends StatelessWidget {
             height: 16,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isDark ? const Color(0xFF2A2E39) : const Color(0xFFE1E4E8),
+              color: isDark ? AppColors.surfaceHover : const Color(0xFFE1E4E8),
             ),
           ),
           const SizedBox(width: 10),

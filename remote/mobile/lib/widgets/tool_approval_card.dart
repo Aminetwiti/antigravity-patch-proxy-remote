@@ -458,10 +458,10 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF3A2423) : const Color(0xFFFEE2E2),
+                        color: isDark ? AppColors.dangerSubtle : const Color(0xFFFEE2E2),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: isDark ? const Color(0xFFEF4444).withValues(alpha: 0.5) : const Color(0xFFDC2626),
+                          color: isDark ? AppColors.danger.withValues(alpha: 0.5) : const Color(0xFFDC2626),
                         ),
                       ),
                       child: Text(
@@ -469,7 +469,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
-                          color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                          color: isDark ? AppColors.danger : const Color(0xFFDC2626),
                         ),
                       ),
                     ),

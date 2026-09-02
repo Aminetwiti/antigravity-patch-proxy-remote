@@ -451,7 +451,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
             child: Stack(
               children: [
                 Container(
-                  color: isDark ? const Color(0xFF0D1117) : const Color(0xFF1E1E1E),
+                  color: isDark ? AppColors.executionTerminalBg : const Color(0xFF1E1E1E),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: ListView.builder(
                     controller: _scrollController,
@@ -473,7 +473,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                                 style: const TextStyle(
                                   fontSize: 11,
                                   fontFamily: 'monospace',
-                                  color: Color(0xFF6E7681),
+                                  color: AppColors.inkMuted,
                                 ),
                                 textAlign: TextAlign.right,
                               ),
@@ -486,7 +486,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                                 style: const TextStyle(
                                   fontSize: 11.5,
                                   fontFamily: 'monospace',
-                                  color: Color(0xFFE6EDF3),
+                                  color: AppColors.inkPrimary,
                                   height: 1.35,
                                 ),
                               ),

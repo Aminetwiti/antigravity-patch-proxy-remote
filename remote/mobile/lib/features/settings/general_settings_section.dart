@@ -525,7 +525,7 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
                   },
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    side: BorderSide(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
+                    side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                   ),
                   child: Text(
@@ -575,7 +575,7 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
                   },
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    side: BorderSide(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
+                    side: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                   ),
                   child: Text(
@@ -612,10 +612,10 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF141619) : scheme.surfaceContainer,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? const Color(0xFF26282E) : scheme.outlineVariant,
+          color: isDark ? AppColors.surfaceInput : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -632,9 +632,9 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
+        border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(2),
       child: Wrap(
@@ -649,7 +649,7 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? (isDark ? const Color(0xFF33363F) : scheme.surface)
+                    ? (isDark ? AppColors.borderSubtle : scheme.surface)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(4),
               ),
@@ -678,14 +678,14 @@ class _GeneralSettingsSectionState extends State<GeneralSettingsSection> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHighest,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: isDark ? const Color(0xFF33363F) : scheme.outlineVariant),
+        border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: items.contains(value) ? value : items.first,
-          dropdownColor: isDark ? const Color(0xFF1F2228) : scheme.surfaceContainerHigh,
+          dropdownColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHigh,
           icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: scheme.onSurfaceVariant),
           style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: scheme.onSurface),
           isDense: true,

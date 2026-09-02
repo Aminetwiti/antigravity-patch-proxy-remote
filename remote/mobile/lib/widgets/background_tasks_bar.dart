@@ -86,7 +86,7 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: isDark ? const Color(0xFF8AB4F8) : scheme.primary,
+                      color: isDark ? AppColors.accentBlue : scheme.primary,
                       width: 1.5,
                     ),
                   ),
@@ -99,7 +99,7 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
                   style: TextStyle(
                     fontSize: 12,
                     fontFamily: 'monospace',
-                    color: isDark ? const Color(0xFFD4D4D4) : scheme.onSurface,
+                    color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -142,11 +142,11 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
     return Container(
       margin: EdgeInsets.symmetric(horizontal: 12, vertical: hasKeyboard ? 2 : 4),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF16191E) : scheme.surfaceContainerLow,
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isDark
-              ? const Color(0xFF262932)
+              ? AppColors.borderSubtle
               : scheme.outlineVariant.withValues(alpha: 0.5),
           width: 1,
         ),
@@ -172,7 +172,7 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
-                      color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
+                      color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                       letterSpacing: -0.1,
                     ),
                   ),
@@ -182,7 +182,7 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
                     size: 16,
-                    color: isDark ? const Color(0xFF9E9E9E) : scheme.onSurfaceVariant,
+                    color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                   ),
                 ],
               ),
