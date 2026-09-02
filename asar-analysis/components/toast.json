@@ -1,0 +1,13 @@
+{
+  "name": "Contextual Error/Status Toast",
+  "structure": {
+    "backgroundColor": "#18181B",
+    "border": "1px solid #27272A",
+    "borderRadius": "12px",
+    "padding": "16px 20px",
+    "boxShadow": "0 10px 15px -3px rgba(0,0,0,0.5)",
+    "accentBarWidth": "4px",
+    "accentBarColor": "#A855F7"
+  },
+  "source": ".impeccable/design.json: L52-58"
+}

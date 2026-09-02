@@ -25,6 +25,10 @@ type DaemonConfig struct {
 	ApprovalTimeout      time.Duration `json:"approval_timeout"`
 	DiscoveryPort        int           `json:"discovery_port"`
 	AllowRemoteTerminal  bool          `json:"allow_remote_terminal"`
+	SessionsCacheTTL     time.Duration `json:"sessions_cache_ttl"`
+	JetboxBackoff        time.Duration `json:"jetbox_backoff"`
+	McpTimeout           time.Duration `json:"mcp_timeout"`
+	DiscoveryScanTimeout time.Duration `json:"discovery_scan_timeout"`
 }
 
 // LoadConfig charge la configuration en appliquant la hiérarchie :
@@ -46,6 +50,10 @@ func LoadConfig() *DaemonConfig {
 		ApprovalTimeout:      getEnvDuration("AG_APPROVAL_TIMEOUT", 5*time.Minute),
 		DiscoveryPort:        getEnvInt("AG_DISCOVERY_PORT", 41234),
 		AllowRemoteTerminal:  getEnvBool("AG_ALLOW_REMOTE_TERMINAL", true),
+		SessionsCacheTTL:     getEnvDuration("AG_SESSIONS_CACHE_TTL", 5*time.Second),
+		JetboxBackoff:        getEnvDuration("AG_JETBOX_BACKOFF", 30*time.Second),
+		McpTimeout:           getEnvDuration("AG_MCP_TIMEOUT", 30*time.Second),
+		DiscoveryScanTimeout: getEnvDuration("AG_DISCOVERY_SCAN_TIMEOUT", 3*time.Second),
 	}
 
 	// Tentative de lecture d'un fichier de configuration local si présent

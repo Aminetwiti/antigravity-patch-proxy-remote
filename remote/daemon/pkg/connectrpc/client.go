@@ -3,8 +3,11 @@ package connectrpc
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,6 +37,27 @@ type Client struct {
 	ModelEnum uint64
 }
 
+func buildTLSConfig(skipVerify bool) *tls.Config {
+	expectedFingerprint := strings.ToLower(strings.ReplaceAll(os.Getenv("AG_LS_CERT_FINGERPRINT"), ":", ""))
+	if expectedFingerprint != "" {
+		return &tls.Config{
+			InsecureSkipVerify: true,
+			VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+				if len(rawCerts) == 0 {
+					return fmt.Errorf("connectrpc: aucun certificat reçu du serveur")
+				}
+				hash := sha256.Sum256(rawCerts[0])
+				fingerprint := hex.EncodeToString(hash[:])
+				if fingerprint != expectedFingerprint {
+					return fmt.Errorf("connectrpc: empreinte TLS non conforme (reçu %s, attendu %s)", fingerprint, expectedFingerprint)
+				}
+				return nil
+			},
+		}
+	}
+	return &tls.Config{InsecureSkipVerify: skipVerify}
+}
+
 func NewClient(port int, csrfToken string) *Client {
 	bindHost := "127.0.0.1"
 	if h := os.Getenv("AG_BIND_HOST"); h != "" {
@@ -45,7 +69,7 @@ func NewClient(port int, csrfToken string) *Client {
 		IdleConnTimeout:     90 * time.Second,
 		DisableKeepAlives:   false,
 		ForceAttemptHTTP2:   true,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig:     buildTLSConfig(true),
 	}
 	return &Client{
 		port:      port,
@@ -81,7 +105,7 @@ func (c *Client) updateTransportTLS() {
 	skipVerify := c.InsecureSkipVerify
 	c.mu.RUnlock()
 	if transport, ok := c.HTTP.Transport.(*http.Transport); ok {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: skipVerify}
+		transport.TLSClientConfig = buildTLSConfig(skipVerify)
 	}
 }
 

@@ -1,0 +1,19 @@
+{
+  "none": "0px",
+  "xs": "4px",
+  "sm": "6px",
+  "md": "8px",
+  "lg": "12px",
+  "xl": "16px",
+  "pill": "999px",
+  "circle": "50%",
+  "rules": {
+    "inputs": "4px (sm)",
+    "buttons": "4px (sm) / 6px",
+    "cards": "8px (md)",
+    "modals": "12px (lg)",
+    "badges": "4px / 999px (pill)",
+    "statusDots": "50% (circle)"
+  },
+  "_source": "DESIGN.md: L48-51 & remote/mobile/design.md: L216-228"
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "chat_stream",
+    "name": "Streaming Chat & Agent Feed",
+    "route": "/chat",
+    "layout": "Conversation column with bottom composer (768px max width)"
+  },
+  {
+    "id": "workspace_viewer",
+    "name": "Workspace File Tree",
+    "route": "/workspace",
+    "layout": "Sidebar (260px) + Code Viewer (flex)"
+  },
+  {
+    "id": "model_manager",
+    "name": "Provider & Model Manager",
+    "route": "/settings/models",
+    "layout": "Modal (650px) or Docked Settings Panel"
+  },
+  {
+    "id": "scheduled_tasks",
+    "name": "Scheduled Cron Tasks",
+    "route": "/tasks",
+    "layout": "Card list with running status indicators"
+  },
+  {
+    "id": "mcp_explorer",
+    "name": "MCP Server Explorer",
+    "route": "/mcp",
+    "layout": "Two-pane master-detail list"
+  }
+]
