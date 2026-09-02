@@ -2681,18 +2681,23 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                       BouncingTap(
                         hapticType: BouncingHapticType.selection,
                         onTap: _showAttachmentMenu,
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh,
-                            shape: BoxShape.circle,
-                          ),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            Icons.add,
-                            size: 19,
-                            color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                          child: Center(
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh,
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.add,
+                                size: 19,
+                                color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -2796,14 +2801,19 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                               _controller.clear();
                               widget.onDraftChanged?.call('');
                             },
-                            child: Container(
-                              width: 30,
-                              height: 30,
-                              alignment: Alignment.center,
-                              child: Icon(
-                                Icons.close_rounded,
-                                size: 16,
-                                color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                              child: Center(
+                                child: Container(
+                                  width: 30,
+                                  height: 30,
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 16,
+                                    color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -2826,14 +2836,19 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                             },
                           );
                         },
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          alignment: Alignment.center,
-                          child: Icon(
-                            Icons.mic_rounded,
-                            size: 19,
-                            color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                          child: Center(
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.mic_rounded,
+                                size: 20,
+                                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -2845,18 +2860,23 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                           key: const Key('stop-generation-button'),
                           hapticType: BouncingHapticType.heavy,
                           onTap: () => widget.onStop?.call(),
-                          child: Container(
-                            width: 30,
-                            height: 30,
-                            margin: const EdgeInsets.only(right: 6),
-                            decoration: BoxDecoration(
-                              color: scheme.error,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.stop_rounded,
-                              size: 16,
-                              color: AppColors.onDanger,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                            child: Center(
+                              child: Container(
+                                width: 30,
+                                height: 30,
+                                margin: const EdgeInsets.only(right: 6),
+                                decoration: BoxDecoration(
+                                  color: scheme.error,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.stop_rounded,
+                                  size: 16,
+                                  color: AppColors.onDanger,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -2895,7 +2915,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                             onTapCancel:
                                 () => setState(() => _isSendPressed = false),
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                               child: Center(
                                 child: AnimatedScale(
                                   scale: _isSendPressed ? 0.85 : 1.0,

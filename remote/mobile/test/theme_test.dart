@@ -60,5 +60,16 @@ void main() {
       expect(light.brightness, Brightness.light);
       expect(light.useMaterial3, true);
     });
+
+    test('AppColors matches ASAR confirmed wizard and window tokens', () {
+      expect(AppColors.windowDark, const Color(0xFF131313));
+      expect(AppColors.windowLight, const Color(0xFFFAFAFA));
+      expect(AppColors.wizardWindowBg, const Color(0xFF0D0D0D));
+      expect(AppColors.wizardBgPrimary, const Color(0xFF000000));
+      expect(AppColors.wizardBgSecondary, const Color(0xFF1A1A1A));
+      expect(AppColors.wizardBgTertiary, const Color(0xFF242424));
+      expect(AppColors.wizardAccent, const Color(0xFF2F80ED));
+      expect(AppColors.wizardAccentHover, const Color(0xFF2D74D7));
+    });
   });
 }

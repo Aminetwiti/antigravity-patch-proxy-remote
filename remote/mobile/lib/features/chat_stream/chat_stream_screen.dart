@@ -5118,18 +5118,23 @@ class _MessageBubble extends StatelessWidget {
                         );
                       },
                       borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Semantics(
-                          label: 'Copier le message',
-                          button: true,
-                          child: Icon(Icons.copy_outlined,
-                              size: 15, color: scheme.onSurfaceVariant),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Semantics(
+                              label: 'Copier le message',
+                              button: true,
+                              child: Icon(Icons.copy_outlined,
+                                  size: 15, color: scheme.onSurfaceVariant),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   Tooltip(
                     message: 'Utile',
                     child: InkWell(
@@ -5143,29 +5148,34 @@ class _MessageBubble extends StatelessWidget {
                         );
                       },
                       borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF22242A) : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: isDark ? const Color(0xFF32353E) : scheme.outlineVariant.withValues(alpha: 0.6),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Semantics(
-                          label: 'Marquer comme utile',
-                          button: true,
-                          child: Icon(
-                            Icons.thumb_up_outlined,
-                            size: 13.5,
-                            color: isDark ? const Color(0xFFD4D7E2) : scheme.onSurface,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.6),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Semantics(
+                              label: 'Marquer comme utile',
+                              button: true,
+                              child: Icon(
+                                Icons.thumb_up_outlined,
+                                size: 14,
+                                color: isDark ? AppColors.inkSecondary : scheme.onSurface,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   Tooltip(
                     message: 'Pas utile',
                     child: InkWell(
@@ -5179,23 +5189,28 @@ class _MessageBubble extends StatelessWidget {
                         );
                       },
                       borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF22242A) : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: isDark ? const Color(0xFF32353E) : scheme.outlineVariant.withValues(alpha: 0.6),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Semantics(
-                          label: 'Marquer comme pas utile',
-                          button: true,
-                          child: Icon(
-                            Icons.thumb_down_outlined,
-                            size: 13.5,
-                            color: isDark ? const Color(0xFFD4D7E2) : scheme.onSurface,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.6),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Semantics(
+                              label: 'Marquer comme pas utile',
+                              button: true,
+                              child: Icon(
+                                Icons.thumb_down_outlined,
+                                size: 14,
+                                color: isDark ? AppColors.inkSecondary : scheme.onSurface,
+                              ),
+                            ),
                           ),
                         ),
                       ),

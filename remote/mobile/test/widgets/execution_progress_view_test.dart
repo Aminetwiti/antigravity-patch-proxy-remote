@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/features/chat_stream/widgets/execution_progress_view.dart';
+import 'package:mobile/widgets/antigravity_dot_pulse_loader.dart';
 
 void main() {
   group('ExecutionProgressView — Antigravity 2.0 Fidelity Tests', () {
@@ -217,6 +218,25 @@ Ran Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine }
       await tester.tap(find.text('Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine }').first);
       await tester.pump();
       expect(find.textContaining('powershell.exe'), findsOneWidget);
+    });
+
+    testWidgets('Renders AntigravityDotPulseLoader when thought is empty and streaming', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: const Scaffold(
+            body: ExecutionProgressView(
+              messageId: 'msg-thinking',
+              thoughtText: '',
+              isStreaming: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      expect(find.text('Thinking…'), findsOneWidget);
+      expect(find.byType(AntigravityDotPulseLoader), findsOneWidget);
     });
   });
 }

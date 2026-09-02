@@ -202,7 +202,7 @@ class _ConnectionBannerState extends State<ConnectionBanner> {
                   style: TextButton.styleFrom(
                     foregroundColor: color,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    minimumSize: const Size(0, 32),
+                    minimumSize: const Size(48, 44),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   child: const Text(
@@ -220,8 +220,8 @@ class _ConnectionBannerState extends State<ConnectionBanner> {
                   ),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
-                    minWidth: 28,
-                    minHeight: 28,
+                    minWidth: 44,
+                    minHeight: 44,
                   ),
                   tooltip: 'Masquer',
                 ),

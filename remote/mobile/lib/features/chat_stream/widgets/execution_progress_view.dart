@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../theme/app_colors.dart';
 import '../../../widgets/md3_spinner.dart';
 import '../../../widgets/antigravity_spinning_arc.dart';
+import '../../../widgets/antigravity_dot_pulse_loader.dart';
 import '../../../widgets/resolved_ask_question_card.dart';
 
 /// Type d'étape d'exécution fidèle à Antigravity 2.0 Desktop.
@@ -951,15 +952,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            isDark ? const Color(0xFF60A5FA) : scheme.primary,
-                          ),
-                        ),
+                      AntigravityDotPulseLoader(
+                        dotSize: 4.5,
+                        spacing: 3.0,
+                        color: isDark ? AppColors.accentBlue : scheme.primary,
                       ),
                       const SizedBox(width: 8),
                       Text(

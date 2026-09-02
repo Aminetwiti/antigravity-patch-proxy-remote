@@ -53,6 +53,16 @@ abstract class AppColors {
   static const Color infoSubtle = Color(0xFF263447);     // #263447 (status.infoSubtle)
   static const Color accent = accentBlue;
 
+  // ── IDE Wizard & Shell Natif ASAR Confirmed Tokens (ASAR_COLOR_PALETTE.md)
+  static const Color windowDark = Color(0xFF131313);       // #131313 (dist/utils.js: L105)
+  static const Color windowLight = Color(0xFFFAFAFA);      // #FAFAFA (dist/utils.js: L105)
+  static const Color wizardWindowBg = Color(0xFF0D0D0D);   // #0D0D0D (dist/ideInstall/wizard.js: L67)
+  static const Color wizardBgPrimary = Color(0xFF000000);  // #000000 (dist/ideInstall/wizardHtml.js: L31)
+  static const Color wizardBgSecondary = Color(0xFF1A1A1A);// #1A1A1A (dist/ideInstall/wizardHtml.js: L32)
+  static const Color wizardBgTertiary = Color(0xFF242424); // #242424 (dist/ideInstall/wizardHtml.js: L33)
+  static const Color wizardAccent = Color(0xFF2F80ED);      // #2F80ED (dist/ideInstall/wizardHtml.js: L38)
+  static const Color wizardAccentHover = Color(0xFF2D74D7); // #2D74D7 (dist/ideInstall/wizardHtml.js: L39)
+
   // ── Code Syntax Colors
   static const Color codeBackground = Color(0xFF1A1A1A); // #1a1a1a
   static const Color codeForeground = Color(0xFFE8EAED); // #e8eaed

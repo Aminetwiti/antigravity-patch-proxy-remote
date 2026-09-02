@@ -52,7 +52,7 @@ class SessionTopTabs extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      height: 38,
+      height: 42,
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         border: Border(
@@ -143,21 +143,21 @@ class SessionTopTabs extends StatelessWidget {
             ),
             if (onNewTab != null)
               IconButton(
-                icon: const Icon(Icons.add, size: 16),
+                icon: const Icon(Icons.add, size: 18),
                 tooltip: 'Nouvelle conversation',
                 onPressed: onNewTab,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                color: isDark ? const Color(0xFF9E9FA9) : scheme.onSurfaceVariant,
+                constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
               ),
             if (onToggleSidebar != null)
               IconButton(
-                icon: const Icon(Icons.splitscreen_rounded, size: 15),
+                icon: const Icon(Icons.splitscreen_rounded, size: 16),
                 tooltip: 'Panneau latéral',
                 onPressed: onToggleSidebar,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                color: isDark ? const Color(0xFF9E9FA9) : scheme.onSurfaceVariant,
+                constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
               ),
             const SizedBox(width: 4),
           ],
@@ -236,9 +236,10 @@ class _TabPillState extends State<_TabPill> {
             widget.onTap();
           },
           child: AnimatedContainer(
-          duration: AppMotion.fast,
-          curve: AppMotion.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            duration: AppMotion.fast,
+            curve: AppMotion.easeOut,
+            constraints: const BoxConstraints(minHeight: 34),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(AppRadius.md),

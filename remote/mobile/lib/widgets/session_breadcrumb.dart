@@ -59,7 +59,7 @@ class SessionBreadcrumb extends StatelessWidget {
     final isCompact = MediaQuery.of(context).size.width < 380;
 
     return Container(
-      height: 30,
+      height: 36,
       width: double.infinity,
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerLowest,
@@ -87,33 +87,37 @@ class SessionBreadcrumb extends StatelessWidget {
                   child: InkWell(
                     onTap: canSwitchProject ? onSelectProject : null,
                     borderRadius: BorderRadius.circular(4),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              displayProject,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w400,
-                                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
-                                letterSpacing: -0.1,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 36),
+                      child: Container(
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                displayProject,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                                  letterSpacing: -0.1,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          if (canSwitchProject) ...[
-                            const SizedBox(width: 2),
-                            Icon(
-                              Icons.arrow_drop_down,
-                              size: 14,
-                              color: isDark ? AppColors.inkMuted : scheme.outline,
-                            ),
+                            if (canSwitchProject) ...[
+                              const SizedBox(width: 2),
+                              Icon(
+                                Icons.arrow_drop_down,
+                                size: 14,
+                                color: isDark ? AppColors.inkSecondary : scheme.outline,
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -128,7 +132,7 @@ class SessionBreadcrumb extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w400,
-                        color: isDark ? AppColors.inkMuted : scheme.outline,
+                        color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -138,11 +142,14 @@ class SessionBreadcrumb extends StatelessWidget {
                     child: InkWell(
                       onTap: onSelectSession,
                       borderRadius: BorderRadius.circular(4),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 36),
+                        child: Container(
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
                             if (isStreaming) ...[
                               AntigravitySpinningArc(
                                 size: 10.5,
@@ -197,7 +204,8 @@ class SessionBreadcrumb extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
+                ),
+              ],
               ],
             ),
           ),
@@ -250,103 +258,118 @@ class SessionBreadcrumb extends StatelessWidget {
               key: const Key('toggle-search-btn'),
               onTap: onToggleSearch,
               borderRadius: BorderRadius.circular(4),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isSearching
-                      ? (isDark ? AppColors.accentBlue.withValues(alpha: 0.2) : scheme.primaryContainer)
-                      : (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: isSearching
-                        ? (isDark ? AppColors.accentBlue : scheme.primary)
-                        : (isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4)),
-                    width: 0.6,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 36),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isSearching
+                          ? (isDark ? AppColors.accentBlue.withValues(alpha: 0.2) : scheme.primaryContainer)
+                          : (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: isSearching
+                            ? (isDark ? AppColors.accentBlue : scheme.primary)
+                            : (isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4)),
+                        width: 0.6,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.search_rounded,
+                      size: 13,
+                      color: isSearching
+                          ? (isDark ? AppColors.accentBlue : scheme.primary)
+                          : (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
+                    ),
                   ),
-                ),
-                child: Icon(
-                  Icons.search_rounded,
-                  size: 13,
-                  color: isSearching
-                      ? (isDark ? AppColors.accentBlue : scheme.primary)
-                      : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
                 ),
               ),
             ),
           ],
           if (onToggleFullscreen != null) ...[
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
             InkWell(
               onTap: onToggleFullscreen,
               borderRadius: BorderRadius.circular(4),
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: isCompact ? 5 : 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4),
-                    width: 0.6,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isFullscreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
-                      size: 13,
-                      color: isDark ? AppColors.accentBlue : scheme.primary,
-                    ),
-                    if (!isCompact) ...[
-                      const SizedBox(width: 4),
-                      Text(
-                        isFullscreen ? 'Quitter' : 'Plein écran',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? AppColors.inkPrimary : scheme.onSurface,
-                        ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 36),
+                child: Center(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: isCompact ? 6 : 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4),
+                        width: 0.6,
                       ),
-                    ],
-                  ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isFullscreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                          size: 13,
+                          color: isDark ? AppColors.accentBlue : scheme.primary,
+                        ),
+                        if (!isCompact) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            isFullscreen ? 'Quitter' : 'Plein écran',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ] else if (onOpenIde != null) ...[
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
             InkWell(
               onTap: onOpenIde,
               borderRadius: BorderRadius.circular(4),
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: isCompact ? 5 : 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4),
-                    width: 0.6,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.terminal_rounded,
-                      size: 13,
-                      color: isDark ? AppColors.accentBlue : scheme.primary,
-                    ),
-                    if (!isCompact) ...[
-                      const SizedBox(width: 4),
-                      Text(
-                        'Ouvrir IDE',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? AppColors.inkPrimary : scheme.onSurface,
-                        ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 36),
+                child: Center(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: isCompact ? 6 : 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4),
+                        width: 0.6,
                       ),
-                    ],
-                  ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.terminal_rounded,
+                          size: 13,
+                          color: isDark ? AppColors.accentBlue : scheme.primary,
+                        ),
+                        if (!isCompact) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            'Ouvrir IDE',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
