@@ -19,12 +19,12 @@
 }
 .install-card:hover {
   border-color: var(--border-strong);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+  transform: none;
+  box-shadow: none;
 }
 .install-card.recommended {
   border-color: var(--ok);
-  box-shadow: 0 0 0 1px var(--ok-bg);
+  box-shadow: none;
 }
 .install-card-head {
   display: flex;

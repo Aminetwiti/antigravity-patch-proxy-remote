@@ -374,9 +374,10 @@ class MarkdownRenderer {
     LocalFileTap? onLocalFile,
     String? searchQuery,
   }) {
+    final safeText = text.toWellFormed();
     final bool canCache = searchQuery == null && onLocalFile == null;
     final String cacheKey = canCache
-        ? '${text.hashCode}_${base.fontSize}_${base.color?.value}_${base.fontWeight}_${base.fontStyle}_${scheme.primary.value}'
+        ? '${safeText.hashCode}_${base.fontSize}_${base.color?.value}_${base.fontWeight}_${base.fontStyle}_${scheme.primary.value}'
         : '';
     if (canCache) {
       final cached = _inlineSpansCache.remove(cacheKey);
@@ -398,7 +399,7 @@ class MarkdownRenderer {
             span.recognizer == null &&
             (spans.last as TextSpan).style == span.style) {
           final prev = spans.removeLast() as TextSpan;
-          spans.add(TextSpan(text: '${prev.text ?? ''}${span.text ?? ''}', style: span.style));
+          spans.add(TextSpan(text: '${prev.text ?? ''}${span.text ?? ''}'.toWellFormed(), style: span.style));
         } else {
           spans.add(span);
         }
@@ -406,8 +407,9 @@ class MarkdownRenderer {
     }
 
     List<TextSpan> highlightText(String content, TextStyle style) {
+      final safeContent = content.toWellFormed();
       if (searchQuery == null || searchQuery.isEmpty) {
-        return [TextSpan(text: content, style: style)];
+        return [TextSpan(text: safeContent, style: style)];
       }
       if (searchQuery != _lastSearchQuery || _lastSearchPattern == null) {
         _lastSearchQuery = searchQuery;
@@ -416,12 +418,12 @@ class MarkdownRenderer {
       final pattern = _lastSearchPattern!;
       final res = <TextSpan>[];
       int cursor = 0;
-      for (final match in pattern.allMatches(content)) {
+      for (final match in pattern.allMatches(safeContent)) {
         if (match.start > cursor) {
-          res.add(TextSpan(text: content.substring(cursor, match.start), style: style));
+          res.add(TextSpan(text: safeContent.substring(cursor, match.start).toWellFormed(), style: style));
         }
         res.add(TextSpan(
-          text: content.substring(match.start, match.end),
+          text: safeContent.substring(match.start, match.end).toWellFormed(),
           style: style.copyWith(
             backgroundColor: Colors.amber.withValues(alpha: 0.35),
             fontWeight: FontWeight.bold,
@@ -429,13 +431,13 @@ class MarkdownRenderer {
         ));
         cursor = match.end;
       }
-      if (cursor < content.length) {
-        res.add(TextSpan(text: content.substring(cursor), style: style));
+      if (cursor < safeContent.length) {
+        res.add(TextSpan(text: safeContent.substring(cursor).toWellFormed(), style: style));
       }
       return res;
     }
 
-    var remaining = text;
+    var remaining = safeText;
     while (remaining.isNotEmpty) {
       // Fast path: find earliest trigger character for markdown syntax (` ! [ *)
       int nextTrigger = -1;
@@ -462,7 +464,7 @@ class MarkdownRenderer {
       if (codeMatch != null && codeMatch.start == 0) {
         final isDark = scheme.brightness == Brightness.dark;
         spans.add(TextSpan(
-          text: codeMatch.group(1),
+          text: codeMatch.group(1)?.toWellFormed(),
           style: base.copyWith(
             fontFamily: 'monospace',
             fontSize: (base.fontSize ?? 13) * 0.92,
@@ -729,7 +731,7 @@ class MarkdownRenderer {
       final boldMatch = _boldRe.firstMatch(remaining);
       if (boldMatch != null && boldMatch.start == 0) {
         spans.add(TextSpan(
-          text: boldMatch.group(1),
+          text: boldMatch.group(1)?.toWellFormed(),
           style: base.copyWith(fontWeight: FontWeight.w700),
         ));
         remaining = remaining.substring(boldMatch.end);
@@ -740,7 +742,7 @@ class MarkdownRenderer {
       final italicMatch = _italicRe.firstMatch(remaining);
       if (italicMatch != null && italicMatch.start == 0) {
         spans.add(TextSpan(
-          text: italicMatch.group(1),
+          text: italicMatch.group(1)?.toWellFormed(),
           style: base.copyWith(fontStyle: FontStyle.italic),
         ));
         remaining = remaining.substring(italicMatch.end);

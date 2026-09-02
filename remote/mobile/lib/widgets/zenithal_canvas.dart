@@ -19,9 +19,11 @@ class ZenithalCanvas extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     if (!isDark) {
-      return Container(
-        color: Theme.of(context).colorScheme.surface,
-        child: child,
+      return SizedBox.expand(
+        child: Container(
+          color: Theme.of(context).colorScheme.surface,
+          child: child,
+        ),
       );
     }
 
@@ -31,6 +33,7 @@ class ZenithalCanvas extends StatelessWidget {
         gradient: AppGradients.zenithal,
       ),
       child: Stack(
+        fit: StackFit.expand,
         children: [
           // RepaintBoundary isolates background atmospheric rendering from active child rebuilds
           RepaintBoundary(
@@ -69,7 +72,7 @@ class ZenithalCanvas extends StatelessWidget {
               ],
             ),
           ),
-          child,
+          Positioned.fill(child: child),
         ],
       ),
     );

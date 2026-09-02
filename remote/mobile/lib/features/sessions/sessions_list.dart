@@ -93,7 +93,7 @@ class _FolderHeader extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: isConversationsSection ? FontWeight.w600 : FontWeight.w500,
-                        color: isConversationsSection ? const Color(0xFF8F909A) : scheme.primary,
+                        color: isConversationsSection ? AppColors.inkSecondary : scheme.primary,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -103,7 +103,7 @@ class _FolderHeader extends StatelessWidget {
                     Icon(
                       isCollapsed ? Icons.keyboard_arrow_right_rounded : Icons.keyboard_arrow_down_rounded,
                       size: 16,
-                      color: const Color(0xFF8F909A),
+                      color: AppColors.inkSecondary,
                     ),
                   ],
                 ],
@@ -485,9 +485,9 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
       onTap: () {
         showModalBottomSheet(
           context: context,
-          backgroundColor: isDark ? const Color(0xFF14171C) : scheme.surface,
+          backgroundColor: isDark ? AppColors.surfaceRaised : scheme.surface,
           shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
           ),
           builder: (ctx) => SafeArea(
             child: Padding(
@@ -503,7 +503,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                         height: 10,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: isConnected ? const Color(0xFF22C55E) : scheme.error,
+                          color: isConnected ? AppColors.positive : scheme.error,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -520,7 +520,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                         isConnected ? 'Connecté' : 'Déconnecté',
                         style: TextStyle(
                           fontSize: 12,
-                          color: isConnected ? const Color(0xFF22C55E) : scheme.error,
+                          color: isConnected ? AppColors.positive : scheme.error,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -570,10 +570,10 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+          color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(AppRadius.pill),
           border: Border.all(
-            color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant.withValues(alpha: 0.5),
+            color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.5),
             width: 0.8,
           ),
         ),
@@ -585,7 +585,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
               height: 7,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isConnected ? const Color(0xFF22C55E) : scheme.error,
+                color: isConnected ? AppColors.positive : scheme.error,
               ),
             ),
             const SizedBox(width: 5),
@@ -693,10 +693,10 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                      color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(AppRadius.lg),
                       border: Border.all(
-                        color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant,
+                        color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                         width: 1,
                       ),
                     ),
@@ -770,14 +770,14 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                               style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF5B94F6),
+                                color: AppColors.accentBlue,
                               ),
                             ),
                             const Spacer(),
                             Icon(
                               _pinnedExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                               size: 16,
-                              color: const Color(0xFF5B94F6),
+                              color: AppColors.accentBlue,
                             ),
                           ],
                         ),
@@ -839,7 +839,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                     style: const TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF8F909A),
+                      color: AppColors.inkSecondary,
                     ),
                   ),
                   const Spacer(),
@@ -896,26 +896,25 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
               ),
             ),
 
+            // ── Champ de recherche / filtre interactif (P6)
             if (_isFilterOpen)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 child: SizedBox(
                   height: 32,
                   child: TextField(
                     controller: _filterController,
-                    autofocus: false,
+                    autofocus: true,
                     style: TextStyle(fontSize: 12, color: scheme.onSurface),
                     decoration: InputDecoration(
-                      hintText: 'Filtrer les sessions...',
-                      hintStyle: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      prefixIcon: Icon(Icons.search, size: 14, color: scheme.onSurfaceVariant),
-                      prefixIconConstraints: const BoxConstraints(minWidth: 26),
+                      hintText: 'Filtrer les conversations...',
+                      hintStyle: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+                      prefixIcon: Icon(Icons.filter_list_rounded, size: 14, color: scheme.primary),
+                      prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                       suffixIcon: _filterQuery.isNotEmpty
                           ? IconButton(
-                              icon: Icon(Icons.close, size: 12, color: scheme.onSurfaceVariant),
-                              tooltip: 'Effacer le filtre',
+                              icon: const Icon(Icons.clear_rounded, size: 13),
                               padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 20),
                               onPressed: () {
                                 _filterController.clear();
                                 setState(() => _filterQuery = '');
@@ -923,18 +922,18 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                             )
                           : null,
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                      fillColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: BorderSide(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant, width: 1),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        borderSide: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, width: 1),
                       ),
                       enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: BorderSide(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant, width: 1),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        borderSide: BorderSide(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, width: 1),
                       ),
                       focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
                         borderSide: BorderSide(color: scheme.primary, width: 1),
                       ),
                     ),
@@ -1020,7 +1019,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontStyle: FontStyle.italic,
-                                  color: Color(0xFF5E606A),
+                                  color: AppColors.inkMuted,
                                 ),
                               ),
                             );
@@ -1118,10 +1117,10 @@ class _HeaderIconBtn extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(AppRadius.xs),
             child: Padding(
               padding: const EdgeInsets.all(5),
-              child: Icon(icon, size: size, color: const Color(0xFF8F909A)),
+              child: Icon(icon, size: size, color: AppColors.inkSecondary),
             ),
           ),
         ),
@@ -1167,8 +1166,8 @@ class _SidebarActionItemState extends State<_SidebarActionItem> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
             color: isSelected
-                ? const Color(0xFF26282E)
-                : (_hovered ? const Color(0xFF1E2025) : Colors.transparent),
+                ? AppColors.surfaceHover
+                : (_hovered ? AppColors.surfacePressed : Colors.transparent),
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Row(
@@ -1176,7 +1175,7 @@ class _SidebarActionItemState extends State<_SidebarActionItem> {
               Icon(
                 widget.icon,
                 size: 16,
-                color: isSelected ? const Color(0xFFFFFFFF) : const Color(0xFF9E9FA9),
+                color: isSelected ? AppColors.inkPrimary : AppColors.inkSecondary,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1185,7 +1184,7 @@ class _SidebarActionItemState extends State<_SidebarActionItem> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: isSelected ? FontWeight.w500 : FontWeight.w400,
-                    color: isSelected ? const Color(0xFFFFFFFF) : const Color(0xFFD4D4D8),
+                    color: isSelected ? AppColors.inkPrimary : AppColors.inkSecondary,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1247,7 +1246,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
+      backgroundColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
       ),
@@ -1262,7 +1261,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF3B3E47) : scheme.outlineVariant,
+                  color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1284,7 +1283,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                   ],
                 ),
               ),
-              Divider(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant),
+              Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
               ListTile(
                 leading: Icon(Icons.edit_outlined, size: 18, color: scheme.onSurface),
                 title: Text('Renommer la conversation', style: TextStyle(fontSize: 13, color: scheme.onSurface)),
@@ -1373,7 +1372,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
       context: context,
       builder: (ctx) => AlertDialog(
         scrollable: true,
-        backgroundColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
+        backgroundColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         title: Text('Renommer la conversation', style: TextStyle(fontSize: 15, color: scheme.onSurface)),
         content: TextField(
           controller: controller,
@@ -1391,9 +1390,9 @@ class _SessionRowItemState extends State<_SessionRowItem> {
             hintText: 'Nouveau titre...',
             hintStyle: TextStyle(color: scheme.onSurfaceVariant),
             filled: true,
-            fillColor: isDark ? const Color(0xFF22252B) : scheme.surfaceContainerHighest,
+            fillColor: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
           ),
         ),
         actions: [
@@ -1424,7 +1423,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
       context: context,
       builder: (ctx) => AlertDialog(
         scrollable: true,
-        backgroundColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
+        backgroundColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         title: Text('Supprimer la conversation ?', style: TextStyle(fontSize: 15, color: scheme.onSurface)),
         content: Text(
           'Voulez-vous supprimer définitivement "${widget.session.title}" ?',
@@ -1497,9 +1496,9 @@ class _SessionRowItemState extends State<_SessionRowItem> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6.5),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? (isDark ? const Color(0xFF26282E) : scheme.surfaceContainerHighest)
+                    ? (isDark ? AppColors.surfaceHover : scheme.surfaceContainerHighest)
                     : (_hovered
-                        ? (isDark ? const Color(0xFF1E2025) : scheme.surfaceContainerHigh.withValues(alpha: 0.5))
+                        ? (isDark ? AppColors.surfacePressed : scheme.surfaceContainerHigh.withValues(alpha: 0.5))
                         : Colors.transparent),
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),
@@ -1518,10 +1517,10 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                               margin: const EdgeInsets.only(right: 5.5),
                               padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 0.8),
                               decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF1E222A) : scheme.surfaceContainerHigh,
+                                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh,
                                 borderRadius: BorderRadius.circular(3.5),
                                 border: Border.all(
-                                  color: isDark ? const Color(0xFF38BDF8).withValues(alpha: 0.5) : const Color(0xFF0284C7).withValues(alpha: 0.4),
+                                  color: isDark ? AppColors.accentBlue.withValues(alpha: 0.5) : scheme.primary.withValues(alpha: 0.4),
                                   width: 0.6,
                                 ),
                               ),
@@ -1534,7 +1533,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                       fontSize: 8.5,
                                       fontWeight: FontWeight.w800,
                                       letterSpacing: 0.4,
-                                      color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                                      color: isDark ? AppColors.accentBlue : scheme.primary,
                                     ),
                                   ),
                                   const SizedBox(width: 3),
@@ -1543,7 +1542,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                     height: 4,
                                     decoration: const BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Color(0xFF38BDF8),
+                                      color: AppColors.accentBlue,
                                     ),
                                   ),
                                 ],
@@ -1556,8 +1555,8 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                               style: TextStyle(
                                 fontSize: 12.5,
                                 color: isSelected
-                                    ? (isDark ? const Color(0xFFFFFFFF) : scheme.onSurface)
-                                    : (isDark ? const Color(0xFFB0B0BA) : scheme.onSurfaceVariant),
+                                    ? (isDark ? AppColors.inkPrimary : scheme.onSurface)
+                                    : (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
                                 fontWeight: widget.session.isIde
                                     ? (isSelected ? FontWeight.w700 : FontWeight.w600)
                                     : (isSelected ? FontWeight.w500 : FontWeight.w400),
@@ -1581,8 +1580,8 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                         : Icons.folder_outlined),
                                 size: 10.5,
                                 color: isSelected
-                                    ? (isDark ? const Color(0xFF8F909A) : scheme.primary)
-                                    : (isDark ? const Color(0xFF8E909D) : scheme.outline),
+                                    ? (isDark ? AppColors.inkSecondary : scheme.primary)
+                                    : (isDark ? AppColors.inkMuted : scheme.outline),
                               ),
                               const SizedBox(width: 3.5),
                               Expanded(
@@ -1591,8 +1590,8 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                   style: TextStyle(
                                     fontSize: 10.5,
                                     color: isSelected
-                                        ? (isDark ? const Color(0xFF8F909A) : scheme.primary)
-                                        : (isDark ? const Color(0xFF8E909D) : scheme.outline),
+                                        ? (isDark ? AppColors.inkSecondary : scheme.primary)
+                                        : (isDark ? AppColors.inkMuted : scheme.outline),
                                     fontWeight: FontWeight.w400,
                                   ),
                                   overflow: TextOverflow.ellipsis,
@@ -1617,8 +1616,8 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                           child: AntigravitySpinningArc(
                             size: 13.5,
                             color: isSelected
-                                ? (isDark ? const Color(0xFFB4B8C5) : scheme.primary)
-                                : (isDark ? const Color(0xFF8E929E) : scheme.outline),
+                                ? (isDark ? AppColors.inkPrimary : scheme.primary)
+                                : (isDark ? AppColors.inkMuted : scheme.outline),
                           ),
                         )
                       : isWaiting
@@ -1637,7 +1636,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                         width: 6,
                                         height: 6,
                                         decoration: const BoxDecoration(
-                                          color: Color(0xFFE5534B),
+                                          color: AppColors.danger,
                                           shape: BoxShape.circle,
                                         ),
                                       ),
@@ -1666,7 +1665,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                                         child: Icon(
                                                           widget.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
                                                           size: 14,
-                                                          color: isDark ? const Color(0xFF8F909A) : scheme.onSurfaceVariant,
+                                                          color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                                                         ),
                                                       ),
                                                     ),
@@ -1687,8 +1686,8 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                                           Icons.more_horiz_rounded,
                                                           size: 15,
                                                           color: isSelected
-                                                              ? (isDark ? const Color(0xFFB0B0BA) : scheme.onSurface)
-                                                              : (isDark ? const Color(0xFF8F909A) : scheme.onSurfaceVariant),
+                                                              ? (isDark ? AppColors.inkPrimary : scheme.onSurface)
+                                                              : (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
                                                         ),
                                                       ),
                                                     ),
@@ -1703,8 +1702,8 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                                 style: TextStyle(
                                                   fontSize: 11.5,
                                                   color: isSelected
-                                                      ? (isDark ? const Color(0xFF9E9FA9) : scheme.onSurfaceVariant)
-                                                      : (isDark ? const Color(0xFF7E818D) : scheme.outline),
+                                                      ? (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant)
+                                                      : (isDark ? AppColors.inkMuted : scheme.outline),
                                                   fontWeight: FontWeight.w400,
                                                 ),
                                               )
@@ -1717,8 +1716,8 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                     Icons.push_pin_rounded,
                     size: 11,
                     color: isSelected
-                        ? (isDark ? const Color(0xFF9E9FA9) : scheme.primary)
-                        : (isDark ? const Color(0xFF6E707A) : scheme.outlineVariant),
+                        ? (isDark ? AppColors.accentBlue : scheme.primary)
+                        : (isDark ? AppColors.inkMuted : scheme.outlineVariant),
                   ),
                 ),
             ],
@@ -1761,8 +1760,8 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                 margin: const EdgeInsets.only(left: 14, right: 6, top: 1, bottom: 1),
                 decoration: BoxDecoration(
                   color: widget.onArchive != null
-                      ? const Color(0xFF6366F1).withValues(alpha: 0.85)
-                      : const Color(0xFF3D5AFE).withValues(alpha: 0.85),
+                      ? AppColors.accentBlue.withValues(alpha: 0.85)
+                      : AppColors.accentBlueDeep.withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 child: Row(
@@ -1816,9 +1815,9 @@ class _EmptyState extends StatelessWidget {
         margin: const EdgeInsets.all(10),
         padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF181A1F) : scheme.surfaceContainerHighest,
+          color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(AppRadius.lg),
-          border: Border.all(color: isDark ? const Color(0xFF272A30) : scheme.outlineVariant, width: 1),
+          border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, width: 1),
         ),
         child: Column(
           children: [
@@ -1893,7 +1892,7 @@ class _Divider extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       height: 1,
-      color: isDark ? const Color(0xFF1F2127) : scheme.outlineVariant,
+      color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
     );
   }
 }
@@ -1930,7 +1929,7 @@ class _ConnectionRowState extends State<_ConnectionRow> {
           margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: _hovered ? (isDark ? const Color(0xFF1E2025) : scheme.surfaceContainerHighest) : Colors.transparent,
+            color: _hovered ? (isDark ? AppColors.surfaceHover : scheme.surfaceContainerHighest) : Colors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Row(
@@ -2013,11 +2012,11 @@ class _PulsingBlueDotState extends State<_PulsingBlueDot>
         height: 7,
         margin: const EdgeInsets.symmetric(horizontal: 2),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A73E8),
+          color: AppColors.accentBlue,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF1A73E8).withValues(alpha: 0.6),
+              color: AppColors.accentBlue.withValues(alpha: 0.6),
               blurRadius: 4,
               spreadRadius: 0.5,
             ),

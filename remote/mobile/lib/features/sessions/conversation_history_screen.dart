@@ -202,9 +202,9 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F1012) : scheme.surface,
+      backgroundColor: isDark ? AppColors.surfaceBase : scheme.surface,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF0F1012) : scheme.surfaceContainer,
+        backgroundColor: isDark ? AppColors.surfaceBase : scheme.surfaceContainer,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: scheme.onSurface),
@@ -263,9 +263,9 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
                     child: Container(
                       height: 40,
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest,
+                        color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(AppRadius.lg),
-                        border: Border.all(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant, width: 1),
+                        border: Border.all(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, width: 1),
                       ),
                       child: TextField(
                         controller: _searchController,
@@ -306,12 +306,12 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
                       decoration: BoxDecoration(
                         color: _selectedWorkspaceFilter != null
                             ? scheme.primary.withValues(alpha: 0.15)
-                            : (isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainerHighest),
+                            : (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest),
                         borderRadius: BorderRadius.circular(AppRadius.lg),
                         border: Border.all(
                           color: _selectedWorkspaceFilter != null
                               ? scheme.primary
-                              : (isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant),
+                              : (isDark ? AppColors.borderSubtle : scheme.outlineVariant),
                           width: 1,
                         ),
                       ),
@@ -561,7 +561,7 @@ class _ConversationHistoryRow extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
+      backgroundColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
       ),
@@ -576,7 +576,7 @@ class _ConversationHistoryRow extends StatelessWidget {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF3B3E47) : scheme.outlineVariant,
+                  color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -598,7 +598,7 @@ class _ConversationHistoryRow extends StatelessWidget {
                   ],
                 ),
               ),
-              Divider(color: isDark ? const Color(0xFF2C2F36) : scheme.outlineVariant),
+              Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
               ListTile(
                 leading: Icon(Icons.copy_rounded, size: 18, color: scheme.onSurface),
                 title: Text('Copier le titre', style: TextStyle(fontSize: 13, color: scheme.onSurface)),
@@ -653,7 +653,7 @@ class _ConversationHistoryRow extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         scrollable: true,
-        backgroundColor: isDark ? const Color(0xFF1B1D22) : scheme.surfaceContainer,
+        backgroundColor: isDark ? AppColors.surfaceRaised : scheme.surfaceContainer,
         title: Text('Supprimer la conversation ?', style: TextStyle(fontSize: 15, color: scheme.onSurface)),
         content: Text(
           'Voulez-vous supprimer définitivement "${session.title}" ?',
@@ -698,7 +698,7 @@ class _ConversationHistoryRow extends StatelessWidget {
           onLongPress: () => _showContextMenu(context),
           onSecondaryTap: () => _showContextMenu(context),
           borderRadius: BorderRadius.circular(AppRadius.md),
-          hoverColor: isDark ? const Color(0xFF1E2127) : scheme.surfaceContainerHighest,
+          hoverColor: isDark ? AppColors.surfaceHover : scheme.surfaceContainerHighest,
           splashColor: scheme.primary.withValues(alpha: 0.1),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -714,7 +714,7 @@ class _ConversationHistoryRow extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                          color: isActive ? scheme.primary : (isDark ? const Color(0xFFE4E4E7) : scheme.onSurface),
+                          color: isActive ? scheme.primary : (isDark ? AppColors.inkPrimary : scheme.onSurface),
                           letterSpacing: -0.1,
                         ),
                         maxLines: 1,
@@ -793,7 +793,7 @@ class _ConversationHistoryRow extends StatelessWidget {
                     message: 'En cours d\'exécution',
                     child: AntigravitySpinningArc(
                       size: 13.5,
-                      color: isActive ? scheme.primary : (isDark ? const Color(0xFF8E929E) : scheme.outline),
+                      color: isActive ? scheme.primary : (isDark ? AppColors.inkMuted : scheme.outline),
                     ),
                   )
                 else if (session.isWaiting)
@@ -807,12 +807,12 @@ class _ConversationHistoryRow extends StatelessWidget {
                     child: Container(
                       width: 7,
                       height: 7,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF1A73E8),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentBlue,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Color(0x661A73E8),
+                            color: AppColors.accentBlue.withValues(alpha: 0.4),
                             blurRadius: 4,
                             spreadRadius: 0.5,
                           ),
@@ -833,7 +833,7 @@ class _ConversationHistoryRow extends StatelessWidget {
                   Icon(
                     Icons.arrow_forward_ios_rounded,
                     size: 11,
-                    color: isDark ? const Color(0xFF3F424E) : scheme.outlineVariant,
+                    color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
                   ),
               ],
             ),

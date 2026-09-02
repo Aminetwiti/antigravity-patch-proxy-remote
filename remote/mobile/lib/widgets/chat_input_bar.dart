@@ -116,12 +116,14 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback? onOpenBrowser;
   final Set<String>? activeSubsystems;
   final bool showCapabilityIcons;
+  final bool hasWaitingApproval;
 
   const ChatInputBar({
     super.key,
     required this.onSend,
     this.isConnected = true,
     this.hasActiveStream = false,
+    this.hasWaitingApproval = false,
     this.api,
     this.cascadeId,
     this.initialModel,
@@ -2453,8 +2455,8 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     final hasKeyboard = viewInsets.bottom > 50 || rawInsetsBottom > 50;
     final isIdle = !_focusNode.hasFocus && _controller.text.isEmpty && _attachments.isEmpty && !hasKeyboard;
     final bottomMargin = hasKeyboard
-        ? 2.0
-        : (viewPadding.bottom > 0 ? 4.0 : 8.0);
+        ? 0.0
+        : (viewPadding.bottom > 0 ? 2.0 : 4.0);
 
     final providerColor = _getModelProviderColor(_selectedModel, scheme);
 
@@ -2867,13 +2869,17 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                 height: 30,
                                 margin: const EdgeInsets.only(right: 6),
                                 decoration: BoxDecoration(
-                                  color: scheme.error,
+                                  color: isDark ? AppColors.dangerSubtle : scheme.errorContainer.withValues(alpha: 0.3),
+                                  border: Border.all(
+                                    color: (isDark ? AppColors.danger : scheme.error).withValues(alpha: 0.5),
+                                    width: 1,
+                                  ),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.stop_rounded,
                                   size: 16,
-                                  color: AppColors.onDanger,
+                                  color: isDark ? AppColors.danger : scheme.error,
                                 ),
                               ),
                             ),
@@ -2975,7 +2981,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
   }
 
   Widget _buildQuickActionPills(ColorScheme scheme, bool isDark) {
-    if (!widget.hasPlan) return const SizedBox.shrink();
+    if (!widget.hasPlan || widget.hasWaitingApproval || widget.hasActiveStream) return const SizedBox.shrink();
     return Container(
       height: 30,
       margin: const EdgeInsets.only(bottom: 6),

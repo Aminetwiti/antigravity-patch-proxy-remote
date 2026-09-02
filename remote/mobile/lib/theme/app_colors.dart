@@ -100,10 +100,10 @@ abstract class AppColors {
   static const Color providerCustomBg = Color(0x22A855F7);
 
   // ── Execution Feed Tokens (Antigravity 2.0 "The Quiet Console")
-  static const Color executionTerminalBg = Color(0xFF0E0F12);
-  static const Color executionCardBg = Color(0xFF14171F);
-  static const Color executionSearchBg = Color(0xFF1F2430);
-  static const Color executionSearchBorder = Color(0xFF2E3345);
+  static const Color executionTerminalBg = Color(0xFF101012);
+  static const Color executionCardBg = Color(0xFF1A1A1E);
+  static const Color executionSearchBg = Color(0xFF202024);
+  static const Color executionSearchBorder = Color(0xFF2E2E34);
   static const Color executionBorder = Color(0xFF27272A);
   static const Color executionFileEdit = Color(0xFF34D399);
   static const Color executionFileAnalysis = Color(0xFF38BDF8);
@@ -253,30 +253,30 @@ abstract class AppGradients {
     center: Alignment(0.0, -1.25),
     radius: 1.45,
     colors: [
-      Color(0xFF202028),
-      Color(0xFF09090B),
+      Color(0xFF1E1E22),
+      Color(0xFF131313),
     ],
     stops: [0.0, 0.65],
   );
 
-  // ── Decorative atmospheric orbs (blurred circles behind content) ──
+  // ── Decorative atmospheric orbs (subtle studio light behind content) ──
 
-  /// Blue orb — top-right placement, 5% opacity dark / 3% light
+  /// Blue orb — top-right placement, subtle studio tint
   static RadialGradient orbBlue({bool isDark = true}) => RadialGradient(
     center: Alignment.center,
     radius: 0.8,
     colors: [
-      _agyBlue.withValues(alpha: isDark ? 0.06 : 0.035),
+      _agyBlue.withValues(alpha: isDark ? 0.025 : 0.015),
       _agyBlue.withValues(alpha: 0.0),
     ],
   );
 
-  /// Green orb — bottom-left placement
+  /// Green orb — bottom-left placement, subtle studio tint
   static RadialGradient orbGreen({bool isDark = true}) => RadialGradient(
     center: Alignment.center,
     radius: 0.8,
     colors: [
-      _agyGreen.withValues(alpha: isDark ? 0.05 : 0.03),
+      _agyGreen.withValues(alpha: isDark ? 0.02 : 0.012),
       _agyGreen.withValues(alpha: 0.0),
     ],
   );

@@ -3278,6 +3278,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               onSend: _handleSendMessage,
               isConnected: isConnected,
               hasActiveStream: _hasCurrentActiveStream,
+              hasWaitingApproval: _currentSessionApprovals.isNotEmpty,
               onStop: _handleStopGeneration,
               api: widget.api,
               cascadeId: widget.activeSessionId,
@@ -3652,6 +3653,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             child: ListView.builder(
               key: PageStorageKey('chat_list_${widget.activeSessionId}'),
               controller: _scrollController,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               itemCount: totalCount,

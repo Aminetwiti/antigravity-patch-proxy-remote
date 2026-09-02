@@ -898,10 +898,10 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                         side: BorderSide(
                           color: isDark ? AppColors.borderStrong : scheme.outlineVariant,
                         ),
-                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 16, vertical: 10),
-                        minimumSize: const Size(0, 38),
+                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 18, vertical: 10),
+                        minimumSize: const Size(0, 44),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
                         ),
                       ),
                       child: Text(
@@ -926,12 +926,12 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: (_selectedOption == 5)
                             ? (isDark ? AppColors.danger : scheme.error)
-                            : (isDark ? const Color(0xFF0B57D0) : scheme.primary),
+                            : (isDark ? AppColors.wizardAccent : scheme.primary),
                         foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 16, vertical: 10),
-                        minimumSize: const Size(0, 38),
+                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 18, vertical: 10),
+                        minimumSize: const Size(0, 44),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
                         ),
                         elevation: 0,
                       ),

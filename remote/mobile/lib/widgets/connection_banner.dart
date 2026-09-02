@@ -110,19 +110,19 @@ class _ConnectionBannerState extends State<ConnectionBanner> {
         ),
       ConnectionStatus.error => (
           Icons.cloud_off_outlined,
-          scheme.error,
-          scheme.error.withValues(alpha: 0.12),
+          AppColors.danger,
+          AppColors.dangerSubtle,
         ),
       ConnectionStatus.disconnected => widget.isManualDisconnect
           ? (
               Icons.cloud_off_outlined,
-              scheme.onSurfaceVariant,
-              scheme.onSurfaceVariant.withValues(alpha: 0.08),
+              AppColors.inkSecondary,
+              AppColors.surfaceRaised,
             )
           : (
               Icons.cloud_off_outlined,
-              scheme.error,
-              scheme.error.withValues(alpha: 0.12),
+              AppColors.danger,
+              AppColors.dangerSubtle,
             ),
     };
 
@@ -150,13 +150,13 @@ class _ConnectionBannerState extends State<ConnectionBanner> {
         child: Container(
           width: double.infinity,
           padding: EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: hasKeyboard ? 4 : 10,
+            horizontal: 12,
+            vertical: hasKeyboard ? 3 : 5,
           ),
           decoration: BoxDecoration(
             color: bg,
             border: Border(
-              bottom: BorderSide(color: color.withValues(alpha: 0.35)),
+              bottom: BorderSide(color: color.withValues(alpha: 0.25)),
             ),
           ),
           child: Row(

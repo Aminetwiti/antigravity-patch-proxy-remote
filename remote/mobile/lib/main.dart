@@ -27,6 +27,11 @@ import 'widgets/remote_terminal_sheet.dart';
 import 'widgets/right_sidebar_drawer.dart';
 
 void main() {
+  FlutterError.onError = (FlutterErrorDetails details) {
+    debugPrint('FLUTTER_ERROR: ${details.exceptionAsString()}');
+    debugPrint('STACK_TRACE: ${details.stack}');
+    FlutterError.presentError(details);
+  };
   ErrorWidget.builder = (FlutterErrorDetails details) {
     return Material(
       color: Colors.transparent,
@@ -1431,6 +1436,8 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       mcpServersCount: _contextStats['mcpServersCount'] as int? ?? 0,
     );
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final scaffold = Scaffold(
       key: _scaffoldKey,
       extendBodyBehindAppBar: false,
@@ -1448,78 +1455,117 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                 onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                 tooltip: 'Ouvrir le menu gauche',
               ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                'Antigravity',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
-                  letterSpacing: -0.2,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            InkWell(
-              onTap: () {
-                if (isConnected) {
-                  _wsClient.disconnect();
-                  SettingsStore.clearSession();
-                } else {
-                  _wsClient.connect();
-                }
-              },
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                decoration: BoxDecoration(
-                  color: (isConnected ? AppColors.positive : AppColors.danger).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(
-                    color: (isConnected ? AppColors.positive : AppColors.danger).withValues(alpha: 0.25),
-                    width: 0.8,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: isConnected ? AppColors.positive : AppColors.danger,
-                        shape: BoxShape.circle,
+        title: InkWell(
+          onTap: () => _scaffoldKey.currentState?.openDrawer(),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              activeProjectDisplayName.isNotEmpty
+                                  ? activeProjectDisplayName
+                                  : 'Antigravity',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.onSurface,
+                                letterSpacing: -0.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Icon(
+                            Icons.unfold_more_rounded,
+                            size: 13,
+                            color: isDark ? AppColors.inkMuted : Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 5),
-                    ValueListenableBuilder<int?>(
-                      valueListenable: _wsClient.latencyMsNotifier,
-                      builder: (context, latency, _) {
-                        final label = isConnected
-                            ? (latency != null ? '${latency}ms' : 'Connecté')
-                            : 'Hors ligne';
-                        return Text(
-                          label,
+                      if (_activeSessionTitle.isNotEmpty)
+                        Text(
+                          _activeSessionTitle,
                           style: TextStyle(
-                            fontSize: 11,
-                            color: isConnected ? AppColors.positive : AppColors.danger,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w400,
+                            color: isDark ? AppColors.inkSecondary : Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                        );
-                      },
-                    ),
-                  ],
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () {
+                    if (isConnected) {
+                      _wsClient.disconnect();
+                      SettingsStore.clearSession();
+                    } else {
+                      _wsClient.connect();
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: (isConnected ? AppColors.positive : AppColors.danger).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      border: Border.all(
+                        color: (isConnected ? AppColors.positive : AppColors.danger).withValues(alpha: 0.25),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: isConnected ? AppColors.positive : AppColors.danger,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        ValueListenableBuilder<int?>(
+                          valueListenable: _wsClient.latencyMsNotifier,
+                          builder: (context, latency, _) {
+                            final label = isConnected
+                                ? (latency != null ? '${latency}ms' : 'Connecté')
+                                : 'Hors ligne';
+                            return Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isConnected ? AppColors.positive : AppColors.danger,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         actions: [
           IconButton(
