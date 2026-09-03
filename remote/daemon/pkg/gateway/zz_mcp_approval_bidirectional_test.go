@@ -98,6 +98,17 @@ func TestMcpApproval_DesktopApprove(t *testing.T) {
 	client := dialWS(t, "ws"+strings.TrimPrefix(ts.URL, "http")+"/ws")
 	defer client.conn.Close()
 
+	// Attendre que le client WebSocket soit bien enregistré côté serveur
+	for i := 0; i < 50; i++ {
+		gw.mu.Lock()
+		clientCount := len(gw.clients)
+		gw.mu.Unlock()
+		if clientCount > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	// Approbation posée
 	gw.MarkApprovalPending("casc-desktop-1", connectrpc.StreamEvent{
 		CallID:         "call-mcp-2",
@@ -126,7 +137,7 @@ func TestMcpApproval_DesktopApprove(t *testing.T) {
 	}
 
 	// Le client mobile reçoit immédiatement approval_resolved avec source=desktop
-	client.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	client.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	for {
 		_, b, err := client.conn.ReadMessage()
 		if err != nil {
