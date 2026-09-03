@@ -11,10 +11,10 @@
  * (read via `workspace.getConfiguration("jetski").get("cloudCodeUrl")` in the
  * bundled extension). No binary/asar surgery is needed: writing
  *
-  *   "jetski.cloudCodeUrl": "http://localhost:<DEFAULT_MITM_PORT>"
+  *   "jetski.cloudCodeUrl": "http://localhost:<DEFAULT_PROXY_PORT>"
   *
   * into the IDE's User settings.json makes the extension spawn the language
-  * server with `--cloud_code_endpoint http://localhost:<DEFAULT_MITM_PORT>`, routing all
+  * server with `--cloud_code_endpoint http://localhost:<DEFAULT_PROXY_PORT>`, routing all
  * Cloud Code traffic through the local proxy — the same effect the classic
  * binary patch had for the 2.x shell.
  *
@@ -26,7 +26,7 @@
 import fs from 'fs';
 import path from 'path';
 import { findAntigravityIdeInstallDir, getIdeSettingsJson } from './paths';
-import { DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
+import { DEFAULT_PROXY_PORT, DEFAULT_BIND_HOST } from './config';
 
 /** Read the IDE product version from resources/app/package.json (best-effort). */
 export function getIdeVersion(installDir?: string): string | null {
@@ -45,7 +45,7 @@ export function getIdeVersion(installDir?: string): string | null {
 /** The VS Code setting key that overrides the Cloud Code endpoint. */
 export const IDE_ENDPOINT_SETTING = 'jetski.cloudCodeUrl';
 /** The value the patch writes (the local proxy). */
-export const IDE_PATCHED_ENDPOINT = `http://${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}`;
+export const IDE_PATCHED_ENDPOINT = `http://${DEFAULT_BIND_HOST}:${DEFAULT_PROXY_PORT}`;
 
 export interface IdePatchStatus {
   /** IDE install directory, or null if the IDE is not installed. */
@@ -65,6 +65,13 @@ export interface IdePatchStatus {
 }
 
 const KEY_RE = /"jetski\.cloudCodeUrl"\s*:\s*("[^"]*"|true|false|null|\d+)/;
+
+const LEGACY_LOCALHOST_ENDPOINT = `http://localhost:${DEFAULT_PROXY_PORT}`;
+
+function isPatchedEndpoint(value: string | null): boolean {
+  if (!value) return false;
+  return value === IDE_PATCHED_ENDPOINT || value === LEGACY_LOCALHOST_ENDPOINT;
+}
 
 /** Read the current setting value without mutating the file. */
 function readCurrentValue(content: string): string | null {
@@ -95,8 +102,8 @@ export function getIdePatchStatus(): IdePatchStatus {
     installDir,
     settingsPath,
     exists,
-    applied: currentValue === IDE_PATCHED_ENDPOINT,
-    hasCustomValue: currentValue !== null && currentValue !== IDE_PATCHED_ENDPOINT,
+    applied: isPatchedEndpoint(currentValue),
+    hasCustomValue: currentValue !== null && !isPatchedEndpoint(currentValue),
     backupExists: settingsPath ? fs.existsSync(settingsPath + '.bak') : false,
     currentValue,
   };
@@ -160,6 +167,16 @@ export function applyIdePatch(): { ok: boolean; message: string } {
     return { ok: false, message: 'Could not resolve the IDE settings.json path' };
   }
   if (status.applied) {
+    const needsNormalize = status.currentValue === LEGACY_LOCALHOST_ENDPOINT;
+    if (needsNormalize && status.exists && !status.backupExists) {
+      fs.copyFileSync(status.settingsPath, status.settingsPath + '.bak');
+    }
+    if (needsNormalize) {
+      const content = fs.readFileSync(status.settingsPath, 'utf-8');
+      const updated = upsertSetting(content, IDE_PATCHED_ENDPOINT);
+      fs.writeFileSync(status.settingsPath, updated, 'utf-8');
+      return { ok: true, message: `IDE patch normalized (${IDE_ENDPOINT_SETTING}=${IDE_PATCHED_ENDPOINT}; backup at ${status.settingsPath}.bak)` };
+    }
     return { ok: true, message: `IDE already patched (${IDE_ENDPOINT_SETTING}=${IDE_PATCHED_ENDPOINT})` };
   }
   if (status.hasCustomValue) {
@@ -213,7 +230,7 @@ const IDE_MAIN_HOOK_SIG = '// Antigravity IDE Proxy Auto-Starter Hook';
 const IDE_MAIN_HOOK = `// Antigravity IDE Proxy Auto-Starter Hook
 try {
   const _net = require('net');
-  const _proxyPort = ${DEFAULT_MITM_PORT};
+  const _proxyPort = ${DEFAULT_PROXY_PORT};
   const _s = _net.connect({ port: _proxyPort, host: DEFAULT_BIND_HOST }, () => { _s.destroy(); });
   _s.on('error', () => {
     try {
