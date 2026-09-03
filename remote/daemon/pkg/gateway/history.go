@@ -239,6 +239,23 @@ func renameSessionOnDisk(home, cascadeID, title string) error {
 	return nil
 }
 
+// getSessionCustomTitle lit le titre personnalisé depuis annotations/<cascadeID>.pbtxt si présent
+func getSessionCustomTitle(home, cascadeID string) string {
+	if cascadeID == "" {
+		return ""
+	}
+	reTitle := regexp.MustCompile(`(?i)custom_title:\s*"([^"]+)"`)
+	for _, subDir := range []string{"antigravity", "antigravity-ide"} {
+		annoPath := filepath.Join(home, ".gemini", subDir, "annotations", cascadeID+".pbtxt")
+		if data, err := os.ReadFile(annoPath); err == nil {
+			if m := reTitle.FindStringSubmatch(string(data)); len(m) >= 2 {
+				return strings.TrimSpace(m[1])
+			}
+		}
+	}
+	return ""
+}
+
 func pinSessionOnDisk(home, cascadeID string, pinned bool) error {
 	if !validCascadeID(cascadeID) {
 		return fmt.Errorf("identifiant de cascade invalide")
@@ -323,16 +340,75 @@ func isSessionPinned(home, cascadeID string) bool {
 	if cascadeID == "" {
 		return false
 	}
+	re := regexp.MustCompile(`(?i)pinned:\s*(true|false)`)
 	for _, sub := range []string{"antigravity", "antigravity-ide"} {
 		annoPath := filepath.Join(home, ".gemini", sub, "annotations", cascadeID+".pbtxt")
 		if data, err := os.ReadFile(annoPath); err == nil {
-			s := strings.ToLower(string(data))
-			if strings.Contains(s, "pinned: true") || strings.Contains(s, "pinned:true") {
-				return true
+			matches := re.FindAllStringSubmatch(string(data), -1)
+			if len(matches) > 0 {
+				return strings.ToLower(matches[len(matches)-1][1]) == "true"
 			}
 		}
 	}
 	return false
+}
+
+// isSessionMarkedUnread vérifie si la session est explicitement marquée comme non-lue dans annotations/<cascadeID>.pbtxt
+func isSessionMarkedUnread(home, cascadeID string) bool {
+	if cascadeID == "" {
+		return false
+	}
+	re := regexp.MustCompile(`(?i)marked_as_unread:\s*(true|false)`)
+	for _, sub := range []string{"antigravity", "antigravity-ide"} {
+		annoPath := filepath.Join(home, ".gemini", sub, "annotations", cascadeID+".pbtxt")
+		if data, err := os.ReadFile(annoPath); err == nil {
+			matches := re.FindAllStringSubmatch(string(data), -1)
+			if len(matches) > 0 {
+				return strings.ToLower(matches[len(matches)-1][1]) == "true"
+			}
+		}
+	}
+	return false
+}
+
+// markSessionUnreadOnDisk persiste marked_as_unread et met à jour last_user_view_time dans annotations/<cascadeID>.pbtxt
+func markSessionUnreadOnDisk(home, cascadeID string, unread bool) error {
+	if !validCascadeID(cascadeID) {
+		return fmt.Errorf("identifiant de cascade invalide")
+	}
+	for _, subDir := range []string{"antigravity", "antigravity-ide"} {
+		annoDir := filepath.Join(home, ".gemini", subDir, "annotations")
+		_ = os.MkdirAll(annoDir, 0o755)
+		annoPath := filepath.Join(annoDir, cascadeID+".pbtxt")
+
+		nowSec := time.Now().Unix()
+		nowNano := time.Now().Nanosecond()
+
+		data, err := os.ReadFile(annoPath)
+		if err != nil {
+			content := fmt.Sprintf("marked_as_unread:%t last_user_view_time:{seconds:%d nanos:%d}\n",
+				unread, nowSec, nowNano)
+			_ = os.WriteFile(annoPath, []byte(content), 0o644)
+			continue
+		}
+
+		s := string(data)
+		reUnread := regexp.MustCompile(`(?i)marked_as_unread:\s*(true|false)`)
+		s = reUnread.ReplaceAllString(s, "")
+		s = strings.TrimSpace(s)
+
+		if !unread {
+			reView := regexp.MustCompile(`(?i)last_user_view_time:\{seconds:\d+\s*nanos:\d+\}`)
+			s = reView.ReplaceAllString(s, "")
+			s = strings.TrimSpace(s)
+			s = fmt.Sprintf("marked_as_unread:false last_user_view_time:{seconds:%d nanos:%d} %s", nowSec, nowNano, s)
+		} else {
+			s = fmt.Sprintf("marked_as_unread:true %s", s)
+		}
+		s = strings.TrimSpace(s) + "\n"
+		_ = os.WriteFile(annoPath, []byte(s), 0o644)
+	}
+	return nil
 }
 
 // deleteSessionFromDisk supprime les artefacts résiduels d'une session sur disque (.pbtxt, .db, brain/)
@@ -706,22 +782,28 @@ func ListIdeSessions(officialProjs []ProjectSummary, includeArchived bool) []map
 				title = base
 			}
 		}
+		if diskTitle := getSessionCustomTitle(home, cascadeID); diskTitle != "" {
+			title = diskTitle
+		}
 		pinned := isSessionPinned(home, cascadeID)
+		markedUnread := isSessionMarkedUnread(home, cascadeID)
 		status := "idle"
 		if archived {
 			status = "CASCADE_STATUS_ARCHIVED"
 		}
 		res = append(res, map[string]interface{}{
-			"cascadeId":     cascadeID,
-			"title":         title,
-			"workspace":     matchedProjectName,
-			"workspacePath": matchedProjectPath,
-			"projectId":     matchedProjectID,
-			"status":        status,
-			"updatedAt":     modTime.Format(time.RFC3339),
-			"isPinned":      pinned,
-			"isArchived":    archived,
-			"isIde":         true,
+			"cascadeId":      cascadeID,
+			"title":          title,
+			"workspace":      matchedProjectName,
+			"workspacePath":  matchedProjectPath,
+			"projectId":      matchedProjectID,
+			"status":         status,
+			"updatedAt":      modTime.Format(time.RFC3339),
+			"isPinned":       pinned,
+			"isArchived":     archived,
+			"markedAsUnread": markedUnread,
+			"hasUnread":      markedUnread,
+			"isIde":          true,
 		})
 	}
 	return res

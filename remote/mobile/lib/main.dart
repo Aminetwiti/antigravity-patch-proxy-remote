@@ -777,6 +777,23 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         return;
       }
 
+      if (type == 'session_status_update') {
+        final data = msg['data'] as Map<String, dynamic>? ?? const {};
+        final status = (data['status'] ?? '').toString();
+        final cid = (msg['cascadeId'] ?? data['cascadeId'] ?? cascadeId).toString();
+        if (cid.isNotEmpty && status.isNotEmpty) {
+          setState(() {
+            _sessions = _sessions.map((s) {
+              if (s.id == cid) {
+                return s.copyWith(status: status);
+              }
+              return s;
+            }).toList();
+          });
+        }
+        return;
+      }
+
       // session_focus_changed : un événement distant ne doit JAMAIS changer
       // automatiquement la session active de l'UI Flutter (Règle fondamentale).
       // On met à jour les métadonnées de la session dans _sessions si présente,
@@ -1467,47 +1484,56 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Flexible(
-                  child: Column(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              activeProjectDisplayName.isNotEmpty
-                                  ? activeProjectDisplayName
-                                  : 'Antigravity',
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).colorScheme.onSurface,
-                                letterSpacing: -0.2,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 3),
-                          Icon(
-                            Icons.unfold_more_rounded,
-                            size: 13,
-                            color: isDark ? AppColors.inkMuted : Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ],
-                      ),
-                      if (_activeSessionTitle.isNotEmpty)
-                        Text(
-                          _activeSessionTitle,
+                      Flexible(
+                        flex: 2,
+                        child: Text(
+                          activeProjectDisplayName.isNotEmpty
+                              ? activeProjectDisplayName
+                              : 'Antigravity',
                           style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w400,
-                            color: isDark ? AppColors.inkSecondary : Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
+                            letterSpacing: -0.2,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                      ),
+                      if (_activeSessionTitle.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            '›',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? AppColors.inkMuted : Theme.of(context).colorScheme.outlineVariant,
+                            ),
+                          ),
+                        ),
+                        Flexible(
+                          flex: 3,
+                          child: Text(
+                            _activeSessionTitle,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w400,
+                              color: isDark ? AppColors.inkSecondary : Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 3),
+                      Icon(
+                        Icons.unfold_more_rounded,
+                        size: 13,
+                        color: isDark ? AppColors.inkMuted : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ],
                   ),
                 ),

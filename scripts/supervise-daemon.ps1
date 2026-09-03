@@ -18,6 +18,7 @@ $ErrorActionPreference = "SilentlyContinue"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $DaemonDir = Join-Path $RepoRoot "remote\daemon"
+$DaemonExe = Join-Path $DaemonDir "daemon.exe"
 $TokenFile = Join-Path $env:USERPROFILE ".gemini\antigravity\daemon.token"
 $Token = if ($env:AG_DAEMON_AUTH_TOKEN) {
     $env:AG_DAEMON_AUTH_TOKEN

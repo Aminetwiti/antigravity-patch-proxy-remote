@@ -216,7 +216,6 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   bool get _hasCurrentActiveStream {
     final activeId = widget.activeSessionId;
     if (_activeStreamingSessions.contains(activeId)) return true;
-    if (_runningBackgroundTasks.isNotEmpty) return true;
 
     final msgs = _sessionMessages[activeId];
     if (msgs != null && msgs.isNotEmpty) {
@@ -1742,20 +1741,30 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         final cmd = data['command'] as String? ?? data['id'] as String? ?? '';
         final taskId = data['id'] as String? ?? cmd;
         final status = data['status'] as String? ?? 'completed';
+        final mappedCmd = _taskIdToCommand[taskId] ?? _taskIdToCommand[cmd] ?? '';
+        final mappedId = _taskCommandToId[cmd] ?? _taskCommandToId[taskId] ?? '';
         setState(() {
           _runningBackgroundTasks.remove(cmd);
           _runningBackgroundTasks.remove(taskId);
+          if (mappedCmd.isNotEmpty) _runningBackgroundTasks.remove(mappedCmd);
+          if (mappedId.isNotEmpty) _runningBackgroundTasks.remove(mappedId);
           _runningBackgroundTasks.removeWhere((t) =>
               (cmd.isNotEmpty && t == cmd) ||
               (taskId.isNotEmpty && t == taskId) ||
+              (mappedCmd.isNotEmpty && t == mappedCmd) ||
+              (mappedId.isNotEmpty && t == mappedId) ||
               (cmd.isNotEmpty && t.contains(cmd)) ||
               (taskId.isNotEmpty && t.contains(taskId)));
           _taskStatuses[cmd] = status;
           _taskStatuses[taskId] = status;
+          if (mappedCmd.isNotEmpty) _taskStatuses[mappedCmd] = status;
+          if (mappedId.isNotEmpty) _taskStatuses[mappedId] = status;
           // P3 (leak) : tâche terminée → fermer ses controllers (plus aucun
           // delta n'arrivera ; la vue détail relit le snapshot StringBuffer).
           _closeTaskController(cmd);
           _closeTaskController(taskId);
+          if (mappedCmd.isNotEmpty) _closeTaskController(mappedCmd);
+          if (mappedId.isNotEmpty) _closeTaskController(mappedId);
         });
         _refreshRunningTasks();
 
@@ -2915,7 +2924,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     );
   }
 
-  Widget _buildSyncStatusBadge(ColorScheme scheme) {
+  Widget _buildSyncStatusBadge(ColorScheme scheme, {EdgeInsets margin = const EdgeInsets.symmetric(horizontal: 16, vertical: 4)}) {
     int pendingCount = 0;
     try {
       pendingCount = widget.api?.outbox?.pendingCount ?? 0;
@@ -2924,7 +2933,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
     if (_isSyncing) {
       return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        margin: margin,
         child: StatusDotBadge(
           label: 'Rattrapage des messages…',
           color: scheme.primary,
@@ -2934,7 +2943,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     }
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: margin,
       child: StatusDotBadge(
         label: '$pendingCount message${pendingCount > 1 ? 's' : ''} en attente',
         color: AppColors.warning,
@@ -2943,7 +2952,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   }
 
   /// Badge de quotas temps réel (P8).
-  Widget _buildQuotaBadge(ColorScheme scheme) {
+  Widget _buildQuotaBadge(ColorScheme scheme, {EdgeInsets margin = const EdgeInsets.symmetric(horizontal: 16, vertical: 1)}) {
     if (_quotaSummary == null) return const SizedBox.shrink();
     final gRaw = _quotaSummary?['weeklyPercent'] ?? _quotaSummary?['geminiQuotaPercent'];
     final cRaw = _quotaSummary?['weeklyPercentClaude'] ?? _quotaSummary?['claudeQuotaPercent'];
@@ -2952,7 +2961,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     if (gVal == null && cVal == null) return const SizedBox.shrink();
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
+      margin: margin,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
@@ -2980,6 +2989,33 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: cVal > 85 ? scheme.error : scheme.onSurfaceVariant),
             ),
         ],
+      ),
+    );
+  }
+
+  /// Fusionne le badge de statut (messages en file) et les quotas sur une seule ligne horizontale compacte.
+  Widget _buildStatusAndQuotaStrip(ColorScheme scheme) {
+    final syncWidget = _buildSyncStatusBadge(scheme, margin: EdgeInsets.zero);
+    final quotaWidget = _buildQuotaBadge(scheme, margin: EdgeInsets.zero);
+    final hasSync = syncWidget is! SizedBox;
+    final hasQuota = quotaWidget is! SizedBox;
+
+    if (!hasSync && !hasQuota) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2.5),
+      child: Center(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasSync) syncWidget,
+              if (hasSync && hasQuota) const SizedBox(width: 8),
+              if (hasQuota) quotaWidget,
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -3119,7 +3155,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           child: Column(
             children: [
               connectivityBanner,
-          if (!hasKeyboard) breadcrumb,
+          if (!hasKeyboard && _isFullscreen) breadcrumb,
           AnimatedSize(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
@@ -3156,6 +3192,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               onOpenArtifact: (art) => setState(() {
                 _activeArtifact = art;
               }),
+              onToggleSearch: _toggleSearch,
               onNewTab: () {
                 final projs = widget.projects ?? [];
                 if (projs.length > 1) {
@@ -3165,10 +3202,8 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 }
               },
             ),
-            if (!hasKeyboard) ...[
-              _buildSyncStatusBadge(scheme),
-              _buildQuotaBadge(scheme),
-            ],
+            if (!hasKeyboard)
+              _buildStatusAndQuotaStrip(scheme),
           ],
           Expanded(
             child: Stack(

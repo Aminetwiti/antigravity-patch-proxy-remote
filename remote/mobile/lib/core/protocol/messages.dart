@@ -130,6 +130,9 @@ class CascadeSession {
 
   bool get isRunning {
     final st = status.toUpperCase();
+    if (st.contains('READY') || st.contains('IDLE') || st.contains('DONE') || st.contains('COMPLETED')) {
+      return false;
+    }
     return st.contains('RUNNING') ||
         st.contains('BUSY') ||
         st.contains('STREAMING') ||

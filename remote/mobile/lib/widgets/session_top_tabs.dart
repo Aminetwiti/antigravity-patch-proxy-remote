@@ -22,6 +22,7 @@ class SessionTopTabs extends StatelessWidget {
   final Function(String artifact)? onOpenArtifact;
   final VoidCallback? onNewTab;
   final VoidCallback? onToggleSidebar;
+  final VoidCallback? onToggleSearch;
 
   const SessionTopTabs({
     super.key,
@@ -36,6 +37,7 @@ class SessionTopTabs extends StatelessWidget {
     this.onOpenArtifact,
     this.onNewTab,
     this.onToggleSidebar,
+    this.onToggleSearch,
   });
 
   IconData _iconForArtifact(String name) {
@@ -135,19 +137,28 @@ class SessionTopTabs extends StatelessWidget {
               ],
             ),
           ),
-          if (onNewTab != null || onToggleSidebar != null) ...[
+          if (onNewTab != null || onToggleSidebar != null || onToggleSearch != null) ...[
             Container(
               height: 20,
               width: 1,
               color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
             ),
+            if (onToggleSearch != null)
+              IconButton(
+                icon: const Icon(Icons.search_rounded, size: 18),
+                tooltip: 'Rechercher dans la conversation',
+                onPressed: onToggleSearch,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 38, minHeight: 42),
+                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+              ),
             if (onNewTab != null)
               IconButton(
                 icon: const Icon(Icons.add, size: 18),
                 tooltip: 'Nouvelle conversation',
                 onPressed: onNewTab,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                constraints: const BoxConstraints(minWidth: 38, minHeight: 42),
                 color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
               ),
             if (onToggleSidebar != null)
@@ -156,7 +167,7 @@ class SessionTopTabs extends StatelessWidget {
                 tooltip: 'Panneau latéral',
                 onPressed: onToggleSidebar,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                constraints: const BoxConstraints(minWidth: 38, minHeight: 42),
                 color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
               ),
             const SizedBox(width: 4),

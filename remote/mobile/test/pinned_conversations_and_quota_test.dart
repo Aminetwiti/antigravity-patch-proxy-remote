@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/protocol/messages.dart';
 import 'package:mobile/features/chat_stream/models/banner_notification.dart';
@@ -150,6 +150,71 @@ Error ID: 53628a95-d513-4328-b19e-97484b5071cd-2371''';
 
       expect(find.textContaining('Individual quota reached'), findsOneWidget);
       expect(find.text('Error ID: 53628a95-d513-4328-b19e-97484b5071cd-2371'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('LeftSidebarDrawer dynamically syncs pins when unpinned on desktop', (tester) async {
+      final initialSessions = <CascadeSession>[
+        const CascadeSession(
+          id: 'sess-sync-1',
+          workspacePath: '/path/project1',
+          title: 'Session to be unpinned',
+          status: 'CASCADE_STATUS_READY',
+          time: '2m',
+          isPinned: true,
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LeftSidebarDrawer(
+              activeSessionId: 'sess-sync-1',
+              sessions: initialSessions,
+              onSessionSelected: (_) {},
+              onNewConversation: () {},
+              onToggleConnection: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Pinned Conversations'), findsOneWidget);
+      expect(find.text('Session to be unpinned'), findsOneWidget);
+
+      // Desktop updates: session is now unpinned
+      final updatedSessions = <CascadeSession>[
+        const CascadeSession(
+          id: 'sess-sync-1',
+          workspacePath: '/path/project1',
+          title: 'Session to be unpinned',
+          status: 'CASCADE_STATUS_READY',
+          time: '3m',
+          isPinned: false,
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LeftSidebarDrawer(
+              activeSessionId: 'sess-sync-1',
+              sessions: updatedSessions,
+              onSessionSelected: (_) {},
+              onNewConversation: () {},
+              onToggleConnection: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Pinned section should now disappear because 0 sessions are pinned
+      expect(find.text('Pinned Conversations'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
     });

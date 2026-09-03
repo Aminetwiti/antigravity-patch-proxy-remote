@@ -236,9 +236,16 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     if (name.contains('/')) {
       name = name.split('/').last.trim();
     }
-    if (_reasoningEffort.isNotEmpty) {
-      final effortLabel = _normalizeEffort(_reasoningEffort);
-      if (!name.toLowerCase().contains(effortLabel.toLowerCase())) {
+    final isGemini = name.toLowerCase().contains('gemini');
+    if (isGemini) {
+      for (final e in ['high', 'medium', 'low', 'élevé', 'moyen', 'faible']) {
+        if (name.toLowerCase().endsWith(' $e')) {
+          name = name.substring(0, name.length - e.length - 1).trim();
+          break;
+        }
+      }
+      if (_reasoningEffort.isNotEmpty) {
+        final effortLabel = _normalizeEffort(_reasoningEffort);
         return '$name $effortLabel';
       }
     }
@@ -2539,7 +2546,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
               decoration: BoxDecoration(
                 color: candidateData.isNotEmpty
                     ? scheme.primary.withValues(alpha: 0.15)
-                    : (isDark ? AppColors.surfaceRaised : const Color(0xFF18181B)),
+                    : (isDark ? AppColors.surfaceRaised : scheme.surfaceContainerLow),
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: _focusNode.hasFocus
                     ? [
@@ -2560,7 +2567,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                               ? (isDark ? AppColors.accentBlue : scheme.primary)
                               : (isDark
                                   ? AppColors.borderSubtle
-                                  : const Color(0xFF27272A)))),
+                                  : scheme.outlineVariant.withValues(alpha: 0.5)))),
                   width: (candidateData.isNotEmpty || _focusNode.hasFocus) ? 1.2 : 1.0,
                 ),
               ),
@@ -2655,7 +2662,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                           autofocus: false,
                           maxLines: isIdle ? 1 : 6,
                           minLines: 1,
-                          style: TextStyle(fontSize: 14, color: isDark ? AppColors.inkPrimary : const Color(0xFFF1F1F1)),
+                          style: TextStyle(fontSize: 14, color: isDark ? AppColors.inkPrimary : scheme.onSurface),
                           decoration: InputDecoration(
                             hintText:
                                 widget.isConnected
@@ -2664,7 +2671,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                         : 'Ask anything, @ to mention, / for actions')
                                     : 'Écrivez un message (envoi dès reconnexion)...',
                             hintStyle: TextStyle(
-                              color: isDark ? AppColors.inkMuted : const Color(0xFF858585),
+                              color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
                               fontSize: 13.5,
                             ),
                             border: InputBorder.none,
@@ -2694,14 +2701,14 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                           decoration: BoxDecoration(
                             color: isDark
                                 ? AppColors.surfaceInput.withValues(alpha: 0.6)
-                                : const Color(0xFF27272A),
+                                : scheme.surfaceContainerHighest,
                             shape: BoxShape.circle,
                           ),
                           alignment: Alignment.center,
                           child: Icon(
                             Icons.add,
                             size: 18,
-                            color: isDark ? AppColors.inkSecondary : const Color(0xFFB8B8B8),
+                            color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -2724,10 +2731,10 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                     vertical: 4.5,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: isDark ? AppColors.surfaceInput : const Color(0xFF27272A),
+                                    color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest,
                                     borderRadius: BorderRadius.circular(AppRadius.pill),
                                     border: Border.all(
-                                      color: isDark ? AppColors.borderSubtle : const Color(0xFF3F3F46),
+                                      color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4),
                                       width: 0.8,
                                     ),
                                   ),
@@ -2752,7 +2759,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                           softWrap: false,
                                           style: TextStyle(
                                             fontSize: 11.5,
-                                            color: isDark ? AppColors.inkPrimary : const Color(0xFFF1F1F1),
+                                            color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                                             fontWeight: FontWeight.w500,
                                           ),
                                         ),
@@ -2761,7 +2768,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                       Icon(
                                         Icons.keyboard_arrow_up_rounded,
                                         size: 15,
-                                        color: isDark ? AppColors.inkMuted : const Color(0xFF858585),
+                                        color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
                                       ),
                                     ],
                                   ),
@@ -2938,13 +2945,13 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                             : ((_controller.text.trim().isNotEmpty || _attachments.isNotEmpty) &&
                                                     widget.isConnected
                                                 ? (isDark ? AppColors.accentBlue : scheme.primary)
-                                                : (isDark ? AppColors.surfaceInput : const Color(0xFF27272A))),
+                                                : (isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest)),
                                         shape: BoxShape.circle,
                                         border: Border.all(
                                           color: ((_controller.text.trim().isNotEmpty || _attachments.isNotEmpty) &&
                                                   widget.isConnected)
                                               ? Colors.transparent
-                                              : (isDark ? AppColors.borderSubtle : const Color(0xFF3F3F46)),
+                                              : (isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4)),
                                           width: 0.8,
                                         ),
                                       ),
@@ -2959,7 +2966,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                                                     widget.isConnected) ||
                                                 (widget.hasActiveStream && _controller.text.trim().isEmpty)
                                             ? AppColors.onAccent
-                                            : (isDark ? AppColors.inkMuted : const Color(0xFF858585)),
+                                            : (isDark ? AppColors.inkMuted : scheme.outline),
                                       ),
                                     ),
                                   ),

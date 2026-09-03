@@ -53,6 +53,8 @@ type IncomingMessage struct {
 	// Confirm : confirmation explicite exigée pour les actions destructives
 	// (delete_cascade) — le mobile DOIT l'envoyer à true après dialog natif.
 	Confirm bool `json:"confirm,omitempty"`
+	// Pinned : statut d'épinglage explicite pour pin_cascade / unpin_cascade.
+	Pinned *bool `json:"pinned,omitempty"`
 	// Content : contenu du fichier pour write_file (encodage base64 JSON → bytes).
 	Content string `json:"content,omitempty"`
 	// Overwrite : autorise l'écrasement pour write_file (sinon erreur si existe).

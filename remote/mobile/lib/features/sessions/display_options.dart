@@ -205,8 +205,10 @@ Map<String, List<CascadeSession>> groupSessions({
       if (matchedProject != null) {
         grouped.putIfAbsent(matchedProject.name, () => []).add(s);
       } else {
-        const fallbackName = 'Conversations';
-        grouped.putIfAbsent(fallbackName, () => []).add(s);
+        final groupName = s.workspacePath.isNotEmpty
+            ? WorkspacePath.displayName(s.workspacePath)
+            : 'Conversations';
+        grouped.putIfAbsent(groupName, () => []).add(s);
       }
     }
 

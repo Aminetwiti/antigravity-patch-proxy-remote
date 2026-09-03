@@ -1,4 +1,4 @@
-﻿package gateway
+package gateway
 
 import (
 	"bufio"
@@ -575,6 +575,11 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 			continue
 		}
 		title := sum.Title
+		if home != "" {
+			if diskTitle := getSessionCustomTitle(home, sum.CascadeID); diskTitle != "" {
+				title = diskTitle
+			}
+		}
 		convTitlesMu.RLock()
 		if custom, ok := globalConvTitles[strings.ToLower(sum.CascadeID)]; ok && custom != "" {
 			title = custom
@@ -592,8 +597,10 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		wsName, wsPath, projID := matchOfficialProject(sum.ProjectID, sum.Workspace, sum.Workspace, projects)
 
 		isPinned := false
+		markedUnread := false
 		if home != "" {
 			isPinned = isSessionPinned(home, sum.CascadeID)
+			markedUnread = isSessionMarkedUnread(home, sum.CascadeID)
 		}
 
 		st := enrichStatus(sum.CascadeID, sum.Status)
@@ -601,16 +608,18 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 			st = "CASCADE_STATUS_ARCHIVED"
 		}
 		items = append(items, map[string]interface{}{
-			"cascadeId":     sum.CascadeID,
-			"title":         title,
-			"workspace":     wsName,
-			"workspacePath": wsPath,
-			"projectId":     projID,
-			"status":        st,
-			"updatedAt":     sum.UpdatedAt,
-			"isPinned":      isPinned,
-			"isArchived":    isArchived,
-			"isIde":         false,
+			"cascadeId":      sum.CascadeID,
+			"title":          title,
+			"workspace":      wsName,
+			"workspacePath":  wsPath,
+			"projectId":      projID,
+			"status":         st,
+			"updatedAt":      sum.UpdatedAt,
+			"isPinned":       isPinned,
+			"isArchived":     isArchived,
+			"markedAsUnread": markedUnread,
+			"hasUnread":      markedUnread,
+			"isIde":          false,
 		})
 	}
 
@@ -1210,7 +1219,7 @@ func (s *Server) isSessionActivelyRunning(cascadeID string) bool {
 		tPath := findTranscriptPath(cascadeID)
 		if tPath != "" {
 			if fi, err := os.Stat(tPath); err == nil {
-				if time.Since(fi.ModTime()) > 4*time.Second {
+				if time.Since(fi.ModTime()) > 1800*time.Millisecond {
 					sum.Status = "CASCADE_STATUS_READY"
 					s.jetboxSummaries[cascadeID] = sum
 					return false
@@ -3324,6 +3333,8 @@ var unaryNoTimeout = map[string]bool{
 	"generate_commit_message": true, "export_markdown": true, "create_worktree": true,
 	"archive_cascade": true, "unarchive_cascade": true, "delete_cascade": true,
 	"rename_cascade": true, "rename_session": true, "pin_cascade": true, "pin_session": true,
+	"unpin_cascade": true, "unpin_session": true,
+	"mark_read": true, "mark_session_read": true, "mark_unread": true, "mark_session_unread": true,
 	"submit_approval": true, "get_session_history": true,
 }
 
@@ -5311,13 +5322,19 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		})
 		return
 
-	case "pin_cascade", "pin_session":
+	case "pin_cascade", "pin_session", "unpin_cascade", "unpin_session":
 		if !validCascadeID(msg.CascadeID) {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis ou invalide"})
 			return
 		}
-		pinned := msg.Confirm
-		if !pinned && msg.Data != nil {
+		pinned := true
+		if msg.Type == "unpin_cascade" || msg.Type == "unpin_session" {
+			pinned = false
+		} else if msg.Pinned != nil {
+			pinned = *msg.Pinned
+		} else if msg.Confirm {
+			pinned = true
+		} else if msg.Data != nil {
 			if p, ok := msg.Data["pinned"].(bool); ok {
 				pinned = p
 			}
@@ -5332,6 +5349,33 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 
 		logJSON.Info("cascade_pinned", "cascadeId", msg.CascadeID, "pinned", pinned)
 		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"status": "pinned", "cascadeId": msg.CascadeID, "pinned": pinned}})
+		s.broadcast(OutgoingMessage{
+			Type: "sessions_updated",
+			Data: s.sessionsFromSummaries(s.snapshotSummaries()),
+		})
+		return
+
+	case "mark_read", "mark_session_read", "mark_unread", "mark_session_unread":
+		if !validCascadeID(msg.CascadeID) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis ou invalide"})
+			return
+		}
+		unread := strings.Contains(msg.Type, "unread")
+		if msg.Data != nil {
+			if u, ok := msg.Data["unread"].(bool); ok {
+				unread = u
+			}
+		}
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			_ = markSessionUnreadOnDisk(home, msg.CascadeID, unread)
+		}
+		s.mu.Lock()
+		s.sessionsCache = nil
+		s.mu.Unlock()
+
+		logJSON.Info("cascade_marked_unread", "cascadeId", msg.CascadeID, "unread", unread)
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"status": "ok", "cascadeId": msg.CascadeID, "unread": unread}})
 		s.broadcast(OutgoingMessage{
 			Type: "sessions_updated",
 			Data: s.sessionsFromSummaries(s.snapshotSummaries()),
@@ -7453,7 +7497,7 @@ func (s *Server) startTranscriptWatchdog() {
 				// Détection de désynchronisation : Si le statut Jetbox dit RUNNING mais qu'il n'y a plus aucune activité fichier depuis > 5s
 				if strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY") {
 					if tPath != "" {
-						if fi, err := os.Stat(tPath); err == nil && now.Sub(fi.ModTime()) > 5*time.Second {
+						if fi, err := os.Stat(tPath); err == nil && now.Sub(fi.ModTime()) > 1800*time.Millisecond {
 							s.mu.Lock()
 							if sSum, ok := s.jetboxSummaries[cascadeID]; ok {
 								sSum.Status = "CASCADE_STATUS_READY"

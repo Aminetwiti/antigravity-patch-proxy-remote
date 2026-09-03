@@ -389,3 +389,157 @@ func TestRenameCascadeSyncsToDisk(t *testing.T) {
 		}
 	}
 }
+
+// TestPinAndUnpinCascadeSyncsToDisk vérifie que pin_cascade et unpin_cascade
+// écrivent correctement pinned:true / pinned:false sur disque et mettent à jour le statut.
+func TestPinAndUnpinCascadeSyncsToDisk(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("UserHomeDir indisponible")
+	}
+
+	testID := "feedface-0000-4000-8000-00000000pin1"
+	defer func() {
+		for _, sub := range []string{"antigravity", "antigravity-ide"} {
+			_ = os.Remove(filepath.Join(home, ".gemini", sub, "annotations", testID+".pbtxt"))
+		}
+	}()
+
+	ts, gw := newTestServerWithGW(&fakeRPCClient{})
+	defer ts.Close()
+
+	gw.mu.Lock()
+	gw.jetboxSummaries = map[string]connectrpc.JetboxSummary{
+		testID: {CascadeID: testID, Title: "Session Pin Test", Status: "CASCADE_STATUS_READY"},
+	}
+	gw.mu.Unlock()
+
+	client := dialWS(t, "ws"+strings.TrimPrefix(ts.URL, "http")+"/ws")
+	defer client.conn.Close()
+
+	// 1. Pin session
+	client.send(t, map[string]string{
+		"type":      "pin_cascade",
+		"requestId": "rPin1",
+		"cascadeId": testID,
+	})
+
+	msg := client.recv(t)
+	if msg["type"] != "response" || msg["error"] != nil {
+		t.Fatalf("réponse pin inattendue: %v", msg)
+	}
+
+	// Broadcast sessions_updated
+	msg = client.recv(t)
+	if msg["type"] != "sessions_updated" {
+		t.Fatalf("attendu broadcast sessions_updated, reçu %v", msg)
+	}
+
+	if !isSessionPinned(home, testID) {
+		t.Fatalf("la session devrait être considérée comme épinglée sur disque")
+	}
+
+	// 2. Unpin session
+	client.send(t, map[string]string{
+		"type":      "unpin_cascade",
+		"requestId": "rPin2",
+		"cascadeId": testID,
+	})
+
+	msg = client.recv(t)
+	if msg["type"] != "response" || msg["error"] != nil {
+		t.Fatalf("réponse unpin inattendue: %v", msg)
+	}
+
+	// Broadcast sessions_updated
+	msg = client.recv(t)
+	if msg["type"] != "sessions_updated" {
+		t.Fatalf("attendu broadcast sessions_updated, reçu %v", msg)
+	}
+
+	if isSessionPinned(home, testID) {
+		t.Fatalf("la session ne devrait plus être épinglée sur disque après unpin")
+	}
+}
+
+func TestCustomTitleAndUnreadSyncsToDisk(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("UserHomeDir non disponible")
+	}
+
+	testID := fmt.Sprintf("test-unread-%d", time.Now().UnixNano())
+	annoDir := filepath.Join(home, ".gemini", "antigravity", "annotations")
+	_ = os.MkdirAll(annoDir, 0o755)
+	annoPath := filepath.Join(annoDir, testID+".pbtxt")
+	defer func() {
+		_ = os.Remove(annoPath)
+	}()
+
+	// Simule Desktop écrivant un titre personnalisé et marked_as_unread: true
+	simulatedDesktopContent := "custom_title:\"Desktop Renamed Session\" marked_as_unread:true\n"
+	_ = os.WriteFile(annoPath, []byte(simulatedDesktopContent), 0o644)
+
+	// Vérifie que getSessionCustomTitle lit fidèlement ce que Desktop a écrit
+	readTitle := getSessionCustomTitle(home, testID)
+	if readTitle != "Desktop Renamed Session" {
+		t.Fatalf("attendu titre Desktop Renamed Session, obtenu %q", readTitle)
+	}
+
+	// Vérifie que isSessionMarkedUnread lit true
+	if !isSessionMarkedUnread(home, testID) {
+		t.Fatalf("attendu isSessionMarkedUnread=true")
+	}
+
+	// Démarre serveur de test gateway
+	srv, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	client := newTestClient(t, srv.URL)
+	defer client.close()
+
+	// Le mobile marque la session comme lue
+	client.send(t, map[string]string{
+		"type":      "mark_read",
+		"requestId": "rMark1",
+		"cascadeId": testID,
+	})
+
+	msg := client.recv(t)
+	if msg["type"] != "response" || msg["error"] != nil {
+		t.Fatalf("réponse mark_read inattendue: %v", msg)
+	}
+
+	// Broadcast sessions_updated
+	msg = client.recv(t)
+	if msg["type"] != "sessions_updated" {
+		t.Fatalf("attendu broadcast sessions_updated, reçu %v", msg)
+	}
+
+	// Vérifie sur disque : marked_as_unread doit être false
+	if isSessionMarkedUnread(home, testID) {
+		t.Fatalf("la session ne devrait plus être marquée unread sur disque")
+	}
+
+	// Le mobile marque à nouveau comme non-lue
+	client.send(t, map[string]string{
+		"type":      "mark_unread",
+		"requestId": "rMark2",
+		"cascadeId": testID,
+	})
+
+	msg = client.recv(t)
+	if msg["type"] != "response" || msg["error"] != nil {
+		t.Fatalf("réponse mark_unread inattendue: %v", msg)
+	}
+
+	msg = client.recv(t)
+	if msg["type"] != "sessions_updated" {
+		t.Fatalf("attendu broadcast sessions_updated, reçu %v", msg)
+	}
+
+	if !isSessionMarkedUnread(home, testID) {
+		t.Fatalf("la session devrait être marquée unread sur disque après mark_unread")
+	}
+}
+

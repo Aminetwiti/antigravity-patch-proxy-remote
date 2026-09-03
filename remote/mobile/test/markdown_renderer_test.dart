@@ -158,5 +158,29 @@ Hello user, here is your result:
       expect(table.rows[0], ['Micro-buffering', '100% fluide', 'Faible']);
       expect(table.rows[1], ['Micro-Haptics', 'Physique', 'Très faible']);
     });
+
+    test('parses GitHub alerts blocks ([!IMPORTANT], > [!NOTE])', () {
+      final blocks = MarkdownRenderer.blocksOf('''
+[!IMPORTANT]
+Mise à jour requise
+
+> [!NOTE] Remarque utile
+''');
+      expect(blocks.length, 2);
+      expect(blocks[0].alertType, 'IMPORTANT');
+      expect(blocks[0].paragraph, 'Mise à jour requise');
+      expect(blocks[1].alertType, 'NOTE');
+      expect(blocks[1].paragraph, 'Remarque utile');
+    });
+
+    test('normalizes LaTeX symbols to unicode in inlineSpans', () {
+      final spans = MarkdownRenderer.inlineSpans(
+        r'Step 1 $\rightarrow$ Step 2 $\Rightarrow$ Done',
+        const TextStyle(fontSize: 14),
+        scheme: scheme,
+      );
+      final fullText = spans.map((s) => s.toPlainText()).join();
+      expect(fullText, contains('Step 1 → Step 2 ⇒ Done'));
+    });
   });
 }

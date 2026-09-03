@@ -249,7 +249,18 @@ class MarkdownRenderer {
         final alertMatch = RegExp(r'^(?:>\s*)?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$', caseSensitive: false).firstMatch(trimmed);
         if (alertMatch != null) {
           final type = alertMatch.group(1)!.toUpperCase();
-          final extra = alertMatch.group(2)?.trim() ?? '';
+          var extra = alertMatch.group(2)?.trim() ?? '';
+          if (extra.isEmpty && i + 1 < rawLines.length) {
+            final nextTrimmed = rawLines[i + 1].trim();
+            if (nextTrimmed.isNotEmpty &&
+                !nextTrimmed.startsWith('#') &&
+                !nextTrimmed.startsWith('```') &&
+                !nextTrimmed.startsWith('>') &&
+                !nextTrimmed.startsWith('---')) {
+              extra = nextTrimmed;
+              i++;
+            }
+          }
           blocks.add(MarkdownBlock.paragraph(
             extra,
             alertType: type,
@@ -265,7 +276,14 @@ class MarkdownRenderer {
           final qAlert = RegExp(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$', caseSensitive: false).firstMatch(qText);
           if (qAlert != null) {
             final type = qAlert.group(1)!.toUpperCase();
-            final extra = qAlert.group(2)?.trim() ?? '';
+            var extra = qAlert.group(2)?.trim() ?? '';
+            if (extra.isEmpty && i + 1 < rawLines.length) {
+              final nextQ = _quoteRe.firstMatch(rawLines[i + 1].trim());
+              if (nextQ != null) {
+                extra = nextQ.group(1)!.trim();
+                i++;
+              }
+            }
             blocks.add(MarkdownBlock.paragraph(
               extra,
               alertType: type,

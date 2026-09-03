@@ -203,21 +203,29 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
   @override
   void didUpdateWidget(covariant LeftSidebarDrawer old) {
     super.didUpdateWidget(old);
-    // BUG-B fix : synchroniser les pins venant du daemon (isPinned dans le payload)
-    // sans écraser les pins locaux de l'utilisateur.
-    final newPinned = widget.sessions?.where((s) => s.isPinned).map((s) => s.id) ?? const [];
-    if (newPinned.isNotEmpty) {
-      final added = newPinned.where((id) => !_pinnedIds.contains(id)).toList();
-      if (added.isNotEmpty) {
-        setState(() => _pinnedIds.addAll(added));
-      }
-    }
-    // Perf : ne PAS recharger pins/read-ids à chaque nouvelle instance de
-    // liste (chaque rafale d'évènements daemon produit une nouvelle liste) :
-    // les pins daemon sont déjà fusionnés ci-dessus, les prefs locales ne
-    // changent que via ce widget. Charge initial uniquement (initState).
+    // Synchronisation bidirectionnelle des pins avec le daemon et Antigravity 2.0
+    _syncPinsWithSessions(widget.sessions);
     if (widget.activeSessionId != old.activeSessionId && widget.activeSessionId.isNotEmpty) {
       _markSessionAsRead(widget.activeSessionId);
+    }
+  }
+
+  void _syncPinsWithSessions(List<CascadeSession>? sessions) {
+    if (sessions == null || sessions.isEmpty) return;
+    bool changed = false;
+    for (final s in sessions) {
+      if (s.isPinned && !_pinnedIds.contains(s.id)) {
+        _pinnedIds.add(s.id);
+        changed = true;
+      } else if (!s.isPinned && _pinnedIds.contains(s.id)) {
+        _pinnedIds.remove(s.id);
+        changed = true;
+      }
+    }
+    if (changed) {
+      setState(() {});
+      SharedPreferences.getInstance().then((prefs) =>
+          prefs.setStringList('pinned_session_ids', _pinnedIds.toList()));
     }
   }
 
@@ -238,13 +246,17 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
   Future<void> _loadPins() async {
     final prefs = await SharedPreferences.getInstance();
     final ids = prefs.getStringList('pinned_session_ids') ?? const [];
-    final fromSessions = widget.sessions?.where((s) => s.isPinned).map((s) => s.id) ?? const [];
     if (!mounted) return;
     setState(() {
-      _pinnedIds
-        ..clear()
-        ..addAll(ids)
-        ..addAll(fromSessions);
+      _pinnedIds.clear();
+      // Si les sessions du daemon sont déjà disponibles, leur statut isPinned fait autorité
+      if (widget.sessions != null && widget.sessions!.isNotEmpty) {
+        for (final s in widget.sessions!) {
+          if (s.isPinned) _pinnedIds.add(s.id);
+        }
+      } else {
+        _pinnedIds.addAll(ids);
+      }
     });
   }
 
@@ -284,7 +296,11 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     // ponytail: fire-and-forget, SharedPreferences garde le dernier état écrit.
     SharedPreferences.getInstance().then((prefs) =>
         prefs.setStringList('pinned_session_ids', _pinnedIds.toList()));
-    widget.api?.pinCascade(id, pinned: isNowPinned);
+    if (isNowPinned) {
+      widget.api?.pinCascade(id, pinned: true);
+    } else {
+      widget.api?.unpinCascade(id);
+    }
   }
 
   @override
@@ -1608,26 +1624,89 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                   duration: const Duration(milliseconds: 180),
                   switchInCurve: Curves.easeOutCubic,
                   switchOutCurve: Curves.easeOutCubic,
-                  child: isRunning
-                      ? Tooltip(
-                          key: const ValueKey('running'),
-                          message: 'En cours d\'exécution',
-                          child: AntigravitySpinningArc(
-                            size: 13.5,
-                            color: isSelected
-                                ? (isDark ? AppColors.inkPrimary : scheme.primary)
-                                : (isDark ? AppColors.inkMuted : scheme.outline),
-                          ),
+                  child: (isSelected || _hovered)
+                      ? Row(
+                          key: const ValueKey('selected_actions'),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isRunning) ...[
+                              Tooltip(
+                                key: const ValueKey('running'),
+                                message: 'En cours d\'exécution',
+                                child: AntigravitySpinningArc(
+                                  size: 13,
+                                  color: isSelected
+                                      ? (isDark ? AppColors.inkPrimary : scheme.primary)
+                                      : (isDark ? AppColors.inkMuted : scheme.outline),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                            ] else if (isWaiting) ...[
+                              const ThreeDotsWaiting(),
+                              const SizedBox(width: 4),
+                            ],
+                            if (widget.onTogglePin != null)
+                              Tooltip(
+                                message: widget.isPinned ? 'Désépingler' : 'Épingler',
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(4),
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    widget.onTogglePin?.call();
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(3),
+                                    child: Icon(
+                                      widget.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                                      size: 14,
+                                      color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            Focus(
+                              child: Tooltip(
+                                key: const ValueKey('session_menu_btn'),
+                                message: 'Options de la conversation (Clavier: Entrée)',
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(4),
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    _showSessionContextMenu(context);
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(3),
+                                    child: Icon(
+                                      Icons.more_horiz_rounded,
+                                      size: 15,
+                                      color: isSelected
+                                          ? (isDark ? AppColors.inkPrimary : scheme.onSurface)
+                                          : (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         )
-                      : isWaiting
+                      : isRunning
                           ? Tooltip(
-                              key: const ValueKey('waiting'),
-                              message: widget.session.isBackgroundTask
-                                  ? 'Tâche d\'arrière-plan en cours (en attente)'
-                                  : 'En attente…',
-                              child: const ThreeDotsWaiting(),
+                              key: const ValueKey('running'),
+                              message: 'En cours d\'exécution',
+                              child: AntigravitySpinningArc(
+                                size: 13.5,
+                                color: isDark ? AppColors.inkMuted : scheme.outline,
+                              ),
                             )
-                      : widget.session.isError
+                          : isWaiting
+                              ? Tooltip(
+                                  key: const ValueKey('waiting'),
+                                  message: widget.session.isBackgroundTask
+                                      ? 'Tâche d\'arrière-plan en cours (en attente)'
+                                      : 'En attente…',
+                                  child: const ThreeDotsWaiting(),
+                                )
+                              : widget.session.isError
                                   ? Tooltip(
                                       key: const ValueKey('error'),
                                       message: 'Erreur',
@@ -1646,54 +1725,6 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                           message: 'Session terminée — non lue',
                                           child: _PulsingBlueDot(),
                                         )
-                                      : (isSelected || _hovered)
-                                          ? Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                if (widget.onTogglePin != null)
-                                                  Tooltip(
-                                                    message: widget.isPinned ? 'Désépingler' : 'Épingler',
-                                                    child: InkWell(
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      onTap: () {
-                                                        HapticFeedback.selectionClick();
-                                                        widget.onTogglePin?.call();
-                                                      },
-                                                      child: Padding(
-                                                        padding: const EdgeInsets.all(3),
-                                                        child: Icon(
-                                                          widget.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-                                                          size: 14,
-                                                          color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                Focus(
-                                                  child: Tooltip(
-                                                    key: const ValueKey('session_menu_btn'),
-                                                    message: 'Options de la conversation (Clavier: Entrée)',
-                                                    child: InkWell(
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      onTap: () {
-                                                        HapticFeedback.selectionClick();
-                                                        _showSessionContextMenu(context);
-                                                      },
-                                                      child: Padding(
-                                                        padding: const EdgeInsets.all(3),
-                                                        child: Icon(
-                                                          Icons.more_horiz_rounded,
-                                                          size: 15,
-                                                          color: isSelected
-                                                              ? (isDark ? AppColors.inkPrimary : scheme.onSurface)
-                                                              : (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            )
                                         : widget.session.time.isNotEmpty
                                             ? Text(
                                                 widget.session.time,

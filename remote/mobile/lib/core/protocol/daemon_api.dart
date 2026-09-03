@@ -533,7 +533,7 @@ class DaemonApi {
       rpc('pin_cascade', {'cascadeId': cascadeId, 'pinned': pinned});
 
   Future<Map<String, dynamic>> unpinCascade(String cascadeId) =>
-      rpc('pin_cascade', {'cascadeId': cascadeId, 'pinned': false});
+      rpc('unpin_cascade', {'cascadeId': cascadeId, 'pinned': false});
 
   Future<Map<String, dynamic>> listFiles(String workspacePath) =>
       rpc('list_files', {'workspacePath': workspacePath});
