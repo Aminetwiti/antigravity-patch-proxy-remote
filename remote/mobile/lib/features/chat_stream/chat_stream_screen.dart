@@ -310,6 +310,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   Timer? _loadOlderTimer;
 
   final List<String> _runningBackgroundTasks = [];
+  final List<String> _activeGoals = [];
   bool _isFullscreen = false;
   bool _isHeaderVisible = true;
   bool _isSearching = false;
@@ -982,6 +983,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
         final isStreaming = data['isStreaming'] == true;
         final isStreamingLive = _activeStreamingSessions.contains(targetSession);
+        final isBufStreaming = buf.any((m) => m.isStreaming);
         final activeReqId = data['activeRequestId']?.toString() ?? 'live';
         if (isStreaming && !parsed.any((m) => m.id == 'ext-$activeReqId' || m.isStreaming)) {
           parsed.add(ChatMessage(
@@ -993,7 +995,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           ));
         }
 
-        if (!isStreamingLive || !isStreaming) {
+        if (buf.isEmpty || (!isStreamingLive && !isBufStreaming)) {
           if (parsed.isNotEmpty || buf.isEmpty) {
             buf
               ..clear()
@@ -1413,6 +1415,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     }
     if (sessionId == widget.activeSessionId) {
       HapticFeedback.lightImpact();
+      if (mounted) {
+        setState(() => _activeGoals.clear());
+      }
     }
     final queue = _sessionMessageQueues[sessionId] ?? [];
     final lastEnd = _sessionLastStreamEnds[sessionId];
@@ -1688,7 +1693,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
       if (type == 'sessions_updated') {
         if (mounted && widget.activeSessionId.isNotEmpty) {
-          _loadHistoryIfEmpty(widget.activeSessionId);
+          final buf = _sessionMessages[widget.activeSessionId];
+          if (buf == null || buf.isEmpty) {
+            _loadHistoryIfEmpty(widget.activeSessionId);
+          }
         }
         return;
       }
@@ -1785,6 +1793,34 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             message: cmd.isNotEmpty ? 'Tâche terminée : $cmd' : 'Travail terminé',
           );
         }
+        return;
+      } else if (type == 'goal_started' || type == 'active_goal') {
+        final data = msg['data'] as Map<String, dynamic>? ?? {};
+        final eventCascadeId = data['cascadeId'] as String? ?? msg['cascadeId'] as String? ?? '';
+        if (eventCascadeId.isNotEmpty && eventCascadeId != widget.activeSessionId) {
+          return;
+        }
+        final goalText = data['goal'] as String? ?? data['command'] as String? ?? data['text'] as String? ?? '';
+        if (goalText.isNotEmpty && !_activeGoals.contains(goalText)) {
+          setState(() {
+            _activeGoals.add(goalText);
+          });
+        }
+        return;
+      } else if (type == 'goal_ended' || type == 'goal_completed') {
+        final data = msg['data'] as Map<String, dynamic>? ?? {};
+        final eventCascadeId = data['cascadeId'] as String? ?? msg['cascadeId'] as String? ?? '';
+        if (eventCascadeId.isNotEmpty && eventCascadeId != widget.activeSessionId) {
+          return;
+        }
+        final goalText = data['goal'] as String? ?? '';
+        setState(() {
+          if (goalText.isNotEmpty) {
+            _activeGoals.remove(goalText);
+          } else {
+            _activeGoals.clear();
+          }
+        });
         return;
       }
 
@@ -2290,6 +2326,23 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         }
       });
       return;
+    }
+
+    final trimmedText = text.trim();
+    if (trimmedText.startsWith('/goal')) {
+      final goalBody = trimmedText.length > 5 ? trimmedText.substring(5).trim() : 'Goal';
+      if (goalBody.isNotEmpty && !_activeGoals.contains(goalBody)) {
+        setState(() {
+          _activeGoals.add(goalBody);
+        });
+      }
+    } else if (trimmedText.startsWith('/boost')) {
+      final boostBody = trimmedText.length > 6 ? trimmedText.substring(6).trim() : 'Boosted Goal';
+      if (boostBody.isNotEmpty && !_activeGoals.contains(boostBody)) {
+        setState(() {
+          _activeGoals.add(boostBody);
+        });
+      }
     }
 
     final targetSession = widget.activeSessionId;
@@ -2942,11 +2995,12 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       );
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       margin: margin,
       child: StatusDotBadge(
         label: '$pendingCount message${pendingCount > 1 ? 's' : ''} en attente',
-        color: AppColors.warning,
+        color: isDark ? AppColors.warning : const Color(0xFFB45309),
       ),
     );
   }
@@ -3232,6 +3286,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           if (!isDocumentMode &&
               (_sideQuestion != null ||
                   _runningBackgroundTasks.isNotEmpty ||
+                  _activeGoals.isNotEmpty ||
                   _subagents.isNotEmpty ||
                   (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
                   _topActiveBanner != null))
@@ -3251,11 +3306,16 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                             _sideQuestionAnswer = null;
                           }),
                         ),
-                      if (_runningBackgroundTasks.isNotEmpty)
+                      if (_runningBackgroundTasks.isNotEmpty || _activeGoals.isNotEmpty)
                         BackgroundTasksBar(
                           runningTasks: _runningBackgroundTasks,
+                          activeGoals: _activeGoals,
                           onTapTask: _openTaskOutputSheet,
                           onStopTask: _handleStopBackgroundTask,
+                          onStopGoal: (g) {
+                            setState(() => _activeGoals.remove(g));
+                            _handleStopGeneration();
+                          },
                           onViewTasks: () {
                             if (_runningBackgroundTasks.isNotEmpty) {
                               _openTaskOutputSheet(_runningBackgroundTasks.first);
@@ -4556,6 +4616,43 @@ class _UserMessageBubbleState extends State<_UserMessageBubble> {
                   onLocalFile: widget.onLocalFile,
                 ),
                 if (effectiveText.isNotEmpty) const SizedBox(height: 10),
+              ],
+              if (effectiveText.trim().startsWith('/goal') || effectiveText.trim().startsWith('/boost')) ...[
+                Row(
+                  children: [
+                    Icon(
+                      effectiveText.trim().startsWith('/boost') ? Icons.bolt_rounded : Icons.flag_outlined,
+                      size: 14,
+                      color: isDark ? AppColors.accentBlue : scheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      effectiveText.trim().startsWith('/boost') ? 'Boost' : 'Goal 1',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: (isDark ? AppColors.accentBlue : scheme.primary).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Active',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? AppColors.accentBlue : scheme.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
               ],
               if (effectiveText.isNotEmpty) ...[
                 AnimatedSize(

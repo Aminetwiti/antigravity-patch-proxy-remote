@@ -1214,12 +1214,15 @@ func (s *Server) isSessionActivelyRunning(cascadeID string) bool {
 	}
 
 	// Auto-correction : Si Jetbox est resté coincé sur RUNNING/BUSY mais que le fichier transcript n'a plus
-	// d'activité depuis plus de 4 secondes, la session est en réalité stabilisée.
+	// d'activité depuis plus de 5 minutes et aucune tâche n'est en cours, la session est considérée abandonnée.
+	if s.runningTasks != nil && len(s.runningTasks.listTasksForCascade(cascadeID, false)) > 0 {
+		return true
+	}
 	if !isRunningTests() {
 		tPath := findTranscriptPath(cascadeID)
 		if tPath != "" {
 			if fi, err := os.Stat(tPath); err == nil {
-				if time.Since(fi.ModTime()) > 1800*time.Millisecond {
+				if time.Since(fi.ModTime()) > 5*time.Minute {
 					sum.Status = "CASCADE_STATUS_READY"
 					s.jetboxSummaries[cascadeID] = sum
 					return false
@@ -7493,55 +7496,85 @@ func (s *Server) startTranscriptWatchdog() {
 			}
 
 			sessions := s.snapshotSummaries()
-			if len(sessions) == 0 {
-				continue
-			}
-
 			now := time.Now()
-			for cascadeID, sum := range sessions {
-				st := strings.ToUpper(sum.Status)
-				tPath := findTranscriptPath(cascadeID)
 
-				// Détection de désynchronisation : Si le statut Jetbox dit RUNNING mais qu'il n'y a plus aucune activité fichier depuis > 5s
-				if strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY") {
-					if tPath != "" {
-						if fi, err := os.Stat(tPath); err == nil && now.Sub(fi.ModTime()) > 1800*time.Millisecond {
-							s.mu.Lock()
-							if sSum, ok := s.jetboxSummaries[cascadeID]; ok {
-								sSum.Status = "CASCADE_STATUS_READY"
-								s.jetboxSummaries[cascadeID] = sSum
+			if len(sessions) > 0 {
+				for cascadeID, sum := range sessions {
+					st := strings.ToUpper(sum.Status)
+					tPath := findTranscriptPath(cascadeID)
+
+					// Détection de désynchronisation : Si le statut Jetbox dit RUNNING mais qu'il n'y a plus aucune activité fichier depuis > 5 min et aucune tâche en cours
+					if strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY") {
+						hasTasks := s.runningTasks != nil && len(s.runningTasks.listTasksForCascade(cascadeID, false)) > 0
+						if tPath != "" && !hasTasks {
+							if fi, err := os.Stat(tPath); err == nil && now.Sub(fi.ModTime()) > 5*time.Minute {
+								s.mu.Lock()
+								if sSum, ok := s.jetboxSummaries[cascadeID]; ok {
+									sSum.Status = "CASCADE_STATUS_READY"
+									s.jetboxSummaries[cascadeID] = sSum
+								}
+								delete(s.activeCascades, cascadeID)
+								s.mu.Unlock()
+								s.broadcast(OutgoingMessage{
+									Type:      "session_status_update",
+									CascadeID: cascadeID,
+									Data: map[string]interface{}{
+										"status":    "CASCADE_STATUS_READY",
+										"cascadeId": cascadeID,
+									},
+								})
+								continue
 							}
-							delete(s.activeCascades, cascadeID)
-							s.mu.Unlock()
-							s.broadcast(OutgoingMessage{
-								Type:      "session_status_update",
-								CascadeID: cascadeID,
-								Data: map[string]interface{}{
-									"status":    "CASCADE_STATUS_READY",
-									"cascadeId": cascadeID,
-								},
-							})
+						}
+						if !s.IsCascadeActive(cascadeID) {
+							s.startExternalTurnStreamer(cascadeID)
 							continue
 						}
 					}
-					if !s.IsCascadeActive(cascadeID) {
-						s.startExternalTurnStreamer(cascadeID)
+
+					if tPath == "" {
 						continue
 					}
+					fi, err := os.Stat(tPath)
+					if err != nil {
+						continue
+					}
+					if now.Sub(fi.ModTime()) < 6*time.Second {
+						prevSize, seen := lastSizes[cascadeID]
+						lastSizes[cascadeID] = fi.Size()
+						if seen && fi.Size() > prevSize && !s.IsCascadeActive(cascadeID) {
+							s.startExternalTurnStreamer(cascadeID)
+						}
+					}
 				}
+			}
 
-				if tPath == "" {
-					continue
-				}
-				fi, err := os.Stat(tPath)
-				if err != nil {
-					continue
-				}
-				if now.Sub(fi.ModTime()) < 6*time.Second {
-					prevSize, seen := lastSizes[cascadeID]
-					lastSizes[cascadeID] = fi.Size()
-					if seen && fi.Size() > prevSize && !s.IsCascadeActive(cascadeID) {
-						s.startExternalTurnStreamer(cascadeID)
+			// Surveillance directe des répertoires brain pour Antigravity IDE (VS Code) et Antigravity 2.0
+			home, _ := os.UserHomeDir()
+			if home != "" {
+				for _, sub := range []string{"antigravity-ide", "antigravity"} {
+					brainDir := filepath.Join(home, ".gemini", sub, "brain")
+					entries, err := os.ReadDir(brainDir)
+					if err != nil {
+						continue
+					}
+					for _, entry := range entries {
+						if !entry.IsDir() {
+							continue
+						}
+						cid := entry.Name()
+						tPath := filepath.Join(brainDir, cid, ".system_generated", "logs", "transcript.jsonl")
+						fi, err := os.Stat(tPath)
+						if err != nil {
+							continue
+						}
+						if now.Sub(fi.ModTime()) < 6*time.Second {
+							prevSize, seen := lastSizes[cid]
+							lastSizes[cid] = fi.Size()
+							if seen && fi.Size() > prevSize && !s.IsCascadeActive(cid) {
+								s.startExternalTurnStreamer(cid)
+							}
+						}
 					}
 				}
 			}

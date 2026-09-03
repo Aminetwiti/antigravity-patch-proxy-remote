@@ -95,7 +95,7 @@ function Start-Daemon {
             }
         }
     Start-Sleep -Seconds 1
-    $proc = Start-Process -FilePath $DaemonExe -ArgumentList "--port $Port --tunnel cloudflare --auth-token $Token" -WorkingDirectory $DaemonDir -WindowStyle Hidden -PassThru
+    $proc = Start-Process -FilePath $DaemonExe -ArgumentList "--port $Port --tunnel cloudflare --auth-token $Token --allow-first-admin" -WorkingDirectory $DaemonDir -WindowStyle Hidden -PassThru
     if ($proc) {
         Write-Log "relance Start-Process OK (PID $($proc.Id), token=$Token)"
     } else {

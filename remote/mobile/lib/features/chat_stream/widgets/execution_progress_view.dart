@@ -106,6 +106,7 @@ class ExecutionProgressView extends StatefulWidget {
 class _ExecutionProgressViewState extends State<ExecutionProgressView>
     with SingleTickerProviderStateMixin {
   final Set<int> _expandedIndices = {};
+  final Set<int> _collapsedIndices = {};
   final Set<String> _expandedSubIndices = {};
   int _secondsElapsed = 0;
   Timer? _timer;
@@ -716,8 +717,11 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
 
       int fileCount = 0;
       int searchCount = 0;
+      int taskCount = 0;
       for (final item in uniqueExploration) {
-        if (item.type == ExecutionStepType.search) {
+        if (item.title.toLowerCase().contains('task')) {
+          taskCount++;
+        } else if (item.type == ExecutionStepType.search) {
           searchCount++;
         } else {
           fileCount++;
@@ -725,6 +729,9 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       }
 
       final parts = <String>[];
+      if (taskCount > 0) {
+        parts.add(taskCount == 1 ? '1 task' : '$taskCount tasks');
+      }
       if (fileCount > 0) {
         parts.add(fileCount == 1 ? '1 file' : '$fileCount files');
       }
@@ -1004,7 +1011,17 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       return const SizedBox.shrink();
     }
 
-    if (!widget.isStreaming && !_isExpanded) {
+    final hasActionSteps = steps.any((s) =>
+        s.type == ExecutionStepType.command ||
+        s.type == ExecutionStepType.commandGroup ||
+        s.type == ExecutionStepType.fileEdit ||
+        s.type == ExecutionStepType.fileAnalysis ||
+        s.type == ExecutionStepType.search ||
+        s.type == ExecutionStepType.subagent ||
+        s.type == ExecutionStepType.exploredGroup ||
+        s.type == ExecutionStepType.taskFinished);
+
+    if (!widget.isStreaming && !_isExpanded && !hasActionSteps) {
       return _buildCollapsedSummary(steps, scheme, isDark);
     }
 
@@ -1032,7 +1049,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
             children: [
             if (widget.isStreaming)
               _buildLiveAgentHeader(scheme, isDark)
-            else
+            else if (!hasActionSteps)
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: InkWell(
@@ -1310,14 +1327,16 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
 
     final isExploredGroup = item.type == ExecutionStepType.exploredGroup;
     final isCommandGroup = item.type == ExecutionStepType.commandGroup;
-    final isExpanded = _expandedIndices.contains(index) ||
-        ((isExploredGroup || isCommandGroup) && item.isRunning) ||
-        (widget.initiallyExpanded &&
-            (item.type == ExecutionStepType.thought ||
-             item.type == ExecutionStepType.timer ||
-             item.type == ExecutionStepType.processingGroup ||
-             item.type == ExecutionStepType.exploredGroup ||
-             item.type == ExecutionStepType.commandGroup));
+    final isExpanded = isCommandGroup
+        ? !_collapsedIndices.contains(index)
+        : (_expandedIndices.contains(index) ||
+            ((isExploredGroup || isCommandGroup) && item.isRunning) ||
+            (widget.initiallyExpanded &&
+                (item.type == ExecutionStepType.thought ||
+                 item.type == ExecutionStepType.timer ||
+                 item.type == ExecutionStepType.processingGroup ||
+                 item.type == ExecutionStepType.exploredGroup ||
+                 item.type == ExecutionStepType.commandGroup)));
 
     final isThoughtType = item.type == ExecutionStepType.thought || item.type == ExecutionStepType.workedDuration;
 
@@ -1334,10 +1353,18 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                 ? () {
                     HapticFeedback.selectionClick();
                     setState(() {
-                      if (_expandedIndices.contains(index)) {
-                        _expandedIndices.remove(index);
+                      if (isCommandGroup) {
+                        if (_collapsedIndices.contains(index)) {
+                          _collapsedIndices.remove(index);
+                        } else {
+                          _collapsedIndices.add(index);
+                        }
                       } else {
-                        _expandedIndices.add(index);
+                        if (_expandedIndices.contains(index)) {
+                          _expandedIndices.remove(index);
+                        } else {
+                          _expandedIndices.add(index);
+                        }
                       }
                     });
                     if (isThoughtType) {

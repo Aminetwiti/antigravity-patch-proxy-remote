@@ -1759,3 +1759,37 @@ func TestWebSocketCreateWorktree(t *testing.T) {
 	}
 }
 
+// TestIsSessionActivelyRunningDoesNotTimeoutAt1800ms vérifie qu'une session avec statut RUNNING
+// ne repasse pas prématurément à faux après 1800ms d'inactivité disque (ex: test unitaire ou thinking en cours).
+func TestIsSessionActivelyRunningDoesNotTimeoutAt1800ms(t *testing.T) {
+	srv := &Server{
+		jetboxSummaries: map[string]connectrpc.JetboxSummary{
+			"casc-running": {CascadeID: "casc-running", Status: "CASCADE_STATUS_RUNNING"},
+		},
+		runningTasks: newRunningTaskManager(),
+	}
+
+	if !srv.isSessionActivelyRunning("casc-running") {
+		t.Fatal("attendu isSessionActivelyRunning=true pour une session RUNNING")
+	}
+
+	// Même avec une tâche enregistrée, elle reste active
+	srv.runningTasks.startTask("task-1", "php vendor/bin/phpunit", "casc-running", nil)
+	if !srv.isSessionActivelyRunning("casc-running") {
+		t.Fatal("attendu isSessionActivelyRunning=true lorsqu'une commande est en cours")
+	}
+
+	// Quand Jetbox passe à READY et aucune tâche n'est en cours, elle n'est plus active
+	srv.runningTasks.finishTask("task-1", "completed")
+	srv.mu.Lock()
+	sum := srv.jetboxSummaries["casc-running"]
+	sum.Status = "CASCADE_STATUS_READY"
+	srv.jetboxSummaries["casc-running"] = sum
+	srv.mu.Unlock()
+
+	if srv.isSessionActivelyRunning("casc-running") {
+		t.Fatal("attendu isSessionActivelyRunning=false quand la session passe à READY")
+	}
+}
+
+

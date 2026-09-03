@@ -1580,7 +1580,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = widget.isSelected;
-    final isWaiting = widget.session.isWaiting;
+    final isWaiting = widget.session.isWaitingAction;
     final isRunning = widget.session.isRunning && !isWaiting;
     final isUnread = (widget.isUnread || widget.session.hasUnread) && !isSelected && !isRunning && !isWaiting;
     final cleaned = widget.session.title.trim().replaceAll('**', '').replaceFirst(RegExp(r'^Task:\s*', caseSensitive: false), '').trim();

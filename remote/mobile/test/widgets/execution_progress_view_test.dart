@@ -238,5 +238,42 @@ Ran Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine }
       expect(find.text('Thinking…'), findsOneWidget);
       expect(find.byType(AntigravityDotPulseLoader), findsOneWidget);
     });
+
+    testWidgets('Renders action steps (Explored, Merge finished, Ran commands) without collapsing when not streaming', (tester) async {
+      const complexThought = '''
+Explored 1 task
+Merge origin/main finished
+Thought for 1s
+Ran git diff --name-only --diff-filter=U
+Ran git log -n 5 origin/main --oneline
+Ran git merge-base HEAD origin/main
+''';
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: const Scaffold(
+            body: ExecutionProgressView(
+              messageId: 'msg-action-steps',
+              thoughtText: complexThought,
+              isStreaming: false,
+              initiallyExpanded: false,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      // Action steps must be visible directly without being hidden behind a collapsed summary
+      expect(find.text('Explored'), findsOneWidget);
+      expect(find.text('1 task'), findsOneWidget);
+      expect(find.text('Merge origin/main finished'), findsOneWidget);
+      expect(find.text('Thought'), findsOneWidget);
+      expect(find.text('for 1s'), findsOneWidget);
+      expect(find.text('3 commands'), findsOneWidget);
+      expect(find.text('Ran'), findsOneWidget);
+      expect(find.text('git diff --name-only --diff-filter=U'), findsOneWidget);
+    });
   });
 }

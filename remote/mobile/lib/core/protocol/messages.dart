@@ -138,12 +138,14 @@ class CascadeSession {
         st.contains('STREAMING') ||
         st.contains('TASK') ||
         st.contains('EXECUTING') ||
-        st.contains('BACKGROUND');
+        st.contains('BACKGROUND') ||
+        st.contains('GOAL') ||
+        st.contains('BOOST');
   }
 
   bool get isBackgroundTask {
     final st = status.toUpperCase();
-    return st.contains('BACKGROUND') || st.contains('TASK') || st.contains('EXECUTING');
+    return st.contains('BACKGROUND') || st.contains('TASK') || st.contains('EXECUTING') || st.contains('GOAL');
   }
 
   bool get isWaitingAction {
@@ -154,7 +156,6 @@ class CascadeSession {
   bool get isWaiting {
     final st = status.toUpperCase();
     return isWaitingAction ||
-        isBackgroundTask ||
         st.contains('WAIT') ||
         st.contains('APPROVAL') ||
         st.contains('QUESTION') ||

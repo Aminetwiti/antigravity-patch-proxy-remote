@@ -190,6 +190,10 @@ class StreamDeltaParser {
       }
     } else {
       arg = arg.trim();
+      while ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
+        if (arg.length < 2) break;
+        arg = arg.substring(1, arg.length - 1).trim();
+      }
     }
     if (arg.length > 70) {
       arg = '${arg.substring(0, 67)}…';

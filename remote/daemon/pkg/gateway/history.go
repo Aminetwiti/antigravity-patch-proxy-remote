@@ -1217,6 +1217,9 @@ func formatToolCallStep(name string, argsRaw json.RawMessage) string {
 			}
 		}
 	}
+	for len(arg) >= 2 && ((arg[0] == '"' && arg[len(arg)-1] == '"') || (arg[0] == '\'' && arg[len(arg)-1] == '\'')) {
+		arg = strings.TrimSpace(arg[1 : len(arg)-1])
+	}
 
 	cleanBase := arg
 	if !strings.Contains(lowerName, "run_command") && !strings.Contains(lowerName, "command") && !strings.Contains(lowerName, "bash") && !strings.Contains(lowerName, "terminal") {
@@ -1602,7 +1605,14 @@ func parseTranscriptFullTurns(transcriptPath string) ([]HistoryMessage, error) {
 		if entry.Thinking != "" {
 			thoughtClean := cleanRawContent(entry.Thinking)
 			if thoughtClean != "" {
-				currentTurnSteps = append(currentTurnSteps, "Thought for 7s", thoughtClean)
+				dur := "1s"
+				if !currentTurnStart.IsZero() && !entryTime.IsZero() && entryTime.After(currentTurnStart) {
+					secs := int(entryTime.Sub(currentTurnStart).Seconds())
+					if secs > 0 {
+						dur = fmt.Sprintf("%ds", secs)
+					}
+				}
+				currentTurnSteps = append(currentTurnSteps, fmt.Sprintf("Thought for %s", dur), thoughtClean)
 			}
 		}
 

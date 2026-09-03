@@ -126,11 +126,12 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? AppColors.surfaceRaised : Colors.white;
-    final borderColor = isDark ? AppColors.borderSubtle : const Color(0xFFE2E4E9);
-    final textPrimary = isDark ? AppColors.inkPrimary : const Color(0xFF18181B);
-    final textSecondary = isDark ? AppColors.inkSecondary : const Color(0xFF71717A);
+    final bg = isDark ? AppColors.surfaceRaised : scheme.surfaceContainer;
+    final borderColor = isDark ? AppColors.borderSubtle : scheme.outlineVariant;
+    final textPrimary = isDark ? AppColors.inkPrimary : scheme.onSurface;
+    final textSecondary = isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant;
 
     return Dialog(
       backgroundColor: bg,

@@ -144,32 +144,44 @@ class SessionTopTabs extends StatelessWidget {
               color: isDark ? AppColors.borderSubtle : scheme.outlineVariant,
             ),
             if (onToggleSearch != null)
-              IconButton(
-                key: const Key('toggle-search-btn'),
-                icon: const Icon(Icons.search_rounded, size: 18),
-                tooltip: 'Rechercher dans la conversation',
-                onPressed: onToggleSearch,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 38, minHeight: 42),
-                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+              Semantics(
+                button: true,
+                label: 'Rechercher dans la conversation',
+                child: IconButton(
+                  key: const Key('toggle-search-btn'),
+                  icon: const Icon(Icons.search_rounded, size: 18),
+                  tooltip: 'Rechercher dans la conversation',
+                  onPressed: onToggleSearch,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 42, minHeight: 44),
+                  color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                ),
               ),
             if (onNewTab != null)
-              IconButton(
-                icon: const Icon(Icons.add, size: 18),
-                tooltip: 'Nouvelle conversation',
-                onPressed: onNewTab,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 38, minHeight: 42),
-                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+              Semantics(
+                button: true,
+                label: 'Nouvelle conversation',
+                child: IconButton(
+                  icon: const Icon(Icons.add, size: 18),
+                  tooltip: 'Nouvelle conversation',
+                  onPressed: onNewTab,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 42, minHeight: 44),
+                  color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                ),
               ),
             if (onToggleSidebar != null)
-              IconButton(
-                icon: const Icon(Icons.splitscreen_rounded, size: 16),
-                tooltip: 'Panneau latéral',
-                onPressed: onToggleSidebar,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 38, minHeight: 42),
-                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+              Semantics(
+                button: true,
+                label: 'Panneau latéral',
+                child: IconButton(
+                  icon: const Icon(Icons.splitscreen_rounded, size: 16),
+                  tooltip: 'Panneau latéral',
+                  onPressed: onToggleSidebar,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 42, minHeight: 44),
+                  color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                ),
               ),
             const SizedBox(width: 4),
           ],

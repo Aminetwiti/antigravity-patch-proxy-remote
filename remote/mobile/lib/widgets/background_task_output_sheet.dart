@@ -280,85 +280,105 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                 const SizedBox(width: 6),
 
                 // Recherche / Filtre
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  padding: const EdgeInsets.all(6),
-                  icon: Icon(_isSearching ? Icons.search_off_rounded : Icons.search_rounded, size: 16),
-                  tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher dans les logs',
-                  color: _isSearching
-                      ? (isDark ? AppColors.accentBlue : scheme.primary)
-                      : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      _isSearching = !_isSearching;
-                      if (!_isSearching) {
-                        _searchQuery = '';
-                        _searchController.clear();
-                      }
-                    });
-                  },
+                Semantics(
+                  button: true,
+                  label: _isSearching ? 'Fermer la recherche' : 'Rechercher dans les logs',
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                    padding: const EdgeInsets.all(7),
+                    icon: Icon(_isSearching ? Icons.search_off_rounded : Icons.search_rounded, size: 16),
+                    tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher dans les logs',
+                    color: _isSearching
+                        ? (isDark ? AppColors.accentBlue : scheme.primary)
+                        : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _isSearching = !_isSearching;
+                        if (!_isSearching) {
+                          _searchQuery = '';
+                          _searchController.clear();
+                        }
+                      });
+                    },
+                  ),
                 ),
 
                 // Rafraîchir
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  padding: const EdgeInsets.all(6),
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                  tooltip: 'Rafraîchir les logs',
-                  color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    _fetchLog();
-                  },
+                Semantics(
+                  button: true,
+                  label: 'Rafraîchir les logs',
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                    padding: const EdgeInsets.all(7),
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    tooltip: 'Rafraîchir les logs',
+                    color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      _fetchLog();
+                    },
+                  ),
                 ),
 
                 // Copier
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  padding: const EdgeInsets.all(6),
-                  icon: const Icon(Icons.copy_rounded, size: 16),
-                  tooltip: 'Copier la sortie',
-                  color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: outputText));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Sortie copiée dans le presse-papier'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                  },
+                Semantics(
+                  button: true,
+                  label: 'Copier la sortie',
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                    padding: const EdgeInsets.all(7),
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    tooltip: 'Copier la sortie',
+                    color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: outputText));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Sortie copiée dans le presse-papier'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                  ),
                 ),
 
                 // Arrêter la tâche
                 if (isRunning && widget.onStop != null) ...[
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    padding: const EdgeInsets.all(6),
-                    icon: Icon(Icons.stop_circle_rounded, size: 18, color: isDark ? AppColors.danger : scheme.error),
-                    tooltip: 'Arrêter la tâche',
-                    onPressed: () {
-                      HapticFeedback.mediumImpact();
-                      widget.onStop!();
-                      Navigator.of(context).pop();
-                    },
+                  Semantics(
+                    button: true,
+                    label: 'Arrêter la tâche',
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                      padding: const EdgeInsets.all(7),
+                      icon: Icon(Icons.stop_circle_rounded, size: 18, color: isDark ? AppColors.danger : scheme.error),
+                      tooltip: 'Arrêter la tâche',
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        widget.onStop!();
+                        Navigator.of(context).pop();
+                      },
+                    ),
                   ),
                 ],
 
                 // Fermer
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  padding: const EdgeInsets.all(6),
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  tooltip: 'Fermer',
-                  color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
-                  onPressed: () => Navigator.of(context).pop(),
+                Semantics(
+                  button: true,
+                  label: 'Fermer',
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                    padding: const EdgeInsets.all(7),
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    tooltip: 'Fermer',
+                    color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
                 ),
               ],
             ),

@@ -7,16 +7,22 @@ import 'package:mobile/theme/app_colors.dart';
 /// fluide (scrollable) lorsqu'il y a plusieurs tâches simultanées.
 class BackgroundTasksBar extends StatefulWidget {
   final List<String> runningTasks;
+  final List<String> activeGoals;
   final ValueChanged<String>? onTapTask;
   final ValueChanged<String>? onStopTask;
+  final ValueChanged<String>? onTapGoal;
+  final ValueChanged<String>? onStopGoal;
   final VoidCallback? onViewTasks;
   final bool initiallyExpanded;
 
   const BackgroundTasksBar({
     super.key,
     required this.runningTasks,
+    this.activeGoals = const [],
     this.onTapTask,
     this.onStopTask,
+    this.onTapGoal,
+    this.onStopGoal,
     this.onViewTasks,
     this.initiallyExpanded = true,
   });
@@ -55,12 +61,17 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
 
   @override
   Widget build(BuildContext context) {
-    if (widget.runningTasks.isEmpty) return const SizedBox.shrink();
+    final taskCount = widget.runningTasks.length;
+    final goalCount = widget.activeGoals.length;
+    if (taskCount == 0 && goalCount == 0) return const SizedBox.shrink();
 
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final count = widget.runningTasks.length;
-    final taskLabel = count == 1 ? '1 task running' : '$count tasks running';
+    final taskPart = taskCount == 1 ? '1 task running' : '$taskCount tasks running';
+    final goalPart = goalCount == 1 ? '1 active goal' : '$goalCount active goals';
+    final taskLabel = (taskCount > 0 && goalCount > 0)
+        ? '$taskPart, $goalPart'
+        : (taskCount > 0 ? taskPart : goalPart);
     final viewInsets = MediaQuery.of(context).viewInsets;
     final rawInsetsBottom =
         View.of(context).viewInsets.bottom / MediaQuery.of(context).devicePixelRatio;
@@ -139,15 +150,88 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
       );
     }
 
+    Widget buildGoalItem(String goal) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            widget.onTapGoal?.call(goal);
+          },
+          child: Row(
+            children: [
+              RotationTransition(
+                turns: _spinController,
+                child: Container(
+                  width: 11,
+                  height: 11,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isDark ? AppColors.accentBlue : scheme.primary,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  goal,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? AppColors.inkPrimary : scheme.onSurface,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (widget.onStopGoal != null) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    widget.onStopGoal!(goal);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: AppColors.danger.withValues(alpha: 0.3),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Text(
+                      'Stop',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.danger.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    final allCount = taskCount + goalCount;
+
     return Container(
       margin: EdgeInsets.symmetric(horizontal: 12, vertical: hasKeyboard ? 2 : 4),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(10),
+        color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark
               ? AppColors.borderSubtle
-              : scheme.outlineVariant.withValues(alpha: 0.5),
+              : scheme.outlineVariant.withValues(alpha: 0.6),
           width: 1,
         ),
       ),
@@ -156,7 +240,7 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // En-tête : "1 task running" + chevron cliquable
+          // En-tête : "1 task running, 1 active goal" + chevron cliquable
           InkWell(
             borderRadius: BorderRadius.circular(6),
             onTap: () {
@@ -200,11 +284,11 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
                       SizedBox(height: hasKeyboard ? 4 : 6),
                       ConstrainedBox(
                         constraints: BoxConstraints(
-                          maxHeight: hasKeyboard ? 80 : (count > 3 ? 140 : 180),
+                          maxHeight: hasKeyboard ? 80 : (allCount > 3 ? 140 : 180),
                         ),
                         child: Scrollbar(
                           controller: _scrollController,
-                          thumbVisibility: count > 2,
+                          thumbVisibility: allCount > 2,
                           radius: const Radius.circular(4),
                           thickness: 3,
                           child: ListView.separated(
@@ -214,10 +298,13 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
                               parent: AlwaysScrollableScrollPhysics(),
                             ),
                             padding: const EdgeInsets.only(right: 2),
-                            itemCount: widget.runningTasks.length,
+                            itemCount: allCount,
                             separatorBuilder: (_, __) => const SizedBox(height: 2),
                             itemBuilder: (context, index) {
-                              return buildTaskItem(widget.runningTasks[index]);
+                              if (index < taskCount) {
+                                return buildTaskItem(widget.runningTasks[index]);
+                              }
+                              return buildGoalItem(widget.activeGoals[index - taskCount]);
                             },
                           ),
                         ),
