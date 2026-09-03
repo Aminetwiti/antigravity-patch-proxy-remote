@@ -91,7 +91,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: remote/mobile
-        run: flutter pub get
+        run: |
+          flutter pub get
+          flutter gen-l10n
 
       - name: Build Split APKs (per-ABI)
         working-directory: remote/mobile
@@ -153,7 +155,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: remote/mobile
-        run: flutter pub get
+        run: |
+          flutter pub get
+          flutter gen-l10n
 
       - name: Build iOS No Codesign
         working-directory: remote/mobile

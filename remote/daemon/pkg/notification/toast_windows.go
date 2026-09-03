@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 func sendWindowsToast(title, message string) {
@@ -28,6 +29,6 @@ $notifier.Show($toast)
 `, cleanTitle, cleanMessage)
 
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psScript)
-	hideWindow(cmd)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	_ = cmd.Run()
 }
