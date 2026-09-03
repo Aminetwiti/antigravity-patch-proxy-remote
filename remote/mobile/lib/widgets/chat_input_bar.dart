@@ -71,6 +71,15 @@ const List<_SlashCommand> _slashCommands = [
   _SlashCommand(Icons.search, '/search', 'Semantic project search'),
 ];
 
+String _normalizeEffort(String? raw) {
+  if (raw == null || raw.isEmpty) return 'Medium';
+  final lower = raw.toLowerCase().trim();
+  if (lower == 'faible' || lower == 'low') return 'Low';
+  if (lower == 'moyen' || lower == 'medium') return 'Medium';
+  if (lower == 'élevé' || lower == 'high') return 'High';
+  return raw[0].toUpperCase() + raw.substring(1);
+}
+
 class ChatInputBar extends StatefulWidget {
   /// Signature unique : message + mode file + modèle sélectionné.
   /// C2 (audit clean-code-guard) : typée — plus de `Function` opaque ni de
@@ -221,17 +230,14 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
   int? _selectedModelEnum = 312;
   List<AntigravityModel> _availableModels = ModelCatalog.standardModels;
 
+
   String get _displayModelName {
     var name = _selectedModel.trim();
     if (name.contains('/')) {
       name = name.split('/').last.trim();
     }
     if (_reasoningEffort.isNotEmpty) {
-      final effortLabel = _reasoningEffort == 'Élevé'
-          ? 'High'
-          : (_reasoningEffort == 'Faible'
-              ? 'Low'
-              : (_reasoningEffort == 'Moyen' ? 'Medium' : _reasoningEffort));
+      final effortLabel = _normalizeEffort(_reasoningEffort);
       if (!name.toLowerCase().contains(effortLabel.toLowerCase())) {
         return '$name $effortLabel';
       }
@@ -261,8 +267,8 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
 
   bool _isSendPressed = false;
   SendMode _sendMode = SendMode.immediate;
-  // Feature Niveaux d'effort de raisonnement (Faible, Moyen, Élevé)
-  String _reasoningEffort = 'Moyen'; // Options: 'Faible', 'Moyen', 'Élevé'
+  // Feature Niveaux d'effort de raisonnement (Low, Medium, High)
+  String _reasoningEffort = 'Medium'; // Options: 'Low', 'Medium', 'High'
   // Feature multi-attachements fichiers et images (Quiet Console)
   final List<_AttachedItem> _attachments = [];
   double? _uploadProgress;
@@ -2176,8 +2182,8 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
     CustomDropdownOverlay.show(
       context: context,
       targetKey: _modelButtonKey,
-      width: 300,
-      maxHeight: 480,
+      width: 310,
+      maxHeight: 560,
       child: _ModelDropdownMenuContent(
         standardModels: standard,
         customModels: custom,
@@ -2703,63 +2709,66 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
 
                       // Model & Reasoning Effort Pill with Brand Dot (Expansion Priority)
                       Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: BouncingTap(
-                            key: _modelButtonKey,
-                            hapticType: BouncingHapticType.selection,
-                            onTap: () => _showModelDropdown(context),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4.5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isDark ? AppColors.surfaceInput : const Color(0xFF27272A),
-                                borderRadius: BorderRadius.circular(AppRadius.pill),
-                                border: Border.all(
-                                  color: isDark ? AppColors.borderSubtle : const Color(0xFF3F3F46),
-                                  width: 0.8,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final maxTextWidth = (constraints.maxWidth - 50).clamp(20.0, 260.0);
+                            return Align(
+                              alignment: Alignment.centerLeft,
+                              child: BouncingTap(
+                                key: _modelButtonKey,
+                                hapticType: BouncingHapticType.selection,
+                                onTap: () => _showModelDropdown(context),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4.5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? AppColors.surfaceInput : const Color(0xFF27272A),
+                                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                                    border: Border.all(
+                                      color: isDark ? AppColors.borderSubtle : const Color(0xFF3F3F46),
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 7,
+                                        height: 7,
+                                        decoration: BoxDecoration(
+                                          color: isQueued ? scheme.primary : providerColor,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      ConstrainedBox(
+                                        constraints: BoxConstraints(maxWidth: maxTextWidth),
+                                        child: Text(
+                                          _displayModelName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          softWrap: false,
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            color: isDark ? AppColors.inkPrimary : const Color(0xFFF1F1F1),
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Icon(
+                                        Icons.keyboard_arrow_up_rounded,
+                                        size: 15,
+                                        color: isDark ? AppColors.inkMuted : const Color(0xFF858585),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: BoxDecoration(
-                                      color: isQueued ? scheme.primary : providerColor,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 5),
-                                  ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      maxWidth: MediaQuery.of(context).size.width * 0.52,
-                                    ),
-                                    child: Text(
-                                      _displayModelName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      softWrap: false,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: isDark ? AppColors.inkPrimary : const Color(0xFFF1F1F1),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Icon(
-                                    Icons.keyboard_arrow_up_rounded,
-                                    size: 15,
-                                    color: isDark ? AppColors.inkMuted : const Color(0xFF858585),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                            );
+                          },
                         ),
                       ),
 
@@ -2830,7 +2839,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                           );
                         },
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                          constraints: const BoxConstraints(minWidth: 34, minHeight: 44),
                           child: Center(
                             child: Container(
                               width: 32,
@@ -2912,7 +2921,7 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                             onTapCancel:
                                 () => setState(() => _isSendPressed = false),
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 44),
                               child: Center(
                                 child: AnimatedScale(
                                   scale: _isSendPressed ? 0.85 : 1.0,
@@ -3416,9 +3425,9 @@ class _ModelDropdownMenuContentState extends State<_ModelDropdownMenuContent> {
 
     return Material(
       color: Colors.transparent,
-      child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        shrinkWrap: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -3430,11 +3439,19 @@ class _ModelDropdownMenuContentState extends State<_ModelDropdownMenuContent> {
               ),
             ),
           ),
-          ...widget.standardModels.map((m) => _buildStandardModelRow(m, isDark, scheme, textTheme)),
-          if (widget.customModels.isNotEmpty) ...[
-            Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, height: 1),
-            ...widget.customModels.map((m) => _buildCustomModelRow(m, isDark, scheme, textTheme)),
-          ],
+          Flexible(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 0),
+              shrinkWrap: true,
+              children: [
+                ...widget.standardModels.map((m) => _buildStandardModelRow(m, isDark, scheme, textTheme)),
+                if (widget.customModels.isNotEmpty) ...[
+                  Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, height: 1),
+                  ...widget.customModels.map((m) => _buildCustomModelRow(m, isDark, scheme, textTheme)),
+                ],
+              ],
+            ),
+          ),
           Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant, height: 1),
           _buildViewUsageRow(isDark, scheme, textTheme),
         ],
@@ -3453,8 +3470,8 @@ class _ModelDropdownMenuContentState extends State<_ModelDropdownMenuContent> {
     final isExpanded = _expandedBaseName == model.baseName;
 
     final currentEffort = isSelected
-        ? (widget.reasoningEffort.isNotEmpty ? _capitalize(widget.reasoningEffort) : (model.effort ?? 'Medium'))
-        : (model.effort ?? 'Medium');
+        ? _normalizeEffort(widget.reasoningEffort)
+        : _normalizeEffort(model.effort);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -3537,7 +3554,7 @@ class _ModelDropdownMenuContentState extends State<_ModelDropdownMenuContent> {
                       ),
                     ],
                     const SizedBox(width: 8),
-                    if (isSelected && !model.supportsEffort)
+                    if (isSelected)
                       Icon(Icons.check, size: 16, color: scheme.primary)
                     else if (model.supportsEffort)
                       GestureDetector(
@@ -3635,9 +3652,9 @@ class _ModelDropdownMenuContentState extends State<_ModelDropdownMenuContent> {
         widget.selectedModel.toLowerCase().contains(model.displayName.toLowerCase());
 
     Color statusColor = scheme.primary;
-    if (model.status == 'degraded') {
+    if (model.status == 'degraded' || (model.latencyMs != null && model.latencyMs! >= 500 && model.latencyMs! < 1200)) {
       statusColor = AppColors.warning;
-    } else if (model.status == 'offline') {
+    } else if (model.status == 'offline' || (model.latencyMs != null && model.latencyMs! >= 1200)) {
       statusColor = scheme.error;
     } else {
       statusColor = AppColors.positive;
@@ -3724,11 +3741,6 @@ class _ModelDropdownMenuContentState extends State<_ModelDropdownMenuContent> {
         ),
       ),
     );
-  }
-
-  String _capitalize(String s) {
-    if (s.isEmpty) return s;
-    return s[0].toUpperCase() + s.substring(1);
   }
 }
 

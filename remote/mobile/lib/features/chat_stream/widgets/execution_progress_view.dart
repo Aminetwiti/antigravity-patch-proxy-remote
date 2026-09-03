@@ -598,7 +598,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         addRawItem(ExecutionStepItem(
           type: ExecutionStepType.narrativeText,
           action: '',
-          title: line,
+          title: line.replaceAll('**', '').replaceAll('*', '').trim(),
           isExpandable: false,
         ));
         continue;
@@ -848,7 +848,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     widget.statusTitle ??
                         (widget.isWaitingForTask
                             ? 'Waiting for background task...'
-                            : 'Agent en cours d\'exécution'),
+                            : 'Agent en cours'),
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,

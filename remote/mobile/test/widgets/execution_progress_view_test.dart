@@ -47,7 +47,7 @@ Task 424 finished
       await tester.pump(const Duration(milliseconds: 100));
 
       // 1. Vérification de l'en-tête de streaming et du modèle actif
-      expect(find.textContaining("Agent en cours d'exécution"), findsOneWidget);
+      expect(find.textContaining("Agent en cours"), findsOneWidget);
       expect(find.text('Gemini 3.7 Flash High'), findsOneWidget);
 
       // 2. Vérification des tâches terminées (Task 332 finished, Task 424 finished)
@@ -109,7 +109,7 @@ Task 424 finished
 
       await tester.pump();
 
-      expect(find.text("Agent en cours d'exécution"), findsNothing);
+      expect(find.textContaining("Agent en cours"), findsNothing);
       expect(find.text('Task 332 finished'), findsOneWidget);
       expect(find.text('Task 424 finished'), findsOneWidget);
       expect(find.text('for 19m'), findsOneWidget);

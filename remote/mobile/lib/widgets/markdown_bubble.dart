@@ -331,7 +331,73 @@ class _ParagraphView extends StatelessWidget {
     );
 
     Widget childWidget;
-    if (block.isQuote) {
+    if (block.alertType != null) {
+      Color alertColor = scheme.primary;
+      IconData alertIcon = Icons.info_outline_rounded;
+      final type = block.alertType!.toUpperCase();
+      switch (type) {
+        case 'IMPORTANT':
+        case 'CAUTION':
+          alertColor = AppColors.danger;
+          alertIcon = Icons.report_problem_outlined;
+          break;
+        case 'WARNING':
+          alertColor = const Color(0xFFF59E0B);
+          alertIcon = Icons.warning_amber_rounded;
+          break;
+        case 'TIP':
+          alertColor = const Color(0xFF10B981);
+          alertIcon = Icons.lightbulb_outline_rounded;
+          break;
+        case 'NOTE':
+        default:
+          alertColor = isDark ? AppColors.accentBlue : scheme.primary;
+          alertIcon = Icons.info_outline_rounded;
+          break;
+      }
+
+      childWidget = Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: alertColor.withValues(alpha: isDark ? 0.12 : 0.08),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border(
+            left: BorderSide(
+              color: alertColor,
+              width: 3.5,
+            ),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(alertIcon, size: 14, color: alertColor),
+                  const SizedBox(width: 5),
+                  Text(
+                    type,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: alertColor,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (spans.isNotEmpty && (block.paragraph?.trim().isNotEmpty ?? false))
+              Text.rich(TextSpan(children: spans)),
+          ],
+        ),
+      );
+    } else if (block.isQuote) {
       childWidget = Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.only(left: 10, top: 3, bottom: 3),

@@ -56,6 +56,7 @@ class MarkdownBlock {
   final int headerLevel;
   final bool isDivider;
   final bool isQuote;
+  final String? alertType;
 
   const MarkdownBlock.paragraph(
     this.paragraph, {
@@ -63,6 +64,7 @@ class MarkdownBlock {
     this.headerLevel = 0,
     this.isDivider = false,
     this.isQuote = false,
+    this.alertType,
   })  : code = null,
         toolCall = null,
         table = null;
@@ -74,7 +76,8 @@ class MarkdownBlock {
         isListItem = false,
         headerLevel = 0,
         isDivider = false,
-        isQuote = false;
+        isQuote = false,
+        alertType = null;
 
   const MarkdownBlock.toolCall(this.toolCall)
       : paragraph = null,
@@ -83,7 +86,8 @@ class MarkdownBlock {
         isListItem = false,
         headerLevel = 0,
         isDivider = false,
-        isQuote = false;
+        isQuote = false,
+        alertType = null;
 
   const MarkdownBlock.table(this.table)
       : paragraph = null,
@@ -92,7 +96,8 @@ class MarkdownBlock {
         isListItem = false,
         headerLevel = 0,
         isDivider = false,
-        isQuote = false;
+        isQuote = false,
+        alertType = null;
 }
 
 /// Callback invoked when a markdown link pointing to a local file
@@ -241,9 +246,34 @@ class MarkdownRenderer {
           continue;
         }
 
+        final alertMatch = RegExp(r'^(?:>\s*)?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$', caseSensitive: false).firstMatch(trimmed);
+        if (alertMatch != null) {
+          final type = alertMatch.group(1)!.toUpperCase();
+          final extra = alertMatch.group(2)?.trim() ?? '';
+          blocks.add(MarkdownBlock.paragraph(
+            extra,
+            alertType: type,
+            isQuote: true,
+          ));
+          i++;
+          continue;
+        }
+
         final quoteMatch = _quoteRe.firstMatch(trimmed);
         if (quoteMatch != null) {
-          blocks.add(MarkdownBlock.paragraph(quoteMatch.group(1)!.trim(), isQuote: true));
+          final qText = quoteMatch.group(1)!.trim();
+          final qAlert = RegExp(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$', caseSensitive: false).firstMatch(qText);
+          if (qAlert != null) {
+            final type = qAlert.group(1)!.toUpperCase();
+            final extra = qAlert.group(2)?.trim() ?? '';
+            blocks.add(MarkdownBlock.paragraph(
+              extra,
+              alertType: type,
+              isQuote: true,
+            ));
+          } else {
+            blocks.add(MarkdownBlock.paragraph(qText, isQuote: true));
+          }
           i++;
           continue;
         }
@@ -372,6 +402,30 @@ class MarkdownRenderer {
     }
   }
 
+  static String _normalizeLatexSymbols(String input) {
+    if (!input.contains(r'$') && !input.contains(r'\rightarrow') && !input.contains(r'\Rightarrow')) {
+      return input;
+    }
+    var res = input;
+    res = res.replaceAll(r'$\rightarrow$', '→').replaceAll(r'\rightarrow', '→');
+    res = res.replaceAll(r'$\leftarrow$', '←').replaceAll(r'\leftarrow', '←');
+    res = res.replaceAll(r'$\Rightarrow$', '⇒').replaceAll(r'\Rightarrow', '⇒');
+    res = res.replaceAll(r'$\Leftarrow$', '⇐').replaceAll(r'\Leftarrow', '⇐');
+    res = res.replaceAll(r'$\leftrightarrow$', '↔').replaceAll(r'\leftrightarrow', '↔');
+    res = res.replaceAll(r'$\Leftrightarrow$', '⇔').replaceAll(r'\Leftrightarrow', '⇔');
+    res = res.replaceAll(r'$\approx$', '≈').replaceAll(r'\approx', '≈');
+    res = res.replaceAll(r'$\le$', '≤').replaceAll(r'\le', '≤');
+    res = res.replaceAll(r'$\ge$', '≥').replaceAll(r'\ge', '≥');
+    res = res.replaceAll(r'$\neq$', '≠').replaceAll(r'\neq', '≠');
+    res = res.replaceAll(r'$\pm$', '±').replaceAll(r'\pm', '±');
+    res = res.replaceAll(r'$\times$', '×').replaceAll(r'\times', '×');
+    res = res.replaceAll(r'$\checkmark$', '✓').replaceAll(r'\checkmark', '✓');
+    res = res.replaceAll(r'$\dots$', '…').replaceAll(r'\dots', '…');
+    res = res.replaceAll(r'$\bullet$', '•').replaceAll(r'\bullet', '•');
+    res = res.replaceAll(r'$\degree$', '°').replaceAll(r'\degree', '°');
+    return res;
+  }
+
   /// Builds inline [TextSpan]s for a paragraph, resolving bold/italic/code.
   /// [onLocalFile] (P5) est appelé quand l'utilisateur tape un lien markdown
   /// vers un fichier local (file:///...) — le caller ouvre le fichier (ex.
@@ -383,7 +437,7 @@ class MarkdownRenderer {
     LocalFileTap? onLocalFile,
     String? searchQuery,
   }) {
-    final safeText = _sanitizeUtf16(text);
+    final safeText = _normalizeLatexSymbols(_sanitizeUtf16(text));
     final bool canCache = searchQuery == null && onLocalFile == null;
     final String cacheKey = canCache
         ? '${safeText.hashCode}_${base.fontSize}_${base.color?.value}_${base.fontWeight}_${base.fontStyle}_${scheme.primary.value}'

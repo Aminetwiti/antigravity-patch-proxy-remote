@@ -3110,6 +3110,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     );
 
     final canPopScreen = _activeArtifact == null && _currentTab == SessionTabType.chat && !_isSearching;
+    final isDocumentMode = _activeArtifact != null || _currentTab == SessionTabType.plan || _currentTab == SessionTabType.review;
 
     final content = ZenithalCanvas(
       child: Center(
@@ -3193,11 +3194,12 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           ),
           if (_currentSessionQuestions.isNotEmpty || _currentSessionApprovals.isNotEmpty)
             _buildApprovalArea(hasKeyboard),
-          if (_sideQuestion != null ||
-              _runningBackgroundTasks.isNotEmpty ||
-              _subagents.isNotEmpty ||
-              (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
-              _topActiveBanner != null)
+          if (!isDocumentMode &&
+              (_sideQuestion != null ||
+                  _runningBackgroundTasks.isNotEmpty ||
+                  _subagents.isNotEmpty ||
+                  (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
+                  _topActiveBanner != null))
             ConstrainedBox(
                 constraints: BoxConstraints(maxHeight: hasKeyboard ? 110 : 200),
                 child: SingleChildScrollView(
@@ -3270,10 +3272,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                   ),
                 ),
               ),
-          if (isCurrentSessionArchived && !_hasCurrentActiveStream && _activeStreamCount == 0)
-            _buildArchivedChatBar(scheme, Theme.of(context).brightness == Brightness.dark)
-          else
-            ChatInputBar(
+          if (!isDocumentMode) ...[
+            if (isCurrentSessionArchived && !_hasCurrentActiveStream && _activeStreamCount == 0)
+              _buildArchivedChatBar(scheme, Theme.of(context).brightness == Brightness.dark)
+            else
+              ChatInputBar(
               key: _chatInputKey,
               onSend: _handleSendMessage,
               isConnected: isConnected,
@@ -3302,6 +3305,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                     cur.contains('@browser') ? cur : (cur.isEmpty ? '@browser ' : '$cur @browser '));
               },
             ),
+          ],
         ],
       ),
     ),
@@ -4278,6 +4282,17 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (_latestPlanText == null || _latestPlanText!.isEmpty) {
+      final sessionArts = _sessionArtifacts[widget.activeSessionId] ?? [];
+      final hasPlanArtifact = _artifacts.any((a) => a.toLowerCase().contains('plan')) ||
+          sessionArts.any((a) => a.toLowerCase().contains('plan'));
+      if (hasPlanArtifact) {
+        final planArtifactName = _artifacts.firstWhere(
+          (a) => a.toLowerCase().contains('plan'),
+          orElse: () => sessionArts.firstWhere((a) => a.toLowerCase().contains('plan')),
+        );
+        return _buildArtifactTabContent(planArtifactName);
+      }
+
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),

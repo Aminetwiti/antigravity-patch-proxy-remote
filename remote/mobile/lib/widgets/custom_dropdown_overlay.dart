@@ -39,8 +39,9 @@ class CustomDropdownOverlay {
         double top = showAbove ? -1 : offset.dy + size.height + 8;
         double bottom = showAbove ? (screenHeight - offset.dy + 8) : 0.0;
 
-        double left = alignRight ? -1 : offset.dx;
-        double right = alignRight ? (screenWidth - offset.dx - size.width) : -1;
+        final effectiveWidth = (width ?? size.width).clamp(160.0, screenWidth - 16.0);
+        double left = alignRight ? -1 : offset.dx.clamp(8.0, (screenWidth - effectiveWidth - 8.0).clamp(8.0, screenWidth));
+        double right = alignRight ? (screenWidth - offset.dx - size.width).clamp(8.0, (screenWidth - effectiveWidth - 8.0).clamp(8.0, screenWidth)) : -1;
 
         return Stack(
           children: [
@@ -58,7 +59,7 @@ class CustomDropdownOverlay {
               bottom: showAbove ? bottom : null,
               left: alignRight ? null : left,
               right: alignRight ? right : null,
-              width: width ?? size.width,
+              width: effectiveWidth,
               child: Material(
                 color: Colors.transparent,
                 child: Builder(builder: (context) {
