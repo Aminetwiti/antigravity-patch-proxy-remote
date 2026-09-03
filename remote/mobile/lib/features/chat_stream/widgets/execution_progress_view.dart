@@ -113,6 +113,16 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
   late AnimationController _pulseAnim;
   bool _showAllSteps = false;
   late bool _isExpanded;
+  String? _lastParsedRaw;
+  List<ExecutionStepItem>? _cachedSteps;
+
+  List<ExecutionStepItem> _getOrParseSteps(String raw) {
+    if (_cachedSteps == null || _lastParsedRaw != raw) {
+      _lastParsedRaw = raw;
+      _cachedSteps = _parseSteps(raw);
+    }
+    return _cachedSteps!;
+  }
 
   @override
   void initState() {
@@ -121,9 +131,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
     _pulseAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
+    );
 
     if (widget.isStreaming) {
+      _pulseAnim.repeat(reverse: true);
       _startTimer();
     }
   }
@@ -134,9 +145,11 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
     if (widget.isStreaming && !oldWidget.isStreaming) {
       _secondsElapsed = 0;
       _isExpanded = true;
+      _pulseAnim.repeat(reverse: true);
       _startTimer();
     } else if (!widget.isStreaming && oldWidget.isStreaming) {
       _timer?.cancel();
+      _pulseAnim.stop();
       // Lorsque l'agent termine son travail, replier automatiquement la réflexion
       _isExpanded = widget.initiallyExpanded;
     } else if (widget.initiallyExpanded != oldWidget.initiallyExpanded) {
@@ -1006,7 +1019,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       return const SizedBox.shrink();
     }
 
-    final steps = _parseSteps(raw);
+    final steps = _getOrParseSteps(raw);
     if (steps.isEmpty && !widget.isStreaming) {
       return const SizedBox.shrink();
     }
@@ -1052,33 +1065,41 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
             else if (!hasActionSteps)
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
-                child: InkWell(
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() => _isExpanded = false);
-                    widget.onToggleExpand?.call();
-                  },
-                  borderRadius: BorderRadius.circular(4),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _getMasterTitle(steps),
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w500,
-                            color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
-                          ),
+                child: Semantics(
+                  button: true,
+                  expanded: true,
+                  label: '${_getMasterTitle(steps)}, appuyer pour replier',
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _isExpanded = false);
+                      widget.onToggleExpand?.call();
+                    },
+                    borderRadius: BorderRadius.circular(4),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 40),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _getMasterTitle(steps),
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w500,
+                                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              size: 15,
+                              color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          size: 15,
-                          color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -1160,49 +1181,62 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
     }
     return _secondsElapsed > 0
         ? 'Worked for ${_formatDuration(_secondsElapsed)}'
-        : 'Worked for 2m';
+        : 'Étapes terminées';
   }
 
   Widget _buildCollapsedSummary(List<ExecutionStepItem> steps, ColorScheme scheme, bool isDark) {
     final title = _getMasterTitle(steps);
 
     return RepaintBoundary(
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        child: InkWell(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            setState(() => _isExpanded = true);
-            widget.onToggleExpand?.call();
-          },
-          borderRadius: BorderRadius.circular(6),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.isStreaming) ...[
-                  AntigravitySpinningArc(
-                    size: 11.5,
-                    color: isDark ? AppColors.accentBlueBright : scheme.primary,
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
-                  ),
+      child: Semantics(
+        button: true,
+        expanded: false,
+        label: '$title, appuyer pour afficher les détails de l\'exécution',
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _isExpanded = true);
+              widget.onToggleExpand?.call();
+            },
+            borderRadius: BorderRadius.circular(6),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.isStreaming) ...[
+                      AntigravitySpinningArc(
+                        size: 11.5,
+                        color: isDark ? AppColors.accentBlueBright : scheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    AnimatedRotation(
+                      turns: _isExpanded ? 0.25 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      child: Icon(
+                        Icons.chevron_right_rounded,
+                        size: 15,
+                        color: isDark ? AppColors.inkMuted : scheme.outline,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 15,
-                  color: isDark ? AppColors.inkMuted : scheme.outline,
-                ),
-              ],
+              ),
             ),
           ),
         ),

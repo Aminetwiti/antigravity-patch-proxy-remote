@@ -507,7 +507,7 @@ func (s *Server) jetboxSyncUpdates(updates map[string]connectrpc.JetboxSummary, 
 			},
 		})
 		st := strings.ToUpper(sum.Status)
-		if strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY") {
+		if (strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY")) && s.isSessionActivelyRunning(id) {
 			s.startExternalTurnStreamer(id)
 		}
 	}
@@ -558,7 +558,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 				}
 			}
 		}
-		if origStatus != "" && origStatus != "idle" {
+		if origStatus != "" && origStatus != "idle" && origStatus != "CASCADE_STATUS_RUNNING" {
 			return origStatus
 		}
 		return "CASCADE_STATUS_READY"
@@ -601,9 +601,13 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 
 		isPinned := false
 		markedUnread := false
+		var pinnedAt time.Time
 		if home != "" {
 			isPinned = isSessionPinned(home, sum.CascadeID)
 			markedUnread = isSessionUnreadWithUpdatedTime(home, sum.CascadeID, sum.UpdatedAt)
+			if isPinned {
+				pinnedAt = getSessionPinnedTime(home, sum.CascadeID)
+			}
 		}
 
 		st := enrichStatus(sum.CascadeID, sum.Status)
@@ -619,6 +623,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 			"status":         st,
 			"updatedAt":      sum.UpdatedAt,
 			"isPinned":       isPinned,
+			"pinnedAt":       pinnedAt,
 			"isArchived":     isArchived,
 			"markedAsUnread": markedUnread,
 			"hasUnread":      markedUnread,
@@ -1261,7 +1266,7 @@ func (s *Server) isSessionActivelyRunning(cascadeID string) bool {
 		tPath := findTranscriptPath(cascadeID)
 		if tPath != "" {
 			if fi, err := os.Stat(tPath); err == nil {
-				if time.Since(fi.ModTime()) > 5*time.Minute {
+				if time.Since(fi.ModTime()) > 5*time.Second {
 					sum.Status = "CASCADE_STATUS_READY"
 					s.jetboxSummaries[cascadeID] = sum
 					return false
@@ -1901,10 +1906,8 @@ func (s *Server) approvalFor(cascadeID string) (pendingApproval, bool) {
 	return *p, true
 }
 
-// commandLineRe extrait la commande propos├®e du d├®tail d'approbation
-// run_command ÔÇÆ accepte "command_line" (format r├®el) et "run_command"
-// (format du blob de corr├®lation), comme le fallback mobile (stream_parser.dart).
-var commandLineRe = regexp.MustCompile(`"(?:command_line|commandline|run_command)"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+// run_command, file_permission, read_url, delete_directory, deploy, etc.
+var commandLineRe = regexp.MustCompile(`"(?:command_line|commandline|run_command|TargetFile|target_file|filePath|file_path|path|Url|url|targetUrl|target_url|directory|dirPath|dir_path|targetEnv|service)"\s*:\s*"((?:[^"\\]|\\.)*)"`)
 
 func extractCommand(detail string) string {
 	if m := commandLineRe.FindStringSubmatch(detail); m != nil {
@@ -2441,6 +2444,18 @@ func buildApprovalPayload(approvalType string, confirm bool, command, filePath, 
 		oneofPayload = connectrpc.BuildSubagentSpawnInteraction(confirm, command)
 	case "run_extension_code":
 		oneofField = connectrpc.InteractionRunExtensionCode
+		oneofPayload = connectrpc.BuildApprovalInteraction(confirm)
+	case "delete_directory":
+		oneofField = connectrpc.InteractionDeleteDirectory
+		oneofPayload = connectrpc.BuildApprovalInteraction(confirm)
+	case "cloudsql", "cloud_sql":
+		oneofField = connectrpc.InteractionCloudSQL
+		oneofPayload = connectrpc.BuildApprovalInteraction(confirm)
+	case "browser_action", "execute_browser_js", "click_pixel", "capture_screenshot", "open_browser_setup", "confirm_browser_setup":
+		oneofField = connectrpc.InteractionBrowserAction
+		oneofPayload = connectrpc.BuildApprovalInteraction(confirm)
+	case "elicitation":
+		oneofField = connectrpc.InteractionElicitation
 		oneofPayload = connectrpc.BuildApprovalInteraction(confirm)
 	default:
 		oneofPayload = connectrpc.BuildApprovalInteraction(confirm)
@@ -3059,7 +3074,7 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 				return "CASCADE_STATUS_WAITING_FOR_USER_ACTION"
 			}
 		}
-		if origStatus != "" && origStatus != "idle" {
+		if origStatus != "" && origStatus != "idle" && origStatus != "CASCADE_STATUS_RUNNING" {
 			return origStatus
 		}
 		return "CASCADE_STATUS_READY"
@@ -3130,9 +3145,13 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		wsName, wsPath, projID := matchOfficialProject(sum.ProjectID, sum.Workspace, sum.Workspace, projects)
 		isPinned := false
 		markedUnread := false
+		var pinnedAt time.Time
 		if home != "" {
 			isPinned = isSessionPinned(home, sum.CascadeID)
 			markedUnread = isSessionUnreadWithUpdatedTime(home, sum.CascadeID, sum.UpdatedAt)
+			if isPinned {
+				pinnedAt = getSessionPinnedTime(home, sum.CascadeID)
+			}
 		}
 		isIde := false
 		items = append(items, sessionWithTime{
@@ -3145,6 +3164,7 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 				"status":         status,
 				"updatedAt":      sum.UpdatedAt,
 				"isPinned":       isPinned,
+				"pinnedAt":       pinnedAt,
 				"isArchived":     isArchived,
 				"markedAsUnread": markedUnread,
 				"hasUnread":      markedUnread,
@@ -4738,6 +4758,29 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			raw, err = clientTarget.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), oneofField, oneofPayload)
 		} else {
 			raw, err = s.RPCClient.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), oneofField, oneofPayload)
+		}
+		// Résilience multi-versions IDE : si l'appel avec le champ spécifique échoue,
+		// tenter automatiquement via PermissionInteraction (champ 21) puis Approval (champ 23).
+		if err != nil && oneofField != connectrpc.InteractionPermission && oneofField != connectrpc.InteractionApproval {
+			scopeVal := parsePermissionScope(msg.Scope)
+			target := msg.Command
+			if target == "" {
+				target = msg.FilePath
+			}
+			fbPayload := connectrpc.BuildPermissionInteraction(confirm, scopeVal, target)
+			if clientTarget := s.getRPCClientForCascade(msg.CascadeID); clientTarget != nil {
+				raw, err = clientTarget.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), connectrpc.InteractionPermission, fbPayload)
+			} else {
+				raw, err = s.RPCClient.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), connectrpc.InteractionPermission, fbPayload)
+			}
+			if err != nil {
+				fb2Payload := connectrpc.BuildApprovalInteraction(confirm)
+				if clientTarget := s.getRPCClientForCascade(msg.CascadeID); clientTarget != nil {
+					raw, err = clientTarget.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), connectrpc.InteractionApproval, fb2Payload)
+				} else {
+					raw, err = s.RPCClient.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), connectrpc.InteractionApproval, fb2Payload)
+				}
+			}
 		}
 		if err == nil {
 			s.writeJSON(conn, OutgoingMessage{
@@ -7123,8 +7166,13 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 
 	transcriptPath := findTranscriptPath(cascadeID)
 	var lastOffset int64
+	isExternal := strings.HasPrefix(requestID, "desktop-") || strings.HasPrefix(requestID, "ext-")
 	if transcriptPath != "" {
-		lastOffset = findLastTurnOffset(transcriptPath)
+		if isExternal {
+			lastOffset = findLastTurnOffset(transcriptPath)
+		} else if fi, errStat := os.Stat(transcriptPath); errStat == nil {
+			lastOffset = fi.Size()
+		}
 	}
 
 	ticker := time.NewTicker(30 * time.Millisecond)
@@ -7149,7 +7197,11 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 				transcriptPath = findTranscriptPath(cascadeID)
 				nextTranscriptLookup = time.Now().Add(500 * time.Millisecond)
 				if transcriptPath != "" && lastOffset == 0 {
-					lastOffset = findLastTurnOffset(transcriptPath)
+					if isExternal {
+						lastOffset = findLastTurnOffset(transcriptPath)
+					} else if fi, errStat := os.Stat(transcriptPath); errStat == nil {
+						lastOffset = fi.Size()
+					}
 				}
 			}
 

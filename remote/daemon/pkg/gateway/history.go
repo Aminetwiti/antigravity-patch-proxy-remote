@@ -354,6 +354,28 @@ func isSessionPinned(home, cascadeID string) bool {
 	return false
 }
 
+// getSessionPinnedTime renvoie la date de last_user_view_time (ou modtime) de l'annotation épinglée
+func getSessionPinnedTime(home, cascadeID string) time.Time {
+	if cascadeID == "" {
+		return time.Time{}
+	}
+	reView := regexp.MustCompile(`last_user_view_time:\s*\{\s*seconds:\s*(\d+)`)
+	for _, sub := range []string{"antigravity", "antigravity-ide"} {
+		annoPath := filepath.Join(home, ".gemini", sub, "annotations", cascadeID+".pbtxt")
+		if data, err := os.ReadFile(annoPath); err == nil {
+			if m := reView.FindStringSubmatch(string(data)); len(m) > 1 {
+				if sec, errConv := strconv.ParseInt(m[1], 10, 64); errConv == nil && sec > 0 {
+					return time.Unix(sec, 0)
+				}
+			}
+			if fi, errStat := os.Stat(annoPath); errStat == nil {
+				return fi.ModTime()
+			}
+		}
+	}
+	return time.Time{}
+}
+
 // isSessionMarkedUnread vérifie si la session est explicitement marquée comme non-lue dans annotations/<cascadeID>.pbtxt
 func isSessionMarkedUnread(home, cascadeID string) bool {
 	if cascadeID == "" {
@@ -3643,7 +3665,7 @@ func matchOfficialProject(projID, wsPath, wsName string, projects []ProjectSumma
 		if p.GitRemoteURL != "" && strings.Contains(wsSearch, strings.ToLower(p.GitRemoteURL)) {
 			return p.Name, p.Path, p.ID
 		}
-		if p.Name != "" && strings.Contains(wsSearch, strings.ToLower(p.Name)) {
+		if p.Name != "" && hasProjectWordBoundary(wsSearch, strings.ToLower(p.Name)) {
 			return p.Name, p.Path, p.ID
 		}
 	}
@@ -3661,11 +3683,33 @@ func matchOfficialProject(projID, wsPath, wsName string, projects []ProjectSumma
 		return -1
 	}, cleanName)
 	cleanName = strings.TrimSpace(cleanName)
-	if cleanName == "" {
+	if cleanName == "" && wsName != "" {
 		cleanName = "Workspace"
 	}
 
 	return cleanName, wsPath, projID
+}
+
+func hasProjectWordBoundary(text, word string) bool {
+	idx := strings.Index(text, word)
+	for idx >= 0 {
+		beforeOk := idx == 0 || !isProjectWordChar(rune(text[idx-1]))
+		endIdx := idx + len(word)
+		afterOk := endIdx == len(text) || !isProjectWordChar(rune(text[endIdx]))
+		if beforeOk && afterOk {
+			return true
+		}
+		next := strings.Index(text[idx+1:], word)
+		if next < 0 {
+			break
+		}
+		idx = idx + 1 + next
+	}
+	return false
+}
+
+func isProjectWordChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-'
 }
 
 // GetUniqueWorkspaces returns the list of unique workspace names discovered on the machine.

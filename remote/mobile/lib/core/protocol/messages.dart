@@ -17,6 +17,8 @@ class CascadeSession {
   final bool isArchived;
   /// Session épinglée
   final bool isPinned;
+  /// Date à laquelle la session a été épinglée sur le bureau
+  final DateTime? pinnedAt;
   /// Session issue d'Antigravity IDE (VS Code)
   final bool isIde;
 
@@ -33,6 +35,7 @@ class CascadeSession {
     this.stepCount = 0,
     this.hasUnread = false,
     this.isPinned = false,
+    this.pinnedAt,
     this.isArchived = false,
     this.isIde = false,
   });
@@ -68,6 +71,11 @@ class CascadeSession {
       stepCount: (json['stepCount'] as num?)?.toInt() ?? 0,
       hasUnread: json['hasUnread'] == true || json['markedAsUnread'] == true,
       isPinned: json['isPinned'] == true || json['pinned'] == true,
+      pinnedAt: json['pinnedAt'] != null && json['pinnedAt'] != ''
+          ? (json['pinnedAt'] is int
+              ? DateTime.fromMillisecondsSinceEpoch(json['pinnedAt'])
+              : DateTime.tryParse(json['pinnedAt'].toString()))
+          : null,
       isArchived: isArchivedVal,
       isIde: json['isIde'] == true || json['clientType'] == 'ide' || json['source'] == 'ide',
     );

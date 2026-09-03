@@ -83,6 +83,10 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
       return Icons.folder_outlined;
     } else if (lower.contains('browser') || lower.contains('web') || lower.contains('search')) {
       return Icons.language;
+    } else if (lower.contains('sql') || lower.contains('database') || lower.contains('cloudsql')) {
+      return Icons.dns_outlined;
+    } else if (lower.contains('extension')) {
+      return Icons.extension_outlined;
     }
     return Icons.security_outlined;
   }
@@ -110,6 +114,19 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
       return 'Allow cloud deployment?';
     }
     final lower = widget.request.toolName.toLowerCase();
+    final appType = widget.request.approvalType.toLowerCase();
+    if (appType == 'browser_action' || lower.contains('browser')) {
+      return 'Allow browser interaction?';
+    }
+    if (appType == 'cloudsql' || lower.contains('sql') || lower.contains('database')) {
+      return 'Allow executing Cloud SQL query?';
+    }
+    if (appType == 'run_extension_code' || lower.contains('extension')) {
+      return 'Allow running extension code?';
+    }
+    if (appType == 'elicitation') {
+      return 'Allow plan execution?';
+    }
     if (lower.contains('run') || lower.contains('command') || lower.contains('bash') || lower.contains('exec')) {
       return 'Allow running this command?';
     }
@@ -338,7 +355,6 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final request = widget.request;
     final targetDisplay = _extractTargetDisplay(request.command);
-    final target = targetDisplay.trim();
     const conversationLabel = 'Yes, and always allow in this conversation';
     const projectLabel = 'Yes, and always allow in this project';
     const globalLabel = 'Yes, and always allow';

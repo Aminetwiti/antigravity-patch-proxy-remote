@@ -844,11 +844,12 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                 final pinnedSessions = (widget.sessions ?? const <CascadeSession>[])
                     .where((s) => s.isAvailable && s.id.isNotEmpty && _pinnedIds.contains(s.id))
                     .toList();
-                final pinnedList = _pinnedIds.toList();
                 pinnedSessions.sort((a, b) {
-                  final idxA = pinnedList.indexOf(a.id);
-                  final idxB = pinnedList.indexOf(b.id);
-                  if (idxA != -1 && idxB != -1) return idxA.compareTo(idxB);
+                  if (a.pinnedAt != null && b.pinnedAt != null) {
+                    return a.pinnedAt!.compareTo(b.pinnedAt!);
+                  }
+                  if (a.pinnedAt != null) return -1;
+                  if (b.pinnedAt != null) return 1;
                   return 0;
                 });
                 if (pinnedSessions.isEmpty) return const SizedBox.shrink();

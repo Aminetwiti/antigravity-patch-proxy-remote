@@ -191,6 +191,12 @@ func reactiveInteractionValue(v any) int {
 			return InteractionDeleteDirectory
 		case "CLOUDSQL", "INTERACTION_TYPE_CLOUDSQL":
 			return InteractionCloudSQL
+		case "RUN_EXTENSION_CODE", "INTERACTION_TYPE_RUN_EXTENSION_CODE":
+			return InteractionRunExtensionCode
+		case "BROWSER_ACTION", "INTERACTION_TYPE_BROWSER_ACTION", "EXECUTE_BROWSER_JS", "CAPTURE_SCREENSHOT", "CLICK_PIXEL":
+			return InteractionBrowserAction
+		case "ELICITATION", "INTERACTION_TYPE_ELICITATION":
+			return InteractionElicitation
 		}
 	}
 	return 0

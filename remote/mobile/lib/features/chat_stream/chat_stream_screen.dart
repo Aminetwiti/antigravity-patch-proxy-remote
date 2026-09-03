@@ -3856,10 +3856,15 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               // Clé stable par message : sans elle, une insertion au milieu
               // de la liste réassocie l'état (cache markdown, animations)
               // aux mauvais éléments lors des insertions/retraits.
-              return Padding(
+              return Center(
                 key: ValueKey('msg_${msg.id}'),
-                padding: const EdgeInsets.only(bottom: 16),
-                child: isolatedBubble,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 860),
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: isolatedBubble,
+                  ),
+                ),
               );
             },
           ),

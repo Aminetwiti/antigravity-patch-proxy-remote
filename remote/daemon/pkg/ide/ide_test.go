@@ -95,4 +95,3 @@ func TestFindClientForCascade(t *testing.T) {
 	}
 	t.Logf("✅ Heartbeat OK sur l'instance IDE pour %s (reçu %d octets)", cid, len(hb))
 }
-

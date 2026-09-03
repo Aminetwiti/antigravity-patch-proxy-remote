@@ -68,7 +68,11 @@ func ParseFrameEvents(raw []byte, cascadeID string) []StreamEvent {
 					sub.Num == InteractionApproval || sub.Num == InteractionMcp ||
 					sub.Num == InteractionDeploy || sub.Num == InteractionRunExtensionCode ||
 					sub.Num == InteractionDeleteDirectory || sub.Num == InteractionSendCommandInput ||
-					sub.Num == InteractionInvokeSubagent || sub.Num == InteractionCloudSQL {
+					sub.Num == InteractionInvokeSubagent || sub.Num == InteractionCloudSQL ||
+					sub.Num == InteractionExecuteBrowserJS || sub.Num == InteractionCaptureScreenshot ||
+					sub.Num == InteractionClickPixel || sub.Num == InteractionBrowserAction ||
+					sub.Num == InteractionOpenBrowserSetup || sub.Num == InteractionConfirmBrowserSetup ||
+					sub.Num == InteractionElicitation {
 					isInteraction = true
 					interactionNum = sub.Num
 					if sub.Num == InteractionRunCommand {
@@ -95,6 +99,12 @@ func ParseFrameEvents(raw []byte, cascadeID string) []StreamEvent {
 						detectedTool = "invoke_subagent"
 					} else if sub.Num == InteractionCloudSQL {
 						detectedTool = "cloudsql"
+					} else if sub.Num == InteractionExecuteBrowserJS || sub.Num == InteractionCaptureScreenshot ||
+						sub.Num == InteractionClickPixel || sub.Num == InteractionBrowserAction ||
+						sub.Num == InteractionOpenBrowserSetup || sub.Num == InteractionConfirmBrowserSetup {
+						detectedTool = "browser_action"
+					} else if sub.Num == InteractionElicitation {
+						detectedTool = "elicitation"
 					}
 					if len(sub.Bytes) > 0 {
 						detail = string(sub.Bytes)
@@ -187,6 +197,9 @@ func ParseFrameEvents(raw []byte, cascadeID string) []StreamEvent {
 						strings.Contains(st, `"permission"`) ||
 						strings.Contains(st, `"ask_question"`) || strings.Contains(st, `"ask_user"`) ||
 						strings.Contains(st, `"mcp"`) || strings.Contains(st, `"call_mcp_tool"`) || strings.Contains(st, `"mcp_tool"`) ||
+						strings.Contains(st, `"deploy"`) || strings.Contains(st, `"send_command_input"`) ||
+						strings.Contains(st, `"invoke_subagent"`) || strings.Contains(st, `"delete_directory"`) ||
+						strings.Contains(st, `"browser"`) || strings.Contains(st, `"cloudsql"`) ||
 						strings.Contains(st, `"tool"`)) {
 					isNestedApproval = true
 					nestedTool = extractToolName(st)

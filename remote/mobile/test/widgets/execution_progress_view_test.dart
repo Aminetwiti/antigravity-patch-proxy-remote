@@ -275,5 +275,38 @@ Ran git merge-base HEAD origin/main
       expect(find.text('Ran'), findsOneWidget);
       expect(find.text('git diff --name-only --diff-filter=U'), findsOneWidget);
     });
+
+    testWidgets('Collapsed summary has Semantics, 48dp min touch target and AnimatedRotation', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: const Scaffold(
+            body: ExecutionProgressView(
+              messageId: 'msg-collapsed-test',
+              thoughtText: 'Thought for 4s\nLooking into code structure...',
+              isStreaming: false,
+              initiallyExpanded: false,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      // Semantics present with accessible action label
+      final semanticsFinder = find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.button == true && (w.properties.label?.contains('appuyer pour afficher') ?? false),
+      );
+      expect(semanticsFinder, findsOneWidget);
+
+      // Touch target height constraint == 48
+      final boxFinder = find.byWidgetPredicate(
+        (w) => w is ConstrainedBox && w.constraints.minHeight == 48,
+      );
+      expect(boxFinder, findsOneWidget);
+
+      // AnimatedRotation present
+      expect(find.byType(AnimatedRotation), findsOneWidget);
+    });
   });
 }

@@ -89,7 +89,16 @@ func (s *Server) reactiveSyncUpdates(updates map[string]connectrpc.ReactiveUpdat
 				connectrpc.InteractionSendCommandInput,
 				connectrpc.InteractionInvokeSubagent,
 				connectrpc.InteractionDeleteDirectory,
-				connectrpc.InteractionCloudSQL:
+				connectrpc.InteractionCloudSQL,
+				connectrpc.InteractionRunExtensionCode,
+				connectrpc.InteractionBrowserAction,
+				connectrpc.InteractionExecuteBrowserJS,
+				connectrpc.InteractionCaptureScreenshot,
+				connectrpc.InteractionClickPixel,
+				connectrpc.InteractionOpenBrowserSetup,
+				connectrpc.InteractionConfirmBrowserSetup,
+				connectrpc.InteractionElicitation,
+				connectrpc.InteractionAskQuestion:
 				tool := interactionToolName(u.RequestedInteraction)
 				// Même garde que le chemin binaire (websocket.go) : une
 				// auto-approbation de session déjà traitée ne doit ni poser
@@ -165,6 +174,19 @@ func interactionToolName(t int) string {
 		return "delete_directory"
 	case connectrpc.InteractionCloudSQL:
 		return "cloudsql"
+	case connectrpc.InteractionRunExtensionCode:
+		return "run_extension_code"
+	case connectrpc.InteractionBrowserAction,
+		connectrpc.InteractionExecuteBrowserJS,
+		connectrpc.InteractionCaptureScreenshot,
+		connectrpc.InteractionClickPixel,
+		connectrpc.InteractionOpenBrowserSetup,
+		connectrpc.InteractionConfirmBrowserSetup:
+		return "browser_action"
+	case connectrpc.InteractionElicitation:
+		return "elicitation"
+	case connectrpc.InteractionAskQuestion:
+		return "ask_question"
 	default:
 		return "approval"
 	}
