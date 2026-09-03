@@ -21,6 +21,8 @@ class CascadeSession {
   final DateTime? pinnedAt;
   /// Session issue d'Antigravity IDE (VS Code)
   final bool isIde;
+  /// Session sous-agent (masquée de l'arborescence des projets et conversations)
+  final bool isSubagent;
 
   const CascadeSession({
     required this.id,
@@ -38,6 +40,7 @@ class CascadeSession {
     this.pinnedAt,
     this.isArchived = false,
     this.isIde = false,
+    this.isSubagent = false,
   });
 
   factory CascadeSession.fromJson(Map<String, dynamic> json, [DateTime? now]) {
@@ -78,6 +81,7 @@ class CascadeSession {
           : null,
       isArchived: isArchivedVal,
       isIde: json['isIde'] == true || json['clientType'] == 'ide' || json['source'] == 'ide',
+      isSubagent: json['isSubagent'] == true || json['source'] == 16,
     );
   }
 
@@ -98,6 +102,10 @@ class CascadeSession {
     return formatRelativeTime(parsed, now);
   }
 
+  static final RegExp _uuidRegex = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
   bool get isAvailable {
     if (id.isEmpty) return false;
     if (isArchived) return false;
@@ -105,7 +113,7 @@ class CascadeSession {
     if (trimmedTitle.isEmpty ||
         trimmedTitle == 'Cascade Session' ||
         trimmedTitle == 'Untitled Conversation' ||
-        (trimmedTitle.length >= 32 && trimmedTitle.contains('-'))) {
+        _uuidRegex.hasMatch(trimmedTitle)) {
       return false;
     }
     if (status.isNotEmpty) {
@@ -527,7 +535,11 @@ class ToolApprovalRequest {
   bool get isUrlApproval =>
       approvalType == 'read_url_content' ||
       approvalType == 'open_browser_url' ||
-      url != null;
+      approvalType == 'url_permission' ||
+      approvalType == 'url' ||
+      url != null ||
+      command.startsWith('http://') ||
+      command.startsWith('https://');
 
   bool get isMcpApproval =>
       approvalType == 'mcp_tool' ||
@@ -577,7 +589,7 @@ class ToolApprovalRequest {
       stepIndex: (json['stepIndex'] as num?)?.toInt() ?? -1,
       approvalType: appType,
       filePath: json['filePath'] ?? json['path'] ?? json['file_path'],
-      url: json['url'] ?? json['targetUrl'] ?? json['target_url'],
+      url: json['url'] ?? json['targetUrl'] ?? json['target_url'] ?? ((cmd.toString().startsWith('http://') || cmd.toString().startsWith('https://')) ? cmd.toString() : null),
       mcpServer: json['mcpServer'] ?? json['serverName'] ?? json['server_name'],
       mcpTool: json['mcpTool'] ?? json['tool_name'],
       mcpArgs: json['mcpArgs'] ?? json['argumentsJson'] ?? json['arguments_json'],

@@ -217,6 +217,12 @@ Map<String, List<CascadeSession>> groupSessions({
       grouped.putIfAbsent(p.name, () => []);
     }
 
+    // Fusionner 'Outside of Project' dans 'Conversations' pour éviter un doublon de toggle
+    if (grouped.containsKey('Outside of Project')) {
+      final outside = grouped.remove('Outside of Project')!;
+      grouped.putIfAbsent('Conversations', () => []).addAll(outside);
+    }
+
     // Placer la section 'Conversations' (hors projet) tout en bas après tous les projets
     if (grouped.containsKey('Conversations')) {
       final convs = grouped.remove('Conversations');

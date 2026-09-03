@@ -308,5 +308,47 @@ Ran git merge-base HEAD origin/main
       // AnimatedRotation present
       expect(find.byType(AnimatedRotation), findsOneWidget);
     });
+
+    testWidgets('Synthesizes Exploring X files, Y folders, Z searches and renders folder icon for directories', (tester) async {
+      const explorationThought = '''
+Explored 1 file
+Analyzed c:\\Users\\amine\\.gemini\\config\\skills\\impeccable
+Analyzed c:\\Users\\amine\\.gemini\\config\\skills\\impeccable\\reference
+Analyzed audit.native.md #L1-100
+Analyzed audit.native.md #L101-140
+Search *course* 2 results
+Analyzed c:\\Users\\amine\\Downloads\\raouf taxi\\www - Copie\\resources\\views\\driver
+Analyzed c:\\Users\\amine\\Downloads\\raouf taxi\\www - Copie\\resources\\views\\driver\\cou
+''';
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: ExecutionProgressView(
+                messageId: 'msg-desktop-fidelity',
+                thoughtText: explorationThought,
+                isStreaming: false,
+                initiallyExpanded: true,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // 1. Grouping title matches Desktop: "Exploring 2 files, 4 folders, 1 search"
+      expect(find.text('Exploring'), findsOneWidget);
+      expect(find.text('2 files, 4 folders, 1 search'), findsOneWidget);
+
+      // 2. Expand accordion and verify folder icons for directory paths
+      await tester.tap(find.text('Exploring'));
+      await tester.pumpAndSettle();
+
+      final folderIconFinder = find.byIcon(Icons.folder_outlined);
+      expect(folderIconFinder, findsWidgets);
+    });
   });
 }

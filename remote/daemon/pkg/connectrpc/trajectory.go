@@ -22,7 +22,8 @@ type TrajectorySummary struct {
 	Archived     bool      `json:"archived,omitempty"` // annotations.archived (field 15→4)
 	Killed       bool      `json:"killed,omitempty"`   // field 23
 	Source       int       `json:"source,omitempty"`   // field 20 (1=CASCADE_CLIENT, 16=SUBAGENT)
-	IsSubagent   bool      `json:"isSubagent,omitempty"`
+	IsSubagent      bool      `json:"isSubagent,omitempty"`
+	ParentCascadeID string    `json:"parentCascadeId,omitempty"`
 }
 
 var (
@@ -133,6 +134,30 @@ func trajectoryFromBlob(blob []byte) TrajectorySummary {
 									}
 								}
 							}
+						case 17: // TrajectoryMetadata (contient subagent type, parentCascadeId, spec, projectId)
+							if mf.WireType == 2 {
+								for _, tmf := range DecodeFields(mf.Bytes) {
+									switch tmf.Num {
+									case 4, 8: // Subagent Type (e.g. "self") ou Subagent Spec/Role
+										if tmf.WireType == 2 && len(tmf.Bytes) > 0 {
+											t.IsSubagent = true
+										}
+									case 5: // Parent Cascade ID
+										if tmf.WireType == 2 && len(tmf.Bytes) > 0 {
+											t.IsSubagent = true
+											t.ParentCascadeID = string(tmf.Bytes)
+										}
+									case 17: // is_subagent varint flag
+										if tmf.WireType == 0 && tmf.Varint != 0 {
+											t.IsSubagent = true
+										}
+									case 18: // ProjectID
+										if tmf.WireType == 2 && len(tmf.Bytes) > 0 {
+											t.ProjectID = string(tmf.Bytes)
+										}
+									}
+								}
+							}
 						case 18:
 							if mf.WireType == 2 {
 								t.ProjectID = string(mf.Bytes)
@@ -153,6 +178,30 @@ func trajectoryFromBlob(blob []byte) TrajectorySummary {
 					for _, af := range DecodeFields(f.Bytes) {
 						if (af.Num == 4 && af.WireType == 0 && af.Varint != 0) || af.Num == 5 {
 							t.Archived = true
+						}
+					}
+				}
+			case 17: // TrajectoryMetadata (fallback niveau supérieur)
+				if f.WireType == 2 {
+					for _, tmf := range DecodeFields(f.Bytes) {
+						switch tmf.Num {
+						case 4, 8:
+							if tmf.WireType == 2 && len(tmf.Bytes) > 0 {
+								t.IsSubagent = true
+							}
+						case 5:
+							if tmf.WireType == 2 && len(tmf.Bytes) > 0 {
+								t.IsSubagent = true
+								t.ParentCascadeID = string(tmf.Bytes)
+							}
+						case 17:
+							if tmf.WireType == 0 && tmf.Varint != 0 {
+								t.IsSubagent = true
+							}
+						case 18:
+							if tmf.WireType == 2 && len(tmf.Bytes) > 0 {
+								t.ProjectID = string(tmf.Bytes)
+							}
 						}
 					}
 				}

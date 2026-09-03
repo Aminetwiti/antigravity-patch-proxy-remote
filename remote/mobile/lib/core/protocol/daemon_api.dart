@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import '../../data/db/database_helper.dart';
 import '../network/outbox.dart';
 import 'messages.dart';
-import 'session_parser.dart';
 import '../../features/mcp/models/mcp_server_info.dart';
 import '../../features/scheduled_tasks/models/scheduled_task_item.dart';
 
@@ -332,11 +331,8 @@ class DaemonApi {
       // rejette l'erreur réseau d'ORIGINE, pas l'échec de la base.
       try {
         final sessions = await DatabaseHelper.instance.getSessions();
-        // C1 : le cache local (format `fields`) doit passer par le même filtre
-        // isAvailable que le chemin en ligne — sinon des sessions archivées/
-        // supprimées réapparaissent en mode hors-ligne.
         return {
-          'fields': SessionParser.parseListSessions({'fields': sessions}),
+          'sessions': sessions,
         };
       } catch (_) {
         Error.throwWithStackTrace(e, st);

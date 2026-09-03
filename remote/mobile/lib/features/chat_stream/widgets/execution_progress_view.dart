@@ -181,6 +181,15 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
     return secs > 0 ? '${mins}m ${secs}s' : '${mins}m';
   }
 
+  static bool _isFolderPath(String title) {
+    final clean = title.trim();
+    if (clean.endsWith('/') || clean.endsWith('\\') || clean.endsWith('>')) return true;
+    final pathOnly = clean.replaceFirst(RegExp(r'\s+#L\d+.*$'), '').trim();
+    final lastSegment = pathOnly.split(RegExp(r'[/\\]')).last.trim();
+    if (lastSegment.isEmpty) return true;
+    return !lastSegment.contains('.');
+  }
+
   List<ExecutionStepItem> _parseSteps(String raw) {
     if (raw.trim().isEmpty) {
       if (widget.isStreaming) {
@@ -261,6 +270,16 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       }
 
       final lower = line.toLowerCase();
+
+      // Filter raw background task markers and generic tool logs
+      if (lower.startsWith('completed at:') ||
+          lower.startsWith('created at:') ||
+          lower.startsWith('tool is running as a background task') ||
+          lower.startsWith('you must take one of the following two actions') ||
+          lower.startsWith('task description:') ||
+          lower.startsWith('task logs are available at:')) {
+        continue;
+      }
 
       // 1. Auto-proceeded with <Plan/Artifact>
       if (lower.startsWith('auto-proceeded with') ||
@@ -429,10 +448,12 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                 : (lower.startsWith('reading file') ? 12 : 12));
         var rest = line.substring(prefixLen).trim();
         rest = rest.replaceAll('"', '').replaceAll("'", '').trim();
-        final match = RegExp(r'^(?:(TS|JS|Dart|Go|Py|>_|JSON|MD|HTML|CSS|YAML|SQL)\s+)?(\S+)(?:\s+(#L\d+(?:-\d+)?))?', caseSensitive: false).firstMatch(rest);
-        final extTag = match?.group(1);
-        var fileName = match?.group(2) ?? rest;
-        final lineRange = match?.group(3);
+        final lineRangeMatch = RegExp(r'\s+(#L\d+(?:-\d+)?)$', caseSensitive: false).firstMatch(rest);
+        final lineRange = lineRangeMatch?.group(1);
+        var pathPart = lineRangeMatch != null ? rest.substring(0, lineRangeMatch.start).trim() : rest;
+        final tagMatch = RegExp(r'^(TS|JS|Dart|Go|Py|>_|JSON|MD|HTML|CSS|YAML|SQL)\s+', caseSensitive: false).firstMatch(pathPart);
+        final extTag = tagMatch?.group(1);
+        var fileName = tagMatch != null ? pathPart.substring(tagMatch.end).trim() : pathPart;
         fileName = fileName.replaceAll('"', '').replaceAll("'", '').trim();
 
         // Humanize scaled image names: scaled_1000134685.png -> Scaled 1000134685
@@ -533,6 +554,12 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
 
       // 10. Checked task / Task
       if (lower.startsWith('checked task ') || lower.startsWith('task ')) {
+        if (lower.startsWith('task generic') ||
+            lower.contains('created at:') ||
+            lower.contains('completed at:') ||
+            lower.contains('tool is running as a background task')) {
+          continue;
+        }
         final isChecked = lower.startsWith('checked task ');
         String action = 'Task';
         String title = line.substring(5).trim();
@@ -624,48 +651,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
 
     flushConsole();
 
-    // Grouping: Si on a un exploredGroup suivi d'analyses, on les regroupe sous le groupe Explored
-    final items = <ExecutionStepItem>[];
-    for (int i = 0; i < rawItems.length; i++) {
-      final current = rawItems[i];
-      if (current.type == ExecutionStepType.exploredGroup) {
-        final sub = <ExecutionStepItem>[];
-        final seenSubKeys = <String>{};
-        int j = i + 1;
-        while (j < rawItems.length && (rawItems[j].type == ExecutionStepType.fileAnalysis || rawItems[j].type == ExecutionStepType.search)) {
-          final sKey = '${rawItems[j].type}:${rawItems[j].action}:${rawItems[j].title}:${rawItems[j].lineRange}';
-          if (seenSubKeys.add(sKey)) {
-            sub.add(rawItems[j]);
-          }
-          j++;
-        }
-        if (sub.isNotEmpty && (current.title.isEmpty || RegExp(r'^\d+\s+(file|task|item)', caseSensitive: false).hasMatch(current.title))) {
-          int fCount = 0;
-          int sCount = 0;
-          for (final s in sub) {
-            if (s.type == ExecutionStepType.search) {
-              sCount++;
-            } else {
-              fCount++;
-            }
-          }
-          final pList = <String>[];
-          if (fCount > 0) pList.add(fCount == 1 ? '1 file' : '$fCount files');
-          if (sCount > 0) pList.add(sCount == 1 ? '1 search' : '$sCount searches');
-
-          items.add(ExecutionStepItem(
-            type: ExecutionStepType.exploredGroup,
-            action: current.action,
-            title: pList.isNotEmpty ? pList.join(', ') : (sub.length == 1 ? '1 file' : '${sub.length} files'),
-            subItems: sub,
-            isExpandable: true,
-          ));
-          i = j - 1;
-          continue;
-        }
-      }
-      items.add(current);
-    }
+    final items = List<ExecutionStepItem>.from(rawItems);
 
     // Process Thought Buffer
     final thoughtContent = currentThoughtBuffer.toString().trim();
@@ -718,17 +704,35 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
     void flushExploration(bool isLastGroup) {
       if (explorationGroup.isEmpty) return;
 
+      if (explorationGroup.length == 1 && explorationGroup.first.subItems == null) {
+        result.add(explorationGroup.first);
+        explorationGroup.clear();
+        return;
+      }
+
       // Deduplicate explorationGroup items by unique signature
       final uniqueExploration = <ExecutionStepItem>[];
       final seen = <String>{};
       for (final item in explorationGroup) {
-        final key = '${item.type}:${item.action}:${item.title}:${item.lineRange}';
-        if (seen.add(key)) {
-          uniqueExploration.add(item);
+        if (item.type == ExecutionStepType.exploredGroup &&
+            (item.title.isEmpty || RegExp(r'^\d+\s+(file|task|item)', caseSensitive: false).hasMatch(item.title)) &&
+            item.subItems == null &&
+            explorationGroup.length > 1) {
+          continue; // Ne pas afficher l'en-tête générique "1 file" comme enfant quand on a le détail
+        }
+        if (item.subItems != null && item.subItems!.isNotEmpty) {
+          for (final child in item.subItems!) {
+            final key = '${child.type}:${child.action}:${child.title}:${child.lineRange}';
+            if (seen.add(key)) uniqueExploration.add(child);
+          }
+        } else {
+          final key = '${item.type}:${item.action}:${item.title}:${item.lineRange}';
+          if (seen.add(key)) uniqueExploration.add(item);
         }
       }
 
       int fileCount = 0;
+      int folderCount = 0;
       int searchCount = 0;
       int taskCount = 0;
       for (final item in uniqueExploration) {
@@ -736,33 +740,27 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
           taskCount++;
         } else if (item.type == ExecutionStepType.search) {
           searchCount++;
+        } else if (_isFolderPath(item.title)) {
+          folderCount++;
         } else {
           fileCount++;
         }
       }
 
       final parts = <String>[];
-      if (taskCount > 0) {
-        parts.add(taskCount == 1 ? '1 task' : '$taskCount tasks');
-      }
-      if (fileCount > 0) {
-        parts.add(fileCount == 1 ? '1 file' : '$fileCount files');
-      }
-      if (searchCount > 0) {
-        parts.add(searchCount == 1 ? '1 search' : '$searchCount searches');
-      }
+      if (fileCount > 0) parts.add(fileCount == 1 ? '1 file' : '$fileCount files');
+      if (folderCount > 0) parts.add(folderCount == 1 ? '1 folder' : '$folderCount folders');
+      if (searchCount > 0) parts.add(searchCount == 1 ? '1 search' : '$searchCount searches');
+      if (taskCount > 0) parts.add(taskCount == 1 ? '1 task' : '$taskCount tasks');
       final title = parts.join(', ');
-
-      final bool isRunning = widget.isStreaming && isLastGroup;
-      final action = isRunning ? 'Exploring' : 'Explored';
 
       result.add(ExecutionStepItem(
         type: ExecutionStepType.exploredGroup,
-        action: action,
-        title: title.isNotEmpty ? title : 'files',
+        action: 'Exploring',
+        title: title.isNotEmpty ? title : (uniqueExploration.length == 1 ? '1 file' : '${uniqueExploration.length} files'),
         subItems: uniqueExploration,
         isExpandable: true,
-        isRunning: isRunning,
+        isRunning: widget.isStreaming && isLastGroup,
       ));
 
       explorationGroup.clear();
@@ -1435,14 +1433,18 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     ),
                   ],
 
-                  // File Read Badge (Image photo icon or Document icon)
+                  // File Read Badge (Folder icon, Image photo icon, or Document icon)
                   if (item.type == ExecutionStepType.fileAnalysis) ...[
                     Padding(
                       padding: const EdgeInsets.only(right: 5),
                       child: Icon(
-                        item.isImage ? Icons.photo_outlined : Icons.insert_drive_file_outlined,
-                        size: item.isImage ? 14 : 13.5,
-                        color: item.isImage ? AppColors.inkSecondary : AppColors.executionFileAnalysis,
+                        _isFolderPath(item.title)
+                            ? Icons.folder_outlined
+                            : (item.isImage ? Icons.photo_outlined : Icons.insert_drive_file_outlined),
+                        size: 13.5,
+                        color: _isFolderPath(item.title)
+                            ? (isDark ? AppColors.warning : const Color(0xFFE5A000))
+                            : (item.isImage ? AppColors.inkSecondary : AppColors.executionFileAnalysis),
                       ),
                     ),
                   ],
@@ -1710,9 +1712,13 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                             Padding(
                                               padding: const EdgeInsets.only(right: 5),
                                               child: Icon(
-                                                sub.isImage ? Icons.photo_outlined : Icons.insert_drive_file_outlined,
-                                                size: sub.isImage ? 14 : 13.5,
-                                                color: sub.isImage ? AppColors.inkSecondary : AppColors.executionFileAnalysis,
+                                                _isFolderPath(sub.title)
+                                                    ? Icons.folder_outlined
+                                                    : (sub.isImage ? Icons.photo_outlined : Icons.insert_drive_file_outlined),
+                                                size: 13.5,
+                                                color: _isFolderPath(sub.title)
+                                                    ? (isDark ? AppColors.warning : const Color(0xFFE5A000))
+                                                    : (sub.isImage ? AppColors.inkSecondary : AppColors.executionFileAnalysis),
                                               ),
                                             ),
                                           ] else if (sub.type == ExecutionStepType.fileEdit) ...[

@@ -665,15 +665,17 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
               _activeSessionId = sessions.first.id;
               _activeSessionTitle = sessions.first.title;
             }
-          } else if (_activeSessionId.isNotEmpty) {
-            final existingPending = _sessions.where((s) => s.id == _activeSessionId);
-            if (existingPending.isNotEmpty) {
-              _sessions = [existingPending.first];
+          } else if (_sessions.isEmpty) {
+            if (_activeSessionId.isNotEmpty) {
+              final existingPending = _sessions.where((s) => s.id == _activeSessionId);
+              if (existingPending.isNotEmpty) {
+                _sessions = [existingPending.first];
+              }
+            } else {
+              _sessions = const [];
+              _activeSessionId = '';
+              _activeSessionTitle = 'Nouvelle conversation';
             }
-          } else {
-            _sessions = const [];
-            _activeSessionId = '';
-            _activeSessionTitle = 'Nouvelle conversation';
           }
           _lastSessionsSyncAt = DateTime.now();
         });
@@ -903,17 +905,19 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                 _activeSessionTitle = parsed.first.title;
                 _refreshContext();
               }
-            } else if (_activeSessionId.isNotEmpty) {
-              final existingPending = _sessions.where((s) => s.id == _activeSessionId);
-              if (existingPending.isNotEmpty) {
-                _sessions = [existingPending.first];
+            } else if (_sessions.isEmpty) {
+              if (_activeSessionId.isNotEmpty) {
+                final existingPending = _sessions.where((s) => s.id == _activeSessionId);
+                if (existingPending.isNotEmpty) {
+                  _sessions = [existingPending.first];
+                }
+              } else {
+                // Liste vide : toutes les sessions ont été supprimées/archivées
+                _sessions = const [];
+                _activeSessionId = '';
+                _activeSessionTitle = 'Nouvelle conversation';
+                _contextStats = {};
               }
-            } else {
-              // Liste vide : toutes les sessions ont été supprimées/archivées
-              _sessions = const [];
-              _activeSessionId = '';
-              _activeSessionTitle = 'Nouvelle conversation';
-              _contextStats = {};
             }
             _lastSessionsSyncAt = DateTime.now();
           });

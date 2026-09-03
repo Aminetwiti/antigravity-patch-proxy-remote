@@ -1632,6 +1632,21 @@ func parseTranscriptFullTurns(transcriptPath string) ([]HistoryMessage, error) {
 			continue
 		}
 
+		if entry.Type == "ERROR_MESSAGE" || entry.Status == "ERROR" {
+			if len(entry.Content) > 0 {
+				errText := entry.Content
+				if strings.Contains(errText, "stream was interrupted") {
+					errText = "Error Individual quota reached: Baseline model quota reached.\n" + errText
+				}
+				currentTurnSegments = append(currentTurnSegments, HistorySegment{
+					Type:    "error",
+					Content: errText,
+				})
+				currentTurnHasError = true
+			}
+			continue
+		}
+
 		// Tool result matching
 		if entry.Type == "GREP_SEARCH" || entry.Type == "FIND_BY_NAME" {
 			count := countGrepResults(entry.Content)
@@ -2943,10 +2958,10 @@ func enrichSubagentFromBrain(sub *SubagentSummary) {
 			}
 		}
 	}
-	if hasSteps && (sub.State == "" || sub.State == "idle") {
-		if isDone {
+	if sub.State != "killed" && hasSteps {
+		if isDone || lastAssistantMsg != "" {
 			sub.State = "completed"
-		} else {
+		} else if sub.State == "" || sub.State == "idle" {
 			sub.State = "running"
 		}
 	}
@@ -3065,6 +3080,41 @@ func ExtractSubagents(cascadeID string) []SubagentSummary {
 								pendingInvocations = append(pendingInvocations, item)
 							}
 						}
+					} else if c.Name == "manage_subagents" {
+						args := c.Args
+						if args == nil {
+							args = c.Arguments
+						}
+						action, _ := args["Action"].(string)
+						if action == "" {
+							action, _ = args["action"].(string)
+						}
+						action = strings.ToLower(action)
+						if action == "kill_all" {
+							for k := range results {
+								results[k].State = "killed"
+							}
+						} else if action == "kill" {
+							var toKill []string
+							if cids, ok := args["ConversationIds"].([]interface{}); ok {
+								for _, cid := range cids {
+									if s, ok := cid.(string); ok {
+										toKill = append(toKill, s)
+									}
+								}
+							} else if cids, ok := args["conversationIds"].([]interface{}); ok {
+								for _, cid := range cids {
+									if s, ok := cid.(string); ok {
+										toKill = append(toKill, s)
+									}
+								}
+							}
+							for _, kid := range toKill {
+								if idx, exists := seen[kid]; exists {
+									results[idx].State = "killed"
+								}
+							}
+						}
 					}
 				}
 			}
@@ -3158,10 +3208,45 @@ func ExtractSubagents(cascadeID string) []SubagentSummary {
 
 			// Cas 3: Message reçu d'un sous-agent: <SYSTEM_MESSAGE> ... sender=<uid>
 			if strings.Contains(entry.Content, "<SYSTEM_MESSAGE>") && strings.Contains(entry.Content, "sender=") {
+				senderRe := regexp.MustCompile(`sender=([a-f0-9-]+)`)
+				if sm := senderRe.FindStringSubmatch(entry.Content); len(sm) > 1 {
+					sID := sm[1]
+					if sID != cascadeID {
+						if idx, exists := seen[sID]; exists {
+							results[idx].State = "completed"
+						}
+					}
+				}
 				m := conversationUUIDRe.FindString(entry.Content)
 				if m != "" && m != cascadeID {
 					if idx, exists := seen[m]; exists {
 						results[idx].State = "completed"
+					}
+				}
+			}
+
+			// Cas 4: Message d'erreur, arrêt ou achèvement de sous-agent
+			if strings.Contains(lowerContent, "subagent") && (strings.Contains(lowerContent, "error") || strings.Contains(lowerContent, "stopped") || strings.Contains(lowerContent, "failed") || strings.Contains(lowerContent, "finished") || strings.Contains(lowerContent, "completed") || strings.Contains(lowerContent, "killed")) {
+				uuids := conversationUUIDRe.FindAllString(entry.Content, -1)
+				targetState := "completed"
+				if strings.Contains(lowerContent, "error") || strings.Contains(lowerContent, "failed") {
+					targetState = "error"
+				} else if strings.Contains(lowerContent, "stopped") || strings.Contains(lowerContent, "killed") {
+					targetState = "killed"
+				}
+				for _, uid := range uuids {
+					if uid == cascadeID {
+						continue
+					}
+					if idx, exists := seen[uid]; exists {
+						results[idx].State = targetState
+					} else if len(pendingInvocations) > 0 {
+						item := pendingInvocations[0]
+						pendingInvocations = pendingInvocations[1:]
+						item.ID = uid
+						item.State = targetState
+						seen[uid] = len(results)
+						results = append(results, item)
 					}
 				}
 			}
@@ -3172,8 +3257,20 @@ func ExtractSubagents(cascadeID string) []SubagentSummary {
 	for _, item := range pendingInvocations {
 		subID := fmt.Sprintf("subagent-%s-%d", item.TypeName, len(results)+1)
 		item.ID = subID
+		item.State = "completed"
 		seen[subID] = len(results)
 		results = append(results, item)
+	}
+
+	// Auto-résolution : si le transcript parent n'a plus d'activité récente (< 10s)
+	// ou si la session est inactive, aucun sous-agent ne peut être encore 'running'.
+	parentActive := false
+	if tPath := findTranscriptPath(cascadeID); tPath != "" {
+		if fi, errStat := os.Stat(tPath); errStat == nil {
+			if time.Since(fi.ModTime()) < 10*time.Second {
+				parentActive = true
+			}
+		}
 	}
 
 	// Enrichissement avec les données réelles de chaque brain sous-agent
@@ -3181,6 +3278,8 @@ func ExtractSubagents(cascadeID string) []SubagentSummary {
 		enrichSubagentFromBrain(&results[i])
 		if allStopped {
 			results[i].State = "killed"
+		} else if !parentActive && results[i].State == "running" {
+			results[i].State = "completed"
 		}
 	}
 

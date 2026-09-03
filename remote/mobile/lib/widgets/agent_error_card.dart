@@ -9,12 +9,16 @@ class AgentErrorCard extends StatefulWidget {
   final String errorText;
   final String? title;
   final VoidCallback? onRetry;
+  final VoidCallback? onSwitchModel;
+  final VoidCallback? onSeePlans;
 
   const AgentErrorCard({
     super.key,
     required this.errorText,
     this.title,
     this.onRetry,
+    this.onSwitchModel,
+    this.onSeePlans,
   });
 
   @override
@@ -44,6 +48,9 @@ class _AgentErrorCardState extends State<AgentErrorCard> {
     }
     if (lower.contains('baseline model quota reached')) {
       return 'Baseline model quota reached';
+    }
+    if (lower.contains('stream was interrupted') || lower.contains('the stream was interrupted')) {
+      return 'Baseline model quota reached (Stream interrupted)';
     }
     if (lower.contains('quota exceeded') || lower.contains('insufficient_quota')) {
       return 'Error: Quota exceeded';
@@ -179,20 +186,55 @@ class _AgentErrorCardState extends State<AgentErrorCard> {
                       color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                     ),
                   ),
-                  if (widget.onRetry != null) ...[
-                    const SizedBox(height: 10),
+                  if (widget.onRetry != null || widget.onSwitchModel != null || widget.onSeePlans != null) ...[
+                    const SizedBox(height: 12),
                     Align(
                       alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: widget.onRetry,
-                        icon: const Icon(Icons.refresh_rounded, size: 14),
-                        label: const Text('Réessayer', style: TextStyle(fontSize: 12)),
-                        style: TextButton.styleFrom(
-                          foregroundColor: errorTextColor,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        alignment: WrapAlignment.end,
+                        children: [
+                          if (widget.onSwitchModel != null)
+                            OutlinedButton.icon(
+                              onPressed: widget.onSwitchModel,
+                              icon: const Icon(Icons.swap_horiz_rounded, size: 14),
+                              label: const Text('Changer de modèle', style: TextStyle(fontSize: 12)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: errorTextColor,
+                                side: BorderSide(color: errorBorder),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          if (widget.onSeePlans != null)
+                            TextButton.icon(
+                              onPressed: widget.onSeePlans,
+                              icon: const Icon(Icons.bar_chart_rounded, size: 14),
+                              label: const Text('Voir les quotas', style: TextStyle(fontSize: 12)),
+                              style: TextButton.styleFrom(
+                                foregroundColor: errorTextColor,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          if (widget.onRetry != null)
+                            FilledButton.icon(
+                              onPressed: widget.onRetry,
+                              icon: const Icon(Icons.refresh_rounded, size: 14),
+                              label: const Text('Réessayer', style: TextStyle(fontSize: 12)),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: errorTextColor.withValues(alpha: 0.15),
+                                foregroundColor: errorTextColor,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ],

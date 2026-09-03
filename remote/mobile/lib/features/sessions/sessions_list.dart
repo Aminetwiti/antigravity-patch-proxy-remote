@@ -467,7 +467,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     }
 
     final availableSessions = sessions
-        .where((s) => s.isAvailable && s.id.isNotEmpty)
+        .where((s) => s.isAvailable && s.id.isNotEmpty && !s.isSubagent)
         .where((s) {
           if (_filterQuery.isEmpty) return true;
           final q = _filterQuery.toLowerCase();

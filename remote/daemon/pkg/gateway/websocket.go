@@ -509,6 +509,15 @@ func (s *Server) jetboxSyncUpdates(updates map[string]connectrpc.JetboxSummary, 
 		st := strings.ToUpper(sum.Status)
 		if (strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY")) && s.isSessionActivelyRunning(id) {
 			s.startExternalTurnStreamer(id)
+		} else if sum.Waiting && !s.hasPendingApproval(id) {
+			if pending := s.inspectTranscriptPendingApproval(id); pending != nil {
+				pending["hostActive"] = hostActiveSince(hostActiveWindow)
+				s.broadcast(OutgoingMessage{
+					Type:      "approval_pending",
+					CascadeID: id,
+					Data:      pending,
+				})
+			}
 		}
 	}
 
@@ -806,11 +815,12 @@ func (s *Server) fetchSessionsSingleFlight() []byte {
 
 	s.mu.Lock()
 	if err == nil {
-		s.sessionsCache = raw
-		if len(raw) == 0 {
-			s.sessionsCache = []byte(`{"sessions":[]}`)
+		if len(raw) > 0 {
+			s.sessionsCache = raw
+			s.sessionsCachedAt = time.Now()
+		} else {
+			s.sessionsCache = nil
 		}
-		s.sessionsCachedAt = time.Now()
 	}
 	s.fetchDone = nil
 	close(doneCh)
@@ -1791,10 +1801,170 @@ func (s *Server) MarkApprovalPending(cascadeID string, ev connectrpc.StreamEvent
 // (app tuée entre l'émission et le tap).
 func (s *Server) pendingApprovalInfo(cascadeID string) map[string]interface{} {
 	s.mu.Lock()
+	p, ok := s.approvals[cascadeID]
+	if ok && !p.expired {
+		expiresAt := int64(0)
+		if p.timer != nil {
+			expiresAt = time.Now().Add(s.approvalTimeout).UnixMilli()
+		}
+		info := map[string]interface{}{
+			"cascadeId":    p.cascadeID,
+			"callId":       p.callID,
+			"trajectoryId": p.trajectoryID,
+			"stepIndex":    p.stepIndex,
+			"approvalType": p.approvalType,
+			"command":      p.command,
+			"detail":       p.detail,
+			"expiresAt":    expiresAt,
+		}
+		s.mu.Unlock()
+		return info
+	}
+	s.mu.Unlock()
+
+	return s.inspectTranscriptPendingApproval(cascadeID)
+}
+
+// inspectTranscriptPendingApproval inspecte la fin du transcript pour vérifier si un outil
+// est actuellement en attente d'approbation utilisateur (pas de résultat après tool_calls).
+func (s *Server) inspectTranscriptPendingApproval(cascadeID string) map[string]interface{} {
+	tPath := findTranscriptPath(cascadeID)
+	if tPath == "" {
+		return nil
+	}
+	fi, err := os.Stat(tPath)
+	if err != nil || fi.Size() == 0 {
+		return nil
+	}
+
+	f, err := os.Open(tPath)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	seekOffset := int64(0)
+	if fi.Size() > 65536 {
+		seekOffset = fi.Size() - 65536
+	}
+	if _, err := f.Seek(seekOffset, 0); err != nil {
+		return nil
+	}
+
+	scanner := bufio.NewScanner(f)
+	hBuf := AcquireHistoryBuffer()
+	defer ReleaseHistoryBuffer(hBuf)
+	scanner.Buffer(*hBuf, len(*hBuf))
+
+	type transcriptEntry struct {
+		StepIndex int             `json:"step_index"`
+		Type      string          `json:"type"`
+		ToolCalls json.RawMessage `json:"tool_calls"`
+	}
+
+	var lastToolEntry *transcriptEntry
+	var hasResultAfter bool
+
+	for scanner.Scan() {
+		b := scanner.Bytes()
+		if len(b) == 0 {
+			continue
+		}
+		var entry transcriptEntry
+		if err := json.Unmarshal(b, &entry); err != nil {
+			continue
+		}
+		if len(entry.ToolCalls) > 0 {
+			lastToolEntry = &entry
+			hasResultAfter = false
+		} else if lastToolEntry != nil {
+			if entry.Type == "VIEW_FILE" || entry.Type == "RUN_COMMAND" || entry.Type == "GREP_SEARCH" ||
+				entry.Type == "FIND_BY_NAME" || entry.Type == "WRITE_TO_FILE" || entry.Type == "REPLACE_FILE_CONTENT" ||
+				entry.Type == "TOOL_RESULT" || entry.Type == "GENERIC" || entry.Type == "USER_INPUT" ||
+				strings.Contains(entry.Type, "BROWSER") {
+				hasResultAfter = true
+			}
+		}
+	}
+
+	if lastToolEntry == nil || hasResultAfter {
+		return nil
+	}
+
+	var toolCalls []struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"args"`
+		Function  struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(lastToolEntry.ToolCalls, &toolCalls); err != nil || len(toolCalls) == 0 {
+		return nil
+	}
+
+	tc := toolCalls[0]
+	toolName := tc.Name
+	if toolName == "" {
+		toolName = tc.Function.Name
+	}
+	args := tc.Arguments
+	if len(args) == 0 {
+		args = tc.Function.Arguments
+	}
+	if isReadOnlyTool(toolName) {
+		return nil
+	}
+	if s.hasSessionApproval(cascadeID, toolName) || s.shouldAutoApprove(toolName) {
+		return nil
+	}
+
+	lower := strings.ToLower(toolName)
+	isMcp := strings.Contains(lower, "mcp")
+	isCmd := strings.Contains(lower, "run_command") || strings.Contains(lower, "command") || strings.Contains(lower, "bash") || strings.Contains(lower, "terminal")
+	isWrite := strings.Contains(lower, "write_to_file") || strings.Contains(lower, "replace_file_content")
+	isQuestion := strings.Contains(lower, "ask_question") || strings.Contains(lower, "ask_user")
+	isUrl := strings.Contains(lower, "read_url") || strings.Contains(lower, "url") || strings.Contains(lower, "browse") || strings.Contains(lower, "fetch")
+
+	if !isMcp && !isCmd && !isWrite && !isQuestion && !isUrl {
+		return nil
+	}
+
+	appType := "approval"
+	cmdTarget := toolName
+	if isMcp {
+		appType = "mcp_tool"
+		cmdTarget = extractMcpTarget(args)
+	} else if isCmd {
+		appType = "run_command"
+		cmdTarget = extractCmdFromArgs(args)
+	} else if isWrite {
+		appType = "file_permission"
+		cmdTarget = extractFilePathFromArgs(args)
+	} else if isUrl {
+		appType = "read_url_content"
+		cmdTarget = extractUrlFromArgs(args)
+	}
+
+	callID := fmt.Sprintf("call-%s-%d", cascadeID, lastToolEntry.StepIndex)
+	ev := connectrpc.StreamEvent{
+		Kind:           connectrpc.EventKindApprovalRequired,
+		CascadeID:      cascadeID,
+		TrajectoryID:   cascadeID,
+		StepIndex:      uint32(lastToolEntry.StepIndex),
+		CallID:         callID,
+		Tool:           appType,
+		Detail:         string(args),
+		Command:        cmdTarget,
+		InteractionNum: toolInteractionNum(toolName),
+	}
+	s.MarkApprovalPending(cascadeID, ev)
+
+	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.approvals[cascadeID]
 	if !ok || p.expired {
-		return nil // expirée : le mobile a reçu approval_expired, pas de fantôme
+		return nil
 	}
 	expiresAt := int64(0)
 	if p.timer != nil {
@@ -1909,9 +2079,113 @@ func (s *Server) approvalFor(cascadeID string) (pendingApproval, bool) {
 // run_command, file_permission, read_url, delete_directory, deploy, etc.
 var commandLineRe = regexp.MustCompile(`"(?:command_line|commandline|run_command|TargetFile|target_file|filePath|file_path|path|Url|url|targetUrl|target_url|directory|dirPath|dir_path|targetEnv|service)"\s*:\s*"((?:[^"\\]|\\.)*)"`)
 
+func cleanJSONString(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, `"`) && strings.HasSuffix(s, `"`) && len(s) >= 2 {
+		var unq string
+		if json.Unmarshal([]byte(s), &unq) == nil {
+			return unq
+		}
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+func extractMcpTarget(raw []byte) string {
+	if len(raw) == 0 {
+		return "mcp_tool"
+	}
+	var m map[string]interface{}
+	if json.Unmarshal(raw, &m) == nil {
+		var srv, tl string
+		for _, k := range []string{"ServerName", "server_name", "Server", "server"} {
+			if v, ok := m[k].(string); ok && v != "" {
+				srv = cleanJSONString(v)
+				break
+			}
+		}
+		for _, k := range []string{"ToolName", "tool_name", "Tool", "tool"} {
+			if v, ok := m[k].(string); ok && v != "" {
+				tl = cleanJSONString(v)
+				break
+			}
+		}
+		if srv != "" && tl != "" {
+			return srv + "/" + tl
+		}
+		if tl != "" {
+			return tl
+		}
+		if srv != "" {
+			return srv
+		}
+	}
+	return "mcp_tool"
+}
+
+func extractFilePathFromArgs(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var m map[string]interface{}
+	if json.Unmarshal(raw, &m) == nil {
+		for _, k := range []string{"TargetFile", "target_file", "FilePath", "file_path", "path", "AbsolutePath", "absolute_path"} {
+			if v, ok := m[k].(string); ok && v != "" {
+				return cleanJSONString(v)
+			}
+		}
+	}
+	return ""
+}
+
+func extractUrlFromArgs(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var m map[string]interface{}
+	if json.Unmarshal(raw, &m) == nil {
+		for _, k := range []string{"Url", "url", "URL", "targetUrl", "target_url", "uri", "Uri", "URI", "link"} {
+			if v, ok := m[k].(string); ok && v != "" {
+				return cleanJSONString(v)
+			}
+		}
+	}
+	re := regexp.MustCompile(`(?i)"(?:url|uri|targeturl|target_url)":\s*"([^"]+)"`)
+	if match := re.FindSubmatch(raw); len(match) > 1 {
+		return cleanJSONString(string(match[1]))
+	}
+	return ""
+}
+
+func toolInteractionNum(tool string) int {
+	clean := strings.ToLower(tool)
+	if strings.Contains(clean, "mcp") {
+		return connectrpc.InteractionMcp
+	}
+	if strings.Contains(clean, "run_command") || strings.Contains(clean, "command") || strings.Contains(clean, "bash") || strings.Contains(clean, "terminal") {
+		return connectrpc.InteractionRunCommand
+	}
+	if strings.Contains(clean, "write_to_file") || strings.Contains(clean, "replace_file_content") {
+		return connectrpc.InteractionFilePermission
+	}
+	if strings.Contains(clean, "ask_question") || strings.Contains(clean, "ask_user") {
+		return connectrpc.InteractionAskQuestion
+	}
+	if strings.Contains(clean, "url") || strings.Contains(clean, "browse") {
+		return connectrpc.InteractionReadUrlContent
+	}
+	if strings.Contains(clean, "deploy") {
+		return connectrpc.InteractionDeploy
+	}
+	if strings.Contains(clean, "subagent") {
+		return connectrpc.InteractionInvokeSubagent
+	}
+	return connectrpc.InteractionApproval
+}
+
 func extractCommand(detail string) string {
 	if m := commandLineRe.FindStringSubmatch(detail); m != nil {
-		return m[1]
+		return cleanJSONString(m[1])
 	}
 	if strings.Contains(detail, "ServerName") || strings.Contains(detail, "server_name") || strings.Contains(detail, "ToolName") || strings.Contains(detail, "tool_name") || strings.Contains(detail, "coolify") {
 		var mcpMap map[string]interface{}
@@ -1924,6 +2198,8 @@ func extractCommand(detail string) string {
 			if tl == "" {
 				tl, _ = mcpMap["tool_name"].(string)
 			}
+			srv = cleanJSONString(srv)
+			tl = cleanJSONString(tl)
 			if srv != "" && tl != "" {
 				return srv + "/" + tl
 			}
@@ -1946,7 +2222,7 @@ func extractCommand(detail string) string {
 // inconnus retombent dans le default ÔÇÆ jamais auto-approuv├®s.
 func isReadOnlyTool(tool string) bool {
 	switch strings.ToLower(tool) {
-	case "view_file", "read_file", "list_dir", "list_files", "grep_search", "search_files", "read_resource", "list_resources", "grep", "glob", "fetch", "read_url_content":
+	case "view_file", "read_file", "list_dir", "list_files", "grep_search", "search_files", "read_resource", "list_resources", "grep", "glob":
 		return true
 	default:
 		return false
@@ -2421,9 +2697,18 @@ func buildApprovalPayload(approvalType string, confirm bool, command, filePath, 
 	case "permission":
 		oneofField = connectrpc.InteractionPermission
 		oneofPayload = connectrpc.BuildPermissionInteraction(confirm, scope, filePath)
-	case "read_url_content", "read_url", "browse":
-		oneofField = connectrpc.InteractionReadUrlContent
-		oneofPayload = connectrpc.BuildReadUrlContentInteraction(confirm)
+	case "read_url_content", "read_url", "browse", "url_permission":
+		target := filePath
+		if target == "" {
+			target = command
+		}
+		if scope != 0 && scope != connectrpc.PermissionScopeOnce {
+			oneofField = connectrpc.InteractionPermission
+			oneofPayload = connectrpc.BuildPermissionInteraction(confirm, scope, target)
+		} else {
+			oneofField = connectrpc.InteractionReadUrlContent
+			oneofPayload = connectrpc.BuildReadUrlContentInteraction(confirm)
+		}
 	case "open_browser_url":
 		oneofField = connectrpc.InteractionOpenBrowserURL
 		oneofPayload = connectrpc.BuildOpenBrowserUrlInteraction(confirm)
@@ -3056,7 +3341,7 @@ func (s *Server) sessionsOutWithLimit(raw []byte, limitPerProject int) interface
 func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, includeArchived bool) interface{} {
 	var alreadyOut map[string]interface{}
 	if err := json.Unmarshal(raw, &alreadyOut); err == nil {
-		if _, ok := alreadyOut["sessions"]; ok {
+		if sessList, ok := alreadyOut["sessions"].([]interface{}); ok && len(sessList) > 0 {
 			return alreadyOut
 		}
 	}
@@ -4740,11 +5025,34 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		// contact RPC ├®vite d'ex├®cuter une commande que l'utilisateur n'a pas
 		// valid├®e ├á temps. Ponytail: compare le callId quand le mobile le fournit.
 		if p, ok := s.approvalFor(msg.CascadeID); ok && !p.expired {
-			// Fra├«che : annule le timer AVANT l'envoi (pas de course entre
-			// submit et auto-refus).
+			// Fraîche : annule le timer AVANT l'envoi (pas de course entre submit et auto-refus).
 			s.clearApproval(msg.CascadeID)
-		} else if ok {
+		} else if ok && p.expired {
 			s.writeJSON(conn, OutgoingMessage{Type: "error", RequestID: msg.RequestID, Error: "approval expired (auto-denied)"})
+			return
+		} else if !ok {
+			// Conflit concurrentiel évité : l'action a déjà été résolue (par le Desktop ou un autre client)
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Data: map[string]interface{}{
+					"status":   "already_resolved",
+					"conflict": true,
+					"message":  "Action déjà résolue sur le PC",
+				},
+			})
+			s.broadcast(OutgoingMessage{
+				Type:      "approval_resolved",
+				CascadeID: msg.CascadeID,
+				Data: map[string]interface{}{
+					"cascadeId":    msg.CascadeID,
+					"callId":       msg.CallID,
+					"decision":     msg.Decision,
+					"approvalType": msg.ApprovalType,
+					"conflict":     true,
+					"source":       "desktop",
+				},
+			})
 			return
 		}
 
@@ -4783,6 +5091,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			}
 		}
 		if err == nil {
+			go notifyDesktopAction(msg.ApprovalType, msg.Command, msg.Decision)
 			s.writeJSON(conn, OutgoingMessage{
 				Type:      "response",
 				RequestID: msg.RequestID,
@@ -4800,6 +5109,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 					"approvalType": msg.ApprovalType,
 					"scope":        msg.Scope,
 					"source":       "remote",
+					"conflict":     false,
 				},
 			})
 			s.broadcast(OutgoingMessage{
@@ -7181,6 +7491,7 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 	var deliveredTextLen int
 	var turnCompleted bool
 	var nextTranscriptLookup time.Time
+	var lastPendingApprovalTool *pendingApproval
 	lastActivityTime := time.Now()
 
 	for {
@@ -7188,10 +7499,6 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 1. Détection d'approbation en attente → fin immédiate du flux avec outcome=approval
-			if s.hasPendingApproval(cascadeID) {
-				return
-			}
 
 			if transcriptPath == "" && time.Now().After(nextTranscriptLookup) {
 				transcriptPath = findTranscriptPath(cascadeID)
@@ -7268,26 +7575,84 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 											if len(args) == 0 {
 												args = tc.Function.Arguments
 											}
-											if toolName != "" && toolName != "ask_question" && toolName != "ask_user" {
-												lowerTool := strings.ToLower(toolName)
-												kind := "tool_start"
-												if strings.Contains(lowerTool, "run_command") || strings.Contains(lowerTool, "command") || strings.Contains(lowerTool, "bash") || strings.Contains(lowerTool, "terminal") {
-													kind = "runner_started"
-													cmdText := extractCmdFromArgs(args)
-													if cmdText == "" {
-														cmdText = toolName
-													}
-													s.runningTasks.startTask(fmt.Sprintf("%s-%d", cascadeID, entry.StepIndex), cmdText, cascadeID, nil)
-												} else if strings.Contains(lowerTool, "grep") || strings.Contains(lowerTool, "search") || strings.Contains(lowerTool, "find_by_name") || strings.Contains(lowerTool, "list_dir") || strings.Contains(lowerTool, "list_files") {
-													kind = "search_started"
-												} else if strings.Contains(lowerTool, "browser") || strings.Contains(lowerTool, "playwright") || strings.Contains(lowerTool, "read_page") {
-													kind = "browser_action"
+											if toolName == "" {
+												continue
+											}
+
+											lowerTool := strings.ToLower(toolName)
+											isQuestion := strings.Contains(lowerTool, "ask_question") || strings.Contains(lowerTool, "ask_user")
+											if isQuestion {
+												var qData map[string]interface{}
+												if json.Unmarshal(args, &qData) == nil {
+													callID := fmt.Sprintf("call-%s-%d", cascadeID, entry.StepIndex)
+													qData["cascadeId"] = cascadeID
+													qData["stepIndex"] = entry.StepIndex
+													qData["callId"] = callID
+													qData["trajectoryId"] = cascadeID
+													s.broadcast(OutgoingMessage{
+														Type:      "question_pending",
+														CascadeID: cascadeID,
+														Data:      qData,
+													})
+													events = append(events, map[string]interface{}{
+														"kind":         "question_required",
+														"tool":         toolName,
+														"detail":       string(args),
+														"cascadeId":    cascadeID,
+														"stepIndex":    entry.StepIndex,
+														"callId":       callID,
+														"trajectoryId": cascadeID,
+													})
 												}
-												events = append(events, map[string]interface{}{
-													"kind":   kind,
-													"tool":   toolName,
-													"detail": string(args),
-												})
+												continue
+											}
+
+											kind := "tool_start"
+											if strings.Contains(lowerTool, "run_command") || strings.Contains(lowerTool, "command") || strings.Contains(lowerTool, "bash") || strings.Contains(lowerTool, "terminal") {
+												kind = "runner_started"
+												cmdText := extractCmdFromArgs(args)
+												if cmdText == "" {
+													cmdText = toolName
+												}
+												s.runningTasks.startTask(fmt.Sprintf("%s-%d", cascadeID, entry.StepIndex), cmdText, cascadeID, nil)
+											} else if strings.Contains(lowerTool, "grep") || strings.Contains(lowerTool, "search") || strings.Contains(lowerTool, "find_by_name") || strings.Contains(lowerTool, "list_dir") || strings.Contains(lowerTool, "list_files") {
+												kind = "search_started"
+											} else if strings.Contains(lowerTool, "browser") || strings.Contains(lowerTool, "playwright") || strings.Contains(lowerTool, "read_page") {
+												kind = "browser_action"
+											}
+											events = append(events, map[string]interface{}{
+												"kind":   kind,
+												"tool":   toolName,
+												"detail": string(args),
+											})
+
+											// Détection si l'outil requiert confirmation utilisateur
+											if !isReadOnlyTool(toolName) && !s.hasSessionApproval(cascadeID, toolName) && !s.shouldAutoApprove(toolName) {
+												appType := "approval"
+												cmdTarget := toolName
+												if strings.Contains(lowerTool, "mcp") {
+													appType = "mcp_tool"
+													cmdTarget = extractMcpTarget(args)
+												} else if strings.Contains(lowerTool, "run_command") || strings.Contains(lowerTool, "command") || strings.Contains(lowerTool, "bash") || strings.Contains(lowerTool, "terminal") {
+													appType = "run_command"
+													cmdTarget = extractCmdFromArgs(args)
+												} else if strings.Contains(lowerTool, "write_to_file") || strings.Contains(lowerTool, "replace_file_content") {
+													appType = "file_permission"
+													cmdTarget = extractFilePathFromArgs(args)
+												} else if strings.Contains(lowerTool, "read_url") || strings.Contains(lowerTool, "url") || strings.Contains(lowerTool, "browse") || strings.Contains(lowerTool, "fetch") {
+													appType = "read_url_content"
+													cmdTarget = extractUrlFromArgs(args)
+												}
+												lastPendingApprovalTool = &pendingApproval{
+													callID:         fmt.Sprintf("call-%s-%d", cascadeID, entry.StepIndex),
+													cascadeID:      cascadeID,
+													trajectoryID:   cascadeID,
+													stepIndex:      uint32(entry.StepIndex),
+													approvalType:   appType,
+													command:        cmdTarget,
+													detail:         string(args),
+													requestedField: toolInteractionNum(toolName),
+												}
 											}
 										}
 									}
@@ -7295,6 +7660,18 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 
 								// 2b. Tool Results
 								if entry.Type == "VIEW_FILE" || entry.Type == "RUN_COMMAND" || entry.Type == "GREP_SEARCH" || entry.Type == "FIND_BY_NAME" || entry.Type == "WRITE_TO_FILE" || entry.Type == "REPLACE_FILE_CONTENT" || entry.Type == "TOOL_RESULT" || entry.Type == "GENERIC" || strings.Contains(entry.Type, "BROWSER") {
+									lastPendingApprovalTool = nil
+									if s.hasPendingApproval(cascadeID) {
+										s.clearApproval(cascadeID)
+										s.broadcast(OutgoingMessage{
+											Type:      "approval_resolved",
+											CascadeID: cascadeID,
+											Data: map[string]interface{}{
+												"cascadeId": cascadeID,
+												"source":    "desktop",
+											},
+										})
+									}
 									preview := entry.Content
 									kind := "tool_output"
 									if entry.Type == "RUN_COMMAND" || (entry.Type == "GENERIC" && (strings.Contains(preview, "command") || strings.Contains(preview, "exit code") || strings.Contains(preview, "Output:"))) {
@@ -7356,9 +7733,28 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 
 								// 2e. Error message handling
 								if (entry.Type == "ERROR_MESSAGE" || entry.Status == "ERROR") && len(entry.Content) > 0 {
+									errorDetail := entry.Content
+									if strings.Contains(entry.Content, "stream was interrupted") {
+										quotaHeader := "Baseline model quota reached (stream interrupted)"
+										if s.RPCClient != nil {
+											if rawQuota, errQ := s.RPCClient.RetrieveUserQuotaSummary(); errQ == nil && len(rawQuota) > 0 {
+												q := connectrpc.ParseQuotaSummary(rawQuota)
+												if q.FiveHourPercentClaude >= 100 || q.WeeklyPercentClaude >= 100 || q.FiveHourPercent >= 100 || q.WeeklyPercent >= 100 {
+													modelName := "Baseline model"
+													if q.FiveHourPercentClaude >= 100 || q.WeeklyPercentClaude >= 100 {
+														modelName = "Claude"
+													} else if q.FiveHourPercent >= 100 || q.WeeklyPercent >= 100 {
+														modelName = "Gemini"
+													}
+													quotaHeader = fmt.Sprintf("Error Individual quota reached: %s quota exceeded (100%%). Baseline model quota reached.", modelName)
+												}
+											}
+										}
+										errorDetail = quotaHeader + "\n" + entry.Content
+									}
 									events = append(events, map[string]interface{}{
 										"kind":   "error",
-										"detail": entry.Content,
+										"detail": errorDetail,
 										"status": "ERROR",
 									})
 									turnCompleted = true
@@ -7444,6 +7840,58 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 							ReleaseHistoryBuffer(hBuf)
 						}
 						f.Close()
+
+						// Si à la fin de la lecture du transcript, un outil attend toujours confirmation
+						if lastPendingApprovalTool != nil && !s.hasPendingApproval(cascadeID) {
+							ev := connectrpc.StreamEvent{
+								Kind:           connectrpc.EventKindApprovalRequired,
+								CascadeID:      cascadeID,
+								TrajectoryID:   cascadeID,
+								StepIndex:      lastPendingApprovalTool.stepIndex,
+								CallID:         lastPendingApprovalTool.callID,
+								Tool:           lastPendingApprovalTool.approvalType,
+								Detail:         lastPendingApprovalTool.detail,
+								Command:        lastPendingApprovalTool.command,
+								InteractionNum: lastPendingApprovalTool.requestedField,
+							}
+							s.MarkApprovalPending(cascadeID, ev)
+							pending := s.pendingApprovalInfo(cascadeID)
+							if pending != nil {
+								pending["hostActive"] = hostActiveSince(hostActiveWindow)
+								s.broadcast(OutgoingMessage{
+									Type:      "approval_pending",
+									CascadeID: cascadeID,
+									Data:      pending,
+								})
+							}
+							fIdx := atomic.AddInt64(frameIndex, 1)
+							deltaData := map[string]interface{}{
+								"frameIndex": fIdx,
+								"events": []map[string]interface{}{
+									{
+										"kind":         "approval_required",
+										"tool":         lastPendingApprovalTool.approvalType,
+										"detail":       lastPendingApprovalTool.detail,
+										"callId":       lastPendingApprovalTool.callID,
+										"cascadeId":    cascadeID,
+										"stepIndex":    int(lastPendingApprovalTool.stepIndex),
+										"approvalType": lastPendingApprovalTool.approvalType,
+										"command":      lastPendingApprovalTool.command,
+									},
+								},
+								"cascadeId":  cascadeID,
+								"hostActive": hostActiveSince(hostActiveWindow),
+							}
+							deltaMsg := OutgoingMessage{
+								Type:      "stream_delta",
+								RequestID: requestID,
+								CascadeID: cascadeID,
+								Data:      deltaData,
+							}
+							stepIdx := s.streamBuffer.RecordEvent(cascadeID, deltaMsg)
+							deltaData["stepIndex"] = stepIdx
+							s.broadcast(deltaMsg)
+						}
 					}
 				}
 			}
@@ -7489,6 +7937,10 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 			// 4. Clôture propre dès que le tour est stabilisé
 			// Ne JAMAIS terminer tant que la session est activement en cours d'exécution (statut RUNNING ou BUSY)
 			if s.isSessionActivelyRunning(cascadeID) {
+				continue
+			}
+			if s.hasPendingApproval(cascadeID) {
+				time.Sleep(100 * time.Millisecond)
 				continue
 			}
 
@@ -7586,6 +8038,10 @@ func (s *Server) startExternalTurnStreamer(cascadeID string) {
 				"requestId": reqID,
 				"status":    "DONE",
 				"outcome":   "completed",
+			}
+			if s.hasPendingApproval(cascadeID) {
+				endData["outcome"] = "approval"
+				endData["message"] = "Action requise"
 			}
 			s.broadcast(OutgoingMessage{
 				Type:      "stream_end",
@@ -7779,4 +8235,35 @@ func isRunningTests() bool {
 		strings.HasSuffix(os.Args[0], ".test.exe") ||
 		strings.Contains(os.Args[0], "__debug_bin")
 }
+
+// notifyDesktopAction notifie l'utilisateur sur son PC (Windows Toast / Log)
+// lorsqu'une action d'approbation est exécutée depuis le mobile.
+func notifyDesktopAction(approvalType, command, decision string) {
+	logJSON.Info("mobile_approval_executed", "type", approvalType, "decision", decision, "command", command)
+	if isRunningTests() {
+		return
+	}
+	if runtime.GOOS == "windows" {
+		title := "Antigravity Remote (Mobile)"
+		actionText := "Action approuvée"
+		if strings.EqualFold(decision, "deny") {
+			actionText = "Action refusée"
+		}
+		detail := command
+		if detail == "" {
+			detail = approvalType
+		}
+		if len(detail) > 80 {
+			detail = detail[:77] + "..."
+		}
+		body := fmt.Sprintf("%s à distance : %s", actionText, detail)
+		psCmd := fmt.Sprintf(`[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $textNodes = $template.GetElementsByTagName('text'); $textNodes.Item(0).AppendChild($template.CreateTextNode('%s')) > $null; $textNodes.Item(1).AppendChild($template.CreateTextNode('%s')) > $null; $toast = [Windows.UI.Notifications.ToastNotification]::new($template); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Antigravity Remote').Show($toast)`, escapePowerShell(title), escapePowerShell(body))
+		_ = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd).Start()
+	}
+}
+
+func escapePowerShell(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
 

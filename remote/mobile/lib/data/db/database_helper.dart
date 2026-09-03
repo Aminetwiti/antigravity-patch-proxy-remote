@@ -49,6 +49,11 @@ class DatabaseHelper {
         await db.rawQuery('PRAGMA journal_mode = WAL;');
         await db.rawQuery('PRAGMA synchronous = NORMAL;');
       },
+      onOpen: (db) async {
+        try {
+          await db.execute('ALTER TABLE $tableSessions ADD COLUMN raw_json TEXT;');
+        } catch (_) {}
+      },
       onCreate: _createDB,
     );
   }
@@ -102,14 +107,22 @@ CREATE TABLE IF NOT EXISTS $tableSessionScrollState (
           if (id.isEmpty) continue;
           final title = session['title']?.toString() ?? defaultSessionTitle;
           final time = session['time']?.toString() ?? session['updatedAt']?.toString() ?? '';
+          String? rawJson;
+          try {
+            rawJson = jsonEncode(session);
+          } catch (_) {}
+          final values = <String, dynamic>{
+            colId: id,
+            colTitle: title,
+            colTime: time,
+            colUpdatedAt: DateTime.now().millisecondsSinceEpoch,
+          };
+          if (rawJson != null) {
+            values['raw_json'] = rawJson;
+          }
           batch.insert(
             tableSessions,
-            {
-              colId: id,
-              colTitle: title,
-              colTime: time,
-              colUpdatedAt: DateTime.now().millisecondsSinceEpoch,
-            },
+            values,
             conflictAlgorithm: ConflictAlgorithm.replace,
           );
         }
@@ -121,7 +134,23 @@ CREATE TABLE IF NOT EXISTS $tableSessionScrollState (
   Future<List<Map<String, dynamic>>> getSessions() async {
     final db = await instance.database;
     final result = await db.query(tableSessions, orderBy: '$colUpdatedAt DESC');
-    return result;
+    return result.map((row) {
+      final raw = row['raw_json'] as String?;
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map<String, dynamic>) return decoded;
+          if (decoded is Map) return Map<String, dynamic>.from(decoded);
+        } catch (_) {}
+      }
+      return <String, dynamic>{
+        'cascadeId': row[colId],
+        'id': row[colId],
+        'title': row[colTitle],
+        'time': row[colTime],
+        'updatedAt': DateTime.fromMillisecondsSinceEpoch((row[colUpdatedAt] as num?)?.toInt() ?? 0).toIso8601String(),
+      };
+    }).toList();
   }
 
   /// Sauvegarde les messages de session avec compression GZIP pour les payloads volumineux (réduction > 75%).

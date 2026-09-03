@@ -28,7 +28,8 @@ type JetboxSummary struct {
 	UpdatedAt    time.Time `json:"updatedAt,omitempty"`
 	StepCount    int       `json:"stepCount,omitempty"`
 	Source       int       `json:"source,omitempty"` // 16 = SUBAGENT
-	IsSubagent   bool      `json:"isSubagent,omitempty"`
+	IsSubagent      bool      `json:"isSubagent,omitempty"`
+	ParentCascadeID string    `json:"parentCascadeId,omitempty"`
 	Archived     bool      `json:"archived,omitempty"`
 	Killed       bool      `json:"killed,omitempty"`
 	Waiting      bool      `json:"waiting,omitempty"`
@@ -58,9 +59,16 @@ type jetboxSummaryJSON struct {
 		IsDeleted               bool `json:"isDeleted"`
 	} `json:"annotations"`
 	TrajectoryMetadata *struct {
-		ProjectID        string `json:"projectId"`
-		SubagentMetadata any    `json:"subagentMetadata"`
-		WorktreeMetadata any    `json:"worktreeMetadata"`
+		ProjectID            string `json:"projectId"`
+		ParentConversationID string `json:"parentConversationId"`
+		ParentCascadeID      string `json:"parentCascadeId"`
+		ParentTrajectoryID   string `json:"parentTrajectoryId"`
+		RootConversationID   string `json:"rootConversationId"`
+		NestingDepth         int    `json:"nestingDepth"`
+		SubagentSpec         any    `json:"subagentSpec"`
+		AgentScript          any    `json:"agentScript"`
+		SubagentMetadata     any    `json:"subagentMetadata"`
+		WorktreeMetadata     any    `json:"worktreeMetadata"`
 	} `json:"trajectoryMetadata"`
 	Workspaces []struct {
 		WorkspaceFolderAbsoluteURI string `json:"workspaceFolderAbsoluteUri"`
@@ -113,7 +121,17 @@ func (j jetboxSummaryJSON) toSummary(id string) JetboxSummary {
 	}
 	if j.TrajectoryMetadata != nil {
 		s.ProjectID = j.TrajectoryMetadata.ProjectID
-		if j.TrajectoryMetadata.SubagentMetadata != nil || j.TrajectoryMetadata.WorktreeMetadata != nil {
+		parentID := j.TrajectoryMetadata.ParentConversationID
+		if parentID == "" {
+			parentID = j.TrajectoryMetadata.ParentCascadeID
+		}
+		s.ParentCascadeID = parentID
+		if parentID != "" ||
+			j.TrajectoryMetadata.NestingDepth > 0 ||
+			j.TrajectoryMetadata.SubagentSpec != nil ||
+			j.TrajectoryMetadata.AgentScript != nil ||
+			j.TrajectoryMetadata.SubagentMetadata != nil ||
+			j.TrajectoryMetadata.WorktreeMetadata != nil {
 			s.IsSubagent = true
 			s.Source = 16
 		}
@@ -214,6 +232,8 @@ func (j JetboxSummary) ToTrajectorySummary() TrajectorySummary {
 		Size:         j.StepCount,
 		Archived:     j.Archived,
 		Killed:       j.Killed,
-		Source:       j.Source,
+		Source:          j.Source,
+		IsSubagent:      j.IsSubagent,
+		ParentCascadeID: j.ParentCascadeID,
 	}
 }

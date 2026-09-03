@@ -19,6 +19,7 @@ import '../../widgets/chat_input_bar.dart';
 import '../../widgets/connection_banner.dart';
 import '../../widgets/markdown_bubble.dart';
 import '../../widgets/tool_approval_card.dart';
+import '../../widgets/floating_resolution_banner.dart';
 import '../../widgets/session_top_tabs.dart';
 import '../../widgets/artifact_cards.dart';
 import '../../widgets/side_question_card.dart';
@@ -157,6 +158,24 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   // callIds dont le daemon a broadcasté approval_expired : la carte reste
   // affichée (pourquoi elle a disparu) mais passe en lecture seule.
   final Set<String> _expiredCallIds = {};
+
+  // Bannière flottante de résolution distante et arbitrage de conflit
+  String? _resolutionBannerMessage;
+  bool _isResolutionBannerConflict = false;
+
+  void _showResolutionBanner(String message, {bool isConflict = false}) {
+    setState(() {
+      _resolutionBannerMessage = message;
+      _isResolutionBannerConflict = isConflict;
+    });
+    HapticFeedback.selectionClick();
+  }
+
+  void _dismissResolutionBanner() {
+    setState(() {
+      _resolutionBannerMessage = null;
+    });
+  }
 
   List<AskQuestionChoiceRequest> get _currentSessionQuestions =>
       _sessionQuestions.putIfAbsent(widget.activeSessionId, () => []);
@@ -1013,6 +1032,8 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 final fullError = '$txt\n$thought\n$segError';
                 if (fullError.contains('quota') ||
                     fullError.contains('resource_exhausted') ||
+                    fullError.contains('stream was interrupted') ||
+                    fullError.contains('baseline model') ||
                     fullError.contains('429') ||
                     fullError.contains('insufficient_quota')) {
                   final banner = BannerClassifier.classifyError(
@@ -1454,6 +1475,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       HapticFeedback.lightImpact();
     }
 
+    // Rafraîchir l'état des sous-agents dès la fin d'un tour pour faire disparaître les terminés/tués
+    _fetchSubagentsForSession(cascadeId);
+
     // Si l'utilisateur est DÉJÀ dans la session active et au premier plan, NE PAS envoyer de notification.
     final isViewingThisSessionInForeground = _appInForeground && cascadeId == widget.activeSessionId;
     if (isViewingThisSessionInForeground) {
@@ -1743,6 +1767,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       } else if (type == 'task_ended') {
         final data = msg['data'] as Map<String, dynamic>? ?? {};
         final eventCascadeId = data['cascadeId'] as String? ?? msg['cascadeId'] as String? ?? '';
+        final targetCId = eventCascadeId.isNotEmpty ? eventCascadeId : widget.activeSessionId;
         if (eventCascadeId.isNotEmpty && eventCascadeId != widget.activeSessionId) {
           return;
         }
@@ -1775,10 +1800,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           if (mappedId.isNotEmpty) _closeTaskController(mappedId);
         });
         _refreshRunningTasks();
+        _fetchSubagentsForSession(targetCId);
 
         // Si toutes les tâches d'arrière-plan sont terminées, que le stream est inactif,
         // et que l'utilisateur N'EST PAS sur cette session au premier plan, notifier la fin définitive.
-        final targetCId = eventCascadeId.isNotEmpty ? eventCascadeId : widget.activeSessionId;
         final isViewingThisSessionInForeground = _appInForeground && targetCId == widget.activeSessionId;
         final hasSubagents = (_sessionSubagents[targetCId] ?? []).any((sa) => sa.status.toLowerCase() == 'running');
         if (!isViewingThisSessionInForeground &&
@@ -2227,6 +2252,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         final data = msg['data'] as Map<String, dynamic>? ?? const {};
         final callId = data['callId'] as String? ?? '';
         final cascadeId = (msg['cascadeId'] ?? data['cascadeId']) as String? ?? '';
+        final source = data['source']?.toString() ?? '';
+        final isConflict = data['conflict'] == true;
+        final decision = data['decision']?.toString() ?? '';
+        final appType = data['approvalType']?.toString() ?? '';
+
         setState(() {
           if (callId.isNotEmpty) {
             _removeApproval(callId, cascadeId);
@@ -2240,6 +2270,22 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           }
         });
         ApprovalNotifier.instance.cancelApprovalByCascadeId(cascadeId);
+
+        if (source == 'desktop' || isConflict) {
+          if (isConflict) {
+            _showResolutionBanner(
+              '⚡ Conflit évité : action déjà arbitrée sur votre PC',
+              isConflict: true,
+            );
+          } else {
+            final decisionText = decision.toLowerCase() == 'deny' ? 'refusée' : 'approuvée';
+            final toolText = appType.isNotEmpty ? ' ($appType)' : '';
+            _showResolutionBanner(
+              '💻 Action $decisionText sur le PC$toolText',
+              isConflict: false,
+            );
+          }
+        }
       } else if (type == 'stream_error' || type == 'error') {
         final errText = msg['error']?.toString() ??
             msg['data']?['error']?.toString() ??
@@ -3192,6 +3238,12 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           child: Column(
             children: [
               connectivityBanner,
+              if (_resolutionBannerMessage != null)
+                FloatingResolutionBanner(
+                  message: _resolutionBannerMessage!,
+                  isConflict: _isResolutionBannerConflict,
+                  onDismiss: _dismissResolutionBanner,
+                ),
           if (!hasKeyboard && _isFullscreen) breadcrumb,
           AnimatedSize(
             duration: const Duration(milliseconds: 180),
@@ -3780,6 +3832,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 },
                 onStop: _handleStopGeneration,
                 onSwitchModel: _showModelSelector,
+                onSeePlans: _showPlansOrLimitsSheet,
                 onEditPrompt: (text) => _chatInputKey.currentState?.setText(text),
                 onRevertStep: _handleRevertStep,
                 onRetryTask: () => _handleRetryTaskDirectly(msg),
@@ -4798,6 +4851,7 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback? onStop;
   final ValueChanged<ChatMessage>? onResend;
   final VoidCallback? onSwitchModel;
+  final VoidCallback? onSeePlans;
   final ValueChanged<String>? onEditPrompt;
   final ValueChanged<String>? onOpenFile;
 
@@ -4824,6 +4878,7 @@ class _MessageBubble extends StatelessWidget {
     this.onStop,
     this.onResend,
     this.onSwitchModel,
+    this.onSeePlans,
     this.onEditPrompt,
     this.onOpenFile,
     this.onRevertStep,
@@ -5113,6 +5168,8 @@ class _MessageBubble extends StatelessWidget {
                     errorText: message.segments[segIdx].content,
                     title: message.segments[segIdx].title,
                     onRetry: onRetryTask,
+                    onSwitchModel: onSwitchModel,
+                    onSeePlans: onSeePlans,
                   ),
                 ] else if (message.segments[segIdx].type == ChatSegmentType.question) ...[
                   ResolvedAskQuestionCard(

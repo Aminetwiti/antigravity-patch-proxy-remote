@@ -50,12 +50,12 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
   bool get _isDestructive => widget.request.checkDestructive;
 
   String _extractTargetDisplay(String raw) {
+    if (widget.request.isMcpApproval && widget.request.mcpServer != null) {
+      final tl = widget.request.mcpTool ?? widget.request.toolName;
+      return '${widget.request.mcpServer} -> $tl';
+    }
     if (raw.isEmpty) {
       if (widget.request.filePath != null) return widget.request.filePath!;
-      if (widget.request.mcpServer != null) {
-        final tl = widget.request.mcpTool ?? widget.request.toolName;
-        return '${widget.request.mcpServer}/$tl';
-      }
       return widget.request.description;
     }
     final trimmed = raw.trim();
@@ -102,6 +102,9 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
       return 'Allow file access outside workspace?';
     }
     if (widget.request.isMcpApproval) {
+      if (widget.request.mcpServer != null && widget.request.mcpServer!.isNotEmpty) {
+        return 'Allow MCP tool execution (${widget.request.mcpServer})?';
+      }
       return 'Allow using this MCP tool?';
     }
     if (widget.request.isStdinApproval) {

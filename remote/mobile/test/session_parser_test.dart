@@ -124,5 +124,27 @@ void main() {
       expect(killed.isAvailable, isFalse);
       expect(deleted.isAvailable, isFalse);
     });
+
+    test('correctly parses isSubagent flag and source: 16', () {
+      final sub1 = CascadeSession.fromJson({
+        'cascadeId': 'sub-1',
+        'title': 'Subagent Task',
+        'isSubagent': true,
+      });
+      final sub2 = CascadeSession.fromJson({
+        'cascadeId': 'sub-2',
+        'title': 'Subagent Source 16',
+        'source': 16,
+      });
+      final root = CascadeSession.fromJson({
+        'cascadeId': 'root-1',
+        'title': 'Root Conversation',
+        'isSubagent': false,
+      });
+
+      expect(sub1.isSubagent, isTrue);
+      expect(sub2.isSubagent, isTrue);
+      expect(root.isSubagent, isFalse);
+    });
   });
 }

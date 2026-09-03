@@ -331,11 +331,17 @@ class StreamDeltaParser {
       case 'tool_output':
       case 'runner_output':
       case 'search_result':
-        return arg.isNotEmpty ? '✓ $arg' : '✓ completed';
+        return '';
       default:
         final cleanTool = tool.replaceAll('_', ' ');
         if (cleanTool.toLowerCase().startsWith('task ') && (arg.toLowerCase().contains('finish') || arg.toLowerCase().contains('complete'))) {
           return cleanTool;
+        }
+        if (lowerTool == 'generic' || lowerTool == 'generic_tool' || lowerTool == 'tool_result') {
+          return '';
+        }
+        if (arg.contains('Created At:') || arg.contains('Completed At:')) {
+          return '';
         }
         return arg.isNotEmpty ? 'Task $cleanTool ($arg)' : 'Task $cleanTool';
     }

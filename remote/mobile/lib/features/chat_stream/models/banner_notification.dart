@@ -83,9 +83,11 @@ class BannerClassifier {
   }) {
     final lower = errorText.toLowerCase();
 
-    // 1. Quota Exceeded (Individual quota reached, baseline model quota reached, RESOURCE_EXHAUSTED, 429, 402, insufficient_quota)
+    // 1. Quota Exceeded (Individual quota reached, baseline model quota reached, RESOURCE_EXHAUSTED, 429, 402, insufficient_quota, stream interrupted)
     if (lower.contains('individual quota reached') ||
         lower.contains('baseline model quota reached') ||
+        lower.contains('stream was interrupted') ||
+        lower.contains('the stream was interrupted') ||
         lower.contains('resource_exhausted') ||
         lower.contains('insufficient_quota') ||
         lower.contains('quota exceeded') ||
