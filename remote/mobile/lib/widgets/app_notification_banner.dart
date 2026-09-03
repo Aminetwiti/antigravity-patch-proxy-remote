@@ -38,6 +38,9 @@ class AppNotificationBanner extends StatelessWidget {
       case BannerType.contextLimit:
         iconData = Icons.memory_rounded;
         break;
+      case BannerType.streamInterrupted:
+        iconData = Icons.sync_problem_outlined;
+        break;
     }
 
     final surfaceBg = isDark

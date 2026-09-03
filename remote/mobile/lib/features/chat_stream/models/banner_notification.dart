@@ -7,6 +7,7 @@ enum BannerType {
   apiKeyInvalid,
   fallbackActive,
   contextLimit,
+  streamInterrupted,
 }
 
 /// Sévérité visuelle (définit la couleur de bordure, l'icône et l'arrière-plan)
@@ -67,6 +68,8 @@ class BannerNotificationData {
         return 4;
       case BannerType.contextLimit:
         return 5;
+      case BannerType.streamInterrupted:
+        return 6;
     }
   }
 }
@@ -189,7 +192,7 @@ class BannerClassifier {
 
       return BannerNotificationData(
         id: 'stream-interrupted',
-        type: BannerType.networkError,
+        type: BannerType.streamInterrupted,
         severity: BannerSeverity.warning,
         title: 'Flux interrompu',
         message: 'La transmission avec l\'IDE a été interrompue. Vous pouvez continuer ou renvoyer votre requête.',

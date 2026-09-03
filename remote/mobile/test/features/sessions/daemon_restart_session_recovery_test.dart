@@ -1,6 +1,4 @@
-﻿import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobile/core/protocol/daemon_api.dart';
 import 'package:mobile/core/protocol/messages.dart';
 import 'package:mobile/core/protocol/session_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
