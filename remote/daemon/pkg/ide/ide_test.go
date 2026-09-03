@@ -75,6 +75,9 @@ func TestFindInstanceForCascade(t *testing.T) {
 	t.Logf("🔍 Hint extrait pour %s : %q", cid, hint)
 	inst, err := FindInstanceForCascade(cid)
 	if err != nil {
+		if strings.Contains(err.Error(), "aucune instance active") {
+			t.Skip("aucune instance active d'Antigravity IDE trouvée (normal hors environnement IDE)")
+		}
 		t.Fatalf("FindInstanceForCascade error: %v", err)
 	}
 	t.Logf("🎯 Instance trouvée pour cascade %s : PID %d, Port %d, WS %s", cid, inst.PID, inst.Port, inst.WorkspaceID)
@@ -87,6 +90,9 @@ func TestFindClientForCascade(t *testing.T) {
 	cid := "12deb7f0-b0a0-4461-95a6-b9b45ecec1c5"
 	client, err := FindClientForCascade(cid)
 	if err != nil {
+		if strings.Contains(err.Error(), "aucune instance active") {
+			t.Skip("aucune instance active d'Antigravity IDE trouvée (normal hors environnement IDE)")
+		}
 		t.Fatalf("FindClientForCascade failed: %v", err)
 	}
 	hb, errHb := client.Heartbeat()

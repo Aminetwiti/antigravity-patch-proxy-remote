@@ -145,7 +145,7 @@ func ListDiscoveredSkills() []DiscoveredSkill {
 		return []DiscoveredSkill{}
 	}
 
-	var skills []DiscoveredSkill
+	skills := make([]DiscoveredSkill, 0)
 	seen := make(map[string]bool)
 
 	dirs := []struct {
@@ -230,7 +230,7 @@ func ListDiscoveredRules() []DiscoveredRule {
 		return []DiscoveredRule{}
 	}
 
-	var rules []DiscoveredRule
+	rules := make([]DiscoveredRule, 0)
 	rulesDir := filepath.Join(home, ".gemini", "antigravity", "rules")
 	entries, err := os.ReadDir(rulesDir)
 	if err == nil {
@@ -482,13 +482,18 @@ func UpdateProjectSettings(projectIDOrWorkspace string, settings ProjectSettings
 
 // resolveProjectConfigFile trouve le fichier de configuration de projet correspondant.
 func resolveProjectConfigFile(projectIDOrWorkspace string) (string, string) {
+	fallbackID := projectIDOrWorkspace
+	if fallbackID == "" || strings.Contains(fallbackID, "/") || strings.Contains(fallbackID, "\\") {
+		fallbackID = "outside-of-project"
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", ""
+		return "", fallbackID
 	}
 	projectsDir := filepath.Join(home, ".gemini", "config", "projects")
 	if _, err := os.Stat(projectsDir); err != nil {
-		return "", ""
+		return "", fallbackID
 	}
 
 	// 1. Recherche directe par ID de fichier
@@ -562,6 +567,6 @@ func resolveProjectConfigFile(projectIDOrWorkspace string) (string, string) {
 		}
 	}
 
-	return "", "outside-of-project"
+	return "", fallbackID
 }
 
