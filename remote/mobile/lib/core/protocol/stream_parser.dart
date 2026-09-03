@@ -368,7 +368,7 @@ class StreamDeltaParser {
           appType = 'file_permission';
         } else if (cleanTool == 'permission') {
           appType = 'permission';
-        } else if (cleanTool.contains('mcp') || cleanTool == 'mcp_tool' || cleanTool == 'call_mcp_tool') {
+        } else if (cleanTool.contains('/') || cleanTool.startsWith('mcp_') || cleanTool.contains('mcp') || cleanTool == 'mcp_tool' || cleanTool == 'call_mcp_tool') {
           appType = 'mcp_tool';
         } else if (cleanTool == 'delete_directory') {
           appType = 'delete_directory';

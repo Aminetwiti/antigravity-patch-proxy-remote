@@ -144,6 +144,8 @@ type Server struct {
 	cascadeDeviceOwners map[string]string
 	// approvals : cascadeId -> approbation en attente
 	approvals map[string]*pendingApproval
+	// resolvedApprovals : callId -> date de résolution
+	resolvedApprovals map[string]time.Time
 	// approvalTimeout : d├®lai avant auto-refus d'une approbation sans r├®ponse
 	// (s├®curit├® : t├®l├®phone perdu). 0 = d├®sactiv├®. D├®faut 5 minutes.
 	approvalTimeout time.Duration
@@ -294,6 +296,7 @@ func NewServer(client RPCClient, authToken string) *Server {
 		clients:             make(map[*websocket.Conn]bool),
 		cascadeDeviceOwners: make(map[string]string),
 		approvals:           make(map[string]*pendingApproval),
+		resolvedApprovals:   make(map[string]time.Time),
 		approvalTimeout:     5 * time.Minute,
 		sessionApprovals:    make(map[string]bool),
 		autoAcceptMode:      "readonly",
@@ -1991,6 +1994,14 @@ func (s *Server) clearApproval(cascadeID string) {
 		if p.timer != nil {
 			p.timer.Stop()
 		}
+		if s.resolvedApprovals == nil {
+			s.resolvedApprovals = make(map[string]time.Time)
+		}
+		now := time.Now()
+		if p.callID != "" {
+			s.resolvedApprovals[p.callID] = now
+		}
+		s.resolvedApprovals[cascadeID] = now
 		delete(s.approvals, cascadeID)
 	}
 }
@@ -2074,6 +2085,40 @@ func (s *Server) approvalFor(cascadeID string) (pendingApproval, bool) {
 		return pendingApproval{}, false
 	}
 	return *p, true
+}
+
+func (s *Server) markApprovalResolved(callID string) {
+	if callID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.resolvedApprovals == nil {
+		s.resolvedApprovals = make(map[string]time.Time)
+	}
+	s.resolvedApprovals[callID] = time.Now()
+	now := time.Now()
+	for id, t := range s.resolvedApprovals {
+		if now.Sub(t) > 10*time.Minute {
+			delete(s.resolvedApprovals, id)
+		}
+	}
+}
+
+func (s *Server) isRecentlyResolved(callID string) bool {
+	if callID == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.resolvedApprovals == nil {
+		return false
+	}
+	t, ok := s.resolvedApprovals[callID]
+	if !ok {
+		return false
+	}
+	return time.Since(t) < 10*time.Minute
 }
 
 // run_command, file_permission, read_url, delete_directory, deploy, etc.
@@ -2687,7 +2732,17 @@ func buildApprovalPayload(approvalType string, confirm bool, command, filePath, 
 	}
 	scope := parsePermissionScope(scopeStr)
 
-	switch strings.ToLower(approvalType) {
+	lowerType := strings.ToLower(approvalType)
+	lowerCmd := strings.ToLower(command)
+	if lowerType == "mcp_tool" || lowerType == "call_mcp_tool" || lowerType == "mcp" ||
+		strings.Contains(command, "/") || strings.Contains(approvalType, "/") ||
+		strings.HasPrefix(lowerCmd, "mcp_") || strings.HasPrefix(lowerType, "mcp_") {
+		oneofField = connectrpc.InteractionMcp
+		oneofPayload = connectrpc.BuildMcpInteraction(confirm, filePath, command, denyReason)
+		return oneofField, oneofPayload
+	}
+
+	switch lowerType {
 	case "run_command":
 		oneofField = connectrpc.InteractionRunCommand
 		oneofPayload = connectrpc.BuildRunCommandInteraction(confirm, command, denyReason)
@@ -5030,7 +5085,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		} else if ok && p.expired {
 			s.writeJSON(conn, OutgoingMessage{Type: "error", RequestID: msg.RequestID, Error: "approval expired (auto-denied)"})
 			return
-		} else if !ok {
+		} else if (msg.CallID != "" && s.isRecentlyResolved(msg.CallID)) || (msg.CascadeID != "" && s.isRecentlyResolved(msg.CascadeID)) {
 			// Conflit concurrentiel évité : l'action a déjà été résolue (par le Desktop ou un autre client)
 			s.writeJSON(conn, OutgoingMessage{
 				Type:      "response",
@@ -5091,6 +5146,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			}
 		}
 		if err == nil {
+			s.markApprovalResolved(msg.CallID)
 			go notifyDesktopAction(msg.ApprovalType, msg.Command, msg.Decision)
 			s.writeJSON(conn, OutgoingMessage{
 				Type:      "response",
@@ -7662,6 +7718,9 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 								if entry.Type == "VIEW_FILE" || entry.Type == "RUN_COMMAND" || entry.Type == "GREP_SEARCH" || entry.Type == "FIND_BY_NAME" || entry.Type == "WRITE_TO_FILE" || entry.Type == "REPLACE_FILE_CONTENT" || entry.Type == "TOOL_RESULT" || entry.Type == "GENERIC" || strings.Contains(entry.Type, "BROWSER") {
 									lastPendingApprovalTool = nil
 									if s.hasPendingApproval(cascadeID) {
+										if p, ok := s.approvalFor(cascadeID); ok {
+											s.markApprovalResolved(p.callID)
+										}
 										s.clearApproval(cascadeID)
 										s.broadcast(OutgoingMessage{
 											Type:      "approval_resolved",

@@ -47,17 +47,25 @@ function Write-Log($m) {
     if (-not $Loop) { Write-Host $line }
 }
 
-# Vrai si un daemon.exe écoute et répond sur $Port.
+# Vrai si un daemon.exe écoute et répond sur $Port (ou 8091).
 function Test-DaemonOk {
-    $lis = Get-NetTCPConnection -LocalPort $Port -State Listen
-    if (-not $lis) { return $false }
+    $lis = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    if (-not $lis) {
+        $alt = Get-NetTCPConnection -LocalPort 8091 -State Listen -ErrorAction SilentlyContinue
+        if ($alt) {
+            $owner = ($alt | Select-Object -First 1).OwningProcess
+            $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue
+            if ($proc -and $proc.Name -like "daemon*") { return $true }
+        }
+        return $false
+    }
     try {
         $d = Invoke-RestMethod -Uri "http://${BindHost}:$Port/health/diagnostic" -TimeoutSec 2
         return ($d.status -eq "ok" -or $d.status -eq "degraded" -or $d.rpcPort -ne 0)
     } catch {
         $owner = ($lis | Select-Object -First 1).OwningProcess
-        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$owner"
-        return ($proc -and $proc.Name -eq "daemon.exe")
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue
+        return ($proc -and $proc.Name -like "daemon*")
     }
 }
 
@@ -116,7 +124,7 @@ if ($Loop) {
     Write-Log "watchdog demarre (boucle 30s, token=$Token, port=$Port)"
     while ($true) {
         # IDE fermé (language_server absent) : pas de daemon à maintenir.
-        if (-not (Get-Process -Name language_server)) {
+        if (-not (Get-Process -Name language_server -ErrorAction SilentlyContinue)) {
             Start-Sleep -Seconds 30
             continue
         }
@@ -126,13 +134,10 @@ if ($Loop) {
             Start-Sleep -Seconds 5
             continue
         }
-        # Tunnel mort ? (grace 90s après un (re)démarrage : cloudflared met ~15s à s'enregistrer)
-        # ponytail: heuristique 90s — si cloudflared met plus longtemps, le daemon sera
-        # redémarré une fois de plus ; acceptable, upgrade = surveiller /health/diagnostic en boucle.
-        if ((Get-Date) -gt $lastStart.AddSeconds(90) -and -not (Test-TunnelOk)) {
-            Write-Log "tunnel absent - redemarrage du daemon pour relancer cloudflared"
-            Start-Daemon
-            $lastStart = Get-Date
+        # Le daemon Go supervise lui-même cloudflared dans tunnel.go.
+        # Ne PAS tuer un daemon sain qui sert des clients locaux.
+        if (-not (Test-TunnelOk)) {
+            Write-Log "tunnel externe en attente d'enregistrement - daemon local sain sur :$Port"
         } else {
             Write-Log "ok: daemon $Token sur :$Port"
         }

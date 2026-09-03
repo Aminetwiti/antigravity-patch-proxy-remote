@@ -543,15 +543,16 @@ class ToolApprovalRequest {
 
   bool get isMcpApproval =>
       approvalType == 'mcp_tool' ||
-      mcpServer != null;
+      mcpServer != null ||
+      toolName.contains('/') ||
+      toolName.startsWith('mcp_');
 
   bool get isStdinApproval =>
       approvalType == 'send_command_input' ||
       toolName.toLowerCase().contains('stdin');
 
   bool get isDeployApproval =>
-      approvalType == 'deploy' ||
-      toolName.toLowerCase().contains('deploy');
+      !isMcpApproval && (approvalType == 'deploy' || toolName.toLowerCase().contains('deploy'));
 
   bool get isSubagentApproval =>
       approvalType == 'invoke_subagent' ||

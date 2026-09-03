@@ -281,7 +281,28 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
               ? null
               : () {
                   HapticFeedback.selectionClick();
-                  setState(() => _selectedOption = index);
+                  if (index == 5) {
+                    setState(() => _selectedOption = 5);
+                  } else {
+                    setState(() => _selectedOption = index);
+                    if (_isDestructive && !_destructiveConfirmed) {
+                      return;
+                    }
+                    switch (index) {
+                      case 1:
+                        _handleDecision(ToolDecision.allow, scope: ApprovalScope.once);
+                        break;
+                      case 2:
+                        _handleDecision(ToolDecision.allow, scope: ApprovalScope.session);
+                        break;
+                      case 3:
+                        _handleDecision(ToolDecision.allow, scope: ApprovalScope.project);
+                        break;
+                      case 4:
+                        _handleDecision(ToolDecision.allow, scope: ApprovalScope.global);
+                        break;
+                    }
+                  }
                 },
           borderRadius: BorderRadius.circular(6),
           child: AnimatedContainer(

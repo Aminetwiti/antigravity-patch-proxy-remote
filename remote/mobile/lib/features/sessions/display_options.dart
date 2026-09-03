@@ -77,13 +77,27 @@ Map<String, List<CascadeSession>> groupSessions({
 }) {
   final Map<String, List<CascadeSession>> grouped = {};
 
+  // Dédoublonnage strict par ID (insensible à la casse) et exclusion des sessions archivées/supprimées
+  final seenIds = <String>{};
+  final cleanSessions = <CascadeSession>[];
+  for (final s in sessions) {
+    if (s.id.isEmpty) continue;
+    if (s.isArchived || !s.isAvailable) continue;
+    final stUpper = s.status.toUpperCase();
+    if (stUpper.contains('ARCHIV') || stUpper.contains('DELET') || stUpper.contains('TRASH') || stUpper.contains('KILLED')) continue;
+    final normId = s.id.toLowerCase();
+    if (seenIds.contains(normId)) continue;
+    seenIds.add(normId);
+    cleanSessions.add(s);
+  }
+
   if (groupBy == SessionGroupBy.none) {
-    grouped['All Conversations'] = List.from(sessions);
+    grouped['All Conversations'] = List.from(cleanSessions);
     return grouped;
   }
 
   if (groupBy == SessionGroupBy.status) {
-    for (final s in sessions) {
+    for (final s in cleanSessions) {
       String statusGroup = 'Other';
       if (s.isRunning) {
         statusGroup = 'Active';
@@ -104,7 +118,7 @@ Map<String, List<CascadeSession>> groupSessions({
     final sevenDaysAgo = today.subtract(const Duration(days: 7));
     final thirtyDaysAgo = today.subtract(const Duration(days: 30));
 
-    for (final s in sessions) {
+    for (final s in cleanSessions) {
       final date = s.updatedAt;
       String dateGroup = 'Plus ancien';
       if (date != null) {
@@ -124,7 +138,7 @@ Map<String, List<CascadeSession>> groupSessions({
   }
 
   if (groupBy == SessionGroupBy.workspace) {
-    for (final s in sessions) {
+    for (final s in cleanSessions) {
       final ws = WorkspacePath.displayName(s.workspacePath);
       grouped.putIfAbsent(ws, () => []).add(s);
     }
@@ -167,7 +181,7 @@ Map<String, List<CascadeSession>> groupSessions({
     // Sort parent paths by descending length so first match in loop is the most specific
     canonicalParentEntries.sort((a, b) => b.key.length.compareTo(a.key.length));
 
-    for (final s in sessions) {
+    for (final s in cleanSessions) {
       ProjectItem? matchedProject;
 
       // 1. Priority 1: explicit projectId
@@ -205,9 +219,15 @@ Map<String, List<CascadeSession>> groupSessions({
       if (matchedProject != null) {
         grouped.putIfAbsent(matchedProject.name, () => []).add(s);
       } else {
-        final groupName = s.workspacePath.isNotEmpty
+        final dispName = s.workspacePath.isNotEmpty
             ? WorkspacePath.displayName(s.workspacePath)
             : 'Conversations';
+        final groupName = (dispName == 'Outside of Project' ||
+                dispName.isEmpty ||
+                s.projectId == 'outside-of-project' ||
+                s.workspacePath == 'file:///')
+            ? 'Conversations'
+            : dispName;
         grouped.putIfAbsent(groupName, () => []).add(s);
       }
     }
@@ -231,7 +251,7 @@ Map<String, List<CascadeSession>> groupSessions({
       }
     }
   } else {
-    for (final s in sessions) {
+    for (final s in cleanSessions) {
       final folderName = WorkspacePath.displayName(
         s.workspacePath,
         fallback: 'antigravity-workspace',

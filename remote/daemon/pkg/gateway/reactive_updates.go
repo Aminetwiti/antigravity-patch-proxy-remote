@@ -130,6 +130,9 @@ func (s *Server) reactiveSyncUpdates(updates map[string]connectrpc.ReactiveUpdat
 		} else if !u.WaitingForInput && s.hasPendingApproval(id) {
 			// L'utilisateur a validé ou refusé l'approbation directement sur l'IDE PC :
 			// on nettoie l'approbation locale et on notifie immédiatement le mobile.
+			if p, ok := s.approvalFor(id); ok {
+				s.markApprovalResolved(p.callID)
+			}
 			s.clearApproval(id)
 			s.broadcast(OutgoingMessage{
 				Type:      "approval_resolved",

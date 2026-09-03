@@ -466,15 +466,23 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
       return _pipeResult!;
     }
 
-    final availableSessions = sessions
-        .where((s) => s.isAvailable && s.id.isNotEmpty && !s.isSubagent)
-        .where((s) {
-          if (_filterQuery.isEmpty) return true;
-          final q = _filterQuery.toLowerCase();
-          return s.title.toLowerCase().contains(q) ||
-              s.workspacePath.toLowerCase().contains(q);
-        })
-        .toList();
+    final seen = <String>{};
+    final availableSessions = <CascadeSession>[];
+    for (final s in sessions) {
+      if (!s.isAvailable || s.id.isEmpty || s.isSubagent || s.isArchived) continue;
+      final stUpper = s.status.toUpperCase();
+      if (stUpper.contains('ARCHIV') || stUpper.contains('DELET') || stUpper.contains('TRASH') || stUpper.contains('KILLED')) continue;
+      final normId = s.id.toLowerCase();
+      if (seen.contains(normId)) continue;
+      seen.add(normId);
+      if (_filterQuery.isNotEmpty) {
+        final q = _filterQuery.toLowerCase();
+        if (!s.title.toLowerCase().contains(q) && !s.workspacePath.toLowerCase().contains(q)) {
+          continue;
+        }
+      }
+      availableSessions.add(s);
+    }
 
     final sortedSessions = sortSessions(
       sessions: availableSessions,
@@ -841,9 +849,17 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
             // ── Pinned Conversations Section (Desktop 1:1)
             Builder(
               builder: (context) {
-                final pinnedSessions = (widget.sessions ?? const <CascadeSession>[])
-                    .where((s) => s.isAvailable && s.id.isNotEmpty && _pinnedIds.contains(s.id))
-                    .toList();
+                final seenPinned = <String>{};
+                final pinnedSessions = <CascadeSession>[];
+                for (final s in (widget.sessions ?? const <CascadeSession>[])) {
+                  if (!s.isAvailable || s.id.isEmpty || s.isArchived || !_pinnedIds.contains(s.id)) continue;
+                  final stUpper = s.status.toUpperCase();
+                  if (stUpper.contains('ARCHIV') || stUpper.contains('DELET') || stUpper.contains('TRASH') || stUpper.contains('KILLED')) continue;
+                  final normId = s.id.toLowerCase();
+                  if (seenPinned.contains(normId)) continue;
+                  seenPinned.add(normId);
+                  pinnedSessions.add(s);
+                }
                 pinnedSessions.sort((a, b) {
                   if (a.pinnedAt != null && b.pinnedAt != null) {
                     return a.pinnedAt!.compareTo(b.pinnedAt!);

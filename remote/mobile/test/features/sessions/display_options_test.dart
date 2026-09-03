@@ -56,6 +56,62 @@ void main() {
       expect(grouped['antigravity']!.length, equals(2));
     });
 
+    test('groupSessions merges file:/// and outside-of-project into single Conversations without duplicates', () {
+      final mixedSessions = [
+        const CascadeSession(
+          id: 's_proj',
+          workspacePath: 'c:/projects/antigravity',
+          title: 'Project Session',
+          status: 'ready',
+          time: '1h',
+        ),
+        const CascadeSession(
+          id: 's_file',
+          workspacePath: 'file:///',
+          title: 'File Session',
+          status: 'ready',
+          time: '2h',
+        ),
+        const CascadeSession(
+          id: 's_out',
+          workspacePath: '',
+          projectId: 'outside-of-project',
+          title: 'Outside Session',
+          status: 'ready',
+          time: '3h',
+        ),
+      ];
+
+      final projects = [
+        const ProjectItem(
+          id: 'p1',
+          name: 'antigravity',
+          folderUri: 'file:///c:/projects/antigravity',
+          path: 'c:/projects/antigravity',
+        ),
+        const ProjectItem(
+          id: 'p2',
+          name: 'empty_proj',
+          folderUri: 'file:///c:/projects/empty',
+          path: 'c:/projects/empty',
+        ),
+      ];
+
+      final grouped = groupSessions(
+        sessions: mixedSessions,
+        groupBy: SessionGroupBy.project,
+        projects: projects,
+      );
+
+      expect(grouped.containsKey('antigravity'), isTrue);
+      expect(grouped['antigravity']!.length, equals(1));
+      expect(grouped.containsKey('Outside of Project'), isFalse);
+      expect(grouped.containsKey('Conversations'), isTrue);
+      expect(grouped['Conversations']!.length, equals(2));
+      // Conversations must be placed at the very end after all projects
+      expect(grouped.keys.last, equals('Conversations'));
+    });
+
     test('groupSessions by Workspace', () {
       final grouped = groupSessions(
         sessions: sessions,

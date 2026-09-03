@@ -30,11 +30,17 @@ class SessionParser {
     if (sessions is List) {
       final now = DateTime.now();
       final entries = <(CascadeSession, int)>[];
+      final seenIds = <String>{};
       for (final s in sessions) {
         if (s is Map) {
           final sMap = s;
-          final id = sMap['cascadeId'] ?? sMap['id'];
-          if (id is String && id.isNotEmpty) {
+          final rawId = sMap['cascadeId'] ?? sMap['id'];
+          if (rawId is String && rawId.trim().isNotEmpty) {
+            final id = rawId.trim();
+            final normId = id.toLowerCase();
+            if (seenIds.contains(normId)) continue;
+            seenIds.add(normId);
+
             final stepCount = (sMap['stepCount'] as num?)?.toInt() ?? 0;
             final status = (sMap['status'] as String? ?? '').toUpperCase();
             final isWaiting = status.contains('WAIT') ||
@@ -55,6 +61,9 @@ class SessionParser {
             final updatedMs = updatedParsed?.millisecondsSinceEpoch ?? 0;
             final timeStr = sMap['time']?.toString() ??
                 (updatedParsed != null ? CascadeSession.formatRelativeTime(updatedParsed, now) : 'Just now');
+            final isArchived = sMap['isArchived'] == true ||
+                status.contains('ARCHIV') ||
+                status == 'CASCADE_STATUS_ARCHIVED';
             final session = CascadeSession(
               id: id,
               workspacePath: sMap['workspacePath'] ?? sMap['workspace'] ?? '',
@@ -68,10 +77,10 @@ class SessionParser {
               stepCount: stepCount,
               hasUnread: hasUnread,
               isPinned: sMap['isPinned'] == true || sMap['pinned'] == true,
-              isArchived: sMap['isArchived'] == true,
+              isArchived: isArchived,
               isIde: sMap['isIde'] == true || sMap['clientType'] == 'ide' || sMap['source'] == 'ide',
             );
-            if (session.isAvailable || (includeArchived && session.isArchived)) {
+            if ((session.isAvailable && !session.isArchived) || (includeArchived && session.isArchived)) {
               entries.add((session, updatedMs));
             }
           }
@@ -96,6 +105,7 @@ class SessionParser {
     if (fields is! List) return const [];
 
     final sessions = <CascadeSession>[];
+    final seenIds = <String>{};
     for (final f in fields) {
       if (f is! Map) continue;
       final fMap = Map<String, dynamic>.from(f);
@@ -107,6 +117,9 @@ class SessionParser {
       final id = _uuidRe.firstMatch(combined)?.group(0) ?? '';
       final title = _legacyTitleOf(fMap, text, blob);
       if (id.isEmpty) continue;
+      final normId = id.toLowerCase();
+      if (seenIds.contains(normId)) continue;
+      seenIds.add(normId);
 
       final session = CascadeSession(
         id: id,

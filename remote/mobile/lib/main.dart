@@ -23,6 +23,7 @@ import 'features/scheduled_tasks/scheduled_tasks_screen.dart';
 import 'features/battle_arena/battle_arena_screen.dart';
 import 'features/sidecars/sidecars_dashboard_screen.dart';
 import 'services/settings_store.dart';
+import 'data/db/database_helper.dart';
 import 'widgets/remote_terminal_sheet.dart';
 import 'widgets/right_sidebar_drawer.dart';
 
@@ -164,6 +165,20 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       DateTime.now().difference(_activeMissingSince!) >
           const Duration(seconds: 45);
 
+
+  List<CascadeSession> _dedupSessions(List<CascadeSession> list) {
+    final seen = <String>{};
+    final out = <CascadeSession>[];
+    for (final s in list) {
+      if (s.id.isEmpty) continue;
+      final norm = s.id.toLowerCase();
+      if (seen.contains(norm)) continue;
+      seen.add(norm);
+      out.add(s);
+    }
+    return out;
+  }
+
   ConnectionStatus _prevStatus = ConnectionStatus.disconnected;
 
   Map<String, dynamic> _savedSettings = const {};
@@ -217,6 +232,25 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         setState(() => _activeSessionId = sid);
       }
     });
+    // Pré-charge immédiatement les sessions sauvegardées localement en SQLite
+    // pour éviter tout clignotement ou disparition des conversations au démarrage
+    // ou lors d'une déconnexion/reconnexion du daemon remote.
+    DatabaseHelper.instance.getSessions().then((dbSessions) async {
+      if (!mounted || dbSessions.isEmpty) return;
+      final parsed = await SessionParser.parseListSessionsAsync({'sessions': dbSessions});
+      if (!mounted || parsed.isEmpty) return;
+      setState(() {
+        if (_sessions.isEmpty) {
+          _sessions = parsed;
+          if (_activeSessionId.isNotEmpty) {
+            final cur = parsed.where((s) => s.id == _activeSessionId);
+            if (cur.isNotEmpty && _activeSessionTitle.isEmpty) {
+              _activeSessionTitle = cur.first.title;
+            }
+          }
+        }
+      });
+    }).catchError((_) {});
     // Auto-connexion : session persistée < 24 h en priorité (reconnexion
     // directe au tunnel), sinon réglages host/port/ssl/token, sinon repli sur
     // la config d'environnement. `adb reverse tcp:8090` + jeton par défaut
@@ -317,6 +351,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
 
     setState(() {});
     if (currentStatus == ConnectionStatus.connected) {
+      _lastStateVersion = 0; // Réinitialise la version d'état pour accepter les nouvelles frames après redémarrage du daemon
       // Persiste la session (URL tunnel + token + sessionId) : le tunnel
       // Cloudflare change d'URL à chaque redémarrage du daemon, on re-sauvegarde
       // donc à chaque connexion réussie, y compris les reconnexions.
@@ -569,7 +604,8 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         setState(() {
           _activeSessionId = newId;
           _activeSessionTitle = 'Nouvelle conversation';
-          _sessions = [newSession, ..._sessions.where((s) => s.id != newId)];
+          _activeSessionIsArchived = false;
+          _sessions = _dedupSessions([newSession, ..._sessions.where((s) => s.id.toLowerCase() != newId.toLowerCase())]);
           _contextStats = {};
         });
         SettingsStore.saveSession(
@@ -614,10 +650,14 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       final data = await api.listSessions();
       final version = (data['version'] as num?)?.toInt() ?? 0;
       if (version > 0 && version < _lastStateVersion) {
-        // Réponse plus ancienne qu'un push plus récent — ignorer pour éviter la régression
-        return;
-      }
-      if (version > 0) {
+        if (_lastStateVersion - version > 5) {
+          // Le daemon a redémarré (compteur réinitialisé) : accepter le nouvel état
+          _lastStateVersion = version;
+        } else {
+          // Réponse plus ancienne qu'un push plus récent — ignorer pour éviter la régression
+          return;
+        }
+      } else if (version > 0) {
         _lastStateVersion = version;
       }
 
@@ -637,18 +677,18 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
             _projects = projects;
           }
           if (sessions.isNotEmpty) {
-            final stillActive = sessions.any((s) => s.id == _activeSessionId);
+            final stillActive = sessions.any((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
             if (_activeSessionId.isNotEmpty && stillActive) {
               _activeMissingSince = null;
-              _sessions = sessions;
-              final cur = sessions.firstWhere((s) => s.id == _activeSessionId);
+              _sessions = _dedupSessions(sessions);
+              final cur = sessions.firstWhere((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
               _activeSessionTitle = cur.title.isNotEmpty
                   ? cur.title
                   : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
-            } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired) {
+            } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired && !_activeSessionIsArchived) {
               _activeMissingSince ??= DateTime.now();
               // Préserve la session active en tête de liste si c'est une nouvelle session
-              final existingPending = _sessions.where((s) => s.id == _activeSessionId);
+              final existingPending = _sessions.where((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
               final activeItem = existingPending.isNotEmpty
                   ? existingPending.first
                   : CascadeSession(
@@ -658,23 +698,31 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                       status: 'CASCADE_STATUS_READY',
                       time: 'Maintenant',
                     );
-              _sessions = [activeItem, ...sessions.where((s) => s.id != _activeSessionId)];
+              if (!activeItem.isArchived && !activeItem.status.toUpperCase().contains('ARCHIV')) {
+                _sessions = _dedupSessions([activeItem, ...sessions.where((s) => s.id.toLowerCase() != _activeSessionId.toLowerCase())]);
+              } else {
+                _sessions = _dedupSessions(sessions);
+              }
             } else {
               _activeMissingSince = null;
-              _sessions = sessions;
-              _activeSessionId = sessions.first.id;
-              _activeSessionTitle = sessions.first.title;
+              _sessions = _dedupSessions(sessions);
+              if (sessions.isNotEmpty && !_activeSessionIsArchived) {
+                _activeSessionId = sessions.first.id;
+                _activeSessionTitle = sessions.first.title;
+              }
             }
           } else if (_sessions.isEmpty) {
-            if (_activeSessionId.isNotEmpty) {
-              final existingPending = _sessions.where((s) => s.id == _activeSessionId);
-              if (existingPending.isNotEmpty) {
+            if (_activeSessionId.isNotEmpty && !_activeSessionIsArchived) {
+              final existingPending = _sessions.where((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
+              if (existingPending.isNotEmpty && !existingPending.first.isArchived) {
                 _sessions = [existingPending.first];
               }
             } else {
               _sessions = const [];
-              _activeSessionId = '';
-              _activeSessionTitle = 'Nouvelle conversation';
+              if (!_activeSessionIsArchived) {
+                _activeSessionId = '';
+                _activeSessionTitle = 'Nouvelle conversation';
+              }
             }
           }
           _lastSessionsSyncAt = DateTime.now();
@@ -853,10 +901,14 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           final dataMap = Map<String, dynamic>.from(data);
           final version = (dataMap['version'] as num?)?.toInt() ?? 0;
           if (version > 0 && version < _lastStateVersion) {
-            // Événement obsolète arrivé dans le désordre — ignorer
-            return;
-          }
-          if (version > 0) {
+            if (_lastStateVersion - version > 5) {
+              // Le daemon a redémarré (compteur réinitialisé) : accepter le nouvel état
+              _lastStateVersion = version;
+            } else {
+              // Événement obsolète arrivé dans le désordre — ignorer
+              return;
+            }
+          } else if (version > 0) {
             _lastStateVersion = version;
           }
 
@@ -875,19 +927,19 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
               _projects = projects;
             }
             if (parsed.isNotEmpty) {
-              final stillActive = parsed.any((s) => s.id == _activeSessionId);
+              final stillActive = parsed.any((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
               if (_activeSessionId.isNotEmpty && stillActive) {
                 _activeMissingSince = null;
-                _sessions = parsed;
-                final current = parsed.firstWhere((s) => s.id == _activeSessionId);
+                _sessions = _dedupSessions(parsed);
+                final current = parsed.firstWhere((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
                 _activeSessionTitle = current.title.isNotEmpty
                     ? current.title
                     : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
-              } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired) {
+              } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired && !_activeSessionIsArchived) {
                 _activeMissingSince ??= DateTime.now();
                 // Préserve la session active en tête de liste si c'est une nouvelle session
                 // qui n'est pas encore synchronisée dans les résumés distants
-                final existingPending = _sessions.where((s) => s.id == _activeSessionId);
+                final existingPending = _sessions.where((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
                 final activeItem = existingPending.isNotEmpty
                     ? existingPending.first
                     : CascadeSession(
@@ -897,26 +949,34 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                         status: 'CASCADE_STATUS_READY',
                         time: 'Maintenant',
                       );
-                _sessions = [activeItem, ...parsed.where((s) => s.id != _activeSessionId)];
+                if (!activeItem.isArchived && !activeItem.status.toUpperCase().contains('ARCHIV')) {
+                  _sessions = _dedupSessions([activeItem, ...parsed.where((s) => s.id.toLowerCase() != _activeSessionId.toLowerCase())]);
+                } else {
+                  _sessions = _dedupSessions(parsed);
+                }
               } else {
                 _activeMissingSince = null;
-                _sessions = parsed;
-                _activeSessionId = parsed.first.id;
-                _activeSessionTitle = parsed.first.title;
-                _refreshContext();
+                _sessions = _dedupSessions(parsed);
+                if (parsed.isNotEmpty && !_activeSessionIsArchived) {
+                  _activeSessionId = parsed.first.id;
+                  _activeSessionTitle = parsed.first.title;
+                  _refreshContext();
+                }
               }
             } else if (_sessions.isEmpty) {
-              if (_activeSessionId.isNotEmpty) {
-                final existingPending = _sessions.where((s) => s.id == _activeSessionId);
-                if (existingPending.isNotEmpty) {
+              if (_activeSessionId.isNotEmpty && !_activeSessionIsArchived) {
+                final existingPending = _sessions.where((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
+                if (existingPending.isNotEmpty && !existingPending.first.isArchived) {
                   _sessions = [existingPending.first];
                 }
               } else {
                 // Liste vide : toutes les sessions ont été supprimées/archivées
                 _sessions = const [];
-                _activeSessionId = '';
-                _activeSessionTitle = 'Nouvelle conversation';
-                _contextStats = {};
+                if (!_activeSessionIsArchived) {
+                  _activeSessionId = '';
+                  _activeSessionTitle = 'Nouvelle conversation';
+                  _contextStats = {};
+                }
               }
             }
             _lastSessionsSyncAt = DateTime.now();
@@ -964,7 +1024,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           onRestoreSession: _restoreSession,
           onSessionSelected: (id) async {
             CascadeSession? target;
-            final existing = _sessions.where((s) => s.id == id);
+            final existing = _sessions.where((s) => s.id.toLowerCase() == id.toLowerCase());
             if (existing.isNotEmpty) {
               target = existing.first;
             } else {
@@ -972,12 +1032,13 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                 final allRes = await _api?.listAllSessions();
                 if (allRes != null) {
                   final parsed = SessionParser.parseListSessions(allRes, includeArchived: true);
-                  final match = parsed.where((s) => s.id == id);
+                  final match = parsed.where((s) => s.id.toLowerCase() == id.toLowerCase());
                   if (match.isNotEmpty) target = match.first;
                 }
               } catch (_) {}
             }
-            final isArchived = target?.isArchived == true || target?.status == 'CASCADE_STATUS_ARCHIVED';
+            final isArchived = target?.isArchived == true ||
+                (target?.status.toUpperCase().contains('ARCHIV') ?? false);
             setState(() {
               _activeSessionId = id;
               _activeSessionIsArchived = isArchived;
@@ -1040,10 +1101,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     final api = _api;
     if (api == null) return;
     try {
-      final wasActive = (id == _activeSessionId);
+      final wasActive = (id.toLowerCase() == _activeSessionId.toLowerCase());
       if (mounted) {
         setState(() {
-          _sessions = _sessions.where((s) => s.id != id).toList();
+          _sessions = _dedupSessions(_sessions.where((s) => s.id.toLowerCase() != id.toLowerCase()).toList());
           if (wasActive) {
             if (_sessions.isNotEmpty) {
               _activeSessionId = _sessions.first.id;
@@ -1077,10 +1138,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     final api = _api;
     if (api == null) return;
     try {
-      final wasActive = (id == _activeSessionId);
+      final wasActive = (id.toLowerCase() == _activeSessionId.toLowerCase());
       if (mounted) {
         setState(() {
-          _sessions = _sessions.where((s) => s.id != id).toList();
+          _sessions = _dedupSessions(_sessions.where((s) => s.id.toLowerCase() != id.toLowerCase()).toList());
           if (wasActive) {
             _activeSessionIsArchived = true;
           }
@@ -1249,15 +1310,19 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       onSessionSelected: (id) {
         setState(() {
           _activeSessionId = id;
+          _activeSessionIsArchived = false;
           _activeMissingSince = null;
           _contextStats = {};
           _sessions = _sessions.map((s) {
-            if (s.id == id) {
+            if (s.id.toLowerCase() == id.toLowerCase()) {
               return s.copyWith(hasUnread: false);
             }
             return s;
           }).toList();
-          final s = _sessions.firstWhere((s) => s.id == id, orElse: () => const CascadeSession(id: '', workspacePath: '', title: 'Session', status: '', time: ''));
+          final s = _sessions.firstWhere(
+            (s) => s.id.toLowerCase() == id.toLowerCase(),
+            orElse: () => const CascadeSession(id: '', workspacePath: '', title: 'Session', status: '', time: ''),
+          );
           _activeSessionTitle = s.title;
         });
         _api?.markSessionRead(id);

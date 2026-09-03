@@ -146,5 +146,66 @@ void main() {
       expect(sub2.isSubagent, isTrue);
       expect(root.isSubagent, isFalse);
     });
+
+    test('strictly deduplicates repeated sessions by cascadeId (case-insensitive)', () {
+      final data = {
+        'sessions': [
+          {
+            'cascadeId': '153aebf9-a80d-431d-9f52-a006a4f59af8',
+            'title': 'Remote Session List Issue',
+            'status': 'CASCADE_STATUS_READY',
+            'updatedAt': '2026-09-03T17:00:00Z',
+          },
+          {
+            'cascadeId': '153AEBF9-A80D-431D-9F52-A006A4F59AF8',
+            'title': 'sertin fois in remote (connected )ma...',
+            'status': 'CASCADE_STATUS_READY',
+            'updatedAt': '2026-09-03T16:00:00Z',
+          },
+          {
+            'cascadeId': '153aebf9-a80d-431d-9f52-a006a4f59af8',
+            'title': 'sertin fois in remote (duplicate)',
+            'status': 'CASCADE_STATUS_READY',
+            'updatedAt': '2026-09-03T16:00:00Z',
+          },
+        ],
+      };
+
+      final sessions = SessionParser.parseListSessions(data);
+
+      expect(sessions, hasLength(1));
+      expect(sessions.first.id.toLowerCase(), '153aebf9-a80d-431d-9f52-a006a4f59af8');
+    });
+
+    test('excludes archived sessions unless includeArchived: true', () {
+      final data = {
+        'sessions': [
+          {
+            'cascadeId': 'active-1',
+            'title': 'Active Task',
+            'status': 'CASCADE_STATUS_READY',
+            'isArchived': false,
+          },
+          {
+            'cascadeId': 'archived-1',
+            'title': 'Archived Task By Flag',
+            'status': 'CASCADE_STATUS_READY',
+            'isArchived': true,
+          },
+          {
+            'cascadeId': 'archived-2',
+            'title': 'Archived Task By Status',
+            'status': 'CASCADE_STATUS_ARCHIVED',
+          },
+        ],
+      };
+
+      final activeOnly = SessionParser.parseListSessions(data, includeArchived: false);
+      expect(activeOnly, hasLength(1));
+      expect(activeOnly.first.id, 'active-1');
+
+      final all = SessionParser.parseListSessions(data, includeArchived: true);
+      expect(all, hasLength(3));
+    });
   });
 }
