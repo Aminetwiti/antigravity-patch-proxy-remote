@@ -37,6 +37,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/adb"
 	"github.com/antigravity/remote-daemon/pkg/connectrpc"
 	"github.com/antigravity/remote-daemon/pkg/discovery"
+	"github.com/antigravity/remote-daemon/pkg/ide"
 	"github.com/gorilla/websocket"
 )
 
@@ -110,6 +111,8 @@ type pendingApproval struct {
 	approvalType        string
 	command             string
 	filePath            string
+	detail              string
+	requestedField      int
 	originatingDeviceID string
 	timer               *time.Timer
 	// expired : true une fois le timer d'auto-refus parti (auto-deny envoyé,
@@ -600,7 +603,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		markedUnread := false
 		if home != "" {
 			isPinned = isSessionPinned(home, sum.CascadeID)
-			markedUnread = isSessionMarkedUnread(home, sum.CascadeID)
+			markedUnread = isSessionUnreadWithUpdatedTime(home, sum.CascadeID, sum.UpdatedAt)
 		}
 
 		st := enrichStatus(sum.CascadeID, sum.Status)
@@ -629,7 +632,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 			seenIDs[cid] = true
 		}
 	}
-	if s != nil && s.isIDERunning {
+	if s != nil && s.isIDERunning && len(items) == 0 {
 		localIDE := ListIdeSessions(projects, includeArchived)
 		for _, loc := range localIDE {
 			cid, _ := loc["cascadeId"].(string)
@@ -1076,6 +1079,37 @@ func mcpProxyBase() string {
 	return fmt.Sprintf("http://%s:%d", mcpProxyHost, mcpProxyPort)
 }
 
+// isIDESession indique si la cascade appartient à l'environnement Antigravity IDE (VS Code).
+func isIDESession(cascadeID string) bool {
+	if cascadeID == "" {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err == nil {
+		if resolveGeminiSubDir(home, cascadeID) == "antigravity-ide" {
+			return true
+		}
+		p := filepath.Join(home, ".gemini", "antigravity-ide", "conversations", cascadeID+".db")
+		if _, errStat := os.Stat(p); errStat == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// getRPCClientForCascade résout l'instance RPC cible appropriée (instance Antigravity IDE spécifique au workspace ou Antigravity 2.0 Hub).
+func (s *Server) getRPCClientForCascade(cascadeID string) RPCClient {
+	if s == nil {
+		return nil
+	}
+	if cascadeID != "" && isIDESession(cascadeID) {
+		if ideClient, err := ide.FindClientForCascade(cascadeID); err == nil && ideClient != nil {
+			return ideClient
+		}
+	}
+	return s.RPCClient
+}
+
 // CancelGeneration interrompt une cascade active, appelle le Language Server pour
 // couper l'exécution hôte dans Antigravity, et diffuse stream_end(cancelled).
 func (s *Server) CancelGeneration(cascadeID string) {
@@ -1085,15 +1119,20 @@ func (s *Server) CancelGeneration(cascadeID string) {
 
 	// 1. Appel RPC direct vers le Language Server pour interrompre réellement l'agent hôte
 	go func(cid string) {
-		if s.RPCClient != nil {
-			_, errInv := s.RPCClient.CancelCascadeInvocation(cid, true)
+		clientTarget := s.getRPCClientForCascade(cid)
+		if clientTarget != nil {
+			_, errInv := clientTarget.CancelCascadeInvocation(cid, true)
 			if errInv != nil {
 				logJSON.Warn("cancel_cascade_invocation_error", "cascadeId", cid, "err", errInv.Error())
 			}
-			_, errTree := s.RPCClient.ForceStopCascadeTree(cid)
+			_, errTree := clientTarget.ForceStopCascadeTree(cid)
 			if errTree != nil {
 				logJSON.Warn("force_stop_cascade_tree_error", "cascadeId", cid, "err", errTree.Error())
 			}
+		}
+		if s.RPCClient != nil && s.RPCClient != clientTarget {
+			_, _ = s.RPCClient.CancelCascadeInvocation(cid, true)
+			_, _ = s.RPCClient.ForceStopCascadeTree(cid)
 		}
 		// Coupure multi-instances (si la cascade tourne sur une instance IDE enfant)
 		if instances, err := discovery.DiscoverAll(); err == nil {
@@ -1731,6 +1770,8 @@ func (s *Server) MarkApprovalPending(cascadeID string, ev connectrpc.StreamEvent
 		approvalType:        ev.Tool,
 		command:             extractCommand(ev.Detail),
 		filePath:            "",
+		detail:              ev.Detail,
+		requestedField:      ev.InteractionNum,
 		originatingDeviceID: devID,
 	}
 	s.approvals[cascadeID] = p
@@ -1740,15 +1781,15 @@ func (s *Server) MarkApprovalPending(cascadeID string, ev connectrpc.StreamEvent
 }
 
 // pendingApprovalInfo renvoie le contexte d'approbation en attente pour un
-// client qui la r├®-ouvre (tap sur la notification locale) : null si aucune.
-// Les champs sont stables m├¬me si le stream_delta d'origine a ├®t├® perdu
-// (app tu├®e entre l'├®mission et le tap).
+// client qui la ré-ouvre (tap sur la notification locale) : null si aucune.
+// Les champs sont stables même si le stream_delta d'origine a été perdu
+// (app tuée entre l'émission et le tap).
 func (s *Server) pendingApprovalInfo(cascadeID string) map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.approvals[cascadeID]
 	if !ok || p.expired {
-		return nil // expir├®e : le mobile a re├ºu approval_expired, pas de fant├┤me
+		return nil // expirée : le mobile a reçu approval_expired, pas de fantôme
 	}
 	expiresAt := int64(0)
 	if p.timer != nil {
@@ -1761,6 +1802,7 @@ func (s *Server) pendingApprovalInfo(cascadeID string) map[string]interface{} {
 		"stepIndex":    p.stepIndex,
 		"approvalType": p.approvalType,
 		"command":      p.command,
+		"detail":       p.detail,
 		"expiresAt":    expiresAt,
 	}
 }
@@ -1829,8 +1871,10 @@ func (s *Server) expireApproval(cascadeID string) {
 	logJSON.Info("approval_expired", "cascadeId", cascadeID)
 	if p.trajectoryID != "" {
 		oneofField, oneofPayload := buildApprovalPayload(p.approvalType, false, p.command, p.filePath, "")
-		if _, err := s.RPCClient.SubmitToolApproval(cascadeID, p.trajectoryID, p.stepIndex, oneofField, oneofPayload); err != nil {
-			logJSON.Error("auto_deny_failed", "cascadeId", cascadeID, "err", err)
+		if clientTarget := s.getRPCClientForCascade(cascadeID); clientTarget != nil {
+			if _, err := clientTarget.SubmitToolApproval(cascadeID, p.trajectoryID, p.stepIndex, oneofField, oneofPayload); err != nil {
+				logJSON.Error("auto_deny_failed", "cascadeId", cascadeID, "err", err)
+			}
 		}
 	}
 	s.broadcast(OutgoingMessage{
@@ -1865,6 +1909,25 @@ var commandLineRe = regexp.MustCompile(`"(?:command_line|commandline|run_command
 func extractCommand(detail string) string {
 	if m := commandLineRe.FindStringSubmatch(detail); m != nil {
 		return m[1]
+	}
+	if strings.Contains(detail, "ServerName") || strings.Contains(detail, "server_name") || strings.Contains(detail, "ToolName") || strings.Contains(detail, "tool_name") || strings.Contains(detail, "coolify") {
+		var mcpMap map[string]interface{}
+		if json.Unmarshal([]byte(detail), &mcpMap) == nil {
+			srv, _ := mcpMap["ServerName"].(string)
+			if srv == "" {
+				srv, _ = mcpMap["server_name"].(string)
+			}
+			tl, _ := mcpMap["ToolName"].(string)
+			if tl == "" {
+				tl, _ = mcpMap["tool_name"].(string)
+			}
+			if srv != "" && tl != "" {
+				return srv + "/" + tl
+			}
+			if tl != "" {
+				return tl
+			}
+		}
 	}
 	return ""
 }
@@ -3066,36 +3129,40 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		}
 		wsName, wsPath, projID := matchOfficialProject(sum.ProjectID, sum.Workspace, sum.Workspace, projects)
 		isPinned := false
+		markedUnread := false
 		if home != "" {
 			isPinned = isSessionPinned(home, sum.CascadeID)
+			markedUnread = isSessionUnreadWithUpdatedTime(home, sum.CascadeID, sum.UpdatedAt)
 		}
 		isIde := false
 		items = append(items, sessionWithTime{
 			data: map[string]interface{}{
-				"cascadeId":     sum.CascadeID,
-				"title":         title,
-				"workspace":     wsName,
-				"workspacePath": wsPath,
-				"projectId":     projID,
-				"status":        status,
-				"updatedAt":     sum.UpdatedAt,
-				"isPinned":      isPinned,
-				"isArchived":    isArchived,
-				"isIde":         isIde,
+				"cascadeId":      sum.CascadeID,
+				"title":          title,
+				"workspace":      wsName,
+				"workspacePath":  wsPath,
+				"projectId":      projID,
+				"status":         status,
+				"updatedAt":      sum.UpdatedAt,
+				"isPinned":       isPinned,
+				"isArchived":     isArchived,
+				"markedAsUnread": markedUnread,
+				"hasUnread":      markedUnread,
+				"isIde":          isIde,
 			},
 			updatedAt: sum.UpdatedAt,
 			isActive:  status == "CASCADE_STATUS_RUNNING" || status == "CASCADE_STATUS_WAITING_FOR_USER_ACTION",
 		})
 	}
 
-	// Fusionner les sessions Antigravity IDE partageant un workspace commun
+	// Fusionner les sessions Antigravity IDE partageant un workspace commun uniquement si aucune session officielle
 	seenIDs := make(map[string]bool)
 	for _, it := range items {
 		if cid, ok := it.data["cascadeId"].(string); ok {
 			seenIDs[cid] = true
 		}
 	}
-	if s != nil && s.IsIDERunning() {
+	if s != nil && s.IsIDERunning() && len(items) == 0 {
 		localIDE := ListIdeSessions(projects, includeArchived)
 		for _, loc := range localIDE {
 			cid, _ := loc["cascadeId"].(string)
@@ -3339,6 +3406,8 @@ var unaryNoTimeout = map[string]bool{
 	"unpin_cascade": true, "unpin_session": true,
 	"mark_read": true, "mark_session_read": true, "mark_unread": true, "mark_session_unread": true,
 	"submit_approval": true, "get_session_history": true,
+	"clipboard.get": true, "clipboard_get": true, "clipboard.set": true, "clipboard_set": true,
+	"focus_session": true, "focus": true, "ide.open_file": true, "ide_open_file": true, "open_file_in_ide": true,
 }
 
 func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
@@ -3358,9 +3427,9 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 	var err error
 
 	// Garde anti-blocage (C3) : tout handler unary RPC (list_sessions,
-	// get_context, ÔÇª) est born├® par une deadline courte. Un hub lent ne doit
-	// JAMAIS laisser une r├®ponse unary ind├®finiment en attente ÔÇö sinon le
-	// mobile (timeout 10 s) consid├¿re le daemon mort et boucle reconnexion.
+	// get_context, …) est borné par une deadline courte. Un hub lent ne doit
+	// JAMAIS laisser une réponse unary indéfiniment en attente — sinon le
+	// mobile (timeout 10 s) considère le daemon mort et boucle reconnexion.
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if !unaryNoTimeout[msg.Type] && !strings.HasPrefix(msg.Type, "terminal_") {
@@ -3368,14 +3437,6 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		go func() {
 			select {
 			case <-time.After(15 * time.Second):
-				// ponytail: time.After au lieu de ctx.Done() ÔÇö si le handler
-				// r├®pond vite, close(c) puis cancel() s'ex├®cutent presque en
-				// m├¬me temps et le select verrait DEUX canaux pr├¬ts (choix
-				// arbitraire ÔåÆ 'rpc timeout' parasite sur un handler sain).
-				// time.After n'est pr├¬t qu'apr├¿s 15s r├®elles : aucun race.
-				// Le double-select garde le cas o├╣ le handler termine pendant
-				// l'expiration (deadline et close(c) simultan├®s) : handler
-				// fini (c ferm├®) ÔåÆ on supprime l'erreur parasite.
 				select {
 				case <-c:
 					return
@@ -3390,8 +3451,8 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 
 	switch msg.Type {
 	// Administration multi-devices (3.4) : list_devices / revoke_device sont
-	// routÃ©s AVANT les RPC unary pour ne pas passer par la deadline 15 s et
-	// pour garder un chemin court (rÃ©ponse locale, aucun appel LS).
+	// routés AVANT les RPC unary pour ne pas passer par la deadline 15 s et
+	// pour garder un chemin court (réponse locale, aucun appel LS).
 	case "admin.list_devices", "admin.revoke_device":
 		s.handleAdmin(conn, msg)
 		return
@@ -3401,7 +3462,35 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 	case "adb.list_devices", "adb.list_files", "adb.search_files", "adb.pull_file", "adb.push_file":
 		s.handleADB(conn, msg)
 		return
-	case "ide.list_workspaces", "ide.list_sessions", "ide.create_session", "ide.send_prompt", "ide.focus", "ide.status":
+	case "clipboard.get", "clipboard_get", "get_clipboard":
+		text, errClip := GetClipboardText()
+		if errClip != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: errClip.Error()})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"text": text}})
+		return
+	case "clipboard.set", "clipboard_set", "set_clipboard":
+		text := ""
+		if msg.Data != nil {
+			if t, ok := msg.Data["text"].(string); ok {
+				text = t
+			} else if t, ok := msg.Data["content"].(string); ok {
+				text = t
+			}
+		}
+		if text == "" && msg.Prompt != "" {
+			text = msg.Prompt
+		}
+		if errClip := SetClipboardText(text); errClip != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: errClip.Error()})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"success": true, "bytes": len(text)}})
+		return
+	case "ide.list_workspaces", "ide.list_sessions", "ide.create_session", "ide.send_prompt", "ide.focus", "ide.status",
+		"ide.launch", "ide.restart", "ide.kill", "ide_launch", "ide_restart", "ide_kill", "emergency_stop",
+		"ide.open_file", "ide_open_file", "open_file_in_ide", "focus_session", "focus":
 		s.handleIDEMessage(conn, msg)
 		return
 	case "get_capabilities":
@@ -3581,6 +3670,18 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 						Type: "git_branch_changed",
 						Data: map[string]interface{}{
 							"command": trimmedCmd,
+						},
+					})
+				} else if strings.HasPrefix(trimmedCmd, "/goal") || strings.HasPrefix(trimmedCmd, "/boost") {
+					goalText := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(trimmedCmd, "/goal"), "/boost"))
+					if goalText == "" {
+						goalText = "Goal"
+					}
+					s.broadcast(OutgoingMessage{
+						Type: "goal_started",
+						Data: map[string]interface{}{
+							"goal":      goalText,
+							"cascadeId": msg.CascadeID,
 						},
 					})
 				}
@@ -3970,7 +4071,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			// réponse et auto-refus), même contrat que submit_approval.
 			s.clearApproval(msg.CascadeID)
 			oneofPayload := connectrpc.BuildAskQuestionInteraction(msg.SelectedAnswers, msg.CustomAnswer, false)
-			raw, err = s.RPCClient.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), connectrpc.InteractionAskQuestion, oneofPayload)
+			raw, err = s.getRPCClientForCascade(msg.CascadeID).SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), connectrpc.InteractionAskQuestion, oneofPayload)
 			// Réponse unary au client demandeur (même contrat que
 			// submit_approval) — sinon le fallthrough écrirait un dump protobuf
 			// vide, et une écriture sans lecture préalable créerait une course
@@ -3991,7 +4092,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		// Réponse libre : accuse réception au client et envoie au LS
 		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"status": "submitted"}})
 		go func() {
-			_ = s.RPCClient.SendMessageStream(msg.CascadeID, responseText, func([]byte) error { return nil })
+			_ = s.getRPCClientForCascade(msg.CascadeID).SendMessageStream(msg.CascadeID, responseText, func([]byte) error { return nil })
 		}()
 		return
 
@@ -4085,8 +4186,20 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		s.activeRequestIDs[msg.CascadeID] = msg.RequestID
 		s.mu.Unlock()
 
+		promptText := msg.Prompt
+		trimmedPrompt := strings.TrimSpace(promptText)
+		isGoalPrompt := strings.HasPrefix(trimmedPrompt, "/goal") || strings.HasPrefix(trimmedPrompt, "/boost")
+
 		s.MarkCascadeActive(msg.CascadeID)
 		defer func() {
+			if isGoalPrompt {
+				s.broadcast(OutgoingMessage{
+					Type: "goal_ended",
+					Data: map[string]interface{}{
+						"cascadeId": msg.CascadeID,
+					},
+				})
+			}
 			s.ClearCascadeActive(msg.CascadeID)
 			s.mu.Lock()
 			cancel()
@@ -4109,7 +4222,19 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		s.broadcast(OutgoingMessage{Type: "stream_start", RequestID: msg.RequestID, CascadeID: msg.CascadeID, Data: startData})
 		logJSON.Info("stream_start", "requestId", msg.RequestID, "cascadeId", msg.CascadeID)
 
-		promptText := msg.Prompt
+		if isGoalPrompt {
+			goalText := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(trimmedPrompt, "/goal"), "/boost"))
+			if goalText == "" {
+				goalText = "Goal"
+			}
+			s.broadcast(OutgoingMessage{
+				Type: "goal_started",
+				Data: map[string]interface{}{
+					"goal":      goalText,
+					"cascadeId": msg.CascadeID,
+				},
+			})
+		}
 		base64Data := msg.Base64Data
 		fileName := msg.FileName
 		images := msg.Images
@@ -4345,7 +4470,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 					// « toujours autoriser ce type pour la session ».
 					if s.hasSessionApproval(msg.CascadeID, ev.Tool) {
 						oneofField, oneofPayload := buildApprovalPayload(ev.Tool, true, extractCommand(ev.Detail), "", "")
-						if _, errSubmit := s.RPCClient.SubmitToolApproval(
+						if _, errSubmit := s.getRPCClientForCascade(msg.CascadeID).SubmitToolApproval(
 							msg.CascadeID, ev.TrajectoryID, ev.StepIndex,
 							oneofField, oneofPayload,
 						); errSubmit != nil {
@@ -4356,7 +4481,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 						// En mode full, tout passe sauf questions interactives.
 						// En mode readonly, seules les lectures passent sans confirmation.
 						oneofField, oneofPayload := buildApprovalPayload(ev.Tool, true, extractCommand(ev.Detail), "", "")
-						if _, errSubmit := s.RPCClient.SubmitToolApproval(
+						if _, errSubmit := s.getRPCClientForCascade(msg.CascadeID).SubmitToolApproval(
 							msg.CascadeID, ev.TrajectoryID, ev.StepIndex,
 							oneofField, oneofPayload,
 						); errSubmit != nil {
@@ -4464,13 +4589,23 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			promptText = strings.TrimSpace(promptText) + metaBlock
 		}
 
-		if ctxClient, ok := s.RPCClient.(RPCStreamContextClient); ok {
+		clientTarget := s.getRPCClientForCascade(msg.CascadeID)
+		if ctxClient, ok := clientTarget.(RPCStreamContextClient); ok {
 			err = ctxClient.SendMessageStreamModelWithMediaContext(ctx, msg.CascadeID, promptText, modelUID, modelEnum, nonImageMedia, onFrameHandler, noTools)
+		} else if clientTarget != nil {
+			err = clientTarget.SendMessageStreamModelWithMedia(msg.CascadeID, promptText, modelUID, modelEnum, nonImageMedia, onFrameHandler, noTools)
 		} else {
-			err = s.RPCClient.SendMessageStreamModelWithMedia(msg.CascadeID, promptText, modelUID, modelEnum, nonImageMedia, onFrameHandler, noTools)
+			err = fmt.Errorf("aucun client RPC disponible pour la session %s", msg.CascadeID)
+		}
+
+		if err == nil && isIDESession(msg.CascadeID) && clientTarget != nil {
+			_, _ = clientTarget.SetBrowserOpenConversation(msg.CascadeID)
 		}
 
 		if err != nil {
+			if isIDESession(msg.CascadeID) {
+				ide.InvalidateClientForCascade(msg.CascadeID)
+			}
 			cancelWatcher()
 		} else {
 			// Si un fichier transcript existe ou que la cascade est activement en cours dans Jetbox/LS,
@@ -4599,7 +4734,11 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		}
 
 		oneofField, oneofPayload := buildApprovalPayload(msg.ApprovalType, confirm, msg.Command, msg.FilePath, msg.DenyReason, msg.Scope)
-		raw, err = s.RPCClient.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), oneofField, oneofPayload)
+		if clientTarget := s.getRPCClientForCascade(msg.CascadeID); clientTarget != nil {
+			raw, err = clientTarget.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), oneofField, oneofPayload)
+		} else {
+			raw, err = s.RPCClient.SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), oneofField, oneofPayload)
+		}
 		if err == nil {
 			s.writeJSON(conn, OutgoingMessage{
 				Type:      "response",
@@ -4617,6 +4756,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 					"decision":     msg.Decision,
 					"approvalType": msg.ApprovalType,
 					"scope":        msg.Scope,
+					"source":       "remote",
 				},
 			})
 			s.broadcast(OutgoingMessage{

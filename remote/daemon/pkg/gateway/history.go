@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -369,6 +370,41 @@ func isSessionMarkedUnread(home, cascadeID string) bool {
 		}
 	}
 	return false
+}
+
+// isSessionUnreadWithUpdatedTime vérifie l'état de lecture exact de la session :
+// 1) Si marked_as_unread: true -> true
+// 2) Si une date de dernière vue est enregistrée et qu'une mise à jour de turn est intervenue après -> true (point bleu desktop 1:1)
+func isSessionUnreadWithUpdatedTime(home, cascadeID string, updatedAt time.Time) bool {
+	if cascadeID == "" {
+		return false
+	}
+	reUnread := regexp.MustCompile(`(?i)marked_as_unread:\s*(true|false)`)
+	reView := regexp.MustCompile(`(?i)last_user_view_time:\s*\{seconds:\s*(\d+)`)
+
+	for _, sub := range []string{"antigravity", "antigravity-ide"} {
+		annoPath := filepath.Join(home, ".gemini", sub, "annotations", cascadeID+".pbtxt")
+		if data, err := os.ReadFile(annoPath); err == nil {
+			str := string(data)
+			if m := reUnread.FindAllStringSubmatch(str, -1); len(m) > 0 {
+				if strings.ToLower(m[len(m)-1][1]) == "true" {
+					return true
+				}
+			}
+			if !updatedAt.IsZero() {
+				if mView := reView.FindStringSubmatch(str); len(mView) >= 2 {
+					if sec, errSec := strconv.ParseInt(mView[1], 10, 64); errSec == nil && sec > 0 {
+						viewTime := time.Unix(sec, 0)
+						if updatedAt.After(viewTime.Add(2 * time.Second)) {
+							return true
+						}
+						return false
+					}
+				}
+			}
+		}
+	}
+	return isSessionMarkedUnread(home, cascadeID)
 }
 
 // markSessionUnreadOnDisk persiste marked_as_unread et met à jour last_user_view_time dans annotations/<cascadeID>.pbtxt
@@ -3337,11 +3373,55 @@ func cleanPromptTitle(s string) string {
 
 // ProjectSummary represents an official Antigravity 2.0 project from ~/.gemini/config/projects/
 type ProjectSummary struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	FolderURI string    `json:"folderUri"`
-	Path      string    `json:"path"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	FolderURI    string    `json:"folderUri"`
+	Path         string    `json:"path"`
+	GitRemoteURL string    `json:"gitRemoteUrl,omitempty"`
+	RepoSlug     string    `json:"repoSlug,omitempty"`
+	RepoName     string    `json:"repoName,omitempty"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+func extractProjectGitRemote(projPath string) (rawUrl, slug, repoName string) {
+	if projPath == "" {
+		return "", "", ""
+	}
+	gitConfig := filepath.Join(projPath, ".git", "config")
+	data, err := os.ReadFile(gitConfig)
+	if err != nil {
+		dotGit := filepath.Join(projPath, ".git")
+		if content, errGit := os.ReadFile(dotGit); errGit == nil {
+			str := string(content)
+			if strings.HasPrefix(str, "gitdir:") {
+				gd := strings.TrimSpace(strings.TrimPrefix(str, "gitdir:"))
+				if !filepath.IsAbs(gd) {
+					gd = filepath.Join(projPath, gd)
+				}
+				data, _ = os.ReadFile(filepath.Join(gd, "config"))
+			}
+		}
+	}
+	if len(data) == 0 {
+		return "", "", ""
+	}
+	re := regexp.MustCompile(`(?i)url\s*=\s*([^\r\n]+)`)
+	m := re.FindStringSubmatch(string(data))
+	if len(m) < 2 {
+		return "", "", ""
+	}
+	rawUrl = strings.TrimSpace(m[1])
+	slug = strings.TrimSuffix(rawUrl, ".git")
+	if idx := strings.LastIndex(slug, "github.com/"); idx != -1 {
+		slug = slug[idx+len("github.com/"):]
+	} else if idx := strings.LastIndex(slug, ":"); idx != -1 && !strings.Contains(slug, "://") {
+		slug = slug[idx+1:]
+	}
+	parts := strings.Split(slug, "/")
+	if len(parts) > 0 {
+		repoName = parts[len(parts)-1]
+	}
+	return rawUrl, slug, repoName
 }
 
 var (
@@ -3438,12 +3518,17 @@ func ListOfficialProjects() []ProjectSummary {
 			name = parsed.ID
 		}
 
+		gitUrl, gitSlug, gitRepo := extractProjectGitRemote(path)
+
 		list = append(list, ProjectSummary{
-			ID:        parsed.ID,
-			Name:      name,
-			FolderURI: folderURI,
-			Path:      path,
-			UpdatedAt: updatedTime,
+			ID:           parsed.ID,
+			Name:         name,
+			FolderURI:    folderURI,
+			Path:         path,
+			GitRemoteURL: gitUrl,
+			RepoSlug:     gitSlug,
+			RepoName:     gitRepo,
+			UpdatedAt:    updatedTime,
 		})
 	}
 
@@ -3546,7 +3631,41 @@ func matchOfficialProject(projID, wsPath, wsName string, projects []ProjectSumma
 		}
 	}
 
-	return wsName, wsPath, projID
+	// 5. Priorité 5 : Git Remote URL / Repository Slug (sessions Antigravity 2.0 identifiées par leur repo git)
+	wsSearch := strings.ToLower(wsPath + " " + wsName)
+	for _, p := range projects {
+		if p.RepoSlug != "" && strings.Contains(wsSearch, strings.ToLower(p.RepoSlug)) {
+			return p.Name, p.Path, p.ID
+		}
+		if p.RepoName != "" && strings.Contains(wsSearch, strings.ToLower(p.RepoName)) {
+			return p.Name, p.Path, p.ID
+		}
+		if p.GitRemoteURL != "" && strings.Contains(wsSearch, strings.ToLower(p.GitRemoteURL)) {
+			return p.Name, p.Path, p.ID
+		}
+		if p.Name != "" && strings.Contains(wsSearch, strings.ToLower(p.Name)) {
+			return p.Name, p.Path, p.ID
+		}
+	}
+
+	// Nettoyer les résidus de caractères binaires/protobuf si aucun projet officiel n'a matché
+	cleanName := wsName
+	if strings.Contains(cleanName, "github.com/") {
+		parts := strings.Split(cleanName, "/")
+		cleanName = strings.TrimSuffix(parts[len(parts)-1], ".git")
+	}
+	cleanName = strings.Map(func(r rune) rune {
+		if r >= 32 && r < 127 {
+			return r
+		}
+		return -1
+	}, cleanName)
+	cleanName = strings.TrimSpace(cleanName)
+	if cleanName == "" {
+		cleanName = "Workspace"
+	}
+
+	return cleanName, wsPath, projID
 }
 
 // GetUniqueWorkspaces returns the list of unique workspace names discovered on the machine.

@@ -42,6 +42,7 @@ abstract class AppColors {
   // ── Status (Antigravity 2.0 States: Success / Warning / Error / Info)
   static const Color positive = Color(0xFF81C995);       // #81c995 (status.success)
   static const Color success = positive;
+  static const Color online = positive;
   static const Color successSubtle = Color(0xFF20352A);  // #20352a (status.successSubtle)
   static const Color warning = Color(0xFFFDD663);        // #fdd663 (status.warning)
   static const Color warningSubtle = Color(0xFF3A321A);  // #3a321a (status.warningSubtle)

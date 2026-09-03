@@ -300,5 +300,98 @@ void main() {
       api.dispose();
       await tester.pump(const Duration(milliseconds: 100));
     });
+
+    testWidgets('Scénario 6 : Approbation MCP Tool (coolify/get_application) avec 5 options unifiées Desktop/Mobile', (tester) async {
+      final (:api, :ctrl, :out) = _mkApi();
+      await _pumpScreen(tester, api: api, ctrl: ctrl);
+      out.clear();
+
+      // Pousse d'approbation d'un outil MCP
+      ctrl.add(jsonEncode({
+        'type': 'approval_pending',
+        'broadcast': true,
+        'cascadeId': 'c1',
+        'data': {
+          'callId': 'mcp-call-coolify-1',
+          'toolName': 'mcp_tool',
+          'approvalType': 'mcp_tool',
+          'command': 'coolify/get_application',
+          'detail': '{"ServerName":"coolify","ToolName":"get_application","Arguments":{"uuid":"1qyidg5c2izhxy6njh4ua7wm"}}',
+          'stepIndex': 368,
+        }
+      }));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byType(ToolApprovalCard), findsOneWidget);
+      expect(find.text('Allow using this MCP tool?'), findsOneWidget);
+      expect(find.text('coolify/get_application'), findsOneWidget);
+
+      // Vérification des 5 options conformes à Antigravity Desktop
+      expect(find.text('Yes, allow this time'), findsOneWidget);
+      expect(find.text('Yes, and always allow in this conversation'), findsOneWidget);
+      expect(find.text('Yes, and always allow in this project'), findsOneWidget);
+      expect(find.text('Yes, and always allow'), findsOneWidget);
+      expect(find.text('No (tell the agent what to do instead)'), findsOneWidget);
+      expect(find.text('Skip'), findsOneWidget);
+
+      // L'utilisateur choisit "Yes, and always allow in this conversation" (option 2)
+      await tester.tap(find.text('Yes, and always allow in this conversation'));
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // Soumission via Submit ↵
+      await tester.ensureVisible(find.byKey(const Key('allow-btn')));
+      await tester.tap(find.byKey(const Key('allow-btn')), warnIfMissed: false);
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final approvals = out.where((m) => m['type'] == 'submit_approval').toList();
+      expect(approvals.length, equals(1));
+      expect(approvals[0]['cascadeId'], equals('c1'));
+      expect(approvals[0]['decision'], equals('allow'));
+      expect(approvals[0]['approvalType'], equals('mcp_tool'));
+      expect(approvals[0]['scope'], equals('session'));
+
+      api.dispose();
+      await tester.pump(const Duration(milliseconds: 100));
+    });
+
+    testWidgets('Scénario 7 : Résolution Desktop sur outil MCP fermant la carte mobile instantanément', (tester) async {
+      final (:api, :ctrl, :out) = _mkApi();
+      await _pumpScreen(tester, api: api, ctrl: ctrl);
+      out.clear();
+
+      ctrl.add(jsonEncode({
+        'type': 'approval_pending',
+        'broadcast': true,
+        'cascadeId': 'c1',
+        'data': {
+          'callId': 'mcp-call-coolify-2',
+          'toolName': 'mcp_tool',
+          'approvalType': 'mcp_tool',
+          'command': 'coolify/deploy_application',
+          'stepIndex': 370,
+        }
+      }));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byType(ToolApprovalCard), findsOneWidget);
+
+      // Résolution Desktop diffusée par le daemon
+      ctrl.add(jsonEncode({
+        'type': 'approval_resolved',
+        'broadcast': true,
+        'cascadeId': 'c1',
+        'data': {
+          'callId': 'mcp-call-coolify-2',
+          'source': 'desktop',
+        }
+      }));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // La carte se ferme immédiatement sur Mobile
+      expect(find.byType(ToolApprovalCard), findsNothing);
+
+      api.dispose();
+      await tester.pump(const Duration(milliseconds: 100));
+    });
   });
 }

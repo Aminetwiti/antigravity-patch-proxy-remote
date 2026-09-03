@@ -1754,13 +1754,71 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
                   ),
                   ListTile(
                     leading: Icon(Icons.content_paste_rounded, color: scheme.primary),
-                    title: Text('Coller depuis le presse-papier', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500)),
-                    subtitle: Text('Image Base64, JSON, texte ou extrait de code', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                    title: Text('Coller depuis le presse-papier mobile', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500)),
+                    subtitle: Text('Image Base64, JSON, texte ou extrait de code du téléphone', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
                     onTap: () {
                       Navigator.of(ctx).pop();
                       _pasteFromClipboard();
                     },
                   ),
+                  if (widget.api != null) ...[
+                    ListTile(
+                      leading: Icon(Icons.desktop_windows_rounded, color: AppColors.online),
+                      title: Text('Coller depuis le PC', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500)),
+                      subtitle: Text('Récupère le presse-papier de votre ordinateur hôte', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                      onTap: () async {
+                        Navigator.of(ctx).pop();
+                        final text = await widget.api?.getDesktopClipboard();
+                        if (text != null && text.isNotEmpty) {
+                          _insertTextAtCursor(text);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Texte collé depuis le PC (${text.length} caractères)'),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        } else if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Presse-papier du PC vide ou inaccessible'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.send_to_mobile_rounded, color: AppColors.accentBlue),
+                      title: Text('Envoyer le prompt vers le PC', style: TextStyle(color: isDark ? AppColors.inkPrimary : scheme.onSurface, fontWeight: FontWeight.w500)),
+                      subtitle: Text('Copie le texte saisi dans le presse-papier de votre PC', style: TextStyle(color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant, fontSize: 12)),
+                      onTap: () async {
+                        Navigator.of(ctx).pop();
+                        final promptText = _controller.text.trim();
+                        if (promptText.isEmpty) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Veuillez d\'abord saisir un message à envoyer au PC'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                          return;
+                        }
+                        final ok = await widget.api?.setDesktopClipboard(promptText) ?? false;
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(ok ? 'Copié dans le presse-papier du PC !' : 'Échec de la copie vers le PC'),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
                   ListTile(
                     leading: Icon(Icons.edit_note_outlined, color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
                     title: Text(

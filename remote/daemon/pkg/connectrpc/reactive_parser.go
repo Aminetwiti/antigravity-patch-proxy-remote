@@ -179,6 +179,18 @@ func reactiveInteractionValue(v any) int {
 			return InteractionSingleSelect
 		case "ASK_QUESTION", "INTERACTION_TYPE_ASK_QUESTION":
 			return InteractionAskQuestion
+		case "MCP", "MCP_TOOL", "CALL_MCP_TOOL", "INTERACTION_TYPE_MCP", "CASCADE_MCP":
+			return InteractionMcp
+		case "DEPLOY", "INTERACTION_TYPE_DEPLOY":
+			return InteractionDeploy
+		case "SEND_COMMAND_INPUT", "INTERACTION_TYPE_SEND_COMMAND_INPUT":
+			return InteractionSendCommandInput
+		case "INVOKE_SUBAGENT", "INTERACTION_TYPE_INVOKE_SUBAGENT":
+			return InteractionInvokeSubagent
+		case "DELETE_DIRECTORY", "INTERACTION_TYPE_DELETE_DIRECTORY":
+			return InteractionDeleteDirectory
+		case "CLOUDSQL", "INTERACTION_TYPE_CLOUDSQL":
+			return InteractionCloudSQL
 		}
 	}
 	return 0

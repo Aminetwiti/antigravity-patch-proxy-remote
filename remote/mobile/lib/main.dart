@@ -135,6 +135,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
 
   String _activeSessionId = '';
   String _activeSessionTitle = '';
+  String? _focusedDesktopSessionId;
 
   DaemonApi? _api;
   Map<String, dynamic> _contextStats = {};
@@ -803,16 +804,19 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         if (data is Map) {
           final cid = (data['cascadeId'] ?? data['focusedCascadeId']) as String? ?? '';
           final title = data['title'] as String? ?? '';
-          if (cid.isNotEmpty && title.isNotEmpty) {
-            setState(() {
+          setState(() {
+            if (cid.isNotEmpty) {
+              _focusedDesktopSessionId = cid;
+            }
+            if (cid.isNotEmpty && title.isNotEmpty) {
               _sessions = _sessions.map((s) {
                 if (s.id == cid) {
                   return s.copyWith(title: title);
                 }
                 return s;
               }).toList();
-            });
-          }
+            }
+          });
         }
         return;
       }
@@ -1265,6 +1269,8 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       onArchiveSession: _archiveSession,
       onRenameSession: _renameSession,
       onExportSession: _exportSession,
+      focusedDesktopSessionId: _focusedDesktopSessionId,
+      onFocusDesktop: (id) => _api?.focusIdeSession(id),
       onConversationHistory: _showSessionHistory,
       onScheduledTasks: _showScheduledTasks,
       onOpenBattleArena: () {

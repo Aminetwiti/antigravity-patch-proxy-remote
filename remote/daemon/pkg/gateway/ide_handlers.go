@@ -13,7 +13,8 @@ import (
 func (s *Server) IsIDESupportedAction(action string) bool {
 	switch action {
 	case "ide.list_workspaces", "ide.list_sessions", "ide.create_session", "ide.send_prompt", "ide.focus", "ide.status",
-		"ide.launch", "ide.restart", "ide.kill", "ide_launch", "ide_restart", "ide_kill", "emergency_stop":
+		"ide.launch", "ide.restart", "ide.kill", "ide_launch", "ide_restart", "ide_kill", "emergency_stop",
+		"ide.open_file", "ide_open_file", "open_file_in_ide", "focus_session":
 		return true
 	default:
 		return false
@@ -216,7 +217,7 @@ func (s *Server) handleIDEMessage(conn *websocket.Conn, msg IncomingMessage) {
 			},
 		})
 
-	case "ide.focus":
+	case "ide.focus", "focus_session":
 		cascadeID := msg.CascadeID
 		if cascadeID == "" && msg.Data != nil {
 			if c, ok := msg.Data["cascadeId"].(string); ok {
@@ -232,24 +233,46 @@ func (s *Server) handleIDEMessage(conn *websocket.Conn, msg IncomingMessage) {
 			return
 		}
 
-		client, err := ide.NewAutoClient()
-		if err != nil {
+		var focusErr error
+		rpcTarget := s.getRPCClientForCascade(cascadeID)
+		if rpcTarget != nil {
+			_, focusErr = rpcTarget.SetBrowserOpenConversation(cascadeID)
+		}
+		if focusErr != nil || rpcTarget == nil {
+			if client, err := ide.FindClientForCascade(cascadeID); err == nil {
+				_, focusErr = client.SetBrowserOpenConversation(cascadeID)
+			} else if autoClient, errAuto := ide.NewAutoClient(); errAuto == nil {
+				focusErr = autoClient.SetFocus(cascadeID)
+			} else if focusErr == nil {
+				focusErr = err
+			}
+		}
+
+		if focusErr != nil {
 			s.writeJSON(conn, OutgoingMessage{
 				Type:      "response",
 				RequestID: msg.RequestID,
-				Error:     fmt.Sprintf("erreur connexion IDE: %v", err),
+				Error:     fmt.Sprintf("échec focus IDE: %v", focusErr),
 			})
 			return
 		}
 
-		if err := client.SetFocus(cascadeID); err != nil {
-			s.writeJSON(conn, OutgoingMessage{
-				Type:      "response",
-				RequestID: msg.RequestID,
-				Error:     fmt.Sprintf("échec focus IDE: %v", err),
-			})
-			return
+		s.mu.Lock()
+		s.focusedCascadeID = cascadeID
+		var title string
+		if sum, ok := s.jetboxSummaries[cascadeID]; ok {
+			title = sum.Title
 		}
+		s.mu.Unlock()
+
+		s.broadcast(OutgoingMessage{
+			Type: "session_focus_changed",
+			Data: map[string]interface{}{
+				"cascadeId":        cascadeID,
+				"focusedCascadeId": cascadeID,
+				"title":            title,
+			},
+		})
 
 		s.writeJSON(conn, OutgoingMessage{
 			Type:      "response",
@@ -257,6 +280,56 @@ func (s *Server) handleIDEMessage(conn *websocket.Conn, msg IncomingMessage) {
 			Data: map[string]interface{}{
 				"cascadeId": cascadeID,
 				"focused":   true,
+			},
+		})
+
+	case "ide.open_file", "ide_open_file", "open_file_in_ide":
+		filePath := ""
+		line := 0
+		col := 0
+		if msg.Data != nil {
+			if p, ok := msg.Data["filePath"].(string); ok {
+				filePath = p
+			} else if p, ok := msg.Data["file"].(string); ok {
+				filePath = p
+			} else if p, ok := msg.Data["path"].(string); ok {
+				filePath = p
+			}
+			if l, ok := msg.Data["line"].(float64); ok {
+				line = int(l)
+			} else if l, ok := msg.Data["line"].(int); ok {
+				line = l
+			}
+			if c, ok := msg.Data["column"].(float64); ok {
+				col = int(c)
+			} else if c, ok := msg.Data["column"].(int); ok {
+				col = c
+			}
+		}
+		if filePath == "" {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     "filePath requis",
+			})
+			return
+		}
+		if err := launcher.OpenFile(filePath, line, col); err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec d'ouverture du fichier dans l'IDE: %v", err),
+			})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"filePath": filePath,
+				"line":     line,
+				"column":   col,
+				"opened":   true,
 			},
 		})
 
@@ -281,12 +354,23 @@ func (s *Server) handleIDEMessage(conn *websocket.Conn, msg IncomingMessage) {
 			return
 		}
 
-		client, err := ide.NewAutoClient()
-		if err != nil {
+		var client *ide.Client
+		var err error
+		inst, errInst := ide.FindInstanceForCascade(cascadeID)
+		if errInst == nil {
+			client = ide.NewClient(inst)
+		} else {
+			client, err = ide.NewAutoClient()
+		}
+		if client == nil || (errInst != nil && err != nil) {
+			errMsg := errInst
+			if errMsg == nil {
+				errMsg = err
+			}
 			s.writeJSON(conn, OutgoingMessage{
 				Type:      "response",
 				RequestID: msg.RequestID,
-				Error:     fmt.Sprintf("connexion IDE impossible: %v", err),
+				Error:     fmt.Sprintf("connexion IDE impossible: %v", errMsg),
 			})
 			return
 		}

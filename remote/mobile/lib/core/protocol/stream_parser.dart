@@ -554,6 +554,30 @@ class ToolApproval {
     this.approvalType = 'approval',
   });
 
+  ToolApprovalRequest toRequest({String targetSessionId = '', ApprovalScope scope = ApprovalScope.once}) {
+    final srv = mcpServer;
+    final tl = mcpTool;
+    final args = mcpArgs;
+    final target = command;
+
+    return ToolApprovalRequest(
+      callId: callId,
+      toolName: tool,
+      command: target.isNotEmpty ? target : (srv != null && tl != null ? '$srv/$tl' : tool),
+      description: 'Tool execution requires your confirmation',
+      cascadeId: cascadeId.isNotEmpty ? cascadeId : targetSessionId,
+      trajectoryId: trajectoryId,
+      stepIndex: stepIndex,
+      approvalType: approvalType,
+      filePath: approvalType == 'file_permission' ? target : null,
+      url: approvalType == 'read_url_content' ? target : null,
+      mcpServer: srv,
+      mcpTool: tl,
+      mcpArgs: args,
+      scope: scope,
+    );
+  }
+
   static final RegExp _cmdTargetRe = RegExp(
     r'"(command_line|commandline|command)"\s*:\s*"((?:[^"\\]|\\.)*)"',
     caseSensitive: false,
@@ -564,10 +588,78 @@ class ToolApproval {
   );
   static final RegExp _rawUrlTargetRe = RegExp(r'https?://[^\s"<>]+');
 
-  /// The command line or URL to echo back on approval (run_command / read_url_content).
+  /// The command line, MCP tool or URL to echo back on approval.
   String get command => _extractTarget(detail);
 
+  String? get mcpServer {
+    if (detail.contains('ServerName') || detail.contains('server_name') || detail.contains('coolify')) {
+      try {
+        final start = detail.indexOf('{');
+        final end = detail.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+          final m = json.decode(detail.substring(start, end + 1));
+          if (m is Map) {
+            return (m['ServerName'] ?? m['server_name'] ?? m['server'])?.toString().replaceAll('"', '');
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  String? get mcpTool {
+    if (detail.contains('ToolName') || detail.contains('tool_name')) {
+      try {
+        final start = detail.indexOf('{');
+        final end = detail.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+          final m = json.decode(detail.substring(start, end + 1));
+          if (m is Map) {
+            return (m['ToolName'] ?? m['tool_name'] ?? m['tool'])?.toString().replaceAll('"', '');
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  String? get mcpArgs {
+    try {
+      final start = detail.indexOf('{');
+      final end = detail.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        final m = json.decode(detail.substring(start, end + 1));
+        if (m is Map) {
+          final args = m['Arguments'] ?? m['arguments'] ?? m['args'];
+          if (args != null) {
+            return args is String ? args : json.encode(args);
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static String _extractTarget(String detail) {
+    // Check for MCP tool (e.g. coolify/get_application)
+    if (detail.contains('ServerName') || detail.contains('server_name') || detail.contains('ToolName') || detail.contains('tool_name') || detail.contains('coolify')) {
+      try {
+        final start = detail.indexOf('{');
+        final end = detail.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+          final m = json.decode(detail.substring(start, end + 1));
+          if (m is Map) {
+            final srv = (m['ServerName'] ?? m['server_name'] ?? m['server'])?.toString().replaceAll('"', '') ?? '';
+            final tl = (m['ToolName'] ?? m['tool_name'] ?? m['tool'])?.toString().replaceAll('"', '') ?? '';
+            if (srv.isNotEmpty && tl.isNotEmpty) {
+              return '$srv/$tl';
+            }
+            if (tl.isNotEmpty) return tl;
+          }
+        }
+      } catch (_) {}
+    }
+
     // Check for command
     final cmdMatch = _cmdTargetRe.firstMatch(detail);
     if (cmdMatch != null) return cmdMatch.group(2)!.replaceAll(r'\n', '\n');

@@ -541,6 +541,38 @@ class DaemonApi {
   Future<Map<String, dynamic>> markSessionUnread(String cascadeId) =>
       rpc('mark_unread', {'cascadeId': cascadeId});
 
+  /// Ouvre un fichier spécifique dans l'éditeur Antigravity 2.0 Desktop à une ligne/colonne donnée.
+  Future<Map<String, dynamic>> openFileInIDE(String filePath, {int? line, int? column}) =>
+      rpc('ide.open_file', {
+        'data': {
+          'filePath': filePath,
+          if (line != null) 'line': line,
+          if (column != null) 'column': column,
+        },
+      });
+
+  /// Récupère le texte présent dans le presse-papier du PC hôte (Windows/macOS/Linux).
+  Future<String?> getDesktopClipboard() async {
+    try {
+      final res = await rpc('clipboard.get', {});
+      if (res['text'] is String) return res['text'] as String;
+      if (res['data'] is Map && (res['data'] as Map)['text'] is String) {
+        return (res['data'] as Map)['text'] as String;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Écrit du texte directement dans le presse-papier du PC hôte.
+  Future<bool> setDesktopClipboard(String text) async {
+    try {
+      final res = await rpc('clipboard.set', {'data': {'text': text}});
+      return res['success'] == true || (res['data'] is Map && (res['data'] as Map)['success'] == true);
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> listFiles(String workspacePath) =>
       rpc('list_files', {'workspacePath': workspacePath});
 

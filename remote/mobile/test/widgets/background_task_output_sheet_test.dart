@@ -58,6 +58,35 @@ void main() {
       expect(find.text('task 1'), findsWidgets);
       expect(find.text('task 2'), findsOneWidget);
     });
+
+    testWidgets('renders 1 task running, 1 active goal simultaneously and stops goal', (tester) async {
+      bool stoppedGoal = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BackgroundTasksBar(
+              runningTasks: const ['& "test-task.exe"'],
+              activeGoals: const ['je veux mettre que ses all module et action 100% Synchro bidirectionnelle /goal /boost'],
+              onStopGoal: (_) => stoppedGoal = true,
+              initiallyExpanded: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(find.text('1 task running, 1 active goal'), findsOneWidget);
+      expect(find.text('& "test-task.exe"'), findsOneWidget);
+      expect(find.text('je veux mettre que ses all module et action 100% Synchro bidirectionnelle /goal /boost'), findsOneWidget);
+
+      // Tap Stop on the goal
+      final stopButtons = find.text('Stop');
+      expect(stopButtons, findsNWidgets(1)); // Only on goal since onStopTask is null
+      await tester.tap(stopButtons.first);
+      await tester.pump();
+      expect(stoppedGoal, isTrue);
+    });
   });
 
   group('BackgroundTaskOutputSheet', () {

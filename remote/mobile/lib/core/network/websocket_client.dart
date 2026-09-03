@@ -72,11 +72,9 @@ class DaemonWebSocketClient {
 
   /// Keep-alive applicatif : le daemon ferme les connexions sans frame après
   /// pongWait (60 s). En arrière-plan, l'OS Android gèle le réseau → le ping
-  /// WS natif 30 s du serveur est perdu. On envoie donc un ping JSON toutes
-  /// les 20 s quand connecté : toute frame reçue reset le read deadline du
-  /// daemon → la connexion survit. ponytail: intervalle fixe 20 s, pas de
-  /// jitter — suffisant pour traverser Cloudflare/4G.
-  static const keepAliveInterval = Duration(seconds: 20);
+  /// Ping JSON toutes les 5 s : le daemon lit la frame → reset du read deadline
+  /// (pongWait) → connexion maintenue contre les timeouts d'inactivité Wi-Fi/NAT.
+  static const keepAliveInterval = Duration(seconds: 5);
   Timer? _keepAliveTimer;
 
   /// Callback appelé après chaque connexion réussie : permet au consumer de
@@ -356,20 +354,29 @@ class DaemonWebSocketClient {
     _scheduleReconnect();
   }
 
-  /// Ping JSON toutes les 20 s : le daemon lit la frame → reset du read
-  /// deadline (pongWait) → connexion maintenue même en arrière-plan.
+  /// Ping JSON toutes les 5 s (avec émission immédiate à la connexion) :
+  /// le daemon lit la frame → reset du read deadline (pongWait) → connexion
+  /// maintenue en continu même en cas de veille réseau agressive.
   void _startKeepAlive() {
     _keepAliveTimer?.cancel();
+    // Émission immédiate au handshake pour réchauffer le socket et mesurer le RTT initial
+    final sock = _socket;
+    if (sock != null && statusNotifier.value == ConnectionStatus.connected) {
+      try {
+        _lastPingTimestamp = DateTime.now().millisecondsSinceEpoch;
+        sock.add('{"type":"ping","ts":$_lastPingTimestamp}');
+      } catch (_) {}
+    }
     _keepAliveTimer = Timer.periodic(keepAliveInterval, (_) {
-      final sock = _socket;
-      if (sock == null ||
+      final s = _socket;
+      if (s == null ||
           statusNotifier.value != ConnectionStatus.connected) {
         _stopKeepAlive();
         return;
       }
       try {
         _lastPingTimestamp = DateTime.now().millisecondsSinceEpoch;
-        sock.add('{"type":"ping","ts":$_lastPingTimestamp}');
+        s.add('{"type":"ping","ts":$_lastPingTimestamp}');
       } catch (_) {
         _stopKeepAlive();
       }

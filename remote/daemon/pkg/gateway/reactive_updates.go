@@ -83,25 +83,26 @@ func (s *Server) reactiveSyncUpdates(updates map[string]connectrpc.ReactiveUpdat
 				connectrpc.InteractionFilePermission,
 				connectrpc.InteractionPermission,
 				connectrpc.InteractionOpenBrowserURL,
-				connectrpc.InteractionReadUrlContent:
+				connectrpc.InteractionReadUrlContent,
+				connectrpc.InteractionMcp,
+				connectrpc.InteractionDeploy,
+				connectrpc.InteractionSendCommandInput,
+				connectrpc.InteractionInvokeSubagent,
+				connectrpc.InteractionDeleteDirectory,
+				connectrpc.InteractionCloudSQL:
 				tool := interactionToolName(u.RequestedInteraction)
 				// Même garde que le chemin binaire (websocket.go) : une
 				// auto-approbation de session déjà traitée ne doit ni poser
-				// de carte ni diffuser. L'auto-accept read-only n'est PAS
-				// vérifié ici : aucun type d'interaction réactif ne mappe
-				// vers un outil read-only (interactionToolName ne produit
-				// que run_command/file_permission/permission/approval/
-				// open_browser_url), la garde serait du code mort. Le chemin
-				// binaire soumet l'auto-approbation read-only avec le détail
-				// de la commande que le flux réactif ne porte pas.
+				// de carte ni diffuser.
 				if s.hasSessionApproval(id, tool) {
 					continue
 				}
 				ev := connectrpc.StreamEvent{
-					CallID:       u.CallID,
-					TrajectoryID: u.TrajectoryID,
-					StepIndex:    u.StepIndex,
-					Tool:         tool,
+					CallID:         u.CallID,
+					TrajectoryID:   u.TrajectoryID,
+					StepIndex:      u.StepIndex,
+					Tool:           tool,
+					InteractionNum: u.RequestedInteraction,
 				}
 				s.MarkApprovalPending(id, ev)
 				// C7-B : idle détection hôte — même champ que le push

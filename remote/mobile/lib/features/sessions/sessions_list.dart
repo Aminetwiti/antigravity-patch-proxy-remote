@@ -144,6 +144,8 @@ class LeftSidebarDrawer extends StatefulWidget {
   final Function(String id)? onArchiveSession;
   final Function(String id, String newTitle)? onRenameSession;
   final Function(CascadeSession session)? onExportSession;
+  final String? focusedDesktopSessionId;
+  final Function(String id)? onFocusDesktop;
   final DaemonApi? api;
 
   const LeftSidebarDrawer({
@@ -167,6 +169,8 @@ class LeftSidebarDrawer extends StatefulWidget {
     this.onArchiveSession,
     this.onRenameSession,
     this.onExportSession,
+    this.focusedDesktopSessionId,
+    this.onFocusDesktop,
     this.api,
   });
 
@@ -840,6 +844,13 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                 final pinnedSessions = (widget.sessions ?? const <CascadeSession>[])
                     .where((s) => s.isAvailable && s.id.isNotEmpty && _pinnedIds.contains(s.id))
                     .toList();
+                final pinnedList = _pinnedIds.toList();
+                pinnedSessions.sort((a, b) {
+                  final idxA = pinnedList.indexOf(a.id);
+                  final idxB = pinnedList.indexOf(b.id);
+                  if (idxA != -1 && idxB != -1) return idxA.compareTo(idxB);
+                  return 0;
+                });
                 if (pinnedSessions.isEmpty) return const SizedBox.shrink();
 
                 return Column(
@@ -905,6 +916,8 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                               : null,
                           isPinned: true,
                           isPinnedSection: true,
+                          isDesktopFocused: s.id == widget.focusedDesktopSessionId,
+                          onFocusDesktop: () => widget.onFocusDesktop?.call(s.id),
                           onTogglePin: () => _togglePin(s.id),
                           onToggleRead: () => _toggleRead(s.id),
                         ),
@@ -1155,6 +1168,8 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                                   ? () => widget.onExportSession!(s)
                                   : null,
                               isPinned: _pinnedIds.contains(s.id),
+                              isDesktopFocused: s.id == widget.focusedDesktopSessionId,
+                              onFocusDesktop: () => widget.onFocusDesktop?.call(s.id),
                               onTogglePin: () => _togglePin(s.id),
                               onToggleRead: () => _toggleRead(s.id),
                             );
@@ -1314,6 +1329,8 @@ class _SessionRowItem extends StatefulWidget {
   // P4 : épinglage local
   final bool isPinned;
   final bool isPinnedSection;
+  final bool isDesktopFocused;
+  final VoidCallback? onFocusDesktop;
   final VoidCallback? onTogglePin;
   final VoidCallback? onToggleRead;
 
@@ -1330,6 +1347,8 @@ class _SessionRowItem extends StatefulWidget {
     this.onExport,
     this.isPinned = false,
     this.isPinnedSection = false,
+    this.isDesktopFocused = false,
+    this.onFocusDesktop,
     this.onTogglePin,
     this.onToggleRead,
   });
@@ -1388,6 +1407,18 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                 ),
               ),
               Divider(color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
+              if (widget.onFocusDesktop != null)
+                ListTile(
+                  leading: Icon(Icons.desktop_windows_outlined, size: 18, color: scheme.onSurface),
+                  title: Text('Ouvrir sur le PC (Focus IDE)', style: TextStyle(fontSize: 13, color: scheme.onSurface)),
+                  subtitle: widget.isDesktopFocused
+                      ? Text('Actuellement ouvert sur l\'écran PC', style: TextStyle(fontSize: 11, color: AppColors.online))
+                      : null,
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    widget.onFocusDesktop?.call();
+                  },
+                ),
               ListTile(
                 leading: Icon(Icons.edit_outlined, size: 18, color: scheme.onSurface),
                 title: Text('Renommer la conversation', style: TextStyle(fontSize: 13, color: scheme.onSurface)),
@@ -1580,7 +1611,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = widget.isSelected;
-    final isWaiting = widget.session.isWaitingAction;
+    final isWaiting = widget.session.isWaitingAction || widget.session.isBackgroundTask;
     final isRunning = widget.session.isRunning && !isWaiting;
     final isUnread = (widget.isUnread || widget.session.hasUnread) && !isSelected && !isRunning && !isWaiting;
     final cleaned = widget.session.title.trim().replaceAll('**', '').replaceFirst(RegExp(r'^Task:\s*', caseSensitive: false), '').trim();
@@ -1669,6 +1700,36 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                     decoration: const BoxDecoration(
                                       shape: BoxShape.circle,
                                       color: AppColors.accentBlue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (widget.isDesktopFocused) ...[
+                            Container(
+                              margin: const EdgeInsets.only(right: 5.5),
+                              padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 0.8),
+                              decoration: BoxDecoration(
+                                color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(3.5),
+                                border: Border.all(
+                                  color: AppColors.online.withValues(alpha: 0.7),
+                                  width: 0.6,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.desktop_windows_rounded, size: 8.5, color: AppColors.online),
+                                  const SizedBox(width: 2.5),
+                                  Text(
+                                    'PC ACTIF',
+                                    style: TextStyle(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.3,
+                                      color: AppColors.online,
                                     ),
                                   ),
                                 ],
@@ -1831,10 +1892,22 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                       ),
                                     )
                                   : isUnread
-                                      ? const Tooltip(
-                                          key: ValueKey('unread_blue_dot'),
-                                          message: 'Session terminée — non lue',
-                                          child: _PulsingBlueDot(),
+                                      ? Row(
+                                          key: const ValueKey('unread_indicator'),
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.notifications_none_rounded,
+                                              size: 13.5,
+                                              color: isDark ? AppColors.inkMuted : scheme.outline,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            const Tooltip(
+                                              key: ValueKey('unread_blue_dot'),
+                                              message: 'Session terminée — non lue',
+                                              child: _PulsingBlueDot(),
+                                            ),
+                                          ],
                                         )
                                         : widget.session.time.isNotEmpty
                                             ? Text(

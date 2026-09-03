@@ -53,7 +53,8 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
     if (raw.isEmpty) {
       if (widget.request.filePath != null) return widget.request.filePath!;
       if (widget.request.mcpServer != null) {
-        return '${widget.request.mcpServer} -> ${widget.request.mcpTool ?? widget.request.toolName}';
+        final tl = widget.request.mcpTool ?? widget.request.toolName;
+        return '${widget.request.mcpServer}/$tl';
       }
       return widget.request.description;
     }
@@ -97,8 +98,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
       return 'Allow file access outside workspace?';
     }
     if (widget.request.isMcpApproval) {
-      final srv = widget.request.mcpServer != null ? ' (${widget.request.mcpServer})' : '';
-      return 'Allow MCP tool execution$srv?';
+      return 'Allow using this MCP tool?';
     }
     if (widget.request.isStdinApproval) {
       return 'Send terminal input (stdin)';
@@ -339,18 +339,9 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
     final request = widget.request;
     final targetDisplay = _extractTargetDisplay(request.command);
     final target = targetDisplay.trim();
-    final shortTarget = (!_isUrlApproval && !_isFileApproval && target.isNotEmpty)
-        ? (target.length > 35 ? "'${target.substring(0, 32)}...'" : "'$target'")
-        : '';
-    final conversationLabel = shortTarget.isNotEmpty
-        ? 'Yes, and always allow $shortTarget in this conversation'
-        : 'Yes, and always allow in this conversation';
-    final projectLabel = shortTarget.isNotEmpty
-        ? 'Yes, and always allow $shortTarget in this project'
-        : 'Yes, and always allow in this project';
-    final globalLabel = shortTarget.isNotEmpty
-        ? 'Yes, and always allow $shortTarget'
-        : 'Yes, and always allow';
+    const conversationLabel = 'Yes, and always allow in this conversation';
+    const projectLabel = 'Yes, and always allow in this project';
+    const globalLabel = 'Yes, and always allow';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -905,7 +896,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                         ),
                       ),
                       child: Text(
-                        'Refuser',
+                        _isScopedApproval ? 'Skip' : 'Refuser',
                         style: TextStyle(
                           color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                           fontSize: 12.5,

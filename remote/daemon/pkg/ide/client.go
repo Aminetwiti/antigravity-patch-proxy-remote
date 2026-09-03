@@ -40,6 +40,11 @@ func (c *Client) Instance() *Instance {
 	return c.instance
 }
 
+// RPC retourne le client ConnectRPC sous-jacent.
+func (c *Client) RPC() *connectrpc.Client {
+	return c.rpc
+}
+
 // CreateSession crée une nouvelle session de chat pour un workspace donné.
 func (c *Client) CreateSession(workspacePath, modelUID string) (string, error) {
 	if modelUID == "" {

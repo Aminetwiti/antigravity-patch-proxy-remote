@@ -3,6 +3,7 @@ package ide
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -56,3 +57,42 @@ func TestListSessions(t *testing.T) {
 		t.Logf("  - ID: %s | Étapes: %d | Titre: %q | Modifié: %v", s.CascadeID, s.StepCount, s.Title, s.LastModified)
 	}
 }
+
+func TestDiscoverInstances(t *testing.T) {
+	instances, err := DiscoverInstances()
+	if err != nil {
+		t.Fatalf("DiscoverInstances error: %v", err)
+	}
+	t.Logf("✅ Instances IDE découvertes : %d", len(instances))
+	for _, inst := range instances {
+		t.Logf("  - PID: %d | Port: %d | WS: %s | AppDir: %s", inst.PID, inst.Port, inst.WorkspaceID, inst.AppDataDir)
+	}
+}
+
+func TestFindInstanceForCascade(t *testing.T) {
+	cid := "12deb7f0-b0a0-4461-95a6-b9b45ecec1c5"
+	hint := extractCascadeWorkspaceHint(cid)
+	t.Logf("🔍 Hint extrait pour %s : %q", cid, hint)
+	inst, err := FindInstanceForCascade(cid)
+	if err != nil {
+		t.Fatalf("FindInstanceForCascade error: %v", err)
+	}
+	t.Logf("🎯 Instance trouvée pour cascade %s : PID %d, Port %d, WS %s", cid, inst.PID, inst.Port, inst.WorkspaceID)
+	if inst.PID != 17992 && !strings.Contains(inst.WorkspaceID, "Copie") {
+		t.Errorf("attendu instance pour www - Copie, obtenu: %v", inst)
+	}
+}
+
+func TestFindClientForCascade(t *testing.T) {
+	cid := "12deb7f0-b0a0-4461-95a6-b9b45ecec1c5"
+	client, err := FindClientForCascade(cid)
+	if err != nil {
+		t.Fatalf("FindClientForCascade failed: %v", err)
+	}
+	hb, errHb := client.Heartbeat()
+	if errHb != nil {
+		t.Fatalf("Heartbeat failed: %v", errHb)
+	}
+	t.Logf("✅ Heartbeat OK sur l'instance IDE pour %s (reçu %d octets)", cid, len(hb))
+}
+

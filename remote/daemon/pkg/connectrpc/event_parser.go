@@ -30,12 +30,13 @@ type StreamEvent struct {
 	TrajectoryID string    `json:"trajectoryId,omitempty"`
 	StepIndex    uint32    `json:"stepIndex,omitempty"`
 	CallID       string    `json:"callId,omitempty"`
-	Tool         string    `json:"tool,omitempty"`
-	Detail       string    `json:"detail,omitempty"`
-	Command      string    `json:"command,omitempty"`
-	Output       string    `json:"output,omitempty"`
-	RunID        string    `json:"runId,omitempty"`
-	Sequence     uint64    `json:"sequence,omitempty"`
+	Tool           string    `json:"tool,omitempty"`
+	Detail         string    `json:"detail,omitempty"`
+	Command        string    `json:"command,omitempty"`
+	Output         string    `json:"output,omitempty"`
+	RunID          string    `json:"runId,omitempty"`
+	Sequence       uint64    `json:"sequence,omitempty"`
+	InteractionNum int       `json:"interactionNum,omitempty"`
 }
 
 // ParseFrameEvents analyse une frame protobuf gRPC-Web et extrait les événements lisibles.
@@ -53,6 +54,7 @@ func ParseFrameEvents(raw []byte, cascadeID string) []StreamEvent {
 			var detectedTool string
 			var detail string
 
+			var interactionNum int
 			for _, sub := range subFields {
 				if sub.WireType == 0 && sub.Num == 2 {
 					stepIndex = uint32(sub.Varint)
@@ -68,6 +70,7 @@ func ParseFrameEvents(raw []byte, cascadeID string) []StreamEvent {
 					sub.Num == InteractionDeleteDirectory || sub.Num == InteractionSendCommandInput ||
 					sub.Num == InteractionInvokeSubagent || sub.Num == InteractionCloudSQL {
 					isInteraction = true
+					interactionNum = sub.Num
 					if sub.Num == InteractionRunCommand {
 						detectedTool = "run_command"
 					} else if sub.Num == InteractionFilePermission {
@@ -100,12 +103,13 @@ func ParseFrameEvents(raw []byte, cascadeID string) []StreamEvent {
 			}
 			if isInteraction && (trajectoryID != "" || stepIndex > 0) {
 				return []StreamEvent{{
-					Kind:         EventKindApprovalRequired,
-					CascadeID:    cascadeID,
-					TrajectoryID: trajectoryID,
-					StepIndex:    stepIndex,
-					Tool:         detectedTool,
-					Detail:       detail,
+					Kind:           EventKindApprovalRequired,
+					CascadeID:      cascadeID,
+					TrajectoryID:   trajectoryID,
+					StepIndex:      stepIndex,
+					Tool:           detectedTool,
+					Detail:         detail,
+					InteractionNum: interactionNum,
 				}}
 			}
 		}
@@ -139,6 +143,9 @@ func ParseFrameEvents(raw []byte, cascadeID string) []StreamEvent {
 			strings.Contains(trimmed, `"permission"`) ||
 			strings.Contains(trimmed, `"ask_question"`) ||
 			strings.Contains(trimmed, `"ask_user"`) ||
+			strings.Contains(trimmed, `"mcp"`) ||
+			strings.Contains(trimmed, `"mcp_tool"`) ||
+			strings.Contains(trimmed, `"call_mcp_tool"`) ||
 			strings.Contains(trimmed, `"tool"`) ||
 			strings.Contains(trimmed, `"command"`))
 
@@ -179,6 +186,7 @@ func ParseFrameEvents(raw []byte, cascadeID string) []StreamEvent {
 						strings.Contains(st, `"search_web"`) || strings.Contains(st, `"fetch"`) ||
 						strings.Contains(st, `"permission"`) ||
 						strings.Contains(st, `"ask_question"`) || strings.Contains(st, `"ask_user"`) ||
+						strings.Contains(st, `"mcp"`) || strings.Contains(st, `"call_mcp_tool"`) || strings.Contains(st, `"mcp_tool"`) ||
 						strings.Contains(st, `"tool"`)) {
 					isNestedApproval = true
 					nestedTool = extractToolName(st)

@@ -2077,16 +2077,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         if (approval != null) {
           final hostActive = msg['data']?['hostActive'] == true;
           _addApproval(
-            ToolApprovalRequest(
-              callId: approval.callId,
-              toolName: approval.tool,
-              command: approval.command,
-              description: 'Tool execution requires your confirmation',
-              cascadeId: approval.cascadeId.isNotEmpty ? approval.cascadeId : targetSessionId,
-              trajectoryId: approval.trajectoryId,
-              stepIndex: approval.stepIndex,
-              approvalType: approval.approvalType,
-            ),
+            approval.toRequest(targetSessionId: targetSessionId),
             hostActive: hostActive,
           );
         }
@@ -2208,16 +2199,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         if (approval != null) {
           final hostActive = data['hostActive'] == true;
           _addApproval(
-            ToolApprovalRequest(
-              callId: approval.callId,
-              toolName: approval.tool,
-              command: approval.command,
-              description: 'Tool execution requires your confirmation',
-              cascadeId: approval.cascadeId.isNotEmpty ? approval.cascadeId : targetSessionId,
-              trajectoryId: approval.trajectoryId,
-              stepIndex: approval.stepIndex,
-              approvalType: approval.approvalType,
-            ),
+            approval.toRequest(targetSessionId: targetSessionId),
             hostActive: hostActive,
           );
         }
@@ -2245,18 +2227,19 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         final data = msg['data'] as Map<String, dynamic>? ?? const {};
         final callId = data['callId'] as String? ?? '';
         final cascadeId = (msg['cascadeId'] ?? data['cascadeId']) as String? ?? '';
-        if (callId.isNotEmpty && _pendingApprovalCallIds.contains(callId)) {
-          _removeApproval(callId, cascadeId);
-        } else if (cascadeId.isNotEmpty) {
-          setState(() {
+        setState(() {
+          if (callId.isNotEmpty) {
+            _removeApproval(callId, cascadeId);
+          }
+          if (cascadeId.isNotEmpty) {
             final list = _sessionApprovals[cascadeId];
             if (list != null) {
               list.clear();
               _sessionApprovalIndices[cascadeId] = -1;
             }
-          });
-          ApprovalNotifier.instance.cancelApprovalByCascadeId(cascadeId);
-        }
+          }
+        });
+        ApprovalNotifier.instance.cancelApprovalByCascadeId(cascadeId);
       } else if (type == 'stream_error' || type == 'error') {
         final errText = msg['error']?.toString() ??
             msg['data']?['error']?.toString() ??

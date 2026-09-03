@@ -2276,7 +2276,27 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     }
                   },
                 ),
-                if (!isDir)
+                if (!isDir) ...[
+                  ListTile(
+                    leading: Icon(Icons.desktop_windows_rounded, size: 18, color: scheme.primary),
+                    title: const Text('Ouvrir dans l\'IDE sur le PC', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    subtitle: Text('Ouvre $fullPath directement sur votre écran d\'ordinateur', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+                    onTap: () async {
+                      Navigator.of(ctx).pop();
+                      final absPath = _workspaceResolved.isNotEmpty && _workspaceResolved != '.'
+                          ? '$_workspaceResolved/$fullPath'
+                          : fullPath;
+                      await widget.api?.openFileInIDE(absPath);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Fichier ouvert dans Antigravity 2.0 sur le PC !'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                  ),
                   ListTile(
                     leading: const Icon(Icons.share_outlined, size: 18),
                     title: const Text('Partager le fichier', style: TextStyle(fontSize: 13)),
@@ -2285,6 +2305,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       _shareFile();
                     },
                   ),
+                ],
               ],
             ),
           ),

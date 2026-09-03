@@ -165,3 +165,23 @@ func (l *Launcher) Restart(args ...string) (*exec.Cmd, error) {
 	time.Sleep(1 * time.Second)
 	return l.Launch(args...)
 }
+
+// OpenFile ouvre un fichier dans la fenêtre active d'Antigravity IDE.
+func (l *Launcher) OpenFile(filePath string, line, column int) error {
+	exePath, err := l.FindExecutable()
+	if err != nil {
+		return err
+	}
+	target := filePath
+	if line > 0 {
+		if column > 0 {
+			target = fmt.Sprintf("%s:%d:%d", filePath, line, column)
+		} else {
+			target = fmt.Sprintf("%s:%d", filePath, line)
+		}
+	}
+	cmd := exec.Command(exePath, "--reuse-window", "-g", target)
+	setDetachedProcAttr(cmd)
+	return cmd.Start()
+}
+
