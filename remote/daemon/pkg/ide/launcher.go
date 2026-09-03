@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -147,7 +146,7 @@ func (l *Launcher) KillAll() error {
 	switch runtime.GOOS {
 	case "windows":
 		cmd := exec.Command("taskkill", "/F", "/T", "/IM", "language_server.exe", "/IM", "language_server_windows_x64.exe", "/IM", "Antigravity.exe")
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		setDetachedProcAttr(cmd)
 		_ = cmd.Run()
 		return nil
 	default:

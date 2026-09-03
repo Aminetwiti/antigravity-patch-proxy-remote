@@ -52,7 +52,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: remote/mobile
-        run: flutter pub get
+        run: |
+          flutter pub get
+          flutter gen-l10n
 
       - name: Format Check
         working-directory: remote/mobile

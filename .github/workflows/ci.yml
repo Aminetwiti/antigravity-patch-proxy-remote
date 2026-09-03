@@ -96,6 +96,11 @@ jobs:
           cd remote/mobile
           flutter pub get
 
+      - name: Generate l10n
+        run: |
+          cd remote/mobile
+          flutter gen-l10n
+
       - name: Analyze Flutter
         run: |
           cd remote/mobile

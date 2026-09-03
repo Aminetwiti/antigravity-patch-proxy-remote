@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"syscall"
 )
 
 // SetClipboardText écrit du texte dans le presse-papier du système hôte.
@@ -14,7 +13,7 @@ func SetClipboardText(text string) error {
 	switch runtime.GOOS {
 	case "windows":
 		cmd := exec.Command("clip")
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		hideWindow(cmd)
 		cmd.Stdin = strings.NewReader(text)
 		return cmd.Run()
 	case "darwin":
@@ -41,7 +40,7 @@ func GetClipboardText() (string, error) {
 	switch runtime.GOOS {
 	case "windows":
 		cmd := exec.Command("powershell", "-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard")
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		hideWindow(cmd)
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		if err := cmd.Run(); err != nil {
