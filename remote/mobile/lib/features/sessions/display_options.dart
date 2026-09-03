@@ -74,17 +74,19 @@ Map<String, List<CascadeSession>> groupSessions({
   required List<CascadeSession> sessions,
   required SessionGroupBy groupBy,
   List<ProjectItem>? projects,
+  bool includeArchived = false,
 }) {
   final Map<String, List<CascadeSession>> grouped = {};
 
-  // Dédoublonnage strict par ID (insensible à la casse) et exclusion des sessions archivées/supprimées
+  // Dédoublonnage strict par ID (insensible à la casse) et exclusion des sessions supprimées
   final seenIds = <String>{};
   final cleanSessions = <CascadeSession>[];
   for (final s in sessions) {
     if (s.id.isEmpty) continue;
-    if (s.isArchived || !s.isAvailable) continue;
+    if (!includeArchived && (s.isArchived || !s.isAvailable)) continue;
     final stUpper = s.status.toUpperCase();
-    if (stUpper.contains('ARCHIV') || stUpper.contains('DELET') || stUpper.contains('TRASH') || stUpper.contains('KILLED')) continue;
+    if (!includeArchived && stUpper.contains('ARCHIV')) continue;
+    if (stUpper.contains('DELET') || stUpper.contains('TRASH') || stUpper.contains('KILLED')) continue;
     final normId = s.id.toLowerCase();
     if (seenIds.contains(normId)) continue;
     seenIds.add(normId);
@@ -99,7 +101,9 @@ Map<String, List<CascadeSession>> groupSessions({
   if (groupBy == SessionGroupBy.status) {
     for (final s in cleanSessions) {
       String statusGroup = 'Other';
-      if (s.isRunning) {
+      if (s.isArchived) {
+        statusGroup = 'Archived';
+      } else if (s.isRunning) {
         statusGroup = 'Active';
       } else if (s.status.toUpperCase().contains('READY')) {
         statusGroup = 'Ready';

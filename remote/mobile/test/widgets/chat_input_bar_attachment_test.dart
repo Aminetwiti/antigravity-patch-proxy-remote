@@ -32,7 +32,7 @@ void main() {
     expect(find.text('Prendre une photo'), findsOneWidget);
     expect(find.text('Choisir des images'), findsOneWidget);
     expect(find.text('Sélectionner des fichiers'), findsOneWidget);
-    expect(find.text('Coller depuis le presse-papier'), findsOneWidget);
+    expect(find.text('Coller depuis le presse-papier mobile'), findsOneWidget);
     expect(find.text('Saisie manuelle (Base64 / Texte)'), findsOneWidget);
 
     // Tap manual entry

@@ -168,6 +168,7 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
       sessions: filtered,
       groupBy: _groupBy,
       projects: projects,
+      includeArchived: true,
     );
 
     final List<dynamic> displayItems = [];

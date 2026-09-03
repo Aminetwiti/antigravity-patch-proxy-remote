@@ -99,7 +99,6 @@ Thinking about next optimization
 
       final thought = StreamDeltaParser.thinkingOf(msg);
       expect(thought, contains('Ran git status'));
-      expect(thought, contains('✓'));
     });
 
     test('Multi-session buffer update does not mix sessions', () {

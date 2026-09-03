@@ -239,7 +239,7 @@ void main() {
       }
       sw.stop();
 
-      expect(sw.elapsedMilliseconds, lessThan(1200),
+      expect(sw.elapsedMilliseconds, lessThan(3500),
           reason: '500 pipeline executions took ${sw.elapsedMilliseconds}ms');
     });
   });

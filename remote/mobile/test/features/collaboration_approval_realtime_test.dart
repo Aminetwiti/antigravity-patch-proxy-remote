@@ -130,11 +130,10 @@ void main() {
         await tester.tap(opt2);
       } else {
         await tester.tap(find.byType(Switch));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.ensureVisible(find.byKey(const Key('allow-btn')));
+        await tester.tap(find.byKey(const Key('allow-btn')));
       }
-      await tester.pump(const Duration(milliseconds: 50));
-
-      await tester.ensureVisible(find.byKey(const Key('allow-btn')));
-      await tester.tap(find.byKey(const Key('allow-btn')));
       await tester.pump(const Duration(milliseconds: 100));
 
       // Vérification du payload envoyé au daemon
@@ -323,8 +322,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byType(ToolApprovalCard), findsOneWidget);
-      expect(find.text('Allow using this MCP tool?'), findsOneWidget);
-      expect(find.text('coolify/get_application'), findsOneWidget);
+      expect(find.text('Allow MCP tool execution (coolify)?'), findsOneWidget);
+      expect(find.text('coolify -> get_application'), findsOneWidget);
 
       // Vérification des 5 options conformes à Antigravity Desktop
       expect(find.text('Yes, allow this time'), findsOneWidget);
@@ -334,13 +333,8 @@ void main() {
       expect(find.text('No (tell the agent what to do instead)'), findsOneWidget);
       expect(find.text('Skip'), findsOneWidget);
 
-      // L'utilisateur choisit "Yes, and always allow in this conversation" (option 2)
+      // L'utilisateur choisit "Yes, and always allow in this conversation" (option 2, soumission directe)
       await tester.tap(find.text('Yes, and always allow in this conversation'));
-      await tester.pump(const Duration(milliseconds: 50));
-
-      // Soumission via Submit ↵
-      await tester.ensureVisible(find.byKey(const Key('allow-btn')));
-      await tester.tap(find.byKey(const Key('allow-btn')), warnIfMissed: false);
       await tester.pump(const Duration(milliseconds: 100));
 
       final approvals = out.where((m) => m['type'] == 'submit_approval').toList();

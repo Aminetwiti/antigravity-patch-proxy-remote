@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'l10n/app_localizations.dart';
 import 'config/env_config.dart';
 import 'core/network/outbox.dart';
 import 'core/network/websocket_client.dart';
@@ -46,7 +46,11 @@ void main() {
             const SizedBox(height: 16),
             const Text(
               'Erreur de rendu UI',
-              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -72,7 +76,8 @@ class AntigravityRemoteApp extends StatefulWidget {
 }
 
 class _AntigravityRemoteAppState extends State<AntigravityRemoteApp> {
-  int _themeModeIndex = 0; // 0: system, 1: light, 2: dark — system-first prevents FOUC
+  int _themeModeIndex =
+      0; // 0: system, 1: light, 2: dark — system-first prevents FOUC
 
   @override
   void initState() {
@@ -92,7 +97,8 @@ class _AntigravityRemoteAppState extends State<AntigravityRemoteApp> {
 
   @override
   Widget build(BuildContext context) {
-    final idx = (_themeModeIndex >= 0 && _themeModeIndex < 3) ? _themeModeIndex : 0;
+    final idx =
+        (_themeModeIndex >= 0 && _themeModeIndex < 3) ? _themeModeIndex : 0;
     return MaterialApp(
       title: 'Antigravity Mobile',
       debugShowCheckedModeBanner: false,
@@ -165,7 +171,6 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       DateTime.now().difference(_activeMissingSince!) >
           const Duration(seconds: 45);
 
-
   List<CascadeSession> _dedupSessions(List<CascadeSession> list) {
     final seen = <String>{};
     final out = <CascadeSession>[];
@@ -193,7 +198,11 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     // Sauvegarde la session à chaque connexion réussie : URL ws complète + token
     // (le tunnel Cloudflare change d'URL à chaque redémarrage du daemon).
     _wsClient.onSessionEstablished = (url, token) {
-      SettingsStore.saveSession(wsUrl: url, token: token, sessionId: _activeSessionId);
+      SettingsStore.saveSession(
+        wsUrl: url,
+        token: token,
+        sessionId: _activeSessionId,
+      );
     };
     // Token rejeté : affiche le statut erreur pour inviter à scanner le QR ou saisir le PIN.
     _wsClient.onAuthRejected = () async {
@@ -210,13 +219,14 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           _activeSessionId = cascadeId;
           final s = _sessions.firstWhere(
             (e) => e.id == cascadeId,
-            orElse: () => CascadeSession(
-              id: cascadeId,
-              title: 'Session',
-              workspacePath: '',
-              status: 'CASCADE_STATUS_READY',
-              time: '',
-            ),
+            orElse:
+                () => CascadeSession(
+                  id: cascadeId,
+                  title: 'Session',
+                  workspacePath: '',
+                  status: 'CASCADE_STATUS_READY',
+                  time: '',
+                ),
           );
           _activeSessionTitle = s.title;
         });
@@ -235,22 +245,27 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     // Pré-charge immédiatement les sessions sauvegardées localement en SQLite
     // pour éviter tout clignotement ou disparition des conversations au démarrage
     // ou lors d'une déconnexion/reconnexion du daemon remote.
-    DatabaseHelper.instance.getSessions().then((dbSessions) async {
-      if (!mounted || dbSessions.isEmpty) return;
-      final parsed = await SessionParser.parseListSessionsAsync({'sessions': dbSessions});
-      if (!mounted || parsed.isEmpty) return;
-      setState(() {
-        if (_sessions.isEmpty) {
-          _sessions = parsed;
-          if (_activeSessionId.isNotEmpty) {
-            final cur = parsed.where((s) => s.id == _activeSessionId);
-            if (cur.isNotEmpty && _activeSessionTitle.isEmpty) {
-              _activeSessionTitle = cur.first.title;
+    DatabaseHelper.instance
+        .getSessions()
+        .then((dbSessions) async {
+          if (!mounted || dbSessions.isEmpty) return;
+          final parsed = await SessionParser.parseListSessionsAsync({
+            'sessions': dbSessions,
+          });
+          if (!mounted || parsed.isEmpty) return;
+          setState(() {
+            if (_sessions.isEmpty) {
+              _sessions = parsed;
+              if (_activeSessionId.isNotEmpty) {
+                final cur = parsed.where((s) => s.id == _activeSessionId);
+                if (cur.isNotEmpty && _activeSessionTitle.isEmpty) {
+                  _activeSessionTitle = cur.first.title;
+                }
+              }
             }
-          }
-        }
-      });
-    }).catchError((_) {});
+          });
+        })
+        .catchError((_) {});
     // Auto-connexion : session persistée < 24 h en priorité (reconnexion
     // directe au tunnel), sinon réglages host/port/ssl/token, sinon repli sur
     // la config d'environnement. `adb reverse tcp:8090` + jeton par défaut
@@ -314,7 +329,9 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       final bare = cleanHost.substring('http://'.length);
       return 'ws://$bare/ws';
     }
-    if (port == 443 || cleanHost.contains('trycloudflare.com') || cleanHost.contains('pinggy')) {
+    if (port == 443 ||
+        cleanHost.contains('trycloudflare.com') ||
+        cleanHost.contains('pinggy')) {
       return 'wss://$cleanHost/ws';
     }
     return 'ws://$cleanHost:$port/ws';
@@ -338,10 +355,11 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
 
   void _onStatusChanged() {
     if (!mounted) return;
-    
+
     final currentStatus = _wsClient.statusNotifier.value;
     if (_prevStatus != currentStatus) {
-      if (currentStatus == ConnectionStatus.disconnected || currentStatus == ConnectionStatus.error) {
+      if (currentStatus == ConnectionStatus.disconnected ||
+          currentStatus == ConnectionStatus.error) {
         HapticFeedback.heavyImpact();
       } else if (currentStatus == ConnectionStatus.connected) {
         HapticFeedback.lightImpact();
@@ -351,7 +369,8 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
 
     setState(() {});
     if (currentStatus == ConnectionStatus.connected) {
-      _lastStateVersion = 0; // Réinitialise la version d'état pour accepter les nouvelles frames après redémarrage du daemon
+      _lastStateVersion =
+          0; // Réinitialise la version d'état pour accepter les nouvelles frames après redémarrage du daemon
       // Persiste la session (URL tunnel + token + sessionId) : le tunnel
       // Cloudflare change d'URL à chaque redémarrage du daemon, on re-sauvegarde
       // donc à chaque connexion réussie, y compris les reconnexions.
@@ -374,17 +393,15 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           final sessionsToSync = <String>{};
           if (_activeSessionId.isNotEmpty) sessionsToSync.add(_activeSessionId);
           for (final s in _sessions) {
-            if (s.status == 'CASCADE_STATUS_RUNNING' || s.status == 'CASCADE_STATUS_WAITING_USER') {
+            if (s.status == 'CASCADE_STATUS_RUNNING' ||
+                s.status == 'CASCADE_STATUS_WAITING_USER') {
               sessionsToSync.add(s.id);
             }
           }
           for (final cid in sessionsToSync) {
             final lastStep = _api!.getLastStepIndex(cid);
             try {
-              await _api!.syncSession(
-                cascadeId: cid,
-                lastStepIndex: lastStep,
-              );
+              await _api!.syncSession(cascadeId: cid, lastStepIndex: lastStep);
             } catch (_) {}
           }
         },
@@ -396,14 +413,16 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       _autoDockActiveSession();
       _sessionsPollTimer?.cancel();
       _sessionsPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-        if (mounted && _wsClient.statusNotifier.value == ConnectionStatus.connected) {
+        if (mounted &&
+            _wsClient.statusNotifier.value == ConnectionStatus.connected) {
           // P3 : filet de sécurité, pas une source primaire — le daemon pousse
           // déjà `sessions_updated`. On saute le poll si une sync (push ou
           // refresh manuel) a eu lieu il y a moins de 12 s pour éviter le
           // double-chargement réseau + re-parse de la liste complète.
           final lastSync = _lastSessionsSyncAt;
           if (lastSync != null &&
-              DateTime.now().difference(lastSync) < const Duration(seconds: 12)) {
+              DateTime.now().difference(lastSync) <
+                  const Duration(seconds: 12)) {
             return;
           }
           _refreshSessions();
@@ -469,16 +488,17 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     final api = _api;
     if (api == null) return;
     try {
-      final activeWs = _sessions
-              .where((s) => s.id == _activeSessionId)
-              .map((s) => s.workspacePath)
-              .firstWhere((p) => p.isNotEmpty, orElse: () => '')
-          .isNotEmpty
-          ? _sessions
-              .where((s) => s.id == _activeSessionId)
-              .first
-              .workspacePath
-          : (_projects.isNotEmpty ? _projects.first.path : '');
+      final activeWs =
+          _sessions
+                  .where((s) => s.id == _activeSessionId)
+                  .map((s) => s.workspacePath)
+                  .firstWhere((p) => p.isNotEmpty, orElse: () => '')
+                  .isNotEmpty
+              ? _sessions
+                  .where((s) => s.id == _activeSessionId)
+                  .first
+                  .workspacePath
+              : (_projects.isNotEmpty ? _projects.first.path : '');
 
       final stats = await api.getContext(
         cascadeId: _activeSessionId,
@@ -510,7 +530,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.notConnectedToDaemon ?? '⚠️ Non connecté au serveur daemon'),
+            content: Text(
+              AppLocalizations.of(context)?.notConnectedToDaemon ??
+                  '⚠️ Non connecté au serveur daemon',
+            ),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -527,10 +550,16 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                 SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 ),
                 SizedBox(width: 12),
-                Text(AppLocalizations.of(context)?.creatingNewConversation ?? 'Création de la nouvelle conversation...'),
+                Text(
+                  AppLocalizations.of(context)?.creatingNewConversation ??
+                      'Création de la nouvelle conversation...',
+                ),
               ],
             ),
             duration: const Duration(milliseconds: 1500),
@@ -539,7 +568,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       }
       var ws = targetProject?.path ?? '';
       if (ws.isEmpty && targetProject != null) {
-        ws = targetProject.folderUri.isNotEmpty ? targetProject.folderUri : targetProject.name;
+        ws =
+            targetProject.folderUri.isNotEmpty
+                ? targetProject.folderUri
+                : targetProject.name;
       }
       var projId = targetProject?.id ?? '';
 
@@ -554,7 +586,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         }
         if (ws.isEmpty) {
           if (_projects.isNotEmpty) {
-            ws = _projects.first.path.isNotEmpty ? _projects.first.path : _projects.first.folderUri;
+            ws =
+                _projects.first.path.isNotEmpty
+                    ? _projects.first.path
+                    : _projects.first.folderUri;
             projId = _projects.first.id;
           } else if (_sessions.isNotEmpty) {
             ws = _sessions.first.workspacePath;
@@ -564,25 +599,35 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       }
       if (projId.isEmpty && ws.isNotEmpty && _projects.isNotEmpty) {
         for (final p in _projects) {
-          if (p.id.isNotEmpty && (p.path == ws || p.folderUri == ws || WorkspacePath.isSameWorkspace(p.path, ws) || WorkspacePath.isSameWorkspace(p.folderUri, ws))) {
+          if (p.id.isNotEmpty &&
+              (p.path == ws ||
+                  p.folderUri == ws ||
+                  WorkspacePath.isSameWorkspace(p.path, ws) ||
+                  WorkspacePath.isSameWorkspace(p.folderUri, ws))) {
             projId = p.id;
             break;
           }
         }
       }
       final res = await api.createCascade(ws, projectId: projId);
-      final data = (res['data'] is Map<String, dynamic>)
-          ? (res['data'] as Map<String, dynamic>)
-          : (res['data'] is Map ? Map<String, dynamic>.from(res['data'] as Map) : res);
+      final data =
+          (res['data'] is Map<String, dynamic>)
+              ? (res['data'] as Map<String, dynamic>)
+              : (res['data'] is Map
+                  ? Map<String, dynamic>.from(res['data'] as Map)
+                  : res);
 
       String newId = '';
-      if (data['cascadeId'] is String && (data['cascadeId'] as String).isNotEmpty) {
+      if (data['cascadeId'] is String &&
+          (data['cascadeId'] as String).isNotEmpty) {
         newId = data['cascadeId'] as String;
       } else if (data['id'] is String && (data['id'] as String).isNotEmpty) {
         newId = data['id'] as String;
       } else if (data['fields'] is List) {
         for (final f in data['fields']) {
-          if (f is Map && f['text'] is String && (f['text'] as String).isNotEmpty) {
+          if (f is Map &&
+              f['text'] is String &&
+              (f['text'] as String).isNotEmpty) {
             newId = f['text'] as String;
             break;
           }
@@ -605,7 +650,12 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           _activeSessionId = newId;
           _activeSessionTitle = 'Nouvelle conversation';
           _activeSessionIsArchived = false;
-          _sessions = _dedupSessions([newSession, ..._sessions.where((s) => s.id.toLowerCase() != newId.toLowerCase())]);
+          _sessions = _dedupSessions([
+            newSession,
+            ..._sessions.where(
+              (s) => s.id.toLowerCase() != newId.toLowerCase(),
+            ),
+          ]);
           _contextStats = {};
         });
         SettingsStore.saveSession(
@@ -616,7 +666,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.newConversationOpened(newId) ?? '✨ Nouvelle conversation ouverte ($newId)'),
+            content: Text(
+              AppLocalizations.of(context)?.newConversationOpened(newId) ??
+                  '✨ Nouvelle conversation ouverte ($newId)',
+            ),
             backgroundColor: const Color(0xFF1E88E5),
             duration: const Duration(seconds: 2),
           ),
@@ -629,7 +682,12 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.failedToCreateSession(e.toString()) ?? '❌ Échec création session: $e'),
+            content: Text(
+              AppLocalizations.of(
+                    context,
+                  )?.failedToCreateSession(e.toString()) ??
+                  '❌ Échec création session: $e',
+            ),
             backgroundColor: Colors.red.shade800,
             duration: const Duration(seconds: 4),
           ),
@@ -645,7 +703,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     if (_sessionsFetching) return;
     _sessionsFetching = true;
     final api = _api;
-    if (api == null) { _sessionsFetching = false; return; }
+    if (api == null) {
+      _sessionsFetching = false;
+      return;
+    }
     try {
       final data = await api.listSessions();
       final version = (data['version'] as num?)?.toInt() ?? 0;
@@ -665,10 +726,11 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
 
       List<ProjectItem> projects = [];
       if (data['projects'] is List) {
-        projects = (data['projects'] as List)
-            .whereType<Map>()
-            .map((p) => ProjectItem.fromJson(Map<String, dynamic>.from(p)))
-            .toList();
+        projects =
+            (data['projects'] as List)
+                .whereType<Map>()
+                .map((p) => ProjectItem.fromJson(Map<String, dynamic>.from(p)))
+                .toList();
       }
 
       if (mounted) {
@@ -677,29 +739,51 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
             _projects = projects;
           }
           if (sessions.isNotEmpty) {
-            final stillActive = sessions.any((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
+            final stillActive = sessions.any(
+              (s) => s.id.toLowerCase() == _activeSessionId.toLowerCase(),
+            );
             if (_activeSessionId.isNotEmpty && stillActive) {
               _activeMissingSince = null;
               _sessions = _dedupSessions(sessions);
-              final cur = sessions.firstWhere((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
-              _activeSessionTitle = cur.title.isNotEmpty
-                  ? cur.title
-                  : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
-            } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired && !_activeSessionIsArchived) {
+              final cur = sessions.firstWhere(
+                (s) => s.id.toLowerCase() == _activeSessionId.toLowerCase(),
+              );
+              _activeSessionTitle =
+                  cur.title.isNotEmpty
+                      ? cur.title
+                      : (_activeSessionTitle.isNotEmpty
+                          ? _activeSessionTitle
+                          : 'Nouvelle conversation');
+            } else if (_activeSessionId.isNotEmpty &&
+                !_activeGhostExpired &&
+                !_activeSessionIsArchived) {
               _activeMissingSince ??= DateTime.now();
               // Préserve la session active en tête de liste si c'est une nouvelle session
-              final existingPending = _sessions.where((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
-              final activeItem = existingPending.isNotEmpty
-                  ? existingPending.first
-                  : CascadeSession(
-                      id: _activeSessionId,
-                      workspacePath: _projects.isNotEmpty ? _projects.first.path : '',
-                      title: _activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation',
-                      status: 'CASCADE_STATUS_READY',
-                      time: 'Maintenant',
-                    );
-              if (!activeItem.isArchived && !activeItem.status.toUpperCase().contains('ARCHIV')) {
-                _sessions = _dedupSessions([activeItem, ...sessions.where((s) => s.id.toLowerCase() != _activeSessionId.toLowerCase())]);
+              final existingPending = _sessions.where(
+                (s) => s.id.toLowerCase() == _activeSessionId.toLowerCase(),
+              );
+              final activeItem =
+                  existingPending.isNotEmpty
+                      ? existingPending.first
+                      : CascadeSession(
+                        id: _activeSessionId,
+                        workspacePath:
+                            _projects.isNotEmpty ? _projects.first.path : '',
+                        title:
+                            _activeSessionTitle.isNotEmpty
+                                ? _activeSessionTitle
+                                : 'Nouvelle conversation',
+                        status: 'CASCADE_STATUS_READY',
+                        time: 'Maintenant',
+                      );
+              if (!activeItem.isArchived &&
+                  !activeItem.status.toUpperCase().contains('ARCHIV')) {
+                _sessions = _dedupSessions([
+                  activeItem,
+                  ...sessions.where(
+                    (s) => s.id.toLowerCase() != _activeSessionId.toLowerCase(),
+                  ),
+                ]);
               } else {
                 _sessions = _dedupSessions(sessions);
               }
@@ -713,8 +797,11 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
             }
           } else if (_sessions.isEmpty) {
             if (_activeSessionId.isNotEmpty && !_activeSessionIsArchived) {
-              final existingPending = _sessions.where((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
-              if (existingPending.isNotEmpty && !existingPending.first.isArchived) {
+              final existingPending = _sessions.where(
+                (s) => s.id.toLowerCase() == _activeSessionId.toLowerCase(),
+              );
+              if (existingPending.isNotEmpty &&
+                  !existingPending.first.isArchived) {
                 _sessions = [existingPending.first];
               }
             } else {
@@ -752,17 +839,19 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     _sessionsSub = _api?.events.listen((msg) async {
       if (!mounted) return;
       final type = msg['type'] as String?;
-      final cascadeId = (msg['cascadeId'] ?? msg['data']?['cascadeId']) as String? ?? '';
+      final cascadeId =
+          (msg['cascadeId'] ?? msg['data']?['cascadeId']) as String? ?? '';
 
       if (type == 'stream_start') {
         if (cascadeId.isNotEmpty) {
           setState(() {
-            _sessions = _sessions.map((s) {
-              if (s.id == cascadeId) {
-                return s.copyWith(status: 'CASCADE_STATUS_RUNNING');
-              }
-              return s;
-            }).toList();
+            _sessions =
+                _sessions.map((s) {
+                  if (s.id == cascadeId) {
+                    return s.copyWith(status: 'CASCADE_STATUS_RUNNING');
+                  }
+                  return s;
+                }).toList();
           });
         }
         return;
@@ -771,12 +860,15 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       if (type == 'approval_pending' || type == 'approval_required') {
         if (cascadeId.isNotEmpty) {
           setState(() {
-            _sessions = _sessions.map((s) {
-              if (s.id == cascadeId) {
-                return s.copyWith(status: 'CASCADE_STATUS_WAITING_FOR_USER_ACTION');
-              }
-              return s;
-            }).toList();
+            _sessions =
+                _sessions.map((s) {
+                  if (s.id == cascadeId) {
+                    return s.copyWith(
+                      status: 'CASCADE_STATUS_WAITING_FOR_USER_ACTION',
+                    );
+                  }
+                  return s;
+                }).toList();
           });
         }
         return;
@@ -785,12 +877,13 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       if (type == 'approval_expired' || type == 'approval_resolved') {
         if (cascadeId.isNotEmpty) {
           setState(() {
-            _sessions = _sessions.map((s) {
-              if (s.id == cascadeId) {
-                return s.copyWith(status: 'CASCADE_STATUS_READY');
-              }
-              return s;
-            }).toList();
+            _sessions =
+                _sessions.map((s) {
+                  if (s.id == cascadeId) {
+                    return s.copyWith(status: 'CASCADE_STATUS_READY');
+                  }
+                  return s;
+                }).toList();
           });
         }
         return;
@@ -799,12 +892,13 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       if (type == 'stream_error') {
         if (cascadeId.isNotEmpty) {
           setState(() {
-            _sessions = _sessions.map((s) {
-              if (s.id == cascadeId) {
-                return s.copyWith(status: 'CASCADE_STATUS_ERROR');
-              }
-              return s;
-            }).toList();
+            _sessions =
+                _sessions.map((s) {
+                  if (s.id == cascadeId) {
+                    return s.copyWith(status: 'CASCADE_STATUS_ERROR');
+                  }
+                  return s;
+                }).toList();
           });
         }
         return;
@@ -813,15 +907,16 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       if (type == 'stream_end') {
         if (cascadeId.isNotEmpty) {
           setState(() {
-            _sessions = _sessions.map((s) {
-              if (s.id == cascadeId) {
-                return s.copyWith(
-                  status: 'CASCADE_STATUS_READY',
-                  hasUnread: cascadeId != _activeSessionId,
-                );
-              }
-              return s;
-            }).toList();
+            _sessions =
+                _sessions.map((s) {
+                  if (s.id == cascadeId) {
+                    return s.copyWith(
+                      status: 'CASCADE_STATUS_READY',
+                      hasUnread: cascadeId != _activeSessionId,
+                    );
+                  }
+                  return s;
+                }).toList();
           });
         }
         _refreshSessions();
@@ -831,15 +926,17 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       if (type == 'session_status_update') {
         final data = msg['data'] as Map<String, dynamic>? ?? const {};
         final status = (data['status'] ?? '').toString();
-        final cid = (msg['cascadeId'] ?? data['cascadeId'] ?? cascadeId).toString();
+        final cid =
+            (msg['cascadeId'] ?? data['cascadeId'] ?? cascadeId).toString();
         if (cid.isNotEmpty && status.isNotEmpty) {
           setState(() {
-            _sessions = _sessions.map((s) {
-              if (s.id == cid) {
-                return s.copyWith(status: status);
-              }
-              return s;
-            }).toList();
+            _sessions =
+                _sessions.map((s) {
+                  if (s.id == cid) {
+                    return s.copyWith(status: status);
+                  }
+                  return s;
+                }).toList();
           });
         }
         return;
@@ -852,19 +949,21 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       if (type == 'session_focus_changed') {
         final data = msg['data'];
         if (data is Map) {
-          final cid = (data['cascadeId'] ?? data['focusedCascadeId']) as String? ?? '';
+          final cid =
+              (data['cascadeId'] ?? data['focusedCascadeId']) as String? ?? '';
           final title = data['title'] as String? ?? '';
           setState(() {
             if (cid.isNotEmpty) {
               _focusedDesktopSessionId = cid;
             }
             if (cid.isNotEmpty && title.isNotEmpty) {
-              _sessions = _sessions.map((s) {
-                if (s.id == cid) {
-                  return s.copyWith(title: title);
-                }
-                return s;
-              }).toList();
+              _sessions =
+                  _sessions.map((s) {
+                    if (s.id == cid) {
+                      return s.copyWith(title: title);
+                    }
+                    return s;
+                  }).toList();
             }
           });
         }
@@ -872,7 +971,9 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       }
 
       if (type == 'session_deleted') {
-        final deletedId = msg['cascadeId'] as String? ?? (msg['data'] is Map ? msg['data']['cascadeId']?.toString() : null);
+        final deletedId =
+            msg['cascadeId'] as String? ??
+            (msg['data'] is Map ? msg['data']['cascadeId']?.toString() : null);
         if (deletedId != null && deletedId.isNotEmpty) {
           setState(() {
             _sessions = _sessions.where((s) => s.id != deletedId).toList();
@@ -914,10 +1015,13 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
 
           List<ProjectItem> projects = [];
           if (dataMap['projects'] is List) {
-            projects = (dataMap['projects'] as List)
-                .whereType<Map>()
-                .map((p) => ProjectItem.fromJson(Map<String, dynamic>.from(p)))
-                .toList();
+            projects =
+                (dataMap['projects'] as List)
+                    .whereType<Map>()
+                    .map(
+                      (p) => ProjectItem.fromJson(Map<String, dynamic>.from(p)),
+                    )
+                    .toList();
           }
 
           final parsed = await SessionParser.parseListSessionsAsync(dataMap);
@@ -927,30 +1031,53 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
               _projects = projects;
             }
             if (parsed.isNotEmpty) {
-              final stillActive = parsed.any((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
+              final stillActive = parsed.any(
+                (s) => s.id.toLowerCase() == _activeSessionId.toLowerCase(),
+              );
               if (_activeSessionId.isNotEmpty && stillActive) {
                 _activeMissingSince = null;
                 _sessions = _dedupSessions(parsed);
-                final current = parsed.firstWhere((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
-                _activeSessionTitle = current.title.isNotEmpty
-                    ? current.title
-                    : (_activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation');
-              } else if (_activeSessionId.isNotEmpty && !_activeGhostExpired && !_activeSessionIsArchived) {
+                final current = parsed.firstWhere(
+                  (s) => s.id.toLowerCase() == _activeSessionId.toLowerCase(),
+                );
+                _activeSessionTitle =
+                    current.title.isNotEmpty
+                        ? current.title
+                        : (_activeSessionTitle.isNotEmpty
+                            ? _activeSessionTitle
+                            : 'Nouvelle conversation');
+              } else if (_activeSessionId.isNotEmpty &&
+                  !_activeGhostExpired &&
+                  !_activeSessionIsArchived) {
                 _activeMissingSince ??= DateTime.now();
                 // Préserve la session active en tête de liste si c'est une nouvelle session
                 // qui n'est pas encore synchronisée dans les résumés distants
-                final existingPending = _sessions.where((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
-                final activeItem = existingPending.isNotEmpty
-                    ? existingPending.first
-                    : CascadeSession(
-                        id: _activeSessionId,
-                        workspacePath: _projects.isNotEmpty ? _projects.first.path : '',
-                        title: _activeSessionTitle.isNotEmpty ? _activeSessionTitle : 'Nouvelle conversation',
-                        status: 'CASCADE_STATUS_READY',
-                        time: 'Maintenant',
-                      );
-                if (!activeItem.isArchived && !activeItem.status.toUpperCase().contains('ARCHIV')) {
-                  _sessions = _dedupSessions([activeItem, ...parsed.where((s) => s.id.toLowerCase() != _activeSessionId.toLowerCase())]);
+                final existingPending = _sessions.where(
+                  (s) => s.id.toLowerCase() == _activeSessionId.toLowerCase(),
+                );
+                final activeItem =
+                    existingPending.isNotEmpty
+                        ? existingPending.first
+                        : CascadeSession(
+                          id: _activeSessionId,
+                          workspacePath:
+                              _projects.isNotEmpty ? _projects.first.path : '',
+                          title:
+                              _activeSessionTitle.isNotEmpty
+                                  ? _activeSessionTitle
+                                  : 'Nouvelle conversation',
+                          status: 'CASCADE_STATUS_READY',
+                          time: 'Maintenant',
+                        );
+                if (!activeItem.isArchived &&
+                    !activeItem.status.toUpperCase().contains('ARCHIV')) {
+                  _sessions = _dedupSessions([
+                    activeItem,
+                    ...parsed.where(
+                      (s) =>
+                          s.id.toLowerCase() != _activeSessionId.toLowerCase(),
+                    ),
+                  ]);
                 } else {
                   _sessions = _dedupSessions(parsed);
                 }
@@ -965,8 +1092,11 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
               }
             } else if (_sessions.isEmpty) {
               if (_activeSessionId.isNotEmpty && !_activeSessionIsArchived) {
-                final existingPending = _sessions.where((s) => s.id.toLowerCase() == _activeSessionId.toLowerCase());
-                if (existingPending.isNotEmpty && !existingPending.first.isArchived) {
+                final existingPending = _sessions.where(
+                  (s) => s.id.toLowerCase() == _activeSessionId.toLowerCase(),
+                );
+                if (existingPending.isNotEmpty &&
+                    !existingPending.first.isArchived) {
                   _sessions = [existingPending.first];
                 }
               } else {
@@ -1015,49 +1145,58 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
   void _showSessionHistory() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => ConversationHistoryScreen(
-          api: _api,
-          sessions: _sessions,
-          projects: _projects,
-          activeSessionId: _activeSessionId,
-          onRefresh: _refreshSessions,
-          onRestoreSession: _restoreSession,
-          onSessionSelected: (id) async {
-            CascadeSession? target;
-            final existing = _sessions.where((s) => s.id.toLowerCase() == id.toLowerCase());
-            if (existing.isNotEmpty) {
-              target = existing.first;
-            } else {
-              try {
-                final allRes = await _api?.listAllSessions();
-                if (allRes != null) {
-                  final parsed = SessionParser.parseListSessions(allRes, includeArchived: true);
-                  final match = parsed.where((s) => s.id.toLowerCase() == id.toLowerCase());
-                  if (match.isNotEmpty) target = match.first;
+        builder:
+            (context) => ConversationHistoryScreen(
+              api: _api,
+              sessions: _sessions,
+              projects: _projects,
+              activeSessionId: _activeSessionId,
+              onRefresh: _refreshSessions,
+              onRestoreSession: _restoreSession,
+              onSessionSelected: (id) async {
+                CascadeSession? target;
+                final existing = _sessions.where(
+                  (s) => s.id.toLowerCase() == id.toLowerCase(),
+                );
+                if (existing.isNotEmpty) {
+                  target = existing.first;
+                } else {
+                  try {
+                    final allRes = await _api?.listAllSessions();
+                    if (allRes != null) {
+                      final parsed = SessionParser.parseListSessions(
+                        allRes,
+                        includeArchived: true,
+                      );
+                      final match = parsed.where(
+                        (s) => s.id.toLowerCase() == id.toLowerCase(),
+                      );
+                      if (match.isNotEmpty) target = match.first;
+                    }
+                  } catch (_) {}
                 }
-              } catch (_) {}
-            }
-            final isArchived = target?.isArchived == true ||
-                (target?.status.toUpperCase().contains('ARCHIV') ?? false);
-            setState(() {
-              _activeSessionId = id;
-              _activeSessionIsArchived = isArchived;
-              _activeMissingSince = null;
-              _contextStats = {};
-              if (target != null) {
-                _activeSessionTitle = target.title;
-              }
-            });
-            _api?.markSessionRead(id);
-            _refreshContext();
-            SettingsStore.saveSession(
-              wsUrl: _wsClient.targetUrl,
-              token: _wsClient.authToken ?? '',
-              sessionId: id,
-            );
-          },
-          onDeleteSession: _deleteSession,
-        ),
+                final isArchived =
+                    target?.isArchived == true ||
+                    (target?.status.toUpperCase().contains('ARCHIV') ?? false);
+                setState(() {
+                  _activeSessionId = id;
+                  _activeSessionIsArchived = isArchived;
+                  _activeMissingSince = null;
+                  _contextStats = {};
+                  if (target != null) {
+                    _activeSessionTitle = target.title;
+                  }
+                });
+                _api?.markSessionRead(id);
+                _refreshContext();
+                SettingsStore.saveSession(
+                  wsUrl: _wsClient.targetUrl,
+                  token: _wsClient.authToken ?? '',
+                  sessionId: id,
+                );
+              },
+              onDeleteSession: _deleteSession,
+            ),
       ),
     );
   }
@@ -1104,7 +1243,11 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       final wasActive = (id.toLowerCase() == _activeSessionId.toLowerCase());
       if (mounted) {
         setState(() {
-          _sessions = _dedupSessions(_sessions.where((s) => s.id.toLowerCase() != id.toLowerCase()).toList());
+          _sessions = _dedupSessions(
+            _sessions
+                .where((s) => s.id.toLowerCase() != id.toLowerCase())
+                .toList(),
+          );
           if (wasActive) {
             if (_sessions.isNotEmpty) {
               _activeSessionId = _sessions.first.id;
@@ -1141,7 +1284,11 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       final wasActive = (id.toLowerCase() == _activeSessionId.toLowerCase());
       if (mounted) {
         setState(() {
-          _sessions = _dedupSessions(_sessions.where((s) => s.id.toLowerCase() != id.toLowerCase()).toList());
+          _sessions = _dedupSessions(
+            _sessions
+                .where((s) => s.id.toLowerCase() != id.toLowerCase())
+                .toList(),
+          );
           if (wasActive) {
             _activeSessionIsArchived = true;
           }
@@ -1177,9 +1324,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     }
     if (mounted) {
       setState(() {
-        _sessions = _sessions
-            .map((s) => s.id == id ? s.copyWith(title: newTitle) : s)
-            .toList();
+        _sessions =
+            _sessions
+                .map((s) => s.id == id ? s.copyWith(title: newTitle) : s)
+                .toList();
         if (_activeSessionId == id) {
           _activeSessionTitle = newTitle;
         }
@@ -1237,28 +1385,32 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
   /// daemon aujourd'hui ; à brancher sur un RPC `list_scheduled_tasks` quand
   /// il existera, sans changer la signature de ScheduledTasksScreen.
   void _showScheduledTasks() {
-    final workspaces = _sessions
-        .map((s) {
-          var clean = s.workspacePath.replaceAll('\\', '/');
-          if (clean.startsWith('file:///')) clean = clean.substring(8);
-          if (clean.startsWith('file://')) clean = clean.substring(7);
-          final segs = clean.split('/').where((p) => p.isNotEmpty).toList();
-          return segs.isNotEmpty ? segs.last : 'Outside of Project';
-        })
-        .toSet()
-        .toList();
+    final workspaces =
+        _sessions
+            .map((s) {
+              var clean = s.workspacePath.replaceAll('\\', '/');
+              if (clean.startsWith('file:///')) clean = clean.substring(8);
+              if (clean.startsWith('file://')) clean = clean.substring(7);
+              final segs = clean.split('/').where((p) => p.isNotEmpty).toList();
+              return segs.isNotEmpty ? segs.last : 'Outside of Project';
+            })
+            .toSet()
+            .toList();
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => ScheduledTasksScreen(
-          tasks: const [],
-          api: _api,
-          workspaces: workspaces.isNotEmpty ? workspaces : const ['Workspace'],
-          onTriggerNow: (id) => _api?.triggerScheduledTask(id),
-          onCancelTask: (id) => _api?.cancelScheduledTask(id),
-          onToggleTask: (id, enabled) => _api?.toggleScheduledTask(id, enabled),
-          onAddTask: (task) => _api?.scheduleTask(task),
-        ),
+        builder:
+            (context) => ScheduledTasksScreen(
+              tasks: const [],
+              api: _api,
+              workspaces:
+                  workspaces.isNotEmpty ? workspaces : const ['Workspace'],
+              onTriggerNow: (id) => _api?.triggerScheduledTask(id),
+              onCancelTask: (id) => _api?.cancelScheduledTask(id),
+              onToggleTask:
+                  (id, enabled) => _api?.toggleScheduledTask(id, enabled),
+              onAddTask: (task) => _api?.scheduleTask(task),
+            ),
       ),
     );
   }
@@ -1288,22 +1440,25 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         }
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => DiscoveryScreen(
-              onConnect: (host, port, token) async {
-                final url = _formatWsUrl(host, port);
-                _wsClient.disconnect();
-                await _wsClient.connect(customUrl: url, authToken: token);
-                final ok = _wsClient.statusNotifier.value == ConnectionStatus.connected;
-                if (ok) {
-                  SettingsStore.saveSession(
-                    wsUrl: url,
-                    token: token,
-                    sessionId: _activeSessionId,
-                  );
-                }
-                return ok;
-              },
-            ),
+            builder:
+                (context) => DiscoveryScreen(
+                  onConnect: (host, port, token) async {
+                    final url = _formatWsUrl(host, port);
+                    _wsClient.disconnect();
+                    await _wsClient.connect(customUrl: url, authToken: token);
+                    final ok =
+                        _wsClient.statusNotifier.value ==
+                        ConnectionStatus.connected;
+                    if (ok) {
+                      SettingsStore.saveSession(
+                        wsUrl: url,
+                        token: token,
+                        sessionId: _activeSessionId,
+                      );
+                    }
+                    return ok;
+                  },
+                ),
           ),
         );
       },
@@ -1313,15 +1468,23 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           _activeSessionIsArchived = false;
           _activeMissingSince = null;
           _contextStats = {};
-          _sessions = _sessions.map((s) {
-            if (s.id.toLowerCase() == id.toLowerCase()) {
-              return s.copyWith(hasUnread: false);
-            }
-            return s;
-          }).toList();
+          _sessions =
+              _sessions.map((s) {
+                if (s.id.toLowerCase() == id.toLowerCase()) {
+                  return s.copyWith(hasUnread: false);
+                }
+                return s;
+              }).toList();
           final s = _sessions.firstWhere(
             (s) => s.id.toLowerCase() == id.toLowerCase(),
-            orElse: () => const CascadeSession(id: '', workspacePath: '', title: 'Session', status: '', time: ''),
+            orElse:
+                () => const CascadeSession(
+                  id: '',
+                  workspacePath: '',
+                  title: 'Session',
+                  status: '',
+                  time: '',
+                ),
           );
           _activeSessionTitle = s.title;
         });
@@ -1346,14 +1509,23 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         if (_api == null) return;
         final s = _sessions.firstWhere(
           (s) => s.id == _activeSessionId,
-          orElse: () => const CascadeSession(id: '', workspacePath: '', title: '', status: '', time: ''),
+          orElse:
+              () => const CascadeSession(
+                id: '',
+                workspacePath: '',
+                title: '',
+                status: '',
+                time: '',
+              ),
         );
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => BattleArenaScreen(
-              api: _api!,
-              workspaceUri: s.workspacePath.isNotEmpty ? s.workspacePath : '.',
-            ),
+            builder:
+                (context) => BattleArenaScreen(
+                  api: _api!,
+                  workspaceUri:
+                      s.workspacePath.isNotEmpty ? s.workspacePath : '.',
+                ),
           ),
         );
       },
@@ -1361,80 +1533,102 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         if (_api == null) return;
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => SidecarsDashboardScreen(
-              api: _api!,
-            ),
+            builder: (context) => SidecarsDashboardScreen(api: _api!),
           ),
         );
       },
       onOpenSettings: () {
         final s = _sessions.firstWhere(
           (s) => s.id == _activeSessionId,
-          orElse: () => const CascadeSession(id: '', workspacePath: '', title: '', status: '', time: ''),
+          orElse:
+              () => const CascadeSession(
+                id: '',
+                workspacePath: '',
+                title: '',
+                status: '',
+                time: '',
+              ),
         );
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => SettingsScreen(
-              initialSettings: _savedSettings,
-              onThemeModeChanged: widget.onThemeModeChanged,
-              onDaemonSaved: _applyDaemonSettings,
-              onDiscover: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => DiscoveryScreen(
-                      onConnect: (host, port, token) async {
-                        final url = _formatWsUrl(host, port);
-                        _wsClient.disconnect();
-                        await _wsClient.connect(customUrl: url, authToken: token);
-                        final ok = _wsClient.statusNotifier.value == ConnectionStatus.connected;
-                        if (ok) {
-                          SettingsStore.saveSession(
-                            wsUrl: url,
-                            token: token,
-                            sessionId: _activeSessionId,
-                          );
-                        }
-                        return ok;
-                      },
-                    ),
-                  ),
-                );
-              },
-              api: _api,
-              notifier: ApprovalNotifier.instance,
-              workspacePath: s.workspacePath,
-            ),
+            builder:
+                (context) => SettingsScreen(
+                  initialSettings: _savedSettings,
+                  onThemeModeChanged: widget.onThemeModeChanged,
+                  onDaemonSaved: _applyDaemonSettings,
+                  onDiscover: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder:
+                            (context) => DiscoveryScreen(
+                              onConnect: (host, port, token) async {
+                                final url = _formatWsUrl(host, port);
+                                _wsClient.disconnect();
+                                await _wsClient.connect(
+                                  customUrl: url,
+                                  authToken: token,
+                                );
+                                final ok =
+                                    _wsClient.statusNotifier.value ==
+                                    ConnectionStatus.connected;
+                                if (ok) {
+                                  SettingsStore.saveSession(
+                                    wsUrl: url,
+                                    token: token,
+                                    sessionId: _activeSessionId,
+                                  );
+                                }
+                                return ok;
+                              },
+                            ),
+                      ),
+                    );
+                  },
+                  api: _api,
+                  notifier: ApprovalNotifier.instance,
+                  workspacePath: s.workspacePath,
+                ),
           ),
         );
       },
       onDiscover: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => DiscoveryScreen(
-              onConnect: (host, port, token) async {
-                final url = _formatWsUrl(host, port);
-                _wsClient.disconnect();
-                await _wsClient.connect(customUrl: url, authToken: token);
-                final ok = _wsClient.statusNotifier.value == ConnectionStatus.connected;
-                if (ok) {
-                  // Persiste l'appairage : le tunnel Cloudflare peut avoir
-                  // changé d'URL depuis la dernière sauvegarde.
-                  SettingsStore.saveSession(
-                    wsUrl: url,
-                    token: token,
-                    sessionId: _activeSessionId,
-                  );
-                }
-                return ok;
-              },
-            ),
+            builder:
+                (context) => DiscoveryScreen(
+                  onConnect: (host, port, token) async {
+                    final url = _formatWsUrl(host, port);
+                    _wsClient.disconnect();
+                    await _wsClient.connect(customUrl: url, authToken: token);
+                    final ok =
+                        _wsClient.statusNotifier.value ==
+                        ConnectionStatus.connected;
+                    if (ok) {
+                      // Persiste l'appairage : le tunnel Cloudflare peut avoir
+                      // changé d'URL depuis la dernière sauvegarde.
+                      SettingsStore.saveSession(
+                        wsUrl: url,
+                        token: token,
+                        sessionId: _activeSessionId,
+                      );
+                    }
+                    return ok;
+                  },
+                ),
           ),
         );
       },
       onOpenWorkspace: () {
         final activeSession = _sessions.firstWhere(
           (s) => s.id == _activeSessionId,
-          orElse: () => const CascadeSession(id: '', workspacePath: '.', title: '', status: '', time: ''),
+          orElse:
+              () => const CascadeSession(
+                id: '',
+                workspacePath: '.',
+                title: '',
+                status: '',
+                time: '',
+              ),
         );
         var path = activeSession.workspacePath;
         if (path.startsWith('file:///')) {
@@ -1442,14 +1636,15 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         } else if (path.startsWith('file://')) {
           path = path.substring(7);
         }
-        
+
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => WorkspaceScreen(
-              api: _api,
-              workspacePath: path,
-              projects: _projects,
-            ),
+            builder:
+                (context) => WorkspaceScreen(
+                  api: _api,
+                  workspacePath: path,
+                  projects: _projects,
+                ),
           ),
         );
       },
@@ -1467,16 +1662,17 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
 
     // Workspace racine de la session active : git_state / list_git_branches
     // exigent un workspacePath côté daemon (sinon "workspacePath requis").
-    final activeWs = _sessions
-            .where((s) => s.id == _activeSessionId)
-            .map((s) => s.workspacePath)
-            .firstWhere((p) => p.isNotEmpty, orElse: () => '')
-        .isNotEmpty
-        ? _sessions
-            .where((s) => s.id == _activeSessionId)
-            .first
-            .workspacePath
-        : (_projects.isNotEmpty ? _projects.first.path : '');
+    final activeWs =
+        _sessions
+                .where((s) => s.id == _activeSessionId)
+                .map((s) => s.workspacePath)
+                .firstWhere((p) => p.isNotEmpty, orElse: () => '')
+                .isNotEmpty
+            ? _sessions
+                .where((s) => s.id == _activeSessionId)
+                .first
+                .workspacePath
+            : (_projects.isNotEmpty ? _projects.first.path : '');
 
     var cleanActiveWs = activeWs;
     if (cleanActiveWs.startsWith('file:///')) {
@@ -1507,12 +1703,18 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       onStreamingSessionChanged: (sessionId, isStreaming) {
         if (!mounted) return;
         setState(() {
-          _sessions = _sessions.map((s) {
-            if (s.id == sessionId) {
-              return s.copyWith(status: isStreaming ? 'CASCADE_STATUS_RUNNING' : 'CASCADE_STATUS_READY');
-            }
-            return s;
-          }).toList();
+          _sessions =
+              _sessions.map((s) {
+                if (s.id == sessionId) {
+                  return s.copyWith(
+                    status:
+                        isStreaming
+                            ? 'CASCADE_STATUS_RUNNING'
+                            : 'CASCADE_STATUS_READY',
+                  );
+                }
+                return s;
+              }).toList();
         });
       },
     );
@@ -1537,21 +1739,27 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       extendBodyBehindAppBar: false,
       drawer: isWideScreen ? null : sidebar,
       endDrawer: isUltraWide ? null : contextDrawer,
-      drawerScrimColor: isDark
-          ? Colors.black.withValues(alpha: 0.75)
-          : Colors.black.withValues(alpha: 0.65),
+      drawerScrimColor:
+          isDark
+              ? Colors.black.withValues(alpha: 0.75)
+              : Colors.black.withValues(alpha: 0.65),
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         scrolledUnderElevation: 1,
         surfaceTintColor: Colors.transparent,
-        leading: isWideScreen
-            ? null
-            : IconButton(
-                icon: Icon(Icons.dock_outlined, size: 20, color: Theme.of(context).colorScheme.onSurface),
-                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                tooltip: 'Ouvrir le menu gauche',
-              ),
+        leading:
+            isWideScreen
+                ? null
+                : IconButton(
+                  icon: Icon(
+                    Icons.dock_outlined,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  tooltip: 'Ouvrir le menu gauche',
+                ),
         title: InkWell(
           onTap: () => _scaffoldKey.currentState?.openDrawer(),
           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -1587,7 +1795,12 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                             '›',
                             style: TextStyle(
                               fontSize: 12,
-                              color: isDark ? AppColors.inkMuted : Theme.of(context).colorScheme.outlineVariant,
+                              color:
+                                  isDark
+                                      ? AppColors.inkMuted
+                                      : Theme.of(
+                                        context,
+                                      ).colorScheme.outlineVariant,
                             ),
                           ),
                         ),
@@ -1598,7 +1811,12 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w400,
-                              color: isDark ? AppColors.inkSecondary : Theme.of(context).colorScheme.onSurfaceVariant,
+                              color:
+                                  isDark
+                                      ? AppColors.inkSecondary
+                                      : Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1609,7 +1827,12 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                       Icon(
                         Icons.unfold_more_rounded,
                         size: 13,
-                        color: isDark ? AppColors.inkMuted : Theme.of(context).colorScheme.onSurfaceVariant,
+                        color:
+                            isDark
+                                ? AppColors.inkMuted
+                                : Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                       ),
                     ],
                   ),
@@ -1626,12 +1849,21 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                   },
                   borderRadius: BorderRadius.circular(AppRadius.pill),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2.5,
+                    ),
                     decoration: BoxDecoration(
-                      color: (isConnected ? AppColors.positive : AppColors.danger).withValues(alpha: 0.12),
+                      color: (isConnected
+                              ? AppColors.positive
+                              : AppColors.danger)
+                          .withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(AppRadius.pill),
                       border: Border.all(
-                        color: (isConnected ? AppColors.positive : AppColors.danger).withValues(alpha: 0.25),
+                        color: (isConnected
+                                ? AppColors.positive
+                                : AppColors.danger)
+                            .withValues(alpha: 0.25),
                         width: 0.8,
                       ),
                     ),
@@ -1641,9 +1873,12 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                         ValueListenableBuilder<int?>(
                           valueListenable: _wsClient.latencyMsNotifier,
                           builder: (context, latency, _) {
-                            final label = isConnected
-                                ? (latency != null ? '${latency}ms' : 'Connecté')
-                                : 'Hors ligne';
+                            final label =
+                                isConnected
+                                    ? (latency != null
+                                        ? '${latency}ms'
+                                        : 'Connecté')
+                                    : 'Hors ligne';
                             // P2: 3-tier latency color thresholds
                             final Color badgeColor;
                             if (!isConnected) {
@@ -1691,79 +1926,90 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.terminal_rounded, size: 20, color: Theme.of(context).colorScheme.onSurface),
+            icon: Icon(
+              Icons.terminal_rounded,
+              size: 20,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
             onPressed: () {
               HapticFeedback.selectionClick();
               RemoteTerminalSheet.show(
                 context,
                 api: _api,
                 projectName: activeProjectDisplayName,
-                workspacePath: cleanActiveWs.isNotEmpty ? cleanActiveWs : activeWs,
+                workspacePath:
+                    cleanActiveWs.isNotEmpty ? cleanActiveWs : activeWs,
               );
             },
             tooltip: 'Ouvrir le terminal distant',
           ),
           if (!isUltraWide)
             IconButton(
-              icon: Icon(Icons.vertical_split_outlined, size: 20, color: Theme.of(context).colorScheme.onSurface),
+              icon: Icon(
+                Icons.vertical_split_outlined,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
               onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
               tooltip: 'Ouvrir le panneau contexte',
             ),
         ],
       ),
-      body: isUltraWide
-          ? Row(
-              children: [
-                SizedBox(
-                  width: 280,
-                  child: Material(
-                    color: Theme.of(context).colorScheme.surfaceContainer,
-                    child: sidebar,
-                  ),
-                ),
-                VerticalDivider(
-                  width: 1,
-                  thickness: 1,
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-                Expanded(child: chatStream),
-                VerticalDivider(
-                  width: 1,
-                  thickness: 1,
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-                SizedBox(
-                  width: 320,
-                  child: Material(
-                    color: Theme.of(context).colorScheme.surfaceContainer,
-                    child: contextDrawer,
-                  ),
-                ),
-              ],
-            )
-          : isWideScreen
+      body:
+          isUltraWide
               ? Row(
-                  children: [
-                    SizedBox(
-                      width: 320,
-                      child: Material(
-                        color: Theme.of(context).colorScheme.surfaceContainer,
-                        child: sidebar,
-                      ),
+                children: [
+                  SizedBox(
+                    width: 280,
+                    child: Material(
+                      color: Theme.of(context).colorScheme.surfaceContainer,
+                      child: sidebar,
                     ),
-                    VerticalDivider(
-                      width: 1,
-                      thickness: 1,
-                      color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  VerticalDivider(
+                    width: 1,
+                    thickness: 1,
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  Expanded(child: chatStream),
+                  VerticalDivider(
+                    width: 1,
+                    thickness: 1,
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  SizedBox(
+                    width: 320,
+                    child: Material(
+                      color: Theme.of(context).colorScheme.surfaceContainer,
+                      child: contextDrawer,
                     ),
-                    Expanded(child: chatStream),
-                  ],
-                )
+                  ),
+                ],
+              )
+              : isWideScreen
+              ? Row(
+                children: [
+                  SizedBox(
+                    width: 320,
+                    child: Material(
+                      color: Theme.of(context).colorScheme.surfaceContainer,
+                      child: sidebar,
+                    ),
+                  ),
+                  VerticalDivider(
+                    width: 1,
+                    thickness: 1,
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  Expanded(child: chatStream),
+                ],
+              )
               : chatStream,
     );
 
     return PopScope(
-      canPop: !(_scaffoldKey.currentState?.isDrawerOpen ?? false) &&
+      canPop:
+          !(_scaffoldKey.currentState?.isDrawerOpen ?? false) &&
           !(_scaffoldKey.currentState?.isEndDrawerOpen ?? false),
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
@@ -1783,14 +2029,8 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
             }
           },
         },
-        child: Focus(
-          autofocus: false,
-          child: scaffold,
-        ),
+        child: Focus(autofocus: false, child: scaffold),
       ),
     );
   }
 }
-
-
-
