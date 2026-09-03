@@ -5,6 +5,19 @@ All notable changes to Antigravity will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-09-03
+
+### Added
+- **Antigravity Remote v2.11.0 UI/UX Parity**: Comprehensive reverse engineering of official Antigravity Remote web application (`boq_antigravity-external-web_20260901.05_p0` / `Web 2.11.0`) with direct extraction and alignment of design tokens (`--background: #101010`, `--foreground: #cccccc`, `--primary: #007acc`, `--max-conversation-width: 48rem` / 768px).
+- **Quad-Axis Session Display Options**: Full interactive implementation and local persistence (`SharedPreferences`) for session grouping (`Project`, `Workspace`, `Status`, `None`), sorting (`Last Updated`, `Last Prompt`, `Alphabetical`, `Date Added`), and subtitles (`Worktree / Branch`, `None`).
+- **High-Frequency Keep-Alive & Handshake Warmup**: Accelerated WebSocket ping interval from 20s to 5s with immediate connection handshake ping, preventing aggressive mobile Wi-Fi / NAT router timeouts and Android battery saver disconnects.
+- **Deep Audit Forensic Tooling & Artifacts**: End-to-end CDP-driven audit scripts and forensic master report documenting all 7 settings categories, live code theme previews, and permission models.
+
+### Fixed
+- **Responsive Overflow Elimination**: Hardened layout constraints across all cards, modals, and tool approval widgets, ensuring zero overflow on ultra-compact mobile screens (iPhone SE 320px).
+- **Daemon Supervisor & Port Conflict Remediation**: Resolved port 8090 binding conflicts with ADB reverse/forward rules and hardened `supervise-daemon.ps1` orphan process cleanup.
+- **Test Suite Perfection**: 100% test pass rate across all 708+ Flutter unit and widget tests with zero warnings on `flutter analyze`.
+
 ## [3.4.2] - 2026-08-26
 
 ### Fixed

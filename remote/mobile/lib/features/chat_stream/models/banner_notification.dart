@@ -83,11 +83,9 @@ class BannerClassifier {
   }) {
     final lower = errorText.toLowerCase();
 
-    // 1. Quota Exceeded (Individual quota reached, baseline model quota reached, RESOURCE_EXHAUSTED, 429, 402, insufficient_quota, stream interrupted)
+    // 1. Quota Exceeded (Individual quota reached, baseline model quota reached, RESOURCE_EXHAUSTED, 429, 402, insufficient_quota)
     if (lower.contains('individual quota reached') ||
         lower.contains('baseline model quota reached') ||
-        lower.contains('stream was interrupted') ||
-        lower.contains('the stream was interrupted') ||
         lower.contains('resource_exhausted') ||
         lower.contains('insufficient_quota') ||
         lower.contains('quota exceeded') ||
@@ -174,6 +172,27 @@ class BannerClassifier {
         severity: BannerSeverity.error,
         title: 'Clé API Invalide (HTTP 401)',
         message: 'La clé API fournie pour ce modèle est expirée ou invalide.',
+        actions: actions,
+      );
+    }
+
+    // 4. Stream Interrupted / Disconnect
+    if (lower.contains('stream was interrupted') ||
+        lower.contains('the stream was interrupted') ||
+        lower.contains('stream interrupted')) {
+      final actions = <BannerAction>[
+        if (onDismiss != null)
+          BannerAction(label: 'Ignorer', onPressed: onDismiss),
+        if (onNewConversation != null)
+          BannerAction(label: 'Continuer', onPressed: onNewConversation, isPrimary: true),
+      ];
+
+      return BannerNotificationData(
+        id: 'stream-interrupted',
+        type: BannerType.networkError,
+        severity: BannerSeverity.warning,
+        title: 'Flux interrompu',
+        message: 'La transmission avec l\'IDE a été interrompue. Vous pouvez continuer ou renvoyer votre requête.',
         actions: actions,
       );
     }

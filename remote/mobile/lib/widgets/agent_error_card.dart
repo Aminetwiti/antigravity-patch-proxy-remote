@@ -50,7 +50,7 @@ class _AgentErrorCardState extends State<AgentErrorCard> {
       return 'Baseline model quota reached';
     }
     if (lower.contains('stream was interrupted') || lower.contains('the stream was interrupted')) {
-      return 'Baseline model quota reached (Stream interrupted)';
+      return 'Flux interrompu (Stream interrupted)';
     }
     if (lower.contains('quota exceeded') || lower.contains('insufficient_quota')) {
       return 'Error: Quota exceeded';

@@ -285,7 +285,33 @@ class StreamDeltaParser {
             }
           } catch (_) {}
         }
+        if (arg.toLowerCase().contains('created at:') || arg.toLowerCase().startsWith('generic')) {
+          return '';
+        }
         return arg.isNotEmpty ? 'Task $arg' : 'Task finished';
+      case 'call_mcp_tool':
+      case 'mcp':
+      case 'mcp_tool':
+        String mcpDisplay = '';
+        if (detail.isNotEmpty) {
+          try {
+            final start = detail.indexOf('{');
+            final end = detail.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+              final jsonMap = json.decode(detail.substring(start, end + 1));
+              if (jsonMap is Map) {
+                final srv = jsonMap['ServerName'] ?? jsonMap['server_name'] ?? jsonMap['server'];
+                final tl = jsonMap['ToolName'] ?? jsonMap['tool_name'] ?? jsonMap['tool'];
+                if (srv != null && tl != null) {
+                  mcpDisplay = '$srv/$tl';
+                } else if (tl != null) {
+                  mcpDisplay = '$tl';
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        return mcpDisplay.isNotEmpty ? 'Called MCP $mcpDisplay' : 'Called MCP tool';
       case 'send_message':
         return arg.isNotEmpty ? 'Sent to $arg' : 'Sent message';
       case 'generate_image':
@@ -337,13 +363,13 @@ class StreamDeltaParser {
         if (cleanTool.toLowerCase().startsWith('task ') && (arg.toLowerCase().contains('finish') || arg.toLowerCase().contains('complete'))) {
           return cleanTool;
         }
-        if (lowerTool == 'generic' || lowerTool == 'generic_tool' || lowerTool == 'tool_result') {
+        if (lowerTool == 'generic' || lowerTool == 'generic_tool' || lowerTool == 'tool_result' || lowerTool == 'call_mcp_tool') {
           return '';
         }
         if (arg.contains('Created At:') || arg.contains('Completed At:')) {
           return '';
         }
-        return arg.isNotEmpty ? 'Task $cleanTool ($arg)' : 'Task $cleanTool';
+        return arg.isNotEmpty ? '$cleanTool ($arg)' : cleanTool;
     }
   }
 
