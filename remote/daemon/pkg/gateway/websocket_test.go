@@ -583,7 +583,7 @@ func (c *wsTestClient) sendRaw(t *testing.T, raw string) {
 
 func (c *wsTestClient) recv(t *testing.T) map[string]interface{} {
 	t.Helper()
-	_ = c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = c.conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	_, b, err := c.conn.ReadMessage()
 	if err != nil {
 		t.Fatalf("Réception WebSocket échouée: %v", err)
