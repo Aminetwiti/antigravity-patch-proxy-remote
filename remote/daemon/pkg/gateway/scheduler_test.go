@@ -88,6 +88,18 @@ func TestSchedulerQuotaPush(t *testing.T) {
 	client := dialWS(t, "ws"+strings.TrimPrefix(srv.URL, "http")+"/ws")
 	defer client.conn.Close()
 
+	// Attendre que le client soit bien enregistré dans le serveur
+	regDeadline := time.Now().Add(time.Second)
+	for time.Now().Before(regDeadline) {
+		server.mu.Lock()
+		registered := len(server.clients) > 0
+		server.mu.Unlock()
+		if registered {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
 	scheduler := NewScheduler(server)
 	// Forcer un push immédiat (horodatage zéro = jamais poussé).
 	scheduler.maybePushQuota(time.Now())

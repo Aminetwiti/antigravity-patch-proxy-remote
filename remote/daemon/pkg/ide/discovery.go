@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,9 @@ import (
 
 // DiscoverInstances recherche tous les processus language_server_windows_x64.exe actifs.
 func DiscoverInstances() ([]Instance, error) {
+	if runtime.GOOS != "windows" {
+		return nil, nil
+	}
 	// Script PowerShell d'extraction rapide des processus et ports
 	psScript := strings.Join([]string{
 		`$results = @()`,

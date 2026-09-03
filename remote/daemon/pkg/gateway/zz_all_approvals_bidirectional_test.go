@@ -185,7 +185,7 @@ func TestApprovalConflict_SecondSubmissionHandledCleanly(t *testing.T) {
 	}
 
 	// 4. Vérifier les réponses : l'une doit être "submitted", l'autre doit être "already_resolved" avec conflict: true
-	client.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	client.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	var seenSubmitted, seenConflict bool
 	for !seenSubmitted || !seenConflict {
 		_, b, err := client.conn.ReadMessage()

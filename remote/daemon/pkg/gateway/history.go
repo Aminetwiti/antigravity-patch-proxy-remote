@@ -3433,9 +3433,9 @@ func extractUserRequest(content string) string {
 
 	if len(mediaArtifacts) > 0 {
 		for _, imgPath := range mediaArtifacts {
-			cleanP := imgPath
+			cleanP := strings.ReplaceAll(imgPath, "\\", "/")
 			if !strings.HasPrefix(cleanP, "file://") && (strings.HasPrefix(cleanP, "/") || (len(cleanP) >= 2 && cleanP[1] == ':')) {
-				cleanP = "file:///" + filepath.ToSlash(cleanP)
+				cleanP = "file:///" + strings.TrimPrefix(cleanP, "/")
 			}
 			imgTag := fmt.Sprintf("![Image](%s)", cleanP)
 			if !strings.Contains(userReq, imgTag) {

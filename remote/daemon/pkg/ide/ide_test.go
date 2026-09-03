@@ -3,6 +3,7 @@ package ide
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -59,6 +60,9 @@ func TestListSessions(t *testing.T) {
 }
 
 func TestDiscoverInstances(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("DiscoverInstances s'appuie sur Win32_Process / PowerShell (Windows uniquement)")
+	}
 	instances, err := DiscoverInstances()
 	if err != nil {
 		t.Fatalf("DiscoverInstances error: %v", err)
@@ -70,6 +74,9 @@ func TestDiscoverInstances(t *testing.T) {
 }
 
 func TestFindInstanceForCascade(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("FindInstanceForCascade s'appuie sur Win32_Process / PowerShell (Windows uniquement)")
+	}
 	cid := "12deb7f0-b0a0-4461-95a6-b9b45ecec1c5"
 	hint := extractCascadeWorkspaceHint(cid)
 	t.Logf("🔍 Hint extrait pour %s : %q", cid, hint)
@@ -87,6 +94,9 @@ func TestFindInstanceForCascade(t *testing.T) {
 }
 
 func TestFindClientForCascade(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("FindClientForCascade s'appuie sur Win32_Process / PowerShell (Windows uniquement)")
+	}
 	cid := "12deb7f0-b0a0-4461-95a6-b9b45ecec1c5"
 	client, err := FindClientForCascade(cid)
 	if err != nil {

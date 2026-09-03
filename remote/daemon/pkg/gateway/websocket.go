@@ -2006,6 +2006,36 @@ func (s *Server) clearApproval(cascadeID string) {
 	}
 }
 
+// claimApproval réclame atomiquement une approbation en attente pour soumission.
+// Évite la course check-then-act entre approvalFor et clearApproval.
+func (s *Server) claimApproval(cascadeID, callID string) (p pendingApproval, fresh bool, expired bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	curr, exists := s.approvals[cascadeID]
+	if !exists {
+		return pendingApproval{}, false, false
+	}
+	if curr.expired {
+		return *curr, false, true
+	}
+	if curr.timer != nil {
+		curr.timer.Stop()
+	}
+	if s.resolvedApprovals == nil {
+		s.resolvedApprovals = make(map[string]time.Time)
+	}
+	now := time.Now()
+	if curr.callID != "" {
+		s.resolvedApprovals[curr.callID] = now
+	}
+	if callID != "" {
+		s.resolvedApprovals[callID] = now
+	}
+	s.resolvedApprovals[cascadeID] = now
+	delete(s.approvals, cascadeID)
+	return *curr, true, false
+}
+
 // purgeCascadeState nettoie TOUT l'├®tat local d'une cascade supprim├®e :
 // buffer StepRecovery, approbation en attente, auto-approbations de session,
 // stream actif. Sans cette purge, un get_pending_approval sur une cascade
@@ -4426,10 +4456,8 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		}
 		logJSON.Info("question_response", "cascadeId", msg.CascadeID, "answer", responseText)
 
-		if p, ok := s.approvalFor(msg.CascadeID); ok && !p.expired {
-			// Fraîche : annule le timer AVANT l'envoi (pas de course entre
-			// réponse et auto-refus), même contrat que submit_approval.
-			s.clearApproval(msg.CascadeID)
+		_, fresh, expired := s.claimApproval(msg.CascadeID, "")
+		if fresh {
 			oneofPayload := connectrpc.BuildAskQuestionInteraction(msg.SelectedAnswers, msg.CustomAnswer, false)
 			raw, err = s.getRPCClientForCascade(msg.CascadeID).SubmitToolApproval(msg.CascadeID, msg.TrajectoryID, uint32(msg.StepIndex), connectrpc.InteractionAskQuestion, oneofPayload)
 			// Réponse unary au client demandeur (même contrat que
@@ -4442,7 +4470,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 				s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: err.Error()})
 			}
 			return
-		} else if ok {
+		} else if expired {
 			// Garde de fraîcheur : l'approbation ask_question a expiré (auto-
 			// refus parti). Une réponse tardive serait un « oui » après
 			// expiration → refuser sans contact RPC.
@@ -4710,15 +4738,19 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		}
 
 		// Si promptText contient des tags markdown d'images ![name](file:///path), on les extrait vers mediaAttachments
-		imgTagRe := regexp.MustCompile(`!\[([^\]]*)\]\((?:file:///)?([a-zA-Z]:[^\)\r\n]+|/[^\)\r\n]+)\)`)
+		imgTagRe := regexp.MustCompile(`!\[([^\]]*)\]\((file:///[a-zA-Z]:[^\)\r\n]+|file:///[^\)\r\n]+|file://[^\)\r\n]+|[a-zA-Z]:[^\)\r\n]+|/[^\)\r\n]+)\)`)
 		if imgMatches := imgTagRe.FindAllStringSubmatch(promptText, -1); len(imgMatches) > 0 {
 			for _, m := range imgMatches {
 				if len(m) >= 3 {
 					desc := strings.TrimSpace(m[1])
 					rawPath := strings.TrimSpace(m[2])
 					cleanURI := rawPath
-					if !strings.HasPrefix(cleanURI, "file:///") {
-						cleanURI = "file:///" + filepath.ToSlash(cleanURI)
+					if !strings.HasPrefix(cleanURI, "file://") {
+						if strings.HasPrefix(cleanURI, "/") {
+							cleanURI = "file://" + cleanURI
+						} else {
+							cleanURI = "file:///" + strings.ReplaceAll(cleanURI, "\\", "/")
+						}
 					}
 					if desc == "" {
 						desc = filepath.Base(rawPath)
@@ -4756,7 +4788,10 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 				}
 			}
 			if len(m.Data) == 0 && m.URI != "" {
-				localPath := strings.TrimPrefix(m.URI, "file:///")
+				localPath := strings.TrimPrefix(m.URI, "file://")
+				if runtime.GOOS == "windows" || (len(localPath) >= 3 && localPath[0] == '/' && localPath[2] == ':') {
+					localPath = strings.TrimPrefix(localPath, "/")
+				}
 				localPath = filepath.FromSlash(localPath)
 				if data, err := os.ReadFile(localPath); err == nil && len(data) > 0 {
 					m.Data = data
@@ -5075,40 +5110,38 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		}
 		// Garde de fra├«cheur : si le daemon conna├«t l'approbation locale et
 		// qu'elle est d├®j├á expir├®e (timer parti, auto-refus envoy├®), un submit
-		// tardif ÔÇö m├¬me confirm=true ÔÇö serait un ┬½ oui ┬╗ apr├¿s expiration : la
-		// carte mobile affiche d├®j├á ┬½ expir├®e ┬╗ en lecture seule. Refuser sans
-		// contact RPC ├®vite d'ex├®cuter une commande que l'utilisateur n'a pas
-		// valid├®e ├á temps. Ponytail: compare le callId quand le mobile le fournit.
-		if p, ok := s.approvalFor(msg.CascadeID); ok && !p.expired {
-			// Fraîche : annule le timer AVANT l'envoi (pas de course entre submit et auto-refus).
-			s.clearApproval(msg.CascadeID)
-		} else if ok && p.expired {
+		// Garde de fraîcheur et arbitrage atomique des soumissions concurrentes.
+		_, fresh, expired := s.claimApproval(msg.CascadeID, msg.CallID)
+		if expired {
 			s.writeJSON(conn, OutgoingMessage{Type: "error", RequestID: msg.RequestID, Error: "approval expired (auto-denied)"})
 			return
-		} else if (msg.CallID != "" && s.isRecentlyResolved(msg.CallID)) || (msg.CascadeID != "" && s.isRecentlyResolved(msg.CascadeID)) {
-			// Conflit concurrentiel évité : l'action a déjà été résolue (par le Desktop ou un autre client)
-			s.writeJSON(conn, OutgoingMessage{
-				Type:      "response",
-				RequestID: msg.RequestID,
-				Data: map[string]interface{}{
-					"status":   "already_resolved",
-					"conflict": true,
-					"message":  "Action déjà résolue sur le PC",
-				},
-			})
-			s.broadcast(OutgoingMessage{
-				Type:      "approval_resolved",
-				CascadeID: msg.CascadeID,
-				Data: map[string]interface{}{
-					"cascadeId":    msg.CascadeID,
-					"callId":       msg.CallID,
-					"decision":     msg.Decision,
-					"approvalType": msg.ApprovalType,
-					"conflict":     true,
-					"source":       "desktop",
-				},
-			})
-			return
+		}
+		if !fresh {
+			if (msg.CallID != "" && s.isRecentlyResolved(msg.CallID)) || (msg.CascadeID != "" && s.isRecentlyResolved(msg.CascadeID)) {
+				// Conflit concurrentiel évité : l'action a déjà été résolue (par le Desktop ou un autre client)
+				s.writeJSON(conn, OutgoingMessage{
+					Type:      "response",
+					RequestID: msg.RequestID,
+					Data: map[string]interface{}{
+						"status":   "already_resolved",
+						"conflict": true,
+						"message":  "Action déjà résolue sur le PC",
+					},
+				})
+				s.broadcast(OutgoingMessage{
+					Type:      "approval_resolved",
+					CascadeID: msg.CascadeID,
+					Data: map[string]interface{}{
+						"cascadeId":    msg.CascadeID,
+						"callId":       msg.CallID,
+						"decision":     msg.Decision,
+						"approvalType": msg.ApprovalType,
+						"conflict":     true,
+						"source":       "desktop",
+					},
+				})
+				return
+			}
 		}
 
 		// Persistance de l'auto-approbation selon la portée choisie.
@@ -7176,6 +7209,34 @@ func resolvePath(root, requested string) (string, error) {
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("chemin hors workspace: %s", requested)
 	}
+
+	// Évaluer les symlinks pour empêcher l'évasion du workspace
+	realRoot, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		realRoot = rootAbs
+	}
+	checkPath := candidate
+	for {
+		if realCheck, err := filepath.EvalSymlinks(checkPath); err == nil {
+			rRoot := realRoot
+			rCheck := realCheck
+			if runtime.GOOS == "windows" {
+				rRoot = strings.ToLower(rRoot)
+				rCheck = strings.ToLower(rCheck)
+			}
+			symRel, err := filepath.Rel(rRoot, rCheck)
+			if err != nil || symRel == ".." || strings.HasPrefix(symRel, ".."+string(filepath.Separator)) {
+				return "", fmt.Errorf("chemin hors workspace (symlink): %s", requested)
+			}
+			break
+		}
+		parent := filepath.Dir(checkPath)
+		if parent == checkPath {
+			break
+		}
+		checkPath = parent
+	}
+
 	return candidate, nil
 }
 

@@ -14,10 +14,15 @@ func TestCleanExpiredScratchFiles(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpHome)
 
-	// Mock UserHomeDir
-	origHome := os.Getenv("USERPROFILE")
+	// Mock UserHomeDir (HOME on Unix/macOS, USERPROFILE on Windows)
+	origHome := os.Getenv("HOME")
+	origUserProfile := os.Getenv("USERPROFILE")
+	os.Setenv("HOME", tmpHome)
 	os.Setenv("USERPROFILE", tmpHome)
-	defer os.Setenv("USERPROFILE", origHome)
+	defer func() {
+		os.Setenv("HOME", origHome)
+		os.Setenv("USERPROFILE", origUserProfile)
+	}()
 
 	cascadeID := "11111111-2222-3333-4444-555555555555"
 	scratchDir := filepath.Join(tmpHome, ".gemini", "antigravity", "brain", cascadeID, "scratch")
