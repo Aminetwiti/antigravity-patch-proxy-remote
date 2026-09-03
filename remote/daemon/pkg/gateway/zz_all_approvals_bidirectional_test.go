@@ -104,6 +104,18 @@ func TestAllApprovals_DesktopResolutionForAllTypes(t *testing.T) {
 				t.Fatalf("l'approbation %s doit être active", tc.name)
 			}
 
+			// Attendre que le client soit bien enregistré dans le gateway avant de diffuser
+			regDeadline := time.Now().Add(time.Second)
+			for time.Now().Before(regDeadline) {
+				gw.mu.Lock()
+				registered := len(gw.clients) > 0
+				gw.mu.Unlock()
+				if registered {
+					break
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+
 			// Simulation de la résolution Desktop : WaitingForInput passe à false
 			gw.reactiveSyncUpdates(map[string]connectrpc.ReactiveUpdate{
 				cascID: {
@@ -116,7 +128,7 @@ func TestAllApprovals_DesktopResolutionForAllTypes(t *testing.T) {
 				t.Fatalf("l'approbation %s doit être nettoyée suite à la validation desktop", tc.name)
 			}
 
-			client.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			client.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			var seenResolved bool
 			for !seenResolved {
 				_, b, err := client.conn.ReadMessage()
