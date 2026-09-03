@@ -31,7 +31,7 @@
   <!-- Global Smart Banner container -->
   <div id="globalSmartBanner" class="smart-banner-container"></div>
 
-  <main class="app">
+  <div class="app">
     <!-- Sidebar -->
     <nav class="sidebar" aria-label="Main navigation">
       <div class="sidebar-brand-row">
@@ -136,13 +136,13 @@
           <div>
             <div style="display: flex; align-items: center; gap: 12px;">
               <h1>Remote Server</h1>
-              <div id="remoteIdeStatusBanner" style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 3px 10px; border-radius: 20px; background: rgba(255,255,255,0.06); border: 1px solid var(--border);">
+              <div id="remoteIdeStatusBanner" style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 3px 10px; border-radius: var(--r-pill); background: rgba(255,255,255,0.06); border: 1px solid var(--border);">
                 <span id="remoteIdeDot" style="width: 8px; height: 8px; border-radius: 50%; background: var(--text-2); display: inline-block;"></span>
-                <span id="remoteIdeText">Vérification IDE...</span>
-                <button class="btn btn-ghost" id="remoteLaunchIdeBtn" type="button" style="display: none; padding: 1px 8px; font-size: 11px; margin-left: 4px; border-radius: 12px; background: var(--accent-blue, #38bdf8); color: #000; font-weight: 600;">Launch IDE</button>
+                <span id="remoteIdeText">Checking IDE...</span>
+                <button class="btn btn-ghost" id="remoteLaunchIdeBtn" type="button" style="display: none; padding: 1px 8px; font-size: 11px; margin-left: 4px; border-radius: var(--r-pill); background: var(--accent-blue); color: #ffffff; font-weight: 600;">Launch IDE</button>
               </div>
             </div>
-            <p class="subtitle">Scannez le QR code ou saisissez le code PIN avec l'application mobile Antigravity Companion.</p>
+            <p class="subtitle">Scan the QR code or enter the pairing PIN using the Antigravity Companion mobile app.</p>
           </div>
           <div class="header-actions">
             <button class="btn btn-primary" id="startRemoteBtn" type="button">
@@ -159,52 +159,52 @@
               <h3>Daemon Configuration</h3>
               
               <div class="form-group" style="margin-top: 15px;">
-                <label>Port d'écoute</label>
+                <label>Listening Port</label>
                 <input type="number" id="remotePort" class="input" value="8090" />
               </div>
 
               <div class="form-group">
-                <label>Type de Tunnel</label>
+                <label>Tunnel Type</label>
                 <select id="remoteTunnel" class="input">
-                  <option value="pinggy">Pinggy (ssh.pinggy.io — Inclus nativement sans installation)</option>
-                  <option value="none">Aucun (Réseau Wi-Fi local uniquement)</option>
-                  <option value="cloudflare">Cloudflare (Nécessite cloudflared.exe)</option>
-                  <option value="pangolin">Pangolin (Client Newt / URL VPS)</option>
+                  <option value="pinggy">Pinggy (ssh.pinggy.io — Included natively, no setup)</option>
+                  <option value="none">None (Local Wi-Fi network only)</option>
+                  <option value="cloudflare">Cloudflare (Requires cloudflared.exe)</option>
+                  <option value="pangolin">Pangolin (Newt client / VPS URL)</option>
                 </select>
               </div>
 
 
               <div class="form-group">
                 <label style="display: flex; justify-content: space-between; align-items: center;">
-                  <span>Auth Token <span style="font-size: 11px; opacity: 0.7; font-weight: normal;">(sauvegardé automatiquement)</span></span>
-                  <span id="tokenSavedBadge" style="font-size: 11px; color: var(--accent-green, #22c55e); display: none;">✓ Sauvegardé</span>
+                  <span>Auth Token <span style="font-size: 11px; opacity: 0.7; font-weight: normal;">(auto-saved)</span></span>
+                  <span id="tokenSavedBadge" style="font-size: 11px; color: var(--ok); display: none;">Saved</span>
                 </label>
                 <div style="display: flex; gap: 8px;">
-                  <input type="text" id="remoteAuthToken" class="input" placeholder="ex: 11 ou mon-token-secret" style="flex: 1;" />
-                  <button class="btn btn-ghost" id="regenerateTokenBtn" type="button" title="Générer un token aléatoire sécurisé" style="padding: 0 10px;">
+                  <input type="text" id="remoteAuthToken" class="input" placeholder="e.g. secret-token" style="flex: 1;" />
+                  <button class="btn btn-ghost" id="regenerateTokenBtn" type="button" title="Generate secure random token" style="padding: 0 10px;">
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
                   </button>
                 </div>
               </div>
 
               <!-- Admin Mode Option -->
-              <div class="form-group" style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px;">
+              <div class="form-group" style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--r-md);">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 4px;">
                   <input type="checkbox" id="remoteAllowFirstAdmin" style="width: 16px; height: 16px; cursor: pointer;" checked />
-                  <span style="font-weight: 600; font-size: 13px;">👑 Connecter avec privilèges Admin (Allow First Admin)</span>
+                  <span style="font-weight: 600; font-size: 13px;">Admin Privileges (Allow First Admin)</span>
                 </label>
                 <p style="font-size: 11.5px; color: var(--text-2); margin: 0; margin-left: 26px;">
-                  Promeut automatiquement le premier appareil connecté comme <b>Administrateur</b> (accès complet aux fichiers, terminal et sessions sans blocage PIN).
+                  Automatically promotes the first connected companion device as <b>Administrator</b> (full access to files, terminal, and sessions without PIN lock).
                 </p>
               </div>
 
               <!-- Quick Actions -->
               <div style="display: flex; gap: 8px; margin-top: 15px; flex-wrap: wrap;">
                 <button class="btn btn-ghost" id="remoteCheckHealthBtn" type="button" style="font-size: 12px; padding: 6px 12px;">
-                  🧪 Tester la Santé (/health)
+                  Test Health (/health)
                 </button>
                 <button class="btn btn-ghost" id="remoteCopyWsUrlBtn" type="button" style="font-size: 12px; padding: 6px 12px;">
-                  📋 Copier l'URL WebSocket
+                  Copy WebSocket URL
                 </button>
               </div>
             </div>
@@ -212,20 +212,20 @@
             <!-- Telemetry & Active Sessions -->
             <div class="settings-card" id="remoteTelemetryCard" style="display: flex; flex-direction: column; gap: 12px;">
               <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h3 style="margin: 0;">Statut & Télémétrie en Direct</h3>
-                <span id="remoteTelemetryBadge" style="font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.08); color: var(--text-2);">En attente</span>
+                <h3 style="margin: 0;">Live Status & Telemetry</h3>
+                <span id="remoteTelemetryBadge" style="font-size: 11px; padding: 2px 8px; border-radius: var(--r-sm); background: rgba(255,255,255,0.08); color: var(--text-2);">Standby</span>
               </div>
               <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                <div style="padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid var(--border);">
-                  <div style="font-size: 11px; color: var(--text-2);">Clients Connectés</div>
+                <div style="padding: 10px; background: rgba(0,0,0,0.2); border-radius: var(--r-sm); border: 1px solid var(--border);">
+                  <div style="font-size: 11px; color: var(--text-2);">Connected Clients</div>
                   <div id="remoteClientsCount" style="font-size: 18px; font-weight: 700; color: var(--text-1); margin-top: 2px;">0</div>
                 </div>
-                <div style="padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid var(--border);">
-                  <div style="font-size: 11px; color: var(--text-2);">Sessions Actives</div>
+                <div style="padding: 10px; background: rgba(0,0,0,0.2); border-radius: var(--r-sm); border: 1px solid var(--border);">
+                  <div style="font-size: 11px; color: var(--text-2);">Active Sessions</div>
                   <div id="remoteSessionsCount" style="font-size: 18px; font-weight: 700; color: var(--text-1); margin-top: 2px;">0</div>
                 </div>
-                <div style="padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid var(--border);">
-                  <div style="font-size: 11px; color: var(--text-2);">Uptime Daemon</div>
+                <div style="padding: 10px; background: rgba(0,0,0,0.2); border-radius: var(--r-sm); border: 1px solid var(--border);">
+                  <div style="font-size: 11px; color: var(--text-2);">Daemon Uptime</div>
                   <div id="remoteUptimeDisplay" style="font-size: 14px; font-weight: 600; color: var(--text-1); margin-top: 5px;">-</div>
                 </div>
               </div>
@@ -233,13 +233,13 @@
 
             <div class="settings-card" style="flex: 1; display: flex; flex-direction: column;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <h3 style="margin: 0;">Console du Daemon</h3>
+                <h3 style="margin: 0;">Daemon Console</h3>
                 <div style="display: flex; gap: 6px;">
-                  <button class="btn btn-ghost" id="remoteCopyLogsBtn" type="button" style="font-size: 11px; padding: 2px 8px;" title="Copier les logs de la console">📋 Copier</button>
-                  <button class="btn btn-ghost" id="remoteClearConsoleBtn" type="button" style="font-size: 11px; padding: 2px 8px;" title="Effacer la console">🧹 Effacer</button>
+                  <button class="btn btn-ghost" id="remoteCopyLogsBtn" type="button" style="font-size: 11px; padding: 2px 8px;" title="Copy console logs">Copy</button>
+                  <button class="btn btn-ghost" id="remoteClearConsoleBtn" type="button" style="font-size: 11px; padding: 2px 8px;" title="Clear console">Clear</button>
                 </div>
               </div>
-              <textarea id="remoteConsole" readonly style="flex: 1; width: 100%; min-height: 180px; background: #000; color: #0f0; font-family: monospace; font-size: 12px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); resize: none;"></textarea>
+              <textarea id="remoteConsole" readonly style="flex: 1; width: 100%; min-height: 180px; background: var(--bg-0); color: var(--text-1); font-family: var(--font-mono); font-size: 11.5px; padding: 10px; border-radius: var(--r-sm); border: 1px solid var(--border); resize: none;"></textarea>
             </div>
           </div>
 
@@ -247,23 +247,23 @@
           <div style="display: flex; flex-direction: column; gap: 20px;">
             <div class="settings-card" style="display:flex; flex-direction:column; align-items:center; padding: 24px;">
               <h3 style="margin-bottom: 16px;">Pairing QR Code</h3>
-              <div id="remoteQrContainer" style="background: white; padding: 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none;">
+              <div id="remoteQrContainer" style="background: white; padding: 16px; border-radius: var(--r-lg); box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none;">
                   <img id="remoteQrImage" width="220" height="220" />
               </div>
-              <div id="remoteQrPlaceholder" style="width: 220px; height: 220px; background: var(--bg-1); border: 2px dashed var(--border); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--text-2);">
+              <div id="remoteQrPlaceholder" style="width: 220px; height: 220px; background: var(--bg-1); border: 2px dashed var(--border); border-radius: var(--r-lg); display: flex; align-items: center; justify-content: center; color: var(--text-2);">
                   Server not running
               </div>
-              <p id="remoteStatusText" style="margin-top: 16px; font-family: monospace; color: var(--text-2); text-align: center; font-size: 12px;">Click 'Start' to host the remote proxy</p>
+              <p id="remoteStatusText" style="margin-top: 16px; font-family: var(--font-mono); color: var(--text-2); text-align: center; font-size: 11.5px;">Click 'Start' to host the remote proxy</p>
             </div>
 
             <!-- PIN Code Card -->
             <div class="settings-card" id="remotePinCard" style="display: flex; flex-direction: column; align-items: center; padding: 20px; text-align: center;">
-              <div style="font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px;">Code PIN d'Appairage Mobile</div>
-              <div id="remotePinDisplay" style="font-size: 28px; font-weight: 800; letter-spacing: 4px; font-family: monospace; color: var(--accent-blue, #38bdf8); margin: 10px 0;">
+              <div style="font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px;">Mobile Pairing PIN</div>
+              <div id="remotePinDisplay" style="font-size: 28px; font-weight: 800; letter-spacing: 4px; font-family: var(--font-mono); color: var(--accent-blue-bright); margin: 10px 0;">
                 ------
               </div>
               <p style="font-size: 11px; color: var(--text-2); margin: 0;">
-                Saisissez ce code à 6 chiffres sur votre mobile lors du premier appairage.
+                Enter this 6-digit code on your mobile companion during initial pairing.
               </p>
             </div>
         </div>
@@ -949,31 +949,31 @@
       </div>
     </section>
 
-    <!-- Status Bar (VS Code-style bottom bar) -->
+    <!-- Status Bar -->
     <footer class="statusbar" role="contentinfo">
       <div class="statusbar-section">
-        <span class="statusbar-item statusbar-item-branch" id="statusBranch">
-          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="6" r="2"/><path d="M6 5v14M6 11c4 0 6-2 6-5"/></svg>
-          <span>main</span>
+        <span class="statusbar-item" id="statusProxyPort" title="Local Proxy Host & Port">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span>127.0.0.1:51074</span>
         </span>
-        <span class="statusbar-item" id="statusSync">
-          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/></svg>
-          <span>Synced</span>
+        <span class="statusbar-item" id="statusLsState" title="Language Server Connection">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span id="statusLsText">Language Server: Connected</span>
         </span>
       </div>
       <div class="statusbar-section statusbar-section-right">
-        <span class="statusbar-item" id="statusTheme">
+        <button type="button" class="statusbar-item statusbar-btn" id="statusTheme" title="Toggle dark/light theme">
           <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           <span>Dark theme</span>
-        </span>
+        </button>
         <span class="statusbar-item" id="statusPlatform">
           <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           <span id="statusPlatformText">Desktop</span>
         </span>
-        <span class="statusbar-item" id="statusVersion">v1.0.0</span>
+        <span class="statusbar-item" id="statusVersion">v3.4.2</span>
       </div>
     </footer>
-  </main>
+  </div>
 
   <!-- Toast container -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>

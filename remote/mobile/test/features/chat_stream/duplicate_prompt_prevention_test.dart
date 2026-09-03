@@ -1,10 +1,11 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/protocol/daemon_api.dart';
 import 'package:mobile/features/chat_stream/chat_stream_screen.dart';
+import 'package:mobile/widgets/markdown_bubble.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -21,10 +22,14 @@ void main() {
         final map = d as Map<String, dynamic>;
         out.add(map);
         final reqId = map['requestId'] as String?;
-        if (reqId != null) {
+        final type = map['type'] as String?;
+        if (reqId != null && type != 'send_prompt') {
           scheduleMicrotask(() {
             if (!ctrl.isClosed) {
-              ctrl.add(jsonEncode({'requestId': reqId, 'data': {'messages': []}}));
+              ctrl.add(jsonEncode({
+                'requestId': reqId,
+                'data': type == 'get_session_history' ? {'messages': []} : {},
+              }));
             }
           });
         }
@@ -65,8 +70,12 @@ void main() {
     }));
     await tester.pump(const Duration(milliseconds: 100));
 
-    // Verifier que 'hi' n'apparait qu'une seule fois dans la liste des messages
-    expect(find.text('hi'), findsOneWidget);
+    // Faire défiler vers le haut pour révéler la bulle utilisateur
+    await tester.drag(find.byKey(const PageStorageKey('chat_list_session-new-1')), const Offset(0, 300));
+    await tester.pump();
+
+    // Verifier que la bulle 'hi' existe et n'est présente qu'une seule fois
+    expect(find.widgetWithText(MarkdownBubble, 'hi'), findsOneWidget);
 
     // Emettre stream_delta
     ctrl.add(jsonEncode({
@@ -81,8 +90,21 @@ void main() {
     }));
     await tester.pump(const Duration(milliseconds: 100));
 
-    // Verifier toujours un seul 'hi' et la reponse
-    expect(find.text('hi'), findsOneWidget);
-    expect(find.text('Hello! How can I help you today?'), findsOneWidget);
+    // Verifier que 'hi' est toujours unique
+    expect(find.widgetWithText(MarkdownBubble, 'hi'), findsOneWidget);
+
+    // Faire défiler vers le bas pour révéler la réponse assistante
+    await tester.drag(find.byKey(const PageStorageKey('chat_list_session-new-1')), const Offset(0, -300));
+    await tester.pump();
+    expect(find.widgetWithText(MarkdownBubble, 'Hello! How can I help you today?'), findsOneWidget);
+
+    // Emettre stream_end pour terminer proprement le stream
+    ctrl.add(jsonEncode({
+      'type': 'stream_end',
+      'requestId': reqId,
+      'cascadeId': 'session-new-1',
+    }));
+    await tester.pump(const Duration(milliseconds: 100));
+    await ctrl.close();
   });
 }

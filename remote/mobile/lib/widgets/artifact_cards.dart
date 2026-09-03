@@ -71,24 +71,28 @@ class ImplementationPlanCard extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: isDark ? AppColors.accentSubtle : scheme.primaryContainer,
+                        color: isDark ? AppColors.accentSubtle : scheme.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(AppRadius.xs),
                         border: Border.all(
-                          color: scheme.primary.withValues(alpha: 0.5),
+                          color: (isDark ? AppColors.accentBlue : scheme.primary).withValues(alpha: 0.4),
                           width: 0.8,
                         ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.play_arrow_rounded, size: 13, color: scheme.primary),
+                          Icon(
+                            Icons.play_arrow_rounded,
+                            size: 13,
+                            color: isDark ? AppColors.accentBlue : scheme.primary,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             'Proceed',
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w600,
-                              color: scheme.primary,
+                              color: isDark ? AppColors.accentBlue : scheme.primary,
                             ),
                           ),
                         ],

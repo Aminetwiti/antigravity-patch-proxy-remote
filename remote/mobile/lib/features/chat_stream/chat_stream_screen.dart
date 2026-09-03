@@ -1763,9 +1763,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         // et que l'utilisateur N'EST PAS sur cette session au premier plan, notifier la fin définitive.
         final targetCId = eventCascadeId.isNotEmpty ? eventCascadeId : widget.activeSessionId;
         final isViewingThisSessionInForeground = _appInForeground && targetCId == widget.activeSessionId;
+        final hasSubagents = (_sessionSubagents[targetCId] ?? []).any((sa) => sa.status.toLowerCase() == 'running');
         if (!isViewingThisSessionInForeground &&
             _runningBackgroundTasks.isEmpty &&
             !_hasCurrentActiveStream &&
+            !hasSubagents &&
             !(_sessionApprovals[targetCId]?.isNotEmpty ?? false) &&
             !_sessionQuestions.containsKey(targetCId)) {
           ApprovalNotifier.instance.notifyTaskEnded(
@@ -3189,18 +3191,14 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               ],
             ),
           ),
-          Flexible(
-            fit: FlexFit.loose,
-            child: _buildApprovalArea(hasKeyboard),
-          ),
+          if (_currentSessionQuestions.isNotEmpty || _currentSessionApprovals.isNotEmpty)
+            _buildApprovalArea(hasKeyboard),
           if (_sideQuestion != null ||
               _runningBackgroundTasks.isNotEmpty ||
               _subagents.isNotEmpty ||
               (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
               _topActiveBanner != null)
-            Flexible(
-              fit: FlexFit.loose,
-              child: ConstrainedBox(
+            ConstrainedBox(
                 constraints: BoxConstraints(maxHeight: hasKeyboard ? 110 : 200),
                 child: SingleChildScrollView(
                   child: Column(
@@ -3227,8 +3225,11 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                             }
                           },
                         ),
-                      if (_subagents.isNotEmpty)
+                      // Seuls les sous-agents en cours d'exécution sont affichés dans la conversation
+                      // Dès qu'un sous-agent se termine, il disparaît de ce bandeau (libérant l'espace vertical)
+                      if (_subagents.any((s) => s.status.toLowerCase() == 'running'))
                         SubagentTreeCard(
+                          onlyRunning: true,
                           subagents: _subagents,
                           projectName: widget.activeProjectName,
                           sessionTitle: widget.activeSessionTitle,
@@ -3269,8 +3270,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                   ),
                 ),
               ),
-            ),
-          if (isCurrentSessionArchived)
+          if (isCurrentSessionArchived && !_hasCurrentActiveStream && _activeStreamCount == 0)
             _buildArchivedChatBar(scheme, Theme.of(context).brightness == Brightness.dark)
           else
             ChatInputBar(
@@ -3674,6 +3674,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 onLocalFile: _openLocalFile,
                 onOpenArtifact: _openArtifactByName,
                 isThoughtExpanded: _expandedThoughts.contains(msg.id),
+                isWaitingForTask: isLatest && _runningBackgroundTasks.isNotEmpty,
                 onToggleThought: () => setState(() {
                   if (_expandedThoughts.contains(msg.id)) {
                     _expandedThoughts.remove(msg.id);
@@ -4670,6 +4671,7 @@ class _MessageBubble extends StatelessWidget {
   final ValueChanged<String>? onOpenArtifact;
   final ValueChanged<ChatMessage>? onRevertStep;
   final VoidCallback? onRetryTask;
+  final bool isWaitingForTask;
 
   const _MessageBubble({
     super.key,
@@ -4679,6 +4681,7 @@ class _MessageBubble extends StatelessWidget {
     this.onLocalFile,
     this.onOpenArtifact,
     this.isThoughtExpanded = false,
+    this.isWaitingForTask = false,
     this.onToggleThought,
     this.onProceedPlan,
     this.onViewPlan,
@@ -4953,6 +4956,7 @@ class _MessageBubble extends StatelessWidget {
                     thoughtText: message.segments[segIdx].content,
                     isStreaming: message.isStreaming &&
                         (segIdx == message.segments.length - 1 || message.segments[segIdx].isRunning),
+                    isWaitingForTask: isWaitingForTask && message.isStreaming,
                     modelLabel: message.modelLabel,
                     initiallyExpanded: isThoughtExpanded,
                     onToggleExpand: onToggleThought,
@@ -5018,6 +5022,7 @@ class _MessageBubble extends StatelessWidget {
                   messageId: message.id,
                   thoughtText: message.thought,
                   isStreaming: message.isStreaming,
+                  isWaitingForTask: isWaitingForTask && message.isStreaming,
                   modelLabel: message.modelLabel,
                   initiallyExpanded: isThoughtExpanded,
                   onToggleExpand: onToggleThought,

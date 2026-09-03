@@ -188,6 +188,7 @@
   width: 100%;
   position: relative;
   z-index: 100;
+  contain: layout style;
 }
 .smart-banner {
   display: flex;
@@ -270,6 +271,9 @@
 .agy-showcase-status { padding:3px 8px; border-radius:4px; background:rgba(255,138,0,.14); color:#ffa657; font-weight:500; font-family:var(--font-mono); font-size:10.5px; }
 .agy-showcase-card-inner { padding:16px; }
 .agy-showcase-raw { padding:8px 14px; background:rgba(0,0,0,.25); border-top:1px solid var(--border-subtle); font-family:var(--font-mono); font-size:11px; color:var(--text-2); white-space:pre-wrap; word-break:break-all; }
-.agy-filter-chip { font-size:11px; padding:4px 10px; border-radius:14px; }
 .agy-filter-chip.active { background:var(--accent-blue); color:white; border-color:var(--accent-blue); }
 .agy-filter-chip.active:hover { background:var(--accent-blue-bright); }
+
+:root[data-theme="light"] .agy-showcase-badge { color: #6b21a8; background: rgba(107, 33, 168, 0.12); }
+:root[data-theme="light"] .agy-showcase-provider { color: #1d4ed8; background: rgba(29, 78, 216, 0.12); }
+:root[data-theme="light"] .agy-showcase-status { color: #c2410c; background: rgba(194, 65, 12, 0.12); }

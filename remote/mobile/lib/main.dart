@@ -1443,6 +1443,9 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       extendBodyBehindAppBar: false,
       drawer: isWideScreen ? null : sidebar,
       endDrawer: isUltraWide ? null : contextDrawer,
+      drawerScrimColor: isDark
+          ? Colors.black.withValues(alpha: 0.75)
+          : Colors.black.withValues(alpha: 0.65),
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
@@ -1532,30 +1535,46 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: isConnected ? AppColors.positive : AppColors.danger,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
                         ValueListenableBuilder<int?>(
                           valueListenable: _wsClient.latencyMsNotifier,
                           builder: (context, latency, _) {
                             final label = isConnected
                                 ? (latency != null ? '${latency}ms' : 'Connecté')
                                 : 'Hors ligne';
-                            return Text(
-                              label,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: isConnected ? AppColors.positive : AppColors.danger,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            // P2: 3-tier latency color thresholds
+                            final Color badgeColor;
+                            if (!isConnected) {
+                              badgeColor = AppColors.danger;
+                            } else if (latency == null || latency < 250) {
+                              badgeColor = AppColors.positive;
+                            } else if (latency < 500) {
+                              badgeColor = AppColors.warning;
+                            } else {
+                              badgeColor = AppColors.danger;
+                            }
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: badgeColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  label,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: badgeColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             );
                           },
                         ),

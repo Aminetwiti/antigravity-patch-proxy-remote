@@ -94,22 +94,22 @@ class ModelCatalog {
   /// Standard Antigravity 2.0 built-in models (source of truth from Antigravity IDE UI).
   static const List<AntigravityModel> standardModels = [
     AntigravityModel(
-      id: 'gemini-3.7-flash',
-      displayName: 'Gemini 3.7 Flash High',
-      tag: 'Fast',
-      effort: 'High',
-      modelEnum: 312,
-    ),
-    AntigravityModel(
-      id: 'gemini-3.6-flash',
-      displayName: 'Gemini 3.6 Flash Medium',
+      id: 'gemini-3.8-flash',
+      displayName: 'Gemini 3.8 Flash Medium',
       tag: 'Fast',
       effort: 'Medium',
       modelEnum: 312,
     ),
     AntigravityModel(
-      id: 'gemini-3.5-flash',
-      displayName: 'Gemini 3.5 Flash Medium',
+      id: 'gemini-3.7-flash',
+      displayName: 'Gemini 3.7 Flash Medium',
+      tag: 'Fast',
+      effort: 'Medium',
+      modelEnum: 312,
+    ),
+    AntigravityModel(
+      id: 'gemini-3.6-flash',
+      displayName: 'Gemini 3.6 Flash Medium',
       tag: 'Fast',
       effort: 'Medium',
       modelEnum: 312,
@@ -145,9 +145,9 @@ class ModelCatalog {
   /// Default model when opening a fresh session.
   static const AntigravityModel defaultModel = AntigravityModel(
     id: 'gemini-3.7-flash',
-    displayName: 'Gemini 3.7 Flash High',
+    displayName: 'Gemini 3.7 Flash Medium',
     tag: 'Fast',
-    effort: 'High',
+    effort: 'Medium',
     modelEnum: 312,
   );
 

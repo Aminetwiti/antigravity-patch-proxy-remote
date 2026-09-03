@@ -6,6 +6,10 @@ import '../../../widgets/md3_spinner.dart';
 import '../../../widgets/antigravity_spinning_arc.dart';
 import '../../../widgets/antigravity_dot_pulse_loader.dart';
 import '../../../widgets/resolved_ask_question_card.dart';
+import '../../../widgets/wave_pulse_indicator.dart';
+
+/// Strip raw markdown bold markers (`**`) and leading `Task:` prefix from step titles.
+String _cleanStepTitle(String raw) => raw.replaceAll('**', '').replaceFirst(RegExp(r'^Task:\s*', caseSensitive: false), '').trim();
 
 /// Type d'étape d'exécution fidèle à Antigravity 2.0 Desktop.
 enum ExecutionStepType {
@@ -73,6 +77,8 @@ class ExecutionProgressView extends StatefulWidget {
   final String? messageId;
   final String? thoughtText;
   final bool isStreaming;
+  final bool isWaitingForTask;
+  final String? statusTitle;
   final String? modelLabel;
   final VoidCallback? onToggleExpand;
   final VoidCallback? onStop;
@@ -84,6 +90,8 @@ class ExecutionProgressView extends StatefulWidget {
     this.messageId,
     this.thoughtText,
     this.isStreaming = false,
+    this.isWaitingForTask = false,
+    this.statusTitle,
     this.modelLabel,
     this.onToggleExpand,
     this.onStop,
@@ -825,7 +833,9 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
       ),
       child: Row(
         children: [
-          if (widget.isStreaming)
+          if (widget.isWaitingForTask)
+            const WavePulseIndicator(width: 16, height: 14)
+          else if (widget.isStreaming)
             const AntigravitySpinningArc(size: 13, color: AppColors.accentBlueBright)
           else
             _buildPulsingDot(),
@@ -835,7 +845,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
               children: [
                 Flexible(
                   child: Text(
-                    'Agent en cours d\'exécution',
+                    widget.statusTitle ??
+                        (widget.isWaitingForTask
+                            ? 'Waiting for background task...'
+                            : 'Agent en cours d\'exécution'),
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
@@ -1340,9 +1353,9 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                   if (item.action.isNotEmpty) ...[
                     Text(
                       item.action,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AppColors.inkSecondary,
+                        color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                         fontWeight: FontWeight.w400,
                       ),
                     ),
@@ -1441,8 +1454,8 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       children: [
                         Text(
                           isExpanded && item.rawDetail != null && !isThoughtType && item.type != ExecutionStepType.timer && !item.title.toLowerCase().startsWith('error')
-                              ? item.rawDetail!
-                              : item.title,
+                              ? _cleanStepTitle(item.rawDetail!)
+                              : _cleanStepTitle(item.title),
                           key: (isFirstThought && isThoughtType && widget.messageId != null)
                               ? Key('thought-${widget.messageId}')
                               : null,
@@ -1461,10 +1474,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                             color: item.title.toLowerCase().startsWith('error')
                                 ? AppColors.danger
                                 : (isThoughtType
-                                    ? AppColors.inkSecondary
+                                    ? (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant)
                                     : (item.type == ExecutionStepType.taskFinished
-                                        ? AppColors.inkSecondary
-                                        : AppColors.inkPrimary)),
+                                        ? (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant)
+                                        : (isDark ? AppColors.inkPrimary : scheme.onSurface))),
                           ),
                         ),
                         if (item.consolePrompt != null && item.title.toLowerCase().startsWith('error')) ...[
@@ -1671,7 +1684,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                                     ? 'monospace'
                                                     : null,
                                                 fontWeight: FontWeight.w500,
-                                                color: AppColors.inkPrimary,
+                                                color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                                               ),
                                             ),
                                           ),
@@ -1679,10 +1692,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                             const SizedBox(width: 5),
                                             Text(
                                               sub.lineRange!,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 11,
                                                 fontFamily: 'monospace',
-                                                color: AppColors.inkMuted,
+                                                color: isDark ? AppColors.inkMuted : scheme.outline,
                                               ),
                                             ),
                                           ],
@@ -1700,11 +1713,11 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                               ),
                                               child: Text(
                                                 sub.diffAdded!,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 10.5,
                                                   fontFamily: 'monospace',
                                                   fontWeight: FontWeight.w500,
-                                                  color: AppColors.inkSecondary,
+                                                  color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                                                 ),
                                               ),
                                             ),

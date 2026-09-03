@@ -45,9 +45,9 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
   final String _claude5HourRefresh = 'in 4 hours, 2 minutes';
 
   final List<String> _models = [
+    'Gemini 3.8 Flash Medium',
     'Gemini 3.7 Flash Medium',
     'Gemini 3.6 Flash Medium',
-    'Gemini 3.5 Flash Medium',
     'Gemini 3.1 Pro Low',
     'Claude Sonnet 4.6 (Thinking)',
     'Claude Opus 4.6 (Thinking)',

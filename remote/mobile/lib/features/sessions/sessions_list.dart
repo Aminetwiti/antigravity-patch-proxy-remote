@@ -1456,9 +1456,8 @@ class _SessionRowItemState extends State<_SessionRowItem> {
     final isWaiting = widget.session.isWaiting;
     final isRunning = widget.session.isRunning && !isWaiting;
     final isUnread = (widget.isUnread || widget.session.hasUnread) && !isSelected && !isRunning && !isWaiting;
-    final rawTitle = widget.session.title.trim().isNotEmpty
-        ? widget.session.title.trim()
-        : 'Nouvelle conversation';
+    final cleaned = widget.session.title.trim().replaceAll('**', '').replaceFirst(RegExp(r'^Task:\s*', caseSensitive: false), '').trim();
+    final rawTitle = cleaned.isNotEmpty ? cleaned : 'Nouvelle conversation';
     // Point 9 : remplacer [nom](url) par @nom propre
     final displayTitle = rawTitle.contains('[')
         ? rawTitle.replaceAllMapped(

@@ -879,7 +879,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
             // ── Boutons d'action : Refuser & Approuver
             LayoutBuilder(
               builder: (context, btnConstraints) {
-                final isCompact = btnConstraints.maxWidth < 290;
+                final isCompact = btnConstraints.maxWidth < 300;
                 return Row(
                   children: [
                     // Bouton Refuser
@@ -898,7 +898,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                         side: BorderSide(
                           color: isDark ? AppColors.borderStrong : scheme.outlineVariant,
                         ),
-                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 18, vertical: 10),
+                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 8 : 18, vertical: 10),
                         minimumSize: const Size(0, 44),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -928,7 +928,7 @@ class _ToolApprovalCardState extends State<ToolApprovalCard> {
                             ? (isDark ? AppColors.danger : scheme.error)
                             : (isDark ? AppColors.wizardAccent : scheme.primary),
                         foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 18, vertical: 10),
+                        padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 18, vertical: 10),
                         minimumSize: const Size(0, 44),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(AppRadius.sm),

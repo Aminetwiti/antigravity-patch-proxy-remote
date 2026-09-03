@@ -96,7 +96,7 @@ export class ExecutionFeedRenderer {
     }
 
     let html = `
-      <div class="execution-step-row ${isExpandable ? 'is-expandable' : ''}" data-step-id="${this.escape(step.id)}">
+      <div class="execution-step-row ${isExpandable ? 'is-expandable' : ''}" data-step-id="${this.escape(step.id)}" ${isExpandable ? `role="button" tabindex="0" aria-expanded="${!step.isCollapsed}"` : ''}>
         ${this.renderIcon(step.type)}
         ${verb}
         <span class="${titleClass}">${this.escape(step.title)}</span>
@@ -138,7 +138,7 @@ export class ExecutionFeedRenderer {
     if (!isStreaming && options.steps.length > 0) {
       const fileEdits = options.steps.filter(s => s.type === 'fileEdit').length;
       summaryHeader = `
-        <div class="execution-summary-bar" id="executionSummaryBar">
+        <div class="execution-summary-bar" id="executionSummaryBar" role="button" tabindex="0" aria-expanded="${!isSummaryCollapsed}">
           <span class="execution-step-icon thought">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="18" x2="15" y2="18"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>
           </span>
@@ -176,29 +176,51 @@ export class ExecutionFeedRenderer {
   }
 
   public attachInteractiveListeners(container: HTMLElement): void {
-    const summaryBar = container.querySelector('#executionSummaryBar');
+    const summaryBar = container.querySelector('#executionSummaryBar') as HTMLElement | null;
     const timelineList = container.querySelector('#executionTimelineList') as HTMLElement | null;
     if (summaryBar && timelineList) {
-      summaryBar.addEventListener('click', () => {
+      const toggleSummary = () => {
         const isHidden = timelineList.style.display === 'none';
         timelineList.style.display = isHidden ? 'flex' : 'none';
+        summaryBar.setAttribute('aria-expanded', String(isHidden));
+      };
+      summaryBar.addEventListener('click', toggleSummary);
+      summaryBar.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleSummary();
+        }
       });
     }
 
     const expandableRows = container.querySelectorAll('.execution-step-row.is-expandable');
     expandableRows.forEach(row => {
-      row.addEventListener('click', () => {
+      const toggleRow = () => {
         const stepId = row.getAttribute('data-step-id');
         if (!stepId) return;
 
+        let isExpanded = false;
         const subitems = container.querySelector(`#subitems-${stepId}`) as HTMLElement | null;
         if (subitems) {
-          subitems.style.display = subitems.style.display === 'none' ? 'flex' : 'none';
+          const show = subitems.style.display === 'none';
+          subitems.style.display = show ? 'flex' : 'none';
+          isExpanded = show;
         }
 
         const term = container.querySelector(`#term-${stepId}`) as HTMLElement | null;
         if (term) {
-          term.style.display = term.style.display === 'none' ? 'block' : 'none';
+          const show = term.style.display === 'none';
+          term.style.display = show ? 'block' : 'none';
+          isExpanded = show;
+        }
+        row.setAttribute('aria-expanded', String(isExpanded));
+      };
+      row.addEventListener('click', toggleRow);
+      row.addEventListener('keydown', (e: Event) => {
+        const ke = e as KeyboardEvent;
+        if (ke.key === 'Enter' || ke.key === ' ') {
+          ke.preventDefault();
+          toggleRow();
         }
       });
     });

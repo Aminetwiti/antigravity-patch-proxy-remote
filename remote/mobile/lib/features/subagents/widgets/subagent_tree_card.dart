@@ -15,6 +15,7 @@ class SubagentTreeCard extends StatefulWidget {
   final VoidCallback? onOpenFullTree;
   final ValueChanged<SubagentItem>? onSelectSubagent;
   final bool initiallyExpanded;
+  final bool onlyRunning;
 
   const SubagentTreeCard({
     super.key,
@@ -25,6 +26,7 @@ class SubagentTreeCard extends StatefulWidget {
     this.onOpenFullTree,
     this.onSelectSubagent,
     this.initiallyExpanded = false,
+    this.onlyRunning = false,
   });
 
   @override
@@ -49,12 +51,19 @@ class _SubagentTreeCardState extends State<SubagentTreeCard> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.subagents.isEmpty) return const SizedBox.shrink();
+    // Si onlyRunning est activé, on ne conserve que les sous-agents en cours d'exécution
+    final displaySubagents = widget.onlyRunning
+        ? widget.subagents
+            .where((s) => s.status.toLowerCase() == 'running')
+            .toList()
+        : widget.subagents;
+
+    if (displaySubagents.isEmpty) return const SizedBox.shrink();
 
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final count = widget.subagents.length;
-    final runningCount = widget.subagents
+    final count = displaySubagents.length;
+    final runningCount = displaySubagents
         .where((s) => s.status.toLowerCase() == 'running')
         .length;
     final statusText = runningCount > 0
@@ -204,7 +213,7 @@ class _SubagentTreeCardState extends State<SubagentTreeCard> {
                                   )
                                 : const NeverScrollableScrollPhysics(),
                             padding: const EdgeInsets.symmetric(vertical: 4),
-                            itemCount: widget.subagents.length,
+                            itemCount: displaySubagents.length,
                             separatorBuilder: (_, __) => Divider(
                               height: 1,
                               thickness: 1,
@@ -213,7 +222,7 @@ class _SubagentTreeCardState extends State<SubagentTreeCard> {
                                   : scheme.outlineVariant.withValues(alpha: 0.2),
                             ),
                             itemBuilder: (context, index) {
-                              final subagent = widget.subagents[index];
+                              final subagent = displaySubagents[index];
                               final isRunning =
                                   subagent.status.toLowerCase() == 'running';
                               final isErrored =

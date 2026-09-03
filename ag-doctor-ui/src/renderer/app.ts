@@ -1767,18 +1767,6 @@ autoSentinelToggle?.addEventListener('change', () => {
   }
 });
 
-
-// Impeccable Hover Glow effect for model cards
-document.getElementById('modelsList')?.addEventListener('mousemove', (e) => {
-  const card = (e.target as HTMLElement).closest('.model-card') as HTMLElement;
-  if (!card) return;
-  const rect = card.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  card.style.setProperty('--mouse-x', `${x}px`);
-  card.style.setProperty('--mouse-y', `${y}px`);
-});
-
 // Bulk Actions on Models Page
 
 // Handle individual checkbox clicks

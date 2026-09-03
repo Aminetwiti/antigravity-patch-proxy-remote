@@ -20,7 +20,7 @@ void main() {
       final models = ModelCatalog.standardModels;
       expect(models.any((m) => m.displayName.contains('Gemini 3.7 Flash')), isTrue);
       expect(models.any((m) => m.displayName.contains('Gemini 3.6 Flash')), isTrue);
-      expect(models.any((m) => m.displayName.contains('Gemini 3.5 Flash')), isTrue);
+      expect(models.any((m) => m.displayName.contains('Gemini 3.8 Flash')), isTrue);
       expect(models.any((m) => m.displayName.contains('Gemini 3.1 Pro')), isTrue);
       expect(models.any((m) => m.displayName.contains('Claude Sonnet 4.6')), isTrue);
       expect(models.any((m) => m.displayName.contains('Claude Opus 4.6')), isTrue);
