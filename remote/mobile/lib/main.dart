@@ -71,7 +71,7 @@ class AntigravityRemoteApp extends StatefulWidget {
 }
 
 class _AntigravityRemoteAppState extends State<AntigravityRemoteApp> {
-  int _themeModeIndex = 2; // 0: system, 1: light, 2: dark — AG2.0 dark-first
+  int _themeModeIndex = 0; // 0: system, 1: light, 2: dark — system-first prevents FOUC
 
   @override
   void initState() {
@@ -83,7 +83,7 @@ class _AntigravityRemoteAppState extends State<AntigravityRemoteApp> {
     try {
       final s = await SettingsStore.load();
       if (!mounted) return;
-      setState(() => _themeModeIndex = (s['themeMode'] as int?) ?? 2);
+      setState(() => _themeModeIndex = (s['themeMode'] as int?) ?? 0);
     } catch (_) {
       // Tests sans mock SharedPreferences : thème système par défaut.
     }
@@ -979,6 +979,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
                 _activeSessionTitle = target.title;
               }
             });
+            _api?.markSessionRead(id);
             _refreshContext();
             SettingsStore.saveSession(
               wsUrl: _wsClient.targetUrl,
@@ -1251,6 +1252,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
           final s = _sessions.firstWhere((s) => s.id == id, orElse: () => const CascadeSession(id: '', workspacePath: '', title: 'Session', status: '', time: ''));
           _activeSessionTitle = s.title;
         });
+        _api?.markSessionRead(id);
         _refreshContext();
         SettingsStore.saveSession(
           wsUrl: _wsClient.targetUrl,

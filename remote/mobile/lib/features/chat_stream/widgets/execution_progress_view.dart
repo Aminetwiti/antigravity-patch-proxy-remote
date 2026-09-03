@@ -1084,13 +1084,13 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.unfold_more, size: 12, color: AppColors.inkSecondary),
+                        Icon(Icons.unfold_more, size: 12, color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
                         const SizedBox(width: 4),
                         Text(
                           '+ $hiddenCount more steps',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: AppColors.inkSecondary,
+                            color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -1108,18 +1108,18 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                     setState(() => _showAllSteps = false);
                   },
                   borderRadius: BorderRadius.circular(4),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.unfold_less, size: 12, color: AppColors.inkSecondary),
-                        SizedBox(width: 4),
+                        Icon(Icons.unfold_less, size: 12, color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
+                        const SizedBox(width: 4),
                         Text(
                           'Show fewer steps',
                           style: TextStyle(
                             fontSize: 11,
-                            color: AppColors.inkSecondary,
+                            color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -1523,11 +1523,11 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       ),
                       child: Text(
                         item.diffAdded!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10.5,
                           fontFamily: 'monospace',
                           fontWeight: FontWeight.w500,
-                          color: AppColors.inkSecondary,
+                          color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -1628,9 +1628,9 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                           if (sub.action.isNotEmpty) ...[
                                             Text(
                                               sub.action,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 12,
-                                                color: AppColors.inkSecondary,
+                                                color: isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant,
                                                 fontWeight: FontWeight.w400,
                                               ),
                                             ),
@@ -1778,10 +1778,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                               padding: const EdgeInsets.only(bottom: 6),
                                               child: SelectableText(
                                                 sub.consolePrompt!,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 11,
                                                   fontFamily: 'monospace',
-                                                  color: AppColors.inkMuted,
+                                                  color: isDark ? AppColors.inkMuted : scheme.outline,
                                                   height: 1.35,
                                                 ),
                                               ),
@@ -1789,10 +1789,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                                           if (sub.consoleOutput != null && sub.consoleOutput!.isNotEmpty)
                                             SelectableText(
                                               sub.consoleOutput!,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 11.5,
                                                 fontFamily: 'monospace',
-                                                color: AppColors.inkPrimary,
+                                                color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                                                 height: 1.35,
                                               ),
                                             ),
@@ -1884,9 +1884,12 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
               margin: const EdgeInsets.only(top: 4, bottom: 4),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: AppColors.executionTerminalBg,
+                color: isDark ? AppColors.executionTerminalBg : scheme.surfaceContainerHighest.withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AppColors.borderSubtle, width: 0.8),
+                border: Border.all(
+                  color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.5),
+                  width: 0.8,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1896,10 +1899,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       padding: const EdgeInsets.only(bottom: 6),
                       child: SelectableText(
                         item.consolePrompt!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontFamily: 'monospace',
-                          color: AppColors.inkMuted,
+                          color: isDark ? AppColors.inkMuted : scheme.outline,
                           height: 1.35,
                         ),
                       ),
@@ -1907,10 +1910,10 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                   if (item.consoleOutput != null && item.consoleOutput!.isNotEmpty)
                     SelectableText(
                       item.consoleOutput!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         fontFamily: 'monospace',
-                        color: AppColors.inkPrimary,
+                        color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                         height: 1.35,
                       ),
                     ),
@@ -1940,14 +1943,14 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
                         item.thoughtTitle!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.inkPrimary,
+                          color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                         ),
                       ),
                     ),
-                  _buildFormattedThoughtText(item.rawDetail!),
+                  _buildFormattedThoughtText(item.rawDetail!, isDark, scheme),
                 ],
               ),
             ),
@@ -1957,7 +1960,7 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
   }
 
   /// Builds thought text with subtle syntax highlighting on code tokens (gold/amber)
-  Widget _buildFormattedThoughtText(String text) {
+  Widget _buildFormattedThoughtText(String text, bool isDark, ColorScheme scheme) {
     final spans = <InlineSpan>[];
     final words = text.split(' ');
 
@@ -1974,20 +1977,20 @@ class _ExecutionProgressViewState extends State<ExecutionProgressView>
         final clean = word.replaceAll('`', '');
         spans.add(TextSpan(
           text: '$clean ',
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'monospace',
             fontSize: 11.5,
             fontWeight: FontWeight.w500,
-            color: AppColors.warning, // Antigravity 2.0 Gold token
+            color: isDark ? AppColors.warning : const Color(0xFFB45309), // Amber-700 for WCAG AA in light mode
           ),
         ));
       } else {
         spans.add(TextSpan(
           text: '$word ',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
             height: 1.45,
-            color: AppColors.inkPrimary,
+            color: isDark ? AppColors.inkPrimary : scheme.onSurface,
           ),
         ));
       }

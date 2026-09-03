@@ -118,8 +118,62 @@ void main() {
 
       expect(find.text('Background Task Output'), findsOneWidget);
       expect(find.byIcon(Icons.copy_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.stop_circle_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('adapts colors correctly in Light Mode (no dark sheet or white text leak)', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.light(),
+          home: const Scaffold(
+            body: BackgroundTaskOutputSheet(
+              taskId: 'task-light',
+              command: 'git status',
+              initialOutput: 'On branch main',
+              status: 'running',
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Vérifier que le texte de la commande n'est pas blanc mais onSurface
+      final commandText = tester.widget<Text>(find.text('git status'));
+      expect(commandText.style?.color, isNot(equals(const Color(0xFFF1F1F1))));
+
+      // Vérifier que le titre secondaire n'est pas blanc
+      final titleText = tester.widget<Text>(find.text('Background Task Output'));
+      expect(titleText.style?.color, isNot(equals(const Color(0xFFF1F1F1))));
+
+      // Vérifier que le contenu des logs est lisible
+      final logText = tester.widget<Text>(find.text('On branch main'));
+      expect(logText.style?.color, isNot(equals(const Color(0xFFF1F1F1))));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('adapts colors correctly in Dark Mode (Quiet Console zinc tokens)', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: const Scaffold(
+            body: BackgroundTaskOutputSheet(
+              taskId: 'task-dark',
+              command: 'npm test',
+              initialOutput: 'Tests passing',
+              status: 'running',
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final commandText = tester.widget<Text>(find.text('npm test'));
+      expect(commandText.style?.color, equals(const Color(0xFFF1F1F1)));
+
+      final titleText = tester.widget<Text>(find.text('Background Task Output'));
+      expect(titleText.style?.color, equals(const Color(0xFFF1F1F1)));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     });

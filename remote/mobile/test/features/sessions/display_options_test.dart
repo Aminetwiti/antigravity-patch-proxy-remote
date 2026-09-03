@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/protocol/messages.dart';
 import 'package:mobile/features/sessions/display_options.dart';
 import 'package:mobile/features/sessions/sessions_list.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   group('Display Options Helpers', () {
@@ -219,6 +220,37 @@ void main() {
       expect(find.text('Streaming Session'), findsOneWidget);
       expect(find.text('Idle Session'), findsOneWidget);
       expect(find.byKey(const ValueKey('running')), findsOneWidget);
+    });
+
+    testWidgets('LeftSidebarDrawer loads persisted display options from SharedPreferences', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'session_group_by': SessionGroupBy.workspace.index,
+        'session_sort_by': SessionSortBy.alphabetical.index,
+        'session_subtitle': SessionSubtitle.worktree.index,
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            drawer: LeftSidebarDrawer(
+              sessions: const [],
+              activeSessionId: '',
+              isConnected: true,
+              onToggleConnection: () {},
+              onSessionSelected: (_) {},
+              onNewConversation: () {},
+            ),
+            body: const Center(child: Text('Content')),
+          ),
+        ),
+      );
+
+      final ScaffoldState state = tester.firstState(find.byType(Scaffold));
+      state.openDrawer();
+      await tester.pumpAndSettle();
+
+      // With SessionGroupBy.workspace, the section header text shows 'Workspaces' instead of 'Projects'
+      expect(find.text('Workspaces'), findsOneWidget);
     });
   });
 }

@@ -468,7 +468,7 @@ func TestCustomTitleAndUnreadSyncsToDisk(t *testing.T) {
 		t.Skip("UserHomeDir non disponible")
 	}
 
-	testID := fmt.Sprintf("test-unread-%d", time.Now().UnixNano())
+	testID := "feedface-0000-4000-8000-000000unread1"
 	annoDir := filepath.Join(home, ".gemini", "antigravity", "annotations")
 	_ = os.MkdirAll(annoDir, 0o755)
 	annoPath := filepath.Join(annoDir, testID+".pbtxt")
@@ -492,11 +492,17 @@ func TestCustomTitleAndUnreadSyncsToDisk(t *testing.T) {
 	}
 
 	// Démarre serveur de test gateway
-	srv, cleanup := setupTestServer(t)
-	defer cleanup()
+	ts, gw := newTestServerWithGW(&fakeRPCClient{})
+	defer ts.Close()
 
-	client := newTestClient(t, srv.URL)
-	defer client.close()
+	gw.mu.Lock()
+	gw.jetboxSummaries = map[string]connectrpc.JetboxSummary{
+		testID: {CascadeID: testID, Title: "Session Test", Status: "CASCADE_STATUS_READY"},
+	}
+	gw.mu.Unlock()
+
+	client := dialWS(t, "ws"+strings.TrimPrefix(ts.URL, "http")+"/ws")
+	defer client.conn.Close()
 
 	// Le mobile marque la session comme lue
 	client.send(t, map[string]string{

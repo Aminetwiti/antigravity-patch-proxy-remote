@@ -535,6 +535,12 @@ class DaemonApi {
   Future<Map<String, dynamic>> unpinCascade(String cascadeId) =>
       rpc('unpin_cascade', {'cascadeId': cascadeId, 'pinned': false});
 
+  Future<Map<String, dynamic>> markSessionRead(String cascadeId) =>
+      rpc('mark_read', {'cascadeId': cascadeId});
+
+  Future<Map<String, dynamic>> markSessionUnread(String cascadeId) =>
+      rpc('mark_unread', {'cascadeId': cascadeId});
+
   Future<Map<String, dynamic>> listFiles(String workspacePath) =>
       rpc('list_files', {'workspacePath': workspacePath});
 

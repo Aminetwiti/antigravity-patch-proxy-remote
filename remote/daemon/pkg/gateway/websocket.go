@@ -6933,6 +6933,14 @@ func executeShellCommand(dir, cmdStr string) (string, error) {
 	return outBuf.String(), nil
 }
 
+func cleanCmdString(s string) string {
+	s = strings.TrimSpace(s)
+	for len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
+}
+
 func extractCmdFromArgs(raw []byte) string {
 	if len(raw) == 0 {
 		return ""
@@ -6941,11 +6949,11 @@ func extractCmdFromArgs(raw []byte) string {
 	if json.Unmarshal(raw, &m) == nil {
 		for _, k := range []string{"CommandLine", "command_line", "command", "cmd", "CommandLineString"} {
 			if v, ok := m[k].(string); ok && v != "" {
-				return v
+				return cleanCmdString(v)
 			}
 		}
 	}
-	s := string(raw)
+	s := cleanCmdString(string(raw))
 	if len(s) > 80 {
 		s = s[:77] + "..."
 	}
@@ -7091,10 +7099,10 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 								}
 
 								// 2b. Tool Results
-								if entry.Type == "VIEW_FILE" || entry.Type == "RUN_COMMAND" || entry.Type == "GREP_SEARCH" || entry.Type == "FIND_BY_NAME" || entry.Type == "WRITE_TO_FILE" || entry.Type == "REPLACE_FILE_CONTENT" || entry.Type == "TOOL_RESULT" || strings.Contains(entry.Type, "BROWSER") {
+								if entry.Type == "VIEW_FILE" || entry.Type == "RUN_COMMAND" || entry.Type == "GREP_SEARCH" || entry.Type == "FIND_BY_NAME" || entry.Type == "WRITE_TO_FILE" || entry.Type == "REPLACE_FILE_CONTENT" || entry.Type == "TOOL_RESULT" || entry.Type == "GENERIC" || strings.Contains(entry.Type, "BROWSER") {
 									preview := entry.Content
 									kind := "tool_output"
-									if entry.Type == "RUN_COMMAND" {
+									if entry.Type == "RUN_COMMAND" || (entry.Type == "GENERIC" && (strings.Contains(preview, "command") || strings.Contains(preview, "exit code") || strings.Contains(preview, "Output:"))) {
 										kind = "runner_output"
 										s.runningTasks.appendOutput(fmt.Sprintf("%s-%d", cascadeID, entry.StepIndex), preview)
 										s.runningTasks.finishTask(fmt.Sprintf("%s-%d", cascadeID, entry.StepIndex), "completed")

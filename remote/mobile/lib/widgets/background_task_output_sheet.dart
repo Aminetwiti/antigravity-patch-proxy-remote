@@ -186,6 +186,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isRunning = _currentStatus == 'running';
     final outputText = _outputBuffer.toString();
@@ -200,18 +201,18 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
         outputText.contains('FAIL');
     final statusLabel = isRunning ? 'EN COURS' : (hasError ? 'ÉCHEC' : 'SUCCÈS');
     final statusColor = isRunning
-        ? AppColors.accentBlue
-        : (hasError ? AppColors.danger : AppColors.positive);
+        ? (isDark ? AppColors.accentBlue : scheme.primary)
+        : (hasError ? (isDark ? AppColors.danger : scheme.error) : (isDark ? AppColors.positive : const Color(0xFF15803D)));
 
     return SafeArea(
       top: false,
       child: Container(
         height: MediaQuery.of(context).size.height * 0.75,
         decoration: BoxDecoration(
-          color: isDark ? AppColors.surfaceBase : AppColors.surfaceInput,
+          color: isDark ? AppColors.surfaceBase : scheme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
           border: Border(
-            top: BorderSide(color: isDark ? AppColors.borderStrong : AppColors.borderSubtle, width: 1),
+            top: BorderSide(color: isDark ? AppColors.borderStrong : scheme.outlineVariant, width: 1),
           ),
         ),
         child: Column(
@@ -224,7 +225,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: isDark ? AppColors.borderStrong : AppColors.borderSubtle,
+                color: isDark ? AppColors.borderStrong : scheme.outlineVariant,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -240,13 +241,13 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: isDark ? AppColors.surfaceRaised : AppColors.surfaceBase,
+                      color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(color: isDark ? AppColors.borderStrong : AppColors.borderSubtle),
+                      border: Border.all(color: isDark ? AppColors.borderStrong : scheme.outlineVariant),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.terminal_rounded, size: 14, color: AppColors.accentBlue),
+                        Icon(Icons.terminal_rounded, size: 14, color: isDark ? AppColors.accentBlue : scheme.primary),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -255,7 +256,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               fontFamily: 'monospace',
-                              color: isDark ? AppColors.inkPrimary : Colors.black87,
+                              color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -263,12 +264,12 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                         ),
                         if (isRunning) ...[
                           const SizedBox(width: 8),
-                          const SizedBox(
+                          SizedBox(
                             width: 10,
                             height: 10,
                             child: CircularProgressIndicator(
                               strokeWidth: 1.5,
-                              color: AppColors.accentBlue,
+                              color: isDark ? AppColors.accentBlue : scheme.primary,
                             ),
                           ),
                         ],
@@ -285,7 +286,9 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                   padding: const EdgeInsets.all(6),
                   icon: Icon(_isSearching ? Icons.search_off_rounded : Icons.search_rounded, size: 16),
                   tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher dans les logs',
-                  color: _isSearching ? AppColors.accentBlue : (isDark ? AppColors.inkMuted : const Color(0xFF8B949E)),
+                  color: _isSearching
+                      ? (isDark ? AppColors.accentBlue : scheme.primary)
+                      : (isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
                   onPressed: () {
                     HapticFeedback.selectionClick();
                     setState(() {
@@ -305,7 +308,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                   padding: const EdgeInsets.all(6),
                   icon: const Icon(Icons.refresh_rounded, size: 16),
                   tooltip: 'Rafraîchir les logs',
-                  color: isDark ? AppColors.inkMuted : const Color(0xFF8B949E),
+                  color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
                   onPressed: () {
                     HapticFeedback.selectionClick();
                     _fetchLog();
@@ -319,7 +322,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                   padding: const EdgeInsets.all(6),
                   icon: const Icon(Icons.copy_rounded, size: 16),
                   tooltip: 'Copier la sortie',
-                  color: isDark ? AppColors.inkMuted : const Color(0xFF8B949E),
+                  color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: outputText));
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -337,7 +340,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                     visualDensity: VisualDensity.compact,
                     constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                     padding: const EdgeInsets.all(6),
-                    icon: const Icon(Icons.stop_circle_rounded, size: 18, color: AppColors.danger),
+                    icon: Icon(Icons.stop_circle_rounded, size: 18, color: isDark ? AppColors.danger : scheme.error),
                     tooltip: 'Arrêter la tâche',
                     onPressed: () {
                       HapticFeedback.mediumImpact();
@@ -354,7 +357,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                   padding: const EdgeInsets.all(6),
                   icon: const Icon(Icons.close_rounded, size: 18),
                   tooltip: 'Fermer',
-                  color: isDark ? AppColors.inkMuted : const Color(0xFF8B949E),
+                  color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant,
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -368,13 +371,13 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
-                  color: isDark ? AppColors.surfaceRaised : Colors.white,
+                  color: isDark ? AppColors.surfaceRaised : scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.accentBlue.withValues(alpha: 0.5)),
+                  border: Border.all(color: (isDark ? AppColors.accentBlue : scheme.primary).withValues(alpha: 0.5)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.search_rounded, size: 14, color: AppColors.accentBlue),
+                    Icon(Icons.search_rounded, size: 14, color: isDark ? AppColors.accentBlue : scheme.primary),
                     const SizedBox(width: 6),
                     Expanded(
                       child: TextField(
@@ -382,14 +385,14 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                         autofocus: true,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? AppColors.inkPrimary : Colors.black87,
+                          color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                         ),
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: 'Filtrer (error, FAIL, warning...)',
-                          hintStyle: TextStyle(fontSize: 12, color: AppColors.inkMuted),
+                          hintStyle: TextStyle(fontSize: 12, color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
                           border: InputBorder.none,
                           isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 6),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 6),
                         ),
                         onChanged: (val) {
                           setState(() {
@@ -401,7 +404,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                     if (_searchQuery.isNotEmpty)
                       Text(
                         '${lines.length} résultat${lines.length > 1 ? 's' : ''}',
-                        style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
+                        style: TextStyle(fontSize: 11, color: isDark ? AppColors.inkMuted : scheme.onSurfaceVariant),
                       ),
                   ],
                 ),
@@ -419,7 +422,7 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
-                      color: isDark ? AppColors.inkPrimary : Colors.black87,
+                      color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -444,14 +447,14 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
               ],
             ),
           ),
-          const Divider(height: 12, thickness: 1),
+          Divider(height: 12, thickness: 1, color: isDark ? AppColors.borderSubtle : scheme.outlineVariant),
 
           // Zone de console terminal avec numéros de lignes et bouton Reprendre
           Expanded(
             child: Stack(
               children: [
                 Container(
-                  color: isDark ? AppColors.executionTerminalBg : const Color(0xFF1E1E1E),
+                  color: isDark ? AppColors.executionTerminalBg : scheme.surfaceContainerLowest,
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: ListView.builder(
                     controller: _scrollController,
@@ -470,10 +473,10 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                               width: 38,
                               child: Text(
                                 '$lineNum',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
                                   fontFamily: 'monospace',
-                                  color: AppColors.inkMuted,
+                                  color: isDark ? AppColors.inkMuted : scheme.outline,
                                 ),
                                 textAlign: TextAlign.right,
                               ),
@@ -483,10 +486,10 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                             Expanded(
                               child: Text(
                                 lineContent,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11.5,
                                   fontFamily: 'monospace',
-                                  color: AppColors.inkPrimary,
+                                  color: isDark ? AppColors.inkPrimary : scheme.onSurface,
                                   height: 1.35,
                                 ),
                               ),
@@ -506,13 +509,13 @@ class _BackgroundTaskOutputSheetState extends State<BackgroundTaskOutputSheet> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: AppColors.accentBlue,
+                          color: isDark ? AppColors.accentBlue : scheme.primary,
                           borderRadius: BorderRadius.circular(AppRadius.pill),
-                          boxShadow: const [
+                          boxShadow: [
                             BoxShadow(
-                              color: Color(0x66000000),
+                              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.15),
                               blurRadius: 6,
-                              offset: Offset(0, 2),
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),

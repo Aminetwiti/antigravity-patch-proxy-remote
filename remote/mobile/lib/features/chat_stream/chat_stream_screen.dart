@@ -4415,10 +4415,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: scheme.onSurface),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Les tâches et sous-tâches de la session s\'afficheront ici.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
           ],
         ),

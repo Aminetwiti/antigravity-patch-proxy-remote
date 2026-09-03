@@ -66,7 +66,7 @@ class CascadeSession {
       worktree: json['worktree']?.toString(),
       projectId: json['projectId']?.toString(),
       stepCount: (json['stepCount'] as num?)?.toInt() ?? 0,
-      hasUnread: json['hasUnread'] == true,
+      hasUnread: json['hasUnread'] == true || json['markedAsUnread'] == true,
       isPinned: json['isPinned'] == true || json['pinned'] == true,
       isArchived: isArchivedVal,
       isIde: json['isIde'] == true || json['clientType'] == 'ide' || json['source'] == 'ide',

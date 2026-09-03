@@ -99,8 +99,9 @@ void main() {
       expect(grouped['Monorepo Root']?.map((s) => s.id).toList(), isNot(contains('s-mobile')));
       // s-backend -> Backend API
       expect(grouped['Backend API']?.map((s) => s.id).toList(), contains('s-backend'));
-      // s-other -> Conversations (pas de fausse correspondance avec monorepo)
-      expect(grouped['Conversations']?.map((s) => s.id).toList(), contains('s-other'));
+      // s-other -> somewhere (pas de fausse correspondance avec monorepo)
+      expect(grouped['Monorepo Root']?.map((s) => s.id).toList(), isNot(contains('s-other')));
+      expect(grouped['somewhere']?.map((s) => s.id).toList(), contains('s-other'));
     });
   });
 

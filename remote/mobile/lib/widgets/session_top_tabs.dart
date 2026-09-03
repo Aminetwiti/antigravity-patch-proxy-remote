@@ -145,6 +145,7 @@ class SessionTopTabs extends StatelessWidget {
             ),
             if (onToggleSearch != null)
               IconButton(
+                key: const Key('toggle-search-btn'),
                 icon: const Icon(Icons.search_rounded, size: 18),
                 tooltip: 'Rechercher dans la conversation',
                 onPressed: onToggleSearch,

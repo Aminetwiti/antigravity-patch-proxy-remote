@@ -218,5 +218,20 @@ Error ID: 53628a95-d513-4328-b19e-97484b5071cd-2371''';
 
       await tester.pumpWidget(const SizedBox());
     });
+
+    test('CascadeSession.fromJson correctly parses markedAsUnread and custom titles', () {
+      final json = {
+        'cascadeId': 'sess-custom-title-1',
+        'title': 'Custom Renamed Title from Desktop',
+        'markedAsUnread': true,
+        'hasUnread': false,
+        'pinned': true,
+      };
+      final session = CascadeSession.fromJson(json);
+      expect(session.id, 'sess-custom-title-1');
+      expect(session.title, 'Custom Renamed Title from Desktop');
+      expect(session.hasUnread, isTrue);
+      expect(session.isPinned, isTrue);
+    });
   });
 }

@@ -198,6 +198,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     _loadPins();
     _loadReadSessions();
     _loadCollapsedFolders();
+    _loadDisplayOptions();
   }
 
   @override
@@ -205,6 +206,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     super.didUpdateWidget(old);
     // Synchronisation bidirectionnelle des pins avec le daemon et Antigravity 2.0
     _syncPinsWithSessions(widget.sessions);
+    _syncReadStateWithSessions(widget.sessions);
     if (widget.activeSessionId != old.activeSessionId && widget.activeSessionId.isNotEmpty) {
       _markSessionAsRead(widget.activeSessionId);
     }
@@ -229,6 +231,25 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     }
   }
 
+  void _syncReadStateWithSessions(List<CascadeSession>? sessions) {
+    if (sessions == null || sessions.isEmpty) return;
+    bool changed = false;
+    for (final s in sessions) {
+      if (!s.hasUnread && !_readSessionIds.contains(s.id)) {
+        _readSessionIds.add(s.id);
+        changed = true;
+      } else if (s.hasUnread && _readSessionIds.contains(s.id)) {
+        _readSessionIds.remove(s.id);
+        changed = true;
+      }
+    }
+    if (changed) {
+      setState(() {});
+      SharedPreferences.getInstance().then((prefs) =>
+          prefs.setStringList('read_session_ids', _readSessionIds.toList()));
+    }
+  }
+
   Future<void> _loadCollapsedFolders() async {
     final prefs = await SharedPreferences.getInstance();
     final collapsed = prefs.getStringList('collapsed_folder_names') ?? const [];
@@ -241,6 +262,33 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
   void _saveCollapsedFolders() {
     SharedPreferences.getInstance().then((prefs) =>
         prefs.setStringList('collapsed_folder_names', _collapsedFolders.toList()));
+  }
+
+  Future<void> _loadDisplayOptions() async {
+    final prefs = await SharedPreferences.getInstance();
+    final groupIndex = prefs.getInt('session_group_by');
+    final sortIndex = prefs.getInt('session_sort_by');
+    final subIndex = prefs.getInt('session_subtitle');
+    if (!mounted) return;
+    setState(() {
+      if (groupIndex != null && groupIndex >= 0 && groupIndex < SessionGroupBy.values.length) {
+        _groupBy = SessionGroupBy.values[groupIndex];
+      }
+      if (sortIndex != null && sortIndex >= 0 && sortIndex < SessionSortBy.values.length) {
+        _sortBy = SessionSortBy.values[sortIndex];
+      }
+      if (subIndex != null && subIndex >= 0 && subIndex < SessionSubtitle.values.length) {
+        _subtitle = SessionSubtitle.values[subIndex];
+      }
+    });
+  }
+
+  void _saveDisplayOptions() {
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setInt('session_group_by', _groupBy.index);
+      prefs.setInt('session_sort_by', _sortBy.index);
+      prefs.setInt('session_subtitle', _subtitle.index);
+    });
   }
 
   Future<void> _loadPins() async {
@@ -265,9 +313,16 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
     final ids = prefs.getStringList('read_session_ids') ?? const [];
     if (!mounted) return;
     setState(() {
-      _readSessionIds
-        ..clear()
-        ..addAll(ids);
+      _readSessionIds.clear();
+      if (widget.sessions != null && widget.sessions!.isNotEmpty) {
+        for (final s in widget.sessions!) {
+          if (!s.hasUnread) {
+            _readSessionIds.add(s.id);
+          }
+        }
+      } else {
+        _readSessionIds.addAll(ids);
+      }
       if (widget.activeSessionId.isNotEmpty) {
         _readSessionIds.add(widget.activeSessionId);
       }
@@ -275,12 +330,32 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
   }
 
   void _markSessionAsRead(String id) {
+    widget.api?.markSessionRead(id);
     if (_readSessionIds.contains(id)) return;
     setState(() {
       _readSessionIds.add(id);
     });
     SharedPreferences.getInstance().then((prefs) =>
         prefs.setStringList('read_session_ids', _readSessionIds.toList()));
+  }
+
+  void _markSessionAsUnread(String id) {
+    widget.api?.markSessionUnread(id);
+    if (!_readSessionIds.contains(id)) return;
+    setState(() {
+      _readSessionIds.remove(id);
+    });
+    SharedPreferences.getInstance().then((prefs) =>
+        prefs.setStringList('read_session_ids', _readSessionIds.toList()));
+  }
+
+  void _toggleRead(String id) {
+    HapticFeedback.selectionClick();
+    if (_readSessionIds.contains(id)) {
+      _markSessionAsUnread(id);
+    } else {
+      _markSessionAsRead(id);
+    }
   }
 
   void _togglePin(String id) {
@@ -831,6 +906,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                           isPinned: true,
                           isPinnedSection: true,
                           onTogglePin: () => _togglePin(s.id),
+                          onToggleRead: () => _toggleRead(s.id),
                         ),
                       const SizedBox(height: 6),
                     ],
@@ -864,9 +940,18 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                     selectedSortBy: _sortBy,
                     selectedSubtitle: _subtitle,
                     isFilterOpen: _isFilterOpen,
-                    onGroupByChanged: (val) => setState(() => _groupBy = val),
-                    onSortByChanged: (val) => setState(() => _sortBy = val),
-                    onSubtitleChanged: (val) => setState(() => _subtitle = val),
+                    onGroupByChanged: (val) {
+                      setState(() => _groupBy = val);
+                      _saveDisplayOptions();
+                    },
+                    onSortByChanged: (val) {
+                      setState(() => _sortBy = val);
+                      _saveDisplayOptions();
+                    },
+                    onSubtitleChanged: (val) {
+                      setState(() => _subtitle = val);
+                      _saveDisplayOptions();
+                    },
                     onToggleFilter: () {
                       HapticFeedback.selectionClick();
                       setState(() {
@@ -1071,6 +1156,7 @@ class _LeftSidebarDrawerState extends State<LeftSidebarDrawer> {
                                   : null,
                               isPinned: _pinnedIds.contains(s.id),
                               onTogglePin: () => _togglePin(s.id),
+                              onToggleRead: () => _toggleRead(s.id),
                             );
                           }
 
@@ -1229,6 +1315,7 @@ class _SessionRowItem extends StatefulWidget {
   final bool isPinned;
   final bool isPinnedSection;
   final VoidCallback? onTogglePin;
+  final VoidCallback? onToggleRead;
 
   const _SessionRowItem({
     super.key,
@@ -1244,6 +1331,7 @@ class _SessionRowItem extends StatefulWidget {
     this.isPinned = false,
     this.isPinnedSection = false,
     this.onTogglePin,
+    this.onToggleRead,
   });
 
   @override
@@ -1324,6 +1412,22 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                     widget.onTogglePin?.call();
                   },
                 ),
+              if (widget.onToggleRead != null)
+                ListTile(
+                  leading: Icon(
+                    widget.isUnread ? Icons.mark_chat_read_outlined : Icons.mark_chat_unread_outlined,
+                    size: 18,
+                    color: scheme.onSurface,
+                  ),
+                  title: Text(
+                    widget.isUnread ? 'Marquer comme lue' : 'Marquer comme non-lue',
+                    style: TextStyle(fontSize: 13, color: scheme.onSurface),
+                  ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    widget.onToggleRead?.call();
+                  },
+                ),
               if (widget.onExport != null)
                 ListTile(
                   leading: Icon(Icons.download_rounded, size: 18, color: scheme.onSurface),
@@ -1357,8 +1461,15 @@ class _SessionRowItemState extends State<_SessionRowItem> {
               ),
               if (widget.onArchive != null)
                 ListTile(
-                  leading: Icon(Icons.archive_outlined, size: 18, color: scheme.onSurface),
-                  title: Text('Archiver la conversation', style: TextStyle(fontSize: 13, color: scheme.onSurface)),
+                  leading: Icon(
+                    widget.session.isArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+                    size: 18,
+                    color: scheme.onSurface,
+                  ),
+                  title: Text(
+                    widget.session.isArchived ? 'Désarchiver la conversation' : 'Archiver la conversation',
+                    style: TextStyle(fontSize: 13, color: scheme.onSurface),
+                  ),
                   onTap: () {
                     Navigator.of(ctx).pop();
                     widget.onArchive?.call();
