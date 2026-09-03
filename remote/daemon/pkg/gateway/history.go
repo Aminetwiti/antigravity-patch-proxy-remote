@@ -3459,12 +3459,32 @@ func extractModelFromContent(content string) string {
 			target := sub[mIdx+len("`Model Selection` from "):]
 			if toIdx := strings.Index(target, " to "); toIdx != -1 {
 				afterTo := target[toIdx+len(" to "):]
-				if endIdx := strings.Index(afterTo, "."); endIdx != -1 {
-					return strings.TrimSpace(afterTo[:endIdx])
+				// Find sentence-ending period (". " or ".\n" or ".\r"), NOT decimal dots like "3.6".
+				endIdx := -1
+				for i := 0; i < len(afterTo)-1; i++ {
+					if afterTo[i] == '.' && (afterTo[i+1] == ' ' || afterTo[i+1] == '\n' || afterTo[i+1] == '\r') {
+						endIdx = i
+						break
+					}
 				}
-				if endIdx := strings.Index(afterTo, "\n"); endIdx != -1 {
-					return strings.TrimSpace(afterTo[:endIdx])
+				if endIdx == -1 {
+					// Trailing period at end of string
+					if len(afterTo) > 0 && afterTo[len(afterTo)-1] == '.' {
+						endIdx = len(afterTo) - 1
+					}
 				}
+				var raw string
+				if endIdx != -1 {
+					raw = strings.TrimSpace(afterTo[:endIdx])
+				} else if nlIdx := strings.Index(afterTo, "\n"); nlIdx != -1 {
+					raw = strings.TrimSpace(afterTo[:nlIdx])
+				} else {
+					raw = strings.TrimSpace(afterTo)
+				}
+				// Strip parentheses from effort suffix: "(Low)" → "Low"
+				raw = strings.ReplaceAll(raw, "(", "")
+				raw = strings.ReplaceAll(raw, ")", "")
+				return strings.TrimSpace(raw)
 			}
 		}
 	}
