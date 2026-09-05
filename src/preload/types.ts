@@ -102,6 +102,8 @@ export interface StorageAPI {
   exportProviders: () => Promise<{ success: boolean; base64?: string; count?: number; error?: string }>;
   importProviders: (base64Code?: string) => Promise<{ success: boolean; count?: number; error?: string }>;
   getDoctorDiagnostics: () => Promise<any>;
+  injectUserStatus?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
+  injectAvailableModels?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
 }
 
 export interface LogsAPI {

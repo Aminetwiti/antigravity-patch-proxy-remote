@@ -192,3 +192,114 @@ export function encodeModelEntryForGetModels(
   }
   return encodeProtoBuf(fields);
 }
+
+// ─── Raw Protobuf Utilities (used by GetUserStatus injection) ─────────────
+
+export interface RawProtoField {
+  tag: number;
+  wireType: number;
+  fieldNum: number;
+  value?: number;
+  raw?: Buffer;
+  start: number;
+  end: number;
+}
+
+/**
+ * Parses protobuf fields at a single level without recursively assuming
+ * length-delimited bytes are submessages. This avoids corrupting strings.
+ */
+export function parseProtoRaw(buf: Buffer, offset: number = 0, end: number = buf.length): RawProtoField[] {
+  const fields: RawProtoField[] = [];
+  let pos = offset;
+  while (pos < end) {
+    const start = pos;
+    const tagVarint = readVarint(buf, pos);
+    const tag = tagVarint.value;
+    const wireType = tag & 0x07;
+    const fieldNum = tag >>> 3;
+    pos += tagVarint.bytes;
+
+    if (wireType === 0) {
+      const v = readVarint(buf, pos);
+      fields.push({ tag, wireType, fieldNum, value: v.value, start, end: pos + v.bytes });
+      pos += v.bytes;
+    } else if (wireType === 2) {
+      const lenVarint = readVarint(buf, pos);
+      pos += lenVarint.bytes;
+      const len = lenVarint.value;
+      fields.push({ tag, wireType, fieldNum, raw: buf.subarray(pos, pos + len), start, end: pos + len });
+      pos += len;
+    } else if (wireType === 1) {
+      fields.push({ tag, wireType, fieldNum, raw: buf.subarray(pos, pos + 8), start, end: pos + 8 });
+      pos += 8;
+    } else if (wireType === 5) {
+      fields.push({ tag, wireType, fieldNum, raw: buf.subarray(pos, pos + 4), start, end: pos + 4 });
+      pos += 4;
+    } else {
+      break;
+    }
+  }
+  return fields;
+}
+
+export function encodeStringField(fieldNum: number, str: string): Buffer {
+  const tagBuf = encodeVarint((fieldNum << 3) | 2);
+  const strBuf = Buffer.from(str, 'utf8');
+  const lenBuf = encodeVarint(strBuf.length);
+  return Buffer.concat([tagBuf, lenBuf, strBuf]);
+}
+
+export function encodeVarintField(fieldNum: number, val: number): Buffer {
+  const tagBuf = encodeVarint((fieldNum << 3) | 0);
+  const valBuf = encodeVarint(val);
+  return Buffer.concat([tagBuf, valBuf]);
+}
+
+export function encodeMessageField(fieldNum: number, msgBuf: Buffer): Buffer {
+  const tagBuf = encodeVarint((fieldNum << 3) | 2);
+  const lenBuf = encodeVarint(msgBuf.length);
+  return Buffer.concat([tagBuf, lenBuf, msgBuf]);
+}
+
+const COMMON_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+
+/**
+ * Encodes a ClientModelConfig protobuf message for Antigravity 2.5+ / 2.12+.
+ */
+export function encodeClientModelConfig(
+  label: string,
+  modelEnum: number,
+  modelId: string,
+  supportsImages: boolean,
+  supportsThought: boolean,
+): Buffer {
+  const parts: Buffer[] = [];
+  // field 1: label
+  parts.push(encodeStringField(1, label));
+  // field 2: model_or_alias -> field 1: model
+  parts.push(encodeMessageField(2, encodeVarintField(1, modelEnum)));
+  // field 5: supports_images
+  if (supportsImages) {
+    parts.push(encodeVarintField(5, 1));
+  }
+  // field 11: is_recommended
+  parts.push(encodeVarintField(11, 1));
+  // field 12: allowed_tiers (all tiers)
+  parts.push(encodeMessageField(12, Buffer.from([0x02, 0x01, 0x05, 0x03, 0x04, 0x08])));
+  // field 18: supported_mime_types (when images supported)
+  if (supportsImages) {
+    for (const mime of COMMON_IMAGE_MIMES) {
+      const entry = Buffer.concat([encodeStringField(1, mime), encodeVarintField(2, 1)]);
+      parts.push(encodeMessageField(18, entry));
+    }
+  }
+  // field 19: supports_thought_circulation
+  if (supportsThought) {
+    parts.push(encodeVarintField(19, 1));
+  }
+  // field 21: model_id
+  parts.push(encodeStringField(21, modelId));
+  return Buffer.concat(parts);
+}
+

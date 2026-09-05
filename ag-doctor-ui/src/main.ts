@@ -808,13 +808,24 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           enabled: m.enabled !== false
         });
       }
-      return Array.from(pm.values());
+      const migrated = Array.from(pm.values());
+      parsed.providers = migrated;
+      delete parsed.models;
+      await fs.promises.writeFile(p, JSON.stringify(parsed, null, 2), 'utf8');
+      return migrated;
     }
     return [];
   } catch {
     return [];
   }
 });
+
+async function atomicWriteCustomModels(filePath: string, data: unknown): Promise<void> {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+  await fs.promises.rename(tmp, filePath);
+}
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
   try {
@@ -835,10 +846,12 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
         const pmId = pm.id || pm.displayName;
         if (!pmId) continue;
         const cleanId = pmId.startsWith('models/') ? pmId.slice(7) : pmId;
+        const pNormUrl = (p.apiUrl || '').replace(/\/+$/, '').toLowerCase();
         const mIdx = parsed.models.findIndex(m => {
           const mClean = (m.name || '').startsWith('models/') ? (m.name || '').slice(7) : (m.name || '');
-          const urlMatch = !p.apiUrl || !m.apiUrl || p.apiUrl.toLowerCase() === m.apiUrl.toLowerCase();
-          return (m.name === pmId || m.name === `models/${pmId}` || mClean === cleanId) && urlMatch;
+          const mNormUrl = (m.apiUrl || '').replace(/\/+$/, '').toLowerCase();
+          const urlMatch = !pNormUrl || !mNormUrl || pNormUrl === mNormUrl;
+          return (m.name === pmId || m.name === `models/${pmId}` || mClean === cleanId || m.displayName === pm.displayName) && urlMatch;
         });
         if (mIdx !== -1) {
           parsed.models[mIdx].enabled = pm.enabled !== false && p.enabled !== false;
@@ -846,7 +859,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
       }
     }
 
-    await fs.promises.writeFile(fp, JSON.stringify(parsed, null, 2), 'utf8');
+    await atomicWriteCustomModels(fp, parsed);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
     return { success: true };
   } catch(e) {
@@ -861,7 +874,8 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_DELETE, async (_, id) => {
     const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
     if (parsed.providers) {
       parsed.providers = parsed.providers.filter((x: any) => x.id !== id);
-      await fs.promises.writeFile(fp, JSON.stringify(parsed, null, 2), 'utf8');
+      delete parsed.models;
+      await atomicWriteCustomModels(fp, parsed);
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
     }
     return { success: true };

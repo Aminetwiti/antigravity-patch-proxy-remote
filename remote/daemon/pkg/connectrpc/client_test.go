@@ -191,3 +191,51 @@ func TestCallStream_OnFrameErrorStops(t *testing.T) {
 		t.Fatalf("Attendu 1 seul appel onFrame, reçu %d", calls)
 	}
 }
+
+func TestClientAutoRecoverOnInvalidCSRF(t *testing.T) {
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if r.Header.Get("x-codeium-csrf-token") == "bad-token" {
+			w.Header().Set("Content-Type", "application/grpc-web+proto")
+			w.Header().Set("grpc-status", "16")
+			w.Header().Set("grpc-message", "invalid CSRF token")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		// Second attempt with good token
+		w.Header().Set("Content-Type", "application/grpc-web+proto")
+		w.Header().Set("grpc-status", "0")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(Frame([]byte("success_payload")))
+	}))
+	defer ts.Close()
+
+	u, _ := url.Parse(ts.URL)
+	port, _ := strconv.Atoi(u.Port())
+
+	client := NewClient(port, "bad-token")
+	client.Host = u.Hostname()
+
+	recovered := false
+	client.OnAuthError = func() bool {
+		recovered = true
+		client.UpdateEndpoint(port, "good-token")
+		return true
+	}
+
+	res, err := client.Call("GetRevertPreview", []byte("req"))
+	if err != nil {
+		t.Fatalf("Attendu succès après auto-recovery, reçu erreur: %v", err)
+	}
+	if !recovered {
+		t.Errorf("Attendu que OnAuthError soit invoqué")
+	}
+	if attempts != 2 {
+		t.Errorf("Attendu 2 tentatives, reçu %d", attempts)
+	}
+	if string(res) != "success_payload" {
+		t.Errorf("Attendu payload 'success_payload', reçu %q", string(res))
+	}
+}
+

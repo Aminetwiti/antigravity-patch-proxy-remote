@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -170,9 +171,33 @@ func main() {
 		server.SetSessionsCacheTTL(cfg.SessionsCacheTTL)
 	}
 
+	var currentPID = info.PID
+	var pidMu sync.Mutex
+
+	rpcClient.OnAuthError = func() bool {
+		newInfo, err := discovery.Discover()
+		if err != nil {
+			return false
+		}
+		rpcClient.UpdateEndpoint(newInfo.ConnectRPCPort, newInfo.ExtensionCSRF)
+		rpcClient.SetUseTLS(newInfo.UseTLS)
+		server.SetIDERunning(true, newInfo.ConnectRPCPort, newInfo)
+		pidMu.Lock()
+		currentPID = newInfo.PID
+		pidMu.Unlock()
+		return true
+	}
+
 	// Lancement du Watchdog CSRF & Statut IDE
 	watchdog := discovery.NewWatchdog(rpcClient, 5*time.Second)
-	watchdog.OnStatusChange = server.SetIDERunning
+	watchdog.OnStatusChange = func(running bool, port int, inf *discovery.LocalHarnessInfo) {
+		if running && inf != nil {
+			pidMu.Lock()
+			currentPID = inf.PID
+			pidMu.Unlock()
+		}
+		server.SetIDERunning(running, port, inf)
+	}
 	watchdog.Start()
 	fmt.Println("🛡️ Watchdog CSRF & Statut IDE démarré (vérification toutes les 5s)")
 	// Flux temps réel Jetbox : la sidebar mobile est alimentée par le stream
@@ -219,10 +244,13 @@ func main() {
 		port, _ := rpcClient.Endpoint()
 		provider := tunnelMgr.GetProvider()
 		pubURL := tunnelMgr.GetPublicURL()
+		pidMu.Lock()
+		p := currentPID
+		pidMu.Unlock()
 		data, _ := json.Marshal(map[string]interface{}{
 			"status":         status,
 			"rpcPort":        port,
-			"pid":            info.PID,
+			"pid":            p,
 			"heartbeatOk":    hbErr == "",
 			"tunnelProvider": provider,
 			"publicUrl":      pubURL,

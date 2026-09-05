@@ -5,7 +5,7 @@ const { mockGetMitmStatus, mockGetPatchStatus } = vi.hoisted(() => ({
   mockGetPatchStatus: vi.fn(),
 }));
 
-vi.mock('../core/config', () => ({ DEFAULT_MITM_PORT: 443 }));
+vi.mock('../core/config', () => ({ DEFAULT_MITM_PORT: 51074, DEFAULT_BIND_HOST: '127.0.0.1' }));
 vi.mock('../core/mitm', () => ({
   getMitmStatus: mockGetMitmStatus,
   MITM_FORWARDER_PORTS: new Set([443]),

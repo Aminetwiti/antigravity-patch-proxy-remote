@@ -62,6 +62,11 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
       return;
     }
 
+    setState(() {
+      _isLoadingPreview = true;
+      _errorMessage = null;
+    });
+
     try {
       final res = await widget.api!.getRevertPreview(widget.cascadeId, widget.stepIndex);
       if (!mounted) return;
@@ -80,9 +85,16 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
       });
     } catch (e) {
       if (!mounted) return;
+      final errStr = e.toString();
+      String friendlyMsg = 'Impossible de charger l\'aperçu : $errStr';
+      if (errStr.contains('invalid CSRF token') || errStr.contains('status 16')) {
+        friendlyMsg = 'Jeton de session IDE expiré. Le Language Server s\'est reconnecté, appuyez sur Réessayer.';
+      } else if (errStr.contains('run state not found')) {
+        friendlyMsg = 'Session inactive ou expirée de la mémoire de l\'IDE.';
+      }
       setState(() {
         _isLoadingPreview = false;
-        _errorMessage = 'Impossible de charger l\'aperçu: $e';
+        _errorMessage = friendlyMsg;
       });
     }
   }
@@ -113,9 +125,11 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
     } catch (e) {
       if (!mounted) return;
       final errStr = e.toString();
-      String friendlyMsg = 'Erreur lors du rollback: $errStr';
+      String friendlyMsg = 'Erreur lors du rollback : $errStr';
       if (errStr.contains('run state not found')) {
         friendlyMsg = 'Impossible de revenir à cette étape : la session active a été réinitialisée ou a expiré de la mémoire de l\'IDE.';
+      } else if (errStr.contains('invalid CSRF token') || errStr.contains('status 16')) {
+        friendlyMsg = 'Jeton de session IDE expiré. Le Language Server s\'est reconnecté, veuillez réessayer.';
       }
       setState(() {
         _isReverting = false;
@@ -214,9 +228,35 @@ class _RevertStepPreviewDialogState extends State<RevertStepPreviewDialog> {
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                     border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
                   ),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(fontSize: 12, color: AppColors.danger),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _errorMessage!,
+                        style: const TextStyle(fontSize: 12, color: AppColors.danger),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _isLoadingPreview ? null : _loadPreview,
+                          icon: const Icon(Icons.refresh, size: 14, color: AppColors.danger),
+                          label: const Text(
+                            'Réessayer',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.danger,
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 )
               else ...[

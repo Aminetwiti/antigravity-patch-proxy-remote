@@ -35,6 +35,7 @@ type Client struct {
 	SessionID string
 	ModelUID  string
 	ModelEnum uint64
+	OnAuthError func() bool
 }
 
 func buildTLSConfig(skipVerify bool) *tls.Config {
@@ -133,8 +134,22 @@ func Frame(payload []byte) []byte {
 	return buf
 }
 
+func (c *Client) tryRecoverAuth() bool {
+	c.mu.RLock()
+	cb := c.OnAuthError
+	c.mu.RUnlock()
+	if cb != nil {
+		return cb()
+	}
+	return false
+}
+
 // Call exécute une méthode RPC et retourne les messages protobuf bruts.
 func (c *Client) Call(method string, payload []byte) ([]byte, error) {
+	return c.callWithRetry(method, payload, true)
+}
+
+func (c *Client) callWithRetry(method string, payload []byte, allowRetry bool) ([]byte, error) {
 	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
@@ -165,13 +180,23 @@ func (c *Client) Call(method string, payload []byte) ([]byte, error) {
 		rawStr := string(raw)
 		if scheme == "http" && strings.Contains(rawStr, "HTTPS server") {
 			c.SetUseTLS(true)
-			return c.Call(method, payload)
+			return c.callWithRetry(method, payload, allowRetry)
+		}
+		if allowRetry && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || strings.Contains(strings.ToLower(rawStr), "csrf")) {
+			if c.tryRecoverAuth() {
+				return c.callWithRetry(method, payload, false)
+			}
 		}
 		return raw, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(rawStr, 200))
 	}
 
 	if st := resp.Header.Get("grpc-status"); st != "" && st != "0" {
 		msg := resp.Header.Get("grpc-message")
+		if allowRetry && (st == "16" || strings.Contains(strings.ToLower(msg), "csrf")) {
+			if c.tryRecoverAuth() {
+				return c.callWithRetry(method, payload, false)
+			}
+		}
 		return raw, fmt.Errorf("gRPC status %s: %s", st, msg)
 	}
 
@@ -195,6 +220,11 @@ func (c *Client) Call(method string, payload []byte) ([]byte, error) {
 						st := strings.TrimSpace(strings.TrimPrefix(line, "grpc-status:"))
 						if st != "" && st != "0" {
 							trailerErr = fmt.Errorf("gRPC trailer error: %s", trailerText)
+							if allowRetry && (st == "16" || strings.Contains(strings.ToLower(trailerText), "csrf")) {
+								if c.tryRecoverAuth() {
+									return c.callWithRetry(method, payload, false)
+								}
+							}
 						}
 					}
 				}
@@ -215,6 +245,10 @@ func (c *Client) Call(method string, payload []byte) ([]byte, error) {
 
 // CallJSON exécute une méthode RPC en ConnectRPC JSON direct (Content-Type: application/json).
 func (c *Client) CallJSON(method string, payload []byte) ([]byte, error) {
+	return c.callJSONWithRetry(method, payload, true)
+}
+
+func (c *Client) callJSONWithRetry(method string, payload []byte, allowRetry bool) ([]byte, error) {
 	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
@@ -244,7 +278,12 @@ func (c *Client) CallJSON(method string, payload []byte) ([]byte, error) {
 		rawStr := string(raw)
 		if scheme == "http" && strings.Contains(rawStr, "HTTPS server") {
 			c.SetUseTLS(true)
-			return c.CallJSON(method, payload)
+			return c.callJSONWithRetry(method, payload, allowRetry)
+		}
+		if allowRetry && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || strings.Contains(strings.ToLower(rawStr), "csrf")) {
+			if c.tryRecoverAuth() {
+				return c.callJSONWithRetry(method, payload, false)
+			}
 		}
 		return raw, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(rawStr, 200))
 	}
@@ -258,6 +297,10 @@ func (c *Client) CallStream(method string, payload []byte, timeout time.Duration
 
 // CallStreamWithContext exécute une méthode RPC en streaming gRPC-Web avec support d'annulation contextuelle immédiate.
 func (c *Client) CallStreamWithContext(ctx context.Context, method string, payload []byte, timeout time.Duration, onFrame func([]byte) error) error {
+	return c.callStreamWithRetry(ctx, method, payload, timeout, onFrame, true)
+}
+
+func (c *Client) callStreamWithRetry(ctx context.Context, method string, payload []byte, timeout time.Duration, onFrame func([]byte) error, allowRetry bool) error {
 	c.updateTransportTLS()
 	port, csrfToken := c.Endpoint()
 	scheme := c.Scheme()
@@ -289,9 +332,23 @@ func (c *Client) CallStreamWithContext(ctx context.Context, method string, paylo
 		rawStr := string(raw)
 		if scheme == "http" && strings.Contains(rawStr, "HTTPS server") {
 			c.SetUseTLS(true)
-			return c.CallStreamWithContext(ctx, method, payload, timeout, onFrame)
+			return c.callStreamWithRetry(ctx, method, payload, timeout, onFrame, allowRetry)
+		}
+		if allowRetry && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || strings.Contains(strings.ToLower(rawStr), "csrf")) {
+			if c.tryRecoverAuth() {
+				return c.callStreamWithRetry(ctx, method, payload, timeout, onFrame, false)
+			}
 		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(rawStr, 200))
+	}
+	if st := resp.Header.Get("grpc-status"); st != "" && st != "0" {
+		msg := resp.Header.Get("grpc-message")
+		if allowRetry && (st == "16" || strings.Contains(strings.ToLower(msg), "csrf")) {
+			if c.tryRecoverAuth() {
+				return c.callStreamWithRetry(ctx, method, payload, timeout, onFrame, false)
+			}
+		}
+		return fmt.Errorf("gRPC status %s: %s", st, msg)
 	}
 
 	buf := make([]byte, 32768)

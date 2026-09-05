@@ -187,6 +187,13 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         };
       }
       (result as Record<string, unknown>)[slug] = entry;
+      (result as Record<string, unknown>)[pid] = entry;
+      if (m.name && m.name !== pid && m.name !== slug) {
+        (result as Record<string, unknown>)[m.name] = entry;
+      }
+      if (m.externalModelName && m.externalModelName !== pid && m.externalModelName !== slug) {
+        (result as Record<string, unknown>)[m.externalModelName] = entry;
+      }
       log.info(
         `[Proxy] Custom model "${m.displayName}" => slug: ${slug} => model: ${generateModelPlaceholderId(m)} => thinking: ${cap.isThinking} => images: ${cap.supportsImages}`,
       );

@@ -250,6 +250,7 @@ async function saveProvidersInternal(providers: ProviderFileEntry[]): Promise<vo
   const filePath = getCustomModelsPath();
   const existing = readExistingJson(filePath);
   existing.providers = providers;
+  delete existing.models;
   await atomicWriteJson(filePath, existing);
 }
 

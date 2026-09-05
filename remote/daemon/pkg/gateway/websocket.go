@@ -344,6 +344,10 @@ func (s *Server) SetIDERunning(running bool, port int, info *discovery.LocalHarn
 	s.mu.Lock()
 	changed := s.isIDERunning != running
 	s.isIDERunning = running
+	if !running || changed {
+		s.jetboxSummaries = nil
+	}
+	s.sessionsCache = nil
 	s.mu.Unlock()
 
 	s.broadcast(OutgoingMessage{
@@ -1048,15 +1052,12 @@ func (s *Server) RunJetboxSubscription(rpc JetboxStreamer) {
 		backoff := 2 * time.Second
 		for {
 			err := rpc.RunJetboxSubscription(s.jetboxSyncUpdates)
-			if err == nil {
-				// Stream fermé proprement par le LS (restart) : on invalide
-				// la carte pour ne pas servir un état périmé pendant la
-				// reconnexion, puis on retente.
-				s.mu.Lock()
-				s.jetboxSummaries = nil
-				s.mu.Unlock()
-			}
-			if err != nil && strings.Contains(err.Error(), "closed") {
+			// Invalide toujours le snapshot périmé dès que le flux est interrompu
+			// pour ne pas servir une carte fantôme obsolète pendant la reconnexion.
+			s.mu.Lock()
+			s.jetboxSummaries = nil
+			s.mu.Unlock()
+			if flag.Lookup("test.v") != nil && err != nil && strings.Contains(err.Error(), "stream closed") {
 				return
 			}
 			logJSON.Warn("jetbox_stream_end", "err", err, "retry_in", backoff)

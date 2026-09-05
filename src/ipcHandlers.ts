@@ -18,6 +18,8 @@ import type { CustomModelFileEntry as CustomModelFileEntryFromTypes } from './pr
 import { WELL_KNOWN_PRESETS } from './presets';
 import * as configExchange from './services/configExchange';
 import { DEFAULT_PROXY_PORT } from './constants';
+import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from './proxy/protoInjector';
+import { loadCustomModels as loadProxyCustomModels } from './proxy/modelLoader';
 
 
 
@@ -375,6 +377,30 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     } catch (err) {
       console.error('[IPC] Failed to delete custom model:', err);
       return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('proto:inject-user-status', async (_event, rawBytes: Uint8Array | number[]) => {
+    try {
+      const buf = Buffer.from(rawBytes);
+      const models = loadProxyCustomModels();
+      const result = injectCustomModelsIntoUserStatus(buf, models);
+      return new Uint8Array(result.buffer);
+    } catch (err) {
+      log.error('[IPC] Failed to inject custom models into UserStatus:', err);
+      return rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(Buffer.from(rawBytes));
+    }
+  });
+
+  ipcMain.handle('proto:inject-available-models', async (_event, rawBytes: Uint8Array | number[]) => {
+    try {
+      const buf = Buffer.from(rawBytes);
+      const models = loadProxyCustomModels();
+      const result = injectCustomModelsIntoResponse(buf, models);
+      return new Uint8Array(result.buffer);
+    } catch (err) {
+      log.error('[IPC] Failed to inject custom models into AvailableModels:', err);
+      return rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(Buffer.from(rawBytes));
     }
   });
 

@@ -13,7 +13,16 @@ const path = require('path');
 const net = require('net');
 const { spawn } = require('child_process');
 
-const constants_1 = require('./constants');
+let constants_1;
+try {
+  constants_1 = require('./dist/constants');
+} catch (_) {
+  try {
+    constants_1 = require('./constants');
+  } catch (__) {
+    constants_1 = { DEFAULT_BIND_HOST: process.env.AG_BIND_HOST || '127.0.0.1' };
+  }
+}
 
 const MITM_443_PROBE_TIMEOUT_MS = 500;
 

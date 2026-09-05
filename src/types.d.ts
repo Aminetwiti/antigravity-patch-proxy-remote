@@ -193,6 +193,7 @@ declare module 'electron' {
     getZoomLevel(): number;
     getZoomFactor(): number;
     setZoomFactor(factor: number): void;
+    executeJavaScript(code: string, userGesture?: boolean): Promise<any>;
   };
 
   // Type-only export for function signatures that need BrowserWindow as a type
@@ -263,7 +264,8 @@ declare module 'electron' {
   export const session: {
     defaultSession: {
       webRequest: {
-        onBeforeRequest(callback: (details: { url: string }, cb: (arg: { cancel?: boolean }) => void) => void): void;
+        onBeforeRequest(callback: (details: { url: string; resourceType?: string }, cb: (arg: { cancel?: boolean; redirectURL?: string }) => void) => void): void;
+        onErrorOccurred?(callback: (details: { url: string; error: string }) => void): void;
       };
       closeAllConnections(): Promise<void>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

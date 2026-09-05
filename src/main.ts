@@ -152,24 +152,15 @@ app
 
     // Intercept and block SetCloudCodeURL requests to prevent the frontend
     // from overriding the local proxy endpoint.
-    // Redirect GetAvailableModels to our proxy so custom models are injected.
     session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+      if (details.resourceType === 'mainFrame') {
+        callback({});
+        return;
+      }
       if (details.url.includes('SetCloudCodeURL')) {
         console.log(`[Proxy Intercept] Blocked SetCloudCodeURL: ${details.url}`);
         callback({ cancel: true });
         return;
-      }
-      if (details.url.includes('LanguageServerService/GetAvailableModels')) {
-        const proxyPort = (require('./proxy').getProxyPort as () => number)();
-        if (proxyPort > 0) {
-          const redirectTarget = `http://${LOOPBACK_HOSTS[0]}:${proxyPort}/GetAvailableModels?ls=${encodeURIComponent(details.url)}`;
-          console.log(`[Proxy Intercept] Redirecting GetAvailableModels to proxy: ${redirectTarget}`);
-          (callback as (opts: { cancel?: boolean; redirectURL?: string }) => void)({ redirectURL: redirectTarget });
-          return;
-        }
-      }
-      if (details.url.includes('CloudCode') || details.url.includes('LanguageServerService')) {
-        console.log(`[Proxy Intercept] Request URL: ${details.url}`);
       }
       callback({});
     });

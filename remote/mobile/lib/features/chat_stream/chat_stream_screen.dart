@@ -2861,15 +2861,24 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   /// ◀ ▶ quand plusieurs demandes sont empilées.
   Widget _buildApprovalArea([bool hasKeyboard = false]) {
     final questions = _currentSessionQuestions;
+    final hasAuxItems = _runningBackgroundTasks.isNotEmpty ||
+        _activeGoals.isNotEmpty ||
+        _subagents.isNotEmpty ||
+        _sideQuestion != null;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final maxApprovalHeight = hasKeyboard
+        ? 110.0
+        : (hasAuxItems
+            ? (screenHeight * 0.26).clamp(100.0, 210.0)
+            : (screenHeight * 0.35).clamp(120.0, 360.0));
+
     if (questions.isNotEmpty) {
       final q = questions.first;
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: hasKeyboard
-                ? 110.0
-                : (MediaQuery.sizeOf(context).height * 0.35).clamp(120.0, 360.0),
+            maxHeight: maxApprovalHeight,
           ),
           child: SingleChildScrollView(
             physics: const ClampingScrollPhysics(),
@@ -2911,9 +2920,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: hasKeyboard
-              ? 110.0
-              : (MediaQuery.sizeOf(context).height * 0.35).clamp(120.0, 360.0),
+          maxHeight: maxApprovalHeight,
         ),
         child: SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
@@ -3230,6 +3237,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
     final canPopScreen = _activeArtifact == null && _currentTab == SessionTabType.chat && !_isSearching;
     final isDocumentMode = _activeArtifact != null || _currentTab == SessionTabType.plan || _currentTab == SessionTabType.review;
+    final hasApprovalOrQuestion = _currentSessionQuestions.isNotEmpty || _currentSessionApprovals.isNotEmpty;
 
     final content = ZenithalCanvas(
       child: Center(
@@ -3316,7 +3324,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               ],
             ),
           ),
-          if (_currentSessionQuestions.isNotEmpty || _currentSessionApprovals.isNotEmpty)
+          if (hasApprovalOrQuestion)
             _buildApprovalArea(hasKeyboard),
           if (!isDocumentMode &&
               (_sideQuestion != null ||
@@ -3326,7 +3334,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                   (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
                   _topActiveBanner != null))
             ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: hasKeyboard ? 110 : 200),
+                constraints: BoxConstraints(
+                  maxHeight: hasKeyboard ? 110 : (hasApprovalOrQuestion ? 100 : 200),
+                ),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -3345,6 +3355,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                         BackgroundTasksBar(
                           runningTasks: _runningBackgroundTasks,
                           activeGoals: _activeGoals,
+                          initiallyExpanded: !hasApprovalOrQuestion,
                           onTapTask: _openTaskOutputSheet,
                           onStopTask: _handleStopBackgroundTask,
                           onStopGoal: (g) {

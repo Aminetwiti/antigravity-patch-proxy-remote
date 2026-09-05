@@ -28,12 +28,14 @@ export interface ProcessInfo {
 const WINDOWS_IMAGE_NAMES = ['Antigravity.exe', 'Antigravity IDE.exe'];
 
 /** Find running Antigravity processes. */
-export async function findAntigravityProcesses(): Promise<ProcessInfo[]> {
+export async function findAntigravityProcesses(options?: { keepIde?: boolean }): Promise<ProcessInfo[]> {
   const platform = getPlatform();
+  const keepIde = options?.keepIde ?? (Boolean(process.env.AG_KEEP_IDE) || Boolean(process.env.VSCODE_PID));
+  const imageNames = keepIde ? ['Antigravity.exe'] : WINDOWS_IMAGE_NAMES;
   try {
     if (platform === 'win32') {
       const results: ProcessInfo[] = [];
-      for (const name of WINDOWS_IMAGE_NAMES) {
+      for (const name of imageNames) {
         const { stdout } = await execFileAsync('tasklist', ['/FI', `IMAGENAME eq ${name}`, '/FO', 'CSV', '/NH']);
         results.push(...parseWindowsTasklist(stdout));
       }

@@ -39,6 +39,7 @@ vi.mock('./antigravity', () => ({
 vi.mock('./config', () => ({
   getPatchVersionOverride: vi.fn(() => ({ range: null, reason: null, setAt: null })),
   DEFAULT_MITM_PORT: 51074,
+  DEFAULT_BIND_HOST: '127.0.0.1',
 }));
 
 import fs from 'fs';

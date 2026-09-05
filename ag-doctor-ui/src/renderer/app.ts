@@ -1883,18 +1883,32 @@ $('#modelsBulkEnableBtn')?.addEventListener('click', async () => {
   if (selectedModelNames.size === 0) return;
   setStatus(`Enabling ${selectedModelNames.size} selected models…`, 'busy');
   try {
+    const providers = (await window.ag.providers.get()) as ProviderEntry[];
+    providersCache = providers;
+    const modifiedProviders = new Map<string, ProviderEntry>();
+    let enabledCount = 0;
+
     for (const name of Array.from(selectedModelNames)) {
       const match = await getProviderForModelBulk(name);
       if (match) {
+        const targetId = resolveModelId(match, name);
         const cleanName = name.replace(/^models\//, '');
         if (!match.models) match.models = [];
-        const pModel = match.models.find((m) => m.id === cleanName || m.displayName === cleanName || m.id === name || m.displayName === name);
-        if (pModel) pModel.enabled = true;
-        else match.models.push({ id: cleanName, displayName: cleanName, enabled: true });
-        await window.ag.providers.save(match);
+        const pModel = match.models.find((m) => m.id === targetId || m.displayName === targetId || m.id === name || m.displayName === name || m.id === cleanName);
+        if (pModel) {
+          pModel.enabled = true;
+        } else {
+          match.models.push({ id: targetId, displayName: targetId, enabled: true });
+        }
+        modifiedProviders.set(match.id, match);
+        enabledCount++;
       }
     }
-    const enabledCount = selectedModelNames.size;
+
+    for (const provider of modifiedProviders.values()) {
+      await window.ag.providers.save(provider);
+    }
+
     selectedModelNames.clear();
     toast(`Enabled ${enabledCount} models`, 'ok');
     void loadModels();
@@ -1910,18 +1924,32 @@ $('#modelsBulkDisableBtn')?.addEventListener('click', async () => {
   if (selectedModelNames.size === 0) return;
   setStatus(`Disabling ${selectedModelNames.size} selected models…`, 'busy');
   try {
+    const providers = (await window.ag.providers.get()) as ProviderEntry[];
+    providersCache = providers;
+    const modifiedProviders = new Map<string, ProviderEntry>();
+    let disabledCount = 0;
+
     for (const name of Array.from(selectedModelNames)) {
       const match = await getProviderForModelBulk(name);
       if (match) {
+        const targetId = resolveModelId(match, name);
         const cleanName = name.replace(/^models\//, '');
         if (!match.models) match.models = [];
-        const pModel = match.models.find((m) => m.id === cleanName || m.displayName === cleanName || m.id === name || m.displayName === name);
-        if (pModel) pModel.enabled = false;
-        else match.models.push({ id: cleanName, displayName: cleanName, enabled: false });
-        await window.ag.providers.save(match);
+        const pModel = match.models.find((m) => m.id === targetId || m.displayName === targetId || m.id === name || m.displayName === name || m.id === cleanName);
+        if (pModel) {
+          pModel.enabled = false;
+        } else {
+          match.models.push({ id: targetId, displayName: targetId, enabled: false });
+        }
+        modifiedProviders.set(match.id, match);
+        disabledCount++;
       }
     }
-    const disabledCount = selectedModelNames.size;
+
+    for (const provider of modifiedProviders.values()) {
+      await window.ag.providers.save(provider);
+    }
+
     selectedModelNames.clear();
     toast(`Disabled ${disabledCount} models`, 'ok');
     void loadModels();
@@ -1945,14 +1973,24 @@ $('#modelsBulkDeleteBtn')?.addEventListener('click', async () => {
 
   setStatus(`Deleting ${count} selected models…`, 'busy');
   try {
+    const providers = (await window.ag.providers.get()) as ProviderEntry[];
+    providersCache = providers;
+    const modifiedProviders = new Map<string, ProviderEntry>();
+
     for (const name of Array.from(selectedModelNames)) {
       const match = await getProviderForModelBulk(name);
       if (match && match.models) {
-        match.models = match.models.filter((m) => m.id !== name && m.displayName !== name);
-        await window.ag.providers.save(match);
+        const targetId = resolveModelId(match, name);
+        match.models = match.models.filter((m) => m.id !== targetId && m.displayName !== targetId && m.id !== name && m.displayName !== name);
+        modifiedProviders.set(match.id, match);
       }
       await window.ag.run(['models', 'remove', name, '--yes']);
     }
+
+    for (const provider of modifiedProviders.values()) {
+      await window.ag.providers.save(provider);
+    }
+
     selectedModelNames.clear();
     toast(`Deleted ${count} models`, 'ok');
     void loadModels();
@@ -3655,6 +3693,7 @@ let pmModelsSearchQuery = '';
 
 const pmKeyToggle = $('#pmKeyToggle') as HTMLButtonElement | null;
 const pmModelsSearch = $('#pmModelsSearch') as HTMLInputElement | null;
+const pmModelsSearchClear = $('#pmModelsSearchClear') as HTMLButtonElement | null;
 const pmModelsSelectAll = $('#pmModelsSelectAll') as HTMLButtonElement | null;
 const pmModelsDeselectAll = $('#pmModelsDeselectAll') as HTMLButtonElement | null;
 const pmFormCustomModelInput = $('#pmFormCustomModelInput') as HTMLInputElement | null;
@@ -3662,6 +3701,67 @@ const pmFormAddCustomModelBtn = $('#pmFormAddCustomModelBtn') as HTMLButtonEleme
 const pmModelsCountBadge = $('#pmModelsCountBadge') as HTMLSpanElement | null;
 const pmCapFilters = $('#pmCapFilters') as HTMLDivElement | null;
 let activeCapFilter: 'all' | 'reasoning' | 'vision' | 'code' = 'all';
+
+interface ProviderPresetDef {
+  name: string;
+  provider: 'openai' | 'anthropic' | 'google' | 'custom';
+  apiUrl: string;
+  defaultKey: string;
+}
+
+const PROVIDER_PRESETS: Record<string, ProviderPresetDef> = {
+  ollama: {
+    name: 'Ollama (Local)',
+    provider: 'custom',
+    apiUrl: 'http://localhost:11434/v1',
+    defaultKey: 'ollama',
+  },
+  lmstudio: {
+    name: 'LM Studio (Local)',
+    provider: 'openai',
+    apiUrl: 'http://localhost:1234/v1',
+    defaultKey: 'lm-studio',
+  },
+  openrouter: {
+    name: 'OpenRouter AI',
+    provider: 'openai',
+    apiUrl: 'https://openrouter.ai/api/v1',
+    defaultKey: '',
+  },
+  deepseek: {
+    name: 'DeepSeek Cloud',
+    provider: 'openai',
+    apiUrl: 'https://api.deepseek.com/v1',
+    defaultKey: '',
+  },
+  google: {
+    name: 'Google Gemini',
+    provider: 'google',
+    apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultKey: '',
+  },
+  localai: {
+    name: 'LocalAI',
+    provider: 'custom',
+    apiUrl: 'http://localhost:8000/v1',
+    defaultKey: '',
+  },
+};
+
+function applyProviderPreset(presetKey: string): void {
+  const p = PROVIDER_PRESETS[presetKey];
+  if (!p) return;
+  pmFormName.value = p.name;
+  pmFormType.value = p.provider;
+  pmFormUrl.value = p.apiUrl;
+  if (p.defaultKey) {
+    pmFormKey.value = p.defaultKey;
+  }
+  toast(`Preset applied: ${p.name}`, 'ok');
+  if (!p.defaultKey && p.provider !== 'custom') {
+    pmFormKey.focus();
+  }
+}
 
 function detectModelCapabilities(modelId: string): string[] {
   const caps: string[] = [];
@@ -3712,14 +3812,21 @@ function renderPmModelsCatalog(): void {
   let html = '<div class="agy-model-chips">';
   for (const m of filtered) {
     const checked = m.enabled !== false ? 'checked' : '';
+    const selectedClass = m.enabled !== false ? ' is-selected' : '';
     const caps = detectModelCapabilities(m.id);
-    const badgesHtml = caps
-      .map((c) => `<span class="pm-cap-badge ${c}">${c}</span>`)
-      .join('');
+    const badgesHtml = caps.length > 0
+      ? `<div class="pm-chip-caps">${caps.map((c) => `<span class="pm-cap-badge ${c}">${c}</span>`).join('')}</div>`
+      : '';
+    const hasDiffName = m.displayName && m.displayName !== m.id;
+    const nameLabel = escapeHtml(m.displayName || m.id);
+    const idLabel = hasDiffName ? `<span class="pm-chip-id">${escapeHtml(m.id)}</span>` : '';
 
-    html += `<label class="agy-chip" title="${escapeHtml(m.id)}">
+    html += `<label class="agy-chip${selectedClass}" title="${escapeHtml(m.id)}">
       <input type="checkbox" data-model-id="${escapeHtml(m.id)}" ${checked} />
-      <span>${escapeHtml(m.displayName || m.id)}</span>
+      <div class="pm-chip-info">
+        <span class="pm-chip-name">${nameLabel}</span>
+        ${idLabel}
+      </div>
       ${badgesHtml}
     </label>`;
   }
@@ -3818,9 +3925,9 @@ async function renderProviderList(): Promise<void> {
               <span>${escapeHtml(p.name)}</span>
             </div>
             <div class="agy-provider-row-meta">
-              <span>${escapeHtml(p.provider)}</span>
+              <span class="agy-provider-badge ${escapeHtml(p.provider)}">${escapeHtml(p.provider)}</span>
               <span class="agy-dot">·</span>
-              <span>${escapeHtml(p.apiUrl.replace(/^https?:\/\//, ''))}</span>
+              <span>${escapeHtml(p.apiUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span>
               <span class="agy-dot">·</span>
               <span>${p.models.length} model${p.models.length === 1 ? '' : 's'}</span>
             </div>
@@ -3946,11 +4053,25 @@ function resetProviderForm(): void {
   pmFormType.value = 'openai';
   pmFormUrl.value = '';
   pmFormKey.value = '';
+  pmFormKey.type = 'password';
+  if (pmKeyToggle) {
+    pmKeyToggle.title = 'Show API key';
+    pmKeyToggle.setAttribute('aria-label', 'Show API key');
+    pmKeyToggle.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  }
   pmFormInsecure.checked = false;
   pmModelsList.innerHTML = '';
   pmFormError.hidden = true;
   pmFormError.textContent = '';
   editingProviderId = null;
+  activeCapFilter = 'all';
+  if (pmCapFilters) {
+    pmCapFilters.querySelectorAll('.pm-cap-filter').forEach((b) => b.classList.remove('active'));
+    pmCapFilters.querySelector('[data-cap="all"]')?.classList.add('active');
+  }
+  pmModelsSearchQuery = '';
+  if (pmModelsSearch) pmModelsSearch.value = '';
+  if (pmModelsSearchClear) pmModelsSearchClear.hidden = true;
 }
 
 function openProviderForm(existingId?: string): void {
@@ -4025,6 +4146,12 @@ pmFormSave.addEventListener('click', async () => {
   const selectedModels = currentFetchedModels
     .filter((m) => m.enabled !== false)
     .map((m) => ({ id: m.id, displayName: m.displayName || m.id, enabled: true }));
+
+  if (selectedModels.length === 0 && currentFetchedModels.length > 0) {
+    pmFormError.textContent = 'Please select at least one model to save.';
+    pmFormError.hidden = false;
+    return;
+  }
 
   const entry: ProviderEntry = {
     id: editingProviderId || `provider-${Date.now()}`,
@@ -4138,16 +4265,46 @@ if (pmCapFilters) {
   });
 }
 
+// Delegated change listener for model catalog selection chips
+pmModelsList?.addEventListener('change', (e) => {
+  const target = e.target as HTMLInputElement;
+  if (target && target.matches('input[data-model-id]')) {
+    const modelId = target.dataset.modelId;
+    const model = currentFetchedModels.find((m) => m.id === modelId);
+    if (model) {
+      model.enabled = target.checked;
+      target.closest('.agy-chip')?.classList.toggle('is-selected', target.checked);
+      updatePmModelsCounter();
+    }
+  }
+});
+
 if (pmModelsSelectAll) {
   pmModelsSelectAll.addEventListener('click', () => {
-    currentFetchedModels.forEach((m) => { m.enabled = true; });
+    const q = pmModelsSearchQuery.trim().toLowerCase();
+    currentFetchedModels.forEach((m) => {
+      const caps = detectModelCapabilities(m.id);
+      if (activeCapFilter !== 'all' && !caps.includes(activeCapFilter)) return;
+      if (q && !m.id.toLowerCase().includes(q) && !(m.displayName || '').toLowerCase().includes(q)) return;
+      m.enabled = true;
+    });
     renderPmModelsCatalog();
   });
 }
 
 if (pmModelsDeselectAll) {
   pmModelsDeselectAll.addEventListener('click', () => {
-    currentFetchedModels.forEach((m) => { m.enabled = false; });
+    const q = pmModelsSearchQuery.trim().toLowerCase();
+    if (!q && activeCapFilter === 'all') {
+      currentFetchedModels.forEach((m) => { m.enabled = false; });
+    } else {
+      currentFetchedModels.forEach((m) => {
+        const caps = detectModelCapabilities(m.id);
+        if (activeCapFilter !== 'all' && !caps.includes(activeCapFilter)) return;
+        if (q && !m.id.toLowerCase().includes(q) && !(m.displayName || '').toLowerCase().includes(q)) return;
+        m.enabled = false;
+      });
+    }
     renderPmModelsCatalog();
   });
 }
@@ -4172,6 +4329,59 @@ if (pmFormCustomModelInput) {
       e.preventDefault();
       addCustomModelToCatalog();
     }
+  });
+}
+
+// Quick Preset button handlers
+$('#presetOllama')?.addEventListener('click', () => applyProviderPreset('ollama'));
+$('#presetLMStudio')?.addEventListener('click', () => applyProviderPreset('lmstudio'));
+$('#presetOpenRouter')?.addEventListener('click', () => applyProviderPreset('openrouter'));
+$('#presetDeepSeek')?.addEventListener('click', () => applyProviderPreset('deepseek'));
+$('#presetGoogle')?.addEventListener('click', () => applyProviderPreset('google'));
+$('#presetLocalAI')?.addEventListener('click', () => applyProviderPreset('localai'));
+
+// API Key visibility toggle
+if (pmKeyToggle) {
+  pmKeyToggle.addEventListener('click', () => {
+    const isPassword = pmFormKey.type === 'password';
+    pmFormKey.type = isPassword ? 'text' : 'password';
+    pmKeyToggle.title = isPassword ? 'Hide API key' : 'Show API key';
+    pmKeyToggle.setAttribute('aria-label', isPassword ? 'Hide API key' : 'Show API key');
+    pmKeyToggle.innerHTML = isPassword
+      ? `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  });
+}
+
+// Model Catalog Search & Clear
+if (pmModelsSearch) {
+  pmModelsSearch.addEventListener('input', () => {
+    pmModelsSearchQuery = pmModelsSearch.value;
+    if (pmModelsSearchClear) {
+      pmModelsSearchClear.hidden = !pmModelsSearchQuery;
+    }
+    renderPmModelsCatalog();
+  });
+  pmModelsSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && pmModelsSearch.value) {
+      e.stopPropagation();
+      pmModelsSearch.value = '';
+      pmModelsSearchQuery = '';
+      if (pmModelsSearchClear) pmModelsSearchClear.hidden = true;
+      renderPmModelsCatalog();
+    }
+  });
+}
+
+if (pmModelsSearchClear) {
+  pmModelsSearchClear.addEventListener('click', () => {
+    if (pmModelsSearch) {
+      pmModelsSearch.value = '';
+      pmModelsSearch.focus();
+    }
+    pmModelsSearchQuery = '';
+    pmModelsSearchClear.hidden = true;
+    renderPmModelsCatalog();
   });
 }
 

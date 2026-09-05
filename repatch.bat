@@ -56,9 +56,9 @@ echo  Antigravity Patch (one-click, version-agnostic)
 echo ============================================================
 echo.
 
-REM -- 1. Stop Antigravity + language servers + proxy-stub
-echo [1/5] Stopping Antigravity processes...
-powershell -ExecutionPolicy Bypass -Command "Stop-Process -Name 'Antigravity IDE', Antigravity, language_server, language_server_windows_x64 -Force -ErrorAction SilentlyContinue"
+REM -- 1. Stop Classic Antigravity + language servers + proxy-stub (keep Antigravity IDE intact)
+echo [1/5] Stopping Classic Antigravity processes...
+powershell -ExecutionPolicy Bypass -Command "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"
 powershell -ExecutionPolicy Bypass -Command "Get-Process -Name node -ErrorAction SilentlyContinue | ForEach-Object { try { $cmd = (Get-CimInstance Win32_Process -Filter 'ProcessId='+$_.Id).CommandLine; if ($cmd -like '*proxy-stub*' -or $cmd -like '*standalone-proxy-runner*') { $_ | Stop-Process -Force } } catch {} }"
 timeout /t 2 /nobreak >nul
 

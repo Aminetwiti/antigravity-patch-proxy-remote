@@ -74,6 +74,8 @@ export const storageAPI: StorageAPI = {
   exportProviders: () => ipcRenderer.invoke('storage:export-providers'),
   importProviders: () => ipcRenderer.invoke('storage:import-providers'),
   getDoctorDiagnostics: () => ipcRenderer.invoke('storage:get-doctor-diagnostics'),
+  injectUserStatus: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-user-status', rawBuffer),
+  injectAvailableModels: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-available-models', rawBuffer),
 };
 
 const logsAPI: LogsAPI = {
@@ -140,5 +142,58 @@ contextBridge.exposeInMainWorld('extensions', extensionsAPI);
 contextBridge.exposeInMainWorld('deepLink', deepLinkAPI);
 contextBridge.exposeInMainWorld('agent', agentAPI);
 contextBridge.exposeInMainWorld('electronNative', electronNativeAPI);
+
+// Intercept GetUserStatus and GetAvailableModels in the renderer without redirects (which break ConnectRPC)
+try {
+  webFrame.executeJavaScript(`
+    (function() {
+      if (window.__ag_fetch_hooked) return;
+      window.__ag_fetch_hooked = true;
+      const origFetch = window.fetch;
+      window.fetch = async function(...args) {
+        const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : (args[0] && args[0].href ? args[0].href : ''));
+        const isUserStatus = typeof url === 'string' && url.includes('LanguageServerService/GetUserStatus');
+        const isAvailableModels = typeof url === 'string' && url.includes('LanguageServerService/GetAvailableModels');
+
+        if (!isUserStatus && !isAvailableModels) {
+          return origFetch.apply(this, args);
+        }
+
+        try {
+          const response = await origFetch.apply(this, args);
+          if (!response.ok) {
+            return response;
+          }
+          const rawBuf = await response.arrayBuffer();
+          let modifiedBytes = null;
+          if (isUserStatus && window.nativeStorage && window.nativeStorage.injectUserStatus) {
+            modifiedBytes = await window.nativeStorage.injectUserStatus(new Uint8Array(rawBuf));
+          } else if (isAvailableModels && window.nativeStorage && window.nativeStorage.injectAvailableModels) {
+            modifiedBytes = await window.nativeStorage.injectAvailableModels(new Uint8Array(rawBuf));
+          }
+          if (modifiedBytes && modifiedBytes.length > 0) {
+            const headers = new Headers(response.headers);
+            headers.set('content-length', String(modifiedBytes.length));
+            return new Response(modifiedBytes, {
+              status: response.status,
+              statusText: response.statusText,
+              headers: headers,
+            });
+          }
+          return new Response(rawBuf, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+        } catch (err) {
+          console.error('[AG] Fetch interceptor error:', err);
+          return origFetch.apply(this, args);
+        }
+      };
+    })();
+  `);
+} catch (e) {
+  preloadLog.error('Failed to install fetch interceptor in main world', e);
+}
 
 export * from './preload/types';

@@ -1041,27 +1041,31 @@
             <div class="pm-presets-bar">
               <span class="pm-presets-label">Quick Presets</span>
               <div class="pm-presets-row">
-                <button type="button" class="btn btn-ghost btn-sm" id="presetOllama" title="Ollama local server">Ollama (11434)</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="presetLMStudio" title="LM Studio local server">LM Studio (1234)</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="presetOpenRouter" title="OpenRouter cloud AI">OpenRouter</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="presetLocalAI" title="LocalAI server">LocalAI (8000)</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetOllama" title="Ollama local server">Ollama (11434)</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetLMStudio" title="LM Studio local server">LM Studio (1234)</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetOpenRouter" title="OpenRouter cloud AI">OpenRouter</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetDeepSeek" title="DeepSeek API">DeepSeek</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetGoogle" title="Google Gemini API">Google Gemini</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetLocalAI" title="LocalAI server">LocalAI (8000)</button>
               </div>
             </div>
 
-            <label class="form-field" for="pmFormName">
-              <span>Display name</span>
-              <input type="text" id="pmFormName" placeholder="My OpenAI-compatible API" autocomplete="off" />
-            </label>
+            <div class="pm-form-grid">
+              <label class="form-field" for="pmFormName">
+                <span>Display name</span>
+                <input type="text" id="pmFormName" placeholder="My OpenAI-compatible API" autocomplete="off" />
+              </label>
 
-            <label class="form-field" for="pmFormType">
-              <span>Provider type</span>
-              <select id="pmFormType">
-                <option value="openai">OpenAI-compatible</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="google">Google Gemini</option>
-                <option value="custom">Custom</option>
-              </select>
-            </label>
+              <label class="form-field" for="pmFormType">
+                <span>Provider type</span>
+                <select id="pmFormType">
+                  <option value="openai">OpenAI-compatible</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="google">Google Gemini</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+            </div>
 
             <label class="form-field" for="pmFormUrl">
               <span>API URL</span>
@@ -1110,6 +1114,7 @@
             <div class="pm-models-toolbar">
               <div class="pm-models-search-wrap">
                 <input type="text" id="pmModelsSearch" placeholder="Search models…" autocomplete="off" class="input-sm" />
+                <button type="button" class="pm-search-clear" id="pmModelsSearchClear" aria-label="Clear search" title="Clear search" hidden>&times;</button>
               </div>
               <div class="pm-models-actions-wrap">
                 <button type="button" class="btn btn-ghost btn-sm" id="pmModelsSelectAll">Select all</button>

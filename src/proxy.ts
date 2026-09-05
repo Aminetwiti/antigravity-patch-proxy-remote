@@ -64,7 +64,7 @@ import {
 import * as registry from './proxy/registry';
 
 // Protobuf injection (extracted from proxy.ts)
-import { injectCustomModelsIntoResponse } from './proxy/protoInjector';
+import { injectCustomModelsIntoResponse, injectCustomModelsIntoUserStatus } from './proxy/protoInjector';
 
 // Custom model loading (extracted from proxy.ts)
 import { loadCustomModels, getCustomModelsPath } from './proxy/modelLoader';
@@ -1214,6 +1214,7 @@ function handleGetAvailableModelsProxy(
 ): void {
   const lsParsed = new URL(lsUrl);
   const client = lsParsed.protocol === 'https:' ? https : http;
+  const bodyToSend = reqBody && reqBody.length > 0 ? reqBody : Buffer.from([0, 0, 0, 0, 0]);
 
   const options: https.RequestOptions = {
     method: 'POST',
@@ -1223,7 +1224,7 @@ function handleGetAvailableModelsProxy(
     headers: {
       'Content-Type': 'application/grpc-web+proto',
       'Accept': 'application/grpc-web+proto',
-      'Content-Length': String(reqBody.length),
+      'Content-Length': String(bodyToSend.length),
       ...(reqHeaders['x-codeium-csrf-token'] ? { 'x-codeium-csrf-token': String(reqHeaders['x-codeium-csrf-token']) } : {}),
       ...(reqHeaders['Connect-Protocol-Version'] ? { 'Connect-Protocol-Version': String(reqHeaders['Connect-Protocol-Version']) } : {}),
       ...(reqHeaders['X-Grpc-Web'] ? { 'X-Grpc-Web': String(reqHeaders['X-Grpc-Web']) } : {}),
@@ -1237,7 +1238,10 @@ function handleGetAvailableModelsProxy(
       lsResErrored = true;
       log.error('[Proxy] LS error for GetAvailableModels:', err.message);
       if (!res.headersSent && !res.writableEnded) {
-        safeWriteHead(res, 502);
+        safeWriteHead(res, 502, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': '*',
+        });
         safeEnd(res);
       }
     });
@@ -1259,6 +1263,9 @@ function handleGetAvailableModelsProxy(
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
             'Content-Length': String(modifiedBuf.length),
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Expose-Headers': '*',
           })
         ) {
           safeEnd(res, modifiedBuf);
@@ -1269,6 +1276,9 @@ function handleGetAvailableModelsProxy(
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
             'Content-Length': String(modifiedBuf.length),
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Expose-Headers': '*',
           })
         ) {
           safeEnd(res, modifiedBuf);
@@ -1281,7 +1291,10 @@ function handleGetAvailableModelsProxy(
     log.error('[Proxy] GetAvailableModels forward timed out');
     lsReq.destroy();
     if (!res.headersSent && !res.writableEnded) {
-      safeWriteHead(res, 504);
+      safeWriteHead(res, 504, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+      });
       safeEnd(res);
     }
   });
@@ -1289,12 +1302,125 @@ function handleGetAvailableModelsProxy(
   lsReq.on('error', (err) => {
     log.error('[Proxy] GetAvailableModels forward error:', err.message);
     if (!res.headersSent && !res.writableEnded) {
-      safeWriteHead(res, 502);
+      safeWriteHead(res, 502, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+      });
       safeEnd(res);
     }
   });
 
-  lsReq.write(reqBody);
+  lsReq.write(bodyToSend);
+  lsReq.end();
+}
+
+// ─── GetUserStatus Proxy Handler ─────────────────────────────────────────────
+
+function handleGetUserStatusProxy(
+  res: http.ServerResponse,
+  reqBody: Buffer,
+  lsUrl: string,
+  reqHeaders: Record<string, string | string[] | undefined>,
+): void {
+  const lsParsed = new URL(lsUrl);
+  const client = lsParsed.protocol === 'https:' ? https : http;
+  const bodyToSend = reqBody && reqBody.length > 0 ? reqBody : Buffer.from([0, 0, 0, 0, 0]);
+
+  const options: https.RequestOptions = {
+    method: 'POST',
+    hostname: lsParsed.hostname,
+    port: lsParsed.port || (lsParsed.protocol === 'https:' ? '443' : '80'),
+    path: lsParsed.pathname + lsParsed.search,
+    headers: {
+      'Content-Type': 'application/grpc-web+proto',
+      'Accept': 'application/grpc-web+proto',
+      'Content-Length': String(bodyToSend.length),
+      ...(reqHeaders['x-codeium-csrf-token'] ? { 'x-codeium-csrf-token': String(reqHeaders['x-codeium-csrf-token']) } : {}),
+      ...(reqHeaders['Connect-Protocol-Version'] ? { 'Connect-Protocol-Version': String(reqHeaders['Connect-Protocol-Version']) } : {}),
+      ...(reqHeaders['X-Grpc-Web'] ? { 'X-Grpc-Web': String(reqHeaders['X-Grpc-Web']) } : {}),
+    },
+    rejectUnauthorized: !LOOPBACK_HOSTS.includes(lsParsed.hostname as typeof LOOPBACK_HOSTS[number]),
+  };
+
+  const lsReq = client.request(options, (lsRes) => {
+    let lsResErrored = false;
+    lsRes.on('error', (err) => {
+      lsResErrored = true;
+      log.error('[Proxy] LS error for GetUserStatus:', err.message);
+      if (!res.headersSent && !res.writableEnded) {
+        safeWriteHead(res, 502, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': '*',
+        });
+        safeEnd(res);
+      }
+    });
+
+    const chunks: Buffer[] = [];
+    lsRes.on('data', (chunk: Buffer) => chunks.push(chunk));
+    lsRes.on('end', () => {
+      if (lsResErrored || res.headersSent || res.writableEnded) {
+        log.debug('[Proxy] GetUserStatus: skipping end handler (response terminated)');
+        return;
+      }
+      const responseBuf = Buffer.concat(chunks);
+      const customModels = loadCustomModels();
+      checkAllModelsHealth(customModels).then((healthMap) => {
+        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels, healthMap);
+        log.info(`[Proxy] GetUserStatus injected ${injectedCount} custom models`);
+        if (
+          safeWriteHead(res, lsRes.statusCode || 200, {
+            'Content-Type': 'application/grpc-web+proto',
+            'Content-Length': String(modifiedBuf.length),
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Expose-Headers': '*',
+          })
+        ) {
+          safeEnd(res, modifiedBuf);
+        }
+      }).catch(() => {
+        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels);
+        log.info(`[Proxy] GetUserStatus injected ${injectedCount} custom models (fallback)`);
+        if (
+          safeWriteHead(res, lsRes.statusCode || 200, {
+            'Content-Type': 'application/grpc-web+proto',
+            'Content-Length': String(modifiedBuf.length),
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Expose-Headers': '*',
+          })
+        ) {
+          safeEnd(res, modifiedBuf);
+        }
+      });
+    });
+  });
+
+  lsReq.setTimeout(30_000, () => {
+    log.error('[Proxy] GetUserStatus forward timed out');
+    lsReq.destroy();
+    if (!res.headersSent && !res.writableEnded) {
+      safeWriteHead(res, 504, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+      });
+      safeEnd(res);
+    }
+  });
+
+  lsReq.on('error', (err) => {
+    log.error('[Proxy] GetUserStatus forward error:', err.message);
+    if (!res.headersSent && !res.writableEnded) {
+      safeWriteHead(res, 502, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+      });
+      safeEnd(res);
+    }
+  });
+
+  lsReq.write(bodyToSend);
   lsReq.end();
 }
 
@@ -1449,6 +1575,18 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
 
+  // CORS Preflight handler for browser-initiated requests
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': '*',
+      'Access-Control-Max-Age': '86400',
+    });
+    res.end();
+    return;
+  }
+
   req.url = req.url!.replace(/^.*\/dummy_path_padding/, '');
   // Strip binary patch padding (from LS hostname replacement)
   req.url = req.url!.replace(/\/v1internal\/x{7}/, '');
@@ -1524,7 +1662,21 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         handleGetAvailableModelsProxy(res, fullBody, lsUrl, req.headers as Record<string, string | string[] | undefined>);
         return;
       }
-      if (safeWriteHead(res, 400, { 'Content-Type': 'application/json' })) {
+      if (safeWriteHead(res, 400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })) {
+        safeEnd(res, JSON.stringify({ error: 'Missing ls parameter' }));
+      }
+      return;
+    }
+
+    // 0.1. Intercept GetUserStatus (redirected from Electron webRequest for Antigravity 2.5+/2.12+)
+    if (req.url!.startsWith('/GetUserStatus')) {
+      const gusParsed = new URL(req.url!, `http://${LOOPBACK_HOSTS[0]}`);
+      const lsUrl = gusParsed.searchParams.get('ls');
+      if (lsUrl) {
+        handleGetUserStatusProxy(res, fullBody, lsUrl, req.headers as Record<string, string | string[] | undefined>);
+        return;
+      }
+      if (safeWriteHead(res, 400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })) {
         safeEnd(res, JSON.stringify({ error: 'Missing ls parameter' }));
       }
       return;
@@ -1676,16 +1828,27 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               const modelsMap: Record<string, unknown> = {};
               customModels.forEach((m) => {
                 const slug = toSlug(m);
-                modelsMap[slug] = {
+                const pid = generateModelPlaceholderId(m);
+                const entry = {
                   displayName: m.displayName,
                   recommended: true,
                   maxTokens: 1048576,
                   maxOutputTokens: 4096,
                   tokenizerType: 'LLAMA_WITH_SPECIAL',
-                  model: generateModelPlaceholderId(m),
+                  model: pid,
+                  planModel: pid,
+                  requestedModel: pid,
                   apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
                   modelProvider: 'MODEL_PROVIDER_GOOGLE',
                 };
+                modelsMap[slug] = entry;
+                modelsMap[pid] = entry;
+                if (m.name && m.name !== pid && m.name !== slug) {
+                  modelsMap[m.name] = entry;
+                }
+                if (m.externalModelName && m.externalModelName !== pid && m.externalModelName !== slug) {
+                  modelsMap[m.externalModelName] = entry;
+                }
                 m._slug = slug;
               });
               googleJson.models = modelsMap;

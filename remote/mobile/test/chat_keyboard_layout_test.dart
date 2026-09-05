@@ -6,6 +6,7 @@ import 'package:mobile/core/protocol/daemon_api.dart';
 import 'package:mobile/features/chat_stream/chat_stream_screen.dart';
 import 'package:mobile/widgets/background_tasks_bar.dart';
 import 'package:mobile/widgets/chat_input_bar.dart';
+import 'package:mobile/widgets/tool_approval_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -135,6 +136,91 @@ void main() {
 
       // Vérification qu'aucun RenderFlex overflow n'a été levé
       expect(errors, isEmpty);
+      expect(find.byType(ChatInputBar), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await ctrl.close();
+      api.dispose();
+    });
+
+    testWidgets('ChatStreamScreen does not overflow with 10 running tasks and pending approval concurrently', (tester) async {
+      tester.view.physicalSize = const Size(360, 600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final ctrl = StreamController<dynamic>.broadcast();
+      final api = DaemonApi(
+        incoming: ctrl.stream,
+        send: (d) {
+          final map = d as Map<String, dynamic>;
+          final reqId = map['requestId'] as String?;
+          if (reqId != null) {
+            scheduleMicrotask(() {
+              if (!ctrl.isClosed) {
+                ctrl.add(jsonEncode({'requestId': reqId, 'data': {}}));
+              }
+            });
+          }
+        },
+      );
+
+      final oldOnError = FlutterError.onError;
+      final errors = <String>[];
+      FlutterError.onError = (details) {
+        errors.add(details.toString());
+      };
+      addTearDown(() => FlutterError.onError = oldOnError);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatStreamScreen(
+              api: api,
+              activeSessionId: 'sess-kb-2',
+              activeProjectName: 'Antigravity Workspace',
+              isConnected: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Émet 10 tâches de fond actives
+      for (int i = 0; i < 10; i++) {
+        ctrl.add(jsonEncode({
+          'type': 'task_started',
+          'cascadeId': 'sess-kb-2',
+          'data': {
+            'id': 'task-$i',
+            'command': 'powershell -Command "Test-Path script-$i.ps1"',
+            'cascadeId': 'sess-kb-2',
+          },
+        }));
+      }
+
+      // Émet une approbation d'outil bloquante
+      ctrl.add(jsonEncode({
+        'type': 'approval_pending',
+        'cascadeId': 'sess-kb-2',
+        'data': {
+          'callId': 'call-node-1',
+          'approvalType': 'run_command',
+          'tool': 'run_command',
+          'command': 'node -e "try { const m = require(\'./dist/proxy/modelLoader\'); } catch (e) {}"',
+          'cascadeId': 'sess-kb-2',
+        },
+      }));
+
+      await tester.pump(const Duration(milliseconds: 300));
+
+      FlutterError.onError = oldOnError;
+
+      // Vérification qu'aucun débordement RenderFlex n'a été levé
+      expect(errors, isEmpty);
+      expect(find.text('10 tasks running'), findsOneWidget);
+      expect(find.byType(ToolApprovalCard), findsOneWidget);
       expect(find.byType(ChatInputBar), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
