@@ -112,7 +112,6 @@ class CascadeSession {
     final trimmedTitle = title.trim();
     if (trimmedTitle.isEmpty ||
         trimmedTitle == 'Cascade Session' ||
-        trimmedTitle == 'Untitled Conversation' ||
         _uuidRegex.hasMatch(trimmedTitle)) {
       return false;
     }

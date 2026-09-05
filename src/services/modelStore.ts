@@ -66,6 +66,8 @@ export interface ProviderModelEntry {
   id: string;
   displayName?: string;
   enabled: boolean;
+  supportsImages?: boolean;
+  supportsVision?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
 }
@@ -79,6 +81,8 @@ export interface ProviderFileEntry {
   allowUnauthorized?: boolean;
   encrypted?: boolean;
   enabled: boolean;
+  supportsImages?: boolean;
+  supportsVision?: boolean;
   useRawBaseUrl?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
@@ -128,6 +132,8 @@ export async function loadCustomModels(): Promise<CustomModelFileEntry[]> {
           allowUnauthorized: p.allowUnauthorized,
           encrypted: p.encrypted,
           useRawBaseUrl: p.useRawBaseUrl,
+          supportsImages: m.supportsImages ?? p.supportsImages ?? true,
+          supportsVision: m.supportsVision ?? p.supportsVision ?? true,
           extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
           extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
         });

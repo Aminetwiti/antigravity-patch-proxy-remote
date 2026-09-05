@@ -26,6 +26,8 @@ interface RawProviderEntry {
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
   fallbackModel?: string;
+  supportsImages?: boolean;
+  supportsVision?: boolean;
   models?: RawModelEntry[];
 }
 
@@ -34,6 +36,8 @@ interface RawModelEntry {
   id?: string;
   displayName?: string;
   enabled?: boolean;
+  supportsImages?: boolean;
+  supportsVision?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
   fallbackModel?: string;
@@ -171,6 +175,8 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
         encrypted: p.encrypted,
         useRawBaseUrl: p.useRawBaseUrl,
         fallbackModel: m.fallbackModel ?? p.fallbackModel,
+        supportsImages: m.supportsImages ?? p.supportsImages ?? true,
+        supportsVision: m.supportsVision ?? p.supportsVision ?? true,
         extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
         extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
       };
@@ -232,17 +238,7 @@ export function loadCustomModels(): CustomModel[] {
     const models = parsed.models || [];
     return parseModelsSchema(models, filePath);
   } catch (e) {
-    log.error('[Proxy] Failed to parse custom_models.json', e);
-    try {
-      if (fs.existsSync(filePath)) {
-        cryptoStore.backupFile(filePath);
-        fs.renameSync(filePath, filePath + '.corrupt');
-        log.warn(`[Proxy] Corrupted custom_models.json moved to ${filePath}.corrupt. Recreating defaults.`);
-      }
-      return createDefaultModelsFile(filePath);
-    } catch (recoveryErr) {
-      log.error('[Proxy] Auto-recovery failed:', recoveryErr);
-      return [];
-    }
+    log.error('[Proxy] Failed to parse custom_models.json (preserving file on disk):', e);
+    return [];
   }
 }

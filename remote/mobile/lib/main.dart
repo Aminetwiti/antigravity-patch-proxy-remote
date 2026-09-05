@@ -206,9 +206,10 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     };
     // Token rejeté : affiche le statut erreur pour inviter à scanner le QR ou saisir le PIN.
     _wsClient.onAuthRejected = () async {
-      // Pas de boucle infinie : l'utilisateur peut entrer le PIN ou scanner le QR.
+      await SettingsStore.clearSession();
     };
     _wsClient.onEndpointDead = () async {
+      await SettingsStore.clearSession();
       _connectWithSavedSettings();
     };
     ApprovalNotifier.instance.init();

@@ -42,6 +42,35 @@ describe('Live Model Synchronization & Cache Invalidation', () => {
     expect(getCachedHealth('models/test-1')).toBeNull();
   });
 
+  it('should deduplicate concurrent in-flight pings to the same endpoint', async () => {
+    const { pingCustomModel } = await import('../proxy/modelHealthChecker');
+    const m1: CustomModel = {
+      name: 'models/dedup-1',
+      displayName: 'Dedup 1',
+      provider: 'openai',
+      apiUrl: 'https://example.com/v1',
+      apiKey: 'key-123',
+    };
+    const m2: CustomModel = {
+      name: 'models/dedup-2',
+      displayName: 'Dedup 2',
+      provider: 'openai',
+      apiUrl: 'https://example.com/v1',
+      apiKey: 'key-123',
+    };
+
+    // Both pings invoked concurrently for the exact same endpoint
+    const p1 = pingCustomModel(m1);
+    const p2 = pingCustomModel(m2);
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1).toBeDefined();
+    expect(r2).toBeDefined();
+    expect(r1.status).toEqual(r2.status);
+    expect(getCachedHealth('models/dedup-1')).toBeDefined();
+    expect(getCachedHealth('models/dedup-2')).toBeDefined();
+  });
+
   it('should setup and stop custom_models.json watcher without errors', () => {
     expect(() => setupCustomModelsWatcher()).not.toThrow();
     expect(() => stopCustomModelsWatcher()).not.toThrow();

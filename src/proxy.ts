@@ -202,7 +202,8 @@ export function buildProxyErrorPayload(
 
 // ─── Safe Response Helpers ─────────────────────────────────────────────────
 import { safeWriteHead, safeEnd } from './proxy/httpUtils';
-import { mergeModels, getMappedCustomModels, getCustomModelsList } from './proxy/modelInjector';
+import { mergeModels, getMappedCustomModels, getCustomModelsList, injectCustomSlugsIntoAgentModelSorts } from './proxy/modelInjector';
+import { detectModelCapabilities } from './proxy/modelUtils';
 
 // ─── Model Helpers ────────────────────────────────────────────────────────
 
@@ -1426,6 +1427,37 @@ function handleGetUserStatusProxy(
 
 // ─── Main Request Handler ─────────────────────────────────────────────────
 
+export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
+  if (!candidate || typeof candidate !== 'string') return false;
+  const enumName = generateModelPlaceholderId(m);
+  const slug = toSlug(m);
+  const clean = candidate.replace(/^models\//, '');
+  const cleanLower = clean.toLowerCase();
+  const candLower = candidate.toLowerCase();
+  const extLower = (m.externalModelName || '').toLowerCase();
+  const idLower = ((m as { id?: string }).id || '').toLowerCase();
+  const dispLower = (m.displayName || '').toLowerCase();
+  const slugLower = slug.toLowerCase();
+  const mSlugLower = (m._slug || '').toLowerCase();
+
+  return (
+    m.name === candidate ||
+    m.name === clean ||
+    slug === candidate ||
+    slug === clean ||
+    slugLower === candLower ||
+    slugLower === cleanLower ||
+    enumName === candidate ||
+    enumName === clean ||
+    `models/${enumName}` === candidate ||
+    candidate.endsWith(enumName) ||
+    (Boolean(extLower) && (candLower === extLower || cleanLower === extLower || candLower === `models/${extLower}`)) ||
+    (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
+    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower)) ||
+    (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower))
+  );
+}
+
 function isAllowedOrigin(req: http.IncomingMessage): boolean {
   const host = (req.headers.host || '').toLowerCase();
   const origin = ((req.headers.origin || req.headers.referer || '') as string).toLowerCase();
@@ -1654,6 +1686,79 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       return;
     }
 
+    // OpenAI /chat/completions relay: sanitizes reasoning_content and forwards to upstream provider
+    if (req.method === 'POST' && req.url!.includes('/chat/completions')) {
+      try {
+        const payload = JSON.parse(bodyStr || '{}');
+        if (payload.model && /MODEL_PLACEHOLDER_/i.test(payload.model)) {
+          const allModels = loadCustomModels();
+          const found = allModels.find(
+            (m) => generateModelPlaceholderId(m) === payload.model || m.name === payload.model || m.name.endsWith('/' + payload.model),
+          );
+          if (found && found.externalModelName) {
+            payload.model = found.externalModelName;
+          }
+        }
+        if (Array.isArray(payload.messages)) {
+          for (const msg of payload.messages) {
+            delete msg.reasoning_content;
+          }
+        }
+        // Modern reasoning models (gpt-6, astra, luna, o-series) reject non-default temperature
+        if (payload.temperature !== undefined && payload.temperature !== 1) {
+          delete payload.temperature;
+        }
+        if (payload.max_tokens && !payload.max_completion_tokens) {
+          payload.max_completion_tokens = payload.max_tokens;
+          delete payload.max_tokens;
+        }
+        log.info(`[Relay on 51074] Forwarding request for model: ${payload.model}`);
+        const cleanedBody = JSON.stringify(payload);
+        const upstreamTarget = (req.headers['x-upstream-url'] as string) || 'https://api.experientiallabs.ai/v1/chat/completions';
+        const upstreamUrl = new URL(upstreamTarget);
+        const forwardHeaders: Record<string, string> = {
+          host: upstreamUrl.host,
+          'content-type': 'application/json',
+          'content-length': String(Buffer.byteLength(cleanedBody)),
+        };
+        for (const [k, v] of Object.entries(req.headers)) {
+          const lk = k.toLowerCase();
+          if (
+            lk !== 'host' &&
+            lk !== 'content-length' &&
+            lk !== 'transfer-encoding' &&
+            lk !== 'connection' &&
+            lk !== 'accept-encoding' &&
+            lk !== 'x-upstream-url' &&
+            typeof v === 'string'
+          ) {
+            forwardHeaders[lk] = v;
+          }
+        }
+
+        const isHttps = upstreamUrl.protocol === 'https:';
+        const client = isHttps ? https : http;
+        const upstreamReq = client.request(upstreamUrl, {
+          method: 'POST',
+          headers: forwardHeaders,
+        }, (upstreamRes) => {
+          safeWriteHead(res, upstreamRes.statusCode || 200, upstreamRes.headers as any);
+          upstreamRes.pipe(res);
+        });
+        upstreamReq.on('error', (err) => {
+          log.error('[Proxy] /chat/completions relay network error:', err);
+          if (safeWriteHead(res, 502, { 'Content-Type': 'application/json' })) {
+            safeEnd(res, JSON.stringify({ error: { message: err.message } }));
+          }
+        });
+        upstreamReq.write(cleanedBody);
+        upstreamReq.end();
+        return;
+      } catch (err) {
+        log.error('[Proxy] /chat/completions relay error:', err);
+      }
+    }
+
     // 0. Intercept GetAvailableModels (redirected from Electron webRequest)
     if (req.url!.startsWith('/GetAvailableModels')) {
       const gavParsed = new URL(req.url!, `http://${LOOPBACK_HOSTS[0]}`);
@@ -1810,6 +1915,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
             log.info(`[Proxy] Loaded custom models count: ${customModels.length}`);
 
+            const expandedCustomModels = expandModelsWithEffort(customModels);
+
             let merged = false;
             if (googleJson.models) {
               googleJson.models = mergeModels(googleJson.models, customModels);
@@ -1826,9 +1933,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
             if (!merged) {
               const modelsMap: Record<string, unknown> = {};
-              customModels.forEach((m) => {
-                const slug = toSlug(m);
+              expandedCustomModels.forEach((m) => {
+                const slug = m._slug || toSlug(m);
                 const pid = generateModelPlaceholderId(m);
+                const cap = detectModelCapabilities(m, true);
                 const entry = {
                   displayName: m.displayName,
                   recommended: true,
@@ -1838,6 +1946,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                   model: pid,
                   planModel: pid,
                   requestedModel: pid,
+                  supportsImages: cap.supportsImages,
+                  supportsVision: cap.supportsImages,
+                  supportsThinking: cap.isThinking,
                   apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
                   modelProvider: 'MODEL_PROVIDER_GOOGLE',
                 };
@@ -1849,30 +1960,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 if (m.externalModelName && m.externalModelName !== pid && m.externalModelName !== slug) {
                   modelsMap[m.externalModelName] = entry;
                 }
-                m._slug = slug;
               });
               googleJson.models = modelsMap;
             }
 
-            // Inject custom model slugs into agentModelSorts
-            const customSlugs = customModels.map((m) => m._slug).filter(Boolean) as string[];
-            if (customSlugs.length > 0) {
-              if (googleJson.agentModelSorts && Array.isArray(googleJson.agentModelSorts)) {
-                (googleJson.agentModelSorts as { groups?: { modelIds?: string[] }[] }[]).forEach((sort) => {
-                  if (sort.groups && Array.isArray(sort.groups)) {
-                    sort.groups.forEach((group) => {
-                      if (group.modelIds && Array.isArray(group.modelIds)) {
-                        customSlugs.forEach((slug) => {
-                          if (!group.modelIds!.includes(slug)) {
-                            group.modelIds!.push(slug);
-                          }
-                        });
-                      }
-                    });
-                  }
-                });
-              }
-            }
+            // 2. Injecter les modèles personnalisés dans agentModelSorts (menu déroulant Antigravity IDE)
+            // Modèles originaux en tête de liste, modèles personnalisés ajoutés sans duplication
+            injectCustomSlugsIntoAgentModelSorts(googleJson, customModels);
 
             // P1: Strip Google's upstream error from the response. When Google
             // returns 401/403/etc., the proxy forwards that error object alongside
@@ -2084,6 +2178,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           reqJson.plan_model,
           reqJson.modelId,
           reqJson.model_id,
+          reqJson.agentModel,
+          reqJson.selectedModel,
           targetReq.model,
           targetReq.requestedModel,
           targetReq.planModel,
@@ -2091,6 +2187,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           targetReq.plan_model,
           targetReq.modelId,
           targetReq.model_id,
+          targetReq.agentModel,
+          targetReq.selectedModel,
         ].filter((x): x is string => typeof x === 'string' && Boolean(x));
 
         log.info(
@@ -2099,17 +2197,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
         if (candidateNames.length > 0) {
           const customModels = expandModelsWithEffort(loadCustomModels());
-          let matchedCustomModel = customModels.find((m) => {
-            const enumName = generateModelPlaceholderId(m);
-            return candidateNames.some(
-              (cn) =>
-                m.name === cn ||
-                toSlug(m) === cn ||
-                enumName === cn ||
-                `models/${enumName}` === cn ||
-                cn.endsWith(enumName),
-            );
-          });
+          let matchedCustomModel = customModels.find((m) =>
+            candidateNames.some((cn) => matchesCustomModel(m, cn)),
+          );
           // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298)
           if (!matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
             matchedCustomModel = customModels[0];
@@ -2142,15 +2232,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (req.method === 'POST' && (isGenerate || isStandardStream)) {
       const matchedModelName = isGenerate ? generateMatch![1] : streamMatch![1];
       const customModels = expandModelsWithEffort(loadCustomModels());
-      let matchedCustomModel = customModels.find((m) => {
-        const enumName = generateModelPlaceholderId(m);
-        return (
-          m.name === matchedModelName ||
-          toSlug(m) === matchedModelName ||
-          enumName === matchedModelName ||
-          'models/' + enumName === matchedModelName
-        );
-      });
+      let matchedCustomModel = customModels.find((m) =>
+        matchesCustomModel(m, matchedModelName),
+      );
       if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
         matchedCustomModel = customModels[0];
       }

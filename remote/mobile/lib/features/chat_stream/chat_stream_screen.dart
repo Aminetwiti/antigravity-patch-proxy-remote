@@ -580,6 +580,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     if (mounted) {
       setState(() {
         _dismissedBannerIds.add(bannerId);
+        _activeBanners.remove(bannerId);
       });
     }
   }
@@ -1035,14 +1036,18 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                     fullError.contains('stream was interrupted') ||
                     fullError.contains('baseline model') ||
                     fullError.contains('429') ||
-                    fullError.contains('insufficient_quota')) {
+                    fullError.contains('insufficient_quota') ||
+                    fullError.contains('401') ||
+                    fullError.contains('invalid_api_key') ||
+                    fullError.contains('unauthorized')) {
                   final banner = BannerClassifier.classifyError(
                     msg.text.isNotEmpty
                         ? msg.text
                         : (segError.isNotEmpty ? segError : (msg.thought ?? '')),
-                    onDismiss: () => _dismissBanner('quota-exceeded'),
+                    onDismiss: _dismissBanner,
                     onSwitchModel: _showModelSelector,
                     onSeePlans: _showPlansOrLimitsSheet,
+                    onOpenSettings: _showPlansOrLimitsSheet,
                   );
                   if (banner != null) {
                     _activeBanners[banner.id] = banner;
@@ -2082,9 +2087,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             ));
             final banner = BannerClassifier.classifyError(
               errorDelta,
-              onDismiss: () => _dismissBanner('quota-exceeded'),
+              onDismiss: _dismissBanner,
               onSwitchModel: _showModelSelector,
               onSeePlans: _showPlansOrLimitsSheet,
+              onOpenSettings: _showPlansOrLimitsSheet,
             );
             if (banner != null) {
               _activeBanners[banner.id] = banner;
@@ -2645,9 +2651,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             if (candidateError != null) {
               final banner = BannerClassifier.classifyError(
                 candidateError,
-                onDismiss: () => _dismissBanner('quota-exceeded'),
+                onDismiss: _dismissBanner,
                 onSwitchModel: _showModelSelector,
                 onSeePlans: _showPlansOrLimitsSheet,
+                onOpenSettings: _showPlansOrLimitsSheet,
               );
               if (banner != null) {
                 _activeBanners[banner.id] = banner;
@@ -2677,9 +2684,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           final errorText = 'Erreur: $err';
           final banner = BannerClassifier.classifyError(
             errorText,
-            onDismiss: () => _dismissBanner('quota-exceeded'),
+            onDismiss: _dismissBanner,
             onSwitchModel: _showModelSelector,
             onSeePlans: _showPlansOrLimitsSheet,
+            onOpenSettings: _showPlansOrLimitsSheet,
           );
           if (banner != null) {
             _activeBanners[banner.id] = banner;
@@ -2861,52 +2869,33 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   /// ◀ ▶ quand plusieurs demandes sont empilées.
   Widget _buildApprovalArea([bool hasKeyboard = false]) {
     final questions = _currentSessionQuestions;
-    final hasAuxItems = _runningBackgroundTasks.isNotEmpty ||
-        _activeGoals.isNotEmpty ||
-        _subagents.isNotEmpty ||
-        _sideQuestion != null;
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    final maxApprovalHeight = hasKeyboard
-        ? 110.0
-        : (hasAuxItems
-            ? (screenHeight * 0.26).clamp(100.0, 210.0)
-            : (screenHeight * 0.35).clamp(120.0, 360.0));
-
     if (questions.isNotEmpty) {
       final q = questions.first;
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: maxApprovalHeight,
-          ),
-          child: SingleChildScrollView(
-            physics: const ClampingScrollPhysics(),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 4, bottom: 6),
-                  child: Text(
-                    'Waiting for user input.',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? AppColors.inkSecondary
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 6),
+              child: Text(
+                'Waiting for user input.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? AppColors.inkSecondary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w400,
                 ),
-                AskQuestionChoiceCard(
-                  request: q,
-                  onSubmit: (selected, custom) =>
-                      _handleQuestionSubmit(q, selected, custom),
-                ),
-              ],
+              ),
             ),
-          ),
+            AskQuestionChoiceCard(
+              request: q,
+              onSubmit: (selected, custom) =>
+                  _handleQuestionSubmit(q, selected, custom),
+            ),
+          ],
         ),
       );
     }
@@ -2918,97 +2907,89 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: maxApprovalHeight,
-        ),
-        child: SingleChildScrollView(
-          physics: const ClampingScrollPhysics(),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 6, bottom: 6),
+            child: Text(
+              'Waiting for user input.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? AppColors.inkSecondary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+          Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 6, bottom: 6),
-                child: Text(
-                  'Waiting for user input.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? AppColors.inkSecondary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w400,
-                  ),
+              if (total > 1)
+                IconButton(
+                  key: const Key('approval-prev'),
+                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.chevron_left, size: 16),
+                  tooltip: 'Approbation précédente',
+                  onPressed: () => setState(() {
+                    _approvalIndex =
+                        (_approvalIndex - 1 + total) % total;
+                  }),
+                ),
+              Text(
+                'Approbation ${_approvalIndex + 1}/$total',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
-              Row(
-                children: [
-                  if (total > 1)
-                    IconButton(
-                      key: const Key('approval-prev'),
-                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.chevron_left, size: 16),
-                      tooltip: 'Approbation précédente',
-                      onPressed: () => setState(() {
-                        _approvalIndex =
-                            (_approvalIndex - 1 + total) % total;
-                      }),
-                    ),
-                  Text(
-                    'Approbation ${_approvalIndex + 1}/$total',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (total > 1)
-                    IconButton(
-                      key: const Key('approval-next'),
-                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.chevron_right, size: 16),
-                      tooltip: 'Approbation suivante',
-                      onPressed: () => setState(() {
-                        _approvalIndex = (_approvalIndex + 1) % total;
-                      }),
-                    ),
-                  const Spacer(),
-                  IconButton(
-                    key: const Key('approval-dismiss'),
-                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.close, size: 14),
-                    tooltip: 'Fermer cette approbation',
-                    onPressed: () => _removeApproval(approval.callId),
-                  ),
-                ],
-              ),
-              TweenAnimationBuilder<double>(
-                key: ValueKey('approval-${approval.callId}'),
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutQuart,
-                tween: Tween(begin: 0.0, end: 1.0),
-                builder: (context, value, child) => Opacity(
-                  opacity: value,
-                  child: Transform.translate(
-                    offset: Offset(0, 8 * (1 - value)),
-                    child: child,
-                  ),
+              if (total > 1)
+                IconButton(
+                  key: const Key('approval-next'),
+                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.chevron_right, size: 16),
+                  tooltip: 'Approbation suivante',
+                  onPressed: () => setState(() {
+                    _approvalIndex = (_approvalIndex + 1) % total;
+                  }),
                 ),
-                child: ToolApprovalCard(
-                  request: approval,
-                  onDecision: _handleToolDecision,
-                  isExpired: expired,
-                ),
+              const Spacer(),
+              IconButton(
+                key: const Key('approval-dismiss'),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close, size: 14),
+                tooltip: 'Fermer cette approbation',
+                onPressed: () => _removeApproval(approval.callId),
               ),
             ],
           ),
-        ),
+          TweenAnimationBuilder<double>(
+            key: ValueKey('approval-${approval.callId}'),
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutQuart,
+            tween: Tween(begin: 0.0, end: 1.0),
+            builder: (context, value, child) => Opacity(
+              opacity: value,
+              child: Transform.translate(
+                offset: Offset(0, 8 * (1 - value)),
+                child: child,
+              ),
+            ),
+            child: ToolApprovalCard(
+              request: approval,
+              onDecision: _handleToolDecision,
+              isExpired: expired,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3238,6 +3219,13 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     final canPopScreen = _activeArtifact == null && _currentTab == SessionTabType.chat && !_isSearching;
     final isDocumentMode = _activeArtifact != null || _currentTab == SessionTabType.plan || _currentTab == SessionTabType.review;
     final hasApprovalOrQuestion = _currentSessionQuestions.isNotEmpty || _currentSessionApprovals.isNotEmpty;
+    final hasAuxItems = _sideQuestion != null ||
+        _runningBackgroundTasks.isNotEmpty ||
+        _activeGoals.isNotEmpty ||
+        _subagents.any((s) => s.status.toLowerCase() == 'running') ||
+        (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
+        _topActiveBanner != null;
+    final hasDockItems = hasApprovalOrQuestion || hasAuxItems;
 
     final content = ZenithalCanvas(
       child: Center(
@@ -3324,95 +3312,92 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               ],
             ),
           ),
-          if (hasApprovalOrQuestion)
-            _buildApprovalArea(hasKeyboard),
-          if (!isDocumentMode &&
-              (_sideQuestion != null ||
-                  _runningBackgroundTasks.isNotEmpty ||
-                  _activeGoals.isNotEmpty ||
-                  _subagents.isNotEmpty ||
-                  (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
-                  _topActiveBanner != null))
+          if (!isDocumentMode && hasDockItems)
             ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: hasKeyboard ? 110 : (hasApprovalOrQuestion ? 100 : 200),
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_sideQuestion != null)
-                        SideQuestionCard(
-                          question: _sideQuestion!,
-                          answer: _sideQuestionAnswer,
-                          isLoading: _isSideQuestionLoading,
-                          onClose: () => setState(() {
-                            _sideQuestion = null;
-                            _sideQuestionAnswer = null;
-                          }),
-                        ),
-                      if (_runningBackgroundTasks.isNotEmpty || _activeGoals.isNotEmpty)
-                        BackgroundTasksBar(
-                          runningTasks: _runningBackgroundTasks,
-                          activeGoals: _activeGoals,
-                          initiallyExpanded: !hasApprovalOrQuestion,
-                          onTapTask: _openTaskOutputSheet,
-                          onStopTask: _handleStopBackgroundTask,
-                          onStopGoal: (g) {
-                            setState(() => _activeGoals.remove(g));
-                            _handleStopGeneration();
-                          },
-                          onViewTasks: () {
-                            if (_runningBackgroundTasks.isNotEmpty) {
-                              _openTaskOutputSheet(_runningBackgroundTasks.first);
-                            }
-                          },
-                        ),
-                      // Seuls les sous-agents en cours d'exécution sont affichés dans la conversation
-                      // Dès qu'un sous-agent se termine, il disparaît de ce bandeau (libérant l'espace vertical)
-                      if (_subagents.any((s) => s.status.toLowerCase() == 'running'))
-                        SubagentTreeCard(
-                          onlyRunning: true,
-                          subagents: _subagents,
-                          projectName: widget.activeProjectName,
-                          sessionTitle: widget.activeSessionTitle,
-                          onOpenFullTree: () {
-                            SubagentsTreeSheet.show(
-                              context,
-                              api: widget.api,
-                              cascadeId: widget.activeSessionId,
-                              projectName: widget.activeProjectName,
-                              sessionTitle: widget.activeSessionTitle,
-                            );
-                          },
-                          onSelectSubagent: (sub) {
-                            SubagentDetailModal.show(
-                              context,
-                              agent: sub,
-                              api: widget.api,
-                              cascadeId: widget.activeSessionId,
-                              projectName: widget.activeProjectName,
-                              sessionTitle: widget.activeSessionTitle,
-                              onKill: () => _fetchSubagentsForSession(widget.activeSessionId),
-                            );
-                          },
-                        ),
-                      if ((_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false))
-                        QueuedMessagesCard(
-                          queuedMessages: _sessionMessageQueues[widget.activeSessionId]!,
-                          onSendNow: _handleQueueSendNow,
-                          onEdit: _handleQueueEdit,
-                          onDelete: _handleQueueDelete,
-                        ),
-                      if (_topActiveBanner != null)
-                        AppNotificationBanner(
-                          data: _topActiveBanner!,
-                          isCompact: hasKeyboard,
-                        ),
-                    ],
-                  ),
+              constraints: BoxConstraints(
+                maxHeight: hasKeyboard
+                    ? 110.0
+                    : (MediaQuery.sizeOf(context).height * 0.38).clamp(120.0, 300.0),
+              ),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (hasApprovalOrQuestion)
+                      _buildApprovalArea(hasKeyboard),
+                    if (_sideQuestion != null)
+                      SideQuestionCard(
+                        question: _sideQuestion!,
+                        answer: _sideQuestionAnswer,
+                        isLoading: _isSideQuestionLoading,
+                        onClose: () => setState(() {
+                          _sideQuestion = null;
+                          _sideQuestionAnswer = null;
+                        }),
+                      ),
+                    if (_runningBackgroundTasks.isNotEmpty || _activeGoals.isNotEmpty)
+                      BackgroundTasksBar(
+                        runningTasks: _runningBackgroundTasks,
+                        activeGoals: _activeGoals,
+                        initiallyExpanded: !hasApprovalOrQuestion,
+                        onTapTask: _openTaskOutputSheet,
+                        onStopTask: _handleStopBackgroundTask,
+                        onStopGoal: (g) {
+                          setState(() => _activeGoals.remove(g));
+                          _handleStopGeneration();
+                        },
+                        onViewTasks: () {
+                          if (_runningBackgroundTasks.isNotEmpty) {
+                            _openTaskOutputSheet(_runningBackgroundTasks.first);
+                          }
+                        },
+                      ),
+                    // Seuls les sous-agents en cours d'exécution sont affichés dans la conversation
+                    // Dès qu'un sous-agent se termine, il disparaît de ce bandeau (libérant l'espace vertical)
+                    if (_subagents.any((s) => s.status.toLowerCase() == 'running'))
+                      SubagentTreeCard(
+                        onlyRunning: true,
+                        subagents: _subagents,
+                        projectName: widget.activeProjectName,
+                        sessionTitle: widget.activeSessionTitle,
+                        onOpenFullTree: () {
+                          SubagentsTreeSheet.show(
+                            context,
+                            api: widget.api,
+                            cascadeId: widget.activeSessionId,
+                            projectName: widget.activeProjectName,
+                            sessionTitle: widget.activeSessionTitle,
+                          );
+                        },
+                        onSelectSubagent: (sub) {
+                          SubagentDetailModal.show(
+                            context,
+                            agent: sub,
+                            api: widget.api,
+                            cascadeId: widget.activeSessionId,
+                            projectName: widget.activeProjectName,
+                            sessionTitle: widget.activeSessionTitle,
+                          );
+                        },
+                      ),
+                    if ((_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false))
+                      QueuedMessagesCard(
+                        queuedMessages: _sessionMessageQueues[widget.activeSessionId]!,
+                        onSendNow: _handleQueueSendNow,
+                        onEdit: _handleQueueEdit,
+                        onDelete: _handleQueueDelete,
+                      ),
+                    if (_topActiveBanner != null)
+                      AppNotificationBanner(
+                        data: _topActiveBanner!,
+                        isCompact: hasKeyboard || hasApprovalOrQuestion,
+                        onDismiss: () => _dismissBanner(_topActiveBanner!.id),
+                      ),
+                  ],
                 ),
               ),
+            ),
           if (!isDocumentMode) ...[
             if (isCurrentSessionArchived && !_hasCurrentActiveStream && _activeStreamCount == 0)
               _buildArchivedChatBar(scheme, Theme.of(context).brightness == Brightness.dark)

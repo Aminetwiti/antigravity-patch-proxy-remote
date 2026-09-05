@@ -51,7 +51,7 @@ export function resolveCustomModelUrl(
   }
 
   const provider = resolveProvider(model);
-  let finalUrlStr = model.apiUrl;
+  let finalUrlStr = (model.apiUrl || '').replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
   const cleanModelName = getBaseModelId(model.externalModelName);
 
   if (provider === 'google' || provider === 'ollama') {
@@ -60,17 +60,16 @@ export function resolveCustomModelUrl(
   } else if (provider === 'openai' || model.provider === 'custom' || model.provider === 'openrouter') {
     const urlLower = finalUrlStr.toLowerCase();
     if (!urlLower.includes('/chat/completions') && !urlLower.includes('/completions')) {
+      finalUrlStr = finalUrlStr.replace(/\/+$/, '');
       if (finalUrlStr.endsWith('/v1')) {
         finalUrlStr += '/chat/completions';
-      } else if (!finalUrlStr.endsWith('/')) {
-        finalUrlStr += '/v1/chat/completions';
       } else {
-        finalUrlStr += 'v1/chat/completions';
+        finalUrlStr += '/v1/chat/completions';
       }
     }
   }
 
-  return finalUrlStr;
+  return finalUrlStr.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
 }
 
 

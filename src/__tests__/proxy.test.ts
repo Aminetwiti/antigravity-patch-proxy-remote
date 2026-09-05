@@ -13,8 +13,11 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-import { parseRetryAfter } from '../proxy';
+import { parseRetryAfter, matchesCustomModel } from '../proxy';
 import { generateModelPlaceholderId, toSlug } from '../proxy/idGenerator';
+import { expandModelsWithEffort } from '../proxy/effortExpander';
+import { injectCustomSlugsIntoAgentModelSorts } from '../proxy/modelInjector';
+import type { CustomModel } from '../proxy/types';
 
 describe('generateModelPlaceholderId', () => {
   it('generates deterministic IDs for the same input', () => {
@@ -162,3 +165,84 @@ describe('parseRetryAfter', () => {
     expect(parseRetryAfter({ 'retry-after': '' })).toBe(0);
   });
 });
+
+describe('agentModelSorts custom slug injection', () => {
+  it('injects custom slugs after original models without repeating models', () => {
+    const customModels = [
+      { name: 'qwen3.8', displayName: 'Qwen 3.8 27B', apiUrl: 'https://api.example.com', provider: 'openai', externalModelName: 'qwen-3.8-27b' },
+    ];
+
+    const googleJson: Record<string, unknown> = {
+      agentModelSorts: [{ displayName: 'Recommended', groups: [{ modelIds: ['gemini-2.0-flash'] }] }],
+    };
+
+    injectCustomSlugsIntoAgentModelSorts(googleJson, customModels as CustomModel[]);
+
+    const sortGroup = (googleJson.agentModelSorts as { groups: { modelIds: string[] }[] }[])[0].groups[0].modelIds;
+    // 1. Original model comes first (not displaced by unshift)
+    expect(sortGroup[0]).toBe('gemini-2.0-flash');
+    // 2. Custom model is appended after
+    const expectedSlug = toSlug(customModels[0] as CustomModel);
+    expect(sortGroup).toContain(expectedSlug);
+    // 3. Exactly one entry per custom model (no duplicate from slug + externalModelName)
+    expect(sortGroup.filter((id) => id === expectedSlug).length).toBe(1);
+    expect(sortGroup.length).toBe(2);
+  });
+
+  it('creates default agentModelSorts structure when upstream does not provide it', () => {
+    const customModels = [
+      { name: 'gpt-4o', displayName: 'GPT-4o', apiUrl: 'https://api.openai.com/v1', provider: 'openai' },
+    ];
+
+    const googleJson: Record<string, unknown> = {};
+
+    injectCustomSlugsIntoAgentModelSorts(googleJson, customModels as CustomModel[]);
+
+    expect(googleJson.agentModelSorts).toBeDefined();
+    const sortGroup = (googleJson.agentModelSorts as { groups: { modelIds: string[] }[] }[])[0].groups[0].modelIds;
+    expect(sortGroup.length).toBe(1);
+    expect(sortGroup[0]).toMatch(/^custom-openai-/);
+  });
+});
+
+describe('matchesCustomModel', () => {
+  const model = {
+    name: 'models/MODEL_PLACEHOLDER_M542',
+    displayName: 'GPT-5.6 Luna',
+    externalModelName: 'gpt-5.6-luna',
+    apiUrl: 'https://api.experientiallabs.ai/v1/',
+    provider: 'openai' as const,
+  };
+
+  it('matches externalModelName (e.g. gpt-5.6-luna)', () => {
+    expect(matchesCustomModel(model, 'gpt-5.6-luna')).toBe(true);
+    expect(matchesCustomModel(model, 'models/gpt-5.6-luna')).toBe(true);
+  });
+
+  it('matches externalModelName case-insensitively', () => {
+    expect(matchesCustomModel(model, 'GPT-5.6-Luna')).toBe(true);
+  });
+
+  it('matches displayName', () => {
+    expect(matchesCustomModel(model, 'GPT-5.6 Luna')).toBe(true);
+    expect(matchesCustomModel(model, 'gpt-5.6 luna')).toBe(true);
+  });
+
+  it('matches placeholder ID and models/ placeholder ID', () => {
+    const pid = generateModelPlaceholderId(model);
+    expect(matchesCustomModel(model, pid)).toBe(true);
+    expect(matchesCustomModel(model, `models/${pid}`)).toBe(true);
+  });
+
+  it('matches generated slug', () => {
+    const slug = toSlug(model);
+    expect(matchesCustomModel(model, slug)).toBe(true);
+  });
+
+  it('does not match unrelated model names', () => {
+    expect(matchesCustomModel(model, 'claude-3-5-sonnet')).toBe(false);
+    expect(matchesCustomModel(model, 'gemini-2.0-flash')).toBe(false);
+  });
+});
+
+

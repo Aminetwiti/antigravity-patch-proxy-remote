@@ -435,16 +435,17 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
         const providerLower = (model.provider || '').toLowerCase();
         // Normalize URL for chat API endpoints
         if (providerLower === 'openai' || providerLower === 'custom' || providerLower === 'ollama') {
+          urlStr = urlStr.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
           const urlLower = urlStr.toLowerCase();
           if (!urlLower.includes('/chat/completions') && !urlLower.includes('/completions')) {
+            urlStr = urlStr.replace(/\/+$/, '');
             if (urlStr.endsWith('/v1')) {
               urlStr += '/chat/completions';
-            } else if (!urlStr.endsWith('/')) {
-              urlStr += '/v1/chat/completions';
             } else {
-              urlStr += 'v1/chat/completions';
+              urlStr += '/v1/chat/completions';
             }
           }
+          urlStr = urlStr.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
         }
 
         const url = new URL(urlStr);
@@ -854,8 +855,10 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
           return;
         } else if (!modelsUrl.endsWith('/models')) {
           // Assume it's a base URL, append /v1/models
-          modelsUrl = modelsUrl.replace(/\/$/, '') + '/v1/models';
+          const cleanModelsUrl = modelsUrl.replace(/\/+$/, '');
+          modelsUrl = cleanModelsUrl.endsWith('/v1') ? `${cleanModelsUrl}/models` : `${cleanModelsUrl}/v1/models`;
         }
+        modelsUrl = modelsUrl.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
         
         const protocol = parsedUrl.protocol === 'https:' ? https : http;
         const headers: Record<string, string> = {

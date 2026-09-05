@@ -115,6 +115,8 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         inputTokenLimit: cap.maxTokens,
         outputTokenLimit: cap.maxOutputTokens,
         supportedGenerationMethods: ['generateContent', 'countTokens'],
+        supportsImages: cap.supportsImages,
+        supportsVision: cap.supportsImages,
         temperature: cap.isThinking ? undefined : 0.7,
         topP: cap.isThinking ? undefined : 0.9,
         topK: cap.isThinking ? undefined : 40,
@@ -133,6 +135,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       const entry: Record<string, unknown> = {
         displayName: formatDisplayName(m),
         supportsImages: cap.supportsImages,
+        supportsVision: cap.supportsImages,
         supportsThinking: cap.isThinking,
         reasoningEffort: m.reasoningEffort || undefined,
         thinkingBudget: m.thinkingBudget || undefined,
@@ -201,4 +204,63 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
     return result;
   }
   return target;
+}
+
+/**
+ * Injects custom model slugs into `agentModelSorts` for Antigravity IDE (VS Code-based).
+ *
+ * Guarantees:
+ * 1. Each custom model is added EXACTLY ONCE (prevents duplicate entries from slug + externalModelName).
+ * 2. Original models appear FIRST (at the top); custom models are appended AFTER original models.
+ * 3. Any duplicate IDs or stale custom entries already in group.modelIds are cleanly filtered.
+ */
+export function injectCustomSlugsIntoAgentModelSorts(
+  googleJson: Record<string, unknown>,
+  customModels: CustomModel[],
+): void {
+  if (!customModels || customModels.length === 0) return;
+
+  const sortedCustomModels = sortCustomModels(expandModelsWithEffort(customModels));
+  const customSlugs: string[] = [];
+
+  sortedCustomModels.forEach((m) => {
+    const slug = toSlug(m);
+    m._slug = slug;
+    if (!customSlugs.includes(slug)) {
+      customSlugs.push(slug);
+    }
+  });
+
+  if (customSlugs.length === 0) return;
+
+  if (!googleJson.agentModelSorts || !Array.isArray(googleJson.agentModelSorts)) {
+    googleJson.agentModelSorts = [{ displayName: 'Recommended', groups: [{ modelIds: [] }] }];
+  }
+
+  const customExternalNames = new Set(
+    sortedCustomModels.map((m) => m.externalModelName).filter(Boolean) as string[],
+  );
+  const customPlaceholders = new Set(
+    sortedCustomModels.map((m) => generateModelPlaceholderId(m)),
+  );
+
+  (googleJson.agentModelSorts as { groups?: { modelIds?: string[] }[] }[]).forEach((sort) => {
+    if (sort.groups && Array.isArray(sort.groups)) {
+      sort.groups.forEach((group) => {
+        if (group.modelIds && Array.isArray(group.modelIds)) {
+          // Keep genuine original models first; filter out any duplicate or stale custom entries
+          const originalModelIds = group.modelIds.filter(
+            (id) =>
+              !customSlugs.includes(id) &&
+              !id.startsWith('custom-') &&
+              !id.startsWith('MODEL_PLACEHOLDER_') &&
+              !customExternalNames.has(id) &&
+              !customPlaceholders.has(id),
+          );
+          // Original models first, custom models appended cleanly after without repetition
+          group.modelIds = [...originalModelIds, ...customSlugs];
+        }
+      });
+    }
+  });
 }

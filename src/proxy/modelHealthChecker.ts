@@ -18,8 +18,9 @@ export interface ModelHealthResult {
 
 /** Health check results cache (model name -> result) with 30s TTL */
 const healthCache = new Map<string, { result: ModelHealthResult; expiresAt: number }>();
+const inflightPings = new Map<string, Promise<ModelHealthResult>>();
 const CACHE_TTL_MS = 30_000;
-const HEALTH_CHECK_TIMEOUT_MS = 3000;
+const HEALTH_CHECK_TIMEOUT_MS = 6000;
 
 /** Synchronous getter for cached health status */
 export function getCachedHealth(modelName: string): ModelHealthResult | null {
@@ -38,6 +39,7 @@ export function invalidateHealthCache(modelName?: string): void {
     healthCache.delete(modelName);
   } else {
     healthCache.clear();
+    inflightPings.clear();
   }
 }
 
@@ -49,9 +51,20 @@ export function pingCustomModel(model: CustomModel): Promise<ModelHealthResult> 
     return Promise.resolve(cached.result);
   }
 
-  return new Promise((resolve) => {
+  // Deduplicate concurrent in-flight probes to the same endpoint & API key
+  const endpointKey = `${model.apiUrl}::${model.apiKey || ''}`;
+  const inflight = inflightPings.get(endpointKey);
+  if (inflight) {
+    return inflight.then((result) => {
+      healthCache.set(model.name, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+      return result;
+    });
+  }
+
+  const pingPromise = new Promise<ModelHealthResult>((resolve) => {
     const startTime = Date.now();
     let settled = false;
+    let req: http.ClientRequest | null = null;
 
     const finish = (result: ModelHealthResult) => {
       if (settled) return;
@@ -61,6 +74,9 @@ export function pingCustomModel(model: CustomModel): Promise<ModelHealthResult> 
     };
 
     const timer = setTimeout(() => {
+      if (req) {
+        try { req.destroy(); } catch {}
+      }
       finish({
         status: 'unhealthy',
         latencyMs: Date.now() - startTime,
@@ -73,7 +89,7 @@ export function pingCustomModel(model: CustomModel): Promise<ModelHealthResult> 
       const isHttps = url.protocol === 'https:';
       const client = isHttps ? https : http;
 
-      const req = client.request(
+      req = client.request(
         model.apiUrl,
         {
           method: 'GET',
@@ -90,7 +106,7 @@ export function pingCustomModel(model: CustomModel): Promise<ModelHealthResult> 
           const statusCode = res.statusCode || 0;
           // Abort request to save bandwidth (we only need headers/status)
           res.destroy();
-          req.destroy();
+          if (req) req.destroy();
 
           if (statusCode === 429) {
             finish({ status: 'cooldown', statusCode, latencyMs, error: 'Cooldown (429)' });
@@ -125,6 +141,15 @@ export function pingCustomModel(model: CustomModel): Promise<ModelHealthResult> 
       });
     }
   });
+
+  inflightPings.set(endpointKey, pingPromise);
+  pingPromise.finally(() => {
+    if (inflightPings.get(endpointKey) === pingPromise) {
+      inflightPings.delete(endpointKey);
+    }
+  });
+
+  return pingPromise;
 }
 
 /** Check health of all custom models concurrently */

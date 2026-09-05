@@ -68,6 +68,10 @@ export interface CustomModel {
    * Values: 'thinking' | 'reasoning' | 'non-thinking' | 'auto'
    */
   mode?: string;
+  /** Whether the model supports multimodal image inputs. */
+  supportsImages?: boolean;
+  /** Alias for supportsImages. */
+  supportsVision?: boolean;
 }
 
 

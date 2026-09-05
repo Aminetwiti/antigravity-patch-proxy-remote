@@ -124,10 +124,12 @@ export function injectCustomModelsIntoResponse(
 
       const placeholderId = generateModelPlaceholderId(m);
       const formattedName = formatModelDisplayName(m, health);
+      const cap = detectModelCapabilities(m);
       const entry = encodeModelEntryForGetModels(
         `models/${placeholderId}`,
         formattedName,
         fieldMapping,
+        cap.supportsImages,
       );
       const tagBuf = encodeVarint(modelTag);
       const lenBuf = encodeVarint(entry.length);

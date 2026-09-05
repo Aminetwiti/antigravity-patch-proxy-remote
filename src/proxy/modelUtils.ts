@@ -112,7 +112,7 @@ const CLAUDE_PATTERN = /claude|opus|sonnet/i;
 const CLAUDE_THINKING_PATTERN = /opus-4|sonnet-4|claude-4|claude-3-5|claude-3-7/i;
 const THINKING_MODEL_PATTERN = /opus-4|sonnet-4|claude-4/i;
 const IMAGE_SUPPORT_PATTERN =
-  /gpt-4o|gpt-4-turbo|gpt-4\.5|claude|gemini|glm|zhipu|vision|vl|llava|bakllava|qwenvl|qwen.*vl|qvq|pixtral|yi-vision|cogvlm|cogview|kimi|moonshot|minimax|abab|internvl|internlm|doubao|step|stepfun|baichuan|janus|paligemma|florence|multimodal|vlm|visual|mllama|llama-3\.2|llama-4|phi-3.*vision|phi-3\.5.*vision|phi-4/i;
+  /gpt-4o|gpt-4-turbo|gpt-4\.5|gpt-5|gpt-6|astra|luna|claude|gemini|glm|zhipu|vision|vl|llava|bakllava|qwenvl|qwen.*vl|qvq|pixtral|yi-vision|cogvlm|cogview|kimi|moonshot|minimax|abab|internvl|internlm|doubao|step|stepfun|baichuan|janus|paligemma|florence|multimodal|vlm|visual|mllama|llama-3\.2|llama-4|phi-3.*vision|phi-3\.5.*vision|phi-4/i;
 const NO_IMAGE_PATTERN =
   /deepseek(?!.*(?:vision|vl|janus))|llama(?!.*(?:vision|vl|3\.2|4|mllama))|mixtral(?!.*vision)|mistral(?!.*(?:pixtral|vision))|codestral|qwen(?!.*(?:vl|qvq|vision))/i;
 

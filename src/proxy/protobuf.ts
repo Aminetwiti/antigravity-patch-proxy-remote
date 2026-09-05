@@ -170,6 +170,7 @@ export function encodeModelEntryForGetModels(
   name: string,
   displayName: string,
   mapping: Map<number, ProtoFieldType>,
+  supportsImages: boolean = true,
 ): Buffer {
   const fields: { tag: number; value: Buffer }[] = [];
   for (const [fieldNum, protoType] of mapping) {
@@ -184,7 +185,13 @@ export function encodeModelEntryForGetModels(
       }
     } else if (protoType === 'varint') {
       const tag = (fieldNum << 3) | 0;
-      fields.push({ tag, value: encodeVarint(0) });
+      if (fieldNum === 2 && supportsImages) {
+        fields.push({ tag, value: encodeVarint(1) });
+      } else if (fieldNum === 6) {
+        fields.push({ tag, value: encodeVarint(1) });
+      } else {
+        fields.push({ tag, value: encodeVarint(0) });
+      }
     } else {
       const tag = (fieldNum << 3) | 2;
       fields.push({ tag, value: Buffer.alloc(0) });

@@ -42,7 +42,7 @@ describe('mapGeminiToOpenAI', () => {
       contents: [{ role: 'model', parts: [{ text: 'Hi there!' }] }],
     };
     const result = mapGeminiToOpenAI(body, 'gpt-4o');
-    expect(result.messages[0]).toEqual({ role: 'assistant', content: 'Hi there!', reasoning_content: '' });
+    expect(result.messages[0]).toEqual({ role: 'assistant', content: 'Hi there!' });
   });
 
   it('should handle functionCall parts as tool_calls', () => {
@@ -121,7 +121,7 @@ describe('mapGeminiToOpenAI', () => {
     expect((result.tools![0].function.parameters as Record<string, string>).type).toBe('object');
   });
 
-  it('should include reasoning_content on assistant messages', () => {
+  it('should filter out thought parts from assistant messages in request', () => {
     const body = {
       contents: [
         {
@@ -136,7 +136,22 @@ describe('mapGeminiToOpenAI', () => {
     const result = mapGeminiToOpenAI(body, 'deepseek-model');
     const assistant = result.messages.find((m) => m.role === 'assistant')!;
     expect(assistant.content).toBe('answer');
-    expect(assistant.reasoning_content).toBe('thinking...');
+    expect(assistant.reasoning_content).toBeUndefined();
+  });
+
+  it('should fall back to thought text if no regular text parts exist', () => {
+    const body = {
+      contents: [
+        {
+          role: 'model',
+          parts: [{ text: 'only thought', thought: true }],
+        },
+      ],
+    };
+    const result = mapGeminiToOpenAI(body, 'gpt-4o');
+    const assistant = result.messages.find((m) => m.role === 'assistant')!;
+    expect(assistant.content).toBe('only thought');
+    expect(assistant.reasoning_content).toBeUndefined();
   });
 
   it('should handle multiple contents', () => {

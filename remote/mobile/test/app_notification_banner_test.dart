@@ -39,4 +39,41 @@ void main() {
     await tester.tap(find.text('Dismiss'));
     expect(dismissed, isTrue);
   });
+
+  testWidgets('renders AppNotificationBanner for 401 and dismisses via Ignorer button and top-right close icon', (tester) async {
+    String? dismissedId;
+
+    final banner = BannerClassifier.classifyError(
+      'HTTP 401 Unauthorized: invalid_api_key provided for OpenAI',
+      onDismiss: (id) => dismissedId = id,
+    );
+
+    expect(banner, isNotNull);
+    expect(banner!.id, 'api-key-invalid');
+    expect(banner.title, 'Clé API Invalide (HTTP 401)');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppNotificationBanner(
+            data: banner,
+            onDismiss: () => dismissedId = banner.id,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Clé API Invalide (HTTP 401)'), findsOneWidget);
+    expect(find.text('Ignorer'), findsOneWidget);
+    expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+
+    // Test tap on "Ignorer" button
+    await tester.tap(find.text('Ignorer'));
+    expect(dismissedId, 'api-key-invalid');
+
+    // Reset and test tap on top-right close icon
+    dismissedId = null;
+    await tester.tap(find.byIcon(Icons.close_rounded));
+    expect(dismissedId, 'api-key-invalid');
+  });
 }

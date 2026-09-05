@@ -31,11 +31,11 @@ export { mapGeminiToOpenAI, mapOpenAIToGemini, mapOpenAIChunkToGemini } from './
  * If localhost has no port, defaults to Ollama's standard port 11434.
  */
 export function getOllamaApiUrl(baseUrl: string): string {
-  let url = baseUrl;
+  let url = (baseUrl || '').replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
 
   // If it already has a specific API path, don't touch it
   if (url.includes('/api/')) {
-    return url;
+    return url.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
   }
 
   // Clean trailing slash
@@ -47,18 +47,19 @@ export function getOllamaApiUrl(baseUrl: string): string {
     log.info('[OllamaTranslator] Added default Ollama port 11434');
   }
 
+  const cleanUrl = url.replace(/\/+$/, '');
+
   // If URL ends with /v1, append /chat/completions
-  if (url.endsWith('/v1')) {
-    url += '/chat/completions';
-    return url;
+  if (cleanUrl.endsWith('/v1')) {
+    return (cleanUrl + '/chat/completions').replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
   }
 
   // If URL doesn't have a chat completions path, add full /v1/chat/completions
-  if (!url.includes('/chat/completions') && !url.includes('/completions')) {
-    url += '/v1/chat/completions';
+  if (!cleanUrl.includes('/chat/completions') && !cleanUrl.includes('/completions')) {
+    return (cleanUrl + '/v1/chat/completions').replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
   }
 
-  return url;
+  return cleanUrl.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
 }
 
 /**

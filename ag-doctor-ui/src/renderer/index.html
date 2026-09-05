@@ -593,16 +593,44 @@
               <div class="models-search-wrap">
                 <svg class="search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input type="text" id="modelsSearchInput" class="input-sm models-search-input" placeholder="Search models by name, provider, model ID, or endpoint…" aria-label="Search models">
+                <button type="button" class="models-search-clear" id="modelsSearchClearBtn" aria-label="Clear search" title="Clear search" hidden>&times;</button>
               </div>
               <div class="models-category-tabs">
                 <button class="models-cat-tab active" data-cat="all">All</button>
                 <button class="models-cat-tab" data-cat="active">Active</button>
                 <button class="models-cat-tab" data-cat="disabled">Disabled</button>
               </div>
+              <div class="models-cap-filters" id="modelsCapFilters">
+                <button type="button" class="models-cap-filter active" data-cap="all">All</button>
+                <button type="button" class="models-cap-filter" data-cap="reasoning" title="Reasoning models (o1, r1, thinking, etc.)">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 10 10 0 0 0-10-10z"/><path d="M12 6a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/></svg> Reasoning
+                </button>
+                <button type="button" class="models-cap-filter" data-cap="vision" title="Vision models (4o, sonnet, flash, etc.)">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Vision
+                </button>
+                <button type="button" class="models-cap-filter" data-cap="code" title="Code models (coder, starcoder, etc.)">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> Code
+                </button>
+              </div>
+              <div class="models-filter-selects">
+                <select id="modelsProviderFilter" class="input-sm models-provider-filter" aria-label="Filter by provider" title="Filter by provider">
+                  <option value="all">All providers</option>
+                </select>
+                <select id="modelsSortSelect" class="input-sm models-sort-select" aria-label="Sort models" title="Sort models">
+                  <option value="default">Default order</option>
+                  <option value="name-asc">Name (A → Z)</option>
+                  <option value="name-desc">Name (Z → A)</option>
+                  <option value="provider">By Provider</option>
+                  <option value="status">Active first</option>
+                </select>
+              </div>
               <div class="models-bulk-actions">
-                <label class="models-select-all" title="Select all models on this page" style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:12px;cursor:pointer;">
+                <label class="models-select-all" title="Select all models on this page" style="display:flex;align-items:center;gap:6px;margin-right:6px;font-size:12px;cursor:pointer;">
                   <input type="checkbox" id="modelsSelectAllCb" /> Select page
                 </label>
+                <span id="modelsSelectedBadge" class="badge badge-primary" style="display: none; font-size: 11px;">0 selected</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="modelsSelectAllMatchesBtn" title="Select all models matching active filter" style="display: none;">Select all (<span id="modelsSelectAllCount">0</span>)</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="modelsClearSelectionBtn" title="Clear selection" style="display: none;">Clear</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="modelsBulkTestBtn" title="Test selected models" disabled>
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                   Test

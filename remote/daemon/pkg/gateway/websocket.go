@@ -468,6 +468,17 @@ func (s *Server) jetboxSyncUpdates(updates map[string]connectrpc.JetboxSummary, 
 		s.jetboxSummaries = make(map[string]connectrpc.JetboxSummary)
 	}
 	for id, sum := range updates {
+		st := strings.ToUpper(sum.Status)
+		if (strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY")) && !isRunningTests() {
+			actPath := findSessionActivityPath(id)
+			if actPath != "" {
+				if fi, err := os.Stat(actPath); err == nil && time.Since(fi.ModTime()) > 5*time.Second {
+					sum.Status = "CASCADE_STATUS_READY"
+				}
+			} else {
+				sum.Status = "CASCADE_STATUS_READY"
+			}
+		}
 		s.jetboxSummaries[id] = sum
 	}
 	for _, id := range deletes {
@@ -630,6 +641,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		if isArchived {
 			st = "CASCADE_STATUS_ARCHIVED"
 		}
+		isIde := isIDESession(sum.CascadeID)
 		items = append(items, map[string]interface{}{
 			"cascadeId":      sum.CascadeID,
 			"title":          title,
@@ -643,7 +655,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 			"isArchived":     isArchived,
 			"markedAsUnread": markedUnread,
 			"hasUnread":      markedUnread,
-			"isIde":          false,
+			"isIde":          isIde,
 		})
 	}
 
@@ -653,7 +665,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 			seenIDs[cid] = true
 		}
 	}
-	if s != nil && s.isIDERunning && len(items) == 0 {
+	if s != nil && s.isIDERunning {
 		localIDE := ListIdeSessions(projects, includeArchived)
 		for _, loc := range localIDE {
 			cid, _ := loc["cascadeId"].(string)
@@ -677,6 +689,23 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		return tI.After(tJ)
 	})
 
+	openIDs := make(map[string]bool)
+	for cid := range jetbox {
+		openIDs[cid] = true
+	}
+	if s != nil {
+		if s.focusedCascadeID != "" {
+			openIDs[s.focusedCascadeID] = true
+		}
+		for cid := range s.activeCascades {
+			openIDs[cid] = true
+		}
+	}
+
+	if !includeArchived {
+		items = filterActiveOrLatestPerProject(items, openIDs)
+	}
+
 	var v int64 = 0
 	if s != nil {
 		s.stateVersion++
@@ -688,6 +717,103 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		"sessions":  items,
 		"timestamp": time.Now().UnixMilli(),
 	}
+}
+
+// filterActiveOrLatestPerProject filtre les sessions pour n'afficher que :
+// 1. Les sessions actives (en cours d'exécution ou en attente d'action)
+// 2. Les sessions ouvertes dans l'IDE actuelle (ouvertes via GetAllCascadeTrajectories ou Jetbox)
+// 3. Les sessions récemment terminées (moins de 24h)
+// 4. Les sessions épinglées par l'utilisateur
+// 5. Si aucun de ces critères n'est rempli pour un projet donné : afficher la dernière session de ce projet.
+func filterActiveOrLatestPerProject(items []map[string]interface{}, openIDs map[string]bool) []map[string]interface{} {
+	if len(items) == 0 {
+		return items
+	}
+
+	var groupOrder []string
+	projectMap := make(map[string][]map[string]interface{})
+
+	for _, it := range items {
+		ws, _ := it["workspace"].(string)
+		if ws == "" {
+			ws = "antigravity-workspace"
+		}
+		if _, exists := projectMap[ws]; !exists {
+			groupOrder = append(groupOrder, ws)
+		}
+		projectMap[ws] = append(projectMap[ws], it)
+	}
+
+	now := time.Now()
+	recentCutoff := 24 * time.Hour
+
+	isEligible := func(it map[string]interface{}) bool {
+		// 1. En cours d'exécution ou en attente d'action
+		st, _ := it["status"].(string)
+		if st == "CASCADE_STATUS_RUNNING" || st == "CASCADE_STATUS_WAITING_FOR_USER_ACTION" {
+			return true
+		}
+		// 2. Épinglé par l'utilisateur
+		if pinned, ok := it["isPinned"].(bool); ok && pinned {
+			return true
+		}
+		// 3. Était ouvert dans l'IDE actuelle
+		cid, _ := it["cascadeId"].(string)
+		if openIDs != nil && openIDs[cid] {
+			return true
+		}
+		// 4. Récemment terminé (moins de 24 heures)
+		var upd time.Time
+		switch v := it["updatedAt"].(type) {
+		case time.Time:
+			upd = v
+		case string:
+			upd, _ = time.Parse(time.RFC3339, v)
+		}
+		if !upd.IsZero() && now.Sub(upd) <= recentCutoff {
+			return true
+		}
+		return false
+	}
+
+	var result []map[string]interface{}
+	for _, ws := range groupOrder {
+		sessions := projectMap[ws]
+		if len(sessions) == 0 {
+			continue
+		}
+		var eligible []map[string]interface{}
+		for _, s := range sessions {
+			if isEligible(s) {
+				eligible = append(eligible, s)
+			}
+		}
+		if len(eligible) > 0 {
+			result = append(result, eligible...)
+		} else {
+			// Sinon n'existe pas : afficher la dernière session du projet
+			result = append(result, sessions[0])
+		}
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		var tI, tJ time.Time
+		switch v := result[i]["updatedAt"].(type) {
+		case time.Time:
+			tI = v
+		case string:
+			tI, _ = time.Parse(time.RFC3339, v)
+		}
+		switch v := result[j]["updatedAt"].(type) {
+		case time.Time:
+			tJ = v
+		case string:
+			tJ, _ = time.Parse(time.RFC3339, v)
+		}
+		return tI.After(tJ)
+	})
+
+	return result
 }
 
 // sessionsFromSummaries applique le filtre Antigravity 2.0 et enrichit les statuts dynamiques.
@@ -970,6 +1096,25 @@ type customModelConfig struct {
 	ExternalModelName string `json:"externalModelName"`
 }
 
+type customProviderModel struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Enabled     *bool  `json:"enabled,omitempty"`
+}
+
+type customProviderEntry struct {
+	ID       string                `json:"id"`
+	Name     string                `json:"name"`
+	Provider string                `json:"provider"`
+	Enabled  *bool                 `json:"enabled,omitempty"`
+	Models   []customProviderModel `json:"models"`
+}
+
+type customModelsFileWrapper struct {
+	Providers []customProviderEntry `json:"providers"`
+	Models    []customModelConfig   `json:"models"`
+}
+
 func loadCustomModelsFile() []connectrpc.ModelInfo {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -980,28 +1125,72 @@ func loadCustomModelsFile() []connectrpc.ModelInfo {
 	if err != nil {
 		return nil
 	}
-	var configs []customModelConfig
-	if err := json.Unmarshal(data, &configs); err != nil {
-		return nil
-	}
 	var out []connectrpc.ModelInfo
-	for _, c := range configs {
-		mID := c.Name
-		if mID == "" {
-			mID = c.ExternalModelName
+	var configs []customModelConfig
+	if err := json.Unmarshal(data, &configs); err == nil && len(configs) > 0 {
+		for _, c := range configs {
+			mID := c.Name
+			if mID == "" {
+				mID = c.ExternalModelName
+			}
+			dName := c.DisplayName
+			if dName == "" {
+				dName = mID
+			}
+			out = append(out, connectrpc.ModelInfo{
+				ModelID:          mID,
+				DisplayName:      dName,
+				Description:      c.Description,
+				Recommended:      true,
+				SupportsThinking: strings.Contains(strings.ToLower(mID+dName), "r1") || strings.Contains(strings.ToLower(mID+dName), "reasoning"),
+				SupportsImages:   true,
+			})
 		}
-		dName := c.DisplayName
-		if dName == "" {
-			dName = mID
+		return out
+	}
+
+	var wrapper customModelsFileWrapper
+	if err := json.Unmarshal(data, &wrapper); err == nil {
+		for _, p := range wrapper.Providers {
+			if p.Enabled != nil && !*p.Enabled {
+				continue
+			}
+			for _, m := range p.Models {
+				if m.Enabled != nil && !*m.Enabled {
+					continue
+				}
+				mID := m.ID
+				dName := m.DisplayName
+				if dName == "" {
+					dName = mID
+				}
+				out = append(out, connectrpc.ModelInfo{
+					ModelID:          mID,
+					DisplayName:      dName,
+					Recommended:      true,
+					SupportsThinking: strings.Contains(strings.ToLower(mID+dName), "r1") || strings.Contains(strings.ToLower(mID+dName), "reasoning"),
+					SupportsImages:   true,
+				})
+			}
 		}
-		out = append(out, connectrpc.ModelInfo{
-			ModelID:          mID,
-			DisplayName:      dName,
-			Description:      c.Description,
-			Recommended:      true,
-			SupportsThinking: strings.Contains(strings.ToLower(mID+dName), "r1") || strings.Contains(strings.ToLower(mID+dName), "reasoning"),
-			SupportsImages:   true,
-		})
+		for _, c := range wrapper.Models {
+			mID := c.Name
+			if mID == "" {
+				mID = c.ExternalModelName
+			}
+			dName := c.DisplayName
+			if dName == "" {
+				dName = mID
+			}
+			out = append(out, connectrpc.ModelInfo{
+				ModelID:          mID,
+				DisplayName:      dName,
+				Description:      c.Description,
+				Recommended:      true,
+				SupportsThinking: strings.Contains(strings.ToLower(mID+dName), "r1") || strings.Contains(strings.ToLower(mID+dName), "reasoning"),
+				SupportsImages:   true,
+			})
+		}
 	}
 	return out
 }
@@ -1104,14 +1293,14 @@ func isIDESession(cascadeID string) bool {
 		return false
 	}
 	home, err := os.UserHomeDir()
-	if err == nil {
-		if resolveGeminiSubDir(home, cascadeID) == "antigravity-ide" {
-			return true
-		}
-		p := filepath.Join(home, ".gemini", "antigravity-ide", "conversations", cascadeID+".db")
-		if _, errStat := os.Stat(p); errStat == nil {
-			return true
-		}
+	if err != nil {
+		return false
+	}
+	if _, errStat := os.Stat(filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID)); errStat == nil {
+		return true
+	}
+	if _, errStat := os.Stat(filepath.Join(home, ".gemini", "antigravity-ide", "conversations", cascadeID+".db")); errStat == nil {
+		return true
 	}
 	return false
 }
@@ -1277,7 +1466,7 @@ func (s *Server) isSessionActivelyRunning(cascadeID string) bool {
 		return true
 	}
 	if !isRunningTests() {
-		tPath := findTranscriptPath(cascadeID)
+		tPath := findSessionActivityPath(cascadeID)
 		if tPath != "" {
 			if fi, err := os.Stat(tPath); err == nil {
 				if time.Since(fi.ModTime()) > 5*time.Second {
@@ -1285,8 +1474,13 @@ func (s *Server) isSessionActivelyRunning(cascadeID string) bool {
 					s.jetboxSummaries[cascadeID] = sum
 					return false
 				}
+				return true
 			}
 		}
+		// Si aucun fichier d'activité n'est trouvé, la session n'est pas active localement
+		sum.Status = "CASCADE_STATUS_READY"
+		s.jetboxSummaries[cascadeID] = sum
+		return false
 	}
 	return true
 }
@@ -3524,7 +3718,7 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 				pinnedAt = getSessionPinnedTime(home, sum.CascadeID)
 			}
 		}
-		isIde := false
+		isIde := isIDESession(sum.CascadeID)
 		items = append(items, sessionWithTime{
 			data: map[string]interface{}{
 				"cascadeId":      sum.CascadeID,
@@ -3546,14 +3740,14 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		})
 	}
 
-	// Fusionner les sessions Antigravity IDE partageant un workspace commun uniquement si aucune session officielle
+	// Fusionner les sessions Antigravity IDE partageant un workspace commun
 	seenIDs := make(map[string]bool)
 	for _, it := range items {
 		if cid, ok := it.data["cascadeId"].(string); ok {
 			seenIDs[cid] = true
 		}
 	}
-	if s != nil && s.IsIDERunning() && len(items) == 0 {
+	if s != nil && s.IsIDERunning() {
 		localIDE := ListIdeSessions(projects, includeArchived)
 		for _, loc := range localIDE {
 			cid, _ := loc["cascadeId"].(string)
@@ -3607,20 +3801,43 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		return items[i].updatedAt.After(items[j].updatedAt)
 	})
 
+	openIDs := make(map[string]bool)
+	for _, sum := range summaries {
+		openIDs[sum.CascadeID] = true
+	}
+	if s != nil {
+		s.mu.Lock()
+		if s.focusedCascadeID != "" {
+			openIDs[s.focusedCascadeID] = true
+		}
+		for cid := range s.activeCascades {
+			openIDs[cid] = true
+		}
+		s.mu.Unlock()
+	}
+
 	var resultSessions []map[string]interface{}
+	for _, it := range items {
+		resultSessions = append(resultSessions, it.data)
+	}
+
+	if !includeArchived {
+		resultSessions = filterActiveOrLatestPerProject(resultSessions, openIDs)
+	}
+
 	if limitPerProject > 0 {
 		projectCounts := make(map[string]int)
-		for _, it := range items {
-			ws, _ := it.data["workspace"].(string)
-			if it.isActive || projectCounts[ws] < limitPerProject {
-				resultSessions = append(resultSessions, it.data)
+		var capped []map[string]interface{}
+		for _, sMap := range resultSessions {
+			ws, _ := sMap["workspace"].(string)
+			st, _ := sMap["status"].(string)
+			isActive := st == "CASCADE_STATUS_RUNNING" || st == "CASCADE_STATUS_WAITING_FOR_USER_ACTION"
+			if isActive || projectCounts[ws] < limitPerProject {
+				capped = append(capped, sMap)
 				projectCounts[ws]++
 			}
 		}
-	} else {
-		for _, it := range items {
-			resultSessions = append(resultSessions, it.data)
-		}
+		resultSessions = capped
 	}
 
 	var v int64 = 0
@@ -8068,7 +8285,7 @@ func (s *Server) runLiveTurnStreamer(ctx context.Context, cascadeID, requestID s
 			if turnCompleted && time.Since(lastActivityTime) >= 1000*time.Millisecond {
 				return
 			}
-			if transcriptPath != "" && (*hasTextDelivered || deliveredTextLen > 0) && time.Since(lastActivityTime) >= 1500*time.Millisecond {
+			if time.Since(lastActivityTime) >= 1500*time.Millisecond {
 				return
 			}
 			if transcriptPath == "" {
@@ -8270,13 +8487,21 @@ func (s *Server) startTranscriptWatchdog() {
 			if len(sessions) > 0 {
 				for cascadeID, sum := range sessions {
 					st := strings.ToUpper(sum.Status)
-					tPath := findTranscriptPath(cascadeID)
+					tPath := findSessionActivityPath(cascadeID)
 
-					// Détection de désynchronisation : Si le statut Jetbox dit RUNNING mais qu'il n'y a plus aucune activité fichier depuis > 5 min et aucune tâche en cours
+					// Détection de désynchronisation : Si le statut Jetbox dit RUNNING mais qu'il n'y a plus aucune activité fichier depuis > 5s et aucune tâche en cours
 					if strings.Contains(st, "RUNNING") || strings.Contains(st, "BUSY") {
 						hasTasks := s.runningTasks != nil && len(s.runningTasks.listTasksForCascade(cascadeID, false)) > 0
-						if tPath != "" && !hasTasks {
-							if fi, err := os.Stat(tPath); err == nil && now.Sub(fi.ModTime()) > 5*time.Minute {
+						if !hasTasks {
+							isDead := false
+							if tPath != "" {
+								if fi, err := os.Stat(tPath); err == nil && now.Sub(fi.ModTime()) > 5*time.Second {
+									isDead = true
+								}
+							} else {
+								isDead = true
+							}
+							if isDead {
 								s.mu.Lock()
 								if sSum, ok := s.jetboxSummaries[cascadeID]; ok {
 									sSum.Status = "CASCADE_STATUS_READY"

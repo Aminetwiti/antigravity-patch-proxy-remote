@@ -227,5 +227,98 @@ void main() {
       await ctrl.close();
       api.dispose();
     });
+
+    testWidgets('ChatStreamScreen does not overflow with concurrent Approval Card, Background Task, and 401 Error Banner', (tester) async {
+      tester.view.physicalSize = const Size(360, 600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final ctrl = StreamController<dynamic>.broadcast();
+      final api = DaemonApi(
+        incoming: ctrl.stream,
+        send: (d) {
+          final map = d as Map<String, dynamic>;
+          final reqId = map['requestId'] as String?;
+          if (reqId != null) {
+            scheduleMicrotask(() {
+              if (!ctrl.isClosed) {
+                ctrl.add(jsonEncode({'requestId': reqId, 'data': {}}));
+              }
+            });
+          }
+        },
+      );
+
+      final oldOnError = FlutterError.onError;
+      final errors = <String>[];
+      FlutterError.onError = (details) {
+        errors.add(details.toString());
+      };
+      addTearDown(() => FlutterError.onError = oldOnError);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatStreamScreen(
+              api: api,
+              activeSessionId: 'sess-kb-3',
+              activeProjectName: 'Antigravity Workspace',
+              isConnected: true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // 1. Émet 1 tâche active
+      ctrl.add(jsonEncode({
+        'type': 'task_started',
+        'cascadeId': 'sess-kb-3',
+        'data': {
+          'id': 'task-go-1',
+          'command': 'go test ./pkg/gateway/ -count=1',
+          'cascadeId': 'sess-kb-3',
+        },
+      }));
+
+      // 2. Émet une approbation bloquante
+      ctrl.add(jsonEncode({
+        'type': 'approval_pending',
+        'cascadeId': 'sess-kb-3',
+        'data': {
+          'callId': 'call-go-1',
+          'approvalType': 'run_command',
+          'tool': 'run_command',
+          'command': 'go test ./pkg/gateway/ -count=1',
+          'cascadeId': 'sess-kb-3',
+        },
+      }));
+
+      // 3. Émet une erreur HTTP 401
+      ctrl.add(jsonEncode({
+        'type': 'stream_event',
+        'cascadeId': 'sess-kb-3',
+        'data': {
+          'type': 'error',
+          'content': 'HTTP 401 Unauthorized: invalid_api_key provided for OpenAI',
+        },
+      }));
+
+      await tester.pump(const Duration(milliseconds: 300));
+
+      FlutterError.onError = oldOnError;
+
+      // Zéro overflow
+      expect(errors, isEmpty);
+      expect(find.byType(ToolApprovalCard), findsOneWidget);
+      expect(find.byType(BackgroundTasksBar), findsOneWidget);
+      expect(find.byType(ChatInputBar), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await ctrl.close();
+      api.dispose();
+    });
   });
 }

@@ -1643,9 +1643,9 @@ class _SessionRowItemState extends State<_SessionRowItem> {
     final subtitleText = widget.session.worktree ?? WorkspacePath.displayName(widget.session.workspacePath);
     final pinText = widget.isPinned ? "Épinglée, " : "";
     final runningText = isRunning ? "En cours d'exécution, " : "";
+    final isIde = widget.session.isIde;
+    final ideTag = isIde ? ' [Antigravity IDE]' : '';
     final timeText = widget.session.time.isNotEmpty ? widget.session.time : "récent";
-
-    final ideTag = widget.session.isIde ? ' [Antigravity IDE]' : '';
     Widget item = Tooltip(
       message: '$displayTitle$ideTag\n📁 $subtitleText',
       waitDuration: const Duration(milliseconds: 600),
@@ -1686,7 +1686,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (widget.session.isIde) ...[
+                          if (isIde) ...[
                             Container(
                               margin: const EdgeInsets.only(right: 5.5),
                               padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 0.8),
@@ -1761,7 +1761,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                                 color: isSelected
                                     ? (isDark ? AppColors.inkPrimary : scheme.onSurface)
                                     : (isDark ? AppColors.inkSecondary : scheme.onSurfaceVariant),
-                                fontWeight: widget.session.isIde
+                                fontWeight: isIde
                                     ? (isSelected ? FontWeight.w700 : FontWeight.w600)
                                     : (isSelected ? FontWeight.w500 : FontWeight.w400),
                               ),
@@ -1777,7 +1777,7 @@ class _SessionRowItemState extends State<_SessionRowItem> {
                           child: Row(
                             children: [
                               Icon(
-                                widget.session.isIde
+                                isIde
                                     ? Icons.code_rounded
                                     : ((widget.session.worktree != null && widget.session.worktree!.isNotEmpty)
                                         ? Icons.account_tree_outlined

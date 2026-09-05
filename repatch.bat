@@ -106,7 +106,12 @@ if exist "%AG_CLASSIC_EXE%" (
   )
 )
 
-if exist "%AG_IDE_EXE%" (
+if not "%AG_TARGET%"=="" (
+  set "TARGET=%AG_TARGET%"
+) else if exist "%AG_CLASSIC_EXE%" (
+  echo   Found Antigravity Classic: %AG_CLASSIC%
+  set "TARGET=CLASSIC"
+) else if exist "%AG_IDE_EXE%" (
   echo   Found Antigravity IDE: %AG_IDE%
   set "TARGET=IDE"
 ) else (

@@ -181,14 +181,20 @@ func isJunkSessionTitle(title string) bool {
 
 // resolveGeminiSubDir détermine si la session réside dans antigravity-ide ou antigravity
 func resolveGeminiSubDir(home, cascadeID string) string {
-	for _, sub := range []string{"antigravity-ide", "antigravity"} {
+	if _, err := os.Stat(filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID)); err == nil {
+		return "antigravity-ide"
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini", "antigravity-ide", "conversations", cascadeID+".db")); err == nil {
+		return "antigravity-ide"
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID)); err == nil {
+		return "antigravity"
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini", "antigravity", "conversations", cascadeID+".db")); err == nil {
+		return "antigravity"
+	}
+	for _, sub := range []string{"antigravity", "antigravity-ide"} {
 		if _, err := os.Stat(filepath.Join(home, ".gemini", sub, "annotations", cascadeID+".pbtxt")); err == nil {
-			return sub
-		}
-		if _, err := os.Stat(filepath.Join(home, ".gemini", sub, "brain", cascadeID)); err == nil {
-			return sub
-		}
-		if _, err := os.Stat(filepath.Join(home, ".gemini", sub, "conversations", cascadeID+".db")); err == nil {
 			return sub
 		}
 	}
@@ -251,6 +257,32 @@ func getSessionCustomTitle(home, cascadeID string) string {
 		if data, err := os.ReadFile(annoPath); err == nil {
 			if m := reTitle.FindStringSubmatch(string(data)); len(m) >= 2 {
 				return strings.TrimSpace(m[1])
+			}
+		}
+	}
+	return ""
+}
+
+// getSessionTitleFromDB lit le titre officiel depuis la table `steps` (step_type 23) de conversations/<id>.db
+func getSessionTitleFromDB(home, cascadeID string) string {
+	if cascadeID == "" {
+		return ""
+	}
+	for _, subDir := range []string{"antigravity-ide", "antigravity"} {
+		dbPath := filepath.Join(home, ".gemini", subDir, "conversations", cascadeID+".db")
+		if _, err := os.Stat(dbPath); err != nil {
+			continue
+		}
+		db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+		if err != nil {
+			continue
+		}
+		var payload []byte
+		errQuery := db.QueryRow("SELECT step_payload FROM steps WHERE step_type = 23 ORDER BY idx DESC LIMIT 1").Scan(&payload)
+		db.Close()
+		if errQuery == nil && len(payload) > 0 {
+			if t := titleFromPayload(payload); t != "" {
+				return t
 			}
 		}
 	}
@@ -370,6 +402,25 @@ func getSessionPinnedTime(home, cascadeID string) time.Time {
 			}
 			if fi, errStat := os.Stat(annoPath); errStat == nil {
 				return fi.ModTime()
+			}
+		}
+	}
+	return time.Time{}
+}
+
+// getSessionLastViewTime renvoie l'heure exacte de last_user_view_time dans annotations/<cascadeID>.pbtxt
+func getSessionLastViewTime(home, cascadeID string) time.Time {
+	if cascadeID == "" {
+		return time.Time{}
+	}
+	reView := regexp.MustCompile(`(?i)last_user_view_time:\s*\{\s*seconds:\s*(\d+)`)
+	for _, sub := range []string{"antigravity-ide", "antigravity"} {
+		annoPath := filepath.Join(home, ".gemini", sub, "annotations", cascadeID+".pbtxt")
+		if data, err := os.ReadFile(annoPath); err == nil {
+			if m := reView.FindStringSubmatch(string(data)); len(m) > 1 {
+				if sec, errConv := strconv.ParseInt(m[1], 10, 64); errConv == nil && sec > 0 {
+					return time.Unix(sec, 0)
+				}
 			}
 		}
 	}
@@ -498,14 +549,36 @@ func findTranscriptPath(cascadeID string) string {
 	}
 	candidates := []string{
 		// 1. transcript_full.jsonl — version complète non-tronquée (prioritaire pour éviter <truncated ...>)
-		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "transcript_full.jsonl"),
 		filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID, ".system_generated", "logs", "transcript_full.jsonl"),
+		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "transcript_full.jsonl"),
 		// 2. transcript.jsonl — repli standard
-		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "transcript.jsonl"),
 		filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID, ".system_generated", "logs", "transcript.jsonl"),
+		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "transcript.jsonl"),
 		// 3. chunks/transcript — layout avec transcript découpé en chunks
-		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "chunks", "transcript", "00000000.jsonl"),
 		filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID, ".system_generated", "logs", "chunks", "transcript", "00000000.jsonl"),
+		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID, ".system_generated", "logs", "chunks", "transcript", "00000000.jsonl"),
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// findSessionActivityPath localise le fichier le plus représentatif de l'activité locale
+// d'une session (transcript .jsonl ou base SQLite de conversation .db).
+func findSessionActivityPath(cascadeID string) string {
+	if p := findTranscriptPath(cascadeID); p != "" {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	candidates := []string{
+		filepath.Join(home, ".gemini", "antigravity-ide", "conversations", cascadeID+".db"),
+		filepath.Join(home, ".gemini", "antigravity", "conversations", cascadeID+".db"),
 	}
 	for _, p := range candidates {
 		if _, err := os.Stat(p); err == nil {
@@ -525,8 +598,8 @@ func findBrainDir(cascadeID string) string {
 		return ""
 	}
 	candidates := []string{
-		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID),
 		filepath.Join(home, ".gemini", "antigravity-ide", "brain", cascadeID),
+		filepath.Join(home, ".gemini", "antigravity", "brain", cascadeID),
 	}
 	for _, p := range candidates {
 		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
@@ -647,8 +720,8 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 	}
 
 	roots := []string{
-		filepath.Join(home, ".gemini", "antigravity", "brain"),
 		filepath.Join(home, ".gemini", "antigravity-ide", "brain"),
+		filepath.Join(home, ".gemini", "antigravity", "brain"),
 	}
 
 	type sessionItem struct {
@@ -709,16 +782,24 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 
 			cleanWs := normalizeWorkspace(workspacePath)
 
-			// Si nous avons des projets officiels Antigravity 2.0, ne garder QUE les sessions
-			// rattachées à un projet officiel
 			matchedProjectName, matchedProjectPath, matchedProjectID := matchOfficialProject(
 				"",
 				workspacePath,
 				cleanWs,
 				officialProjs,
 			)
-			if len(officialProjs) > 0 && matchedProjectName == "" {
-				continue
+			if matchedProjectName == "" {
+				if cleanWs != "" {
+					base := filepath.Base(cleanWs)
+					if base != "" && base != "." && base != "/" && base != "\\" {
+						matchedProjectName = base
+						matchedProjectPath = cleanWs
+					}
+				}
+				if matchedProjectName == "" {
+					matchedProjectName = "antigravity-add-model-main"
+					matchedProjectPath = cleanWs
+				}
 			}
 
 			// Nettoyage du titre si c'est un chemin brut
@@ -726,13 +807,6 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 				base := filepath.Base(cleanWs)
 				if base != "" && base != "." && base != "/" && base != "\\" {
 					title = base
-				}
-			}
-
-			if matchedProjectName == "" {
-				matchedProjectName = filepath.Base(cleanWs)
-				if matchedProjectName == "" || matchedProjectName == "." || matchedProjectName == "/" || matchedProjectName == "\\" {
-					matchedProjectName = "antigravity-workspace"
 				}
 			}
 
@@ -754,7 +828,7 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 				"updatedAt":     modTime.Format(time.RFC3339),
 				"isPinned":      pinned,
 				"isArchived":    archived,
-				"isIde":         strings.Contains(root, "antigravity-ide"),
+				"isIde":         strings.Contains(root, "antigravity-ide") || isIDESession(cascadeID),
 			}
 			items = append(items, sessionItem{data: sMap, updatedAt: modTime})
 		}
@@ -788,8 +862,11 @@ func ListLocalSessionsOpts(includeArchived bool) []map[string]interface{} {
 	return sessions
 }
 
-// ListIdeSessions retourne rapidement uniquement les sessions créées dans Antigravity IDE
-// (~/.gemini/antigravity-ide/brain) sans reparcourir le répertoire volumineux d'Antigravity 2.0.
+// ListIdeSessions retourne les sessions créées dans Antigravity IDE
+// selon les conditions utilisateur :
+// 1) Affiche QUE les sessions actives (en cours d'exécution, récemment terminées dans les 24h,
+//    ou ouvertes dans l'IDE actuelle).
+// 2) Sinon si aucune session active n'existe pour un projet, affiche la dernière session de chaque projet.
 func ListIdeSessions(officialProjs []ProjectSummary, includeArchived bool) []map[string]interface{} {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -800,7 +877,17 @@ func ListIdeSessions(officialProjs []ProjectSummary, includeArchived bool) []map
 	if err != nil {
 		return nil
 	}
-	var res []map[string]interface{}
+
+	type ideCandidate struct {
+		data          map[string]interface{}
+		effectiveTime time.Time
+		isActive      bool
+		projectName   string
+	}
+
+	var candidates []ideCandidate
+	var maxViewTime time.Time
+
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -831,8 +918,18 @@ func ListIdeSessions(officialProjs []ProjectSummary, includeArchived bool) []map
 			cleanWs,
 			officialProjs,
 		)
-		if len(officialProjs) == 0 || matchedProjectName == "" {
-			continue
+		if matchedProjectName == "" {
+			if cleanWs != "" {
+				base := filepath.Base(cleanWs)
+				if base != "" && base != "." && base != "/" && base != "\\" {
+					matchedProjectName = base
+					matchedProjectPath = cleanWs
+				}
+			}
+			if matchedProjectName == "" {
+				matchedProjectName = "antigravity-add-model-main"
+				matchedProjectPath = cleanWs
+			}
 		}
 		if strings.HasPrefix(title, "C:\\") || strings.HasPrefix(title, "c:\\") || strings.HasPrefix(title, "file://") {
 			base := filepath.Base(cleanWs)
@@ -840,7 +937,9 @@ func ListIdeSessions(officialProjs []ProjectSummary, includeArchived bool) []map
 				title = base
 			}
 		}
-		if diskTitle := getSessionCustomTitle(home, cascadeID); diskTitle != "" {
+		if dbTitle := getSessionTitleFromDB(home, cascadeID); dbTitle != "" {
+			title = dbTitle
+		} else if diskTitle := getSessionCustomTitle(home, cascadeID); diskTitle != "" {
 			title = diskTitle
 		}
 		pinned := isSessionPinned(home, cascadeID)
@@ -849,21 +948,85 @@ func ListIdeSessions(officialProjs []ProjectSummary, includeArchived bool) []map
 		if archived {
 			status = "CASCADE_STATUS_ARCHIVED"
 		}
-		res = append(res, map[string]interface{}{
-			"cascadeId":      cascadeID,
-			"title":          title,
-			"workspace":      matchedProjectName,
-			"workspacePath":  matchedProjectPath,
-			"projectId":      matchedProjectID,
-			"status":         status,
-			"updatedAt":      modTime.Format(time.RFC3339),
-			"isPinned":       pinned,
-			"isArchived":     archived,
-			"markedAsUnread": markedUnread,
-			"hasUnread":      markedUnread,
-			"isIde":          true,
+
+		viewTime := getSessionLastViewTime(home, cascadeID)
+		if viewTime.After(maxViewTime) {
+			maxViewTime = viewTime
+		}
+
+		effectiveTime := modTime
+		if viewTime.After(effectiveTime) {
+			effectiveTime = viewTime
+		}
+
+		candidates = append(candidates, ideCandidate{
+			data: map[string]interface{}{
+				"cascadeId":      cascadeID,
+				"title":          title,
+				"workspace":      matchedProjectName,
+				"workspacePath":  matchedProjectPath,
+				"projectId":      matchedProjectID,
+				"status":         status,
+				"updatedAt":      effectiveTime.Format(time.RFC3339),
+				"isPinned":       pinned,
+				"isArchived":     archived,
+				"markedAsUnread": markedUnread,
+				"hasUnread":      markedUnread,
+				"isIde":          true,
+			},
+			effectiveTime: effectiveTime,
+			isActive:      false,
+			projectName:   matchedProjectName,
 		})
 	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	for i := range candidates {
+		c := &candidates[i]
+		st, _ := c.data["status"].(string)
+		isExecuting := st == "CASCADE_STATUS_RUNNING" || st == "CASCADE_STATUS_WAITING_FOR_USER_ACTION" || st == "running"
+		isRecent := now.Sub(c.effectiveTime) <= 24*time.Hour
+		isOpenInIde := (!maxViewTime.IsZero() && c.effectiveTime.Equal(maxViewTime))
+		c.isActive = isExecuting || isRecent || isOpenInIde
+	}
+
+	byProject := make(map[string][]ideCandidate)
+	for _, c := range candidates {
+		byProject[c.projectName] = append(byProject[c.projectName], c)
+	}
+
+	var res []map[string]interface{}
+	for _, projSessions := range byProject {
+		sort.Slice(projSessions, func(i, j int) bool {
+			return projSessions[i].effectiveTime.After(projSessions[j].effectiveTime)
+		})
+
+		var activeInProj []ideCandidate
+		for _, s := range projSessions {
+			if s.isActive {
+				activeInProj = append(activeInProj, s)
+			}
+		}
+
+		if len(activeInProj) > 0 {
+			for _, a := range activeInProj {
+				res = append(res, a.data)
+			}
+		} else if len(projSessions) > 0 {
+			res = append(res, projSessions[0].data)
+		}
+	}
+
+	sort.Slice(res, func(i, j int) bool {
+		tI, _ := time.Parse(time.RFC3339, res[i]["updatedAt"].(string))
+		tJ, _ := time.Parse(time.RFC3339, res[j]["updatedAt"].(string))
+		return tI.After(tJ)
+	})
+
 	return res
 }
 
@@ -1037,6 +1200,15 @@ func extractSessionMetadata(transcriptPath, cascadeID string) (title string, wor
 		}
 	}
 
+	if title == "" || title == cascadeID || isJunkSessionTitle(title) {
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			if dbTitle := getSessionTitleFromDB(home, cascadeID); dbTitle != "" {
+				title = dbTitle
+			}
+		}
+	}
+
 	if title == "" {
 		title = cascadeID
 	}
@@ -1060,6 +1232,17 @@ func extractWorkspace(root, cascadeID string) string {
 			}
 			if meta.CorpusName != "" {
 				return meta.CorpusName
+			}
+		}
+	}
+	// Recherche dans la base SQLite conversations/<cascadeID>.db (Antigravity IDE & 2.0)
+	if home, errHome := os.UserHomeDir(); errHome == nil {
+		for _, sub := range []string{"antigravity-ide", "antigravity"} {
+			dbPath := filepath.Join(home, ".gemini", sub, "conversations", cascadeID+".db")
+			if data, err := os.ReadFile(dbPath); err == nil {
+				if m := wsFileURIRe.Find(data); len(m) > 0 {
+					return string(m)
+				}
 			}
 		}
 	}
@@ -2117,7 +2300,9 @@ func assistantTextFromPayload(sp []byte) (text, thought string) {
 func titleFromPayload(sp []byte) string {
 	if f30 := findFieldBytes(sp, 30); f30 != nil {
 		if t := printableString(findFieldBytes(f30, 4)); t != "" {
-			return t
+			t = strings.Split(t, "\n")[0]
+			t = strings.Split(t, "\\n")[0]
+			return strings.TrimSpace(t)
 		}
 	}
 	return ""
