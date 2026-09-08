@@ -433,7 +433,8 @@ const WebConsoleHTML = `<!DOCTYPE html>
           <h2 id="chatTitle" style="font-size:15px;font-weight:600">Select or Create a Session</h2>
           <span id="chatSubtitle" style="font-size:12px;color:var(--text-muted)">No session connected</span>
         </div>
-        <div id="chatActions">
+        <div id="chatActions" style="display:flex;gap:8px;">
+          <button id="exportBtn" class="btn btn-secondary hidden" onclick="exportCurrentSession()">📥 Export Report</button>
           <button id="cancelBtn" class="btn btn-danger hidden" onclick="cancelCurrentTurn()">Stop Generation</button>
         </div>
       </div>
@@ -617,6 +618,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
       document.getElementById('chatSubtitle').innerText = 'Session: ' + id + ' | Workspace: ' + workspace;
       document.getElementById('transcript').innerHTML = '';
       document.getElementById('approvalBanner').classList.add('hidden');
+      document.getElementById('exportBtn').classList.remove('hidden');
 
       // Update sidebar active class
       document.querySelectorAll('.session-item').forEach(function(el) {
@@ -633,6 +635,12 @@ const WebConsoleHTML = `<!DOCTYPE html>
           sinceSeq: 0
         }));
       }
+    }
+
+    function exportCurrentSession() {
+      if (!currentSessionId) return;
+      const url = '/v2/sessions/export?sessionId=' + encodeURIComponent(currentSessionId) + '&format=markdown' + (token ? '&token=' + encodeURIComponent(token) : '');
+      window.open(url, '_blank');
     }
 
     function createNewSession() {

@@ -28,9 +28,11 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
 	"github.com/antigravity/remote-daemon/pkg/gateway"
+	"github.com/antigravity/remote-daemon/pkg/memory"
 	"github.com/antigravity/remote-daemon/pkg/notification"
 	"github.com/antigravity/remote-daemon/pkg/sandbox"
 	"github.com/antigravity/remote-daemon/pkg/server"
+	"github.com/antigravity/remote-daemon/pkg/session"
 	"github.com/antigravity/remote-daemon/pkg/tools"
 	"github.com/antigravity/remote-daemon/pkg/tunnel"
 	"github.com/antigravity/remote-daemon/pkg/web"
@@ -428,6 +430,18 @@ func runServerRuntime(
 	toolsReg.SetSandbox(sb)
 	apprMgr := approval.NewManager(rt.SessionService(), 5*time.Minute)
 
+	memDbPath := filepath.Join(filepath.Dir(dbPath), "memory.db")
+	if memStore, err := memory.NewMemoryStore(memDbPath); err == nil {
+		rt.SetMemoryStore(memStore)
+		defer memStore.Close()
+		toolsReg.RegisterTool(memory.NewStoreMemoryTool(memStore))
+		toolsReg.RegisterTool(memory.NewRecallMemoryTool(memStore))
+		fmt.Println("🧠 Long-Term Memory Store initialized")
+	}
+
+	chkMgr := session.NewCheckpointManager(store, rt.SessionService(), wsMgr)
+	rt.SetCheckpointManager(chkMgr)
+
 	providerCfg := agent.AutoDetectProviderConfig()
 	if provider != "" && provider != "auto" {
 		providerCfg.Type = agent.ProviderType(provider)
@@ -492,6 +506,9 @@ func runServerRuntime(
 	fmt.Println("   - Workspace Shell:   WS   /v2/terminal")
 	fmt.Println("   - Prometheus Metrics:GET  /metrics")
 	fmt.Println("   - Approvals API:     GET  /v2/approvals")
+	fmt.Println("   - Memories API:      GET  /v2/memories")
+	fmt.Println("   - Session Export:    GET  /v2/sessions/export")
+	fmt.Println("   - Turn Rollback:     POST /v2/sessions/rollback")
 	fmt.Println("   - Health check:      GET  /health")
 	fmt.Println("   - Sessions REST:     GET  /v2/sessions")
 	fmt.Println("   - Workspaces API:    GET  /v2/workspaces")

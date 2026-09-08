@@ -410,6 +410,163 @@ func (h *RESTHandler) HandleResolveApproval(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+func (h *RESTHandler) HandleExportSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	sessionID := r.URL.Query().Get("sessionId")
+	if sessionID == "" {
+		parts := strings.Split(r.URL.Path, "/")
+		for i, p := range parts {
+			if p == "sessions" && i+1 < len(parts) {
+				sessionID = parts[i+1]
+				break
+			}
+		}
+	}
+
+	if sessionID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "missing sessionId parameter"})
+		return
+	}
+
+	ctx := r.Context()
+	export, err := BuildSessionExport(ctx, h.rt.store, sessionID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	format := strings.ToLower(r.URL.Query().Get("format"))
+	if format == "json" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(export)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"session-%s.md\"", sessionID))
+	md := FormatSessionMarkdown(export)
+	_, _ = w.Write([]byte(md))
+}
+
+func (h *RESTHandler) HandleRollbackSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	chkMgr := h.rt.CheckpointManager()
+	if chkMgr == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "checkpoint manager not initialized"})
+		return
+	}
+
+	var body struct {
+		SessionID string `json:"sessionId"`
+		Sequence  int64  `json:"sequence"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if body.SessionID == "" {
+		body.SessionID = r.URL.Query().Get("sessionId")
+	}
+
+	ctx := r.Context()
+	snap, err := chkMgr.RollbackSession(ctx, body.SessionID, body.Sequence)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"snapshot": snap,
+	})
+}
+
+func (h *RESTHandler) HandleMemories(w http.ResponseWriter, r *http.Request) {
+	memStore := h.rt.MemoryStore()
+	if memStore == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "memory store not initialized"})
+		return
+	}
+
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		category := r.URL.Query().Get("category")
+		query := r.URL.Query().Get("query")
+		list, err := memStore.Recall(ctx, category, query, 50)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"memories": list})
+
+	case http.MethodPost:
+		var body struct {
+			Category string   `json:"category"`
+			Key      string   `json:"key"`
+			Content  string   `json:"content"`
+			Tags     []string `json:"tags"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json body"})
+			return
+		}
+		mem, err := memStore.Store(ctx, body.Category, body.Key, body.Content, body.Tags)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(mem)
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "missing id query param"})
+			return
+		}
+		if err := memStore.Delete(ctx, id); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
 func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.Handler {
 	mux := http.NewServeMux()
 	rest := NewRESTHandler(rt, wsMgr, authToken)
@@ -428,6 +585,13 @@ func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.
 			rest.HandleListSessions(w, r)
 		}
 	}))
+
+	// Session Export & Rollback
+	mux.HandleFunc("/v2/sessions/export", rest.AuthMiddleware(rest.HandleExportSession))
+	mux.HandleFunc("/v2/sessions/rollback", rest.AuthMiddleware(rest.HandleRollbackSession))
+
+	// Long-Term Memory API
+	mux.HandleFunc("/v2/memories", rest.AuthMiddleware(rest.HandleMemories))
 
 	// Workspaces REST API
 	mux.HandleFunc("/v2/workspaces", rest.AuthMiddleware(rest.HandleWorkspaces))

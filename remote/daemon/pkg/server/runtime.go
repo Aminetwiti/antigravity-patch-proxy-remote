@@ -12,6 +12,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/approval"
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
+	"github.com/antigravity/remote-daemon/pkg/memory"
 	"github.com/antigravity/remote-daemon/pkg/notification"
 	"github.com/antigravity/remote-daemon/pkg/protocol"
 	"github.com/antigravity/remote-daemon/pkg/session"
@@ -49,6 +50,8 @@ type RuntimeServer struct {
 	v1Adapter *V1Adapter
 	scheduler *Scheduler
 	webhookDispatcher *notification.WebhookDispatcher
+	checkpointMgr     *session.CheckpointManager
+	memStore          *memory.MemoryStore
 
 	mu              sync.RWMutex
 	attachedClients map[string]map[*websocket.Conn]*AttachedClient
@@ -133,6 +136,30 @@ func (r *RuntimeServer) WebhookDispatcher() *notification.WebhookDispatcher {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.webhookDispatcher
+}
+
+func (r *RuntimeServer) SetCheckpointManager(m *session.CheckpointManager) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.checkpointMgr = m
+}
+
+func (r *RuntimeServer) CheckpointManager() *session.CheckpointManager {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.checkpointMgr
+}
+
+func (r *RuntimeServer) SetMemoryStore(m *memory.MemoryStore) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.memStore = m
+}
+
+func (r *RuntimeServer) MemoryStore() *memory.MemoryStore {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.memStore
 }
 
 // BroadcastEvent broadcasts to all clients attached to event.SessionID.
