@@ -1473,6 +1473,14 @@ function handleRequest(req, res) {
             }
             return;
         }
+        // 0.6. Intercept telemetry metrics to avoid noisy upstream 503 UNAVAILABLE errors
+        if (req.url.includes('/v1internal:recordCodeAssistMetrics') ||
+            req.url.includes('/v1internal:recordTrajectoryAnalytics')) {
+            if ((0, httpUtils_1.safeWriteHead)(res, 200, { 'Content-Type': 'application/json' })) {
+                (0, httpUtils_1.safeEnd)(res, JSON.stringify({}));
+            }
+            return;
+        }
         // 1. Intercept /v1internal:fetchAvailableModels
         if (req.url.includes('/v1internal:fetchAvailableModels')) {
             electron_log_1.default.info('[Proxy] Intercepting fetchAvailableModels request');

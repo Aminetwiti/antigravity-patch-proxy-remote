@@ -1803,6 +1803,17 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       return;
     }
 
+    // 0.6. Intercept telemetry metrics to avoid noisy upstream 503 UNAVAILABLE errors
+    if (
+      req.url!.includes('/v1internal:recordCodeAssistMetrics') ||
+      req.url!.includes('/v1internal:recordTrajectoryAnalytics')
+    ) {
+      if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+        safeEnd(res, JSON.stringify({}));
+      }
+      return;
+    }
+
     // 1. Intercept /v1internal:fetchAvailableModels
     if (req.url!.includes('/v1internal:fetchAvailableModels')) {
       log.info('[Proxy] Intercepting fetchAvailableModels request');

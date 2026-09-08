@@ -196,4 +196,101 @@ try {
   preloadLog.error('Failed to install fetch interceptor in main world', e);
 }
 
+// Inject Remote environment option into Antigravity 2.0 React UI and DOM
+try {
+  webFrame.executeJavaScript(`
+    (function() {
+      function hookReact(React) {
+        if (!React || React.__ag_remote_hooked) return;
+        React.__ag_remote_hooked = true;
+        const origCreateElement = React.createElement;
+        React.createElement = function(type, props, ...children) {
+          if (props && (props.title === "New Worktree" || props.title === "New Workspace")) {
+            const origEl = origCreateElement.apply(this, [type, props, ...children]);
+            const iconComp = (props.icon && props.icon.type) ? props.icon.type : "span";
+            const cloudIcon = origCreateElement(iconComp, { name: "cloud", size: 14, className: "mt-0.5" });
+            const remoteProps = Object.assign({}, props, {
+              title: "Remote",
+              icon: cloudIcon,
+              subtitle: "Remote Agent (62.169.27.8)",
+              selected: false,
+              disabled: false,
+              onClick: function(e) {
+                try {
+                  const url = localStorage.getItem("ag_remote_url") || "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/console?token=4d8b9f1a2c3e5a7b0e2f4a6c8d1e3b5a7c9e1f3a5b7d9f1a3c5e7b9d1f3a5b7d";
+                  window.open(url, "_blank");
+                } catch (err) {
+                  console.error(err);
+                }
+                if (typeof props.onClick === "function") {
+                  try { props.onClick(e); } catch(err) {}
+                }
+              }
+            });
+            const remoteEl = origCreateElement.apply(this, [type, remoteProps]);
+            return origCreateElement(React.Fragment, null, origEl, remoteEl);
+          }
+          return origCreateElement.apply(this, [type, props, ...children]);
+        };
+      }
+
+      let _r = window.React || globalThis.React;
+      if (_r) {
+        hookReact(_r);
+      } else {
+        let internalReact = undefined;
+        Object.defineProperty(globalThis, 'React', {
+          configurable: true,
+          enumerable: true,
+          get() { return internalReact; },
+          set(val) {
+            internalReact = val;
+            hookReact(val);
+          }
+        });
+      }
+
+      // DOM Observer fallback
+      if (!window.__ag_dom_observer) {
+        const observer = new MutationObserver(() => {
+          const items = document.querySelectorAll('button, div[role="menuitem"], div[role="option"]');
+          for (const item of items) {
+            if (item.textContent.includes("New Worktree") && !item.parentElement.querySelector('[data-ag-remote]')) {
+              const clone = item.cloneNode(true);
+              clone.setAttribute('data-ag-remote', 'true');
+              const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+              let node;
+              while (node = walker.nextNode()) {
+                if (node.textContent.includes("New Worktree")) {
+                  node.textContent = "Remote";
+                } else if (node.textContent.includes("Worktree from") || node.textContent.includes("reuse")) {
+                  node.textContent = "Remote Agent (62.169.27.8)";
+                }
+              }
+              const icons = clone.querySelectorAll('[class*="call_split"], span');
+              for (const ic of icons) {
+                if (ic.textContent === "call_split" || ic.getAttribute('name') === "call_split") {
+                  ic.textContent = "cloud";
+                  ic.setAttribute('name', 'cloud');
+                }
+              }
+              clone.onclick = (e) => {
+                e.stopPropagation();
+                const url = localStorage.getItem("ag_remote_url") || "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/console?token=4d8b9f1a2c3e5a7b0e2f4a6c8d1e3b5a7c9e1f3a5b7d9f1a3c5e7b9d1f3a5b7d";
+                window.open(url, "_blank");
+                item.click();
+              };
+              item.parentElement.insertBefore(clone, item.nextSibling);
+            }
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        window.__ag_dom_observer = observer;
+      }
+    })();
+  `);
+} catch (e) {
+  preloadLog.error('Failed to install Remote environment hook', e);
+}
+
 export * from './preload/types';
