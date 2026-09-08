@@ -1,4 +1,4 @@
-﻿package domain
+package domain
 
 import (
 	"encoding/json"
@@ -164,5 +164,12 @@ type Snapshot struct {
 	PendingData map[string]interface{} `json:"pendingData,omitempty"`
 	CapturedAt  time.Time              `json:"capturedAt"`
 }
+
+const (
+	EventSubagentStarted   = "subagent.started"
+	EventSubagentProgress  = "subagent.progress"
+	EventSubagentCompleted = "subagent.completed"
+	EventSubagentFailed    = "subagent.failed"
+)
 
 

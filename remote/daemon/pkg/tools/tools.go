@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/antigravity/remote-daemon/pkg/sandbox"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 )
 
@@ -42,10 +43,11 @@ type Tool interface {
 }
 
 type Registry struct {
-	mu         sync.RWMutex
-	tools      map[string]Tool
-	wsMgr      *workspace.Manager
+	mu          sync.RWMutex
+	tools       map[string]Tool
+	wsMgr       *workspace.Manager
 	autoApprove bool
+	sandbox     sandbox.Provider
 }
 
 func NewRegistry(wsMgr *workspace.Manager, autoApprove bool) *Registry {
@@ -56,6 +58,23 @@ func NewRegistry(wsMgr *workspace.Manager, autoApprove bool) *Registry {
 	}
 	r.registerDefaults()
 	return r
+}
+
+func (r *Registry) SetSandbox(sb sandbox.Provider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sandbox = sb
+	if cmdTool, ok := r.tools["run_command"].(*RunCommandTool); ok {
+		cmdTool.sandbox = sb
+	}
+}
+
+func (r *Registry) SetSubagentRunner(runner SubagentRunner) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if tool, ok := r.tools["invoke_subagent"].(*InvokeSubagentTool); ok {
+		tool.SetRunner(runner)
+	}
 }
 
 func (r *Registry) RegisterTool(t Tool) {
@@ -112,6 +131,7 @@ func (r *Registry) registerDefaults() {
 	r.tools["replace_file_content"] = &ReplaceFileContentTool{wsMgr: r.wsMgr}
 	r.tools["list_dir"] = &ListDirTool{wsMgr: r.wsMgr}
 	r.tools["grep_search"] = &GrepSearchTool{wsMgr: r.wsMgr}
+	r.tools["invoke_subagent"] = NewInvokeSubagentTool(nil)
 }
 
 // -----------------------------------------------------------------------------
@@ -119,7 +139,8 @@ func (r *Registry) registerDefaults() {
 // -----------------------------------------------------------------------------
 
 type RunCommandTool struct {
-	wsMgr *workspace.Manager
+	wsMgr   *workspace.Manager
+	sandbox sandbox.Provider
 }
 
 type RunCommandParams struct {
@@ -172,6 +193,26 @@ func (t *RunCommandTool) Execute(ctx context.Context, sessionID, workspaceID str
 	timeout := 120 * time.Second
 	if p.TimeoutSec > 0 {
 		timeout = time.Duration(p.TimeoutSec) * time.Second
+	}
+
+	if t.sandbox != nil {
+		req := sandbox.ExecutionRequest{
+			SessionID:   sessionID,
+			WorkspaceID: workspaceID,
+			Directory:   wsDir,
+			CommandLine: p.CommandLine,
+			Timeout:     timeout,
+		}
+		res, err := t.sandbox.Execute(ctx, req, onChunk)
+		if err != nil {
+			return nil, err
+		}
+		return &ToolResult{
+			Success:  res.ExitCode == 0,
+			Output:   res.Output,
+			Error:    res.Error,
+			ExitCode: res.ExitCode,
+		}, nil
 	}
 
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)

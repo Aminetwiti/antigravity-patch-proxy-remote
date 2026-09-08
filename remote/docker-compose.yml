@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  ag-agentd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: antigravity/ag-agentd:latest
+    container_name: ag-agentd
+    restart: unless-stopped
+    ports:
+      - "${AG_PORT:-8090}:8090"
+    environment:
+      - AG_HOST=0.0.0.0
+      - AG_PORT=8090
+      - AG_DB_PATH=/data/runtime.db
+      - AG_WORKSPACES_DIR=/workspaces
+      - AG_SANDBOX=${AG_SANDBOX:-native}
+      - AG_PROVIDER=${AG_PROVIDER:-auto}
+      - AG_MODEL=${AG_MODEL:-}
+      - AG_AUTH_TOKEN=${AG_AUTH_TOKEN:-}
+      - AG_TUNNEL=${AG_TUNNEL:-local}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
+    volumes:
+      - ag_data:/data
+      - ag_workspaces:/workspaces
+      # Docker socket mount allows Docker-in-Docker sandbox execution if --sandbox=docker
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  ag_data:
+    name: ag_data
+  ag_workspaces:
+    name: ag_workspaces

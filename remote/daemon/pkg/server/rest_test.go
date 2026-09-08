@@ -34,6 +34,9 @@ func setupMuxTest(t *testing.T, authToken string) (http.Handler, func()) {
 	rt := server.NewRuntimeServer(serverInfo, store)
 	wsMgr := workspace.NewManager()
 
+	sched := server.NewScheduler(rt.SessionService(), nil)
+	rt.SetScheduler(sched)
+
 	mux := server.NewMux(rt, wsMgr, authToken)
 
 	cleanup := func() {
@@ -147,3 +150,72 @@ func TestREST_CreateAndListSessions(t *testing.T) {
 		t.Fatalf("expected 1 session in list, got %+v", listResp.Sessions)
 	}
 }
+
+func TestREST_Schedules(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-sched")
+	defer cleanup()
+
+	// 1. Create schedule via POST
+	body := []byte(`{"id": "cron-audit", "name": "Nightly Audit", "cron": "0 2 * * *", "prompt": "Audit repo", "workspaceId": "default", "isEnabled": true}`)
+	postReq := httptest.NewRequest("POST", "/v2/schedules?token=token-sched", bytes.NewReader(body))
+	postW := httptest.NewRecorder()
+	mux.ServeHTTP(postW, postReq)
+
+	if postW.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created on POST /v2/schedules, got %d (%s)", postW.Code, postW.Body.String())
+	}
+
+	// 2. List schedules via GET
+	getReq := httptest.NewRequest("GET", "/v2/schedules?token=token-sched", nil)
+	getW := httptest.NewRecorder()
+	mux.ServeHTTP(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on GET /v2/schedules, got %d", getW.Code)
+	}
+
+	var listResp struct {
+		Schedules []server.ScheduledJob `json:"schedules"`
+	}
+	if err := json.NewDecoder(getW.Body).Decode(&listResp); err != nil {
+		t.Fatalf("failed to decode schedules: %v", err)
+	}
+
+	if len(listResp.Schedules) != 1 || listResp.Schedules[0].ID != "cron-audit" {
+		t.Fatalf("expected 1 schedule cron-audit, got %+v", listResp.Schedules)
+	}
+
+	// 3. Delete schedule via DELETE
+	delReq := httptest.NewRequest("DELETE", "/v2/schedules?id=cron-audit&token=token-sched", nil)
+	delW := httptest.NewRecorder()
+	mux.ServeHTTP(delW, delReq)
+
+	if delW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on DELETE, got %d", delW.Code)
+	}
+}
+
+func TestREST_Workspaces(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-ws")
+	defer cleanup()
+
+	// 1. Create workspace via POST
+	body := []byte(`{"id": "ws-cloud", "name": "Cloud Workspace", "path": "test-cloud-dir"}`)
+	postReq := httptest.NewRequest("POST", "/v2/workspaces?token=token-ws", bytes.NewReader(body))
+	postW := httptest.NewRecorder()
+	mux.ServeHTTP(postW, postReq)
+
+	if postW.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created on POST /v2/workspaces, got %d (%s)", postW.Code, postW.Body.String())
+	}
+
+	// 2. List workspaces via GET
+	getReq := httptest.NewRequest("GET", "/v2/workspaces?token=token-ws", nil)
+	getW := httptest.NewRecorder()
+	mux.ServeHTTP(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on GET /v2/workspaces, got %d", getW.Code)
+	}
+}
+

@@ -46,6 +46,7 @@ type RuntimeServer struct {
 	agentEng  *agent.Engine
 	apprMgr   *approval.Manager
 	v1Adapter *V1Adapter
+	scheduler *Scheduler
 
 	mu              sync.RWMutex
 	attachedClients map[string]map[*websocket.Conn]*AttachedClient
@@ -106,6 +107,18 @@ func (r *RuntimeServer) V1Adapter() *V1Adapter {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.v1Adapter
+}
+
+func (r *RuntimeServer) SetScheduler(sched *Scheduler) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.scheduler = sched
+}
+
+func (r *RuntimeServer) Scheduler() *Scheduler {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.scheduler
 }
 
 // BroadcastEvent broadcasts to all clients attached to event.SessionID.

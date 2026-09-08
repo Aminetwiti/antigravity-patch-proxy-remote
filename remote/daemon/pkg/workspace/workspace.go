@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -332,3 +333,116 @@ func (m *Manager) SearchFiles(workspaceID, query string, maxResults int) ([]Sear
 
 	return results, err
 }
+
+// UnregisterWorkspace removes a workspace from management.
+func (m *Manager) UnregisterWorkspace(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.workspaces[id]; !ok {
+		return ErrWorkspaceNotFound
+	}
+	delete(m.workspaces, id)
+	return nil
+}
+
+// ListBranches returns all local and remote branches in the workspace repository.
+func (m *Manager) ListBranches(workspaceID string) ([]string, error) {
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command("git", "branch", "-a", "--format=%(refname:short)")
+	cmd.Dir = ws.Root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git branch failed: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var branches []string
+	seen := make(map[string]bool)
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed != "" && !seen[trimmed] {
+			seen[trimmed] = true
+			branches = append(branches, trimmed)
+		}
+	}
+	sort.Strings(branches)
+	return branches, nil
+}
+
+// CurrentBranch returns the currently checked out branch name in the workspace repository.
+func (m *Manager) CurrentBranch(workspaceID string) (string, error) {
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = ws.Root
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse failed: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// CreateWorktree creates an isolated Git worktree on a new or existing branch.
+func (m *Manager) CreateWorktree(baseWsID, branch, newWsID string) (*Workspace, error) {
+	baseWs, err := m.GetWorkspace(baseWsID)
+	if err != nil {
+		return nil, err
+	}
+
+	if branch == "" {
+		return nil, fmt.Errorf("branch name cannot be empty")
+	}
+	if newWsID == "" {
+		newWsID = fmt.Sprintf("%s_%s", baseWsID, strings.ReplaceAll(branch, "/", "_"))
+	}
+
+	parentDir := filepath.Dir(baseWs.Root)
+	worktreeRoot := filepath.Join(parentDir, "worktrees", newWsID)
+	_ = os.MkdirAll(filepath.Dir(worktreeRoot), 0755)
+
+	branches, _ := m.ListBranches(baseWsID)
+	branchExists := false
+	for _, b := range branches {
+		if b == branch || strings.HasSuffix(b, "/"+branch) {
+			branchExists = true
+			break
+		}
+	}
+
+	var cmd *exec.Cmd
+	if branchExists {
+		cmd = exec.Command("git", "worktree", "add", worktreeRoot, branch)
+	} else {
+		cmd = exec.Command("git", "worktree", "add", "-b", branch, worktreeRoot)
+	}
+	cmd.Dir = baseWs.Root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("git worktree add failed: %s (%w)", string(out), err)
+	}
+
+	return m.RegisterWorkspace(newWsID, fmt.Sprintf("%s (%s)", baseWs.Name, branch), worktreeRoot)
+}
+
+// RemoveWorktree deletes a Git worktree and unregisters the workspace.
+func (m *Manager) RemoveWorktree(wsID string) error {
+	ws, err := m.GetWorkspace(wsID)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command("git", "worktree", "remove", "--force", ws.Root)
+	cmd.Dir = ws.Root
+	_ = cmd.Run()
+
+	_ = m.UnregisterWorkspace(wsID)
+	_ = os.RemoveAll(ws.Root)
+	return nil
+}
+

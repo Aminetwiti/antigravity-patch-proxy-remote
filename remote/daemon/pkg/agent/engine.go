@@ -37,7 +37,7 @@ func NewEngine(
 	apprMgr *approval.Manager,
 	llmClient LLMClient,
 ) *Engine {
-	return &Engine{
+	eng := &Engine{
 		sessionSvc:  sessionSvc,
 		wsMgr:       wsMgr,
 		toolsReg:    toolsReg,
@@ -46,6 +46,10 @@ func NewEngine(
 		maxTurns:    25,
 		turnCancels: make(map[string]context.CancelFunc),
 	}
+	if toolsReg != nil {
+		toolsReg.SetSubagentRunner(eng)
+	}
+	return eng
 }
 
 func (e *Engine) StartTurn(ctx context.Context, sessionID, prompt string) error {
@@ -249,4 +253,117 @@ func (e *Engine) buildContextMessages(events []domain.Event) []LLMMessage {
 		}
 	}
 	return msgs
+}
+
+// RunSubagent executes an isolated child agent session and returns its synthesized outcome.
+func (e *Engine) RunSubagent(ctx context.Context, parentSessionID, role, task, workspaceID string, onChunk func([]byte)) (string, error) {
+	parentSess, err := e.sessionSvc.GetSession(ctx, parentSessionID)
+	if err != nil {
+		return "", fmt.Errorf("parent session not found: %w", err)
+	}
+
+	title := fmt.Sprintf("[%s] %s", role, task)
+	if len(title) > 60 {
+		title = title[:60] + "..."
+	}
+
+	childSess, err := e.sessionSvc.CreateSession(ctx, parentSess.ServerID, workspaceID, title)
+	if err != nil {
+		return "", fmt.Errorf("failed to create subagent session: %w", err)
+	}
+
+	startPayload, _ := json.Marshal(map[string]interface{}{
+		"parentSessionId":   parentSessionID,
+		"subagentSessionId": childSess.ID,
+		"role":              role,
+		"task":              task,
+		"workspaceId":       workspaceID,
+	})
+	_, _ = e.sessionSvc.EmitEvent(ctx, parentSessionID, domain.EventSubagentStarted, startPayload)
+
+	subagentPrompt := fmt.Sprintf("You are a specialized subagent acting as %s. Your task is: %s\nFocus strictly on this mission and provide a clear, structured summary of findings.", role, task)
+
+	_ = e.sessionSvc.TransitionState(ctx, childSess.ID, domain.SessionStateStarting, "Starting subagent turn")
+	_ = e.sessionSvc.TransitionState(ctx, childSess.ID, domain.SessionStateRunning, "Subagent active")
+
+	promptPayload, _ := json.Marshal(map[string]string{"text": subagentPrompt})
+	_, _ = e.sessionSvc.EmitEvent(ctx, childSess.ID, "user.message", promptPayload)
+
+	// Available tools for subagent (exclude invoke_subagent to prevent recursion)
+	allTools := e.toolsReg.ListTools()
+	var subagentTools []tools.ToolDefinition
+	for _, t := range allTools {
+		if t.Name != "invoke_subagent" {
+			subagentTools = append(subagentTools, t)
+		}
+	}
+
+	messages := []LLMMessage{
+		{Role: "user", Content: subagentPrompt},
+	}
+
+	var finalSummary string
+	subagentMaxTurns := 10
+
+	for turn := 0; turn < subagentMaxTurns; turn++ {
+		if ctx.Err() != nil {
+			_ = e.sessionSvc.TransitionState(context.Background(), childSess.ID, domain.SessionStateCancelled, "Subagent cancelled")
+			_, _ = e.sessionSvc.EmitEvent(ctx, parentSessionID, domain.EventSubagentFailed, []byte(fmt.Sprintf(`{"error":"cancelled","subagentSessionId":%q}`, childSess.ID)))
+			return "", ctx.Err()
+		}
+
+		resp, err := e.llmClient.Generate(ctx, messages, subagentTools, func(chunk string) {
+			if onChunk != nil {
+				onChunk([]byte(chunk))
+			}
+			_, _ = e.sessionSvc.EmitEvent(ctx, childSess.ID, "agent.thought_chunk", []byte(chunk))
+		})
+		if err != nil {
+			_ = e.sessionSvc.TransitionState(ctx, childSess.ID, domain.SessionStateFailed, err.Error())
+			failPayload, _ := json.Marshal(map[string]interface{}{
+				"subagentSessionId": childSess.ID,
+				"error":             err.Error(),
+			})
+			_, _ = e.sessionSvc.EmitEvent(ctx, parentSessionID, domain.EventSubagentFailed, failPayload)
+			return "", err
+		}
+
+		if resp.Thought != "" || resp.Message != "" {
+			messages = append(messages, LLMMessage{
+				Role:    "assistant",
+				Content: resp.Message,
+			})
+		}
+
+		if len(resp.ToolCalls) == 0 || resp.Done {
+			finalSummary = resp.Message
+			_ = e.sessionSvc.TransitionState(ctx, childSess.ID, domain.SessionStateCompleted, "Subagent task complete")
+			completePayload, _ := json.Marshal(map[string]interface{}{
+				"parentSessionId":   parentSessionID,
+				"subagentSessionId": childSess.ID,
+				"role":              role,
+				"result":            finalSummary,
+			})
+			_, _ = e.sessionSvc.EmitEvent(ctx, parentSessionID, domain.EventSubagentCompleted, completePayload)
+			break
+		}
+
+		for _, tc := range resp.ToolCalls {
+			result, execErr := e.toolsReg.Execute(ctx, childSess.ID, workspaceID, tc.Name, tc.Arguments, onChunk)
+			if execErr != nil {
+				result = &tools.ToolResult{Success: false, Error: execErr.Error()}
+			}
+			content := result.Output
+			if !result.Success && result.Error != "" {
+				content = fmt.Sprintf("Error: %s\n%s", result.Error, result.Output)
+			}
+			messages = append(messages, LLMMessage{
+				Role:       "tool",
+				ToolCallID: tc.ID,
+				Content:    content,
+			})
+		}
+	}
+
+	return finalSummary, nil
 }

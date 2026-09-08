@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/antigravity/remote-daemon/pkg/sandbox"
 	"github.com/antigravity/remote-daemon/pkg/tools"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 )
@@ -159,5 +160,46 @@ func TestRegistry_ApprovalGating(t *testing.T) {
 	// In auto-approve mode -> requires approval = false always
 	if regAuto.NeedsApproval("write_to_file", json.RawMessage(`{}`)) {
 		t.Errorf("write_to_file should not require approval in auto-approve mode")
+	}
+}
+
+type mockSandboxProvider struct {
+	executedCmd string
+}
+
+func (m *mockSandboxProvider) Name() string { return "mock-sandbox" }
+func (m *mockSandboxProvider) IsAvailable() bool { return true }
+func (m *mockSandboxProvider) Execute(ctx context.Context, req sandbox.ExecutionRequest, onChunk func([]byte)) (*sandbox.ExecutionResult, error) {
+	m.executedCmd = req.CommandLine
+	if onChunk != nil {
+		onChunk([]byte("mocked sandbox stream"))
+	}
+	return &sandbox.ExecutionResult{
+		ExitCode: 0,
+		Output:   "mocked sandbox output: " + req.CommandLine,
+	}, nil
+}
+
+func TestRegistry_SandboxDelegation(t *testing.T) {
+	reg, _, wsID := setupTestTools(t)
+	mockSb := &mockSandboxProvider{}
+	reg.SetSandbox(mockSb)
+
+	var streamed string
+	res, err := reg.Execute(context.Background(), "s-sb", wsID, "run_command", json.RawMessage(`{"command":"go version"}`), func(chunk []byte) {
+		streamed += string(chunk)
+	})
+
+	if err != nil || !res.Success {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if mockSb.executedCmd != "go version" {
+		t.Errorf("expected command 'go version' passed to sandbox, got %q", mockSb.executedCmd)
+	}
+	if !strings.Contains(res.Output, "mocked sandbox output: go version") {
+		t.Errorf("unexpected output: %q", res.Output)
+	}
+	if streamed != "mocked sandbox stream" {
+		t.Errorf("unexpected streamed chunks: %q", streamed)
 	}
 }

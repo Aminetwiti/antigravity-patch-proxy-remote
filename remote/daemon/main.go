@@ -29,6 +29,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
 	"github.com/antigravity/remote-daemon/pkg/gateway"
 	"github.com/antigravity/remote-daemon/pkg/notification"
+	"github.com/antigravity/remote-daemon/pkg/sandbox"
 	"github.com/antigravity/remote-daemon/pkg/server"
 	"github.com/antigravity/remote-daemon/pkg/tools"
 	"github.com/antigravity/remote-daemon/pkg/tunnel"
@@ -63,6 +64,10 @@ func main() {
 	var providerFlag string
 	var modelFlag string
 	var noApproval bool
+	var sandboxFlag string
+	var dockerImageFlag string
+	var dockerMemoryFlag string
+	var dockerCPUFlag string
 
 	flag.IntVar(&listenPort, "port", cfg.Port, "Port for the WebSocket server")
 	flag.StringVar(&host, "host", cfg.Host, "Host for the WebSocket server")
@@ -80,6 +85,10 @@ func main() {
 	flag.StringVar(&providerFlag, "provider", "auto", "AI model provider: 'auto', 'anthropic', 'openai', 'ollama', 'proxy'")
 	flag.StringVar(&modelFlag, "model", "", "Model name override (e.g. claude-3-5-sonnet-20241022, gpt-4o)")
 	flag.BoolVar(&noApproval, "no-approval", false, "Disable manual tool approval (auto-approve all tool calls)")
+	flag.StringVar(&sandboxFlag, "sandbox", "native", "Execution sandbox: 'native' (host execution) or 'docker' (isolated container)")
+	flag.StringVar(&dockerImageFlag, "docker-image", "alpine:latest", "Docker container image when --sandbox=docker")
+	flag.StringVar(&dockerMemoryFlag, "docker-memory", "512m", "Memory limit for docker container (e.g. 512m, 1g)")
+	flag.StringVar(&dockerCPUFlag, "docker-cpu", "", "CPU limit for docker container (e.g. 1.0, 2.0)")
 	flag.Parse()
 
 	if err := config.AssertSafeBind(host, allowPublicBind); err != nil {
@@ -101,7 +110,7 @@ func main() {
 	}
 
 	if modeFlag == "server" {
-		runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval)
+		runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag)
 		return
 	}
 
@@ -119,7 +128,7 @@ func main() {
 		if modeFlag == "auto" {
 			fmt.Printf("ℹ️  No local Antigravity desktop IDE process detected (%v)\n", err)
 			fmt.Println("🚀 Automatically launching in Standalone Cloud Server Runtime mode...")
-			runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval)
+			runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag)
 			return
 		}
 		fmt.Fprintf(os.Stderr, "❌ Failed to discover localharness process: %v\n", err)
@@ -344,6 +353,10 @@ func runServerRuntime(
 	provider string,
 	model string,
 	autoApprove bool,
+	sandboxType string,
+	dockerImage string,
+	dockerMemory string,
+	dockerCPU string,
 ) {
 	fmt.Printf("🚀 Starting Antigravity Standalone Cloud Server Runtime on %s:%d...\n", host, port)
 
@@ -385,6 +398,19 @@ func runServerRuntime(
 	fmt.Printf("📁 Default workspace registered: %s (%s)\n", defaultWs.Name, defaultWs.Root)
 
 	toolsReg := tools.NewRegistry(wsMgr, autoApprove)
+	var sb sandbox.Provider
+	if sandboxType == "docker" {
+		sb = sandbox.NewDockerSandbox(sandbox.DockerSandboxConfig{
+			Image:       dockerImage,
+			MemoryLimit: dockerMemory,
+			CPULimit:    dockerCPU,
+		})
+		fmt.Printf("📦 Sandbox: Docker container (%s, memory: %s)\n", dockerImage, dockerMemory)
+	} else {
+		sb = sandbox.NewNativeSandbox()
+		fmt.Println("💻 Sandbox: Native (host execution)")
+	}
+	toolsReg.SetSandbox(sb)
 	apprMgr := approval.NewManager(rt.SessionService(), 5*time.Minute)
 
 	providerCfg := agent.AutoDetectProviderConfig()
@@ -402,6 +428,11 @@ func runServerRuntime(
 
 	v1Adapter := server.NewV1Adapter(rt.SessionService(), store, wsMgr, agentEng, apprMgr, authToken)
 	rt.SetV1Adapter(v1Adapter)
+
+	sched := server.NewScheduler(rt.SessionService(), agentEng)
+	rt.SetScheduler(sched)
+	sched.Start(context.Background())
+	defer sched.Stop()
 
 	handler := server.NewMux(rt, wsMgr, authToken)
 
@@ -445,6 +476,10 @@ func runServerRuntime(
 	fmt.Println("   - Web Console:       GET  /console")
 	fmt.Println("   - Health check:      GET  /health")
 	fmt.Println("   - Sessions REST:     GET  /v2/sessions")
+	fmt.Println("   - Workspaces API:    GET  /v2/workspaces")
+	fmt.Println("   - Branches API:      GET  /v2/workspaces/branches")
+	fmt.Println("   - Worktrees API:     POST /v2/workspaces/worktrees")
+	fmt.Println("   - Schedules API:     GET  /v2/schedules")
 	fmt.Println("   - Protocol v2 WS:    WS   /v2/ws")
 	fmt.Println("   - Protocol v1 WS:    WS   /ws")
 
