@@ -12,6 +12,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/approval"
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
+	"github.com/antigravity/remote-daemon/pkg/notification"
 	"github.com/antigravity/remote-daemon/pkg/protocol"
 	"github.com/antigravity/remote-daemon/pkg/session"
 	"github.com/gorilla/websocket"
@@ -47,6 +48,7 @@ type RuntimeServer struct {
 	apprMgr   *approval.Manager
 	v1Adapter *V1Adapter
 	scheduler *Scheduler
+	webhookDispatcher *notification.WebhookDispatcher
 
 	mu              sync.RWMutex
 	attachedClients map[string]map[*websocket.Conn]*AttachedClient
@@ -121,6 +123,18 @@ func (r *RuntimeServer) Scheduler() *Scheduler {
 	return r.scheduler
 }
 
+func (r *RuntimeServer) SetWebhookDispatcher(d *notification.WebhookDispatcher) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.webhookDispatcher = d
+}
+
+func (r *RuntimeServer) WebhookDispatcher() *notification.WebhookDispatcher {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.webhookDispatcher
+}
+
 // BroadcastEvent broadcasts to all clients attached to event.SessionID.
 // If a client is still in catchup mode, it stages the event in client.pendingQueue
 // so that catchup and live events never race, guaranteeing zero lost and zero duplicate events.
@@ -128,9 +142,13 @@ func (r *RuntimeServer) BroadcastEvent(event *domain.Event) {
 	// Fan out to Protocol v1 adapter if active
 	r.mu.RLock()
 	adapter := r.v1Adapter
+	dispatcher := r.webhookDispatcher
 	r.mu.RUnlock()
 	if adapter != nil {
 		adapter.OnDomainEvent(*event)
+	}
+	if dispatcher != nil {
+		dispatcher.OnDomainEvent(*event)
 	}
 
 	r.mu.Lock()

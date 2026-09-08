@@ -132,6 +132,8 @@ func (r *Registry) registerDefaults() {
 	r.tools["list_dir"] = &ListDirTool{wsMgr: r.wsMgr}
 	r.tools["grep_search"] = &GrepSearchTool{wsMgr: r.wsMgr}
 	r.tools["invoke_subagent"] = NewInvokeSubagentTool(nil)
+	r.tools["web_search"] = NewWebSearchTool()
+	r.tools["fetch_web_page"] = NewFetchWebPageTool()
 }
 
 // -----------------------------------------------------------------------------

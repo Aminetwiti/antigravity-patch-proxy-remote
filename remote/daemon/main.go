@@ -89,7 +89,13 @@ func main() {
 	flag.StringVar(&dockerImageFlag, "docker-image", "alpine:latest", "Docker container image when --sandbox=docker")
 	flag.StringVar(&dockerMemoryFlag, "docker-memory", "512m", "Memory limit for docker container (e.g. 512m, 1g)")
 	flag.StringVar(&dockerCPUFlag, "docker-cpu", "", "CPU limit for docker container (e.g. 1.0, 2.0)")
+	var webhookURLFlag string
+	flag.StringVar(&webhookURLFlag, "webhook-url", "", "Comma-separated webhook URLs for external alerts (Slack, Discord, generic POST)")
 	flag.Parse()
+
+	if webhookURLFlag == "" {
+		webhookURLFlag = os.Getenv("AG_WEBHOOK_URL")
+	}
 
 	if err := config.AssertSafeBind(host, allowPublicBind); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Security assertion failed: %v\n", err)
@@ -110,7 +116,7 @@ func main() {
 	}
 
 	if modeFlag == "server" {
-		runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag)
+		runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag, webhookURLFlag)
 		return
 	}
 
@@ -128,7 +134,7 @@ func main() {
 		if modeFlag == "auto" {
 			fmt.Printf("ℹ️  No local Antigravity desktop IDE process detected (%v)\n", err)
 			fmt.Println("🚀 Automatically launching in Standalone Cloud Server Runtime mode...")
-			runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag)
+			runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag, webhookURLFlag)
 			return
 		}
 		fmt.Fprintf(os.Stderr, "❌ Failed to discover localharness process: %v\n", err)
@@ -357,6 +363,7 @@ func runServerRuntime(
 	dockerImage string,
 	dockerMemory string,
 	dockerCPU string,
+	webhookURL string,
 ) {
 	fmt.Printf("🚀 Starting Antigravity Standalone Cloud Server Runtime on %s:%d...\n", host, port)
 
@@ -386,6 +393,14 @@ func runServerRuntime(
 	}
 
 	rt := server.NewRuntimeServer(serverInfo, store)
+
+	webhookDispatcher := notification.NewWebhookDispatcher(webhookURL)
+	rt.SetWebhookDispatcher(webhookDispatcher)
+	defer webhookDispatcher.Close()
+	if webhookURL != "" {
+		fmt.Printf("🔔 Cloud Webhooks active: %s\n", webhookURL)
+	}
+
 	wsMgr := workspace.NewManager()
 
 	if workspacesDir == "" {
@@ -474,6 +489,9 @@ func runServerRuntime(
 
 	fmt.Printf("✅ Cloud Server Runtime is listening on http://%s\n", addr)
 	fmt.Println("   - Web Console:       GET  /console")
+	fmt.Println("   - Workspace Shell:   WS   /v2/terminal")
+	fmt.Println("   - Prometheus Metrics:GET  /metrics")
+	fmt.Println("   - Approvals API:     GET  /v2/approvals")
 	fmt.Println("   - Health check:      GET  /health")
 	fmt.Println("   - Sessions REST:     GET  /v2/sessions")
 	fmt.Println("   - Workspaces API:    GET  /v2/workspaces")

@@ -80,6 +80,63 @@ const WebConsoleHTML = `<!DOCTYPE html>
       font-size: 12px;
     }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .nav-tabs { display: flex; gap: 8px; }
+    .tab-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); border-color: var(--text-muted); }
+    .tab-btn.active { background: var(--card); color: var(--text); border-color: var(--accent); }
+    .terminal-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #0d1117;
+      font-family: var(--font-mono);
+    }
+    .terminal-toolbar {
+      padding: 10px 16px;
+      background: #161b22;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .terminal-output {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #58a6ff;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .terminal-input-bar {
+      display: flex;
+      align-items: center;
+      background: #161b22;
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      gap: 8px;
+    }
+    .terminal-prompt { color: var(--accent); font-weight: bold; }
+    .terminal-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #f0f6fc;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      outline: none;
+    }
     /* Layout */
     .app-container {
       display: flex;
@@ -338,9 +395,15 @@ const WebConsoleHTML = `<!DOCTYPE html>
   </div>
 
   <header>
-    <div class="brand">
-      <span>🚀 Antigravity</span>
-      <span class="brand-badge">Cloud Agent Runtime</span>
+    <div style="display:flex;align-items:center;gap:20px;">
+      <div class="brand">
+        <span>🚀 Antigravity</span>
+        <span class="brand-badge">Cloud Agent Runtime</span>
+      </div>
+      <div class="nav-tabs">
+        <button id="tabConsole" class="tab-btn active" onclick="switchTab('console')">💬 Agent Console</button>
+        <button id="tabTerminal" class="tab-btn" onclick="switchTab('terminal')">💻 Workspace Terminal</button>
+      </div>
     </div>
     <div class="server-status">
       <div id="statusPill" class="status-pill">
@@ -353,7 +416,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
 
   <div class="app-container">
     <!-- Sidebar -->
-    <aside>
+    <aside id="asideConsole">
       <div class="aside-header">
         <span style="font-size:13px;font-weight:600;color:var(--text-muted)">ACTIVE SESSIONS</span>
         <button class="btn" onclick="createNewSession()">+ New</button>
@@ -364,7 +427,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
     </aside>
 
     <!-- Main Chat Transcript -->
-    <main>
+    <main id="mainConsole">
       <div class="chat-header">
         <div>
           <h2 id="chatTitle" style="font-size:15px;font-weight:600">Select or Create a Session</h2>
@@ -397,6 +460,25 @@ const WebConsoleHTML = `<!DOCTYPE html>
         <button id="sendBtn" class="btn" onclick="sendPrompt()">Send</button>
       </div>
     </main>
+
+    <!-- Terminal Pane -->
+    <div id="terminalPane" class="terminal-container hidden">
+      <div class="terminal-toolbar">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span style="font-weight:600;font-size:13px;color:var(--text);">WORKSPACE SHELL</span>
+          <span id="termWsBadge" class="badge" style="background:#1e293b;color:#94a3b8;">Default</span>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" onclick="restartTerminal()">Restart Shell</button>
+          <button class="btn btn-secondary" onclick="clearTerminal()">Clear</button>
+        </div>
+      </div>
+      <div id="terminalOutput" class="terminal-output">Connecting to workspace terminal...\n</div>
+      <div class="terminal-input-bar">
+        <span class="terminal-prompt">&gt;</span>
+        <input type="text" id="terminalInput" class="terminal-input" placeholder="Enter shell command (e.g. ls, git status, npm test)..." onkeydown="handleTerminalKey(event)" />
+      </div>
+    </div>
   </div>
 
   <script>
@@ -692,6 +774,85 @@ const WebConsoleHTML = `<!DOCTYPE html>
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendPrompt();
+      }
+    }
+
+    let termWs = null;
+    function switchTab(tab) {
+      document.getElementById('tabConsole').classList.toggle('active', tab === 'console');
+      document.getElementById('tabTerminal').classList.toggle('active', tab === 'terminal');
+      document.getElementById('mainConsole').classList.toggle('hidden', tab !== 'console');
+      document.getElementById('asideConsole').classList.toggle('hidden', tab !== 'console');
+      document.getElementById('terminalPane').classList.toggle('hidden', tab !== 'terminal');
+      if (tab === 'terminal') {
+        if (!termWs || termWs.readyState !== WebSocket.OPEN) {
+          initTerminal();
+        }
+        setTimeout(() => {
+          const inp = document.getElementById('terminalInput');
+          if (inp) inp.focus();
+        }, 100);
+      }
+    }
+
+    function initTerminal() {
+      const output = document.getElementById('terminalOutput');
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = proto + '//' + location.host + '/v2/terminal?token=' + encodeURIComponent(token || '');
+      output.textContent += '\n[System] Connecting to terminal service...\n';
+
+      termWs = new WebSocket(wsUrl);
+      termWs.onopen = function() {
+        output.textContent += '[System] Workspace Shell online. Ready for commands.\n\n';
+        output.scrollTop = output.scrollHeight;
+      };
+      termWs.onmessage = function(e) {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'output') {
+            output.textContent += msg.data;
+            output.scrollTop = output.scrollHeight;
+          } else if (msg.type === 'exit') {
+            output.textContent += '\n[System] Process exited (code ' + msg.code + ')\n';
+            output.scrollTop = output.scrollHeight;
+          } else if (msg.type === 'error') {
+            output.textContent += '\n[System Error] ' + msg.data + '\n';
+            output.scrollTop = output.scrollHeight;
+          }
+        } catch(err) {
+          output.textContent += e.data;
+          output.scrollTop = output.scrollHeight;
+        }
+      };
+      termWs.onclose = function() {
+        output.textContent += '\n[System] Terminal disconnected.\n';
+      };
+    }
+
+    function restartTerminal() {
+      if (termWs) {
+        termWs.close();
+        termWs = null;
+      }
+      document.getElementById('terminalOutput').textContent = '';
+      initTerminal();
+    }
+
+    function clearTerminal() {
+      document.getElementById('terminalOutput').textContent = '';
+    }
+
+    function handleTerminalKey(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const input = document.getElementById('terminalInput');
+        const cmd = input.value;
+        input.value = '';
+        if (termWs && termWs.readyState === WebSocket.OPEN) {
+          termWs.send(JSON.stringify({ type: 'input', data: cmd + '\n' }));
+        } else {
+          document.getElementById('terminalOutput').textContent += '[System] Terminal not connected. Click Restart Shell.\n';
+        }
       }
     }
 

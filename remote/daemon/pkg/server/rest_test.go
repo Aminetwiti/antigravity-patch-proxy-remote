@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/antigravity/remote-daemon/pkg/approval"
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
 	"github.com/antigravity/remote-daemon/pkg/server"
@@ -36,6 +38,9 @@ func setupMuxTest(t *testing.T, authToken string) (http.Handler, func()) {
 
 	sched := server.NewScheduler(rt.SessionService(), nil)
 	rt.SetScheduler(sched)
+
+	apprMgr := approval.NewManager(nil, 5*time.Minute)
+	rt.SetAgentEngine(nil, apprMgr)
 
 	mux := server.NewMux(rt, wsMgr, authToken)
 
@@ -216,6 +221,64 @@ func TestREST_Workspaces(t *testing.T) {
 
 	if getW.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK on GET /v2/workspaces, got %d", getW.Code)
+	}
+}
+
+func TestREST_Metrics(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-metrics")
+	defer cleanup()
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on GET /metrics, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	for _, expectedMetric := range []string{
+		"ag_uptime_seconds",
+		"ag_sessions_total",
+		"ag_sessions_active",
+		"ag_approvals_pending",
+		"ag_scheduler_jobs_total",
+	} {
+		if !strings.Contains(body, expectedMetric) {
+			t.Errorf("expected /metrics output to contain %s, got:\n%s", expectedMetric, body)
+		}
+	}
+}
+
+func TestREST_Approvals(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-appr")
+	defer cleanup()
+
+	// 1. GET /v2/approvals -> list pending
+	getReq := httptest.NewRequest("GET", "/v2/approvals?token=token-appr", nil)
+	getW := httptest.NewRecorder()
+	mux.ServeHTTP(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on GET /v2/approvals, got %d", getW.Code)
+	}
+
+	var getResp map[string]interface{}
+	if err := json.NewDecoder(getW.Body).Decode(&getResp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if _, ok := getResp["approvals"]; !ok {
+		t.Fatalf("expected 'approvals' key in response")
+	}
+
+	// 2. POST /v2/approvals/resolve -> not found if approval ID doesn't exist
+	resolveBody := []byte(`{"approvalId": "non-existent-appr", "approved": true, "reason": "approved by test"}`)
+	resolveReq := httptest.NewRequest("POST", "/v2/approvals/resolve?token=token-appr", bytes.NewReader(resolveBody))
+	resolveW := httptest.NewRecorder()
+	mux.ServeHTTP(resolveW, resolveReq)
+
+	if resolveW.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on non-existent approval ID, got %d (%s)", resolveW.Code, resolveW.Body.String())
 	}
 }
 

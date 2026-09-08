@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"runtime"
@@ -291,12 +292,133 @@ func (h *RESTHandler) HandleSchedules(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusMethodNotAllowed)
 }
 
+func (h *RESTHandler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	sessions, _ := h.rt.store.ListSessions(ctx)
+	totalSessions := len(sessions)
+	activeSessions := 0
+	for _, s := range sessions {
+		if s.State != domain.SessionStateCompleted && s.State != domain.SessionStateFailed && s.State != domain.SessionStateCancelled {
+			activeSessions++
+		}
+	}
+
+	pendingApprovals := 0
+	if apprMgr := h.rt.ApprovalManager(); apprMgr != nil {
+		pendingApprovals = len(apprMgr.GetPendingRequests(""))
+	}
+
+	schedulesCount := 0
+	if sched := h.rt.Scheduler(); sched != nil {
+		schedulesCount = len(sched.ListJobs())
+	}
+
+	uptimeSec := int(time.Since(h.startTime).Seconds())
+
+	var sb strings.Builder
+	sb.WriteString("# HELP ag_uptime_seconds Total runtime server uptime in seconds\n")
+	sb.WriteString("# TYPE ag_uptime_seconds counter\n")
+	fmt.Fprintf(&sb, "ag_uptime_seconds %d\n\n", uptimeSec)
+
+	sb.WriteString("# HELP ag_sessions_total Total number of sessions created\n")
+	sb.WriteString("# TYPE ag_sessions_total counter\n")
+	fmt.Fprintf(&sb, "ag_sessions_total %d\n\n", totalSessions)
+
+	sb.WriteString("# HELP ag_sessions_active Number of active sessions\n")
+	sb.WriteString("# TYPE ag_sessions_active gauge\n")
+	fmt.Fprintf(&sb, "ag_sessions_active %d\n\n", activeSessions)
+
+	sb.WriteString("# HELP ag_approvals_pending Number of pending tool approval requests\n")
+	sb.WriteString("# TYPE ag_approvals_pending gauge\n")
+	fmt.Fprintf(&sb, "ag_approvals_pending %d\n\n", pendingApprovals)
+
+	sb.WriteString("# HELP ag_scheduler_jobs_total Number of configured background scheduler jobs\n")
+	sb.WriteString("# TYPE ag_scheduler_jobs_total gauge\n")
+	fmt.Fprintf(&sb, "ag_scheduler_jobs_total %d\n", schedulesCount)
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	_, _ = w.Write([]byte(sb.String()))
+}
+
+func (h *RESTHandler) HandleApprovals(w http.ResponseWriter, r *http.Request) {
+	apprMgr := h.rt.ApprovalManager()
+	if apprMgr == nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"approvals": []interface{}{}})
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		sessionID := r.URL.Query().Get("sessionId")
+		list := apprMgr.GetPendingRequests(sessionID)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"approvals": list})
+		return
+	}
+
+	w.WriteHeader(http.StatusMethodNotAllowed)
+}
+
+func (h *RESTHandler) HandleResolveApproval(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	apprMgr := h.rt.ApprovalManager()
+	if apprMgr == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "approval manager not initialized"})
+		return
+	}
+
+	var body struct {
+		ApprovalID string `json:"approvalId"`
+		Approved   bool   `json:"approved"`
+		Reason     string `json:"reason"`
+		ActorID    string `json:"actorId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json body"})
+		return
+	}
+
+	if body.ApprovalID == "" {
+		body.ApprovalID = r.URL.Query().Get("id")
+	}
+
+	if body.ActorID == "" {
+		body.ActorID = "rest-api"
+	}
+
+	err := apprMgr.ResolveApproval(body.ApprovalID, body.Approved, body.ActorID, body.Reason)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"approvalId": body.ApprovalID,
+		"approved":   body.Approved,
+	})
+}
+
 func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.Handler {
 	mux := http.NewServeMux()
 	rest := NewRESTHandler(rt, wsMgr, authToken)
 
 	// Health (public)
 	mux.HandleFunc("/health", rest.HandleHealth)
+
+	// Prometheus Metrics Exporter (public or scraper)
+	mux.HandleFunc("/metrics", rest.HandleMetrics)
 
 	// Sessions REST API
 	mux.HandleFunc("/v2/sessions", rest.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -314,6 +436,14 @@ func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.
 
 	// Scheduled Tasks REST API
 	mux.HandleFunc("/v2/schedules", rest.AuthMiddleware(rest.HandleSchedules))
+
+	// Approvals REST API
+	mux.HandleFunc("/v2/approvals", rest.AuthMiddleware(rest.HandleApprovals))
+	mux.HandleFunc("/v2/approvals/resolve", rest.AuthMiddleware(rest.HandleResolveApproval))
+
+	// Interactive Terminal WebSocket (/v2/terminal)
+	termHandler := NewTerminalHandler(wsMgr, authToken)
+	mux.Handle("/v2/terminal", termHandler)
 
 	// Web Console Single-Page App (GET / and GET /console)
 	mux.HandleFunc("/console", HandleWebConsole)
