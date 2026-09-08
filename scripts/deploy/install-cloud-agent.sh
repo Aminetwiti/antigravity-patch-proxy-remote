@@ -32,7 +32,13 @@ PORT=${AG_PORT:-8090}
 HOST=${AG_HOST:-"0.0.0.0"}
 PROVIDER=${AG_PROVIDER:-"auto"}
 MODEL=${AG_MODEL:-""}
-SANDBOX=${AG_SANDBOX:-"native"}
+if command -v docker >/dev/null 2>&1; then
+    SANDBOX_DEFAULT="docker"
+else
+    SANDBOX_DEFAULT="native"
+fi
+SANDBOX=${AG_SANDBOX:-$SANDBOX_DEFAULT}
+SANDBOX_MODE=${AG_SANDBOX_MODE:-"strict"}
 
 echo -e "${BLUE}[1/5] Checking environment and system dependencies...${NC}"
 
@@ -59,6 +65,12 @@ fi
 
 echo -e "${BLUE}[2/5] Creating directories and runtime user...${NC}"
 id -u ag-agent >/dev/null 2>&1 || useradd -r -s /bin/false -d "${DATA_DIR}" ag-agent || true
+
+# HIGH-05: Ensure ag-agent has docker permissions if docker daemon is present
+if getent group docker >/dev/null 2>&1; then
+    usermod -aG docker ag-agent 2>/dev/null || true
+    echo -e "   ${GREEN}✓${NC} User ag-agent added to docker group"
+fi
 
 mkdir -p "${CONFIG_DIR}"
 mkdir -p "${DATA_DIR}"
@@ -125,6 +137,7 @@ AG_AUTH_TOKEN=${AUTH_TOKEN}
 AG_PROVIDER=${PROVIDER}
 AG_MODEL=${MODEL}
 AG_SANDBOX=${SANDBOX}
+AG_SANDBOX_MODE=${SANDBOX_MODE}
 AG_TUNNEL=local
 AG_ALLOW_PUBLIC_BIND=true
 # Set AI Provider Keys as needed:
@@ -138,6 +151,11 @@ chown ag-agent:ag-agent "${ENV_FILE}"
 
 echo -e "${BLUE}[5/5] Installing systemd service unit...${NC}"
 
+SUPP_GROUPS=""
+if getent group docker >/dev/null 2>&1; then
+    SUPP_GROUPS="SupplementaryGroups=docker"
+fi
+
 cat <<EOF > "/etc/systemd/system/${SERVICE_NAME}.service"
 [Unit]
 Description=Antigravity Remote Agent Cloud Runtime Daemon
@@ -148,6 +166,7 @@ Wants=network-online.target
 Type=simple
 User=ag-agent
 Group=ag-agent
+${SUPP_GROUPS}
 WorkingDirectory=${DATA_DIR}
 EnvironmentFile=${ENV_FILE}
 ExecStart=${INSTALL_BIN_DIR}/ag-agentd \\
@@ -160,11 +179,18 @@ ExecStart=${INSTALL_BIN_DIR}/ag-agentd \\
     --provider=\${AG_PROVIDER} \\
     --model=\${AG_MODEL} \\
     --sandbox=\${AG_SANDBOX} \\
+    --sandbox-mode=\${AG_SANDBOX_MODE} \\
     --tunnel=\${AG_TUNNEL} \\
     --allow-public-bind
 Restart=always
 RestartSec=5s
 LimitNOFILE=65536
+# Security Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=${DATA_DIR} ${CONFIG_DIR}
 
 [Install]
 WantedBy=multi-user.target

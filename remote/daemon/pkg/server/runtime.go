@@ -10,6 +10,7 @@ import (
 
 	"github.com/antigravity/remote-daemon/pkg/agent"
 	"github.com/antigravity/remote-daemon/pkg/approval"
+	"github.com/antigravity/remote-daemon/pkg/auth"
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
 	"github.com/antigravity/remote-daemon/pkg/mcp"
@@ -46,28 +47,31 @@ type RuntimeServer struct {
 	store      eventstore.EventStore
 	sessionSvc *session.Service
 
-	agentEng  *agent.Engine
-	apprMgr   *approval.Manager
-	v1Adapter *V1Adapter
-	scheduler *Scheduler
+	agentEng          *agent.Engine
+	apprMgr           *approval.Manager
+	v1Adapter         *V1Adapter
+	scheduler         *Scheduler
 	webhookDispatcher *notification.WebhookDispatcher
 	checkpointMgr     *session.CheckpointManager
 	memStore          *memory.MemoryStore
 	mcpMgr            *mcp.Manager
+	rbacMgr           *auth.RBACManager
 
-	mu              sync.RWMutex
-	attachedClients map[string]map[*websocket.Conn]*AttachedClient
-	clientSessions  map[*websocket.Conn]string
+	mu               sync.RWMutex
+	attachedClients  map[string]map[*websocket.Conn]*AttachedClient
+	clientSessions   map[*websocket.Conn]string
+	clientIdentities map[*websocket.Conn]*auth.Identity
 
 	upgrader websocket.Upgrader
 }
 
 func NewRuntimeServer(serverInfo domain.Server, store eventstore.EventStore) *RuntimeServer {
 	rt := &RuntimeServer{
-		serverInfo:      serverInfo,
-		store:           store,
-		attachedClients: make(map[string]map[*websocket.Conn]*AttachedClient),
-		clientSessions:  make(map[*websocket.Conn]string),
+		serverInfo:       serverInfo,
+		store:            store,
+		attachedClients:  make(map[string]map[*websocket.Conn]*AttachedClient),
+		clientSessions:   make(map[*websocket.Conn]string),
+		clientIdentities: make(map[*websocket.Conn]*auth.Identity),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -223,7 +227,38 @@ func (r *RuntimeServer) BroadcastSessionUpdate(s *domain.Session) {
 	// Optional session metadata update notification
 }
 
+func (r *RuntimeServer) SetRBACManager(m *auth.RBACManager) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rbacMgr = m
+}
+
+func (r *RuntimeServer) RBACManager() *auth.RBACManager {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.rbacMgr
+}
+
+func (r *RuntimeServer) getClientIdentity(conn *websocket.Conn) *auth.Identity {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if ident, ok := r.clientIdentities[conn]; ok {
+		return ident
+	}
+	return &auth.Identity{UserID: "anonymous", Role: auth.RoleUser}
+}
+
 func (r *RuntimeServer) AttachClient(conn *websocket.Conn, deviceID, sessionID string, lastSeq int64) error {
+	if r.rbacMgr != nil {
+		sess, err := r.store.GetSession(context.Background(), sessionID)
+		if err == nil {
+			ident := r.getClientIdentity(conn)
+			if !r.rbacMgr.CanAccessSession(ident, sess.OwnerID) {
+				return errors.New("forbidden: cannot access session owned by another user")
+			}
+		}
+	}
+
 	r.mu.Lock()
 	clients, ok := r.attachedClients[sessionID]
 	if !ok {
@@ -295,6 +330,7 @@ func (r *RuntimeServer) DetachClient(conn *websocket.Conn) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	delete(r.clientIdentities, conn)
 	sessionID, ok := r.clientSessions[conn]
 	if !ok {
 		return
@@ -340,6 +376,10 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		return nil
 
 	case protocol.TypeSessionCreate:
+		ident := r.getClientIdentity(conn)
+		if ident != nil && ident.Role == auth.RoleReadOnly {
+			return r.sendError(conn, env.RequestID, "forbidden: read-only role cannot create sessions")
+		}
 		type createPayload struct {
 			Title       string `json:"title"`
 			WorkspaceID string `json:"workspaceId"`
@@ -348,7 +388,11 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		if len(env.Payload) > 0 {
 			_ = json.Unmarshal(env.Payload, &cp)
 		}
-		sess, err := r.sessionSvc.CreateSession(ctx, r.serverInfo.ID, cp.WorkspaceID, cp.Title)
+		ownerID := ""
+		if ident != nil {
+			ownerID = ident.UserID
+		}
+		sess, err := r.sessionSvc.CreateSessionWithOwner(ctx, r.serverInfo.ID, cp.WorkspaceID, cp.Title, ownerID)
 		if err != nil {
 			return r.sendError(conn, env.RequestID, err.Error())
 		}
@@ -356,6 +400,14 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		return r.sendAck(conn, env.RequestID, sess.ID, data)
 
 	case protocol.TypeSessionPause:
+		if r.rbacMgr != nil {
+			if sess, err := r.store.GetSession(ctx, env.SessionID); err == nil {
+				ident := r.getClientIdentity(conn)
+				if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
+					return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
+				}
+			}
+		}
 		if err := r.sessionSvc.CheckAndRegisterCommand(env.RequestID, env.SessionID, env.Payload); err != nil {
 			if err == session.ErrCommandDuplicate {
 				return r.sendAck(conn, env.RequestID, env.SessionID, nil)
@@ -368,6 +420,14 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		return r.sendAck(conn, env.RequestID, env.SessionID, nil)
 
 	case protocol.TypeSessionResume:
+		if r.rbacMgr != nil {
+			if sess, err := r.store.GetSession(ctx, env.SessionID); err == nil {
+				ident := r.getClientIdentity(conn)
+				if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
+					return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
+				}
+			}
+		}
 		if err := r.sessionSvc.CheckAndRegisterCommand(env.RequestID, env.SessionID, env.Payload); err != nil {
 			if err == session.ErrCommandDuplicate {
 				return r.sendAck(conn, env.RequestID, env.SessionID, nil)
@@ -380,6 +440,14 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		return r.sendAck(conn, env.RequestID, env.SessionID, nil)
 
 	case protocol.TypeSessionCancel:
+		if r.rbacMgr != nil {
+			if sess, err := r.store.GetSession(ctx, env.SessionID); err == nil {
+				ident := r.getClientIdentity(conn)
+				if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
+					return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
+				}
+			}
+		}
 		if err := r.sessionSvc.CheckAndRegisterCommand(env.RequestID, env.SessionID, env.Payload); err != nil {
 			if err == session.ErrCommandDuplicate {
 				return r.sendAck(conn, env.RequestID, env.SessionID, nil)
@@ -396,6 +464,14 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		return r.sendAck(conn, env.RequestID, env.SessionID, nil)
 
 	case protocol.TypeSessionPrompt:
+		if r.rbacMgr != nil {
+			if sess, err := r.store.GetSession(ctx, env.SessionID); err == nil {
+				ident := r.getClientIdentity(conn)
+				if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
+					return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
+				}
+			}
+		}
 		if err := r.sessionSvc.CheckAndRegisterCommand(env.RequestID, env.SessionID, env.Payload); err != nil {
 			if err == session.ErrCommandDuplicate {
 				return r.sendAck(conn, env.RequestID, env.SessionID, []byte(`{"status":"already_processed"}`))
@@ -494,6 +570,11 @@ func (r *RuntimeServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	conn, err := r.upgrader.Upgrade(w, req, nil)
 	if err != nil {
 		return
+	}
+	if ident, ok := req.Context().Value(identityKey).(*auth.Identity); ok {
+		r.mu.Lock()
+		r.clientIdentities[conn] = ident
+		r.mu.Unlock()
 	}
 	defer func() {
 		r.DetachClient(conn)

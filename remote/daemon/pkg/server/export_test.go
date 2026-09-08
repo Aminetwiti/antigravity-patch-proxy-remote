@@ -115,3 +115,78 @@ func TestREST_ExportAndMemories(t *testing.T) {
 		t.Fatalf("expected memories response to contain 'api_design', got: %s", wGetMem.Body.String())
 	}
 }
+
+func TestREST_ExportRedactsSecrets(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "export_redact_test.db")
+
+	store, err := eventstore.NewSQLiteEventStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	serverInfo := domain.Server{
+		ID:        "srv-export-redact",
+		Hostname:  "test-host",
+		Version:   "2.0.0",
+		CreatedAt: time.Now(),
+	}
+
+	rt := server.NewRuntimeServer(serverInfo, store)
+	wsMgr := workspace.NewManager()
+	mux := server.NewMux(rt, wsMgr, "token-exp")
+
+	ctx := context.Background()
+	sess, err := rt.SessionService().CreateSession(ctx, "srv-export-redact", "default", "Deploy with OPENAI_API_KEY=sk-proj-supersecretkey1234567890abcdef")
+	if err != nil {
+		t.Fatalf("failed creating session: %v", err)
+	}
+
+	// Emit events containing secrets: Anthropic key, Bearer token, password in URL
+	_, _ = rt.SessionService().EmitEvent(ctx, sess.ID, "user.message", []byte(`{"text":"Here is my key: sk-ant-api03-abcdef1234567890_secret_anthropic_token"}`))
+	_, _ = rt.SessionService().EmitEvent(ctx, sess.ID, "tool.call", []byte(`{"name":"run_command","parameters":{"command":"curl -H 'Authorization: Bearer my-secret-jwt-token' https://user:superpass123@api.internal.com/data"}}`))
+	_, _ = rt.SessionService().EmitEvent(ctx, sess.ID, "tool.result", []byte(`{"success":true,"output":"Connected to postgres://admin:dbsecret999@localhost:5432/mydb"}`))
+	_, _ = rt.SessionService().EmitEvent(ctx, sess.ID, "agent.thought", []byte(`{"thought":"Using GH token ghp_1234567890abcdefghijklmnopqrstuvwxyz","message":"Completed using token"}`))
+
+	// JSON Export
+	reqJSON := httptest.NewRequest("GET", "/v2/sessions/export?sessionId="+sess.ID+"&format=json&token=token-exp", nil)
+	wJSON := httptest.NewRecorder()
+	mux.ServeHTTP(wJSON, reqJSON)
+
+	if wJSON.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", wJSON.Code)
+	}
+
+	jsonStr := wJSON.Body.String()
+	leaks := []string{
+		"sk-proj-supersecretkey1234567890abcdef",
+		"sk-ant-api03-abcdef1234567890_secret_anthropic_token",
+		"my-secret-jwt-token",
+		"superpass123",
+		"dbsecret999",
+		"ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+	}
+	for _, leak := range leaks {
+		if strings.Contains(jsonStr, leak) {
+			t.Errorf("JSON export leaked secret %q: %s", leak, jsonStr)
+		}
+	}
+
+	// Markdown Export
+	reqMD := httptest.NewRequest("GET", "/v2/sessions/export?sessionId="+sess.ID+"&format=markdown&token=token-exp", nil)
+	wMD := httptest.NewRecorder()
+	mux.ServeHTTP(wMD, reqMD)
+
+	if wMD.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", wMD.Code)
+	}
+
+	mdStr := wMD.Body.String()
+	for _, leak := range leaks {
+		if strings.Contains(mdStr, leak) {
+			t.Errorf("Markdown export leaked secret %q: %s", leak, mdStr)
+		}
+	}
+}
+

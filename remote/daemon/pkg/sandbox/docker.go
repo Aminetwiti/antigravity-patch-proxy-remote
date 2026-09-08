@@ -17,7 +17,8 @@ type DockerSandboxConfig struct {
 	Image       string
 	MemoryLimit string // e.g. "512m", "1g"
 	CPULimit    string // e.g. "1.0", "2.0"
-	NetworkMode string // e.g. "bridge", "none"
+	NetworkMode string // e.g. "bridge", "none" (defaults to "none")
+	Mode        Mode   // ModeStrict, ModePreferred, ModeNative
 }
 
 // DockerSandbox executes commands inside isolated Docker containers.
@@ -32,6 +33,12 @@ func NewDockerSandbox(cfg DockerSandboxConfig) *DockerSandbox {
 	}
 	if cfg.MemoryLimit == "" {
 		cfg.MemoryLimit = "512m"
+	}
+	if cfg.NetworkMode == "" {
+		cfg.NetworkMode = "none"
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = ModeStrict
 	}
 	return &DockerSandbox{
 		cfg:      cfg,
@@ -57,8 +64,15 @@ func (s *DockerSandbox) IsAvailable() bool {
 
 func (s *DockerSandbox) Execute(ctx context.Context, req ExecutionRequest, onChunk func(chunk []byte)) (*ExecutionResult, error) {
 	if !s.IsAvailable() {
-		log.Printf("[DockerSandbox] Docker daemon is unavailable, falling back to NativeSandbox for workspace %s", req.WorkspaceID)
-		return s.fallback.Execute(ctx, req, onChunk)
+		switch s.cfg.Mode {
+		case ModePreferred:
+			log.Printf("[DockerSandbox] WARNING: Docker daemon is unavailable, fallback to host permitted by ModePreferred for workspace %s", req.WorkspaceID)
+			return s.fallback.Execute(ctx, req, onChunk)
+		case ModeNative:
+			return s.fallback.Execute(ctx, req, onChunk)
+		default: // ModeStrict -> FAIL CLOSED
+			return nil, fmt.Errorf("%w: docker daemon not available or not running", ErrSandboxUnavailable)
+		}
 	}
 
 	timeout := req.Timeout
@@ -74,9 +88,14 @@ func (s *DockerSandbox) Execute(ctx context.Context, req ExecutionRequest, onChu
 		absDir = req.Directory
 	}
 
-	// docker run --rm -i -v <host_path>:/workspace -w /workspace -m <mem> <image> sh -c <command>
+	// docker run --rm -i --read-only --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=256 --tmpfs /tmp:rw,noexec,nosuid,size=64m -v <host_path>:/workspace -w /workspace -m <mem> <image> sh -c <command>
 	args := []string{
 		"run", "--rm", "-i",
+		"--read-only",
+		"--cap-drop=ALL",
+		"--security-opt=no-new-privileges",
+		"--pids-limit=256",
+		"--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
 		"-v", fmt.Sprintf("%s:/workspace", absDir),
 		"-w", "/workspace",
 	}

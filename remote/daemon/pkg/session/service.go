@@ -92,6 +92,10 @@ func (s *Service) CheckAndRegisterCommand(commandID, sessionID string, payload i
 }
 
 func (s *Service) CreateSession(ctx context.Context, serverID, workspaceID, title string) (*domain.Session, error) {
+	return s.CreateSessionWithOwner(ctx, serverID, workspaceID, title, "")
+}
+
+func (s *Service) CreateSessionWithOwner(ctx context.Context, serverID, workspaceID, title, ownerID string) (*domain.Session, error) {
 	if serverID == "" {
 		serverID = "local-server"
 	}
@@ -107,6 +111,7 @@ func (s *Service) CreateSession(ctx context.Context, serverID, workspaceID, titl
 		ID:          sessionID,
 		ServerID:    serverID,
 		WorkspaceID: workspaceID,
+		OwnerID:     ownerID,
 		Title:       title,
 		State:       domain.SessionStateCreated,
 		CreatedAt:   time.Now(),

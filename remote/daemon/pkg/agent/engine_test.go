@@ -312,3 +312,66 @@ func TestAgentEngine_TokenAccountingAndBudgetCeiling(t *testing.T) {
 		t.Errorf("expected accumulated total tokens >= 1500, got %d", usage.TotalTokens)
 	}
 }
+
+func TestAgentEngine_MultiTurnToolCallPreservation(t *testing.T) {
+	resp1 := &agent.LLMResponse{
+		Thought: "Calling tool",
+		Message: "Invoking custom tool",
+		ToolCalls: []agent.ToolCall{
+			{
+				ID:        "call_12345",
+				Name:      "write_to_file",
+				Arguments: json.RawMessage(`{"path":"multiturn.txt","content":"hello"}`),
+			},
+		},
+	}
+
+	resp2 := &agent.LLMResponse{
+		Thought: "Tool executed",
+		Message: "All done!",
+		Done:    true,
+	}
+
+	eng, sessionSvc, _, _, sessID, _, cleanup := setupTestEngine(t, true, resp1, resp2)
+	defer cleanup()
+	ctx := context.Background()
+
+	err := eng.StartTurn(ctx, sessID, "Please write file")
+	if err != nil {
+		t.Fatalf("StartTurn failed: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		s, _ := sessionSvc.GetSession(ctx, sessID)
+		if s.State == domain.SessionStateWaitingInput {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Verify events in session: agent.thought must contain toolCalls
+	events, err := sessionSvc.GetCatchupEvents(ctx, sessID, 0, 100)
+	if err != nil {
+		t.Fatalf("failed getting events: %v", err)
+	}
+
+	var foundThoughtWithToolCall bool
+	for _, ev := range events {
+		if ev.Type == "agent.thought" {
+			var data struct {
+				ToolCalls []agent.ToolCall `json:"toolCalls"`
+			}
+			if err := json.Unmarshal(ev.Payload, &data); err == nil && len(data.ToolCalls) > 0 {
+				if data.ToolCalls[0].ID == "call_12345" {
+					foundThoughtWithToolCall = true
+					break
+				}
+			}
+		}
+	}
+
+	if !foundThoughtWithToolCall {
+		t.Fatalf("HIGH-03 REGRESSION: agent.thought event failed to preserve toolCalls in payload")
+	}
+}

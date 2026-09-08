@@ -89,6 +89,8 @@ func main() {
 	flag.StringVar(&modelFlag, "model", "", "Model name override (e.g. claude-3-5-sonnet-20241022, gpt-4o)")
 	flag.BoolVar(&noApproval, "no-approval", false, "Disable manual tool approval (auto-approve all tool calls)")
 	flag.StringVar(&sandboxFlag, "sandbox", "native", "Execution sandbox: 'native' (host execution) or 'docker' (isolated container)")
+	var sandboxModeFlag string
+	flag.StringVar(&sandboxModeFlag, "sandbox-mode", "strict", "Sandbox mode: 'strict' (fail closed if container unavailable), 'preferred' (warn and fallback), 'native'")
 	flag.StringVar(&dockerImageFlag, "docker-image", "alpine:latest", "Docker container image when --sandbox=docker")
 	flag.StringVar(&dockerMemoryFlag, "docker-memory", "512m", "Memory limit for docker container (e.g. 512m, 1g)")
 	flag.StringVar(&dockerCPUFlag, "docker-cpu", "", "CPU limit for docker container (e.g. 1.0, 2.0)")
@@ -119,7 +121,7 @@ func main() {
 	}
 
 	if modeFlag == "server" {
-		runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag, webhookURLFlag)
+		runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, sandboxModeFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag, webhookURLFlag)
 		return
 	}
 
@@ -137,7 +139,7 @@ func main() {
 		if modeFlag == "auto" {
 			fmt.Printf("ℹ️  No local Antigravity desktop IDE process detected (%v)\n", err)
 			fmt.Println("🚀 Automatically launching in Standalone Cloud Server Runtime mode...")
-			runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag, webhookURLFlag)
+			runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval, sandboxFlag, sandboxModeFlag, dockerImageFlag, dockerMemoryFlag, dockerCPUFlag, webhookURLFlag)
 			return
 		}
 		fmt.Fprintf(os.Stderr, "❌ Failed to discover localharness process: %v\n", err)
@@ -363,6 +365,7 @@ func runServerRuntime(
 	model string,
 	autoApprove bool,
 	sandboxType string,
+	sandboxMode string,
 	dockerImage string,
 	dockerMemory string,
 	dockerCPU string,
@@ -418,12 +421,19 @@ func runServerRuntime(
 	toolsReg := tools.NewRegistry(wsMgr, autoApprove)
 	var sb sandbox.Provider
 	if sandboxType == "docker" {
+		mode := sandbox.ModeStrict
+		if sandboxMode == "preferred" {
+			mode = sandbox.ModePreferred
+		} else if sandboxMode == "native" {
+			mode = sandbox.ModeNative
+		}
 		sb = sandbox.NewDockerSandbox(sandbox.DockerSandboxConfig{
 			Image:       dockerImage,
 			MemoryLimit: dockerMemory,
 			CPULimit:    dockerCPU,
+			Mode:        mode,
 		})
-		fmt.Printf("📦 Sandbox: Docker container (%s, memory: %s)\n", dockerImage, dockerMemory)
+		fmt.Printf("📦 Sandbox: Docker container (%s, memory: %s, mode: %s)\n", dockerImage, dockerMemory, mode)
 	} else {
 		sb = sandbox.NewNativeSandbox()
 		fmt.Println("💻 Sandbox: Native (host execution)")
@@ -452,6 +462,10 @@ func runServerRuntime(
 	}
 	llmClient := agent.NewHTTPProviderClient(providerCfg)
 	fmt.Printf("🧠 AI Provider: %s (Model: %s)\n", providerCfg.Type, providerCfg.Model)
+	if providerCfg.Type == agent.ProviderProxy {
+		fmt.Printf("⚠️  Notice: No direct AI API keys detected (ANTHROPIC_API_KEY / OPENAI_API_KEY).\n")
+		fmt.Printf("   Routing through local proxy (%s). On headless VPS, configure API keys in environment.\n", providerCfg.BaseURL)
+	}
 
 	agentEng := agent.NewEngine(rt.SessionService(), wsMgr, toolsReg, apprMgr, llmClient)
 	rt.SetAgentEngine(agentEng, apprMgr)

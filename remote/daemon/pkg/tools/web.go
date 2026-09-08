@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/antigravity/remote-daemon/pkg/security"
 )
 
 // -----------------------------------------------------------------------------
@@ -203,15 +205,20 @@ func extractActualURL(raw string) string {
 // -----------------------------------------------------------------------------
 
 type FetchWebPageTool struct {
-	client *http.Client
+	client               *http.Client
+	allowLocalForTesting bool
 }
 
 func NewFetchWebPageTool() *FetchWebPageTool {
 	return &FetchWebPageTool{
-		client: &http.Client{
-			Timeout: 20 * time.Second,
-		},
+		client: security.NewSSRFProtectedClient(20 * time.Second),
 	}
+}
+
+// SetClientForTesting allows tests with local mock servers to bypass SSRF checks safely.
+func (t *FetchWebPageTool) SetClientForTesting(client *http.Client, allowLocal bool) {
+	t.client = client
+	t.allowLocalForTesting = allowLocal
 }
 
 type FetchWebPageParams struct {
@@ -253,6 +260,12 @@ func (t *FetchWebPageTool) Execute(ctx context.Context, sessionID, workspaceID s
 
 	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
 		targetURL = "https://" + targetURL
+	}
+
+	if !t.allowLocalForTesting {
+		if err := security.ValidateURL(targetURL); err != nil {
+			return &ToolResult{Success: false, Error: "SSRF security check failed: " + err.Error()}, nil
+		}
 	}
 
 	maxLen := p.MaxLength

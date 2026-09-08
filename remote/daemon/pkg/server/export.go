@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
+	"github.com/antigravity/remote-daemon/pkg/security/redaction"
 )
 
 type SessionExport struct {
@@ -43,7 +44,7 @@ func BuildSessionExport(ctx context.Context, store eventstore.EventStore, sessio
 
 	export := &SessionExport{
 		SessionID:   sess.ID,
-		Title:       sess.Title,
+		Title:       redaction.Redact(sess.Title),
 		WorkspaceID: sess.WorkspaceID,
 		State:       string(sess.State),
 		CreatedAt:   sess.CreatedAt,
@@ -66,7 +67,7 @@ func BuildSessionExport(ctx context.Context, store eventstore.EventStore, sessio
 			export.Timeline = append(export.Timeline, TimelineItem{
 				Timestamp: ev.Timestamp,
 				Type:      "User Prompt",
-				Summary:   p.Text,
+				Summary:   redaction.Redact(p.Text),
 			})
 
 		case "agent.thought":
@@ -75,17 +76,19 @@ func BuildSessionExport(ctx context.Context, store eventstore.EventStore, sessio
 				Message string `json:"message"`
 			}
 			_ = json.Unmarshal(ev.Payload, &p)
-			summary := p.Message
+			summary := redaction.Redact(p.Message)
 			if summary == "" {
-				summary = p.Thought
+				summary = redaction.Redact(p.Thought)
 			}
 			export.Timeline = append(export.Timeline, TimelineItem{
 				Timestamp: ev.Timestamp,
 				Type:      "Agent Thought",
 				Summary:   summary,
-				Detail:    p.Thought,
+				Detail:    redaction.Redact(p.Thought),
 			})
-			export.FinalResponse = p.Message
+			if p.Message != "" {
+				export.FinalResponse = redaction.Redact(p.Message)
+			}
 
 		case "tool.call":
 			var p struct {
@@ -98,7 +101,7 @@ func BuildSessionExport(ctx context.Context, store eventstore.EventStore, sessio
 				Timestamp: ev.Timestamp,
 				Type:      "Tool Call: " + p.Name,
 				Summary:   fmt.Sprintf("Invoked %s", p.Name),
-				Detail:    string(p.Parameters),
+				Detail:    redaction.Redact(string(p.Parameters)),
 			})
 
 		case "tool.result":
@@ -114,13 +117,13 @@ func BuildSessionExport(ctx context.Context, store eventstore.EventStore, sessio
 			}
 			summary := fmt.Sprintf("Result: %s", status)
 			if p.Error != "" {
-				summary += " - " + p.Error
+				summary += " - " + redaction.Redact(p.Error)
 			}
 			export.Timeline = append(export.Timeline, TimelineItem{
 				Timestamp: ev.Timestamp,
 				Type:      "Tool Result",
 				Summary:   summary,
-				Detail:    p.Output,
+				Detail:    redaction.Redact(p.Output),
 			})
 
 		case "approval.requested":
@@ -132,7 +135,7 @@ func BuildSessionExport(ctx context.Context, store eventstore.EventStore, sessio
 			export.Timeline = append(export.Timeline, TimelineItem{
 				Timestamp: ev.Timestamp,
 				Type:      "Approval Required",
-				Summary:   fmt.Sprintf("Approval requested for %s: %s", p.ToolName, p.Reason),
+				Summary:   fmt.Sprintf("Approval requested for %s: %s", p.ToolName, redaction.Redact(p.Reason)),
 			})
 
 		case "subagent.started":
@@ -144,7 +147,7 @@ func BuildSessionExport(ctx context.Context, store eventstore.EventStore, sessio
 			export.Timeline = append(export.Timeline, TimelineItem{
 				Timestamp: ev.Timestamp,
 				Type:      "Subagent Delegated",
-				Summary:   fmt.Sprintf("[%s] %s", p.Role, p.Task),
+				Summary:   fmt.Sprintf("[%s] %s", p.Role, redaction.Redact(p.Task)),
 			})
 
 		case "subagent.completed":
@@ -157,7 +160,7 @@ func BuildSessionExport(ctx context.Context, store eventstore.EventStore, sessio
 				Timestamp: ev.Timestamp,
 				Type:      "Subagent Completed",
 				Summary:   fmt.Sprintf("[%s] delegation finished", p.Role),
-				Detail:    p.Result,
+				Detail:    redaction.Redact(p.Result),
 			})
 
 		case "session.checkpoint_created":

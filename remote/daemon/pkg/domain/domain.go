@@ -119,6 +119,7 @@ type Session struct {
 	ID           string       `json:"id"`
 	ServerID     string       `json:"serverId"`
 	WorkspaceID  string       `json:"workspaceId"`
+	OwnerID      string       `json:"ownerId,omitempty"`
 	Title        string       `json:"title"`
 	State        SessionState `json:"state"`
 	CreatedAt    time.Time    `json:"createdAt"`
@@ -129,6 +130,7 @@ type Session struct {
 type Workspace struct {
 	ID        string    `json:"id"`
 	ServerID  string    `json:"serverId"`
+	OwnerID   string    `json:"ownerId,omitempty"`
 	Name      string    `json:"name"`
 	Path      string    `json:"path"`
 	RepoURL   string    `json:"repoUrl,omitempty"`

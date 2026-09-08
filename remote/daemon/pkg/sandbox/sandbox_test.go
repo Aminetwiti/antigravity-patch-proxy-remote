@@ -77,10 +77,11 @@ func TestNativeSandbox_Timeout(t *testing.T) {
 	}
 }
 
-func TestDockerSandbox_FallbackWhenUnavailable(t *testing.T) {
+func TestDockerSandbox_FailClosedOnStrict(t *testing.T) {
 	cfg := DockerSandboxConfig{
 		Image:       "nonexistent-image-xyz:latest",
 		MemoryLimit: "256m",
+		Mode:        ModeStrict,
 	}
 	sb := NewDockerSandbox(cfg)
 
@@ -88,8 +89,32 @@ func TestDockerSandbox_FallbackWhenUnavailable(t *testing.T) {
 		t.Errorf("expected name 'docker', got %s", sb.Name())
 	}
 
-	// When Docker is unavailable (or in CI/Windows without dockerd running),
-	// Execute should cleanly fall back to native execution without crashing
+	req := ExecutionRequest{
+		SessionID:   "sess-strict",
+		WorkspaceID: "ws-test",
+		CommandLine: "echo should_fail",
+		Timeout:     5 * time.Second,
+	}
+
+	if !sb.IsAvailable() {
+		_, err := sb.Execute(context.Background(), req, nil)
+		if err == nil {
+			t.Fatalf("expected ErrSandboxUnavailable in strict mode when docker is down, got nil")
+		}
+		if !strings.Contains(err.Error(), "sandboxed execution failed") {
+			t.Errorf("expected ErrSandboxUnavailable, got: %v", err)
+		}
+	}
+}
+
+func TestDockerSandbox_FallbackWhenPreferred(t *testing.T) {
+	cfg := DockerSandboxConfig{
+		Image:       "nonexistent-image-xyz:latest",
+		MemoryLimit: "256m",
+		Mode:        ModePreferred,
+	}
+	sb := NewDockerSandbox(cfg)
+
 	req := ExecutionRequest{
 		SessionID:   "sess-fb",
 		WorkspaceID: "ws-test",
@@ -97,12 +122,13 @@ func TestDockerSandbox_FallbackWhenUnavailable(t *testing.T) {
 		Timeout:     5 * time.Second,
 	}
 
-	res, err := sb.Execute(context.Background(), req, nil)
-	if err != nil {
-		t.Fatalf("fallback execution failed: %v", err)
-	}
-
-	if !strings.Contains(res.Output, "fallback_success") {
-		t.Errorf("expected fallback output to contain 'fallback_success', got %q", res.Output)
+	if !sb.IsAvailable() {
+		res, err := sb.Execute(context.Background(), req, nil)
+		if err != nil {
+			t.Fatalf("fallback execution failed in preferred mode: %v", err)
+		}
+		if !strings.Contains(res.Output, "fallback_success") {
+			t.Errorf("expected fallback output to contain 'fallback_success', got %q", res.Output)
+		}
 	}
 }

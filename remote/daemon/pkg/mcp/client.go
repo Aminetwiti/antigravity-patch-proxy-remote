@@ -151,10 +151,9 @@ func (c *StdioClient) drainStderr() {
 	if c.stderr == nil {
 		return
 	}
-	scanner := bufio.NewScanner(c.stderr)
-	for scanner.Scan() {
-		_ = scanner.Text()
-	}
+	// Drain stderr using streaming io.Copy into io.Discard to prevent deadlock
+	// on lines exceeding bufio scanner limits without accumulating unbounded memory.
+	_, _ = io.Copy(io.Discard, c.stderr)
 }
 
 func (c *StdioClient) readLoop() {

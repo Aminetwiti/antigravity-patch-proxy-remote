@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,10 +13,11 @@ import (
 
 // SlidingWindowLimiter implements an in-memory sliding window rate limiter.
 type SlidingWindowLimiter struct {
-	mu      sync.Mutex
-	limit   int
-	window  time.Duration
-	entries map[string][]time.Time
+	mu             sync.Mutex
+	limit          int
+	window         time.Duration
+	entries        map[string][]time.Time
+	trustedProxies []*net.IPNet
 }
 
 func NewSlidingWindowLimiter(limit int, window time.Duration) *SlidingWindowLimiter {
@@ -24,8 +26,68 @@ func NewSlidingWindowLimiter(limit int, window time.Duration) *SlidingWindowLimi
 		window:  window,
 		entries: make(map[string][]time.Time),
 	}
+	if env := os.Getenv("AG_TRUSTED_PROXIES"); env != "" {
+		for _, part := range strings.Split(env, ",") {
+			l.AddTrustedProxy(strings.TrimSpace(part))
+		}
+	}
 	go l.cleanupLoop()
 	return l
+}
+
+func (l *SlidingWindowLimiter) SetTrustedProxies(cidrs []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.trustedProxies = nil
+	for _, cidr := range cidrs {
+		c := strings.TrimSpace(cidr)
+		if c == "" {
+			continue
+		}
+		if !strings.Contains(c, "/") {
+			if strings.Contains(c, ":") {
+				c += "/128"
+			} else {
+				c += "/32"
+			}
+		}
+		_, ipNet, err := net.ParseCIDR(c)
+		if err == nil {
+			l.trustedProxies = append(l.trustedProxies, ipNet)
+		}
+	}
+}
+
+func (l *SlidingWindowLimiter) AddTrustedProxy(cidr string) {
+	c := strings.TrimSpace(cidr)
+	if c == "" {
+		return
+	}
+	if !strings.Contains(c, "/") {
+		if strings.Contains(c, ":") {
+			c += "/128"
+		} else {
+			c += "/32"
+		}
+	}
+	_, ipNet, err := net.ParseCIDR(c)
+	if err == nil {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		l.trustedProxies = append(l.trustedProxies, ipNet)
+	}
+}
+
+func (l *SlidingWindowLimiter) isTrustedProxy(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	for _, network := range l.trustedProxies {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (l *SlidingWindowLimiter) Allow(key string) (bool, int, time.Duration) {
@@ -85,8 +147,8 @@ func (l *SlidingWindowLimiter) cleanupLoop() {
 // Middleware returns an HTTP middleware enforcing rate limits.
 func (l *SlidingWindowLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Key by client IP or Bearer token
-		key := extractClientKey(r)
+		// Key by client IP (with trusted-proxy verification) or Bearer token
+		key := l.extractClientKey(r)
 		allowed, remaining, retryAfter := l.Allow(key)
 
 		w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", l.limit))
@@ -111,7 +173,7 @@ func (l *SlidingWindowLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-func extractClientKey(r *http.Request) string {
+func (l *SlidingWindowLimiter) extractClientKey(r *http.Request) string {
 	// If bearer token present, key by token
 	auth := r.Header.Get("Authorization")
 	if strings.HasPrefix(auth, "Bearer ") {
@@ -121,15 +183,26 @@ func extractClientKey(r *http.Request) string {
 		}
 	}
 
-	// Otherwise key by IP
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return "ip:" + strings.TrimSpace(parts[0])
+	peerHost, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		peerHost = r.RemoteAddr
+	}
+	peerIP := net.ParseIP(peerHost)
+
+	// ONLY inspect X-Forwarded-For if peer is in trusted proxies (HIGH-02 Remediation)
+	l.mu.Lock()
+	trusted := l.isTrustedProxy(peerIP)
+	l.mu.Unlock()
+
+	if trusted {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			clientIP := strings.TrimSpace(parts[0])
+			if net.ParseIP(clientIP) != nil {
+				return "ip:" + clientIP
+			}
+		}
 	}
 
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
-		return "ip:" + host
-	}
-	return "ip:" + r.RemoteAddr
+	return "ip:" + peerHost
 }

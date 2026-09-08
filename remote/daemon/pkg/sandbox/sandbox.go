@@ -2,7 +2,20 @@ package sandbox
 
 import (
 	"context"
+	"fmt"
 	"time"
+)
+
+type Mode string
+
+const (
+	ModeStrict    Mode = "strict"    // If requested sandbox is unavailable, fail closed with ErrSandboxUnavailable.
+	ModePreferred Mode = "preferred" // If sandbox is unavailable, log explicit warning and fall back to native host execution.
+	ModeNative    Mode = "native"    // Host execution directly.
+)
+
+var (
+	ErrSandboxUnavailable = fmt.Errorf("sandboxed execution failed: requested container sandbox is unavailable or failed to start")
 )
 
 // ExecutionRequest represents the command execution parameters.

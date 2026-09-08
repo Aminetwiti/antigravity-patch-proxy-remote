@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -40,7 +41,11 @@ type SQLiteEventStore struct {
 }
 
 func NewSQLiteEventStore(dbPath string) (*SQLiteEventStore, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)", dbPath)
+	syncMode := os.Getenv("AG_DB_SYNCHRONOUS")
+	if syncMode == "" {
+		syncMode = "FULL" // MED-02: default to FULL durability in production
+	}
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(%s)", dbPath, syncMode)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
@@ -81,6 +86,7 @@ func (s *SQLiteEventStore) InitSchema(ctx context.Context) error {
 	CREATE TABLE IF NOT EXISTS workspaces (
 		id TEXT PRIMARY KEY,
 		server_id TEXT NOT NULL,
+		owner_id TEXT DEFAULT '',
 		name TEXT NOT NULL,
 		path TEXT NOT NULL,
 		repo_url TEXT,
@@ -93,6 +99,7 @@ func (s *SQLiteEventStore) InitSchema(ctx context.Context) error {
 		id TEXT PRIMARY KEY,
 		server_id TEXT NOT NULL,
 		workspace_id TEXT NOT NULL,
+		owner_id TEXT DEFAULT '',
 		title TEXT NOT NULL,
 		state TEXT NOT NULL,
 		last_sequence INTEGER NOT NULL DEFAULT 0,
@@ -134,7 +141,13 @@ func (s *SQLiteEventStore) InitSchema(ctx context.Context) error {
 	`
 
 	_, err := s.db.ExecContext(ctx, schema)
-	return err
+	if err != nil {
+		return err
+	}
+	// Safe backward compatible column migrations
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN owner_id TEXT DEFAULT '';")
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE workspaces ADD COLUMN owner_id TEXT DEFAULT '';")
+	return nil
 }
 
 func (s *SQLiteEventStore) CreateSession(ctx context.Context, sess *domain.Session) error {
@@ -146,13 +159,14 @@ func (s *SQLiteEventStore) CreateSession(ctx context.Context, sess *domain.Sessi
 	sess.State = domain.SessionStateCreated
 
 	query := `
-	INSERT INTO sessions (id, server_id, workspace_id, title, state, last_sequence, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+	INSERT INTO sessions (id, server_id, workspace_id, owner_id, title, state, last_sequence, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`
 	_, err := s.db.ExecContext(ctx, query,
 		sess.ID,
 		sess.ServerID,
 		sess.WorkspaceID,
+		sess.OwnerID,
 		sess.Title,
 		string(sess.State),
 		sess.LastSequence,
@@ -164,7 +178,7 @@ func (s *SQLiteEventStore) CreateSession(ctx context.Context, sess *domain.Sessi
 
 func (s *SQLiteEventStore) GetSession(ctx context.Context, sessionID string) (*domain.Session, error) {
 	query := `
-	SELECT id, server_id, workspace_id, title, state, last_sequence, created_at, updated_at
+	SELECT id, server_id, workspace_id, owner_id, title, state, last_sequence, created_at, updated_at
 	FROM sessions WHERE id = ?;
 	`
 	row := s.db.QueryRowContext(ctx, query, sessionID)
@@ -177,6 +191,7 @@ func (s *SQLiteEventStore) GetSession(ctx context.Context, sessionID string) (*d
 		&sess.ID,
 		&sess.ServerID,
 		&sess.WorkspaceID,
+		&sess.OwnerID,
 		&sess.Title,
 		&stateStr,
 		&sess.LastSequence,
@@ -199,7 +214,7 @@ func (s *SQLiteEventStore) GetSession(ctx context.Context, sessionID string) (*d
 
 func (s *SQLiteEventStore) ListSessions(ctx context.Context) ([]domain.Session, error) {
 	query := `
-	SELECT id, server_id, workspace_id, title, state, last_sequence, created_at, updated_at
+	SELECT id, server_id, workspace_id, owner_id, title, state, last_sequence, created_at, updated_at
 	FROM sessions ORDER BY updated_at DESC;
 	`
 	rows, err := s.db.QueryContext(ctx, query)
@@ -218,6 +233,7 @@ func (s *SQLiteEventStore) ListSessions(ctx context.Context) ([]domain.Session, 
 			&sess.ID,
 			&sess.ServerID,
 			&sess.WorkspaceID,
+			&sess.OwnerID,
 			&sess.Title,
 			&stateStr,
 			&sess.LastSequence,

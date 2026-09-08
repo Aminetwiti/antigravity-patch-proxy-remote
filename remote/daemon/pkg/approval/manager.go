@@ -154,13 +154,14 @@ func (m *Manager) restoreRunningState(ctx context.Context, sessionID, reason str
 }
 
 func (m *Manager) ResolveApproval(approvalID string, approved bool, actorID, reason string) error {
-	m.mu.RLock()
+	m.mu.Lock()
 	respChan, ok := m.pending[approvalID]
-	m.mu.RUnlock()
-
 	if !ok {
+		m.mu.Unlock()
 		return ErrApprovalNotFound
 	}
+	delete(m.pending, approvalID)
+	m.mu.Unlock()
 
 	resp := ApprovalResponse{
 		ApprovalID: approvalID,
@@ -173,7 +174,7 @@ func (m *Manager) ResolveApproval(approvalID string, approved bool, actorID, rea
 	case respChan <- resp:
 		return nil
 	default:
-		return nil
+		return errors.New("approval already resolved")
 	}
 }
 

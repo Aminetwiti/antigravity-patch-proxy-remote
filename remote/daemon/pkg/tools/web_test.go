@@ -86,6 +86,7 @@ func TestFetchWebPageTool_Sanitization(t *testing.T) {
 	defer server.Close()
 
 	tool := NewFetchWebPageTool()
+	tool.SetClientForTesting(server.Client(), true)
 
 	params, _ := json.Marshal(FetchWebPageParams{
 		URL:       server.URL,
@@ -112,5 +113,33 @@ func TestFetchWebPageTool_Sanitization(t *testing.T) {
 	}
 	if !strings.Contains(res.Output, "clean paragraph with an & entity") {
 		t.Errorf("expected unescaped text 'clean paragraph with an & entity', got: %s", res.Output)
+	}
+}
+
+func TestFetchWebPageTool_SSRFBlocked(t *testing.T) {
+	tool := NewFetchWebPageTool()
+
+	targets := []string{
+		"http://127.0.0.1:8090/v2/sessions",
+		"http://localhost/admin",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://10.0.0.1/sensitive",
+		"http://192.168.1.1:80",
+	}
+
+	for _, target := range targets {
+		params, _ := json.Marshal(FetchWebPageParams{
+			URL: target,
+		})
+		res, err := tool.Execute(context.Background(), "sess-test", "ws-test", params, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Success {
+			t.Errorf("expected SSRF block for %s, but got success", target)
+		}
+		if !strings.Contains(res.Error, "SSRF security check failed") {
+			t.Errorf("expected SSRF error message for %s, got: %s", target, res.Error)
+		}
 	}
 }

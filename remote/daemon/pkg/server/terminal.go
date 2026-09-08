@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -15,9 +16,238 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const maxScrollbackBytes = 1024 * 1024 // 1MB scrollback ceiling
+
+type TerminalMessage struct {
+	Type string `json:"type"` // "input", "output", "kill", "exit", "error"
+	Data string `json:"data,omitempty"`
+	Code int    `json:"code,omitempty"`
+}
+
+// PersistentTerminal represents a long-running subprocess decoupled from individual WebSocket connections.
+type PersistentTerminal struct {
+	ID         string
+	Dir        string
+	cmd        *exec.Cmd
+	stdin      io.WriteCloser
+	mu         sync.RWMutex
+	scrollback []byte
+	listeners  map[*websocket.Conn]chan TerminalMessage
+	exited     bool
+	exitCode   int
+	doneChan   chan struct{}
+}
+
+func newPersistentTerminal(id, dir string) (*PersistentTerminal, error) {
+	shell := "sh"
+	if runtime.GOOS == "windows" {
+		shell = "cmd.exe"
+	} else if _, err := exec.LookPath("bash"); err == nil {
+		shell = "bash"
+	}
+
+	cmd := exec.Command(shell)
+	cmd.Dir = dir
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed opening stdin pipe: %w", err)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = stdin.Close()
+		return nil, fmt.Errorf("failed opening stdout pipe: %w", err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		return nil, fmt.Errorf("failed opening stderr pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = stderr.Close()
+		return nil, fmt.Errorf("failed starting shell process: %w", err)
+	}
+
+	term := &PersistentTerminal{
+		ID:         id,
+		Dir:        dir,
+		cmd:        cmd,
+		stdin:      stdin,
+		scrollback: make([]byte, 0, 8192),
+		listeners:  make(map[*websocket.Conn]chan TerminalMessage),
+		doneChan:   make(chan struct{}),
+	}
+
+	go term.readPump(stdout)
+	go term.readPump(stderr)
+	go term.waitLoop()
+
+	return term, nil
+}
+
+func (t *PersistentTerminal) appendOutput(chunk []byte) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.scrollback = append(t.scrollback, chunk...)
+	if len(t.scrollback) > maxScrollbackBytes {
+		// Drop oldest bytes beyond maxScrollbackBytes
+		overflow := len(t.scrollback) - maxScrollbackBytes
+		t.scrollback = t.scrollback[overflow:]
+	}
+
+	msg := TerminalMessage{
+		Type: "output",
+		Data: string(chunk),
+	}
+
+	for _, ch := range t.listeners {
+		select {
+		case ch <- msg:
+		default:
+			// Non-blocking drop if consumer is stalled
+		}
+	}
+}
+
+func (t *PersistentTerminal) readPump(r io.Reader) {
+	buf := make([]byte, 2048)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			t.appendOutput(buf[:n])
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (t *PersistentTerminal) waitLoop() {
+	err := t.cmd.Wait()
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = 1
+		}
+	}
+
+	t.mu.Lock()
+	t.exited = true
+	t.exitCode = exitCode
+	msg := TerminalMessage{Type: "exit", Code: exitCode}
+	for _, ch := range t.listeners {
+		select {
+		case ch <- msg:
+		default:
+		}
+	}
+	t.mu.Unlock()
+
+	close(t.doneChan)
+}
+
+func (t *PersistentTerminal) Attach(conn *websocket.Conn) (chan TerminalMessage, []byte, bool, int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	ch := make(chan TerminalMessage, 128)
+	t.listeners[conn] = ch
+
+	scrollCopy := make([]byte, len(t.scrollback))
+	copy(scrollCopy, t.scrollback)
+
+	return ch, scrollCopy, t.exited, t.exitCode
+}
+
+func (t *PersistentTerminal) Detach(conn *websocket.Conn) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if ch, ok := t.listeners[conn]; ok {
+		delete(t.listeners, conn)
+		close(ch)
+	}
+}
+
+func (t *PersistentTerminal) WriteInput(data string) error {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.exited {
+		return fmt.Errorf("terminal process has exited")
+	}
+	_, err := io.WriteString(t.stdin, data)
+	return err
+}
+
+func (t *PersistentTerminal) Kill() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.exited {
+		return nil
+	}
+	if t.cmd.Process != nil {
+		return t.cmd.Process.Kill()
+	}
+	return nil
+}
+
+func (t *PersistentTerminal) IsRunning() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return !t.exited
+}
+
+// TerminalManager tracks persistent terminal sessions across client disconnects and reconnects.
+type TerminalManager struct {
+	mu       sync.RWMutex
+	sessions map[string]*PersistentTerminal
+}
+
+func NewTerminalManager() *TerminalManager {
+	return &TerminalManager{
+		sessions: make(map[string]*PersistentTerminal),
+	}
+}
+
+func (m *TerminalManager) GetOrCreate(termID, dir string) (*PersistentTerminal, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if existing, ok := m.sessions[termID]; ok && existing.IsRunning() {
+		return existing, nil
+	}
+
+	term, err := newPersistentTerminal(termID, dir)
+	if err != nil {
+		return nil, err
+	}
+	m.sessions[termID] = term
+	return term, nil
+}
+
+func (m *TerminalManager) Remove(termID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if term, ok := m.sessions[termID]; ok {
+		_ = term.Kill()
+		delete(m.sessions, termID)
+	}
+}
+
 type TerminalHandler struct {
 	wsMgr     *workspace.Manager
 	authToken string
+	mgr       *TerminalManager
 	upgrader  websocket.Upgrader
 }
 
@@ -25,16 +255,15 @@ func NewTerminalHandler(wsMgr *workspace.Manager, authToken string) *TerminalHan
 	return &TerminalHandler{
 		wsMgr:     wsMgr,
 		authToken: authToken,
+		mgr:       NewTerminalManager(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 	}
 }
 
-type TerminalMessage struct {
-	Type string `json:"type"` // "input", "output", "kill", "exit", "error"
-	Data string `json:"data,omitempty"`
-	Code int    `json:"code,omitempty"`
+func (h *TerminalHandler) Manager() *TerminalManager {
+	return h.mgr
 }
 
 func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +294,17 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		dir = resolved
 	}
 
+	termID := r.URL.Query().Get("terminalId")
+	if termID == "" {
+		termID = r.URL.Query().Get("sessionId")
+	}
+	if termID == "" {
+		termID = "default"
+		if workspaceID != "" {
+			termID = "ws_" + workspaceID
+		}
+	}
+
 	// 3. Upgrade to WebSocket
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -73,40 +313,16 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// 4. Select shell
-	shell := "sh"
-	if runtime.GOOS == "windows" {
-		shell = "cmd.exe"
-	} else if _, err := exec.LookPath("bash"); err == nil {
-		shell = "bash"
-	}
-
-	cmd := exec.Command(shell)
-	cmd.Dir = dir
-
-	stdin, err := cmd.StdinPipe()
+	// 4. Get or create persistent terminal session
+	term, err := h.mgr.GetOrCreate(termID, dir)
 	if err != nil {
-		_ = conn.WriteJSON(TerminalMessage{Type: "error", Data: err.Error()})
-		return
-	}
-	defer stdin.Close()
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		_ = conn.WriteJSON(TerminalMessage{Type: "error", Data: err.Error()})
+		_ = conn.WriteJSON(TerminalMessage{Type: "error", Data: "failed to start terminal: " + err.Error()})
 		return
 	}
 
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		_ = conn.WriteJSON(TerminalMessage{Type: "error", Data: err.Error()})
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		_ = conn.WriteJSON(TerminalMessage{Type: "error", Data: "failed to start shell: " + err.Error()})
-		return
-	}
+	// 5. Attach WebSocket listener (detaches cleanly on disconnect without killing process)
+	ch, scrollback, exited, exitCode := term.Attach(conn)
+	defer term.Detach(conn)
 
 	var writeMu sync.Mutex
 	sendMsg := func(msg TerminalMessage) error {
@@ -115,48 +331,47 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return conn.WriteJSON(msg)
 	}
 
-	// 5. Pump stdout and stderr to WebSocket
-	readPump := func(r io.Reader) {
-		buf := make([]byte, 2048)
-		for {
-			n, err := r.Read(buf)
-			if n > 0 {
-				_ = sendMsg(TerminalMessage{
-					Type: "output",
-					Data: string(buf[:n]),
-				})
-			}
-			if err != nil {
-				return
-			}
-		}
+	// Replay scrollback backlog to newly attached client
+	if len(scrollback) > 0 {
+		_ = sendMsg(TerminalMessage{
+			Type: "output",
+			Data: string(scrollback),
+		})
+	}
+	if exited {
+		_ = sendMsg(TerminalMessage{
+			Type: "exit",
+			Code: exitCode,
+		})
+		return
 	}
 
-	go readPump(stdout)
-	go readPump(stderr)
-
-	// 6. Monitor process exit in background
-	doneChan := make(chan struct{})
+	// Background worker forwarding terminal outputs to this specific WebSocket
+	stopForwarding := make(chan struct{})
+	defer close(stopForwarding)
 	go func() {
-		err := cmd.Wait()
-		exitCode := 0
-		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			} else {
-				exitCode = 1
+		for {
+			select {
+			case <-stopForwarding:
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				if err := sendMsg(msg); err != nil {
+					return
+				}
 			}
 		}
-		_ = sendMsg(TerminalMessage{Type: "exit", Code: exitCode})
-		close(doneChan)
 	}()
 
-	// 7. Read inputs from WebSocket client
+	// 6. Read inputs from WebSocket client.
+	// On connection drop/error: EXIT LOOP AND DETACH WITHOUT KILLING SUBPROCESS!
 	for {
 		conn.SetReadDeadline(time.Now().Add(10 * time.Minute))
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			_ = cmd.Process.Kill()
+			// Clean detach on client disconnection — DO NOT KILL SUBPROCESS (HIGH-01 Remediation)
 			break
 		}
 
@@ -166,13 +381,12 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch msg.Type {
-		case "input":
-			_, _ = io.WriteString(stdin, msg.Data)
+		case "input", "stdin":
+			_ = term.WriteInput(msg.Data)
 		case "kill":
-			_ = cmd.Process.Kill()
+			_ = term.Kill()
+			h.mgr.Remove(termID)
 			return
 		}
 	}
-
-	<-doneChan
 }

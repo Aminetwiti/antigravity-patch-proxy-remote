@@ -225,7 +225,10 @@ func (c *HTTPProviderClient) generateOpenAI(ctx context.Context, messages []LLMM
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		if c.cfg.Type == ProviderProxy {
+			return nil, fmt.Errorf("connection to Antigravity proxy failed (%s): please ensure IDE proxy is active, or configure ANTHROPIC_API_KEY/OPENAI_API_KEY for headless server execution: %w", url, err)
+		}
+		return nil, fmt.Errorf("HTTP request to %s failed: %w", c.cfg.Type, err)
 	}
 	defer resp.Body.Close()
 

@@ -185,15 +185,17 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 		}
 
 		// Emit agent thought event
-		if resp.Thought != "" || resp.Message != "" {
-			thoughtPayload, _ := json.Marshal(map[string]string{
-				"thought": resp.Thought,
-				"message": resp.Message,
+		if resp.Thought != "" || resp.Message != "" || len(resp.ToolCalls) > 0 {
+			thoughtPayload, _ := json.Marshal(map[string]interface{}{
+				"thought":   resp.Thought,
+				"message":   resp.Message,
+				"toolCalls": resp.ToolCalls,
 			})
 			_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "agent.thought", thoughtPayload)
 			messages = append(messages, LLMMessage{
-				Role:    "assistant",
-				Content: resp.Message,
+				Role:      "assistant",
+				Content:   resp.Message,
+				ToolCalls: resp.ToolCalls,
 			})
 		}
 
@@ -287,9 +289,32 @@ func (e *Engine) buildContextMessages(events []domain.Event) []LLMMessage {
 				msgs = append(msgs, LLMMessage{Role: "user", Content: data["text"]})
 			}
 		case "agent.thought":
-			var data map[string]string
+			var data struct {
+				Thought   string     `json:"thought"`
+				Message   string     `json:"message"`
+				ToolCalls []ToolCall `json:"toolCalls"`
+			}
 			if err := json.Unmarshal(ev.Payload, &data); err == nil {
-				msgs = append(msgs, LLMMessage{Role: "assistant", Content: data["message"]})
+				msgs = append(msgs, LLMMessage{
+					Role:      "assistant",
+					Content:   data.Message,
+					ToolCalls: data.ToolCalls,
+				})
+			}
+		case "tool.call":
+			var tc ToolCall
+			if err := json.Unmarshal(ev.Payload, &tc); err == nil && len(msgs) > 0 && msgs[len(msgs)-1].Role == "assistant" {
+				last := &msgs[len(msgs)-1]
+				found := false
+				for _, existing := range last.ToolCalls {
+					if existing.ID == tc.ID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					last.ToolCalls = append(last.ToolCalls, tc)
+				}
 			}
 		case "tool.result":
 			var data map[string]interface{}
@@ -376,10 +401,11 @@ func (e *Engine) RunSubagent(ctx context.Context, parentSessionID, role, task, w
 			return "", err
 		}
 
-		if resp.Thought != "" || resp.Message != "" {
+		if resp.Thought != "" || resp.Message != "" || len(resp.ToolCalls) > 0 {
 			messages = append(messages, LLMMessage{
-				Role:    "assistant",
-				Content: resp.Message,
+				Role:      "assistant",
+				Content:   resp.Message,
+				ToolCalls: resp.ToolCalls,
 			})
 		}
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,45 +10,76 @@ import (
 	"strings"
 	"time"
 
+	"github.com/antigravity/remote-daemon/pkg/auth"
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/mcp"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 )
 
+type contextKey string
+
+const identityKey contextKey = "identity"
+
+func getIdentity(r *http.Request) *auth.Identity {
+	if ident, ok := r.Context().Value(identityKey).(*auth.Identity); ok {
+		return ident
+	}
+	return &auth.Identity{UserID: "anonymous", Role: auth.RoleUser}
+}
+
 type RESTHandler struct {
-	rt         *RuntimeServer
-	wsMgr      *workspace.Manager
-	authToken  string
-	startTime  time.Time
+	rt        *RuntimeServer
+	wsMgr     *workspace.Manager
+	authToken string
+	rbacMgr   *auth.RBACManager
+	startTime time.Time
 }
 
 func NewRESTHandler(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) *RESTHandler {
+	rbac := auth.NewRBACManager(authToken)
+	if rt != nil {
+		rt.SetRBACManager(rbac)
+	}
 	return &RESTHandler{
 		rt:        rt,
 		wsMgr:     wsMgr,
 		authToken: authToken,
+		rbacMgr:   rbac,
 		startTime: time.Now(),
 	}
 }
 
+func (h *RESTHandler) SetRBACManager(m *auth.RBACManager) {
+	h.rbacMgr = m
+	if h.rt != nil {
+		h.rt.SetRBACManager(m)
+	}
+}
+
+func (h *RESTHandler) RBACManager() *auth.RBACManager {
+	return h.rbacMgr
+}
+
 func (h *RESTHandler) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if h.authToken != "" && h.authToken != "none" {
-			token := r.URL.Query().Get("token")
-			if token == "" {
-				authHeader := r.Header.Get("Authorization")
-				if strings.HasPrefix(authHeader, "Bearer ") {
-					token = strings.TrimPrefix(authHeader, "Bearer ")
-				}
-			}
-			if token != h.authToken {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized: invalid or missing token"})
-				return
+		token := r.URL.Query().Get("token")
+		if token == "" {
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				token = strings.TrimPrefix(authHeader, "Bearer ")
 			}
 		}
-		next(w, r)
+
+		ident, err := h.rbacMgr.Authenticate(token)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized: " + err.Error()})
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), identityKey, ident)
+		next(w, r.WithContext(ctx))
 	}
 }
 
@@ -56,13 +88,13 @@ func (h *RESTHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	info := h.rt.ServerInfo()
 
 	resp := map[string]interface{}{
-		"status":         "ONLINE",
-		"mode":           "server",
-		"version":        info.Version,
-		"serverId":       info.ID,
-		"hostname":       hostname,
-		"platform":       runtime.GOOS,
-		"uptimeSeconds":  int(time.Since(h.startTime).Seconds()),
+		"status":        "ONLINE",
+		"mode":          "server",
+		"version":       info.Version,
+		"serverId":      info.ID,
+		"hostname":      hostname,
+		"platform":      runtime.GOOS,
+		"uptimeSeconds": int(time.Since(h.startTime).Seconds()),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -71,6 +103,7 @@ func (h *RESTHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (h *RESTHandler) HandleListSessions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	ident := getIdentity(r)
 	sessions, err := h.rt.store.ListSessions(ctx)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -79,13 +112,28 @@ func (h *RESTHandler) HandleListSessions(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	var filtered []domain.Session
+	for _, s := range sessions {
+		if h.rbacMgr.CanAccessSession(ident, s.OwnerID) {
+			filtered = append(filtered, s)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"sessions": sessions,
+		"sessions": filtered,
 	})
 }
 
 func (h *RESTHandler) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
+	ident := getIdentity(r)
+	if ident.Role == auth.RoleReadOnly {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: read-only user cannot create sessions"})
+		return
+	}
+
 	var body struct {
 		Title       string `json:"title"`
 		WorkspaceID string `json:"workspaceId"`
@@ -98,7 +146,7 @@ func (h *RESTHandler) HandleCreateSession(w http.ResponseWriter, r *http.Request
 	}
 
 	ctx := r.Context()
-	sess, err := h.rt.SessionService().CreateSession(ctx, h.rt.ServerInfo().ID, body.WorkspaceID, body.Title)
+	sess, err := h.rt.SessionService().CreateSessionWithOwner(ctx, h.rt.ServerInfo().ID, body.WorkspaceID, body.Title, ident.UserID)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -436,6 +484,22 @@ func (h *RESTHandler) HandleExportSession(w http.ResponseWriter, r *http.Request
 	}
 
 	ctx := r.Context()
+	sess, err := h.rt.store.GetSession(ctx, sessionID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	ident := getIdentity(r)
+	if !h.rbacMgr.CanAccessSession(ident, sess.OwnerID) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: cannot access session owned by another user"})
+		return
+	}
+
 	export, err := BuildSessionExport(ctx, h.rt.store, sessionID)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -463,14 +527,6 @@ func (h *RESTHandler) HandleRollbackSession(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	chkMgr := h.rt.CheckpointManager()
-	if chkMgr == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "checkpoint manager not initialized"})
-		return
-	}
-
 	var body struct {
 		SessionID string `json:"sessionId"`
 		Sequence  int64  `json:"sequence"`
@@ -482,6 +538,30 @@ func (h *RESTHandler) HandleRollbackSession(w http.ResponseWriter, r *http.Reque
 	}
 
 	ctx := r.Context()
+	sess, err := h.rt.store.GetSession(ctx, body.SessionID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	ident := getIdentity(r)
+	if !h.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: cannot mutate session owned by another user"})
+		return
+	}
+
+	chkMgr := h.rt.CheckpointManager()
+	if chkMgr == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "checkpoint manager not initialized"})
+		return
+	}
+
 	snap, err := chkMgr.RollbackSession(ctx, body.SessionID, body.Sequence)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -751,8 +831,25 @@ func (h *RESTHandler) HandleMCPCall(w http.ResponseWriter, r *http.Request) {
 }
 
 func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.Handler {
+	return NewMuxWithRBAC(rt, wsMgr, auth.NewRBACManager(authToken))
+}
+
+func NewMuxWithRBAC(rt *RuntimeServer, wsMgr *workspace.Manager, rbacMgr *auth.RBACManager) http.Handler {
 	mux := http.NewServeMux()
-	rest := NewRESTHandler(rt, wsMgr, authToken)
+	adminToken := ""
+	if rbacMgr != nil {
+		adminToken = rbacMgr.AdminToken()
+	}
+	rest := &RESTHandler{
+		rt:        rt,
+		wsMgr:     wsMgr,
+		authToken: adminToken,
+		rbacMgr:   rbacMgr,
+		startTime: time.Now(),
+	}
+	if rt != nil && rbacMgr != nil {
+		rt.SetRBACManager(rbacMgr)
+	}
 
 	// Health (public)
 	mux.HandleFunc("/health", rest.HandleHealth)
@@ -799,7 +896,7 @@ func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.
 	mux.HandleFunc("/v2/approvals/resolve", rest.AuthMiddleware(rest.HandleResolveApproval))
 
 	// Interactive Terminal WebSocket (/v2/terminal)
-	termHandler := NewTerminalHandler(wsMgr, authToken)
+	termHandler := NewTerminalHandler(wsMgr, adminToken)
 	mux.Handle("/v2/terminal", termHandler)
 
 	// Web Console Single-Page App (GET / and GET /console)
@@ -817,20 +914,20 @@ func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.
 
 	// WebSocket Endpoint (/v2/ws)
 	mux.HandleFunc("/v2/ws", func(w http.ResponseWriter, r *http.Request) {
-		if authToken != "" && authToken != "none" {
-			token := r.URL.Query().Get("token")
-			if token == "" {
-				authHeader := r.Header.Get("Authorization")
-				if strings.HasPrefix(authHeader, "Bearer ") {
-					token = strings.TrimPrefix(authHeader, "Bearer ")
-				}
-			}
-			if token != authToken {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
+		token := r.URL.Query().Get("token")
+		if token == "" {
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				token = strings.TrimPrefix(authHeader, "Bearer ")
 			}
 		}
-		rt.ServeHTTP(w, r)
+		ident, err := rest.rbacMgr.Authenticate(token)
+		if err != nil {
+			http.Error(w, "unauthorized: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+		ctx := context.WithValue(r.Context(), identityKey, ident)
+		rt.ServeHTTP(w, r.WithContext(ctx))
 	})
 
 	// Global Sliding-Window Rate Limiter (120 req/min)

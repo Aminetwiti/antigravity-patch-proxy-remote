@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -64,11 +65,17 @@ func ResolveAndValidatePath(workspaceRoot, targetPath string) (string, error) {
 	}
 	cleanRoot := filepath.Clean(workspaceRoot)
 
-	cleanTarget := strings.TrimPrefix(targetPath, "file:///")
-	cleanTarget = strings.TrimPrefix(cleanTarget, "file://")
+	cleanTarget := strings.TrimPrefix(targetPath, "file://")
 
 	var resolved string
-	if filepath.IsAbs(cleanTarget) {
+	if strings.HasPrefix(cleanTarget, "/") || strings.HasPrefix(cleanTarget, "\\") {
+		if runtime.GOOS == "windows" {
+			vol := filepath.VolumeName(cleanRoot)
+			resolved = filepath.Clean(vol + cleanTarget)
+		} else {
+			resolved = filepath.Clean(cleanTarget)
+		}
+	} else if filepath.IsAbs(cleanTarget) {
 		resolved = filepath.Clean(cleanTarget)
 	} else {
 		resolved = filepath.Clean(filepath.Join(cleanRoot, cleanTarget))
