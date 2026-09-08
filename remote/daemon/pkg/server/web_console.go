@@ -608,6 +608,25 @@ const WebConsoleHTML = `<!DOCTYPE html>
         '</div>' +
         '<div class="tool-body">' + escapeHtml(out) + '</div>';
         transcript.appendChild(card);
+      } else if (evt.type === 'subagent.started') {
+        const card = document.createElement('div');
+        card.className = 'tool-card';
+        card.style.borderColor = '#8b5cf6';
+        card.innerHTML = '<div class="tool-header" style="background:#2e1065;color:#c4b5fd;">' +
+          '<span>👥 SUBAGENT: ' + escapeHtml((payload && payload.role) ? payload.role : 'specialist') + '</span>' +
+          '<span>' + escapeHtml((payload && payload.subagentSessionId) ? payload.subagentSessionId : '') + '</span>' +
+        '</div>' +
+        '<div class="tool-body">' + escapeHtml((payload && payload.task) ? payload.task : '') + '</div>';
+        transcript.appendChild(card);
+      } else if (evt.type === 'subagent.completed') {
+        const card = document.createElement('div');
+        card.className = 'tool-card';
+        card.style.borderColor = '#10b981';
+        card.innerHTML = '<div class="tool-header" style="background:#064e3b;color:#6ee7b7;">' +
+          '<span>✅ SUBAGENT COMPLETED: ' + escapeHtml((payload && payload.role) ? payload.role : '') + '</span>' +
+        '</div>' +
+        '<div class="tool-body">' + escapeHtml((payload && payload.result) ? payload.result : '') + '</div>';
+        transcript.appendChild(card);
       } else if (evt.type === 'approval.requested') {
         if (payload) {
           pendingApprovalId = payload.approval_id;
