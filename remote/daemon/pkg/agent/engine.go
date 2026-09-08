@@ -26,8 +26,10 @@ type Engine struct {
 	llmClient  LLMClient
 	maxTurns   int
 
-	mu         sync.Mutex
-	turnCancels map[string]context.CancelFunc // sessionID -> cancel
+	mu            sync.Mutex
+	turnCancels   map[string]context.CancelFunc // sessionID -> cancel
+	sessionTokens map[string]*UsageInfo         // sessionID -> cumulative Usage
+	maxBudgets    map[string]int                // sessionID -> max token ceiling
 }
 
 func NewEngine(
@@ -38,18 +40,35 @@ func NewEngine(
 	llmClient LLMClient,
 ) *Engine {
 	eng := &Engine{
-		sessionSvc:  sessionSvc,
-		wsMgr:       wsMgr,
-		toolsReg:    toolsReg,
-		apprMgr:     apprMgr,
-		llmClient:   llmClient,
-		maxTurns:    25,
-		turnCancels: make(map[string]context.CancelFunc),
+		sessionSvc:    sessionSvc,
+		wsMgr:         wsMgr,
+		toolsReg:      toolsReg,
+		apprMgr:       apprMgr,
+		llmClient:     llmClient,
+		maxTurns:      25,
+		turnCancels:   make(map[string]context.CancelFunc),
+		sessionTokens: make(map[string]*UsageInfo),
+		maxBudgets:    make(map[string]int),
 	}
 	if toolsReg != nil {
 		toolsReg.SetSubagentRunner(eng)
 	}
 	return eng
+}
+
+func (e *Engine) GetSessionUsage(sessionID string) UsageInfo {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if u, ok := e.sessionTokens[sessionID]; ok {
+		return *u
+	}
+	return UsageInfo{}
+}
+
+func (e *Engine) SetSessionBudget(sessionID string, maxTokens int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.maxBudgets[sessionID] = maxTokens
 }
 
 func (e *Engine) StartTurn(ctx context.Context, sessionID, prompt string) error {
@@ -134,6 +153,35 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 			errPayload, _ := json.Marshal(map[string]string{"error": err.Error()})
 			_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "agent.error", errPayload)
 			return
+		}
+
+		// Token usage accounting
+		if resp.Usage.TotalTokens > 0 {
+			e.mu.Lock()
+			curr, ok := e.sessionTokens[sessionID]
+			if !ok {
+				curr = &UsageInfo{}
+				e.sessionTokens[sessionID] = curr
+			}
+			curr.PromptTokens += resp.Usage.PromptTokens
+			curr.CompletionTokens += resp.Usage.CompletionTokens
+			curr.TotalTokens += resp.Usage.TotalTokens
+			totalNow := *curr
+			maxB := e.maxBudgets[sessionID]
+			e.mu.Unlock()
+
+			usagePayload, _ := json.Marshal(map[string]interface{}{
+				"turn":         turn + 1,
+				"turnUsage":    resp.Usage,
+				"sessionTotal": totalNow,
+			})
+			_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "agent.token_usage", usagePayload)
+
+			if maxB > 0 && totalNow.TotalTokens >= maxB {
+				_ = e.sessionSvc.TransitionState(ctx, sessionID, domain.SessionStatePaused, fmt.Sprintf("Token budget ceiling reached (%d >= %d)", totalNow.TotalTokens, maxB))
+				_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "agent.budget_exceeded", usagePayload)
+				return
+			}
 		}
 
 		// Emit agent thought event

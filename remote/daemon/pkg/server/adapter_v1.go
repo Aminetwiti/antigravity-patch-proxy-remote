@@ -15,6 +15,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/approval"
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
+	"github.com/antigravity/remote-daemon/pkg/mcp"
 	"github.com/antigravity/remote-daemon/pkg/session"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 	"github.com/gorilla/websocket"
@@ -53,6 +54,7 @@ type V1Adapter struct {
 	agentEngine *agent.Engine
 	approvalMgr *approval.Manager
 	authToken   string
+	mcpMgr      *mcp.Manager
 
 	upgrader websocket.Upgrader
 
@@ -62,6 +64,12 @@ type V1Adapter struct {
 
 	// activePrompts tracks running prompts mapped to client requestIDs
 	activePrompts map[string]string // sessionID -> requestID
+}
+
+func (a *V1Adapter) SetMCPManager(mgr *mcp.Manager) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.mcpMgr = mgr
 }
 
 // NewV1Adapter initializes a new Protocol v1 compatibility adapter.
@@ -378,6 +386,121 @@ func (a *V1Adapter) handleAction(conn *websocket.Conn, msg V1IncomingMessage) {
 			Data: map[string]interface{}{
 				"workspaces": list,
 			},
+		})
+
+	case "list_mcp_servers":
+		var servers []interface{}
+		if a.mcpMgr != nil {
+			for _, s := range a.mcpMgr.ListServers() {
+				servers = append(servers, map[string]interface{}{
+					"name":        s.Name,
+					"status":      s.Status,
+					"toolCount":   s.ToolCount,
+					"tools":       s.Tools,
+					"description": s.Description,
+					"sidecarId":   s.Name,
+				})
+			}
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"servers": servers,
+			},
+		})
+
+	case "connect_mcp_server":
+		serverName, _ := msg.Data["serverName"].(string)
+		if serverName == "" {
+			serverName = msg.Prompt
+		}
+		status := "ready"
+		if a.mcpMgr != nil {
+			if s, ok := a.mcpMgr.GetServer(serverName); ok {
+				status = s.Status
+			}
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"serverName": serverName,
+				"status":     status,
+				"connected":  true,
+			},
+		})
+
+	case "call_mcp_tool":
+		serverName, _ := msg.Data["serverName"].(string)
+		toolName, _ := msg.Data["toolName"].(string)
+		args, _ := msg.Data["arguments"].(map[string]interface{})
+		if a.mcpMgr == nil {
+			a.writeJSON(conn, V1OutgoingMessage{
+				Type:      "error",
+				RequestID: msg.RequestID,
+				Error:     "mcp manager not initialized",
+			})
+			return
+		}
+		out, err := a.mcpMgr.CallServerTool(ctx, serverName, toolName, args)
+		if err != nil {
+			a.writeJSON(conn, V1OutgoingMessage{
+				Type:      "error",
+				RequestID: msg.RequestID,
+				Error:     err.Error(),
+			})
+			return
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"success": true,
+				"output":  out,
+			},
+		})
+
+	case "git_diff", "get_git_diff":
+		wsID := "default-workspace"
+		if msg.WorkspacePath != "" {
+			wsID = msg.WorkspacePath
+		}
+		diff, err := a.wsManager.Diff(wsID)
+		if err != nil {
+			a.writeJSON(conn, V1OutgoingMessage{
+				Type:      "error",
+				RequestID: msg.RequestID,
+				Error:     err.Error(),
+			})
+			return
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data:      diff,
+		})
+
+	case "git_commit":
+		wsID := "default-workspace"
+		if msg.WorkspacePath != "" {
+			wsID = msg.WorkspacePath
+		}
+		commitMsg, _ := msg.Data["message"].(string)
+		author, _ := msg.Data["author"].(string)
+		res, err := a.wsManager.Commit(wsID, commitMsg, author)
+		if err != nil {
+			a.writeJSON(conn, V1OutgoingMessage{
+				Type:      "error",
+				RequestID: msg.RequestID,
+				Error:     err.Error(),
+			})
+			return
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data:      res,
 		})
 
 	default:

@@ -157,6 +157,11 @@ type openAIResponse struct {
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
@@ -250,6 +255,11 @@ func (c *HTTPProviderClient) generateOpenAI(ctx context.Context, messages []LLMM
 	result := &LLMResponse{
 		Message: choice.Message.Content,
 		Done:    choice.FinishReason == "stop" || len(choice.Message.ToolCalls) == 0,
+		Usage: UsageInfo{
+			PromptTokens:     oaiResp.Usage.PromptTokens,
+			CompletionTokens: oaiResp.Usage.CompletionTokens,
+			TotalTokens:      oaiResp.Usage.TotalTokens,
+		},
 	}
 
 	if onChunk != nil && result.Message != "" {
@@ -304,6 +314,10 @@ type anthropicRequest struct {
 type anthropicResponse struct {
 	Content    []anthropicContentBlock `json:"content"`
 	StopReason string                  `json:"stop_reason"`
+	Usage      struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
 	Error      *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
@@ -412,6 +426,11 @@ func (c *HTTPProviderClient) generateAnthropic(ctx context.Context, messages []L
 
 	result := &LLMResponse{
 		Done: antResp.StopReason == "end_turn",
+		Usage: UsageInfo{
+			PromptTokens:     antResp.Usage.InputTokens,
+			CompletionTokens: antResp.Usage.OutputTokens,
+			TotalTokens:      antResp.Usage.InputTokens + antResp.Usage.OutputTokens,
+		},
 	}
 
 	for _, block := range antResp.Content {

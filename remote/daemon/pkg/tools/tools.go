@@ -83,6 +83,12 @@ func (r *Registry) RegisterTool(t Tool) {
 	r.tools[t.Name()] = t
 }
 
+func (r *Registry) UnregisterTool(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.tools, name)
+}
+
 func (r *Registry) GetTool(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

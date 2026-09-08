@@ -20,11 +20,18 @@ type ToolCall struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
+type UsageInfo struct {
+	PromptTokens     int `json:"promptTokens"`
+	CompletionTokens int `json:"completionTokens"`
+	TotalTokens      int `json:"totalTokens"`
+}
+
 type LLMResponse struct {
 	Thought   string     `json:"thought,omitempty"`
 	Message   string     `json:"message,omitempty"`
 	ToolCalls []ToolCall `json:"toolCalls,omitempty"`
 	Done      bool       `json:"done"`
+	Usage     UsageInfo  `json:"usage,omitempty"`
 }
 
 type LLMClient interface {

@@ -12,6 +12,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/approval"
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
+	"github.com/antigravity/remote-daemon/pkg/mcp"
 	"github.com/antigravity/remote-daemon/pkg/memory"
 	"github.com/antigravity/remote-daemon/pkg/notification"
 	"github.com/antigravity/remote-daemon/pkg/protocol"
@@ -52,6 +53,7 @@ type RuntimeServer struct {
 	webhookDispatcher *notification.WebhookDispatcher
 	checkpointMgr     *session.CheckpointManager
 	memStore          *memory.MemoryStore
+	mcpMgr            *mcp.Manager
 
 	mu              sync.RWMutex
 	attachedClients map[string]map[*websocket.Conn]*AttachedClient
@@ -160,6 +162,18 @@ func (r *RuntimeServer) MemoryStore() *memory.MemoryStore {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.memStore
+}
+
+func (r *RuntimeServer) SetMCPManager(m *mcp.Manager) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.mcpMgr = m
+}
+
+func (r *RuntimeServer) MCPManager() *mcp.Manager {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.mcpMgr
 }
 
 // BroadcastEvent broadcasts to all clients attached to event.SessionID.

@@ -212,25 +212,29 @@ func TestV1Adapter_PromptStreamingAndApproval(t *testing.T) {
 		t.Fatalf("expected stream_delta, got: %+v", deltaMsg)
 	}
 
-	// Transition session through valid FSM states: CREATED -> STARTING -> RUNNING
-	_ = adapter.sessionSvc.TransitionState(context.Background(), sess.ID, domain.SessionStateStarting, "starting")
-	_ = adapter.sessionSvc.TransitionState(context.Background(), sess.ID, domain.SessionStateRunning, "running")
+	// Transition isolated session through valid FSM states for approval test: CREATED -> STARTING -> RUNNING
+	apprSess, err := adapter.sessionSvc.CreateSession(context.Background(), "test-server", "default-workspace", "Approval Session")
+	if err != nil {
+		t.Fatalf("failed to create approval session: %v", err)
+	}
+	_ = adapter.sessionSvc.TransitionState(context.Background(), apprSess.ID, domain.SessionStateStarting, "starting")
+	_ = adapter.sessionSvc.TransitionState(context.Background(), apprSess.ID, domain.SessionStateRunning, "running")
 
 	var apprErr error
 	go func() {
 		params := json.RawMessage(`{"command": "rm -rf /tmp"}`)
-		_, apprErr = adapter.approvalMgr.RequestApproval(context.Background(), sess.ID, "run_command", params, "Test danger", 5)
+		_, apprErr = adapter.approvalMgr.RequestApproval(context.Background(), apprSess.ID, "run_command", params, "Test danger", 5)
 	}()
 
 	time.Sleep(50 * time.Millisecond)
-	reqs := adapter.approvalMgr.GetPendingRequests(sess.ID)
+	reqs := adapter.approvalMgr.GetPendingRequests(apprSess.ID)
 	if len(reqs) == 0 {
 		t.Fatalf("expected pending approval request, apprErr: %v", apprErr)
 	}
 	apprID := reqs[0].ID
 
 	adapter.OnDomainEvent(domain.Event{
-		SessionID: sess.ID,
+		SessionID: apprSess.ID,
 		Type:      "approval.requested",
 		Payload:   []byte(`{"approval_id": "` + apprID + `", "tool": "run_command", "args": {"command": "rm -rf /tmp"}}`),
 	})

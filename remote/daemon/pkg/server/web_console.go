@@ -394,6 +394,22 @@ const WebConsoleHTML = `<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- MCP Register Modal -->
+  <div id="mcpModal" class="modal-overlay hidden">
+    <div class="modal" style="width:480px;">
+      <h2>Register MCP Server</h2>
+      <p>Configure a stdio or process-based MCP tool provider.</p>
+      <input type="text" id="mcpNameInput" class="input-field" placeholder="Server Name (e.g. coolify, github)" />
+      <input type="text" id="mcpCmdInput" class="input-field" placeholder="Command (e.g. node, python, npx)" />
+      <input type="text" id="mcpArgsInput" class="input-field" placeholder="Arguments (separated by space)" />
+      <input type="text" id="mcpDescInput" class="input-field" placeholder="Description (optional)" />
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="closeMCPModal()">Cancel</button>
+        <button class="btn btn-success" onclick="submitRegisterMCPServer()">Launch Server</button>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div style="display:flex;align-items:center;gap:20px;">
       <div class="brand">
@@ -403,6 +419,8 @@ const WebConsoleHTML = `<!DOCTYPE html>
       <div class="nav-tabs">
         <button id="tabConsole" class="tab-btn active" onclick="switchTab('console')">💬 Agent Console</button>
         <button id="tabTerminal" class="tab-btn" onclick="switchTab('terminal')">💻 Workspace Terminal</button>
+        <button id="tabGit" class="tab-btn" onclick="switchTab('git')">🌿 Git Changes</button>
+        <button id="tabMCP" class="tab-btn" onclick="switchTab('mcp')">🔌 MCP Servers</button>
       </div>
     </div>
     <div class="server-status">
@@ -479,6 +497,38 @@ const WebConsoleHTML = `<!DOCTYPE html>
         <span class="terminal-prompt">&gt;</span>
         <input type="text" id="terminalInput" class="terminal-input" placeholder="Enter shell command (e.g. ls, git status, npm test)..." onkeydown="handleTerminalKey(event)" />
       </div>
+    </div>
+
+    <!-- Git Changes View -->
+    <div id="gitPane" class="terminal-container hidden" style="background:var(--bg);">
+      <div class="chat-header" style="justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span style="font-weight:600;">🌿 Workspace Git Changes</span>
+          <span id="gitBranchBadge" class="badge" style="background:#1e293b;color:#38bdf8;">main</span>
+          <span id="gitChangesBadge" class="badge" style="background:#1e293b;color:#94a3b8;">0 changes</span>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" onclick="loadGitDiff()">🔄 Refresh Diff</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;padding:12px 20px;background:var(--sidebar);border-bottom:1px solid var(--border);align-items:center;">
+        <input type="text" id="gitCommitMsg" class="input-field" style="margin-bottom:0;flex:1;" placeholder="Commit message (e.g. feat: add new feature)..." />
+        <button class="btn btn-success" onclick="commitGitChanges()">Commit All Changes</button>
+      </div>
+      <div id="gitFilesList" style="padding:10px 20px;display:flex;flex-wrap:wrap;gap:8px;background:#0d1117;border-bottom:1px solid var(--border);"></div>
+      <pre id="gitDiffOutput" class="terminal-output" style="flex:1;margin:0;font-size:12px;white-space:pre-wrap;"></pre>
+    </div>
+
+    <!-- MCP Servers View -->
+    <div id="mcpPane" class="terminal-container hidden" style="background:var(--bg);padding:20px;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div>
+          <h2 style="font-size:18px;margin-bottom:4px;">🔌 Model Context Protocol (MCP) Servers</h2>
+          <p style="color:var(--text-muted);font-size:13px;">External tool servers dynamically integrated into the agent runtime.</p>
+        </div>
+        <button class="btn" onclick="openMCPModal()">+ Register Server</button>
+      </div>
+      <div id="mcpServersGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;"></div>
     </div>
   </div>
 
@@ -789,9 +839,15 @@ const WebConsoleHTML = `<!DOCTYPE html>
     function switchTab(tab) {
       document.getElementById('tabConsole').classList.toggle('active', tab === 'console');
       document.getElementById('tabTerminal').classList.toggle('active', tab === 'terminal');
+      document.getElementById('tabGit').classList.toggle('active', tab === 'git');
+      document.getElementById('tabMCP').classList.toggle('active', tab === 'mcp');
+
       document.getElementById('mainConsole').classList.toggle('hidden', tab !== 'console');
       document.getElementById('asideConsole').classList.toggle('hidden', tab !== 'console');
       document.getElementById('terminalPane').classList.toggle('hidden', tab !== 'terminal');
+      document.getElementById('gitPane').classList.toggle('hidden', tab !== 'git');
+      document.getElementById('mcpPane').classList.toggle('hidden', tab !== 'mcp');
+
       if (tab === 'terminal') {
         if (!termWs || termWs.readyState !== WebSocket.OPEN) {
           initTerminal();
@@ -800,7 +856,168 @@ const WebConsoleHTML = `<!DOCTYPE html>
           const inp = document.getElementById('terminalInput');
           if (inp) inp.focus();
         }, 100);
+      } else if (tab === 'git') {
+        loadGitDiff();
+      } else if (tab === 'mcp') {
+        loadMCPServers();
       }
+    }
+
+    function loadGitDiff() {
+      const output = document.getElementById('gitDiffOutput');
+      const filesList = document.getElementById('gitFilesList');
+      output.textContent = 'Loading workspace git diff...';
+      filesList.innerHTML = '';
+
+      fetch('/v2/workspaces/diff?token=' + encodeURIComponent(token || ''))
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById('gitBranchBadge').innerText = data.branch || 'HEAD';
+          document.getElementById('gitChangesBadge').innerText = (data.totalChanges || 0) + ' changes';
+
+          filesList.innerHTML = '';
+          if (data.files && data.files.length > 0) {
+            data.files.forEach(f => {
+              const span = document.createElement('span');
+              span.className = 'badge';
+              const color = f.status.includes('M') ? '#f59e0b' : f.status.includes('A') || f.status.includes('?') ? '#10b981' : '#ef4444';
+              span.style.background = 'rgba(255,255,255,0.05)';
+              span.style.border = '1px solid ' + color;
+              span.style.color = color;
+              span.innerText = f.status + ' ' + f.path;
+              filesList.appendChild(span);
+            });
+          } else {
+            filesList.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">Working tree clean. Zero unstaged or staged changes.</span>';
+          }
+
+          if (data.unifiedDiff) {
+            output.textContent = data.unifiedDiff;
+          } else {
+            output.textContent = 'No diff output (clean workspace)';
+          }
+        })
+        .catch(err => {
+          output.textContent = 'Failed to load git diff: ' + err.message;
+        });
+    }
+
+    function commitGitChanges() {
+      const input = document.getElementById('gitCommitMsg');
+      const msg = input.value.trim();
+      if (!msg) {
+        alert('Please enter a commit message');
+        return;
+      }
+
+      fetch('/v2/workspaces/commit?token=' + encodeURIComponent(token || ''), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg, author: 'Web Console <console@antigravity>' })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          alert('Commit error: ' + data.error);
+        } else {
+          input.value = '';
+          alert('Committed successfully: ' + (data.commitHash || '').substring(0, 7) + ' on ' + (data.branch || 'branch'));
+          loadGitDiff();
+        }
+      })
+      .catch(err => alert('Commit failed: ' + err.message));
+    }
+
+    function loadMCPServers() {
+      const grid = document.getElementById('mcpServersGrid');
+      grid.innerHTML = '<div style="color:var(--text-muted);">Loading MCP servers...</div>';
+
+      fetch('/v2/mcp/servers?token=' + encodeURIComponent(token || ''))
+        .then(res => res.json())
+        .then(data => {
+          grid.innerHTML = '';
+          const servers = data.servers || [];
+          if (servers.length === 0) {
+            grid.innerHTML = '<div style="color:var(--text-muted);grid-column:1/-1;">No MCP servers registered yet. Click "+ Register Server" to add one.</div>';
+            return;
+          }
+          servers.forEach(s => {
+            const card = document.createElement('div');
+            card.className = 'tool-card';
+            card.style.width = '100%';
+            let toolsBadges = '';
+            if (s.tools && s.tools.length > 0) {
+              toolsBadges = s.tools.map(t => '<span class="badge" style="background:#1e293b;color:#38bdf8;font-size:11px;margin:2px;">' + escapeHtml(t) + '</span>').join(' ');
+            } else {
+              toolsBadges = '<span style="color:var(--text-muted);font-size:11px;">0 tools discovered</span>';
+            }
+            card.innerHTML =
+              '<div class="tool-header" style="justify-content:space-between;align-items:center;">' +
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                  '<span style="font-weight:600;color:#f0f6fc;">' + escapeHtml(s.name) + '</span>' +
+                  '<span class="badge" style="background:rgba(16,185,129,0.2);color:#10b981;">' + escapeHtml(s.status || 'ready') + '</span>' +
+                '</div>' +
+                '<button class="btn btn-danger" style="padding:2px 8px;font-size:11px;" onclick="unregisterMCPServer(\'' + escapeHtml(s.name) + '\')">Stop</button>' +
+              '</div>' +
+              '<div class="tool-body" style="background:#161b22;padding:12px;">' +
+                '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">' + escapeHtml(s.description || 'No description provided') + '</div>' +
+                '<div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:6px;">AVAILABLE TOOLS (' + (s.toolCount || 0) + '):</div>' +
+                '<div style="display:flex;flex-wrap:wrap;gap:4px;">' + toolsBadges + '</div>' +
+              '</div>';
+            grid.appendChild(card);
+          });
+        })
+        .catch(err => {
+          grid.innerHTML = '<div style="color:var(--danger);">Failed to load MCP servers: ' + err.message + '</div>';
+        });
+    }
+
+    function openMCPModal() {
+      document.getElementById('mcpModal').classList.remove('hidden');
+    }
+
+    function closeMCPModal() {
+      document.getElementById('mcpModal').classList.add('hidden');
+    }
+
+    function submitRegisterMCPServer() {
+      const name = document.getElementById('mcpNameInput').value.trim();
+      const cmd = document.getElementById('mcpCmdInput').value.trim();
+      const rawArgs = document.getElementById('mcpArgsInput').value.trim();
+      const desc = document.getElementById('mcpDescInput').value.trim();
+
+      if (!name || !cmd) {
+        alert('Server name and command are required');
+        return;
+      }
+
+      const args = rawArgs ? rawArgs.split(' ').filter(a => a.length > 0) : [];
+
+      fetch('/v2/mcp/servers?token=' + encodeURIComponent(token || ''), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, command: cmd, args: args, description: desc })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          alert('Failed to register: ' + data.error);
+        } else {
+          closeMCPModal();
+          loadMCPServers();
+        }
+      })
+      .catch(err => alert('Registration failed: ' + err.message));
+    }
+
+    function unregisterMCPServer(name) {
+      if (!confirm('Unregister and terminate MCP server "' + name + '"?')) return;
+      fetch('/v2/mcp/servers?name=' + encodeURIComponent(name) + '&token=' + encodeURIComponent(token || ''), {
+        method: 'DELETE'
+      })
+      .then(res => res.json())
+      .then(() => loadMCPServers())
+      .catch(err => alert('Failed to unregister: ' + err.message));
     }
 
     function initTerminal() {

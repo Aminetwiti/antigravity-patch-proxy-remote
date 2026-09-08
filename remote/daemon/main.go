@@ -28,6 +28,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
 	"github.com/antigravity/remote-daemon/pkg/gateway"
+	"github.com/antigravity/remote-daemon/pkg/mcp"
 	"github.com/antigravity/remote-daemon/pkg/memory"
 	"github.com/antigravity/remote-daemon/pkg/notification"
 	"github.com/antigravity/remote-daemon/pkg/sandbox"
@@ -455,7 +456,23 @@ func runServerRuntime(
 	agentEng := agent.NewEngine(rt.SessionService(), wsMgr, toolsReg, apprMgr, llmClient)
 	rt.SetAgentEngine(agentEng, apprMgr)
 
+	// MCP Host Manager
+	mcpMgr := mcp.NewManager(toolsReg)
+	rt.SetMCPManager(mcpMgr)
+	defer mcpMgr.Close()
+
+	// Load optional mcp_config.json
+	mcpCfgPath := "mcp_config.json"
+	if _, err := os.Stat(mcpCfgPath); err != nil {
+		home, _ := os.UserHomeDir()
+		mcpCfgPath = filepath.Join(home, ".antigravity", "mcp_config.json")
+	}
+	if err := mcpMgr.LoadConfigFile(mcpCfgPath); err == nil {
+		fmt.Printf("🔌 Loaded MCP configuration from %s\n", mcpCfgPath)
+	}
+
 	v1Adapter := server.NewV1Adapter(rt.SessionService(), store, wsMgr, agentEng, apprMgr, authToken)
+	v1Adapter.SetMCPManager(mcpMgr)
 	rt.SetV1Adapter(v1Adapter)
 
 	sched := server.NewScheduler(rt.SessionService(), agentEng)
@@ -515,6 +532,9 @@ func runServerRuntime(
 	fmt.Println("   - Branches API:      GET  /v2/workspaces/branches")
 	fmt.Println("   - Worktrees API:     POST /v2/workspaces/worktrees")
 	fmt.Println("   - Schedules API:     GET  /v2/schedules")
+	fmt.Println("   - MCP Host API:      GET  /v2/mcp/servers")
+	fmt.Println("   - Git Diff API:      GET  /v2/workspaces/diff")
+	fmt.Println("   - Git Commit API:    POST /v2/workspaces/commit")
 	fmt.Println("   - Protocol v2 WS:    WS   /v2/ws")
 	fmt.Println("   - Protocol v1 WS:    WS   /ws")
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/antigravity/remote-daemon/pkg/domain"
+	"github.com/antigravity/remote-daemon/pkg/mcp"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 )
 
@@ -567,6 +568,188 @@ func (h *RESTHandler) HandleMemories(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *RESTHandler) HandleWorkspaceDiff(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("id")
+	if wsID == "" {
+		wsID = r.URL.Query().Get("workspaceId")
+	}
+	if wsID == "" {
+		if sessID := r.URL.Query().Get("sessionId"); sessID != "" {
+			if sess, err := h.rt.store.GetSession(r.Context(), sessID); err == nil {
+				wsID = sess.WorkspaceID
+			}
+		}
+	}
+	if wsID == "" {
+		wsList := h.wsMgr.ListWorkspaces()
+		if len(wsList) > 0 {
+			wsID = wsList[0].ID
+		}
+	}
+	if wsID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "workspaceId or sessionId required"})
+		return
+	}
+
+	diff, err := h.wsMgr.Diff(wsID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(diff)
+}
+
+func (h *RESTHandler) HandleWorkspaceCommit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		WorkspaceID string `json:"workspaceId"`
+		SessionID   string `json:"sessionId"`
+		Message     string `json:"message"`
+		Author      string `json:"author"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json body"})
+		return
+	}
+
+	wsID := body.WorkspaceID
+	if wsID == "" && body.SessionID != "" {
+		if sess, err := h.rt.store.GetSession(r.Context(), body.SessionID); err == nil {
+			wsID = sess.WorkspaceID
+		}
+	}
+	if wsID == "" {
+		wsList := h.wsMgr.ListWorkspaces()
+		if len(wsList) > 0 {
+			wsID = wsList[0].ID
+		}
+	}
+
+	res, err := h.wsMgr.Commit(wsID, body.Message, body.Author)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (h *RESTHandler) HandleMCPServers(w http.ResponseWriter, r *http.Request) {
+	mcpMgr := h.rt.MCPManager()
+	if mcpMgr == nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"servers": []interface{}{}})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"servers": mcpMgr.ListServers(),
+		})
+
+	case http.MethodPost:
+		var cfg mcp.ServerConfig
+		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json body"})
+			return
+		}
+
+		info, err := mcpMgr.RegisterServer(r.Context(), cfg)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(info)
+
+	case http.MethodDelete:
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "name parameter required"})
+			return
+		}
+
+		if err := mcpMgr.UnregisterServer(name); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "unregistered", "name": name})
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *RESTHandler) HandleMCPCall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	mcpMgr := h.rt.MCPManager()
+	if mcpMgr == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "mcp manager not initialized"})
+		return
+	}
+
+	var body struct {
+		ServerName string                 `json:"serverName"`
+		ToolName   string                 `json:"toolName"`
+		Arguments  map[string]interface{} `json:"arguments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json body"})
+		return
+	}
+
+	output, err := mcpMgr.CallServerTool(r.Context(), body.ServerName, body.ToolName, body.Arguments)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"output":  output,
+	})
+}
+
 func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.Handler {
 	mux := http.NewServeMux()
 	rest := NewRESTHandler(rt, wsMgr, authToken)
@@ -597,6 +780,16 @@ func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.
 	mux.HandleFunc("/v2/workspaces", rest.AuthMiddleware(rest.HandleWorkspaces))
 	mux.HandleFunc("/v2/workspaces/branches", rest.AuthMiddleware(rest.HandleBranches))
 	mux.HandleFunc("/v2/workspaces/worktrees", rest.AuthMiddleware(rest.HandleWorktrees))
+	mux.HandleFunc("/v2/workspaces/diff", rest.AuthMiddleware(rest.HandleWorkspaceDiff))
+	mux.HandleFunc("/v2/workspaces/commit", rest.AuthMiddleware(rest.HandleWorkspaceCommit))
+
+	// Session Git shortcuts
+	mux.HandleFunc("/v2/sessions/diff", rest.AuthMiddleware(rest.HandleWorkspaceDiff))
+	mux.HandleFunc("/v2/sessions/commit", rest.AuthMiddleware(rest.HandleWorkspaceCommit))
+
+	// MCP Host REST API
+	mux.HandleFunc("/v2/mcp/servers", rest.AuthMiddleware(rest.HandleMCPServers))
+	mux.HandleFunc("/v2/mcp/servers/call", rest.AuthMiddleware(rest.HandleMCPCall))
 
 	// Scheduled Tasks REST API
 	mux.HandleFunc("/v2/schedules", rest.AuthMiddleware(rest.HandleSchedules))
@@ -640,7 +833,9 @@ func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.
 		rt.ServeHTTP(w, r)
 	})
 
-	return mux
+	// Global Sliding-Window Rate Limiter (120 req/min)
+	rateLimiter := NewSlidingWindowLimiter(120, time.Minute)
+	return rateLimiter.Middleware(mux)
 }
 
 // Ensure domain is imported for typing

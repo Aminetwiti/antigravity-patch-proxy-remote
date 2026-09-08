@@ -2,7 +2,9 @@ package workspace_test
 
 import (
 	"errors"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/antigravity/remote-daemon/pkg/workspace"
@@ -149,5 +151,77 @@ func TestWorkspaceManager_SearchFiles(t *testing.T) {
 
 	if results[0].LineNumber != 2 {
 		t.Errorf("expected line number 2 in server.go, got %d", results[0].LineNumber)
+	}
+}
+
+func TestWorkspaceManager_GitDiffAndCommit(t *testing.T) {
+	mgr := workspace.NewManager()
+	tmpDir := t.TempDir()
+
+	// Init git repository
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Skip("git not available in test environment")
+	}
+
+	exec.Command("git", "-C", tmpDir, "config", "user.name", "Tester").Run()
+	exec.Command("git", "-C", tmpDir, "config", "user.email", "tester@example.com").Run()
+
+	ws, err := mgr.RegisterWorkspace("ws-git", "git-test", tmpDir)
+	if err != nil {
+		t.Fatalf("RegisterWorkspace failed: %v", err)
+	}
+
+	// 1. Initial commit
+	_ = mgr.WriteFile(ws.ID, "file1.txt", []byte("line 1\n"))
+	_, err = mgr.Commit(ws.ID, "initial commit", "")
+	if err != nil {
+		t.Fatalf("initial commit failed: %v", err)
+	}
+
+	// Clean diff initially
+	diff, err := mgr.Diff(ws.ID)
+	if err != nil {
+		t.Fatalf("Diff failed: %v", err)
+	}
+	if !diff.Clean || diff.TotalChanges != 0 {
+		t.Errorf("expected clean diff, got changes=%d", diff.TotalChanges)
+	}
+
+	// 2. Modify and add a file
+	_ = mgr.WriteFile(ws.ID, "file1.txt", []byte("line 1 modified\nline 2\n"))
+	_ = mgr.WriteFile(ws.ID, "file2.txt", []byte("brand new file\n"))
+
+	diff, err = mgr.Diff(ws.ID)
+	if err != nil {
+		t.Fatalf("Diff failed: %v", err)
+	}
+	if diff.Clean || diff.TotalChanges != 2 {
+		t.Errorf("expected 2 changes, got %d (clean=%v)", diff.TotalChanges, diff.Clean)
+	}
+	if !strings.Contains(diff.UnifiedDiff, "line 1 modified") {
+		t.Errorf("expected unified diff to contain modified line, got: %s", diff.UnifiedDiff)
+	}
+
+	// 3. Commit changes
+	res, err := mgr.Commit(ws.ID, "second commit: update file1 and add file2", "Dev <dev@example.com>")
+	if err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+	if res.CommitHash == "" {
+		t.Errorf("expected non-empty commit hash")
+	}
+	if res.Message != "second commit: update file1 and add file2" {
+		t.Errorf("unexpected commit message: %s", res.Message)
+	}
+
+	// 4. Verify clean after commit
+	diffAfter, err := mgr.Diff(ws.ID)
+	if err != nil {
+		t.Fatalf("Diff after commit failed: %v", err)
+	}
+	if !diffAfter.Clean || diffAfter.TotalChanges != 0 {
+		t.Errorf("expected clean repository after commit, got changes=%d", diffAfter.TotalChanges)
 	}
 }

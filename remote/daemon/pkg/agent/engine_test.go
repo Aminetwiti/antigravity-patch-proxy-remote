@@ -250,3 +250,65 @@ func TestAgentEngine_Cancellation(t *testing.T) {
 		t.Fatalf("expected state CANCELLED, got %s", sess.State)
 	}
 }
+
+func TestAgentEngine_TokenAccountingAndBudgetCeiling(t *testing.T) {
+	resp1 := &agent.LLMResponse{
+		Thought: "Thinking step 1",
+		Message: "Writing part 1",
+		ToolCalls: []agent.ToolCall{
+			{
+				ID:        "call_1",
+				Name:      "write_to_file",
+				Arguments: json.RawMessage(`{"path": "f.txt", "content": "hello"}`),
+			},
+		},
+		Usage: agent.UsageInfo{
+			PromptTokens:     600,
+			CompletionTokens: 200,
+			TotalTokens:      800,
+		},
+	}
+
+	resp2 := &agent.LLMResponse{
+		Thought: "Thinking step 2",
+		Message: "Finishing part 2",
+		Done:    true,
+		Usage: agent.UsageInfo{
+			PromptTokens:     700,
+			CompletionTokens: 300,
+			TotalTokens:      1000,
+		},
+	}
+
+	eng, sessionSvc, _, _, sessID, _, cleanup := setupTestEngine(t, true, resp1, resp2)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Set budget ceiling to 1500 tokens. Total will be 800 + 1000 = 1800 > 1500.
+	eng.SetSessionBudget(sessID, 1500)
+
+	err := eng.StartTurn(ctx, sessID, "Execute tasks with budget limit")
+	if err != nil {
+		t.Fatalf("StartTurn failed: %v", err)
+	}
+
+	// Poll until session pauses due to budget ceiling
+	deadline := time.Now().Add(3 * time.Second)
+	var finalSess *domain.Session
+	for time.Now().Before(deadline) {
+		finalSess, _ = sessionSvc.GetSession(ctx, sessID)
+		if finalSess.State == domain.SessionStatePaused {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if finalSess.State != domain.SessionStatePaused {
+		t.Fatalf("expected state PAUSED on budget exceeded, got %s", finalSess.State)
+	}
+
+	usage := eng.GetSessionUsage(sessID)
+	if usage.TotalTokens < 1500 {
+		t.Errorf("expected accumulated total tokens >= 1500, got %d", usage.TotalTokens)
+	}
+}

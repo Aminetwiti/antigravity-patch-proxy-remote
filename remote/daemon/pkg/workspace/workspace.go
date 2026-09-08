@@ -446,3 +446,126 @@ func (m *Manager) RemoveWorktree(wsID string) error {
 	return nil
 }
 
+type GitDiffFile struct {
+	Path   string `json:"path"`
+	Status string `json:"status"` // "M", "A", "D", "R", "??"
+	Staged bool   `json:"staged"`
+}
+
+type GitDiffSummary struct {
+	Branch       string        `json:"branch"`
+	Clean        bool          `json:"clean"`
+	Files        []GitDiffFile `json:"files"`
+	TotalChanges int           `json:"totalChanges"`
+	UnifiedDiff  string        `json:"unifiedDiff"`
+}
+
+type GitCommitResult struct {
+	CommitHash string `json:"commitHash"`
+	Branch     string `json:"branch"`
+	Message    string `json:"message"`
+}
+
+// Diff returns current working tree and staged Git changes in the workspace.
+func (m *Manager) Diff(workspaceID string) (*GitDiffSummary, error) {
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	branch, _ := m.CurrentBranch(workspaceID)
+	if branch == "" {
+		branch = "HEAD"
+	}
+
+	// 1. Status porcelain
+	statusCmd := exec.Command("git", "status", "--porcelain=v1")
+	statusCmd.Dir = ws.Root
+	statusOut, err := statusCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git status failed: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(statusOut)), "\n")
+	var files []GitDiffFile
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if len(l) < 3 {
+			continue
+		}
+		statusCode := l[:2]
+		filePath := strings.TrimSpace(l[2:])
+		staged := statusCode[0] != ' ' && statusCode[0] != '?'
+		files = append(files, GitDiffFile{
+			Path:   filePath,
+			Status: strings.TrimSpace(statusCode),
+			Staged: staged,
+		})
+	}
+
+	// 2. Unified diff (diff against HEAD, fallback to plain diff)
+	diffCmd := exec.Command("git", "diff", "HEAD")
+	diffCmd.Dir = ws.Root
+	diffOut, err := diffCmd.Output()
+	if err != nil {
+		diffCmd = exec.Command("git", "diff")
+		diffCmd.Dir = ws.Root
+		diffOut, _ = diffCmd.Output()
+	}
+
+	return &GitDiffSummary{
+		Branch:       branch,
+		Clean:        len(files) == 0,
+		Files:        files,
+		TotalChanges: len(files),
+		UnifiedDiff:  string(diffOut),
+	}, nil
+}
+
+// Commit stages all changes in the workspace and creates an atomic Git commit.
+func (m *Manager) Commit(workspaceID, message, author string) (*GitCommitResult, error) {
+	if strings.TrimSpace(message) == "" {
+		return nil, fmt.Errorf("commit message cannot be empty")
+	}
+
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 1. git add -A
+	addCmd := exec.Command("git", "add", "-A")
+	addCmd.Dir = ws.Root
+	if out, err := addCmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("git add failed: %s (%w)", string(out), err)
+	}
+
+	// 2. git commit -m
+	args := []string{"commit", "-m", message}
+	if author != "" {
+		args = append(args, fmt.Sprintf("--author=%s", author))
+	}
+	commitCmd := exec.Command("git", args...)
+	commitCmd.Dir = ws.Root
+	if out, err := commitCmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("git commit failed: %s (%w)", string(out), err)
+	}
+
+	// 3. git rev-parse HEAD
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = ws.Root
+	revOut, err := revCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git rev-parse HEAD failed: %w", err)
+	}
+
+	branch, _ := m.CurrentBranch(workspaceID)
+
+	return &GitCommitResult{
+		CommitHash: strings.TrimSpace(string(revOut)),
+		Branch:     branch,
+		Message:    message,
+	}, nil
+}
+
+

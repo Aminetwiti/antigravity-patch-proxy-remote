@@ -13,6 +13,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/approval"
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
+	"github.com/antigravity/remote-daemon/pkg/mcp"
 	"github.com/antigravity/remote-daemon/pkg/server"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 )
@@ -35,6 +36,10 @@ func setupMuxTest(t *testing.T, authToken string) (http.Handler, func()) {
 
 	rt := server.NewRuntimeServer(serverInfo, store)
 	wsMgr := workspace.NewManager()
+	_, _ = wsMgr.RegisterWorkspace("default", "Default Workspace", tmpDir)
+
+	mcpMgr := mcp.NewManager(nil)
+	rt.SetMCPManager(mcpMgr)
 
 	sched := server.NewScheduler(rt.SessionService(), nil)
 	rt.SetScheduler(sched)
@@ -279,6 +284,69 @@ func TestREST_Approvals(t *testing.T) {
 
 	if resolveW.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 on non-existent approval ID, got %d (%s)", resolveW.Code, resolveW.Body.String())
+	}
+}
+
+func TestREST_MCPServers(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-mcp")
+	defer cleanup()
+
+	// 1. GET /v2/mcp/servers -> list servers
+	req := httptest.NewRequest("GET", "/v2/mcp/servers?token=token-mcp", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on GET /v2/mcp/servers, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if _, ok := resp["servers"]; !ok {
+		t.Fatalf("expected 'servers' in response")
+	}
+
+	// 2. POST /v2/mcp/servers with invalid json -> 400
+	badReq := httptest.NewRequest("POST", "/v2/mcp/servers?token=token-mcp", bytes.NewReader([]byte("{invalid-json")))
+	badW := httptest.NewRecorder()
+	mux.ServeHTTP(badW, badReq)
+	if badW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid json, got %d", badW.Code)
+	}
+
+	// 3. DELETE without name -> 400
+	delReq := httptest.NewRequest("DELETE", "/v2/mcp/servers?token=token-mcp", nil)
+	delW := httptest.NewRecorder()
+	mux.ServeHTTP(delW, delReq)
+	if delW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on missing name parameter, got %d", delW.Code)
+	}
+}
+
+func TestREST_WorkspaceDiffAndCommit(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-git")
+	defer cleanup()
+
+	// 1. GET /v2/workspaces/diff -> returns diff or error if not git repo
+	diffReq := httptest.NewRequest("GET", "/v2/workspaces/diff?token=token-git&id=default", nil)
+	diffW := httptest.NewRecorder()
+	mux.ServeHTTP(diffW, diffReq)
+
+	// Since default workspace is a tempDir without git init, it either returns 500 (git status failed) or 200
+	if diffW.Code != http.StatusOK && diffW.Code != http.StatusInternalServerError {
+		t.Fatalf("unexpected code on diff: %d", diffW.Code)
+	}
+
+	// 2. POST /v2/workspaces/commit with empty message -> 400
+	commitBody := []byte(`{"workspaceId": "default", "message": ""}`)
+	commitReq := httptest.NewRequest("POST", "/v2/workspaces/commit?token=token-git", bytes.NewReader(commitBody))
+	commitW := httptest.NewRecorder()
+	mux.ServeHTTP(commitW, commitReq)
+
+	if commitW.Code != http.StatusBadRequest && commitW.Code != http.StatusInternalServerError {
+		t.Fatalf("expected error on empty commit message, got %d", commitW.Code)
 	}
 }
 
