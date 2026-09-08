@@ -178,6 +178,18 @@ func (m *Manager) ResolveApproval(approvalID string, approved bool, actorID, rea
 	}
 }
 
+func (m *Manager) GetApprovalRequest(approvalID string) (*ApprovalRequest, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	req, ok := m.requests[approvalID]
+	if !ok {
+		return nil, false
+	}
+	cp := *req
+	return &cp, true
+}
+
 func (m *Manager) GetPendingRequests(sessionID string) []*ApprovalRequest {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -190,3 +202,4 @@ func (m *Manager) GetPendingRequests(sessionID string) []*ApprovalRequest {
 	}
 	return list
 }
+

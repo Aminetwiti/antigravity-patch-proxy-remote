@@ -20,7 +20,10 @@ type TokenManager struct {
 // 2. Valeur passée en argument CLI (--auth-token) si non vide et différente de placeholder
 // 3. Génération cryptographique aléatoire (CSPRNG 32 hex chars = 128 bits d'entropie)
 func NewTokenManager(flagToken string) (*TokenManager, string, error) {
-	token := strings.TrimSpace(os.Getenv("AG_REMOTE_AUTH_TOKEN"))
+	token := strings.TrimSpace(os.Getenv("AG_AUTH_TOKEN"))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("AG_REMOTE_AUTH_TOKEN"))
+	}
 	if token == "" {
 		token = strings.TrimSpace(os.Getenv("AG_DAEMON_AUTH_TOKEN"))
 	}

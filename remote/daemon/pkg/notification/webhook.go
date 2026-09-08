@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/antigravity/remote-daemon/pkg/domain"
+	"github.com/antigravity/remote-daemon/pkg/security"
 )
 
 // WebhookDispatcher dispatches real-time domain events to external webhooks (Slack, Discord, Generic HTTP POST).
@@ -18,6 +19,7 @@ import (
 type WebhookDispatcher struct {
 	webhookURLs []string
 	client      *http.Client
+	allowLocal  bool
 	eventQueue  chan domain.Event
 	done        chan struct{}
 	wg          sync.WaitGroup
@@ -25,7 +27,7 @@ type WebhookDispatcher struct {
 	enabled     bool
 }
 
-// NewWebhookDispatcher creates a background webhook dispatcher.
+// NewWebhookDispatcher creates a background webhook dispatcher with SSRF protection.
 // webhookURLs can be comma-separated or single URLs.
 func NewWebhookDispatcher(rawURLs string) *WebhookDispatcher {
 	var urls []string
@@ -38,12 +40,11 @@ func NewWebhookDispatcher(rawURLs string) *WebhookDispatcher {
 
 	d := &WebhookDispatcher{
 		webhookURLs: urls,
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-		eventQueue: make(chan domain.Event, 200),
-		done:       make(chan struct{}),
-		enabled:    len(urls) > 0,
+		client:      security.NewSSRFProtectedClient(10 * time.Second),
+		allowLocal:  false,
+		eventQueue:  make(chan domain.Event, 200),
+		done:        make(chan struct{}),
+		enabled:     len(urls) > 0,
 	}
 
 	if d.enabled {
@@ -52,6 +53,14 @@ func NewWebhookDispatcher(rawURLs string) *WebhookDispatcher {
 	}
 
 	return d
+}
+
+// SetClientForTesting allows setting a custom HTTP client and disabling SSRF checks for tests.
+func (d *WebhookDispatcher) SetClientForTesting(client *http.Client, allowLocal bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.client = client
+	d.allowLocal = allowLocal
 }
 
 // AddWebhookURL dynamically adds a destination webhook URL.
@@ -111,6 +120,12 @@ func (d *WebhookDispatcher) sendEvent(evt domain.Event) {
 	d.mu.RUnlock()
 
 	for _, rawURL := range urls {
+		if !d.allowLocal {
+			if err := security.ValidateURL(rawURL); err != nil {
+				continue
+			}
+		}
+
 		payloadBytes, contentType := formatPayload(rawURL, evt)
 		if len(payloadBytes) == 0 {
 			continue

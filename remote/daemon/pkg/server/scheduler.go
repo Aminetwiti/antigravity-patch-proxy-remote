@@ -10,39 +10,55 @@ import (
 	"time"
 
 	"github.com/antigravity/remote-daemon/pkg/agent"
+	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/session"
 )
 
 // ScheduledJob represents a scheduled agent task.
-type ScheduledJob struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	CronExpression string    `json:"cron"` // Standard 5-field cron (min, hour, day, month, weekday)
-	Prompt         string    `json:"prompt"`
-	WorkspaceID    string    `json:"workspaceId"`
-	IsEnabled      bool      `json:"isEnabled"`
-	LastRunAt      time.Time `json:"lastRunAt,omitempty"`
-	NextRunAt      time.Time `json:"nextRunAt,omitempty"`
-	lastRunMinute  int64
+type ScheduledJob = domain.ScheduledJob
+
+// JobStore defines the persistence interface for scheduled tasks.
+type JobStore interface {
+	SaveScheduledJob(ctx context.Context, job *domain.ScheduledJob) error
+	GetScheduledJob(ctx context.Context, id string) (*domain.ScheduledJob, error)
+	ListScheduledJobs(ctx context.Context) ([]domain.ScheduledJob, error)
+	DeleteScheduledJob(ctx context.Context, id string) error
 }
 
 // Scheduler triggers periodic or cron-scheduled autonomous agent runs.
 type Scheduler struct {
-	mu         sync.RWMutex
-	jobs       map[string]*ScheduledJob
-	sessionSvc *session.Service
-	agentEng   *agent.Engine
-	stopCh     chan struct{}
-	running    bool
+	mu            sync.RWMutex
+	jobs          map[string]*ScheduledJob
+	sessionSvc    *session.Service
+	agentEng      *agent.Engine
+	store         JobStore
+	stopCh        chan struct{}
+	running       bool
+	lastRunMinute map[string]int64
 }
 
-func NewScheduler(sessionSvc *session.Service, agentEng *agent.Engine) *Scheduler {
-	return &Scheduler{
-		jobs:       make(map[string]*ScheduledJob),
-		sessionSvc: sessionSvc,
-		agentEng:   agentEng,
-		stopCh:     make(chan struct{}),
+func NewScheduler(sessionSvc *session.Service, agentEng *agent.Engine, stores ...JobStore) *Scheduler {
+	var store JobStore
+	if len(stores) > 0 {
+		store = stores[0]
 	}
+	s := &Scheduler{
+		jobs:          make(map[string]*ScheduledJob),
+		sessionSvc:    sessionSvc,
+		agentEng:      agentEng,
+		store:         store,
+		stopCh:        make(chan struct{}),
+		lastRunMinute: make(map[string]int64),
+	}
+	if store != nil {
+		if persistedJobs, err := store.ListScheduledJobs(context.Background()); err == nil {
+			for i := range persistedJobs {
+				j := persistedJobs[i]
+				s.jobs[j.ID] = &j
+			}
+		}
+	}
+	return s
 }
 
 func (s *Scheduler) AddJob(job ScheduledJob) error {
@@ -61,8 +77,16 @@ func (s *Scheduler) AddJob(job ScheduledJob) error {
 	if job.Prompt == "" {
 		return fmt.Errorf("prompt is required")
 	}
+	now := time.Now()
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = now
+	}
+	job.UpdatedAt = now
 
 	s.jobs[job.ID] = &job
+	if s.store != nil {
+		_ = s.store.SaveScheduledJob(context.Background(), &job)
+	}
 	return nil
 }
 
@@ -73,6 +97,10 @@ func (s *Scheduler) RemoveJob(id string) error {
 		return fmt.Errorf("job not found")
 	}
 	delete(s.jobs, id)
+	delete(s.lastRunMinute, id)
+	if s.store != nil {
+		_ = s.store.DeleteScheduledJob(context.Background(), id)
+	}
 	return nil
 }
 
@@ -132,15 +160,20 @@ func (s *Scheduler) tick(now time.Time) {
 		if !job.IsEnabled {
 			continue
 		}
-		if job.lastRunMinute == nowMinute {
+		if s.lastRunMinute[job.ID] == nowMinute {
 			continue
 		}
 		if !cronMatches(job.CronExpression, now) {
 			continue
 		}
 
-		job.lastRunMinute = nowMinute
+		s.lastRunMinute[job.ID] = nowMinute
 		job.LastRunAt = now
+		job.LastStatus = "RUNNING"
+		job.UpdatedAt = now
+		if s.store != nil {
+			_ = s.store.SaveScheduledJob(context.Background(), job)
+		}
 		log.Printf("[Scheduler] Triggering autonomous job %s (%s)", job.ID, job.Name)
 
 		go s.executeJob(job)
@@ -158,11 +191,34 @@ func (s *Scheduler) executeJob(job *ScheduledJob) {
 	sess, err := s.sessionSvc.CreateSession(ctx, "server", job.WorkspaceID, fmt.Sprintf("[Schedule: %s]", job.Name))
 	if err != nil {
 		log.Printf("[Scheduler] Failed to create session for job %s: %v", job.ID, err)
+		s.updateJobStatus(job.ID, "FAILED")
 		return
 	}
 
+	s.mu.Lock()
+	job.SessionID = sess.ID
+	if s.store != nil {
+		_ = s.store.SaveScheduledJob(context.Background(), job)
+	}
+	s.mu.Unlock()
+
 	if err := s.agentEng.StartTurn(ctx, sess.ID, job.Prompt); err != nil {
 		log.Printf("[Scheduler] Failed to start turn for job %s: %v", job.ID, err)
+		s.updateJobStatus(job.ID, "FAILED")
+	} else {
+		s.updateJobStatus(job.ID, "COMPLETED")
+	}
+}
+
+func (s *Scheduler) updateJobStatus(id, status string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if job, ok := s.jobs[id]; ok {
+		job.LastStatus = status
+		job.UpdatedAt = time.Now()
+		if s.store != nil {
+			_ = s.store.SaveScheduledJob(context.Background(), job)
+		}
 	}
 }
 

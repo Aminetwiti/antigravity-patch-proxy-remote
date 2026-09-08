@@ -49,14 +49,25 @@ func TestIsPrivateOrReservedIP(t *testing.T) {
 func TestValidateURL(t *testing.T) {
 	blockedURLs := []string{
 		"http://localhost/admin",
+		"http://localhost./admin",
 		"http://127.0.0.1:8080/api",
+		"http://127.1:8080/api",
+		"http://2130706433/admin",
+		"http://0x7f000001/admin",
+		"http://0177.0.0.1/admin",
+		"http://[::ffff:127.0.0.1]/admin",
 		"http://169.254.169.254/latest/meta-data/",
+		"http://metadata.google.internal/computeMetadata/v1/",
+		"http://metadata.aws/latest/meta-data/",
+		"http://instance-data/latest/meta-data/",
 		"http://10.0.0.5/",
 		"http://192.168.1.100:3000",
 		"http://app.localhost",
 		"ftp://example.com/file",
 		"file:///etc/passwd",
 		"gopher://example.com",
+		"ws://example.com/socket",
+		"wss://example.com/socket",
 	}
 
 	for _, u := range blockedURLs {

@@ -25,6 +25,7 @@ func TestWebhookDispatcher_GenericAndFiltering(t *testing.T) {
 	defer server.Close()
 
 	d := NewWebhookDispatcher(server.URL)
+	d.SetClientForTesting(http.DefaultClient, true)
 	defer d.Close()
 
 	// 1. Send ignored event (e.g. transcript.chunk)
@@ -95,6 +96,7 @@ func TestWebhookDispatcher_DiscordAndSlackFormats(t *testing.T) {
 
 	// Pretend URL includes discord/slack paths
 	d := NewWebhookDispatcher(discordServer.URL + "/api/webhooks/123," + slackServer.URL + "/services/hooks.slack.com/123")
+	d.SetClientForTesting(http.DefaultClient, true)
 	defer d.Close()
 
 	statePayload, _ := json.Marshal(map[string]interface{}{
@@ -114,5 +116,30 @@ func TestWebhookDispatcher_DiscordAndSlackFormats(t *testing.T) {
 	}
 	if atomic.LoadInt32(&slackReceived) != 1 {
 		t.Errorf("expected 1 slack webhook call, got %d", slackReceived)
+	}
+}
+
+func TestWebhookDispatcher_SSRFBlocked(t *testing.T) {
+	var receivedCount int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&receivedCount, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Dispatcher configured with default SSRF-protected client (allowLocal=false)
+	d := NewWebhookDispatcher(server.URL + ",http://169.254.169.254/webhook,http://localhost:8080/hook")
+	defer d.Close()
+
+	d.OnDomainEvent(domain.Event{
+		SessionID: "sess-ssrf-test",
+		Type:      "session.state_changed",
+		Timestamp: time.Now().UnixMilli(),
+		Payload:   json.RawMessage(`{"state":"COMPLETED","reason":"testing"}`),
+	})
+
+	time.Sleep(100 * time.Millisecond)
+	if atomic.LoadInt32(&receivedCount) != 0 {
+		t.Fatalf("SECURITY VIOLATION: Webhook dispatched request to loopback server! count=%d", receivedCount)
 	}
 }

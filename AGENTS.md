@@ -257,7 +257,7 @@ Determine for each change:
 
 - API keys: always `cryptoStore.encryptString()` (safeStorage). Never plaintext in config files.
 - Placeholder IDs: `MODEL_PLACEHOLDER_<djb2hash>` — never real model IDs
-- Request body: 10 MB limit (`proxy.ts` — HTTP 413 on exceed)
+- Request body: 100 MB limit (`proxy.ts` — HTTP 413 on exceed, configurable via `AG_MAX_BODY_SIZE_MB` / `AG_MAX_BODY_SIZE`)
 - Timeouts: 30s-120s on outbound requests (`constants.ts`)
 - Logging: all headers masked via `maskApiKey()` — never log `Authorization`, `x-api-key`, etc.
 - Validation: `schemaValidator.ts` checks all provider responses at runtime

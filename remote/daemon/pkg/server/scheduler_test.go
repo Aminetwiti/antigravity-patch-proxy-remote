@@ -123,3 +123,69 @@ func TestCronMatches(t *testing.T) {
 		}
 	}
 }
+
+func TestScheduler_PersistenceAcrossRestarts(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "persist_sched.db")
+	store, err := eventstore.NewSQLiteEventStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	sessSvc := session.NewService(store, nil)
+	sched1 := NewScheduler(sessSvc, nil, store)
+
+	job := ScheduledJob{
+		ID:             "cron_persist_1",
+		OwnerID:        "admin-user",
+		Name:           "Persistent Backup Job",
+		CronExpression: "0 3 * * *",
+		Prompt:         "Execute daily backup",
+		WorkspaceID:    "ws-main",
+		IsEnabled:      true,
+	}
+
+	if err := sched1.AddJob(job); err != nil {
+		t.Fatalf("failed to add job to sched1: %v", err)
+	}
+
+	// Verify job is immediately present in sched1
+	if len(sched1.ListJobs()) != 1 {
+		t.Fatalf("expected 1 job in sched1, got %d", len(sched1.ListJobs()))
+	}
+
+	// Verify directly in sqlite store
+	storedJob, err := store.GetScheduledJob(context.Background(), "cron_persist_1")
+	if err != nil {
+		t.Fatalf("store.GetScheduledJob failed: %v", err)
+	}
+	if storedJob == nil {
+		t.Fatal("expected stored job in sqlite, got nil")
+	}
+	if storedJob.Name != "Persistent Backup Job" || storedJob.OwnerID != "admin-user" {
+		t.Errorf("unexpected stored job data: %+v", storedJob)
+	}
+
+	// Simulate daemon restart: create a new scheduler with the same SQLite store
+	sched2 := NewScheduler(sessSvc, nil, store)
+	restoredJobs := sched2.ListJobs()
+	if len(restoredJobs) != 1 {
+		t.Fatalf("expected 1 restored job in sched2 after reboot, got %d", len(restoredJobs))
+	}
+	if restoredJobs[0].ID != "cron_persist_1" || restoredJobs[0].Prompt != "Execute daily backup" {
+		t.Errorf("unexpected restored job in sched2: %+v", restoredJobs[0])
+	}
+
+	// Remove job in sched2 and verify deletion persists
+	if err := sched2.RemoveJob("cron_persist_1"); err != nil {
+		t.Fatalf("failed to remove job in sched2: %v", err)
+	}
+
+	// Simulate second reboot
+	sched3 := NewScheduler(sessSvc, nil, store)
+	if len(sched3.ListJobs()) != 0 {
+		t.Errorf("expected 0 jobs in sched3 after deletion and restart, got %d", len(sched3.ListJobs()))
+	}
+}
+

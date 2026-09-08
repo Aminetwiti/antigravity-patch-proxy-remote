@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,10 @@ type EventStore interface {
 	GetLatestSequence(ctx context.Context, sessionID string) (int64, error)
 	SaveSnapshot(ctx context.Context, snap *domain.Snapshot) error
 	GetLatestSnapshot(ctx context.Context, sessionID string) (*domain.Snapshot, error)
+	SaveScheduledJob(ctx context.Context, job *domain.ScheduledJob) error
+	GetScheduledJob(ctx context.Context, id string) (*domain.ScheduledJob, error)
+	ListScheduledJobs(ctx context.Context) ([]domain.ScheduledJob, error)
+	DeleteScheduledJob(ctx context.Context, id string) error
 	Close() error
 }
 
@@ -41,8 +46,11 @@ type SQLiteEventStore struct {
 }
 
 func NewSQLiteEventStore(dbPath string) (*SQLiteEventStore, error) {
-	syncMode := os.Getenv("AG_DB_SYNCHRONOUS")
-	if syncMode == "" {
+	syncMode := strings.ToUpper(strings.TrimSpace(os.Getenv("AG_DB_SYNCHRONOUS")))
+	switch syncMode {
+	case "NORMAL", "EXTRA", "OFF":
+		// valid explicit options
+	default:
 		syncMode = "FULL" // MED-02: default to FULL durability in production
 	}
 	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(%s)", dbPath, syncMode)
@@ -138,6 +146,25 @@ func (s *SQLiteEventStore) InitSchema(ctx context.Context) error {
 		status TEXT NOT NULL,
 		created_at INTEGER NOT NULL
 	);
+
+	CREATE TABLE IF NOT EXISTS scheduled_jobs (
+		id TEXT PRIMARY KEY,
+		owner_id TEXT DEFAULT '',
+		workspace_id TEXT NOT NULL,
+		session_id TEXT DEFAULT '',
+		name TEXT NOT NULL,
+		cron_expr TEXT NOT NULL,
+		prompt TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		next_run_at INTEGER NOT NULL DEFAULT 0,
+		last_run_at INTEGER NOT NULL DEFAULT 0,
+		last_status TEXT DEFAULT '',
+		retry_count INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_owner ON scheduled_jobs (owner_id);
 	`
 
 	_, err := s.db.ExecContext(ctx, schema)
@@ -147,6 +174,8 @@ func (s *SQLiteEventStore) InitSchema(ctx context.Context) error {
 	// Safe backward compatible column migrations
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN owner_id TEXT DEFAULT '';")
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE workspaces ADD COLUMN owner_id TEXT DEFAULT '';")
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE scheduled_jobs ADD COLUMN owner_id TEXT DEFAULT '';")
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE scheduled_jobs ADD COLUMN session_id TEXT DEFAULT '';")
 	return nil
 }
 
@@ -484,6 +513,158 @@ func (s *SQLiteEventStore) GetLatestSnapshot(ctx context.Context, sessionID stri
 	return &snap, nil
 }
 
+func (s *SQLiteEventStore) SaveScheduledJob(ctx context.Context, job *domain.ScheduledJob) error {
+	now := time.Now()
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = now
+	}
+	job.UpdatedAt = now
+
+	enabledInt := 0
+	if job.IsEnabled {
+		enabledInt = 1
+	}
+
+	query := `
+	INSERT OR REPLACE INTO scheduled_jobs (
+		id, owner_id, workspace_id, session_id, name, cron_expr, prompt,
+		enabled, next_run_at, last_run_at, last_status, retry_count, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`
+	_, err := s.db.ExecContext(ctx, query,
+		job.ID,
+		job.OwnerID,
+		job.WorkspaceID,
+		job.SessionID,
+		job.Name,
+		job.CronExpression,
+		job.Prompt,
+		enabledInt,
+		job.NextRunAt.UnixMilli(),
+		job.LastRunAt.UnixMilli(),
+		job.LastStatus,
+		job.RetryCount,
+		job.CreatedAt.UnixMilli(),
+		job.UpdatedAt.UnixMilli(),
+	)
+	return err
+}
+
+func (s *SQLiteEventStore) GetScheduledJob(ctx context.Context, id string) (*domain.ScheduledJob, error) {
+	query := `
+	SELECT id, owner_id, workspace_id, session_id, name, cron_expr, prompt,
+	       enabled, next_run_at, last_run_at, last_status, retry_count, created_at, updated_at
+	FROM scheduled_jobs WHERE id = ?;
+	`
+	row := s.db.QueryRowContext(ctx, query, id)
+
+	var job domain.ScheduledJob
+	var enabledInt int
+	var nextRunMs, lastRunMs, createdMs, updatedMs int64
+
+	err := row.Scan(
+		&job.ID,
+		&job.OwnerID,
+		&job.WorkspaceID,
+		&job.SessionID,
+		&job.Name,
+		&job.CronExpression,
+		&job.Prompt,
+		&enabledInt,
+		&nextRunMs,
+		&lastRunMs,
+		&job.LastStatus,
+		&job.RetryCount,
+		&createdMs,
+		&updatedMs,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	job.IsEnabled = enabledInt != 0
+	if nextRunMs > 0 {
+		job.NextRunAt = time.UnixMilli(nextRunMs)
+	}
+	if lastRunMs > 0 {
+		job.LastRunAt = time.UnixMilli(lastRunMs)
+	}
+	if createdMs > 0 {
+		job.CreatedAt = time.UnixMilli(createdMs)
+	}
+	if updatedMs > 0 {
+		job.UpdatedAt = time.UnixMilli(updatedMs)
+	}
+	return &job, nil
+}
+
+func (s *SQLiteEventStore) ListScheduledJobs(ctx context.Context) ([]domain.ScheduledJob, error) {
+	query := `
+	SELECT id, owner_id, workspace_id, session_id, name, cron_expr, prompt,
+	       enabled, next_run_at, last_run_at, last_status, retry_count, created_at, updated_at
+	FROM scheduled_jobs
+	ORDER BY created_at ASC;
+	`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []domain.ScheduledJob
+	for rows.Next() {
+		var job domain.ScheduledJob
+		var enabledInt int
+		var nextRunMs, lastRunMs, createdMs, updatedMs int64
+
+		err := rows.Scan(
+			&job.ID,
+			&job.OwnerID,
+			&job.WorkspaceID,
+			&job.SessionID,
+			&job.Name,
+			&job.CronExpression,
+			&job.Prompt,
+			&enabledInt,
+			&nextRunMs,
+			&lastRunMs,
+			&job.LastStatus,
+			&job.RetryCount,
+			&createdMs,
+			&updatedMs,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		job.IsEnabled = enabledInt != 0
+		if nextRunMs > 0 {
+			job.NextRunAt = time.UnixMilli(nextRunMs)
+		}
+		if lastRunMs > 0 {
+			job.LastRunAt = time.UnixMilli(lastRunMs)
+		}
+		if createdMs > 0 {
+			job.CreatedAt = time.UnixMilli(createdMs)
+		}
+		if updatedMs > 0 {
+			job.UpdatedAt = time.UnixMilli(updatedMs)
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
+func (s *SQLiteEventStore) DeleteScheduledJob(ctx context.Context, id string) error {
+	query := `DELETE FROM scheduled_jobs WHERE id = ?;`
+	_, err := s.db.ExecContext(ctx, query, id)
+	return err
+}
+
 func (s *SQLiteEventStore) Close() error {
 	return s.db.Close()
 }
+

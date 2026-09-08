@@ -84,14 +84,24 @@ echo -e "${BLUE}[3/5] Building or installing ag-agentd binary...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DAEMON_DIR="${SCRIPT_DIR}/../../remote/daemon"
 
-if [ -f "${REPO_DAEMON_DIR}/main.go" ] && command -v go >/dev/null 2>&1; then
+if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    echo -e "   Stopping running ${SERVICE_NAME} before binary update..."
+    systemctl stop "${SERVICE_NAME}"
+fi
+
+RELEASE_BIN="${SCRIPT_DIR}/../../release/v2.0.0/ag-agentd-linux-${GO_ARCH}"
+if [ -f "${RELEASE_BIN}" ]; then
+    echo -e "   Installing official v2.0.0 release binary (${GO_ARCH})..."
+    install -m 755 "${RELEASE_BIN}" "${INSTALL_BIN_DIR}/ag-agentd"
+elif [ -f "${REPO_DAEMON_DIR}/main.go" ] && command -v go >/dev/null 2>&1; then
     echo -e "   Building ag-agentd from local source..."
-    (cd "${REPO_DAEMON_DIR}" && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o "${INSTALL_BIN_DIR}/ag-agentd" .)
-    chmod +x "${INSTALL_BIN_DIR}/ag-agentd"
+    TMP_BUILD="/tmp/ag-agentd-build"
+    (cd "${REPO_DAEMON_DIR}" && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o "${TMP_BUILD}" .)
+    install -m 755 "${TMP_BUILD}" "${INSTALL_BIN_DIR}/ag-agentd"
+    rm -f "${TMP_BUILD}"
 elif [ -f "${SCRIPT_DIR}/ag-agentd" ]; then
     echo -e "   Installing pre-built ag-agentd from script directory..."
-    cp "${SCRIPT_DIR}/ag-agentd" "${INSTALL_BIN_DIR}/ag-agentd"
-    chmod +x "${INSTALL_BIN_DIR}/ag-agentd"
+    install -m 755 "${SCRIPT_DIR}/ag-agentd" "${INSTALL_BIN_DIR}/ag-agentd"
 elif command -v ag-agentd >/dev/null 2>&1; then
     echo -e "   ag-agentd binary already installed at $(command -v ag-agentd)."
 else
@@ -175,7 +185,6 @@ ExecStart=${INSTALL_BIN_DIR}/ag-agentd \\
     --port=\${AG_PORT} \\
     --db-path=\${AG_DB_PATH} \\
     --workspaces-dir=\${AG_WORKSPACES_DIR} \\
-    --auth-token=\${AG_AUTH_TOKEN} \\
     --provider=\${AG_PROVIDER} \\
     --model=\${AG_MODEL} \\
     --sandbox=\${AG_SANDBOX} \\
@@ -187,10 +196,16 @@ RestartSec=5s
 LimitNOFILE=65536
 # Security Hardening
 NoNewPrivileges=true
-ProtectSystem=full
+ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=${DATA_DIR} ${CONFIG_DIR}
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=${DATA_DIR} ${CONFIG_DIR} ${WORKSPACES_DIR}
 
 [Install]
 WantedBy=multi-user.target

@@ -91,9 +91,13 @@ func (h *RESTHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":        "ONLINE",
 		"mode":          "server",
 		"version":       info.Version,
+		"build":         info.GitCommit,
+		"buildTime":     info.BuildTime,
+		"goVersion":     runtime.Version(),
 		"serverId":      info.ID,
 		"hostname":      hostname,
 		"platform":      runtime.GOOS,
+		"arch":          runtime.GOARCH,
 		"uptimeSeconds": int(time.Since(h.startTime).Seconds()),
 	}
 
@@ -161,6 +165,14 @@ func (h *RESTHandler) HandleCreateSession(w http.ResponseWriter, r *http.Request
 
 func (h *RESTHandler) HandleWorkspaces(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
+		ident := getIdentity(r)
+		if ident.Role != auth.RoleAdmin {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: only admin can register workspaces"})
+			return
+		}
+
 		var body struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
@@ -227,6 +239,14 @@ func (h *RESTHandler) HandleBranches(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RESTHandler) HandleWorktrees(w http.ResponseWriter, r *http.Request) {
+	ident := getIdentity(r)
+	if ident.Role == auth.RoleReadOnly {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: read-only user cannot modify worktrees"})
+		return
+	}
+
 	if r.Method == http.MethodPost {
 		var body struct {
 			BaseWorkspaceID string `json:"baseWorkspaceId"`
@@ -279,6 +299,16 @@ func (h *RESTHandler) HandleWorktrees(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RESTHandler) HandleSchedules(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
+		ident := getIdentity(r)
+		if ident.Role != auth.RoleAdmin {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: only admin can configure schedules"})
+			return
+		}
+	}
+
 	sched := h.rt.Scheduler()
 	if sched == nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -414,6 +444,14 @@ func (h *RESTHandler) HandleResolveApproval(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	ident := getIdentity(r)
+	if ident.Role == auth.RoleReadOnly {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: read-only user cannot resolve approvals"})
+		return
+	}
+
 	apprMgr := h.rt.ApprovalManager()
 	if apprMgr == nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -439,11 +477,27 @@ func (h *RESTHandler) HandleResolveApproval(w http.ResponseWriter, r *http.Reque
 		body.ApprovalID = r.URL.Query().Get("id")
 	}
 
-	if body.ActorID == "" {
-		body.ActorID = "rest-api"
+	if appr, ok := apprMgr.GetApprovalRequest(body.ApprovalID); ok {
+		if sess, err := h.rt.store.GetSession(r.Context(), appr.SessionID); err == nil {
+			if !h.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: cannot mutate session owned by another user"})
+				return
+			}
+		}
 	}
 
-	err := apprMgr.ResolveApproval(body.ApprovalID, body.Approved, body.ActorID, body.Reason)
+	actorID := body.ActorID
+	if actorID == "" || actorID == "rest-api" {
+		if ident.UserID != "" {
+			actorID = ident.UserID
+		} else {
+			actorID = "rest-api"
+		}
+	}
+
+	err := apprMgr.ResolveApproval(body.ApprovalID, body.Approved, actorID, body.Reason)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -578,6 +632,16 @@ func (h *RESTHandler) HandleRollbackSession(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *RESTHandler) HandleMemories(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
+		ident := getIdentity(r)
+		if ident.Role == auth.RoleReadOnly {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: read-only user cannot mutate memories"})
+			return
+		}
+	}
+
 	memStore := h.rt.MemoryStore()
 	if memStore == nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -627,6 +691,14 @@ func (h *RESTHandler) HandleMemories(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(mem)
 
 	case http.MethodDelete:
+		ident := getIdentity(r)
+		if ident.Role == auth.RoleReadOnly {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: read-only user cannot mutate memories"})
+			return
+		}
+
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			w.Header().Set("Content-Type", "application/json")
@@ -691,6 +763,14 @@ func (h *RESTHandler) HandleWorkspaceCommit(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	ident := getIdentity(r)
+	if ident.Role == auth.RoleReadOnly {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: read-only user cannot commit"})
+		return
+	}
+
 	var body struct {
 		WorkspaceID string `json:"workspaceId"`
 		SessionID   string `json:"sessionId"`
@@ -730,6 +810,16 @@ func (h *RESTHandler) HandleWorkspaceCommit(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *RESTHandler) HandleMCPServers(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
+		ident := getIdentity(r)
+		if ident.Role != auth.RoleAdmin {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: only admin can manage MCP servers"})
+			return
+		}
+	}
+
 	mcpMgr := h.rt.MCPManager()
 	if mcpMgr == nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -766,6 +856,14 @@ func (h *RESTHandler) HandleMCPServers(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(info)
 
 	case http.MethodDelete:
+		ident := getIdentity(r)
+		if ident.Role != auth.RoleAdmin {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: only admin can manage MCP servers"})
+			return
+		}
+
 		name := r.URL.Query().Get("name")
 		if name == "" {
 			w.Header().Set("Content-Type", "application/json")
@@ -792,6 +890,14 @@ func (h *RESTHandler) HandleMCPServers(w http.ResponseWriter, r *http.Request) {
 func (h *RESTHandler) HandleMCPCall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	ident := getIdentity(r)
+	if ident.Role == auth.RoleReadOnly {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: read-only user cannot call MCP tools"})
 		return
 	}
 
@@ -897,6 +1003,9 @@ func NewMuxWithRBAC(rt *RuntimeServer, wsMgr *workspace.Manager, rbacMgr *auth.R
 
 	// Interactive Terminal WebSocket (/v2/terminal)
 	termHandler := NewTerminalHandler(wsMgr, adminToken)
+	if rbacMgr != nil {
+		termHandler.SetRBACManager(rbacMgr)
+	}
 	mux.Handle("/v2/terminal", termHandler)
 
 	// Web Console Single-Page App (GET / and GET /console)

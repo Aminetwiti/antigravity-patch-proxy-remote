@@ -136,7 +136,7 @@ func TestTerminalHandler_DisconnectPersistsSubprocess(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify terminal subprocess in manager is STILL RUNNING!
-	term, err := handler.Manager().GetOrCreate("term_persist_1", tmpDir)
+	term, err := handler.Manager().GetOrCreate("term_persist_1", tmpDir, "admin")
 	if err != nil {
 		t.Fatalf("failed getting session: %v", err)
 	}

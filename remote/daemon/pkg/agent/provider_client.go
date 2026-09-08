@@ -336,11 +336,20 @@ func (c *HTTPProviderClient) generateAnthropic(ctx context.Context, messages []L
 	for _, m := range messages {
 		role := m.Role
 		if role == "tool" {
-			// Anthropic formats tool results as user messages with tool_result blocks
+			// Anthropic formats tool results as user messages with tool_result blocks.
+			// Consecutive tool results MUST be grouped into a single user message with
+			// multiple tool_result blocks to satisfy Anthropic's role alternation rule.
 			block := map[string]interface{}{
-				"type":         "tool_result",
-				"tool_use_id":  m.ToolCallID,
-				"content":      m.Content,
+				"type":        "tool_result",
+				"tool_use_id": m.ToolCallID,
+				"content":     m.Content,
+			}
+			n := len(reqBody.Messages)
+			if n > 0 && reqBody.Messages[n-1].Role == "user" {
+				if blocks, ok := reqBody.Messages[n-1].Content.([]interface{}); ok {
+					reqBody.Messages[n-1].Content = append(blocks, block)
+					continue
+				}
 			}
 			reqBody.Messages = append(reqBody.Messages, anthropicMessage{
 				Role:    "user",

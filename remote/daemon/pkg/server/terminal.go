@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,11 +13,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/antigravity/remote-daemon/pkg/auth"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 	"github.com/gorilla/websocket"
 )
 
-const maxScrollbackBytes = 1024 * 1024 // 1MB scrollback ceiling
+const (
+	maxScrollbackBytes     = 1024 * 1024 // 1MB scrollback ceiling
+	maxConcurrentTerminals = 32          // Concurrency limit preventing terminal resource exhaustion
+)
 
 type TerminalMessage struct {
 	Type string `json:"type"` // "input", "output", "kill", "exit", "error"
@@ -27,6 +32,7 @@ type TerminalMessage struct {
 // PersistentTerminal represents a long-running subprocess decoupled from individual WebSocket connections.
 type PersistentTerminal struct {
 	ID         string
+	OwnerID    string
 	Dir        string
 	cmd        *exec.Cmd
 	stdin      io.WriteCloser
@@ -38,7 +44,7 @@ type PersistentTerminal struct {
 	doneChan   chan struct{}
 }
 
-func newPersistentTerminal(id, dir string) (*PersistentTerminal, error) {
+func newPersistentTerminal(id, dir, ownerID string) (*PersistentTerminal, error) {
 	shell := "sh"
 	if runtime.GOOS == "windows" {
 		shell = "cmd.exe"
@@ -76,6 +82,7 @@ func newPersistentTerminal(id, dir string) (*PersistentTerminal, error) {
 
 	term := &PersistentTerminal{
 		ID:         id,
+		OwnerID:    ownerID,
 		Dir:        dir,
 		cmd:        cmd,
 		stdin:      stdin,
@@ -218,7 +225,14 @@ func NewTerminalManager() *TerminalManager {
 	}
 }
 
-func (m *TerminalManager) GetOrCreate(termID, dir string) (*PersistentTerminal, error) {
+func (m *TerminalManager) Get(termID string) (*PersistentTerminal, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	t, ok := m.sessions[termID]
+	return t, ok
+}
+
+func (m *TerminalManager) GetOrCreate(termID, dir, ownerID string) (*PersistentTerminal, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -226,7 +240,11 @@ func (m *TerminalManager) GetOrCreate(termID, dir string) (*PersistentTerminal, 
 		return existing, nil
 	}
 
-	term, err := newPersistentTerminal(termID, dir)
+	if len(m.sessions) >= maxConcurrentTerminals {
+		return nil, errors.New("maximum concurrent terminal limit reached (32)")
+	}
+
+	term, err := newPersistentTerminal(termID, dir, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -247,6 +265,7 @@ func (m *TerminalManager) Remove(termID string) {
 type TerminalHandler struct {
 	wsMgr     *workspace.Manager
 	authToken string
+	rbacMgr   *auth.RBACManager
 	mgr       *TerminalManager
 	upgrader  websocket.Upgrader
 }
@@ -255,10 +274,17 @@ func NewTerminalHandler(wsMgr *workspace.Manager, authToken string) *TerminalHan
 	return &TerminalHandler{
 		wsMgr:     wsMgr,
 		authToken: authToken,
+		rbacMgr:   auth.NewRBACManager(authToken),
 		mgr:       NewTerminalManager(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
+	}
+}
+
+func (h *TerminalHandler) SetRBACManager(m *auth.RBACManager) {
+	if m != nil {
+		h.rbacMgr = m
 	}
 }
 
@@ -268,18 +294,17 @@ func (h *TerminalHandler) Manager() *TerminalManager {
 
 func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 1. Auth verification
-	if h.authToken != "" && h.authToken != "none" {
-		token := r.URL.Query().Get("token")
-		if token == "" {
-			authHeader := r.Header.Get("Authorization")
-			if strings.HasPrefix(authHeader, "Bearer ") {
-				token = strings.TrimPrefix(authHeader, "Bearer ")
-			}
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
 		}
-		if token != h.authToken {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
+	}
+	ident, err := h.rbacMgr.Authenticate(token)
+	if err != nil {
+		http.Error(w, "unauthorized: "+err.Error(), http.StatusUnauthorized)
+		return
 	}
 
 	// 2. Resolve workspace directory
@@ -305,7 +330,22 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Upgrade to WebSocket
+	// 3. Ownership / Takeover check & creation permission
+	if existing, ok := h.mgr.Get(termID); ok && existing.IsRunning() {
+		// Terminal already exists: deny access if owned by a different user and caller is not admin
+		if ident.Role != auth.RoleAdmin && existing.OwnerID != "" && existing.OwnerID != ident.UserID {
+			http.Error(w, "forbidden: cannot access terminal owned by another user", http.StatusForbidden)
+			return
+		}
+	} else {
+		// Terminal does not exist: read-only users cannot create terminal subprocesses
+		if ident.Role == auth.RoleReadOnly {
+			http.Error(w, "forbidden: read-only user cannot create terminal session", http.StatusForbidden)
+			return
+		}
+	}
+
+	// 4. Upgrade to WebSocket
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[Terminal] upgrade failed: %v", err)
@@ -313,14 +353,14 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// 4. Get or create persistent terminal session
-	term, err := h.mgr.GetOrCreate(termID, dir)
+	// 5. Get or create persistent terminal session
+	term, err := h.mgr.GetOrCreate(termID, dir, ident.UserID)
 	if err != nil {
 		_ = conn.WriteJSON(TerminalMessage{Type: "error", Data: "failed to start terminal: " + err.Error()})
 		return
 	}
 
-	// 5. Attach WebSocket listener (detaches cleanly on disconnect without killing process)
+	// 6. Attach WebSocket listener (detaches cleanly on disconnect without killing process)
 	ch, scrollback, exited, exitCode := term.Attach(conn)
 	defer term.Detach(conn)
 
@@ -365,7 +405,7 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// 6. Read inputs from WebSocket client.
+	// 7. Read inputs from WebSocket client.
 	// On connection drop/error: EXIT LOOP AND DETACH WITHOUT KILLING SUBPROCESS!
 	for {
 		conn.SetReadDeadline(time.Now().Add(10 * time.Minute))
@@ -382,8 +422,16 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		switch msg.Type {
 		case "input", "stdin":
+			if ident.Role == auth.RoleReadOnly {
+				_ = sendMsg(TerminalMessage{Type: "error", Data: "forbidden: read-only user cannot send input"})
+				continue
+			}
 			_ = term.WriteInput(msg.Data)
 		case "kill":
+			if ident.Role != auth.RoleAdmin && term.OwnerID != "" && term.OwnerID != ident.UserID {
+				_ = sendMsg(TerminalMessage{Type: "error", Data: "forbidden: cannot kill terminal owned by another user"})
+				continue
+			}
 			_ = term.Kill()
 			h.mgr.Remove(termID)
 			return

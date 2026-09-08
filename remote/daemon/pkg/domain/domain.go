@@ -22,6 +22,8 @@ type Server struct {
 	Hostname  string       `json:"hostname"`
 	Platform  string       `json:"platform"`
 	Version   string       `json:"version"`
+	GitCommit string       `json:"gitCommit,omitempty"`
+	BuildTime string       `json:"buildTime,omitempty"`
 	Status    ServerStatus `json:"status"`
 	CreatedAt time.Time    `json:"createdAt"`
 	UpdatedAt time.Time    `json:"updatedAt"`
@@ -173,5 +175,23 @@ const (
 	EventSubagentCompleted = "subagent.completed"
 	EventSubagentFailed    = "subagent.failed"
 )
+
+// ScheduledJob represents an autonomous scheduled task persisted in the database.
+type ScheduledJob struct {
+	ID             string    `json:"id"`
+	OwnerID        string    `json:"ownerId,omitempty"`
+	WorkspaceID    string    `json:"workspaceId"`
+	SessionID      string    `json:"sessionId,omitempty"`
+	Name           string    `json:"name"`
+	CronExpression string    `json:"cron"` // Standard 5-field cron (min, hour, day, month, weekday)
+	Prompt         string    `json:"prompt"`
+	IsEnabled      bool      `json:"isEnabled"`
+	NextRunAt      time.Time `json:"nextRunAt,omitempty"`
+	LastRunAt      time.Time `json:"lastRunAt,omitempty"`
+	LastStatus     string    `json:"lastStatus,omitempty"`
+	RetryCount     int       `json:"retryCount,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
 
 

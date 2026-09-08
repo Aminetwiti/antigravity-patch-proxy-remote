@@ -509,7 +509,22 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		if err := json.Unmarshal(env.Payload, &arp); err != nil {
 			return r.sendError(conn, env.RequestID, "invalid approval response payload")
 		}
-		if err := r.apprMgr.ResolveApproval(arp.ApprovalID, arp.Approved, "client", arp.Reason); err != nil {
+		ident := r.getClientIdentity(conn)
+		if ident.Role == auth.RoleReadOnly {
+			return r.sendError(conn, env.RequestID, "forbidden: read-only role cannot resolve approvals")
+		}
+		if r.rbacMgr != nil {
+			if sess, err := r.store.GetSession(ctx, env.SessionID); err == nil {
+				if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
+					return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
+				}
+			}
+		}
+		actorID := "client"
+		if ident.UserID != "" {
+			actorID = ident.UserID
+		}
+		if err := r.apprMgr.ResolveApproval(arp.ApprovalID, arp.Approved, actorID, arp.Reason); err != nil {
 			return r.sendError(conn, env.RequestID, err.Error())
 		}
 		return r.sendAck(conn, env.RequestID, env.SessionID, []byte(`{"status":"resolved"}`))

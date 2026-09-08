@@ -12,7 +12,7 @@ var (
 	reBearer = regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9_\-\.]{8,}`)
 
 	// API Keys (OpenAI, Anthropic, GitHub, AWS, Slack)
-	reAPIKeys = regexp.MustCompile(`\b(sk-[a-zA-Z0-9_\-]{20,}|sk-ant-[a-zA-Z0-9_\-]{20,}|ghp_[a-zA-Z0-9]{20,}|github_pat_[a-zA-Z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9]{10,})\b`)
+	reAPIKeys = regexp.MustCompile(`\b(sk-[a-zA-Z0-9_\-]{8,}|sk-ant-[a-zA-Z0-9_\-]{8,}|ghp_[a-zA-Z0-9]{8,}|github_pat_[a-zA-Z0-9_]{8,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9]{8,})\b`)
 
 	// Connection URIs with passwords (postgres, redis, http, https, etc.)
 	reConnURI = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://[^:\s/@]+:)([^@\s/]+)(@)`)

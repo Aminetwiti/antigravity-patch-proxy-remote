@@ -1378,7 +1378,9 @@ function handleRequest(req, res) {
     // Strip binary patch padding (from LS hostname replacement)
     req.url = req.url.replace(/\/v1internal\/x{7}/, '');
     // P0-4: Enforce maximum request body size to prevent memory exhaustion DoS
-    const MAX_BODY_SIZE = 10 * 1024 * 1024;
+    const MAX_BODY_SIZE = (constants_1 && constants_1.DEFAULT_MAX_BODY_SIZE) ||
+        (parseInt(process.env.AG_MAX_BODY_SIZE || '', 10) ||
+        (parseInt(process.env.AG_MAX_BODY_SIZE_MB || '', 10) || 100) * 1024 * 1024);
     let bodyLength = 0;
     let bodyRejected = false;
     const bodyChunks = [];
@@ -1387,12 +1389,16 @@ function handleRequest(req, res) {
         if (bodyLength > MAX_BODY_SIZE) {
             if (!bodyRejected) {
                 bodyRejected = true;
-                electron_log_1.default.warn(`[Proxy] Request body exceeds ${MAX_BODY_SIZE / 1024 / 1024}MB limit (${req.method} ${req.url})`);
-                req.destroy();
+                const maxMb = Math.round(MAX_BODY_SIZE / (1024 * 1024));
+                electron_log_1.default.warn(`[Proxy] Request body exceeds ${maxMb}MB limit (${req.method} ${req.url})`);
                 if (!res.headersSent) {
-                    res.writeHead(413, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: { message: `Request body too large. Maximum: ${MAX_BODY_SIZE / 1024 / 1024}MB` } }));
+                    res.writeHead(413, { 'Content-Type': 'application/json', 'Connection': 'close' });
+                    res.end(JSON.stringify({ error: { message: `Request body too large. Maximum: ${maxMb}MB` } }));
                 }
+                req.resume();
+                res.on('finish', () => {
+                    req.destroy();
+                });
             }
             return;
         }

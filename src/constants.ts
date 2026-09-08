@@ -66,6 +66,15 @@ export const STUB_PORT_DEFAULT = getEnvInt('AG_STUB_PORT', 51999);
 /** Path (relative to home) where the active proxy port is persisted for IPC. */
 export const ACTIVE_PORT_FILE = '.gemini/antigravity/active_port';
 
+/**
+ * Maximum request body size in bytes (default: 100 MB).
+ * Override via AG_MAX_BODY_SIZE (in bytes) or AG_MAX_BODY_SIZE_MB (in megabytes).
+ */
+export const DEFAULT_MAX_BODY_SIZE = getEnvInt(
+  'AG_MAX_BODY_SIZE',
+  getEnvInt('AG_MAX_BODY_SIZE_MB', 100) * 1024 * 1024,
+);
+
 
 
 /** Timeout for Google proxy requests (60 seconds). */

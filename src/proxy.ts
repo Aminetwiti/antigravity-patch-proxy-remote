@@ -37,6 +37,7 @@ import {
   FILE_DOWNLOAD_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
   ACTIVE_PORT_FILE,
+  DEFAULT_MAX_BODY_SIZE,
 } from './constants';
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -1624,7 +1625,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   req.url = req.url!.replace(/\/v1internal\/x{7}/, '');
 
   // P0-4: Enforce maximum request body size to prevent memory exhaustion DoS
-  const MAX_BODY_SIZE = 10 * 1024 * 1024;
+  const MAX_BODY_SIZE = DEFAULT_MAX_BODY_SIZE;
   let bodyLength = 0;
   let bodyRejected = false;
 
@@ -1634,14 +1635,21 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (bodyLength > MAX_BODY_SIZE) {
       if (!bodyRejected) {
         bodyRejected = true;
-        log.warn(`[Proxy] Request body exceeds ${MAX_BODY_SIZE / 1024 / 1024}MB limit (${req.method} ${req.url})`);
-        req.destroy();
+        const maxMb = Math.round(MAX_BODY_SIZE / (1024 * 1024));
+        log.warn(`[Proxy] Request body exceeds ${maxMb}MB limit (${req.method} ${req.url})`);
         if (!res.headersSent) {
-          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.writeHead(413, {
+            'Content-Type': 'application/json',
+            'Connection': 'close',
+          });
           res.end(
-            JSON.stringify({ error: { message: `Request body too large. Maximum: ${MAX_BODY_SIZE / 1024 / 1024}MB` } }),
+            JSON.stringify({ error: { message: `Request body too large. Maximum: ${maxMb}MB` } }),
           );
         }
+        req.resume();
+        res.on('finish', () => {
+          req.destroy();
+        });
       }
       return;
     }

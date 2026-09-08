@@ -14,6 +14,7 @@ vi.mock('electron-log/main', () => ({
 }));
 
 import { parseRetryAfter, matchesCustomModel } from '../proxy';
+import { DEFAULT_MAX_BODY_SIZE } from '../constants';
 import { generateModelPlaceholderId, toSlug } from '../proxy/idGenerator';
 import { expandModelsWithEffort } from '../proxy/effortExpander';
 import { injectCustomSlugsIntoAgentModelSorts } from '../proxy/modelInjector';
@@ -242,6 +243,12 @@ describe('matchesCustomModel', () => {
   it('does not match unrelated model names', () => {
     expect(matchesCustomModel(model, 'claude-3-5-sonnet')).toBe(false);
     expect(matchesCustomModel(model, 'gemini-2.0-flash')).toBe(false);
+  });
+});
+
+describe('DEFAULT_MAX_BODY_SIZE', () => {
+  it('defaults to at least 100MB to allow large agent trajectories', () => {
+    expect(DEFAULT_MAX_BODY_SIZE).toBeGreaterThanOrEqual(100 * 1024 * 1024);
   });
 });
 

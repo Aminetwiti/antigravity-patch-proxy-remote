@@ -48,6 +48,12 @@ func maskToken(token string) string {
 	return token
 }
 
+var (
+	Version   = "2.0.0"
+	GitCommit = "none"
+	BuildTime = "unknown"
+)
+
 func main() {
 	cfg := config.LoadConfig()
 
@@ -392,7 +398,9 @@ func runServerRuntime(
 		Name:      "Antigravity Cloud Runtime",
 		Hostname:  hostname,
 		Platform:  runtime.GOOS,
-		Version:   "2.0.0",
+		Version:   Version,
+		GitCommit: GitCommit,
+		BuildTime: BuildTime,
 		Status:    domain.ServerStatusOnline,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -489,7 +497,7 @@ func runServerRuntime(
 	v1Adapter.SetMCPManager(mcpMgr)
 	rt.SetV1Adapter(v1Adapter)
 
-	sched := server.NewScheduler(rt.SessionService(), agentEng)
+	sched := server.NewScheduler(rt.SessionService(), agentEng, store)
 	rt.SetScheduler(sched)
 	sched.Start(context.Background())
 	defer sched.Stop()
