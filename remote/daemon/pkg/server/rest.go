@@ -163,6 +163,19 @@ func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.
 	// Workspaces REST API
 	mux.HandleFunc("/v2/workspaces", rest.AuthMiddleware(rest.HandleWorkspaces))
 
+	// Web Console Single-Page App (GET / and GET /console)
+	mux.HandleFunc("/console", HandleWebConsole)
+	mux.HandleFunc("/", HandleWebConsole)
+
+	// Protocol v1 Compatibility WebSocket Endpoint (/ws)
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		if adapter := rt.V1Adapter(); adapter != nil {
+			adapter.HandleWebSocket(w, r)
+			return
+		}
+		http.Error(w, `{"error":"v1 adapter not initialized"}`, http.StatusServiceUnavailable)
+	})
+
 	// WebSocket Endpoint (/v2/ws)
 	mux.HandleFunc("/v2/ws", func(w http.ResponseWriter, r *http.Request) {
 		if authToken != "" && authToken != "none" {

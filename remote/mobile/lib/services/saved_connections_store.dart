@@ -15,6 +15,9 @@ class SavedConnection {
   final String wsUrl;
   final DateTime lastConnectedAt;
   final String? deviceName;
+  final String serverType; // 'bridge' or 'cloud_agent'
+
+  bool get isCloudAgent => serverType == 'cloud_agent';
 
   const SavedConnection({
     required this.id,
@@ -27,6 +30,7 @@ class SavedConnection {
     this.wsUrl = '',
     required this.lastConnectedAt,
     this.deviceName,
+    this.serverType = 'bridge',
   });
 
   /// toJson persiste dans SharedPreferences : SEC-04 — authToken et pin ne
@@ -41,6 +45,7 @@ class SavedConnection {
         'wsUrl': wsUrl,
         'lastConnectedAt': lastConnectedAt.toIso8601String(),
         if (deviceName != null) 'deviceName': deviceName,
+        'serverType': serverType,
       };
 
   factory SavedConnection.fromJson(Map<String, dynamic> json) {
@@ -65,6 +70,7 @@ class SavedConnection {
       wsUrl: json['wsUrl'] as String? ?? '',
       lastConnectedAt: DateTime.tryParse(json['lastConnectedAt'] as String? ?? '') ?? DateTime.now(),
       deviceName: json['deviceName'] as String?,
+      serverType: json['serverType'] as String? ?? 'bridge',
     );
   }
 
@@ -79,6 +85,7 @@ class SavedConnection {
     String? wsUrl,
     DateTime? lastConnectedAt,
     String? deviceName,
+    String? serverType,
   }) {
     return SavedConnection(
       id: id ?? this.id,
@@ -91,6 +98,7 @@ class SavedConnection {
       wsUrl: wsUrl ?? this.wsUrl,
       lastConnectedAt: lastConnectedAt ?? this.lastConnectedAt,
       deviceName: deviceName ?? this.deviceName,
+      serverType: serverType ?? this.serverType,
     );
   }
 }

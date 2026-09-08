@@ -174,3 +174,7 @@ func (s *Service) EmitEvent(ctx context.Context, sessionID, eventType string, pa
 func (s *Service) GetCatchupEvents(ctx context.Context, sessionID string, fromSeq int64, limit int) ([]domain.Event, error) {
 	return s.store.GetEventsSince(ctx, sessionID, fromSeq, limit)
 }
+
+func (s *Service) ListSessions(ctx context.Context) ([]domain.Session, error) {
+	return s.store.ListSessions(ctx)
+}

@@ -38,6 +38,7 @@ import 'widgets/overview_panel_view.dart';
 import 'widgets/session_review_view.dart';
 import 'widgets/queued_messages_card.dart';
 import 'widgets/revert_step_preview_dialog.dart';
+import 'widgets/turn_navigation_fab.dart';
 import '../../services/offline_outbox_store.dart';
 import '../../services/session_history_cache_store.dart';
 import '../../widgets/skeleton_loader.dart';
@@ -718,6 +719,30 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       _showJumpToBottom = false;
       _hiddenNewCount = 0;
     });
+  }
+
+  void _navigateTurnUp() {
+    HapticFeedback.lightImpact();
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final target = (pos.pixels - pos.viewportDimension * 0.75).clamp(0.0, pos.maxScrollExtent);
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _navigateTurnDown() {
+    HapticFeedback.lightImpact();
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final target = (pos.pixels + pos.viewportDimension * 0.75).clamp(0.0, pos.maxScrollExtent);
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _loadMoreOlderMessages() {
@@ -3307,6 +3332,21 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                     child: _JumpToBottomButton(
                       count: _hiddenNewCount,
                       onTap: _jumpToBottom,
+                    ),
+                  ),
+
+                // Navigation intelligente par tour (TurnNavigationFab inspiré de agy-enhancer)
+                if (_messages.isNotEmpty &&
+                    _activeArtifact == null &&
+                    _currentTab == SessionTabType.chat)
+                  Positioned(
+                    right: 14,
+                    bottom: _showJumpToBottom ? 66 : 14,
+                    child: TurnNavigationFab(
+                      onNavigateUp: _navigateTurnUp,
+                      onNavigateDown: _navigateTurnDown,
+                      onScrollToBottom: _jumpToBottom,
+                      isAtBottom: !_showJumpToBottom,
                     ),
                   ),
               ],

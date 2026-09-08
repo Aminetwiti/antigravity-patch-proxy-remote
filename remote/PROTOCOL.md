@@ -232,6 +232,43 @@ Retourne la télémétrie complète du Daemon et de sa liaison avec le Language 
 }
 ```
 
+#### 7d. Capture d'Écran Live IHM Electron (`ide.screenshot`)
+Permet d'extraire une capture d'écran exacte de la fenêtre Antigravity du PC de bureau via Chrome DevTools Protocol (CDP).
+```json
+{
+  "type": "ide.screenshot",
+  "requestId": "req_107d",
+  "data": {
+    "format": "jpeg",
+    "quality": 80
+  }
+}
+```
+**Réponse succès (HTTP/WS 200) :**
+```json
+{
+  "type": "response",
+  "requestId": "req_107d",
+  "data": {
+    "status": "success",
+    "screenshot": "<base64_image_data>",
+    "format": "jpeg",
+    "targetTitle": "Architecture Remote Agent Runtime",
+    "targetUrl": "https://127.0.0.1:53079/c/cas_123"
+  }
+}
+```
+
+#### 7e. Redirection & Focus IHM Electron (`ide.navigate`, `ide.focus_convo`)
+Redirige la fenêtre de bureau de l'IDE sur l'URL ou la cascade spécifiée.
+```json
+{
+  "type": "ide.navigate",
+  "requestId": "req_107e",
+  "cascadeId": "cas_abc123"
+}
+```
+
 ---
 
 ### B. Approbations d'Outils & Politiques de Sécurité
@@ -534,6 +571,65 @@ Retourne la télémétrie complète du Daemon et de sa liaison avec le Language 
     "chunkIndex": 0,
     "totalChunks": 5,
     "data": "base64data..."
+  }
+}
+```
+
+#### 35b. `resolve_artifact` (Résolution floue d'artefacts & médias sur disque)
+Localise un fichier généré ou média uploadé dans `brain/<cascadeId>/` en utilisant un algorithme flou en 3 passes (Regex, Alphanumérique pur, Sous-chaînes).
+```json
+{
+  "type": "resolve_artifact",
+  "requestId": "req_135b",
+  "cascadeId": "cas_abc123",
+  "data": {
+    "title": "Architecture V2"
+  }
+}
+```
+**Réponse :**
+```json
+{
+  "type": "response",
+  "requestId": "req_135b",
+  "data": {
+    "result": {
+      "cascadeId": "cas_abc123",
+      "originalName": "Architecture V2",
+      "resolvedPath": "C:\\Users\\user\\.gemini\\antigravity\\brain\\cas_abc123\\architecture_v2.png",
+      "exists": true,
+      "isDirectory": false,
+      "isImage": true,
+      "sizeBytes": 204850,
+      "modTime": 1723908600
+    },
+    "success": true
+  }
+}
+```
+
+#### 35c. `reveal_in_explorer` (Révélation dans l'Explorateur OS hôte)
+Ouvre le fichier ou dossier dans l'Explorateur de fichiers de l'ordinateur (`explorer.exe /select,"..."` sur Windows, `open -R` sur macOS, `xdg-open` sur Linux).
+```json
+{
+  "type": "reveal_in_explorer",
+  "requestId": "req_135c",
+  "cascadeId": "cas_abc123",
+  "data": {
+    "title": "Architecture V2"
+  }
+}
+```
+
+#### 35d. `clipboard_copy_image` (Copie d'image Bitmap dans le presse-papiers OS)
+Copie l'image bitmap directement dans le presse-papiers de la machine hôte via PowerShell STA / Applescript.
+```json
+{
+  "type": "clipboard_copy_image",
+  "requestId": "req_135d",
+  "cascadeId": "cas_abc123",
+  "data": {
+    "title": "Architecture V2"
   }
 }
 ```

@@ -119,6 +119,16 @@ func (m *Manager) GetWorkspace(id string) (*Workspace, error) {
 	return ws, nil
 }
 
+func (m *Manager) ListWorkspaces() []*Workspace {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	list := make([]*Workspace, 0, len(m.workspaces))
+	for _, ws := range m.workspaces {
+		list = append(list, ws)
+	}
+	return list
+}
+
 func (m *Manager) ResolvePath(workspaceID, targetPath string) (string, error) {
 	ws, err := m.GetWorkspace(workspaceID)
 	if err != nil {

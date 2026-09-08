@@ -400,6 +400,9 @@ func runServerRuntime(
 	agentEng := agent.NewEngine(rt.SessionService(), wsMgr, toolsReg, apprMgr, llmClient)
 	rt.SetAgentEngine(agentEng, apprMgr)
 
+	v1Adapter := server.NewV1Adapter(rt.SessionService(), store, wsMgr, agentEng, apprMgr, authToken)
+	rt.SetV1Adapter(v1Adapter)
+
 	handler := server.NewMux(rt, wsMgr, authToken)
 
 	tunnelMgr := tunnel.NewManager(tunnelFlag)
@@ -411,6 +414,7 @@ func runServerRuntime(
 			fmt.Printf("🌐 Public Cloud Tunnel active: %s\n", url)
 			if !authMgr.IsDisabled() && authToken != "" {
 				fmt.Printf("📱 Mobile Pair URL: %s/v2/ws?token=%s\n", url, authToken)
+				fmt.Printf("💻 Web Console URL: %s/console?token=%s\n", url, authToken)
 			}
 		} else {
 			fmt.Printf("⚠️ Tunnel not started (local network access on port %d): %v\n", port, err)
@@ -438,9 +442,11 @@ func runServerRuntime(
 	}()
 
 	fmt.Printf("✅ Cloud Server Runtime is listening on http://%s\n", addr)
+	fmt.Println("   - Web Console:       GET  /console")
 	fmt.Println("   - Health check:      GET  /health")
 	fmt.Println("   - Sessions REST:     GET  /v2/sessions")
-	fmt.Println("   - WebSocket Stream:  WS   /v2/ws")
+	fmt.Println("   - Protocol v2 WS:    WS   /v2/ws")
+	fmt.Println("   - Protocol v1 WS:    WS   /ws")
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "❌ Server error: %v\n", err)

@@ -4122,8 +4122,13 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 	case "ide.list_workspaces", "ide.list_sessions", "ide.create_session", "ide.send_prompt", "ide.focus", "ide.status",
 		"ide.launch", "ide.restart", "ide.kill", "ide_launch", "ide_restart", "ide_kill", "emergency_stop",
-		"ide.open_file", "ide_open_file", "open_file_in_ide", "focus_session", "focus":
+		"ide.open_file", "ide_open_file", "open_file_in_ide", "focus_session", "focus",
+		"ide.screenshot", "ide_screenshot", "ide.navigate", "ide_navigate", "ide.focus_convo":
 		s.handleIDEMessage(conn, msg)
+		return
+	case "resolve_artifact", "artifact.resolve", "reveal_in_explorer", "system.reveal_path",
+		"clipboard_copy_image", "clipboard.copy_image", "get_artifact_content", "artifact.get_content":
+		s.handleArtifactMessage(conn, msg)
 		return
 	case "get_capabilities":
 		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: DefaultCapabilities()})

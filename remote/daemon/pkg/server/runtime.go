@@ -43,8 +43,9 @@ type RuntimeServer struct {
 	store      eventstore.EventStore
 	sessionSvc *session.Service
 
-	agentEng *agent.Engine
-	apprMgr  *approval.Manager
+	agentEng  *agent.Engine
+	apprMgr   *approval.Manager
+	v1Adapter *V1Adapter
 
 	mu              sync.RWMutex
 	attachedClients map[string]map[*websocket.Conn]*AttachedClient
@@ -95,10 +96,30 @@ func (r *RuntimeServer) ApprovalManager() *approval.Manager {
 	return r.apprMgr
 }
 
+func (r *RuntimeServer) SetV1Adapter(adapter *V1Adapter) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.v1Adapter = adapter
+}
+
+func (r *RuntimeServer) V1Adapter() *V1Adapter {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.v1Adapter
+}
+
 // BroadcastEvent broadcasts to all clients attached to event.SessionID.
 // If a client is still in catchup mode, it stages the event in client.pendingQueue
 // so that catchup and live events never race, guaranteeing zero lost and zero duplicate events.
 func (r *RuntimeServer) BroadcastEvent(event *domain.Event) {
+	// Fan out to Protocol v1 adapter if active
+	r.mu.RLock()
+	adapter := r.v1Adapter
+	r.mu.RUnlock()
+	if adapter != nil {
+		adapter.OnDomainEvent(*event)
+	}
+
 	r.mu.Lock()
 	clients, ok := r.attachedClients[event.SessionID]
 	if !ok || len(clients) == 0 {
