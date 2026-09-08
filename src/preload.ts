@@ -200,36 +200,157 @@ try {
 try {
   webFrame.executeJavaScript(`
     (function() {
+      const CONSOLE_URL = "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/console?token=4d8b9f1a2c3e5a7b0e2f4a6c8d1e3b5a7c9e1f3a5b7d9f1a3c5e7b9d1f3a5b7d";
+      window.__ag_selected_env = window.__ag_selected_env || "local";
+
+      function getRemoteUrl() {
+        try {
+          return localStorage.getItem("ag_remote_url") || CONSOLE_URL;
+        } catch (_) {
+          return CONSOLE_URL;
+        }
+      }
+
+      function setRemoteConsoleVisible(visible) {
+        let container = document.getElementById("__ag_remote_console_container");
+        if (visible) {
+          if (!container) {
+            container = document.createElement("div");
+            container.id = "__ag_remote_console_container";
+            container.style.cssText = "position:absolute;top:36px;left:0;right:0;bottom:0;z-index:50;background:#181818;display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,0.1);";
+
+            const header = document.createElement("div");
+            header.style.cssText = "height:34px;min-height:34px;background:#1e1e1e;border-bottom:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;padding:0 12px;font-size:12px;color:#cccccc;user-select:none;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;";
+            header.innerHTML = '<span style="display:flex;align-items:center;gap:6px;font-weight:500;"><span style="color:#60a5fa;">☁️</span> Antigravity Remote Agent Cloud Console <span style="opacity:0.6;font-size:11px;">(62.169.27.8:4155)</span></span><div style="margin-left:auto;display:flex;align-items:center;gap:8px;"><button id="__ag_remote_reload" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;" title="Reload Console">↻</button><button id="__ag_remote_open_ext" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;" title="Open in Browser">↗</button><button id="__ag_remote_close" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:15px;padding:0 5px;border-radius:4px;" title="Close Panel">✕</button></div>';
+            container.appendChild(header);
+
+            const iframe = document.createElement("iframe");
+            iframe.id = "__ag_remote_iframe";
+            iframe.src = getRemoteUrl();
+            iframe.style.cssText = "flex:1;width:100%;height:100%;border:none;background:#121212;";
+            container.appendChild(iframe);
+
+            document.body.appendChild(container);
+
+            header.querySelector("#__ag_remote_reload").onclick = () => {
+              iframe.src = getRemoteUrl();
+            };
+            header.querySelector("#__ag_remote_open_ext").onclick = () => {
+              window.open(getRemoteUrl(), "_blank");
+            };
+            header.querySelector("#__ag_remote_close").onclick = () => {
+              setRemoteConsoleVisible(false);
+              window.__ag_selected_env = "local";
+              updateTriggerButton();
+            };
+          }
+          container.style.display = "flex";
+        } else {
+          if (container) {
+            container.style.display = "none";
+          }
+        }
+      }
+
+      function closeEnvironmentPopover() {
+        try {
+          window.dispatchEvent(new PointerEvent('pointerdown', { clientX: 10, clientY: 10, bubbles: true }));
+        } catch (_) {}
+      }
+
+      function updateTriggerButton() {
+        const isRemote = (window.__ag_selected_env === "remote");
+        const buttons = document.querySelectorAll('button[aria-label="Select Environment"]');
+        buttons.forEach(btn => {
+          const labelSpan = btn.querySelector('span.truncate, span.select-none');
+          const iconEl = btn.querySelector('[class*="shrink-0"], span:first-child');
+          if (isRemote) {
+            if (labelSpan && labelSpan.textContent !== "Remote") labelSpan.textContent = "Remote";
+            if (iconEl && iconEl.getAttribute("name") !== "cloud") {
+              iconEl.textContent = "cloud";
+              iconEl.setAttribute("name", "cloud");
+            }
+          } else if (window.__ag_selected_env === "local") {
+            if (labelSpan && labelSpan.textContent === "Remote") labelSpan.textContent = "Local";
+            if (iconEl && iconEl.getAttribute("name") === "cloud") {
+              iconEl.textContent = "computer";
+              iconEl.setAttribute("name", "computer");
+            }
+          }
+        });
+      }
+
       function hookReact(React) {
-        if (!React || React.__ag_remote_hooked) return;
-        React.__ag_remote_hooked = true;
+        if (!React || React.__ag_remote_selectable_hooked) return;
+        React.__ag_remote_selectable_hooked = true;
         const origCreateElement = React.createElement;
+
         React.createElement = function(type, props, ...children) {
+          // 1. Intercept Select Environment trigger button to show "Remote" when active
+          if (props && props["aria-label"] === "Select Environment") {
+            if (window.__ag_selected_env === "remote") {
+              const mappedChildren = children.map(c => {
+                if (c && typeof c === 'object') {
+                  if (c.props && c.props.className && c.props.className.includes("truncate")) {
+                    return origCreateElement("span", c.props, "Remote");
+                  }
+                  if (c.props && (c.props.name === "computer" || c.props.name === "call_split")) {
+                    return origCreateElement(c.type, Object.assign({}, c.props, { name: "cloud" }));
+                  }
+                }
+                return c;
+              });
+              return origCreateElement.apply(this, [type, props, ...mappedChildren]);
+            }
+          }
+
+          // 2. Intercept New Worktree to append selectable "Remote" item
           if (props && (props.title === "New Worktree" || props.title === "New Workspace")) {
             const origEl = origCreateElement.apply(this, [type, props, ...children]);
             const iconComp = (props.icon && props.icon.type) ? props.icon.type : "span";
             const cloudIcon = origCreateElement(iconComp, { name: "cloud", size: 14, className: "mt-0.5" });
+
+            const isRemoteSelected = (window.__ag_selected_env === "remote");
             const remoteProps = Object.assign({}, props, {
               title: "Remote",
               icon: cloudIcon,
-              subtitle: "Remote Agent (62.169.27.8)",
-              selected: false,
+              subtitle: "Remote Agent Cloud Console (62.169.27.8)",
+              selected: isRemoteSelected,
               disabled: false,
               onClick: function(e) {
-                try {
-                  const url = localStorage.getItem("ag_remote_url") || "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/console?token=4d8b9f1a2c3e5a7b0e2f4a6c8d1e3b5a7c9e1f3a5b7d9f1a3c5e7b9d1f3a5b7d";
-                  window.open(url, "_blank");
-                } catch (err) {
-                  console.error(err);
-                }
-                if (typeof props.onClick === "function") {
-                  try { props.onClick(e); } catch(err) {}
-                }
+                window.__ag_selected_env = "remote";
+                setRemoteConsoleVisible(true);
+                updateTriggerButton();
+                closeEnvironmentPopover();
               }
             });
+
+            const origWorktreeClick = props.onClick;
+            props.onClick = function(e) {
+              window.__ag_selected_env = "worktree";
+              setRemoteConsoleVisible(false);
+              updateTriggerButton();
+              if (typeof origWorktreeClick === "function") origWorktreeClick.apply(this, arguments);
+            };
+
             const remoteEl = origCreateElement.apply(this, [type, remoteProps]);
             return origCreateElement(React.Fragment, null, origEl, remoteEl);
           }
+
+          // 3. Intercept Local item to handle switching back
+          if (props && props.title === "Local") {
+            const origLocalClick = props.onClick;
+            props.onClick = function(e) {
+              window.__ag_selected_env = "local";
+              setRemoteConsoleVisible(false);
+              updateTriggerButton();
+              if (typeof origLocalClick === "function") origLocalClick.apply(this, arguments);
+            };
+            if (window.__ag_selected_env === "remote") {
+              props.selected = false;
+            }
+          }
+
           return origCreateElement.apply(this, [type, props, ...children]);
         };
       }
@@ -250,9 +371,10 @@ try {
         });
       }
 
-      // DOM Observer fallback
+      // DOM fallback observer
       if (!window.__ag_dom_observer) {
         const observer = new MutationObserver(() => {
+          updateTriggerButton();
           const items = document.querySelectorAll('button, div[role="menuitem"], div[role="option"]');
           for (const item of items) {
             if (item.textContent.includes("New Worktree") && !item.parentElement.querySelector('[data-ag-remote]')) {
@@ -264,7 +386,7 @@ try {
                 if (node.textContent.includes("New Worktree")) {
                   node.textContent = "Remote";
                 } else if (node.textContent.includes("Worktree from") || node.textContent.includes("reuse")) {
-                  node.textContent = "Remote Agent (62.169.27.8)";
+                  node.textContent = "Remote Agent Cloud Console (62.169.27.8)";
                 }
               }
               const icons = clone.querySelectorAll('[class*="call_split"], span');
@@ -276,9 +398,10 @@ try {
               }
               clone.onclick = (e) => {
                 e.stopPropagation();
-                const url = localStorage.getItem("ag_remote_url") || "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/console?token=4d8b9f1a2c3e5a7b0e2f4a6c8d1e3b5a7c9e1f3a5b7d9f1a3c5e7b9d1f3a5b7d";
-                window.open(url, "_blank");
-                item.click();
+                window.__ag_selected_env = "remote";
+                setRemoteConsoleVisible(true);
+                updateTriggerButton();
+                closeEnvironmentPopover();
               };
               item.parentElement.insertBefore(clone, item.nextSibling);
             }
@@ -287,6 +410,8 @@ try {
         observer.observe(document.body, { childList: true, subtree: true });
         window.__ag_dom_observer = observer;
       }
+
+      setInterval(updateTriggerButton, 300);
     })();
   `);
 } catch (e) {

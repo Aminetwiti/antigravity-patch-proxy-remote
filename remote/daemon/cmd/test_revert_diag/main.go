@@ -23,21 +23,10 @@ func main() {
 		client.SetUseTLS(true)
 	}
 
-	cascadeID := "436813a3-75ed-4636-86be-f41790fa992c"
+	cascadeID := "456db45a-e6e7-470c-b051-cf97cfae99e5"
 
 	// 1. GetTrajectory
+	fmt.Printf("Calling GetCascadeTrajectory for %s...\n", cascadeID)
 	trajRaw, err := client.GetCascadeTrajectory(cascadeID, 0)
 	fmt.Printf("GetCascadeTrajectory: len=%d, err=%v\n", len(trajRaw), err)
-
-	// 2. Test GetRevertPreview for stepIndex 0, 1, 2, etc.
-	for step := int64(0); step <= 3; step++ {
-		prevRaw, err := client.GetRevertPreview(cascadeID, step)
-		fmt.Printf("GetRevertPreview(step=%d): len=%d, err=%v, raw_hex=%x\n", step, len(prevRaw), err, prevRaw)
-	}
-
-	// 3. Test RevertToCascadeStep for stepIndex 0, 1, 2
-	for step := int64(0); step <= 2; step++ {
-		err := client.RevertToCascadeStep(cascadeID, step)
-		fmt.Printf("RevertToCascadeStep(step=%d): err=%v\n", step, err)
-	}
 }
