@@ -689,6 +689,8 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		return tI.After(tJ)
 	})
 
+
+
 	openIDs := make(map[string]bool)
 	for cid := range jetbox {
 		openIDs[cid] = true
@@ -703,7 +705,7 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 	}
 
 	if !includeArchived {
-		items = filterActiveOrLatestPerProject(items, openIDs)
+		items = filterIdeSessionsWithRule(items, openIDs)
 	}
 
 	var v int64 = 0
@@ -719,24 +721,41 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 	}
 }
 
-// filterActiveOrLatestPerProject filtre les sessions pour n'afficher que :
-// 1. Les sessions actives (en cours d'exécution ou en attente d'action)
-// 2. Les sessions ouvertes dans l'IDE actuelle (ouvertes via GetAllCascadeTrajectories ou Jetbox)
-// 3. Les sessions récemment terminées (moins de 24h)
-// 4. Les sessions épinglées par l'utilisateur
-// 5. Si aucun de ces critères n'est rempli pour un projet donné : afficher la dernière session de ce projet.
-func filterActiveOrLatestPerProject(items []map[string]interface{}, openIDs map[string]bool) []map[string]interface{} {
+// filterIdeSessionsWithRule applique la règle spécifiquement aux sessions Antigravity IDE :
+// Affiche les sessions IDE actives (en cours d'exécution, récemment terminées <= 24h,
+// ou ouvertes dans l'IDE actuelle), sinon la dernière session de chaque projet IDE.
+// Les sessions officielles d'Antigravity 2.0 (isIde == false) restent intactes pour garantir
+// une synchronisation 1:1 entre Remote et Antigravity 2.0.
+func filterIdeSessionsWithRule(items []map[string]interface{}, openIDs map[string]bool) []map[string]interface{} {
 	if len(items) == 0 {
 		return items
 	}
 
+	var nonIdeSessions []map[string]interface{}
+	var ideSessions []map[string]interface{}
+
+	for _, it := range items {
+		isIde, _ := it["isIde"].(bool)
+		if isIde {
+			ideSessions = append(ideSessions, it)
+		} else {
+			nonIdeSessions = append(nonIdeSessions, it)
+		}
+	}
+
+	// Si aucune session IDE, retourner directement les sessions 2.0 synchronisées
+	if len(ideSessions) == 0 {
+		return nonIdeSessions
+	}
+
+	// Filtrer les sessions IDE avec la règle par projet
 	var groupOrder []string
 	projectMap := make(map[string][]map[string]interface{})
 
-	for _, it := range items {
+	for _, it := range ideSessions {
 		ws, _ := it["workspace"].(string)
 		if ws == "" {
-			ws = "antigravity-workspace"
+			ws = "antigravity-ide-workspace"
 		}
 		if _, exists := projectMap[ws]; !exists {
 			groupOrder = append(groupOrder, ws)
@@ -776,7 +795,7 @@ func filterActiveOrLatestPerProject(items []map[string]interface{}, openIDs map[
 		return false
 	}
 
-	var result []map[string]interface{}
+	var filteredIDE []map[string]interface{}
 	for _, ws := range groupOrder {
 		sessions := projectMap[ws]
 		if len(sessions) == 0 {
@@ -789,12 +808,15 @@ func filterActiveOrLatestPerProject(items []map[string]interface{}, openIDs map[
 			}
 		}
 		if len(eligible) > 0 {
-			result = append(result, eligible...)
+			filteredIDE = append(filteredIDE, eligible...)
 		} else {
-			// Sinon n'existe pas : afficher la dernière session du projet
-			result = append(result, sessions[0])
+			// Si aucune session active/récente/ouverte n'existe : afficher la dernière session du projet
+			filteredIDE = append(filteredIDE, sessions[0])
 		}
 	}
+
+	// Combiner les sessions 2.0 (synchronisées 1:1) et les sessions IDE filtrées
+	result := append(nonIdeSessions, filteredIDE...)
 
 	sort.Slice(result, func(i, j int) bool {
 		var tI, tJ time.Time
@@ -815,6 +837,8 @@ func filterActiveOrLatestPerProject(items []map[string]interface{}, openIDs map[
 
 	return result
 }
+
+
 
 // sessionsFromSummaries applique le filtre Antigravity 2.0 et enrichit les statuts dynamiques.
 func (s *Server) sessionsFromSummaries(jetbox map[string]connectrpc.JetboxSummary) map[string]interface{} {
@@ -3801,6 +3825,11 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		return items[i].updatedAt.After(items[j].updatedAt)
 	})
 
+	var resultSessions []map[string]interface{}
+	for _, it := range items {
+		resultSessions = append(resultSessions, it.data)
+	}
+
 	openIDs := make(map[string]bool)
 	for _, sum := range summaries {
 		openIDs[sum.CascadeID] = true
@@ -3816,13 +3845,8 @@ func (s *Server) sessionsOutWithLimitOpts(raw []byte, limitPerProject int, inclu
 		s.mu.Unlock()
 	}
 
-	var resultSessions []map[string]interface{}
-	for _, it := range items {
-		resultSessions = append(resultSessions, it.data)
-	}
-
 	if !includeArchived {
-		resultSessions = filterActiveOrLatestPerProject(resultSessions, openIDs)
+		resultSessions = filterIdeSessionsWithRule(resultSessions, openIDs)
 	}
 
 	if limitPerProject > 0 {

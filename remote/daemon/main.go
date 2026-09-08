@@ -12,19 +12,28 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/antigravity/remote-daemon/pkg/agent"
+	"github.com/antigravity/remote-daemon/pkg/approval"
 	"github.com/antigravity/remote-daemon/pkg/auth"
 	"github.com/antigravity/remote-daemon/pkg/config"
 	"github.com/antigravity/remote-daemon/pkg/connectrpc"
 	"github.com/antigravity/remote-daemon/pkg/discovery"
+	"github.com/antigravity/remote-daemon/pkg/domain"
+	"github.com/antigravity/remote-daemon/pkg/eventstore"
 	"github.com/antigravity/remote-daemon/pkg/gateway"
 	"github.com/antigravity/remote-daemon/pkg/notification"
+	"github.com/antigravity/remote-daemon/pkg/server"
+	"github.com/antigravity/remote-daemon/pkg/tools"
 	"github.com/antigravity/remote-daemon/pkg/tunnel"
 	"github.com/antigravity/remote-daemon/pkg/web"
+	"github.com/antigravity/remote-daemon/pkg/workspace"
 )
 
 // maskToken affiche un préfixe du jeton sans paniquer sur les jetons courts.
@@ -48,6 +57,13 @@ func main() {
 	var allowFirstAdmin bool
 	var allowPublicBind bool
 
+	var modeFlag string
+	var dbPathFlag string
+	var workspacesDirFlag string
+	var providerFlag string
+	var modelFlag string
+	var noApproval bool
+
 	flag.IntVar(&listenPort, "port", cfg.Port, "Port for the WebSocket server")
 	flag.StringVar(&host, "host", cfg.Host, "Host for the WebSocket server")
 	flag.StringVar(&tunnelFlag, "tunnel", cfg.TunnelProvider, "Tunnel provider (cloudflare, pinggy, pangolin, ngrok, local)")
@@ -57,6 +73,13 @@ func main() {
 	flag.BoolVar(&enableRemoteTerminal, "enable-remote-terminal", cfg.AllowRemoteTerminal, "Allow remote interactive PTY terminal creation")
 	flag.BoolVar(&allowFirstAdmin, "allow-first-admin", false, "Let the FIRST paired device become Admin (default: promote via host console with 'promote <deviceId>')")
 	flag.BoolVar(&allowPublicBind, "allow-public-bind", false, "Allow binding to public interfaces without restriction")
+
+	flag.StringVar(&modeFlag, "mode", "auto", "Execution mode: 'server' (standalone cloud daemon), 'bridge' (desktop IDE bridge), or 'auto' (detect)")
+	flag.StringVar(&dbPathFlag, "db-path", "", "Path to SQLite database for server runtime (default: ~/.antigravity/runtime.db)")
+	flag.StringVar(&workspacesDirFlag, "workspaces-dir", "", "Root directory for server workspaces (default: ~/.antigravity/workspaces)")
+	flag.StringVar(&providerFlag, "provider", "auto", "AI model provider: 'auto', 'anthropic', 'openai', 'ollama', 'proxy'")
+	flag.StringVar(&modelFlag, "model", "", "Model name override (e.g. claude-3-5-sonnet-20241022, gpt-4o)")
+	flag.BoolVar(&noApproval, "no-approval", false, "Disable manual tool approval (auto-approve all tool calls)")
 	flag.Parse()
 
 	if err := config.AssertSafeBind(host, allowPublicBind); err != nil {
@@ -77,6 +100,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if modeFlag == "server" {
+		runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval)
+		return
+	}
+
 	fmt.Printf("🚀 Starting Antigravity Remote Daemon Bridge on %s:%d...\n", host, listenPort)
 	if authMgr.IsDisabled() {
 		fmt.Println("🔓 Authentication is DISABLED (--no-auth / --auth-token none)")
@@ -88,6 +116,12 @@ func main() {
 
 	info, err := discovery.Discover()
 	if err != nil {
+		if modeFlag == "auto" {
+			fmt.Printf("ℹ️  No local Antigravity desktop IDE process detected (%v)\n", err)
+			fmt.Println("🚀 Automatically launching in Standalone Cloud Server Runtime mode...")
+			runServerRuntime(host, listenPort, dbPathFlag, workspacesDirFlag, tunnelFlag, resolvedToken, authMgr, providerFlag, modelFlag, noApproval)
+			return
+		}
 		fmt.Fprintf(os.Stderr, "❌ Failed to discover localharness process: %v\n", err)
 		os.Exit(1)
 	}
@@ -297,5 +331,119 @@ func main() {
 		fmt.Fprintf(os.Stderr, "❌ Server error: %v\n", err)
 		os.Exit(1)
 	}
+}
 
+func runServerRuntime(
+	host string,
+	port int,
+	dbPath string,
+	workspacesDir string,
+	tunnelFlag string,
+	authToken string,
+	authMgr *auth.TokenManager,
+	provider string,
+	model string,
+	autoApprove bool,
+) {
+	fmt.Printf("🚀 Starting Antigravity Standalone Cloud Server Runtime on %s:%d...\n", host, port)
+
+	if dbPath == "" {
+		home, _ := os.UserHomeDir()
+		dbPath = filepath.Join(home, ".antigravity", "runtime.db")
+	}
+	_ = os.MkdirAll(filepath.Dir(dbPath), 0755)
+
+	store, err := eventstore.NewSQLiteEventStore(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to initialize SQLite EventStore: %v\n", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
+	hostname, _ := os.Hostname()
+	serverInfo := domain.Server{
+		ID:        fmt.Sprintf("srv_%d", time.Now().UnixMilli()),
+		Name:      "Antigravity Cloud Runtime",
+		Hostname:  hostname,
+		Platform:  runtime.GOOS,
+		Version:   "2.0.0",
+		Status:    domain.ServerStatusOnline,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	rt := server.NewRuntimeServer(serverInfo, store)
+	wsMgr := workspace.NewManager()
+
+	if workspacesDir == "" {
+		home, _ := os.UserHomeDir()
+		workspacesDir = filepath.Join(home, ".antigravity", "workspaces")
+	}
+	_ = os.MkdirAll(workspacesDir, 0755)
+
+	defaultWs, _ := wsMgr.RegisterWorkspace("default", "Default Workspace", workspacesDir)
+	fmt.Printf("📁 Default workspace registered: %s (%s)\n", defaultWs.Name, defaultWs.Root)
+
+	toolsReg := tools.NewRegistry(wsMgr, autoApprove)
+	apprMgr := approval.NewManager(rt.SessionService(), 5*time.Minute)
+
+	providerCfg := agent.AutoDetectProviderConfig()
+	if provider != "" && provider != "auto" {
+		providerCfg.Type = agent.ProviderType(provider)
+	}
+	if model != "" {
+		providerCfg.Model = model
+	}
+	llmClient := agent.NewHTTPProviderClient(providerCfg)
+	fmt.Printf("🧠 AI Provider: %s (Model: %s)\n", providerCfg.Type, providerCfg.Model)
+
+	agentEng := agent.NewEngine(rt.SessionService(), wsMgr, toolsReg, apprMgr, llmClient)
+	rt.SetAgentEngine(agentEng, apprMgr)
+
+	handler := server.NewMux(rt, wsMgr, authToken)
+
+	tunnelMgr := tunnel.NewManager(tunnelFlag)
+	if !authMgr.IsDisabled() && authToken != "" {
+		tunnelMgr.SetAuthToken(authToken)
+	}
+	go func() {
+		if url, err := tunnelMgr.StartAutoTunnel(port); err == nil {
+			fmt.Printf("🌐 Public Cloud Tunnel active: %s\n", url)
+			if !authMgr.IsDisabled() && authToken != "" {
+				fmt.Printf("📱 Mobile Pair URL: %s/v2/ws?token=%s\n", url, authToken)
+			}
+		} else {
+			fmt.Printf("⚠️ Tunnel not started (local network access on port %d): %v\n", port, err)
+		}
+	}()
+
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		fmt.Println("\n🛑 Shutting down server runtime gracefully...")
+		tunnelMgr.Stop()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	fmt.Printf("✅ Cloud Server Runtime is listening on http://%s\n", addr)
+	fmt.Println("   - Health check:      GET  /health")
+	fmt.Println("   - Sessions REST:     GET  /v2/sessions")
+	fmt.Println("   - WebSocket Stream:  WS   /v2/ws")
+
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Fprintf(os.Stderr, "❌ Server error: %v\n", err)
+		os.Exit(1)
+	}
 }

@@ -1,0 +1,324 @@
+package workspace
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"unicode/utf8"
+)
+
+var (
+	ErrWorkspaceNotFound = fmt.Errorf("workspace not found")
+	ErrPathOutsideRoot   = fmt.Errorf("access denied: path outside workspace root")
+	ErrTargetNotFound    = fmt.Errorf("target string not found in file")
+	ErrFileTooLarge      = fmt.Errorf("file exceeds maximum size limit")
+)
+
+const (
+	DefaultMaxFileSize = 10 * 1024 * 1024 // 10 MB
+	DefaultMaxDepth    = 8
+)
+
+type FileInfo struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	FullPath string `json:"fullPath"`
+	IsDir    bool   `json:"isDir"`
+	Size     int64  `json:"size"`
+	Depth    int    `json:"depth"`
+}
+
+type SearchResult struct {
+	Path       string `json:"path"`
+	LineNumber int    `json:"lineNumber"`
+	LineText   string `json:"lineText"`
+}
+
+type Workspace struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Root string `json:"root"`
+}
+
+type Manager struct {
+	mu          sync.RWMutex
+	workspaces  map[string]*Workspace
+	maxFileSize int64
+}
+
+func NewManager() *Manager {
+	return &Manager{
+		workspaces:  make(map[string]*Workspace),
+		maxFileSize: DefaultMaxFileSize,
+	}
+}
+
+func ResolveAndValidatePath(workspaceRoot, targetPath string) (string, error) {
+	if workspaceRoot == "" {
+		return "", fmt.Errorf("workspaceRoot cannot be empty")
+	}
+	cleanRoot := filepath.Clean(workspaceRoot)
+
+	cleanTarget := strings.TrimPrefix(targetPath, "file:///")
+	cleanTarget = strings.TrimPrefix(cleanTarget, "file://")
+
+	var resolved string
+	if filepath.IsAbs(cleanTarget) {
+		resolved = filepath.Clean(cleanTarget)
+	} else {
+		resolved = filepath.Clean(filepath.Join(cleanRoot, cleanTarget))
+	}
+
+	rel, err := filepath.Rel(cleanRoot, resolved)
+	if err != nil {
+		return "", fmt.Errorf("failed to evaluate relative path: %w", err)
+	}
+
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: %s", ErrPathOutsideRoot, targetPath)
+	}
+
+	return resolved, nil
+}
+
+func (m *Manager) RegisterWorkspace(id, name, root string) (*Workspace, error) {
+	cleanRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workspace root: %w", err)
+	}
+
+	if err := os.MkdirAll(cleanRoot, 0755); err != nil {
+		return nil, fmt.Errorf("failed to ensure workspace root directory: %w", err)
+	}
+
+	ws := &Workspace{
+		ID:   id,
+		Name: name,
+		Root: cleanRoot,
+	}
+
+	m.mu.Lock()
+	m.workspaces[id] = ws
+	m.mu.Unlock()
+
+	return ws, nil
+}
+
+func (m *Manager) GetWorkspace(id string) (*Workspace, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	ws, ok := m.workspaces[id]
+	if !ok {
+		return nil, ErrWorkspaceNotFound
+	}
+	return ws, nil
+}
+
+func (m *Manager) ResolvePath(workspaceID, targetPath string) (string, error) {
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return ResolveAndValidatePath(ws.Root, targetPath)
+}
+
+func (m *Manager) ReadFile(workspaceID, relPath string) ([]byte, error) {
+	resolved, err := m.ResolvePath(workspaceID, relPath)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("target is a directory, not a file")
+	}
+	if info.Size() > m.maxFileSize {
+		return nil, fmt.Errorf("%w (%d bytes > %d limit)", ErrFileTooLarge, info.Size(), m.maxFileSize)
+	}
+
+	return os.ReadFile(resolved)
+}
+
+func (m *Manager) WriteFile(workspaceID, relPath string, content []byte) error {
+	resolved, err := m.ResolvePath(workspaceID, relPath)
+	if err != nil {
+		return err
+	}
+
+	parent := filepath.Dir(resolved)
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		return fmt.Errorf("failed to create parent directories: %w", err)
+	}
+
+	// Atomic write via temporary file
+	tmpFile := fmt.Sprintf("%s.tmp.%d", resolved, os.Getpid())
+	if err := os.WriteFile(tmpFile, content, 0644); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpFile, resolved); err != nil {
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to commit atomic write: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) EditFile(workspaceID, relPath, target, replacement string) error {
+	resolved, err := m.ResolvePath(workspaceID, relPath)
+	if err != nil {
+		return err
+	}
+
+	content, err := os.ReadFile(resolved)
+	if err != nil {
+		return err
+	}
+
+	text := string(content)
+	if !strings.Contains(text, target) {
+		return fmt.Errorf("%w: %q", ErrTargetNotFound, target)
+	}
+
+	newText := strings.Replace(text, target, replacement, 1)
+	return m.WriteFile(workspaceID, relPath, []byte(newText))
+}
+
+func isIgnored(name string) bool {
+	switch name {
+	case ".git", "node_modules", ".dart_tool", "dist", "build", ".venv", "__pycache__":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Manager) ListDirectory(workspaceID, relPath string, depth int) ([]FileInfo, error) {
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	targetDir, err := ResolveAndValidatePath(ws.Root, relPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.listDirRecursive(ws.Root, targetDir, relPath, 0, depth)
+}
+
+func (m *Manager) listDirRecursive(root, currentAbs, currentRel string, currentDepth, maxDepth int) ([]FileInfo, error) {
+	if maxDepth > 0 && currentDepth >= maxDepth {
+		return nil, nil
+	}
+
+	entries, err := os.ReadDir(currentAbs)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsDir() == entries[j].IsDir() {
+			return entries[i].Name() < entries[j].Name()
+		}
+		return entries[i].IsDir()
+	})
+
+	var result []FileInfo
+	for _, entry := range entries {
+		name := entry.Name()
+		if isIgnored(name) {
+			continue
+		}
+
+		fullPath := filepath.Join(currentAbs, name)
+		info, errInfo := os.Lstat(fullPath)
+		if errInfo != nil || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+
+		entryRel := filepath.ToSlash(filepath.Join(currentRel, name))
+		item := FileInfo{
+			Name:     name,
+			Path:     entryRel,
+			FullPath: fullPath,
+			IsDir:    entry.IsDir(),
+			Size:     info.Size(),
+			Depth:    currentDepth,
+		}
+		result = append(result, item)
+
+		if entry.IsDir() {
+			children, _ := m.listDirRecursive(root, fullPath, entryRel, currentDepth+1, maxDepth)
+			result = append(result, children...)
+		}
+	}
+
+	return result, nil
+}
+
+func (m *Manager) SearchFiles(workspaceID, query string, maxResults int) ([]SearchResult, error) {
+	if query == "" {
+		return []SearchResult{}, nil
+	}
+	if maxResults <= 0 {
+		maxResults = 50
+	}
+
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []SearchResult
+	queryLower := strings.ToLower(query)
+
+	err = filepath.Walk(ws.Root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || len(results) >= maxResults {
+			return nil
+		}
+		if info.IsDir() {
+			if isIgnored(info.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if info.Size() > 2*1024*1024 { // Skip files > 2MB for search
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil || !utf8.Valid(data) || bytes.IndexByte(data, 0) != -1 {
+			return nil // Skip non-utf8 or binary files
+		}
+
+		lines := strings.Split(string(data), "\n")
+		rel, _ := filepath.Rel(ws.Root, path)
+		rel = filepath.ToSlash(rel)
+
+		for i, line := range lines {
+			if strings.Contains(strings.ToLower(line), queryLower) {
+				results = append(results, SearchResult{
+					Path:       rel,
+					LineNumber: i + 1,
+					LineText:   strings.TrimSpace(line),
+				})
+				if len(results) >= maxResults {
+					return nil
+				}
+			}
+		}
+		return nil
+	})
+
+	return results, err
+}

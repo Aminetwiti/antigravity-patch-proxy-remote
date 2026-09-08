@@ -90,3 +90,91 @@ func TestListIdeSessions_ActiveAndProjectFallback(t *testing.T) {
 		t.Errorf("expected projB-latest-old to be present as fallback")
 	}
 }
+
+func TestFilterIdeSessionsWithRule(t *testing.T) {
+	now := time.Now()
+	oldTime := now.Add(-72 * time.Hour) // 3 days ago
+
+	items := []map[string]interface{}{
+		// Antigravity 2.0 sessions (isIde == false): ALL must be preserved (1:1 sync with 2.0)
+		{
+			"cascadeId": "2.0-session-1",
+			"workspace": "my-project",
+			"status":    "CASCADE_STATUS_READY",
+			"updatedAt": oldTime.Format(time.RFC3339),
+			"isIde":     false,
+		},
+		{
+			"cascadeId": "2.0-session-2",
+			"workspace": "my-project",
+			"status":    "CASCADE_STATUS_READY",
+			"updatedAt": oldTime.Add(-1 * time.Hour).Format(time.RFC3339),
+			"isIde":     false,
+		},
+
+		// IDE sessions for ide-proj-A: 1 active (today) + 1 old (3 days ago)
+		{
+			"cascadeId": "ide-projA-active",
+			"workspace": "ide-proj-A",
+			"status":    "CASCADE_STATUS_READY",
+			"updatedAt": now.Format(time.RFC3339),
+			"isIde":     true,
+		},
+		{
+			"cascadeId": "ide-projA-old",
+			"workspace": "ide-proj-A",
+			"status":    "CASCADE_STATUS_READY",
+			"updatedAt": oldTime.Format(time.RFC3339),
+			"isIde":     true,
+		},
+
+		// IDE sessions for ide-proj-B: 2 old sessions (no active)
+		{
+			"cascadeId": "ide-projB-latest",
+			"workspace": "ide-proj-B",
+			"status":    "CASCADE_STATUS_READY",
+			"updatedAt": oldTime.Format(time.RFC3339),
+			"isIde":     true,
+		},
+		{
+			"cascadeId": "ide-projB-older",
+			"workspace": "ide-proj-B",
+			"status":    "CASCADE_STATUS_READY",
+			"updatedAt": oldTime.Add(-24 * time.Hour).Format(time.RFC3339),
+			"isIde":     true,
+		},
+	}
+
+	filtered := filterIdeSessionsWithRule(items, nil)
+
+	// Expecting:
+	// - BOTH 2.0 sessions preserved: "2.0-session-1" and "2.0-session-2" (len 2)
+	// - ide-proj-A: ONLY "ide-projA-active" (len 1)
+	// - ide-proj-B: ONLY "ide-projB-latest" (len 1)
+	// Total: 4
+	if len(filtered) != 4 {
+		t.Fatalf("expected 4 sessions, got %d", len(filtered))
+	}
+
+	foundMap := make(map[string]bool)
+	for _, f := range filtered {
+		cid := f["cascadeId"].(string)
+		foundMap[cid] = true
+	}
+
+	if !foundMap["2.0-session-1"] || !foundMap["2.0-session-2"] {
+		t.Errorf("Antigravity 2.0 sessions must be preserved for 1:1 sync")
+	}
+	if !foundMap["ide-projA-active"] {
+		t.Errorf("expected active IDE session to be included")
+	}
+	if foundMap["ide-projA-old"] {
+		t.Errorf("ide-projA-old should be filtered out")
+	}
+	if !foundMap["ide-projB-latest"] {
+		t.Errorf("expected latest IDE session as fallback for projB")
+	}
+	if foundMap["ide-projB-older"] {
+		t.Errorf("ide-projB-older should be filtered out")
+	}
+}

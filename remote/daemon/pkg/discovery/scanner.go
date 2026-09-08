@@ -55,20 +55,21 @@ func Discover() (*LocalHarnessInfo, error) {
 		return nil, fmt.Errorf("language_server introuvable — IDE Antigravity ouvert ?")
 	}
 
-	// Cibler l'instance principale d'Antigravity IDE en priorité si active,
-	// sinon le hub standalone d'Antigravity 2.0.
-	var ideMain []procEntry
+	// Priorité absolue à Antigravity 2.0 (hubs) pour synchronisation directe 2.0 ↔ Remote,
+	// avec repli sur Antigravity IDE (ideMain) si 2.0 n'est pas démarré.
 	var hubs []procEntry
+	var ideMain []procEntry
 	var ideActive []procEntry
 	var ideOther []procEntry
 	var fallback []procEntry
 
 	for _, p := range procs {
 		isIde := strings.Contains(p.commandLine, "antigravity-ide") || strings.Contains(p.name, "language_server_windows_x64")
-		if isIde && strings.Contains(p.commandLine, "--subclient_type ide") && !strings.Contains(p.commandLine, "--enable_lsp") {
-			ideMain = append(ideMain, p)
-		} else if strings.Contains(p.commandLine, "--subclient_type hub") || (strings.Contains(p.commandLine, "--standalone") && !strings.Contains(p.commandLine, "--subclient_type ide")) {
+		is20 := (!isIde) && (strings.Contains(p.commandLine, "--subclient_type hub") || (strings.Contains(p.commandLine, "--standalone") && !strings.Contains(p.commandLine, "--subclient_type ide")) || strings.Contains(p.commandLine, "--app_data_dir antigravity"))
+		if is20 {
 			hubs = append(hubs, p)
+		} else if isIde && strings.Contains(p.commandLine, "--subclient_type ide") && !strings.Contains(p.commandLine, "--enable_lsp") {
+			ideMain = append(ideMain, p)
 		} else if strings.Contains(p.commandLine, "--workspace_id") || strings.Contains(p.commandLine, "--enable_lsp") {
 			ideActive = append(ideActive, p)
 		} else if strings.Contains(p.commandLine, "--subclient_type ide") {
@@ -79,8 +80,8 @@ func Discover() (*LocalHarnessInfo, error) {
 	}
 
 	var sortedProcs []procEntry
+	sortedProcs = append(sortedProcs, hubs...) // Antigravity 2.0 en priorité absolue !
 	sortedProcs = append(sortedProcs, ideMain...)
-	sortedProcs = append(sortedProcs, hubs...)
 	sortedProcs = append(sortedProcs, ideActive...)
 	sortedProcs = append(sortedProcs, ideOther...)
 	sortedProcs = append(sortedProcs, fallback...)
@@ -239,7 +240,7 @@ func candidatePorts(info *LocalHarnessInfo, p *procEntry) []int {
 
 	// 3. Vérifier le fichier active_port standard ~/.gemini/antigravity/active_port en repli
 	if activePort := readActivePortFile(); activePort > 0 {
-		ports = append(ports, activePort)
+		ports = append(ports, activePort, activePort+1, activePort+2)
 	}
 	return dedupeInts(ports)
 }
