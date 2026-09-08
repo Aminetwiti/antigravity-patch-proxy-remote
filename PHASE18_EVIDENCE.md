@@ -1,4 +1,4 @@
-﻿# PHASE 18 — EMPIRICAL EVIDENCE & AUDIT TRACE LOG
+# PHASE 18 — EMPIRICAL EVIDENCE & AUDIT TRACE LOG
 
 **Antigravity Remote Agent Cloud Runtime — v2.0.0**  
 **Audit Date:** 2026-09-08  
@@ -110,7 +110,7 @@ SUCCESS: Deletion persisted across reboot!
      Memory: 16.3M (peak: 16.6M)
         CPU: 145ms
      CGroup: /system.slice/ag-agentd.service
-             └─140 /usr/local/bin/ag-agentd --mode=server --host=0.0.0.0 --port=8090 --db-path=/var/lib/antigravity/runtime.db --workspaces-dir=/var/lib/antigravity/workspaces --auth-token=80950affad285eda08de99eacc92e160 --provider=auto --model= --sandbox=docker --sandbox-mode=strict --tunnel=local --allow-public-bind
+             └─140 /usr/local/bin/ag-agentd --mode=server --host=0.0.0.0 --port=8090 --db-path=/var/lib/antigravity/runtime.db --workspaces-dir=/var/lib/antigravity/workspaces --auth-token=[REDACTED_COMPROMISED_PHASE18_TOKEN] --provider=auto --model= --sandbox=docker --sandbox-mode=strict --tunnel=local --allow-public-bind
 ```
 
 ---

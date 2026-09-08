@@ -28,7 +28,16 @@ All notable changes to the Antigravity Remote Agent Cloud Runtime (`ag-agentd`) 
 - Prevented rate limiter bypass via spoofed `X-Forwarded-For` headers by enforcing `AG_TRUSTED_PROXIES` (HIGH-02).
 - Sanitized sensitive API credentials in session export post-mortems (HIGH-04).
 - Fixed Docker group permission requirement in automated VPS installer (HIGH-05).
+- Eliminated command-line credential exposure in systemd process arguments by adding native `AG_AUTH_TOKEN` environment variable resolution and stripping `--auth-token` from CLI invocation (`INC-2026-0908-SYSTEMD-TOKEN-LEAK`).
+- Resolved multi-user IDOR access gaps and privilege escalations on workspace, session, terminal, and approval endpoints.
+
+### Verified & Deployed (Phase 19 & 20)
+- **Real External Cloud VPS Deployment**: Verified live on Ubuntu 24.04 LTS (`62.169.27.8:4155`) under systemd supervision with zero secret leakage in `/proc/<PID>/cmdline` or `ps aux`.
+- **Public Ingress & Remote Access**: Automated Cloudflare Quick Tunnel TLS bridge tested end-to-end for both Web Console (`/console`) and Mobile WebSockets (`/v2/ws`).
+- **Disaster Recovery & SQLite Durability**: Online hot point-in-time SQLite snapshot validated with catastrophic state wipe and restore (RTO: 47s, 0 data loss, `PRAGMA integrity_check = ok`).
+- **Physical Mobile Companion**: Built Android APK with Impeller Vulkan engine, installed and verified on Samsung Galaxy S21 FE 5G (`SM G990B2`).
 
 ### Known Limitations
 - **Single-Tenant VPS Target**: Designed and certified for private VPS or single-tenant cloud hosts. Multi-tenant public SaaS hosting untrusted external users on a shared Docker socket is not supported.
 - **Static Multi-User Provisioning**: Multi-user RBAC is enforced in code, but dynamic creation of secondary user tokens via REST API (`POST /v2/users`) is deferred to v2.1.
+

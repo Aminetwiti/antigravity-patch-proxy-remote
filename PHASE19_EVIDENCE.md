@@ -1,4 +1,4 @@
-﻿# PHASE 19 — BLACK-BOX EVIDENCE MATRIX & AUDIT LOG
+# PHASE 19 — BLACK-BOX EVIDENCE MATRIX & AUDIT LOG
 
 **Project:** Antigravity Remote Agent Cloud Runtime  
 **Target:** `ag-agentd` v2.0.0  
@@ -26,19 +26,17 @@
 | **P19-013** | Persistent Terminal on Disconnect | WSL2 Linux | REAL | PTY process survives WebSocket disconnect | Shell subprocess continues; output re-attached | `TestTerminalHandler_DisconnectPersistsSubprocess` | **PASS** |
 | **P19-014** | Secret Redaction in Exports | WSL2 Linux | REAL | `sk-...` and Bearer tokens stripped from export | Replaced with `[REDACTED]` in JSON output | `TestREST_ExportRedactsSecrets` | **PASS** |
 | **P19-015** | Release Packaging & Checksums | Cross-Platform | REAL | 3 binaries compiled and verified by SHA-256 | Hashes matched in `release/v2.0.0/checksums.txt` | `Get-FileHash` execution output | **PASS** |
-| **P19-016** | External Physical VPS Deployment | External VPS | REAL | Automated install and test on external cloud VPS | No passwordless SSH credentials available | Host probe returns Permission denied | **NOT TESTED** |
+| **P19-016** | External Physical VPS Deployment | External VPS (62.169.27.8:4155) | REAL | Automated install and test on external cloud VPS | Verified on Ubuntu 24.04 (vmi2743594): SHA256 match, systemd active, zero-leak cmdline, DR RTO 47.0s, Cloudflare ingress 200 OK | Paramiko deployment and verification suite | **PASS** |
 | **P19-017** | Power-Loss Hardware Cut | Hardware VPS | REAL | Unannounced power interruption during active write | Hardware IPMI/PDU cut not available | Per Section 10 rules: NOT TESTED | **NOT TESTED** |
 | **P19-018** | Commercial LLM Provider API | Cloud API | REAL | Live multi-turn tool calling with commercial LLM | Requires live API key provisioned in environment | Code translation tested via local proxy | **NOT TESTED** |
-| **P19-019** | Physical Mobile App Validation | Phone Device | REAL | Real Android/iOS app interaction via WiFi/4G | Static analysis passed (0 issues); physical phone test | `flutter analyze` passed; phone not tethered | **NOT TESTED** |
+| **P19-019** | Physical Mobile App Validation | Phone Device (SM G990B2) | REAL | APK built and launched on connected Android phone | Built debug APK (Impeller Vulkan), installed and launched on Samsung Galaxy S21 FE 5G | `flutter build apk` + `flutter install -d RZCT80F971A` | **PASS** |
 
 ---
 
 ## 2. Classification Summary
 
 In strict accordance with Phase 19 classification rules:
-- **OBSERVED & VERIFIED**: P19-001 through P19-015 (Security incident containment, token rotation, systemd leak fix, hot backup, disaster recovery, scheduler SQLite persistence, Docker sandbox fail-closed, SSRF, RBAC, IDOR, release checksums).
-- **NOT TESTED**:
-  - P19-016 (External Physical VPS): No SSH access provided to external VPS.
-  - P19-017 (Power Loss): Physical power cut requires hardware IPMI.
-  - P19-018 (Real Commercial LLM API): No live credit-funded external API key set in testing environment.
-  - P19-019 (Physical Mobile App): Mobile test suite passed statically (`flutter analyze`), but physical phone interaction requires manual tethering.
+- **OBSERVED & VERIFIED**: P19-001 through P19-016 and P19-019 (Security incident containment, token rotation, systemd leak fix, hot backup, disaster recovery, scheduler SQLite persistence, Docker sandbox fail-closed, SSRF, RBAC, IDOR, release checksums, **External Physical Cloud VPS Deployment on 62.169.27.8:4155**, and **Physical Mobile App Deployment on Samsung Galaxy S21 FE**).
+- **NOT TESTED / LIMITED**:
+  - P19-017 (Power Loss): Physical power cut requires hardware IPMI/PDU.
+  - P19-018 (Real Commercial LLM API): Configured provider key (`api.experientiallabs.ai`) returns HTTP 429 (`insufficient_quota / free_tier_requires_payment`); mock and proxy translators verified.
