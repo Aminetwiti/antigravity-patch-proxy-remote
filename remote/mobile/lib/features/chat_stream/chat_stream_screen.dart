@@ -248,6 +248,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   
   bool _showStillWorking = false;
   final Map<String, Map<String, dynamic>> _sessionLastStreamEnds = {};
+  final Map<String, Map<String, dynamic>> _sessionTelemetry = {};
   final Map<String, String> _externalThoughts = {};
   final Map<String, String> _streamRequestToMessageId = {};
 
@@ -779,6 +780,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     _loadHistoryIfEmpty();
     _fetchSubagentsForSession(widget.activeSessionId);
     _refreshQuotaSummary();
+    _refreshSessionTelemetry();
     _quotaTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (mounted) _refreshQuotaSummary();
     });
@@ -869,6 +871,64 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         });
       }
     } catch (_) {}
+  }
+
+  Future<void> _refreshSessionTelemetry([String? sessionId]) async {
+    final api = widget.api;
+    final target = sessionId ?? widget.activeSessionId;
+    if (api == null || !widget.isConnected || target.isEmpty) return;
+    try {
+      final res = await api.getSessionTelemetry(target);
+      final tele = res['telemetry'] ?? (res['data'] is Map ? res['data']['telemetry'] : null) ?? res;
+      if (mounted && tele is Map) {
+        setState(() {
+          _sessionTelemetry[target] = Map<String, dynamic>.from(tele);
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _promoteShadowWorktree() async {
+    final api = widget.api;
+    if (api == null || widget.activeSessionId.isEmpty) return;
+    try {
+      final res = await api.promoteShadowWorktree(widget.activeProjectName, widget.activeSessionId);
+      if (mounted) {
+        final msg = res['message'] ?? 'Shadow worktree fusionné avec succès';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$msg'), backgroundColor: AppColors.positive),
+        );
+        _fetchVcsChanges();
+        _refreshSessionTelemetry();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors de la fusion : $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
+
+  Future<void> _discardShadowWorktree() async {
+    final api = widget.api;
+    if (api == null || widget.activeSessionId.isEmpty) return;
+    try {
+      final res = await api.discardShadowWorktree(widget.activeProjectName, widget.activeSessionId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Shadow worktree rejeté avec succès')),
+        );
+        _fetchVcsChanges();
+        _refreshSessionTelemetry();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors du rejet : $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
   }
 
   void _scrollToBottomSettled({int maxAttempts = 4}) {
@@ -1303,6 +1363,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         _loadHistoryIfEmpty(widget.activeSessionId);
       }
       _refreshQuotaSummary();
+      _refreshSessionTelemetry();
       _checkAndFlushOfflineOutbox();
     }
 
@@ -1375,6 +1436,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       _loadPersistedDraft();
       _loadOfflineOutbox(widget.activeSessionId);
       _refreshRunningTasks();
+      _refreshSessionTelemetry(widget.activeSessionId);
       _restoreOrScrollToBottom(widget.activeSessionId);
     }
     if (!oldWidget.isConnected && widget.isConnected) {
