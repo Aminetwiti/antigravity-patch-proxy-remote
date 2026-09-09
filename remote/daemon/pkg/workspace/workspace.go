@@ -118,10 +118,22 @@ func (m *Manager) RegisterWorkspace(id, name, root string) (*Workspace, error) {
 
 func (m *Manager) GetWorkspace(id string) (*Workspace, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	ws, ok := m.workspaces[id]
 	if !ok {
+		for _, w := range m.workspaces {
+			if w.Root == id || filepath.Clean(w.Root) == filepath.Clean(id) {
+				ws = w
+				ok = true
+				break
+			}
+		}
+	}
+	m.mu.RUnlock()
+
+	if !ok {
+		if fi, err := os.Stat(id); err == nil && fi.IsDir() {
+			return m.RegisterWorkspace(id, filepath.Base(id), id)
+		}
 		return nil, ErrWorkspaceNotFound
 	}
 	return ws, nil
@@ -450,6 +462,149 @@ func (m *Manager) RemoveWorktree(wsID string) error {
 
 	_ = m.UnregisterWorkspace(wsID)
 	_ = os.RemoveAll(ws.Root)
+	return nil
+}
+
+// CreateShadowWorktree creates an isolated ephemeral Git worktree for an autonomous agent session.
+// It isolates all file modifications and terminal PTY runs from the primary desktop workspace,
+// returning the shadow Workspace and a cleanup closure to be deferred by the caller.
+func (m *Manager) CreateShadowWorktree(baseWsID, sessionID string) (*Workspace, func(), error) {
+	if sessionID == "" {
+		return nil, nil, fmt.Errorf("sessionID cannot be empty")
+	}
+	cleanID := strings.ReplaceAll(sessionID, "-", "_")
+	shadowBranch := fmt.Sprintf("agent/shadow_%s", cleanID)
+	shadowWsID := fmt.Sprintf("shadow_%s_%s", baseWsID, cleanID)
+
+	ws, err := m.CreateWorktree(baseWsID, shadowBranch, shadowWsID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create shadow worktree: %w", err)
+	}
+
+	cleanup := func() {
+		_ = m.RemoveWorktree(ws.ID)
+		// Best effort: delete ephemeral shadow branch
+		if baseWs, err := m.GetWorkspace(baseWsID); err == nil {
+			cmd := exec.Command("git", "branch", "-D", shadowBranch)
+			cmd.Dir = baseWs.Root
+			_ = cmd.Run()
+		}
+	}
+
+	return ws, cleanup, nil
+}
+
+// ShadowPromoteResult encapsulates the outcome of merging an ephemeral shadow worktree into the main workspace.
+type ShadowPromoteResult struct {
+	Success      bool   `json:"success"`
+	BaseBranch   string `json:"baseBranch"`
+	ShadowBranch string `json:"shadowBranch"`
+	CommitHash   string `json:"commitHash"`
+	Message      string `json:"message"`
+}
+
+// PromoteShadowWorktree commits any pending changes in the shadow worktree, merges its branch back
+// into the base workspace, and cleans up the shadow worktree and ephemeral branch.
+func (m *Manager) PromoteShadowWorktree(baseWsID, sessionID, commitMsg, author string) (*ShadowPromoteResult, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("sessionID cannot be empty")
+	}
+	baseWs, err := m.GetWorkspace(baseWsID)
+	if err != nil {
+		return nil, err
+	}
+
+	cleanID := strings.ReplaceAll(sessionID, "-", "_")
+	shadowBranch := fmt.Sprintf("agent/shadow_%s", cleanID)
+	shadowWsID := fmt.Sprintf("shadow_%s_%s", baseWsID, cleanID)
+
+	baseBranch, _ := m.CurrentBranch(baseWsID)
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+
+	// 1. If shadow workspace exists and has uncommitted changes, commit them
+	shadowWs, err := m.GetWorkspace(shadowWsID)
+	if err == nil {
+		diff, diffErr := m.Diff(shadowWs.ID)
+		if diffErr == nil && !diff.Clean {
+			msg := commitMsg
+			if msg == "" {
+				msg = fmt.Sprintf("Agent changes for session %s", sessionID)
+			}
+			if _, err := m.Commit(shadowWs.ID, msg, author); err != nil {
+				return nil, fmt.Errorf("failed to commit shadow changes: %w", err)
+			}
+		}
+	} else {
+		// Attempt to discover worktree directory on disk if not registered in memory
+		parentDir := filepath.Dir(baseWs.Root)
+		worktreeRoot := filepath.Join(parentDir, "worktrees", shadowWsID)
+		if fi, statErr := os.Stat(worktreeRoot); statErr == nil && fi.IsDir() {
+			_, _ = m.RegisterWorkspace(shadowWsID, shadowBranch, worktreeRoot)
+		}
+	}
+
+	// 2. Merge shadow branch into base workspace
+	msg := commitMsg
+	if msg == "" {
+		msg = fmt.Sprintf("Promote shadow worktree (%s)", sessionID)
+	}
+	mergeCmd := exec.Command("git", "merge", "--no-ff", shadowBranch, "-m", msg)
+	mergeCmd.Dir = baseWs.Root
+	if out, err := mergeCmd.CombinedOutput(); err != nil {
+		abortCmd := exec.Command("git", "merge", "--abort")
+		abortCmd.Dir = baseWs.Root
+		_ = abortCmd.Run()
+		return &ShadowPromoteResult{
+			Success:      false,
+			BaseBranch:   baseBranch,
+			ShadowBranch: shadowBranch,
+			Message:      string(out),
+		}, fmt.Errorf("git merge failed: %s (%w)", string(out), err)
+	}
+
+	// 3. Obtain new commit hash in base workspace
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = baseWs.Root
+	revOut, _ := revCmd.Output()
+	newHash := strings.TrimSpace(string(revOut))
+
+	// 4. Remove worktree and ephemeral branch
+	_ = m.RemoveWorktree(shadowWsID)
+	delCmd := exec.Command("git", "branch", "-D", shadowBranch)
+	delCmd.Dir = baseWs.Root
+	_ = delCmd.Run()
+
+	return &ShadowPromoteResult{
+		Success:      true,
+		BaseBranch:   baseBranch,
+		ShadowBranch: shadowBranch,
+		CommitHash:   newHash,
+		Message:      fmt.Sprintf("Successfully promoted %s into %s", shadowBranch, baseBranch),
+	}, nil
+}
+
+// DiscardShadowWorktree removes the shadow worktree and forcibly deletes its branch without merging.
+func (m *Manager) DiscardShadowWorktree(baseWsID, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("sessionID cannot be empty")
+	}
+	baseWs, err := m.GetWorkspace(baseWsID)
+	if err != nil {
+		return err
+	}
+
+	cleanID := strings.ReplaceAll(sessionID, "-", "_")
+	shadowBranch := fmt.Sprintf("agent/shadow_%s", cleanID)
+	shadowWsID := fmt.Sprintf("shadow_%s_%s", baseWsID, cleanID)
+
+	_ = m.RemoveWorktree(shadowWsID)
+
+	delCmd := exec.Command("git", "branch", "-D", shadowBranch)
+	delCmd.Dir = baseWs.Root
+	_ = delCmd.Run()
+
 	return nil
 }
 

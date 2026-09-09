@@ -1524,6 +1524,31 @@ class DaemonApi {
     return await rpc('get_quota_summary', {});
   }
 
+  /// Récupère la télémétrie temps réel de la session (jetons, budget %, sous-agents actifs).
+  Future<Map<String, dynamic>> getSessionTelemetry(String sessionId) async {
+    return await rpc('get_session_telemetry', {'sessionId': sessionId, 'cascadeId': sessionId});
+  }
+
+  /// Promeut les modifications d'un shadow worktree dans le dépôt principal.
+  Future<Map<String, dynamic>> promoteShadowWorktree(String workspacePath, String sessionId, {String? message, String? author}) async {
+    return await rpc('promote_shadow_worktree', {
+      'workspacePath': workspacePath,
+      'sessionId': sessionId,
+      'cascadeId': sessionId,
+      if (message != null) 'message': message,
+      if (author != null) 'author': author,
+    });
+  }
+
+  /// Annule et détruit un shadow worktree sans merger ses modifications.
+  Future<Map<String, dynamic>> discardShadowWorktree(String workspacePath, String sessionId) async {
+    return await rpc('discard_shadow_worktree', {
+      'workspacePath': workspacePath,
+      'sessionId': sessionId,
+      'cascadeId': sessionId,
+    });
+  }
+
   /// Récupère le profil et statut utilisateur (plan, crédits disponibles).
   Future<Map<String, dynamic>> getUserStatus() async {
     return await rpc('get_user_status', {});

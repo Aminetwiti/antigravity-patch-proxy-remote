@@ -810,6 +810,94 @@ func (h *RESTHandler) HandleWorkspaceCommit(w http.ResponseWriter, r *http.Reque
 	_ = json.NewEncoder(w).Encode(res)
 }
 
+func (h *RESTHandler) HandlePromoteShadowWorktree(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		WorkspaceID string `json:"workspaceId"`
+		SessionID   string `json:"sessionId"`
+		Message     string `json:"message"`
+		Author      string `json:"author"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	if body.WorkspaceID == "" {
+		body.WorkspaceID = "default"
+	}
+	res, err := h.wsMgr.PromoteShadowWorktree(body.WorkspaceID, body.SessionID, body.Message, body.Author)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (h *RESTHandler) HandleDiscardShadowWorktree(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		WorkspaceID string `json:"workspaceId"`
+		SessionID   string `json:"sessionId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	if body.WorkspaceID == "" {
+		body.WorkspaceID = "default"
+	}
+	if err := h.wsMgr.DiscardShadowWorktree(body.WorkspaceID, body.SessionID); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
+func (h *RESTHandler) HandleSessionTelemetry(w http.ResponseWriter, r *http.Request) {
+	sessID := r.URL.Query().Get("id")
+	if sessID == "" {
+		sessID = r.URL.Query().Get("sessionId")
+	}
+	if sessID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "sessionId required"})
+		return
+	}
+	sess, err := h.rt.store.GetSession(r.Context(), sessID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"sessionId":   sess.ID,
+		"workspaceId": sess.WorkspaceID,
+		"state":       sess.State,
+		"title":       sess.Title,
+		"createdAt":   sess.CreatedAt,
+		"updatedAt":   sess.UpdatedAt,
+	})
+}
+
 func (h *RESTHandler) HandleWorkspaceTree(w http.ResponseWriter, r *http.Request) {
 	wsID := r.URL.Query().Get("id")
 	if wsID == "" {
@@ -1211,6 +1299,9 @@ func NewMuxWithRBAC(rt *RuntimeServer, wsMgr *workspace.Manager, rbacMgr *auth.R
 	mux.HandleFunc("/v2/workspaces/file", rest.AuthMiddleware(rest.HandleWorkspaceFile))
 	mux.HandleFunc("/v2/workspaces/search", rest.AuthMiddleware(rest.HandleWorkspaceSearch))
 	mux.HandleFunc("/v2/workspaces/sync", rest.AuthMiddleware(rest.HandleWorkspaceSync))
+	mux.HandleFunc("/v2/workspaces/shadow/promote", rest.AuthMiddleware(rest.HandlePromoteShadowWorktree))
+	mux.HandleFunc("/v2/workspaces/shadow/discard", rest.AuthMiddleware(rest.HandleDiscardShadowWorktree))
+	mux.HandleFunc("/v2/sessions/telemetry", rest.AuthMiddleware(rest.HandleSessionTelemetry))
 
 	// Session Git shortcuts
 	mux.HandleFunc("/v2/sessions/diff", rest.AuthMiddleware(rest.HandleWorkspaceDiff))

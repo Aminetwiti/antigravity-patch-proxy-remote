@@ -273,5 +273,47 @@ void main() {
       // Icon should change to format_align_left_rounded
       expect(find.byIcon(Icons.format_align_left_rounded), findsOneWidget);
     });
+
+    testWidgets('UnifiedDiffViewer collapses unchanged context lines and allows expanding', (tester) async {
+      final diff = StringBuffer();
+      diff.writeln('--- a/file.txt');
+      diff.writeln('+++ b/file.txt');
+      diff.writeln('@@ -1,20 +1,21 @@');
+      for (int i = 1; i <= 15; i++) {
+        diff.writeln(' context line $i');
+      }
+      diff.writeln('+added line');
+      for (int i = 16; i <= 20; i++) {
+        diff.writeln(' context line $i');
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              child: UnifiedDiffViewer(
+                diffContent: diff.toString(),
+                fileName: 'file.txt',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // 15 lines of context: runLen 15 > 6 -> 3 leading, middle 9 folded, 3 trailing
+      expect(find.text('... 9 lignes inchangées ...'), findsOneWidget);
+      expect(find.text('(déplier)'), findsOneWidget);
+
+      // Tap to unfold
+      await tester.tap(find.text('... 9 lignes inchangées ...'));
+      await tester.pumpAndSettle();
+
+      // Folded banner should disappear as it is now unfolded
+      expect(find.text('... 9 lignes inchangées ...'), findsNothing);
+    });
   });
 }
+

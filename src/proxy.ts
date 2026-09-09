@@ -33,6 +33,7 @@ let server: http.Server | null = null;
 let proxyPort = 0;
 let isRemoteVpsActive = false;
 let remoteVpsHost = '62.169.27.8';
+let remoteSessionsMap: Record<string, boolean> = {};
 
 function getRemoteStatePath(): string {
   const home = os.homedir();
@@ -50,7 +51,10 @@ function loadRemoteState(): void {
       const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
       isRemoteVpsActive = !!data.active;
       if (data.host) remoteVpsHost = String(data.host);
-      log.info(`[Proxy] Loaded Remote VPS state from disk: active=${isRemoteVpsActive}, host=${remoteVpsHost}`);
+      if (data.remoteSessions && typeof data.remoteSessions === 'object') {
+        remoteSessionsMap = data.remoteSessions;
+      }
+      log.info(`[Proxy] Loaded Remote VPS state: active=${isRemoteVpsActive}, host=${remoteVpsHost}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
     }
   } catch (e) {
     log.warn('[Proxy] Failed to load remote VPS state from disk:', e);
@@ -60,7 +64,7 @@ function loadRemoteState(): void {
 function saveRemoteState(): void {
   try {
     const p = getRemoteStatePath();
-    fs.writeFileSync(p, JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost }, null, 2), 'utf-8');
+    fs.writeFileSync(p, JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost, remoteSessions: remoteSessionsMap }, null, 2), 'utf-8');
   } catch (e) {
     log.warn('[Proxy] Failed to save remote VPS state to disk:', e);
   }
@@ -1563,7 +1567,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   if (req.url === '/api/remote/status' || req.url?.startsWith('/api/remote/status?')) {
     if (req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost }));
+      res.end(JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost, remoteSessions: remoteSessionsMap }));
       return;
     }
     if (req.method === 'POST') {
@@ -1571,13 +1575,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {
         try {
-          const b = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as { active?: boolean; host?: string };
-          isRemoteVpsActive = !!b.active;
+          const b = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
+            active?: boolean;
+            host?: string;
+            remoteSessions?: Record<string, boolean>;
+          };
+          if (b.active !== undefined) isRemoteVpsActive = !!b.active;
           if (b.host) remoteVpsHost = String(b.host);
+          if (b.remoteSessions && typeof b.remoteSessions === 'object') {
+            remoteSessionsMap = { ...remoteSessionsMap, ...b.remoteSessions };
+          }
           saveRemoteState();
-          log.info(`[Proxy] Remote VPS session status updated: active=${isRemoteVpsActive}, host=${remoteVpsHost}`);
+          log.info(`[Proxy] Remote VPS session status updated: active=${isRemoteVpsActive}, host=${remoteVpsHost}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          res.end(JSON.stringify({ ok: true, active: isRemoteVpsActive, host: remoteVpsHost }));
+          res.end(JSON.stringify({ ok: true, active: isRemoteVpsActive, host: remoteVpsHost, remoteSessions: remoteSessionsMap }));
         } catch {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -2278,13 +2289,40 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         const reqJson = JSON.parse(bodyStr) as Record<string, unknown>;
         const targetReq = (reqJson.request || reqJson) as Record<string, unknown>;
 
-        if (isRemoteVpsActive) {
-          const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur VPS Ubuntu 24.04 (vmi2743594 - ${remoteVpsHost}), utilisateur ag-agent.\nTon espace de travail exclusif est sur ce serveur Linux distant : /var/lib/antigravity.\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant Ubuntu. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows (comme C:\\Users\\... ou antigravity-add-model-main).\nPour toute demande de rapport ou d'état ("donner rapport"), établis immédiatement le bilan de ce serveur VPS distant (système Ubuntu 24.04 LTS, services et conteneurs Docker en production, répertoire /var/lib/antigravity).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux Ubuntu sur le VPS distant.\n\n`;
+        let convId: string | null = null;
+        if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
+          const si = targetReq.systemInstruction as { parts?: Array<{ text?: string }> };
+          const fullSysText = (si.parts || []).map((p) => p.text || '').join('\n');
+          const match = fullSysText.match(/Conversation ID:\s*([a-f0-9\-]+)/i);
+          if (match) convId = match[1];
+        }
+
+        const isSessionRemote = convId ? !!remoteSessionsMap[convId] : isRemoteVpsActive;
+
+        if (isSessionRemote) {
+          if (convId && isRemoteVpsActive && !remoteSessionsMap[convId]) {
+            remoteSessionsMap[convId] = true;
+            saveRemoteState();
+          }
+
+          const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur VPS Ubuntu 24.04 (vmi2743594 - ${remoteVpsHost}), utilisateur ag-agent.\nTon espace de travail exclusif est sur ce serveur Linux distant : /var/lib/antigravity.\nSystème d'exploitation : Linux (Ubuntu 24.04 LTS)\nInterpréteur de commandes (Shell) : bash\nEspace de travail : /var/lib/antigravity\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant Ubuntu. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows (comme C:\\Users\\... ou antigravity-add-model-main).\nPour toute demande d'environnement ou de rapport ("quelle est votre envirenement"), réponds clairement et précisément que ton environnement d'exécution est le serveur Linux Ubuntu 24.04 LTS distant (hôte: ${remoteVpsHost}, workspace: /var/lib/antigravity, shell: bash).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux Ubuntu sur le VPS distant.\n\n`;
 
           let injected = false;
           if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
             const si = targetReq.systemInstruction as { parts?: Array<{ text?: string }> };
             if (Array.isArray(si.parts) && si.parts.length > 0) {
+              for (const part of si.parts) {
+                if (part.text) {
+                  part.text = part.text
+                    .replace(/The USER's OS version is windows\./gi, "The USER's OS version is linux (Ubuntu 24.04 LTS).")
+                    .replace(/Operating System: windows/gi, "Operating System: linux (Ubuntu 24.04 LTS)")
+                    .replace(/OS version is windows/gi, "OS version is linux (Ubuntu 24.04 LTS)")
+                    .replace(/Shell: powershell\./gi, "Shell: bash.")
+                    .replace(/Shell: powershell/gi, "Shell: bash")
+                    .replace(/powershell/gi, "bash");
+                  part.text = part.text.replace(/c:\\Users\\[^\s\n\->]+/gi, "/var/lib/antigravity");
+                }
+              }
               if (si.parts[0].text && !si.parts[0].text.includes('CONSIGNE SYSTÈME OBLIGATOIRE')) {
                 si.parts[0].text = vpsNotice + si.parts[0].text;
                 injected = true;
@@ -2297,7 +2335,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             };
           }
           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
-          log.info(`[Proxy] Injected strict Remote VPS context into Cloud Code request (host=${remoteVpsHost})`);
+          log.info(`[Proxy] Sanitized & injected strict Remote VPS context into Cloud Code request (convId=${convId || 'draft'}, host=${remoteVpsHost})`);
         }
 
         const candidateNames = [

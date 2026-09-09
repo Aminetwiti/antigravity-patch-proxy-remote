@@ -201,3 +201,139 @@ func TestWorkspaceManager_PullAndPush(t *testing.T) {
 		t.Errorf("expected content 'sync content 123', got %q", string(content))
 	}
 }
+
+func TestWorkspaceManager_CreateShadowWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git executable not found, skipping shadow worktree test")
+	}
+
+	repoDir := setupGitRepo(t)
+	mgr := NewManager()
+
+	ws, err := mgr.RegisterWorkspace("main_repo", "Main Repo", repoDir)
+	if err != nil {
+		t.Fatalf("failed to register workspace: %v", err)
+	}
+
+	sessionID := "sess-abc-123"
+	shadowWs, cleanup, err := mgr.CreateShadowWorktree(ws.ID, sessionID)
+	if err != nil {
+		t.Fatalf("CreateShadowWorktree failed: %v", err)
+	}
+	defer cleanup()
+
+	if !strings.Contains(shadowWs.ID, "shadow_") {
+		t.Errorf("expected shadowWs.ID to contain 'shadow_', got %s", shadowWs.ID)
+	}
+
+	// Verify shadow worktree has README.md
+	content, err := mgr.ReadFile(shadowWs.ID, "README.md")
+	if err != nil {
+		t.Fatalf("failed to read README.md from shadow worktree: %v", err)
+	}
+	if !strings.Contains(string(content), "Test Repo") {
+		t.Errorf("unexpected content in shadow worktree: %s", string(content))
+	}
+
+	// Modify file in shadow worktree
+	if err := mgr.WriteFile(shadowWs.ID, "isolated.txt", []byte("only in shadow")); err != nil {
+		t.Fatalf("failed to write file in shadow worktree: %v", err)
+	}
+
+	// Verify main workspace does NOT have isolated.txt (true isolation)
+	if _, err := mgr.ReadFile(ws.ID, "isolated.txt"); err == nil {
+		t.Errorf("expected isolated.txt to NOT exist in main workspace, but it was found")
+	}
+}
+
+func TestWorkspaceManager_PromoteShadowWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git executable not found, skipping promote shadow worktree test")
+	}
+
+	repoDir := setupGitRepo(t)
+	mgr := NewManager()
+
+	ws, err := mgr.RegisterWorkspace("main_repo", "Main Repo", repoDir)
+	if err != nil {
+		t.Fatalf("failed to register workspace: %v", err)
+	}
+
+	sessionID := "sess-promote-123"
+	shadowWs, _, err := mgr.CreateShadowWorktree(ws.ID, sessionID)
+	if err != nil {
+		t.Fatalf("CreateShadowWorktree failed: %v", err)
+	}
+
+	// In shadow worktree, add a new feature file
+	if err := mgr.WriteFile(shadowWs.ID, "feature.go", []byte("package main\n\nfunc Feature() {}\n")); err != nil {
+		t.Fatalf("failed to write feature.go: %v", err)
+	}
+
+	// Promote shadow worktree back to main workspace
+	res, err := mgr.PromoteShadowWorktree(ws.ID, sessionID, "Add Feature from Agent", "Agent <agent@ai>")
+	if err != nil {
+		t.Fatalf("PromoteShadowWorktree failed: %v", err)
+	}
+
+	if !res.Success {
+		t.Errorf("expected promote to succeed")
+	}
+	if res.CommitHash == "" {
+		t.Errorf("expected valid commit hash")
+	}
+
+	// Verify feature.go is now present in main workspace
+	mainContent, err := mgr.ReadFile(ws.ID, "feature.go")
+	if err != nil {
+		t.Fatalf("expected feature.go to exist in main workspace: %v", err)
+	}
+	if !strings.Contains(string(mainContent), "func Feature()") {
+		t.Errorf("unexpected content in main workspace feature.go: %s", string(mainContent))
+	}
+
+	// Verify shadow worktree is unregistered and cleaned up
+	if _, err := mgr.GetWorkspace(shadowWs.ID); err == nil {
+		t.Errorf("expected shadow workspace to be unregistered")
+	}
+}
+
+func TestWorkspaceManager_DiscardShadowWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git executable not found, skipping discard shadow worktree test")
+	}
+
+	repoDir := setupGitRepo(t)
+	mgr := NewManager()
+
+	ws, err := mgr.RegisterWorkspace("main_repo", "Main Repo", repoDir)
+	if err != nil {
+		t.Fatalf("failed to register workspace: %v", err)
+	}
+
+	sessionID := "sess-discard-456"
+	shadowWs, _, err := mgr.CreateShadowWorktree(ws.ID, sessionID)
+	if err != nil {
+		t.Fatalf("CreateShadowWorktree failed: %v", err)
+	}
+
+	// In shadow worktree, write unwanted file
+	if err := mgr.WriteFile(shadowWs.ID, "unwanted.tmp", []byte("trash")); err != nil {
+		t.Fatalf("failed to write unwanted file: %v", err)
+	}
+
+	// Discard shadow worktree
+	if err := mgr.DiscardShadowWorktree(ws.ID, sessionID); err != nil {
+		t.Fatalf("DiscardShadowWorktree failed: %v", err)
+	}
+
+	// Verify main workspace does NOT have unwanted.tmp
+	if _, err := mgr.ReadFile(ws.ID, "unwanted.tmp"); err == nil {
+		t.Errorf("unwanted.tmp should not exist in main workspace")
+	}
+
+	// Verify shadow workspace is gone
+	if _, err := mgr.GetWorkspace(shadowWs.ID); err == nil {
+		t.Errorf("expected shadow workspace to be unregistered")
+	}
+}

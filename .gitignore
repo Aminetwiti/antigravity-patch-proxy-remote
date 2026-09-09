@@ -45,6 +45,10 @@ _archive/
 ag-doctor-ui/dist/
 ag-doctor-ui/release/
 tool/
+/daemon.exe
+/app.asar.new
+/preload.js
+/temp_asar/
 
 # Temporary text outputs from scripts
 scripts/freebuff/extraction-output.txt

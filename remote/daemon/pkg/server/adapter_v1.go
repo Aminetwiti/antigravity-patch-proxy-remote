@@ -571,6 +571,89 @@ func (a *V1Adapter) handleAction(conn *websocket.Conn, msg V1IncomingMessage) {
 			Data:      res,
 		})
 
+	case "promote_shadow_worktree", "merge_shadow_worktree":
+		wsID := "default-workspace"
+		if msg.WorkspacePath != "" {
+			wsID = msg.WorkspacePath
+		}
+		if p, ok := msg.Data["workspaceId"].(string); ok && p != "" {
+			wsID = p
+		}
+		sessID := msg.CascadeID
+		if s, ok := msg.Data["sessionId"].(string); ok && s != "" {
+			sessID = s
+		}
+		commitMsg, _ := msg.Data["message"].(string)
+		author, _ := msg.Data["author"].(string)
+		res, err := a.wsManager.PromoteShadowWorktree(wsID, sessID, commitMsg, author)
+		if err != nil {
+			a.writeJSON(conn, V1OutgoingMessage{
+				Type:      "error",
+				RequestID: msg.RequestID,
+				Error:     err.Error(),
+			})
+			return
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data:      res,
+		})
+
+	case "discard_shadow_worktree":
+		wsID := "default-workspace"
+		if msg.WorkspacePath != "" {
+			wsID = msg.WorkspacePath
+		}
+		if p, ok := msg.Data["workspaceId"].(string); ok && p != "" {
+			wsID = p
+		}
+		sessID := msg.CascadeID
+		if s, ok := msg.Data["sessionId"].(string); ok && s != "" {
+			sessID = s
+		}
+		if err := a.wsManager.DiscardShadowWorktree(wsID, sessID); err != nil {
+			a.writeJSON(conn, V1OutgoingMessage{
+				Type:      "error",
+				RequestID: msg.RequestID,
+				Error:     err.Error(),
+			})
+			return
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data:      map[string]interface{}{"success": true},
+		})
+
+	case "get_session_telemetry", "system.get_session_telemetry":
+		sessID := msg.CascadeID
+		if s, ok := msg.Data["sessionId"].(string); ok && s != "" {
+			sessID = s
+		}
+		if a.agentEngine != nil && sessID != "" {
+			telem, err := a.agentEngine.GetSessionTelemetry(ctx, sessID)
+			if err != nil {
+				a.writeJSON(conn, V1OutgoingMessage{
+					Type:      "error",
+					RequestID: msg.RequestID,
+					Error:     err.Error(),
+				})
+				return
+			}
+			a.writeJSON(conn, V1OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Data:      telem,
+			})
+			return
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data:      map[string]interface{}{"status": "unavailable"},
+		})
+
 	default:
 		a.writeJSON(conn, V1OutgoingMessage{
 			Type:      "response",

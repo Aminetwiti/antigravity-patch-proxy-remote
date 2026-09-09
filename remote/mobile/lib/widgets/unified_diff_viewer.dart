@@ -64,6 +64,8 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
   final List<_DiffHunk> _hunks = [];
   final Map<int, String> _annotations = {}; // lineIndex -> comment
   bool _wrapLines = true;
+  bool _foldUnchangedContext = true;
+  final Set<int> _unfoldedBlocks = {};
   bool _hasRealDiff = true;
   bool _showSideBySideImage = true;
 
@@ -121,6 +123,7 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
     int dels = 0;
     final List<_DiffLine> parsed = [];
     _hunks.clear();
+    _unfoldedBlocks.clear();
 
     int oldLineNum = 0;
     int newLineNum = 0;
@@ -196,6 +199,19 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
           hunkIndex: hunkIdx,
         ));
       }
+    }
+
+    // Calcule les hashes déterministes de chaque hunk (formule Antigravity)
+    final contextName = _activeFileName ?? widget.fileName ?? _activeFilePath ?? widget.filePath ?? '';
+    for (final hunk in _hunks) {
+      final insertions = <String>[];
+      final deletions = <String>[];
+      for (final idx in hunk.lineIndices) {
+        final l = parsed[idx];
+        if (l.type == _DiffLineType.addition) insertions.add(l.content);
+        if (l.type == _DiffLineType.deletion) deletions.add(l.content);
+      }
+      hunk.hunkHash = _DiffHunk.computeHunkHash(insertions, deletions, contextName);
     }
 
     setState(() {
@@ -541,6 +557,25 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                     constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   ),
 
+                  // Toggle folding of unchanged context
+                  IconButton(
+                    icon: Icon(
+                      _foldUnchangedContext ? Icons.unfold_less_rounded : Icons.unfold_more_rounded,
+                      size: 18,
+                      color: _foldUnchangedContext ? scheme.primary : scheme.onSurfaceVariant,
+                    ),
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _foldUnchangedContext = !_foldUnchangedContext;
+                        _unfoldedBlocks.clear();
+                      });
+                    },
+                    tooltip: _foldUnchangedContext ? 'Déplier tout le contexte' : 'Replier le contexte inchangé',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  ),
+
                   // Toggle image side-by-side mode
                   if (_isImageOrSvg)
                     IconButton(
@@ -645,28 +680,38 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                   ? _buildImageSideBySideView(context, isDark, scheme)
                   : (!_hasRealDiff || _lines.isEmpty)
                       ? _buildEmptyState(context, isDark, scheme)
-                      : _wrapLines
-                          ? ListView.builder(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              itemCount: _lines.length,
-                              itemBuilder: (context, index) => _buildDiffItem(index, scheme),
-                            )
-                          : LayoutBuilder(
-                              builder: (context, constraints) {
-                                return SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: SizedBox(
-                                    width: 800,
-                                    height: constraints.maxHeight,
-                                    child: ListView.builder(
-                                      padding: const EdgeInsets.symmetric(vertical: 4),
-                                      itemCount: _lines.length,
-                                      itemBuilder: (context, index) => _buildDiffItem(index, scheme),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final displayItems = _getDisplayItems();
+                            Widget buildList() {
+                              return ListView.builder(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                itemCount: displayItems.length,
+                                itemBuilder: (context, index) {
+                                  final item = displayItems[index];
+                                  if (item is _DiffFoldedContextDisplayItem) {
+                                    return _buildFoldedContextBanner(item, scheme);
+                                  } else if (item is _DiffLineDisplayItem) {
+                                    return _buildDiffItem(item.lineIndex, scheme);
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              );
+                            }
+
+                            if (_wrapLines) {
+                              return buildList();
+                            }
+                            return SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SizedBox(
+                                width: 800,
+                                height: constraints.maxHeight,
+                                child: buildList(),
+                              ),
+                            );
+                          },
+                        ),
             ),
 
             // Bottom Hunks selection bar
@@ -803,6 +848,131 @@ class _UnifiedDiffViewerState extends State<UnifiedDiffViewer> {
                 height: 1.4,
               ),
               textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<_DiffDisplayItem> _getDisplayItems() {
+    if (!_foldUnchangedContext || _lines.isEmpty) {
+      return List.generate(_lines.length, (i) => _DiffLineDisplayItem(i));
+    }
+
+    final items = <_DiffDisplayItem>[];
+    int blockId = 0;
+    int i = 0;
+
+    while (i < _lines.length) {
+      if (_lines[i].type != _DiffLineType.context) {
+        items.add(_DiffLineDisplayItem(i));
+        i++;
+        continue;
+      }
+
+      final startRun = i;
+      while (i < _lines.length && _lines[i].type == _DiffLineType.context) {
+        i++;
+      }
+      final endRun = i;
+      final runLen = endRun - startRun;
+
+      if (runLen > 6) {
+        final currentBlockId = blockId++;
+        if (_unfoldedBlocks.contains(currentBlockId)) {
+          for (int k = startRun; k < endRun; k++) {
+            items.add(_DiffLineDisplayItem(k));
+          }
+        } else {
+          for (int k = startRun; k < startRun + 3; k++) {
+            items.add(_DiffLineDisplayItem(k));
+          }
+
+          final foldStart = startRun + 3;
+          final foldEnd = endRun - 4;
+          final hidden = foldEnd - foldStart + 1;
+
+          bool hasAnnotation = false;
+          for (int k = foldStart; k <= foldEnd; k++) {
+            if (_annotations.containsKey(k)) {
+              hasAnnotation = true;
+              break;
+            }
+          }
+
+          if (hasAnnotation) {
+            for (int k = foldStart; k <= foldEnd; k++) {
+              items.add(_DiffLineDisplayItem(k));
+            }
+          } else {
+            items.add(_DiffFoldedContextDisplayItem(
+              blockId: currentBlockId,
+              startIndex: foldStart,
+              endIndex: foldEnd,
+              hiddenCount: hidden,
+            ));
+          }
+
+          for (int k = endRun - 3; k < endRun; k++) {
+            items.add(_DiffLineDisplayItem(k));
+          }
+        }
+      } else {
+        for (int k = startRun; k < endRun; k++) {
+          items.add(_DiffLineDisplayItem(k));
+        }
+      }
+    }
+
+    return items;
+  }
+
+  Widget _buildFoldedContextBanner(_DiffFoldedContextDisplayItem item, ColorScheme scheme) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return InkWell(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        setState(() {
+          _unfoldedBlocks.add(item.blockId);
+        });
+      },
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceInput : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isDark ? AppColors.borderSubtle : scheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.unfold_more_rounded,
+              size: 14,
+              color: isDark ? AppColors.inkSecondary : scheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '... ${item.hiddenCount} lignes inchangées ...',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'monospace',
+                color: isDark ? AppColors.inkSecondary : scheme.primary,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '(déplier)',
+              style: TextStyle(
+                fontSize: 10.5,
+                color: isDark ? AppColors.inkTertiary : scheme.outline,
+              ),
             ),
           ],
         ),
@@ -1252,6 +1422,7 @@ class _DiffHunk {
   final int index;
   final String header;
   final List<int> lineIndices;
+  String hunkHash = '';
   bool isSelected;
 
   _DiffHunk({
@@ -1260,6 +1431,18 @@ class _DiffHunk {
     required this.lineIndices,
     this.isSelected = true,
   });
+
+  /// Calcule un hash déterministe et insensible au numéro de ligne.
+  /// Port direct de la formule Google Antigravity hunk_storage.ts.
+  static String computeHunkHash(List<String> insertions, List<String> deletions, String context) {
+    final content = '${insertions.join("\n")}|||${deletions.join("\n")}|||$context';
+    var hash = 0xcbf29ce484222325;
+    for (final unit in content.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+    }
+    return hash.toRadixString(16).padLeft(16, '0');
+  }
 }
 
 enum _DiffLineType { hunkHeader, addition, deletion, context, meta }
@@ -1279,3 +1462,25 @@ class _DiffLine {
     this.hunkIndex,
   });
 }
+
+abstract class _DiffDisplayItem {}
+
+class _DiffLineDisplayItem extends _DiffDisplayItem {
+  final int lineIndex;
+  _DiffLineDisplayItem(this.lineIndex);
+}
+
+class _DiffFoldedContextDisplayItem extends _DiffDisplayItem {
+  final int blockId;
+  final int startIndex;
+  final int endIndex;
+  final int hiddenCount;
+
+  _DiffFoldedContextDisplayItem({
+    required this.blockId,
+    required this.startIndex,
+    required this.endIndex,
+    required this.hiddenCount,
+  });
+}
+

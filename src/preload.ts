@@ -323,7 +323,7 @@ try {
 try {
   webFrame.executeJavaScript(`
     (function() {
-      const DEFAULT_HOST = "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com";
+      const DEFAULT_HOST = "62.169.27.8";
       const DEFAULT_TOKEN = "4d8b9f1a2c3e5a7b0e2f4a6c8d1e3b5a7c9e1f3a5b7d9f1a3c5e7b9d1f3a5b7d";
 
       // Remove any legacy admin console container if present
@@ -476,12 +476,27 @@ try {
           pill = null;
         }
         if (active) {
-          const parent = document.getElementById("antigravity.agentSidePanelInputBox") || document.querySelector('.bg-card-border');
+          const cfg = getRemoteConfig();
+          try {
+            fetch("http://127.0.0.1:51074/api/remote/status", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ active: true, host: cfg.host })
+            }).catch(() => {});
+          } catch (_) {}
+
+          const parent = document.getElementById("antigravity.agentSidePanelInputBox")
+            || document.querySelector('.bg-card-border')
+            || document.querySelector('[class*="inputBox"]')
+            || document.querySelector('[class*="input-box"]')
+            || document.querySelector('form')
+            || (document.querySelector('[contenteditable="true"], textarea') ? document.querySelector('[contenteditable="true"], textarea').parentElement : null);
+
           if (!pill) {
             pill = document.createElement("div");
             pill.id = "__ag_remote_chat_pill";
             pill.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:3px 10px;margin:4px 8px;background:rgba(37,99,235,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:12px;font-size:11px;color:#93c5fd;font-family:-apple-system,BlinkMacSystemFont,sans-serif;";
-            pill.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span><span style="font-weight:500;">Runtime Agent Remote (VPS)</span><span style="opacity:0.6;font-size:10px;">62.169.27.8</span><button id="__ag_remote_pill_console" style="background:rgba(37,99,235,0.25);border:1px solid rgba(59,130,246,0.4);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 7px;margin-left:4px;font-weight:500;" title="Ouvrir la Console Agent Cloud Autonome">⚡ Console Cloud</button><button id="__ag_remote_pill_term" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 5px;margin-left:2px;" title="Ouvrir Terminal VPS">>_ Terminal</button><button id="__ag_remote_pill_cfg" style="background:none;border:none;color:#93c5fd;cursor:pointer;font-size:12px;padding:0 2px;margin-left:2px;" title="Configurer">⚙️</button>';
+            pill.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span><span style="font-weight:500;">Runtime Agent Remote (VPS)</span><span style="opacity:0.6;font-size:10px;">' + cfg.host + '</span><button id="__ag_remote_pill_console" style="background:rgba(37,99,235,0.25);border:1px solid rgba(59,130,246,0.4);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 7px;margin-left:4px;font-weight:500;" title="Ouvrir la Console Agent Cloud Autonome">⚡ Console Cloud</button><button id="__ag_remote_pill_term" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 5px;margin-left:2px;" title="Ouvrir Terminal VPS">>_ Terminal</button><button id="__ag_remote_pill_cfg" style="background:none;border:none;color:#93c5fd;cursor:pointer;font-size:12px;padding:0 2px;margin-left:2px;" title="Configurer">⚙️</button>';
             if (parent && parent.parentNode) {
               parent.parentNode.insertBefore(pill, parent);
             } else {
@@ -513,6 +528,13 @@ try {
           }
           pill.style.display = "inline-flex";
         } else {
+          try {
+            fetch("http://127.0.0.1:51074/api/remote/status", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ active: false })
+            }).catch(() => {});
+          } catch (_) {}
           if (pill) pill.style.display = "none";
         }
       }
@@ -526,17 +548,24 @@ try {
         }
 
         const isRemote = isCurrentSessionRemote();
-        const buttons = document.querySelectorAll('button[aria-label="Select Environment"]');
+        const buttons = Array.from(document.querySelectorAll('button')).filter(btn => {
+          const aria = btn.getAttribute('aria-label') || '';
+          if (aria === "Select Environment" || aria.startsWith("Environment:")) return true;
+          const txt = (btn.innerText || btn.textContent || '').trim();
+          return txt === 'Local' || txt === 'Remote (VPS)' || (txt.startsWith('Local') && !!btn.querySelector('svg, [class*="arrow"], [name*="arrow"]'));
+        });
         buttons.forEach(btn => {
-          const labelSpan = btn.querySelector('span.truncate, span.select-none');
+          const labelSpan = btn.querySelector('span.truncate, span.select-none') || btn.querySelector('span');
           const iconEl = btn.querySelector('[class*="shrink-0"], span:first-child');
           if (isRemote) {
+            btn.setAttribute('aria-label', 'Environment: Remote (VPS)');
             if (labelSpan && labelSpan.textContent !== "Remote (VPS)") labelSpan.textContent = "Remote (VPS)";
             if (iconEl && iconEl.getAttribute("name") !== "cloud") {
               iconEl.textContent = "cloud";
               iconEl.setAttribute("name", "cloud");
             }
           } else {
+            btn.setAttribute('aria-label', 'Environment: Local');
             if (labelSpan && labelSpan.textContent === "Remote (VPS)") {
               labelSpan.textContent = "Local";
             }
@@ -1038,34 +1067,45 @@ try {
 
         React.createElement = function(type, props, ...children) {
           // 1. Intercept Select Environment trigger button to show "Remote (VPS)"
-          if (props && props["aria-label"] === "Select Environment") {
+          const aria = props ? (props["aria-label"] || '') : '';
+          if (aria === "Select Environment" || aria.startsWith("Environment:")) {
             if (isCurrentSessionRemote()) {
               const mappedChildren = children.map(c => {
                 if (c && typeof c === 'object') {
                   if (c.props && c.props.className && c.props.className.includes("truncate")) {
                     return origCreateElement("span", c.props, "Remote (VPS)");
                   }
-                  if (c.props && (c.props.name === "computer" || c.props.name === "call_split")) {
+                  if (c.props && (c.props.name === "computer" || c.props.name === "call_split" || c.props.name === "fork_right")) {
                     return origCreateElement(c.type, Object.assign({}, c.props, { name: "cloud" }));
                   }
                 }
                 return c;
               });
-              return origCreateElement.apply(this, [type, props, ...mappedChildren]);
+              const newProps = Object.assign({}, props, { "aria-label": "Environment: Remote (VPS)" });
+              return origCreateElement.apply(this, [type, newProps, ...mappedChildren]);
             }
           }
 
-          // 2. Intercept New Worktree to append selectable "Remote" item
-          if (props && (props.title === "New Worktree" || props.title === "New Workspace")) {
+          // 2. Intercept Worktree item to append selectable "Remote" item
+          const isWorktree = props && !props.__ag_remote && (
+            props.title === "New Worktree" ||
+            props.title === "New Workspace" ||
+            props.title === "Worktree" ||
+            (typeof props.children === "string" && (props.children.includes("Worktree") || props.children.includes("Workspace"))) ||
+            (typeof props.subtitle === "string" && (props.subtitle.toLowerCase().includes("worktree") || props.subtitle.toLowerCase().includes("workspace")))
+          );
+          if (isWorktree) {
             const origEl = origCreateElement.apply(this, [type, props, ...children]);
             const iconComp = (props.icon && props.icon.type) ? props.icon.type : "span";
             const cloudIcon = origCreateElement(iconComp, { name: "cloud", size: 14, className: "mt-0.5" });
 
             const isRemoteSelected = isCurrentSessionRemote();
             const remoteProps = Object.assign({}, props, {
+              __ag_remote: true,
               title: "Remote",
               icon: cloudIcon,
               subtitle: "Remote Agent Runtime (VPS — 62.169.27.8)",
+              children: typeof props.children === "string" ? "Remote (VPS)" : undefined,
               selected: isRemoteSelected,
               disabled: false,
               onClick: function(e) {
@@ -1099,7 +1139,7 @@ try {
           }
 
           // 3. Intercept Local item to handle switching back
-          if (props && props.title === "Local") {
+          if (props && (props.title === "Local" || (typeof props.children === "string" && props.children.includes("Local")))) {
             const origLocalClick = props.onClick;
             props.onClick = function(e) {
               const cid = getActiveSessionId();
@@ -1143,23 +1183,25 @@ try {
         }
         const observer = new MutationObserver(() => {
           updateTriggerButton();
-          const items = document.querySelectorAll('button, div[role="menuitem"], div[role="option"]');
+          const items = document.querySelectorAll('.group\\/popover-item, [class*="popover-item"], button, div[role="menuitem"], div[role="option"]');
           for (const item of items) {
-            if (item.textContent && item.textContent.includes("New Worktree") && item.parentElement && !item.parentElement.querySelector('[data-ag-remote]')) {
-              const clone = item.cloneNode(true);
+            if (item.querySelector('.group\\/popover-item, [class*="popover-item"]')) continue;
+            const text = (item.textContent || '').trim();
+            if ((text.includes("Worktree") || text.includes("New Worktree")) && !text.includes("Remote") && item.parentElement && !item.parentElement.querySelector('[data-ag-remote]')) {
+              const clone = item.cloneNode(true) as HTMLElement;
               clone.setAttribute('data-ag-remote', 'true');
               const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
               let node;
-              while (node = walker.nextNode()) {
-                if (node.textContent.includes("New Worktree")) {
-                  node.textContent = "Remote";
-                } else if (node.textContent.includes("Worktree from") || node.textContent.includes("reuse")) {
-                  node.textContent = "Remote Agent Runtime (VPS — 62.169.27.8)";
+              while ((node = walker.nextNode())) {
+                if (node.textContent && (node.textContent.includes("New Worktree") || node.textContent.includes("Worktree"))) {
+                  node.textContent = "Remote (VPS)";
+                } else if (node.textContent && (node.textContent.includes("worktree") || node.textContent.includes("reuse") || node.textContent.includes("workspace") || node.textContent.includes("Run in a new worktree"))) {
+                  node.textContent = "62.169.27.8 — Ubuntu 24.04 (24/7 Autonome)";
                 }
               }
-              const icons = clone.querySelectorAll('[class*="call_split"], span');
+              const icons = clone.querySelectorAll('[class*="call_split"], [class*="fork"], span, svg');
               for (const ic of icons) {
-                if (ic.textContent === "call_split" || ic.getAttribute('name') === "call_split") {
+                if (ic.textContent === "call_split" || ic.textContent === "fork_right" || ic.getAttribute('name') === "call_split" || ic.getAttribute('name') === "fork_right") {
                   ic.textContent = "cloud";
                   ic.setAttribute('name', 'cloud');
                 }
@@ -1207,9 +1249,9 @@ try {
       };
 
       document.addEventListener('click', (e) => {
-        const target = e.target;
+        const target = e.target as HTMLElement;
         if (!target) return;
-        const item = (target.closest && (target.closest('button') || target.closest('[role="menuitem"]') || target.closest('[role="option"]'))) || target;
+        const item = (target.closest && (target.closest('.group\\/popover-item') || target.closest('[class*="popover-item"]') || target.closest('button') || target.closest('[role="menuitem"]') || target.closest('[role="option"]'))) || target;
         const text = item.textContent || '';
         if (text.includes("Local") && !text.includes("Remote")) {
           const cid = getActiveSessionId();

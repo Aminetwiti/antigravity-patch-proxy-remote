@@ -38,6 +38,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/connectrpc"
 	"github.com/antigravity/remote-daemon/pkg/discovery"
 	"github.com/antigravity/remote-daemon/pkg/ide"
+	"github.com/antigravity/remote-daemon/pkg/workspace"
 	"github.com/gorilla/websocket"
 )
 
@@ -689,8 +690,6 @@ func (s *Server) sessionsFromSummariesOptsLocked(jetbox map[string]connectrpc.Je
 		return tI.After(tJ)
 	})
 
-
-
 	openIDs := make(map[string]bool)
 	for cid := range jetbox {
 		openIDs[cid] = true
@@ -837,8 +836,6 @@ func filterIdeSessionsWithRule(items []map[string]interface{}, openIDs map[strin
 
 	return result
 }
-
-
 
 // sessionsFromSummaries applique le filtre Antigravity 2.0 et enrichit les statuts dynamiques.
 func (s *Server) sessionsFromSummaries(jetbox map[string]connectrpc.JetboxSummary) map[string]interface{} {
@@ -3081,7 +3078,6 @@ func (s *Server) markSessionApproval(cascadeID, approvalType string, scopeArgs .
 }
 
 // OutgoingMessage : voir types.go
-
 
 // toWorkspaceURI normalise un chemin Windows en URI file:///
 func toWorkspaceURI(path string) string {
@@ -6943,7 +6939,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			return
 		}
 
-	case "get_quota_summary", "system.get_quota_summary":
+	case "get_quota_summary", "system.get_quota_summary", "get_session_telemetry", "system.get_session_telemetry":
 		raw, err = s.RPCClient.RetrieveUserQuotaSummary()
 		if err == nil {
 			if data, ok := s.buildQuotaData(raw); ok {
@@ -7181,6 +7177,73 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: toOutgoing(raw)})
 			return
 		}
+
+	case "promote_shadow_worktree", "workspace.promote_shadow_worktree", "merge_shadow_worktree":
+		targetWs := msg.WorkspacePath
+		if targetWs == "" && msg.Data != nil {
+			targetWs, _ = msg.Data["workspacePath"].(string)
+		}
+		if targetWs == "" && msg.CascadeID != "" {
+			targetWs = extractWorkspace(findBrainDir(msg.CascadeID), msg.CascadeID)
+		}
+		if targetWs == "" {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "workspacePath requis"})
+			return
+		}
+		sessionID := msg.CascadeID
+		if sessionID == "" && msg.Data != nil {
+			sessionID, _ = msg.Data["sessionId"].(string)
+		}
+		if sessionID == "" {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId ou sessionId requis"})
+			return
+		}
+		commitMsg := msg.Message
+		if commitMsg == "" && msg.Data != nil {
+			commitMsg, _ = msg.Data["message"].(string)
+		}
+		author := ""
+		if msg.Data != nil {
+			author, _ = msg.Data["author"].(string)
+		}
+
+		wm := workspace.NewManager()
+		res, errPromote := wm.PromoteShadowWorktree(targetWs, sessionID, commitMsg, author)
+		if errPromote != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: errPromote.Error()})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: res})
+		return
+
+	case "discard_shadow_worktree", "workspace.discard_shadow_worktree":
+		targetWs := msg.WorkspacePath
+		if targetWs == "" && msg.Data != nil {
+			targetWs, _ = msg.Data["workspacePath"].(string)
+		}
+		if targetWs == "" && msg.CascadeID != "" {
+			targetWs = extractWorkspace(findBrainDir(msg.CascadeID), msg.CascadeID)
+		}
+		if targetWs == "" {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "workspacePath requis"})
+			return
+		}
+		sessionID := msg.CascadeID
+		if sessionID == "" && msg.Data != nil {
+			sessionID, _ = msg.Data["sessionId"].(string)
+		}
+		if sessionID == "" {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId ou sessionId requis"})
+			return
+		}
+
+		wm := workspace.NewManager()
+		if errDiscard := wm.DiscardShadowWorktree(targetWs, sessionID); errDiscard != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: errDiscard.Error()})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"success": true}})
+		return
 
 	case "get_lint_errors", "lsp.get_lint_errors":
 		if msg.FilePath == "" {
@@ -7696,7 +7759,6 @@ func isIgnoredDir(name string) bool {
 // ---------------------------------------------------------------------------
 // Terminal PTY : voir pty_terminal.go
 // ---------------------------------------------------------------------------
-
 
 // allowedExecBinaries est la liste blanche des binaires autorisés à l'exécution directe depuis le mobile.
 var allowedExecBinaries = map[string]bool{
@@ -8640,5 +8702,3 @@ func notifyDesktopAction(approvalType, command, decision string) {
 func escapePowerShell(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
-
-

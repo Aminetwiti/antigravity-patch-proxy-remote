@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/antigravity/remote-daemon/pkg/approval"
 	"github.com/antigravity/remote-daemon/pkg/domain"
@@ -18,6 +19,21 @@ var (
 	ErrSessionBusy = errors.New("agent turn is already running for this session")
 )
 
+// SessionTelemetry encapsulates real-time execution HUD metrics for the session.
+type SessionTelemetry struct {
+	SessionID        string    `json:"sessionId"`
+	WorkspaceID      string    `json:"workspaceId"`
+	State            string    `json:"state"`
+	PromptTokens     int       `json:"promptTokens"`
+	CompletionTokens int       `json:"completionTokens"`
+	TotalTokens      int       `json:"totalTokens"`
+	TokenBudget      int       `json:"tokenBudget"`
+	BudgetPercent    float64   `json:"budgetPercent"`
+	ActiveSubagents  int       `json:"activeSubagents"`
+	TurnsCompleted   int       `json:"turnsCompleted"`
+	LastUpdated      time.Time `json:"lastUpdated"`
+}
+
 type Engine struct {
 	sessionSvc *session.Service
 	wsMgr      *workspace.Manager
@@ -26,10 +42,12 @@ type Engine struct {
 	llmClient  LLMClient
 	maxTurns   int
 
-	mu            sync.Mutex
-	turnCancels   map[string]context.CancelFunc // sessionID -> cancel
-	sessionTokens map[string]*UsageInfo         // sessionID -> cumulative Usage
-	maxBudgets    map[string]int                // sessionID -> max token ceiling
+	mu              sync.Mutex
+	turnCancels     map[string]context.CancelFunc // sessionID -> cancel
+	sessionTokens   map[string]*UsageInfo         // sessionID -> cumulative Usage
+	maxBudgets      map[string]int                // sessionID -> max token ceiling
+	activeSubagents map[string]int                // sessionID -> active children
+	sessionTurns    map[string]int                // sessionID -> turns completed
 }
 
 func NewEngine(
@@ -40,20 +58,58 @@ func NewEngine(
 	llmClient LLMClient,
 ) *Engine {
 	eng := &Engine{
-		sessionSvc:    sessionSvc,
-		wsMgr:         wsMgr,
-		toolsReg:      toolsReg,
-		apprMgr:       apprMgr,
-		llmClient:     llmClient,
-		maxTurns:      25,
-		turnCancels:   make(map[string]context.CancelFunc),
-		sessionTokens: make(map[string]*UsageInfo),
-		maxBudgets:    make(map[string]int),
+		sessionSvc:      sessionSvc,
+		wsMgr:           wsMgr,
+		toolsReg:        toolsReg,
+		apprMgr:         apprMgr,
+		llmClient:       llmClient,
+		maxTurns:        25,
+		turnCancels:     make(map[string]context.CancelFunc),
+		sessionTokens:   make(map[string]*UsageInfo),
+		maxBudgets:      make(map[string]int),
+		activeSubagents: make(map[string]int),
+		sessionTurns:    make(map[string]int),
 	}
 	if toolsReg != nil {
 		toolsReg.SetSubagentRunner(eng)
 	}
 	return eng
+}
+
+func (e *Engine) GetSessionTelemetry(ctx context.Context, sessionID string) (*SessionTelemetry, error) {
+	sess, err := e.sessionSvc.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	usage := UsageInfo{}
+	if u, ok := e.sessionTokens[sessionID]; ok {
+		usage = *u
+	}
+	budget := e.maxBudgets[sessionID]
+	var budgetPercent float64
+	if budget > 0 {
+		budgetPercent = float64(usage.TotalTokens) / float64(budget) * 100.0
+	}
+	activeSubs := e.activeSubagents[sessionID]
+	turns := e.sessionTurns[sessionID]
+
+	return &SessionTelemetry{
+		SessionID:        sessionID,
+		WorkspaceID:      sess.WorkspaceID,
+		State:            string(sess.State),
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+		TokenBudget:      budget,
+		BudgetPercent:    budgetPercent,
+		ActiveSubagents:  activeSubs,
+		TurnsCompleted:   turns,
+		LastUpdated:      time.Now(),
+	}, nil
 }
 
 func (e *Engine) GetSessionUsage(sessionID string) UsageInfo {
@@ -138,6 +194,10 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 	availableTools := e.toolsReg.ListTools()
 
 	for turn := 0; turn < e.maxTurns; turn++ {
+		e.mu.Lock()
+		e.sessionTurns[sessionID] = turn + 1
+		e.mu.Unlock()
+
 		if ctx.Err() != nil {
 			_ = e.sessionSvc.TransitionState(context.Background(), sessionID, domain.SessionStateCancelled, "Execution loop cancelled")
 			return
@@ -177,6 +237,11 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 				"sessionTotal": totalNow,
 			})
 			_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "agent.token_usage", usagePayload)
+
+			if telem, telemErr := e.GetSessionTelemetry(ctx, sessionID); telemErr == nil {
+				telemData, _ := json.Marshal(telem)
+				e.sessionSvc.EmitEphemeralEvent(sessionID, "session.telemetry", telemData)
+			}
 
 			if maxB > 0 && totalNow.TotalTokens >= maxB {
 				_ = e.sessionSvc.TransitionState(ctx, sessionID, domain.SessionStatePaused, fmt.Sprintf("Token budget ceiling reached (%d >= %d)", totalNow.TotalTokens, maxB))
@@ -380,6 +445,17 @@ func (e *Engine) RunSubagent(ctx context.Context, parentSessionID, role, task, w
 		return "", fmt.Errorf("parent session not found: %w", err)
 	}
 
+	e.mu.Lock()
+	e.activeSubagents[parentSessionID]++
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		if e.activeSubagents[parentSessionID] > 0 {
+			e.activeSubagents[parentSessionID]--
+		}
+		e.mu.Unlock()
+	}()
+
 	title := fmt.Sprintf("[%s] %s", role, task)
 	if len(title) > 60 {
 		title = title[:60] + "..."
@@ -390,12 +466,25 @@ func (e *Engine) RunSubagent(ctx context.Context, parentSessionID, role, task, w
 		return "", fmt.Errorf("failed to create subagent session: %w", err)
 	}
 
+	// Isolate subagent in an ephemeral shadow worktree if Git workspace manager is available
+	effectiveWsID := workspaceID
+	var shadowCleanup func()
+	if e.wsMgr != nil {
+		if shadowWs, cleanup, errWs := e.wsMgr.CreateShadowWorktree(workspaceID, childSess.ID); errWs == nil && shadowWs != nil {
+			effectiveWsID = shadowWs.ID
+			shadowCleanup = cleanup
+		}
+	}
+	if shadowCleanup != nil {
+		defer shadowCleanup()
+	}
+
 	startPayload, _ := json.Marshal(map[string]interface{}{
 		"parentSessionId":   parentSessionID,
 		"subagentSessionId": childSess.ID,
 		"role":              role,
 		"task":              task,
-		"workspaceId":       workspaceID,
+		"workspaceId":       effectiveWsID,
 	})
 	_, _ = e.sessionSvc.EmitEvent(ctx, parentSessionID, domain.EventSubagentStarted, startPayload)
 
@@ -464,11 +553,16 @@ func (e *Engine) RunSubagent(ctx context.Context, parentSessionID, role, task, w
 				"result":            finalSummary,
 			})
 			_, _ = e.sessionSvc.EmitEvent(ctx, parentSessionID, domain.EventSubagentCompleted, completePayload)
+
+			// Promote shadow worktree changes if isolated shadow was used
+			if e.wsMgr != nil && effectiveWsID != workspaceID {
+				_, _ = e.wsMgr.PromoteShadowWorktree(workspaceID, childSess.ID, fmt.Sprintf("Subagent [%s]: %s", role, task), role)
+			}
 			break
 		}
 
 		for _, tc := range resp.ToolCalls {
-			result, execErr := e.toolsReg.Execute(ctx, childSess.ID, workspaceID, tc.Name, tc.Arguments, onChunk)
+			result, execErr := e.toolsReg.Execute(ctx, childSess.ID, effectiveWsID, tc.Name, tc.Arguments, onChunk)
 			if execErr != nil {
 				result = &tools.ToolResult{Success: false, Error: execErr.Error()}
 			}
