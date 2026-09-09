@@ -1752,6 +1752,8 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           type == 'approval_expired' ||
           type == 'session_status_update' ||
           type == 'quota_update' ||
+          type == 'session.telemetry' ||
+          type == 'session_telemetry' ||
           type == 'sessions_updated' ||
           type == 'cascade_reverted';
       if (!isBroadcast || !mounted) return;
@@ -1782,6 +1784,17 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               ),
             );
           }
+        }
+        return;
+      }
+
+      if (type == 'session.telemetry' || type == 'session_telemetry') {
+        final data = (msg['data'] is Map) ? msg['data'] as Map : msg;
+        final targetSession = sessionId ?? widget.activeSessionId;
+        if (mounted && data.isNotEmpty && targetSession.isNotEmpty) {
+          setState(() {
+            _sessionTelemetry[targetSession] = Map<String, dynamic>.from(data);
+          });
         }
         return;
       }
@@ -2748,6 +2761,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 _dismissedBannerIds.remove(banner.id);
               }
               _refreshQuotaSummary();
+              _refreshSessionTelemetry(widget.activeSessionId);
             }
             final isQuotaErr = candidateError != null && candidateError.toLowerCase().contains('quota');
             if (error != null && (error.contains('MODEL_CAPACITY_EXHAUSTED') || error.contains('No capacity available') || error.contains('503'))) {
