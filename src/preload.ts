@@ -79,6 +79,10 @@ export const storageAPI: StorageAPI = {
       : ipcRenderer.invoke('storage:import-providers'),
   getDoctorDiagnostics: () => ipcRenderer.invoke('storage:get-doctor-diagnostics'),
   testRemoteHealth: (payload) => ipcRenderer.invoke('remote:test-health', payload),
+  executeRemoteCommand: (payload) => ipcRenderer.invoke('remote:execute-command', payload),
+  listRemoteSessions: (payload) => ipcRenderer.invoke('remote:list-sessions', payload),
+  createRemoteSession: (payload) => ipcRenderer.invoke('remote:create-session', payload),
+  getRemoteWorkspaces: (payload) => ipcRenderer.invoke('remote:get-workspaces', payload),
   injectUserStatus: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-user-status', rawBuffer),
   injectAvailableModels: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-available-models', rawBuffer),
 };
@@ -477,11 +481,18 @@ try {
             pill = document.createElement("div");
             pill.id = "__ag_remote_chat_pill";
             pill.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:3px 10px;margin:4px 8px;background:rgba(37,99,235,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:12px;font-size:11px;color:#93c5fd;font-family:-apple-system,BlinkMacSystemFont,sans-serif;";
-            pill.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span><span style="font-weight:500;">Runtime Agent Remote (VPS)</span><span style="opacity:0.6;font-size:10px;">62.169.27.8</span><button id="__ag_remote_pill_term" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 5px;margin-left:4px;" title="Ouvrir Terminal VPS">>_ Terminal</button><button id="__ag_remote_pill_cfg" style="background:none;border:none;color:#93c5fd;cursor:pointer;font-size:12px;padding:0 2px;margin-left:2px;" title="Configurer">⚙️</button>';
+            pill.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span><span style="font-weight:500;">Runtime Agent Remote (VPS)</span><span style="opacity:0.6;font-size:10px;">62.169.27.8</span><button id="__ag_remote_pill_console" style="background:rgba(37,99,235,0.25);border:1px solid rgba(59,130,246,0.4);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 7px;margin-left:4px;font-weight:500;" title="Ouvrir la Console Agent Cloud Autonome">⚡ Console Cloud</button><button id="__ag_remote_pill_term" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 5px;margin-left:2px;" title="Ouvrir Terminal VPS">>_ Terminal</button><button id="__ag_remote_pill_cfg" style="background:none;border:none;color:#93c5fd;cursor:pointer;font-size:12px;padding:0 2px;margin-left:2px;" title="Configurer">⚙️</button>';
             if (parent && parent.parentNode) {
               parent.parentNode.insertBefore(pill, parent);
             } else {
               document.body.appendChild(pill);
+            }
+            const cslBtn = pill.querySelector("#__ag_remote_pill_console");
+            if (cslBtn) {
+              cslBtn.onclick = (e) => {
+                e.stopPropagation();
+                openRemoteConsoleModal();
+              };
             }
             const cfgBtn = pill.querySelector("#__ag_remote_pill_cfg");
             if (cfgBtn) {
@@ -624,6 +635,306 @@ try {
         // Initial probe command
         runCmd('uname -a && uptime');
       }
+
+      function openRemoteConsoleModal() {
+        let modal = document.getElementById("__ag_remote_console_modal");
+        if (modal) modal.remove();
+
+        const cfg = getRemoteConfig();
+        const host = cfg.host || "62.169.27.8";
+        const token = cfg.token || "";
+
+        modal = document.createElement("div");
+        modal.id = "__ag_remote_console_modal";
+        modal.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,0.72);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;";
+
+        modal.innerHTML = \`
+          <div style="width:880px;max-width:95vw;height:620px;max-height:92vh;background:#141518;border:1px solid rgba(255,255,255,0.15);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,0.85);display:flex;flex-direction:column;overflow:hidden;color:#e5e7eb;">
+            <!-- Header -->
+            <div style="padding:12px 18px;background:#1c1d22;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:20px;">⚡</span>
+                <div>
+                  <div style="font-size:14px;font-weight:600;color:#fff;display:flex;align-items:center;gap:8px;">
+                    <span>Antigravity Remote Agent Cloud Runtime</span>
+                    <span id="__ag_csl_badge" style="background:rgba(59,130,246,0.15);color:#93c5fd;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:500;">● Connexion...</span>
+                  </div>
+                  <div style="font-size:11px;color:#9ca3af;margin-top:2px;">Hôte : <code>\${host}</code></div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="background:rgba(37,99,235,0.12);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:500;">
+                  🛡️ 100% Autonome : Vous pouvez fermer Antigravity ou éteindre votre PC
+                </div>
+                <button id="__ag_csl_close" style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:18px;padding:2px 6px;" title="Fermer">✕</button>
+              </div>
+            </div>
+
+            <!-- Body -->
+            <div style="flex:1;display:flex;overflow:hidden;">
+              <!-- Left Sidebar: Sessions List -->
+              <div style="width:280px;background:#18191d;border-right:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;">
+                <div style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;gap:6px;">
+                  <button id="__ag_csl_new_btn" style="flex:1;background:#2563eb;color:#fff;border:none;border-radius:6px;padding:7px 10px;font-size:11.5px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;">
+                    <span>+</span><span>Nouvelle Mission</span>
+                  </button>
+                  <button id="__ag_csl_refresh_btn" style="background:#27272a;border:1px solid rgba(255,255,255,0.1);color:#d1d5db;border-radius:6px;padding:7px 10px;font-size:12px;cursor:pointer;" title="Rafraîchir">🔄</button>
+                </div>
+                <div style="padding:8px 12px 4px 12px;font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;">
+                  Missions sur le Serveur
+                </div>
+                <div id="__ag_csl_sessions_list" style="flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:4px;">
+                  <div style="padding:14px;text-align:center;color:#6b7280;font-size:11.5px;">Chargement...</div>
+                </div>
+                <div style="padding:10px 12px;background:#141518;border-top:1px solid rgba(255,255,255,0.06);font-size:11px;color:#9ca3af;display:flex;flex-direction:column;gap:3px;">
+                  <div style="display:flex;justify-content:space-between;"><span style="color:#6b7280;">Daemon :</span><span id="__ag_csl_ver" style="color:#e5e7eb;">ag-agentd v2.0.0</span></div>
+                  <div style="display:flex;justify-content:space-between;"><span style="color:#6b7280;">Sandbox :</span><span style="color:#4ade80;">Docker Fail-Closed</span></div>
+                  <div style="display:flex;justify-content:space-between;"><span style="color:#6b7280;">Persistance :</span><span style="color:#93c5fd;">SQLite WAL</span></div>
+                </div>
+              </div>
+
+              <!-- Right Main Content -->
+              <div id="__ag_csl_main" style="flex:1;display:flex;flex-direction:column;background:#0f1013;overflow:hidden;padding:16px;">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+        \`;
+
+        document.body.appendChild(modal);
+
+        const badgeEl = modal.querySelector("#__ag_csl_badge");
+        const listEl = modal.querySelector("#__ag_csl_sessions_list");
+        const mainEl = modal.querySelector("#__ag_csl_main");
+        const verEl = modal.querySelector("#__ag_csl_ver");
+        modal.querySelector("#__ag_csl_close").onclick = () => modal.remove();
+
+        let activeSessionId = null;
+
+        async function checkHealth() {
+          try {
+            const res = window.nativeStorage && window.nativeStorage.testRemoteHealth
+              ? await window.nativeStorage.testRemoteHealth({ host, token })
+              : null;
+            if (res && res.ok) {
+              const d = res.data || {};
+              badgeEl.style.background = "rgba(16,185,129,0.15)";
+              badgeEl.style.color = "#4ade80";
+              badgeEl.textContent = "● En ligne (" + (d.platform || "linux") + ")";
+              if (d.version) verEl.textContent = "ag-agentd v" + d.version;
+            } else {
+              badgeEl.style.background = "rgba(239,68,68,0.15)";
+              badgeEl.style.color = "#f87171";
+              badgeEl.textContent = "● " + ((res && res.error) || "Injoignable");
+            }
+          } catch (_) {
+            badgeEl.style.background = "rgba(239,68,68,0.15)";
+            badgeEl.style.color = "#f87171";
+            badgeEl.textContent = "● Déconnecté";
+          }
+        }
+
+        async function loadSessions() {
+          listEl.innerHTML = '<div style="padding:14px;text-align:center;color:#6b7280;font-size:11.5px;">Chargement...</div>';
+          try {
+            const res = window.nativeStorage && window.nativeStorage.listRemoteSessions
+              ? await window.nativeStorage.listRemoteSessions({ host, token })
+              : null;
+            const sessions = (res && res.ok && res.sessions) ? res.sessions : [];
+            if (sessions.length === 0) {
+              listEl.innerHTML = '<div style="padding:16px;text-align:center;color:#6b7280;font-size:11.5px;">Aucune mission active.<br>Cliquez sur \\"+ Nouvelle Mission\\" ci-dessus.</div>';
+              return;
+            }
+            listEl.innerHTML = '';
+            sessions.forEach(s => {
+              const item = document.createElement("div");
+              const isSel = s.id === activeSessionId;
+              const statusColor = (s.state === 'RUNNING') ? '#4ade80' : (s.state === 'COMPLETED' ? '#93c5fd' : (s.state === 'FAILED' ? '#f87171' : '#d1d5db'));
+              item.style.cssText = "padding:8px 10px;border-radius:6px;cursor:pointer;background:" + (isSel ? 'rgba(37,99,235,0.18)' : 'rgba(255,255,255,0.03)') + ";border:1px solid " + (isSel ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.06)') + ";transition:all 0.15s;";
+              item.innerHTML = '<div style="font-size:12px;font-weight:500;color:#f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (s.title || s.id) + '</div>' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;font-size:10.5px;">' +
+                  '<span style="color:' + statusColor + ';font-weight:500;">● ' + (s.state || 'CREATED') + '</span>' +
+                  '<span style="color:#6b7280;">' + ((s.id || '').slice(-6)) + '</span>' +
+                '</div>';
+              item.onclick = () => {
+                activeSessionId = s.id;
+                loadSessions();
+                renderSessionDetail(s);
+              };
+              listEl.appendChild(item);
+            });
+          } catch (err) {
+            listEl.innerHTML = '<div style="padding:14px;text-align:center;color:#f87171;font-size:11.5px;">Erreur de chargement des sessions</div>';
+          }
+        }
+
+        function renderNewMissionForm() {
+          activeSessionId = null;
+          mainEl.innerHTML = \`
+            <div style="max-width:540px;margin:0 auto;display:flex;flex-direction:column;gap:14px;overflow-y:auto;padding-right:4px;">
+              <div style="background:rgba(37,99,235,0.08);border:1px solid rgba(59,130,246,0.25);border-radius:8px;padding:12px 14px;">
+                <div style="font-size:13px;font-weight:600;color:#93c5fd;display:flex;align-items:center;gap:6px;">
+                  <span>⚡</span><span>Mode Serveur Autonome (Style Claude Code Remote)</span>
+                </div>
+                <div style="font-size:11.5px;color:#cbd5e1;margin-top:4px;line-height:1.45;">
+                  Cette tâche sera transmise au démon <code>ag-agentd</code> sur votre serveur. L'agent travaillera en tâche de fond (modifications, tests Docker, commits) <strong>même si vous fermez Antigravity ou éteignez votre PC</strong>.
+                </div>
+              </div>
+
+              <div>
+                <label style="display:block;font-size:12px;font-weight:500;color:#d1d5db;margin-bottom:6px;">Consigne / Objectif pour l'agent sur le serveur :</label>
+                <textarea id="__ag_form_prompt" placeholder="Ex: Examine le code dans le workspace, exécute les tests unitaires et corrige les éventuelles erreurs..." style="width:100%;box-sizing:border-box;height:100px;background:#18191d;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;resize:vertical;font-family:inherit;"></textarea>
+              </div>
+
+              <div>
+                <label style="display:block;font-size:12px;font-weight:500;color:#d1d5db;margin-bottom:6px;">Répertoire de travail distant (VPS) :</label>
+                <input id="__ag_form_ws" type="text" value="/var/lib/antigravity/workspaces/default" style="width:100%;box-sizing:border-box;background:#18191d;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" />
+              </div>
+
+              <div style="display:flex;gap:12px;">
+                <div style="flex:1;">
+                  <label style="display:block;font-size:12px;font-weight:500;color:#d1d5db;margin-bottom:6px;">Sandbox d'exécution :</label>
+                  <select id="__ag_form_sandbox" style="width:100%;box-sizing:border-box;background:#18191d;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;">
+                    <option value="docker">Docker Sandbox (Fail-Closed, Sécurisé)</option>
+                    <option value="native">Native Linux Host (Direct)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;">
+                <span id="__ag_form_status" style="font-size:11.5px;color:#9ca3af;">Prêt à lancer</span>
+                <button id="__ag_form_launch_btn" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-size:12.5px;font-weight:600;cursor:pointer;">
+                  🚀 Démarrer l'Agent Autonome
+                </button>
+              </div>
+            </div>
+          \`;
+
+          const launchBtn = mainEl.querySelector("#__ag_form_launch_btn");
+          const statusEl = mainEl.querySelector("#__ag_form_status");
+          const promptInput = mainEl.querySelector("#__ag_form_prompt");
+          const wsInput = mainEl.querySelector("#__ag_form_ws");
+
+          launchBtn.onclick = async () => {
+            const prompt = promptInput.value.trim();
+            if (!prompt) {
+              statusEl.style.color = "#f87171";
+              statusEl.textContent = "Veuillez entrer une consigne";
+              return;
+            }
+            launchBtn.disabled = true;
+            statusEl.style.color = "#93c5fd";
+            statusEl.textContent = "Création de la session sur le serveur...";
+            try {
+              const res = window.nativeStorage && window.nativeStorage.createRemoteSession
+                ? await window.nativeStorage.createRemoteSession({
+                    host,
+                    token,
+                    title: prompt.slice(0, 48),
+                    workspaceId: wsInput.value.trim()
+                  })
+                : null;
+              if (res && res.ok && res.session) {
+                statusEl.style.color = "#4ade80";
+                statusEl.textContent = "Session créée ! Lancement...";
+                activeSessionId = res.session.id;
+                await loadSessions();
+                renderSessionDetail(res.session);
+              } else {
+                statusEl.style.color = "#f87171";
+                statusEl.textContent = "Échec : " + ((res && res.error) || "Erreur serveur");
+                launchBtn.disabled = false;
+              }
+            } catch (err) {
+              statusEl.style.color = "#f87171";
+              statusEl.textContent = "Erreur : " + err.message;
+              launchBtn.disabled = false;
+            }
+          };
+        }
+
+        function renderSessionDetail(s) {
+          mainEl.innerHTML = \`
+            <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+              <!-- Session Header -->
+              <div style="padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;">
+                <div>
+                  <div style="font-size:14px;font-weight:600;color:#fff;">\${s.title || s.id}</div>
+                  <div style="font-size:11px;color:#9ca3af;margin-top:2px;">
+                    Session ID: <code>\${s.id}</code> &bull; Statut : <strong style="color:#4ade80;">\${s.state || 'ACTIVE'}</strong>
+                  </div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                  <button id="__ag_s_term_btn" style="background:#27272a;border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">
+                    >_ Terminal VPS
+                  </button>
+                  <button id="__ag_s_web_btn" style="background:#27272a;border:1px solid rgba(255,255,255,0.15);color:#d1d5db;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;" title="Ouvrir Web Console">
+                    🌐 Web Console
+                  </button>
+                </div>
+              </div>
+
+              <!-- Reassurance Ribbon -->
+              <div style="padding:6px 10px;margin:8px 0;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);border-radius:6px;font-size:11px;color:#4ade80;display:flex;align-items:center;gap:6px;">
+                <span>●</span><span>Cette session s'exécute de façon autonome sur le VPS. Les modifications et logs sont enregistrés en temps réel.</span>
+              </div>
+
+              <!-- Live Stream / Events Feed -->
+              <div id="__ag_s_stream" style="flex:1;background:#09090b;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:12px;overflow-y:auto;font-family:ui-monospace,SFMono-Regular,monospace;font-size:11.5px;line-height:1.5;color:#93c5fd;display:flex;flex-direction:column;gap:6px;">
+                <div style="color:#6b7280;">[Connexion au flux d'événements de la session \${s.id}...]</div>
+                <div style="color:#4ade80;">[Démon actif sur vmi2743594 - Boucle d'agent goroutine en cours]</div>
+              </div>
+
+              <!-- Input bar for follow-up prompts -->
+              <div style="margin-top:10px;display:flex;gap:8px;">
+                <input id="__ag_s_input" type="text" placeholder="Envoyer une consigne supplémentaire à l'agent sur le serveur..." style="flex:1;background:#18191d;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" />
+                <button id="__ag_s_send" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:500;cursor:pointer;">Envoyer</button>
+              </div>
+            </div>
+          \`;
+
+          mainEl.querySelector("#__ag_s_term_btn").onclick = () => openRemoteTerminalModal();
+          mainEl.querySelector("#__ag_s_web_btn").onclick = () => {
+            const proto = host.startsWith('http') ? host : ("https://" + host);
+            window.open(proto + "/console?token=" + encodeURIComponent(token), '_blank');
+          };
+
+          const sInput = mainEl.querySelector("#__ag_s_input");
+          const sSend = mainEl.querySelector("#__ag_s_send");
+          const sStream = mainEl.querySelector("#__ag_s_stream");
+
+          sSend.onclick = () => {
+            const val = sInput.value.trim();
+            if (!val) return;
+            const line = document.createElement("div");
+            line.style.color = "#f3f4f6";
+            line.textContent = "> " + val;
+            sStream.appendChild(line);
+            sStream.scrollTop = sStream.scrollHeight;
+            sInput.value = '';
+          };
+          sInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              sSend.click();
+            }
+          };
+        }
+
+        modal.querySelector("#__ag_csl_new_btn").onclick = () => {
+          renderNewMissionForm();
+        };
+        modal.querySelector("#__ag_csl_refresh_btn").onclick = () => {
+          loadSessions();
+        };
+
+        // Initialize view
+        checkHealth();
+        loadSessions();
+        renderNewMissionForm();
+      }
+
+      window.__ag_open_console = openRemoteConsoleModal;
 
       function openRemoteConfigModal() {
         let modal = document.getElementById("__ag_remote_config_modal");

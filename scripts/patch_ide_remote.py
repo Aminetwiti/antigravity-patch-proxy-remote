@@ -57,10 +57,14 @@ window.__ag_update_pill=function(active){
     if(!pill){
       pill=document.createElement("div");pill.id="__ag_remote_chat_pill";
       pill.style.cssText="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;margin:4px 8px;background:rgba(37,99,235,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:12px;font-size:11px;color:#93c5fd;font-family:-apple-system,BlinkMacSystemFont,sans-serif;";
-      pill.innerHTML='<span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span><span style="font-weight:500;">Runtime Agent Remote (VPS)</span><span style="opacity:0.6;font-size:10px;">62.169.27.8</span><button id="__ag_remote_pill_cfg" style="background:none;border:none;color:#93c5fd;cursor:pointer;font-size:12px;padding:0 2px;margin-left:4px;" title="Configurer">⚙️</button>';
+      pill.innerHTML='<span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span><span style="font-weight:500;">Runtime Agent Remote (VPS)</span><span style="opacity:0.6;font-size:10px;">62.169.27.8</span><button id="__ag_remote_pill_console" style="background:rgba(37,99,235,0.25);border:1px solid rgba(59,130,246,0.4);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 7px;margin-left:4px;font-weight:500;" title="Ouvrir la Console Agent Cloud Autonome">⚡ Console Cloud</button><button id="__ag_remote_pill_term" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 5px;margin-left:2px;" title="Ouvrir Terminal VPS">>_ Terminal</button><button id="__ag_remote_pill_cfg" style="background:none;border:none;color:#93c5fd;cursor:pointer;font-size:12px;padding:0 2px;margin-left:2px;" title="Configurer">⚙️</button>';
       let target=document.querySelector('[class*="inputBox"],[id*="InputBox"],textarea,form')||document.body;
       if(target&&target.parentNode)target.parentNode.insertBefore(pill,target);
       else document.body.appendChild(pill);
+      let cslBtn=pill.querySelector("#__ag_remote_pill_console");
+      if(cslBtn)cslBtn.onclick=(e)=>{e.stopPropagation();if(window.__ag_open_console)window.__ag_open_console();else if(window.__ag_open_cfg)window.__ag_open_cfg();};
+      let termBtn=pill.querySelector("#__ag_remote_pill_term");
+      if(termBtn)termBtn.onclick=(e)=>{e.stopPropagation();if(window.__ag_open_terminal)window.__ag_open_terminal();};
       let btn=pill.querySelector("#__ag_remote_pill_cfg");
       if(btn)btn.onclick=(e)=>{e.stopPropagation();window.__ag_open_cfg();};
     }

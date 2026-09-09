@@ -2278,6 +2278,27 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         const reqJson = JSON.parse(bodyStr) as Record<string, unknown>;
         const targetReq = (reqJson.request || reqJson) as Record<string, unknown>;
 
+        if (isRemoteVpsActive) {
+          const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur VPS Ubuntu 24.04 (vmi2743594 - ${remoteVpsHost}), utilisateur ag-agent.\nTon espace de travail exclusif est sur ce serveur Linux distant : /var/lib/antigravity.\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant Ubuntu. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows (comme C:\\Users\\... ou antigravity-add-model-main).\nPour toute demande de rapport ou d'état ("donner rapport"), établis immédiatement le bilan de ce serveur VPS distant (système Ubuntu 24.04 LTS, services et conteneurs Docker en production, répertoire /var/lib/antigravity).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux Ubuntu sur le VPS distant.\n\n`;
+
+          let injected = false;
+          if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
+            const si = targetReq.systemInstruction as { parts?: Array<{ text?: string }> };
+            if (Array.isArray(si.parts) && si.parts.length > 0) {
+              if (si.parts[0].text && !si.parts[0].text.includes('CONSIGNE SYSTÈME OBLIGATOIRE')) {
+                si.parts[0].text = vpsNotice + si.parts[0].text;
+                injected = true;
+              }
+            }
+          }
+          if (!injected) {
+            targetReq.systemInstruction = {
+              parts: [{ text: vpsNotice }],
+            };
+          }
+          fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
+          log.info(`[Proxy] Injected strict Remote VPS context into Cloud Code request (host=${remoteVpsHost})`);
+        }
 
         const candidateNames = [
           reqJson.model,
