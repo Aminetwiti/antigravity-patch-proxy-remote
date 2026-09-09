@@ -3,6 +3,8 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /src
 
+ENV GOTOOLCHAIN=auto
+
 RUN apk add --no-cache git ca-certificates
 
 COPY remote/daemon/go.mod remote/daemon/go.sum ./
