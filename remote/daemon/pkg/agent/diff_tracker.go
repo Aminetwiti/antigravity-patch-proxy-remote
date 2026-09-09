@@ -15,22 +15,6 @@ func ComputeHunkHash(insertions []string, deletions []string, contextStr string)
 	return hex.EncodeToString(h[:8]) // 16-character hex hash
 }
 
-// EnrichFileDiff annotates a diff map with a deterministic hunkHash derived from
-// its original and modified contents.
-func EnrichFileDiff(path string, diff map[string]interface{}) {
-	if diff == nil {
-		return
-	}
-	orig, _ := diff["originalContents"].(string)
-	mod, _ := diff["modifiedContents"].(string)
-	if orig == "" && mod == "" {
-		return
-	}
-	origLines := strings.Split(orig, "\n")
-	modLines := strings.Split(mod, "\n")
-	diff["hunkHash"] = ComputeHunkHash(modLines, origLines, path)
-}
-
 // Position represents a line and character offset in a document.
 type Position struct {
 	Line      int `json:"line"`

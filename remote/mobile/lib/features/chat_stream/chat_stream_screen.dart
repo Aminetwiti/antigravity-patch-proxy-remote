@@ -914,7 +914,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     final api = widget.api;
     if (api == null || widget.activeSessionId.isEmpty) return;
     try {
-      final res = await api.discardShadowWorktree(widget.activeProjectName, widget.activeSessionId);
+      await api.discardShadowWorktree(widget.activeProjectName, widget.activeSessionId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Shadow worktree rejeté avec succès')),
@@ -3771,6 +3771,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           artifacts: _artifacts,
           subagentsCount: _subagentsCount,
           backgroundTasks: _runningBackgroundTasks,
+          telemetry: _sessionTelemetry[widget.activeSessionId],
+          onPromoteWorktree: _promoteShadowWorktree,
+          onDiscardWorktree: _discardShadowWorktree,
           onOpenReview: () => setState(() {
             _activeArtifact = null;
             _currentTab = SessionTabType.review;

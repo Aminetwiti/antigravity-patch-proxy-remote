@@ -6939,7 +6939,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			return
 		}
 
-	case "get_quota_summary", "system.get_quota_summary", "get_session_telemetry", "system.get_session_telemetry":
+	case "get_quota_summary", "system.get_quota_summary":
 		raw, err = s.RPCClient.RetrieveUserQuotaSummary()
 		if err == nil {
 			if data, ok := s.buildQuotaData(raw); ok {

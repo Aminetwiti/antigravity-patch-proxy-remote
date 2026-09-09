@@ -4,6 +4,7 @@ import 'package:mobile/core/protocol/messages.dart';
 import 'package:mobile/core/protocol/stream_parser.dart';
 import 'package:mobile/widgets/ask_question_choice_card.dart';
 import 'package:mobile/widgets/unified_diff_viewer.dart';
+import 'package:mobile/features/chat_stream/widgets/overview_panel_view.dart';
 
 void main() {
   group('AskQuestion & Choice Card Tests', () {
@@ -313,6 +314,64 @@ void main() {
 
       // Folded banner should disappear as it is now unfolded
       expect(find.text('... 9 lignes inchangées ...'), findsNothing);
+    });
+  });
+
+  group('OverviewPanelView Telemetry & Shadow Worktree Tests', () {
+    testWidgets('OverviewPanelView renders live telemetry and triggers worktree callbacks', (tester) async {
+      bool promoted = false;
+      bool discarded = false;
+
+      final telemetryData = {
+        'promptTokens': 1500,
+        'completionTokens': 600,
+        'totalTokens': 2100,
+        'budgetPercent': 42.5,
+        'activeSubagents': 2,
+        'turnsCompleted': 4,
+      };
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 800,
+              width: 400,
+              child: OverviewPanelView(
+                sessionTitle: 'Test Session',
+                workspacePath: '/repo/test',
+                subagentsCount: 2,
+                telemetry: telemetryData,
+                onPromoteWorktree: () => promoted = true,
+                onDiscardWorktree: () => discarded = true,
+                onOpenReview: () {},
+                onOpenPlan: () {},
+                onOpenSubagents: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Telemetry section check
+      expect(find.text('Télémétrie & Budget Jetons'), findsOneWidget);
+      expect(find.text('2100'), findsOneWidget);
+      expect(find.text('42.5%'), findsOneWidget);
+      expect(find.text('Tour 5'), findsOneWidget);
+      expect(find.text('2 sous-agent(s) actif(s)'), findsOneWidget);
+
+      // Shadow worktree actions check
+      expect(find.text('Shadow Worktree (Isolation)'), findsOneWidget);
+      expect(find.text('Fusionner'), findsOneWidget);
+      expect(find.text('Rejeter'), findsOneWidget);
+
+      await tester.tap(find.text('Fusionner'));
+      expect(promoted, isTrue);
+
+      await tester.tap(find.text('Rejeter'));
+      expect(discarded, isTrue);
     });
   });
 }

@@ -162,6 +162,7 @@ const MISSING_JS_MODULES = [
   'services/telemetryStore',
   'shared/logger',
   'wellKnown/modelIdUtils',
+  'rendererHook',
   // Main proxy entry point
   'proxy',
   // Proxy submodules
@@ -271,6 +272,7 @@ function buildPatchManifest(repoDir) {
     'dist/preload/logger.js',
     'dist/preload/types.js',
     'dist/wellKnown/modelIdUtils.js',
+    'dist/rendererHook.js',
     ...OVERWRITE_FILES,
     ...NEW_ROOT_FILES,
   ])].sort();
