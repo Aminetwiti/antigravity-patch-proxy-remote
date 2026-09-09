@@ -20,8 +20,11 @@ function removeLanguageServerProxyStartup(source) {
   if (source.includes(marker)) return source;
 
   const start = source.indexOf('        let proxyPort;');
-  const endMarker = "        const apiServerUrl = proxyPort ? `http://localhost:${proxyPort}` : 'https://generativelanguage.googleapis.com';";
-  const end = source.indexOf(endMarker, start);
+  let end = source.indexOf('        const apiServerUrl = ', start);
+  if (end < 0) {
+    const fallbackMarker = "        const apiServerUrl = proxyPort ? `http://localhost:${proxyPort}` : 'https://generativelanguage.googleapis.com';";
+    end = source.indexOf(fallbackMarker, start);
+  }
   if (start < 0 || end < 0 || !source.slice(start, end).includes('proxy_1.startProxy')) {
     throw new Error(
       'Unable to remove language-server proxy startup: expected startProxy block was not found.',

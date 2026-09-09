@@ -566,6 +566,94 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
     });
   });
 
+  // Test Remote daemon connectivity and authentication (bypasses browser CORS & TLS)
+  ipcMain.handle('remote:test-health', async (_event, payload: { host: string; token?: string } | string) => {
+    return new Promise<{ ok: boolean; status?: number; data?: Record<string, unknown>; error?: string }>((resolve) => {
+      try {
+        const rawHost = (typeof payload === 'string' ? payload : (payload && payload.host ? payload.host : '')).trim().replace(/\/+$/, '');
+        const token = (typeof payload === 'object' && payload && payload.token) ? payload.token.trim() : '';
+        if (!rawHost) {
+          resolve({ ok: false, error: 'URL ou hôte manquant' });
+          return;
+        }
+        const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
+        const client = parsed.protocol === 'https:' ? https : http;
+        const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
+
+        const healthReq = client.get(
+          {
+            hostname: parsed.hostname,
+            port,
+            path: '/health',
+            timeout: 10000,
+            rejectUnauthorized: false,
+            headers: { 'User-Agent': 'Antigravity-Remote-Client/2.0' },
+          },
+          (healthRes: any) => {
+            let healthBody = '';
+            healthRes.on('data', (c: any) => { healthBody += c; });
+            healthRes.on('end', () => {
+              if (healthRes.statusCode < 200 || healthRes.statusCode >= 300) {
+                resolve({ ok: false, status: healthRes.statusCode, error: `Erreur HTTP ${healthRes.statusCode}` });
+                return;
+              }
+              let healthData: Record<string, unknown> = {};
+              try { healthData = JSON.parse(healthBody); } catch (_) {}
+
+              if (!token) {
+                resolve({ ok: true, status: healthRes.statusCode, data: healthData });
+                return;
+              }
+
+              const authReq = client.get(
+                {
+                  hostname: parsed.hostname,
+                  port,
+                  path: `/v2/sessions?token=${encodeURIComponent(token)}`,
+                  timeout: 10000,
+                  rejectUnauthorized: false,
+                  headers: {
+                    'User-Agent': 'Antigravity-Remote-Client/2.0',
+                    'Authorization': `Bearer ${token}`,
+                  },
+                },
+                (authRes: any) => {
+                  let authBody = '';
+                  authRes.on('data', (c: any) => { authBody += c; });
+                  authRes.on('end', () => {
+                    if (authRes.statusCode === 401) {
+                      resolve({ ok: false, status: 401, error: 'Jeton d\'authentification invalide (HTTP 401)' });
+                    } else if (authRes.statusCode >= 200 && authRes.statusCode < 300) {
+                      resolve({ ok: true, status: 200, data: { ...healthData, authenticated: true } });
+                    } else {
+                      resolve({ ok: false, status: authRes.statusCode, error: `Erreur d'authentification HTTP ${authRes.statusCode}` });
+                    }
+                  });
+                }
+              );
+              authReq.on('error', (err: any) => {
+                resolve({ ok: false, error: err.message || 'Échec vérification jeton' });
+              });
+              authReq.on('timeout', () => {
+                authReq.destroy();
+                resolve({ ok: false, error: 'Délai d\'attente dépassé (timeout vérification jeton)' });
+              });
+            });
+          }
+        );
+        healthReq.on('error', (err: any) => {
+          resolve({ ok: false, error: err.message || 'Hôte injoignable' });
+        });
+        healthReq.on('timeout', () => {
+          healthReq.destroy();
+          resolve({ ok: false, error: 'Délai d\'attente dépassé (timeout)' });
+        });
+      } catch (err: any) {
+        resolve({ ok: false, error: err.message || 'URL invalide' });
+      }
+    });
+  });
+
   // ─── Fetch Models from /v1/models endpoint ──────────────────────────────────────
   // P3-18: Query a provider's /v1/models endpoint to discover available models
   ipcMain.handle('storage:fetch-models', async (_event, params: FetchModelsParams) => {

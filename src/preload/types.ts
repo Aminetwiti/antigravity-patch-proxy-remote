@@ -11,6 +11,7 @@ export interface UpdaterState {
 export type UnsubscribeFn = () => void;
 
 export interface UpdaterAPI {
+  getState: () => Promise<UpdaterState>;
   onStateChanged: (callback: (state: UpdaterState) => void) => UnsubscribeFn;
   applyUpdate: () => Promise<void>;
   quitAndInstall: () => Promise<void>;
@@ -102,6 +103,7 @@ export interface StorageAPI {
   exportProviders: () => Promise<{ success: boolean; base64?: string; count?: number; error?: string }>;
   importProviders: (base64Code?: string) => Promise<{ success: boolean; count?: number; error?: string }>;
   getDoctorDiagnostics: () => Promise<any>;
+  testRemoteHealth?: (payload: { host: string; token?: string } | string) => Promise<{ ok: boolean; status?: number; data?: Record<string, unknown>; error?: string }>;
   injectUserStatus?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
   injectAvailableModels?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
 }

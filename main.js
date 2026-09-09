@@ -161,24 +161,15 @@ electron_1.app
     (0, customScheme_1.registerCustomSchemeHandlers)();
     // Intercept and block SetCloudCodeURL requests to prevent the frontend
     // from overriding the local proxy endpoint.
-    // Redirect GetAvailableModels to our proxy so custom models are injected.
     electron_1.session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+        if (details.resourceType === 'mainFrame') {
+            callback({});
+            return;
+        }
         if (details.url.includes('SetCloudCodeURL')) {
             console.log(`[Proxy Intercept] Blocked SetCloudCodeURL: ${details.url}`);
             callback({ cancel: true });
             return;
-        }
-        if (details.url.includes('LanguageServerService/GetAvailableModels')) {
-            const proxyPort = require('./proxy').getProxyPort();
-            if (proxyPort > 0) {
-                const redirectTarget = `http://${constants_1.DEFAULT_BIND_HOST}:${proxyPort}/GetAvailableModels?ls=${encodeURIComponent(details.url)}`;
-                console.log(`[Proxy Intercept] Redirecting GetAvailableModels to proxy: ${redirectTarget}`);
-                callback({ redirectURL: redirectTarget });
-                return;
-            }
-        }
-        if (details.url.includes('CloudCode') || details.url.includes('LanguageServerService')) {
-            console.log(`[Proxy Intercept] Request URL: ${details.url}`);
         }
         callback({});
     });

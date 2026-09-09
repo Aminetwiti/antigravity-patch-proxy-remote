@@ -61,6 +61,9 @@ export const IPC_CHANNELS = {
 
   // External Shell
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
+
+  // Remote Agent Runtime
+  REMOTE_TEST_HEALTH: 'remote:test-health',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

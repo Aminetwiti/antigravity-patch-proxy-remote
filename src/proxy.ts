@@ -1841,7 +1841,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           customModels.forEach((m) => {
             const slug = toSlug(m);
             const pid = generateModelPlaceholderId(m);
-            mappedCustom[slug] = {
+            const entry = {
               displayName: m.displayName,
               maxTokens: 1048576,
               maxOutputTokens: 4096,
@@ -1851,6 +1851,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
               modelProvider: 'MODEL_PROVIDER_GOOGLE',
             };
+            mappedCustom[slug] = entry;
+            mappedCustom[pid] = entry;
           });
           safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
           safeEnd(res, JSON.stringify({ models: mappedCustom }));
@@ -1888,7 +1890,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             customModels.forEach((m) => {
               const slug = toSlug(m);
               const pid = generateModelPlaceholderId(m);
-              mappedCustom[slug] = {
+              const entry = {
                 displayName: m.displayName,
                 maxTokens: 1048576,
                 maxOutputTokens: 4096,
@@ -1898,6 +1900,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
                 modelProvider: 'MODEL_PROVIDER_GOOGLE',
               };
+              mappedCustom[slug] = entry;
+              mappedCustom[pid] = entry;
             });
             safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
             safeEnd(res, JSON.stringify({ models: mappedCustom }));
@@ -1912,12 +1916,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             log.debug('[Proxy] fetchAvailableModels: skipping end handler (response terminated)');
             return;
           }
+          let googleJson: Record<string, unknown> | null = null;
           try {
             log.info(
               `[Proxy] fetchAvailableModels response status: ${googleRes.statusCode}, body length: ${googleBody.length}`,
             );
 
-            let googleJson: Record<string, unknown>;
             try {
               googleJson = JSON.parse(googleBody) as Record<string, unknown>;
             } catch {
@@ -1985,7 +1989,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
             // 2. Injecter les modèles personnalisés dans agentModelSorts (menu déroulant Antigravity IDE)
             // Modèles originaux en tête de liste, modèles personnalisés ajoutés sans duplication
-            injectCustomSlugsIntoAgentModelSorts(googleJson, customModels);
+            try {
+              if (typeof injectCustomSlugsIntoAgentModelSorts === 'function') {
+                injectCustomSlugsIntoAgentModelSorts(googleJson, customModels);
+              }
+            } catch (sortErr) {
+              log.warn('[Proxy] Failed to inject custom slugs into agentModelSorts:', sortErr);
+            }
 
             // P1: Strip Google's upstream error from the response. When Google
             // returns 401/403/etc., the proxy forwards that error object alongside
@@ -2010,7 +2020,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             customModels.forEach((m) => {
               const slug = toSlug(m);
               const pid = generateModelPlaceholderId(m);
-              mappedCustom[slug] = {
+              const entry = {
                 displayName: m.displayName,
                 maxTokens: 1048576,
                 maxOutputTokens: 4096,
@@ -2020,9 +2030,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
                 modelProvider: 'MODEL_PROVIDER_GOOGLE',
               };
+              mappedCustom[slug] = entry;
+              mappedCustom[pid] = entry;
             });
+            // If googleJson has models, preserve them!
+            let responsePayload: Record<string, unknown> = { models: mappedCustom };
+            if (googleJson && typeof googleJson === 'object') {
+              if (googleJson.models && typeof googleJson.models === 'object') {
+                responsePayload = { ...googleJson, models: { ...(googleJson.models as Record<string, unknown>), ...mappedCustom } };
+              } else {
+                responsePayload = { ...googleJson, models: mappedCustom };
+              }
+            }
             safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
-            safeEnd(res, JSON.stringify({ models: mappedCustom }));
+            safeEnd(res, JSON.stringify(responsePayload));
           }
         });
       });
@@ -2035,7 +2056,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           customModels.forEach((m) => {
             const slug = toSlug(m);
             const pid = generateModelPlaceholderId(m);
-            mappedCustom[slug] = {
+            const entry = {
               displayName: m.displayName,
               maxTokens: 1048576,
               maxOutputTokens: 4096,
@@ -2045,6 +2066,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
               modelProvider: 'MODEL_PROVIDER_GOOGLE',
             };
+            mappedCustom[slug] = entry;
+            mappedCustom[pid] = entry;
           });
           safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
           safeEnd(res, JSON.stringify({ models: mappedCustom }));

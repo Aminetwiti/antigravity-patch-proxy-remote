@@ -19,6 +19,7 @@ const preloadLog = createLogger('Preload');
 preloadLog.debug('Preload script loaded');
 
 const updaterAPI: UpdaterAPI = {
+  getState: () => ipcRenderer.invoke('updater:get-state').catch(() => ({ type: 'idle' })),
   onStateChanged: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, state: UpdaterState) => {
       callback(state);
@@ -74,6 +75,7 @@ export const storageAPI: StorageAPI = {
   exportProviders: () => ipcRenderer.invoke('storage:export-providers'),
   importProviders: () => ipcRenderer.invoke('storage:import-providers'),
   getDoctorDiagnostics: () => ipcRenderer.invoke('storage:get-doctor-diagnostics'),
+  testRemoteHealth: (payload) => ipcRenderer.invoke('remote:test-health', payload),
   injectUserStatus: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-user-status', rawBuffer),
   injectAvailableModels: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-available-models', rawBuffer),
 };
@@ -200,62 +202,68 @@ try {
 try {
   webFrame.executeJavaScript(`
     (function() {
-      const CONSOLE_URL = "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/console?token=4d8b9f1a2c3e5a7b0e2f4a6c8d1e3b5a7c9e1f3a5b7d9f1a3c5e7b9d1f3a5b7d";
+      const DEFAULT_HOST = "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com";
+      const DEFAULT_TOKEN = "";
+
+      // Remove any legacy admin console container if present
+      const existingContainer = document.getElementById("__ag_remote_console_container");
+      if (existingContainer) existingContainer.remove();
+
       window.__ag_selected_env = window.__ag_selected_env || "local";
 
-      function getRemoteUrl() {
+      function getRemoteConfig() {
         try {
-          return localStorage.getItem("ag_remote_url") || CONSOLE_URL;
+          const storedToken = localStorage.getItem("ag_remote_token") || "";
+          return {
+            host: localStorage.getItem("ag_remote_host") || DEFAULT_HOST,
+            token: storedToken,
+            configured: localStorage.getItem("ag_remote_configured") === "true" && storedToken.length > 0
+          };
         } catch (_) {
-          return CONSOLE_URL;
+          return { host: DEFAULT_HOST, token: "", configured: false };
         }
       }
 
-      function setRemoteConsoleVisible(visible) {
-        let container = document.getElementById("__ag_remote_console_container");
-        if (visible) {
-          if (!container) {
-            container = document.createElement("div");
-            container.id = "__ag_remote_console_container";
-            container.style.cssText = "position:absolute;top:36px;left:0;right:0;bottom:0;z-index:50;background:#181818;display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,0.1);";
-
-            const header = document.createElement("div");
-            header.style.cssText = "height:34px;min-height:34px;background:#1e1e1e;border-bottom:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;padding:0 12px;font-size:12px;color:#cccccc;user-select:none;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;";
-            header.innerHTML = '<span style="display:flex;align-items:center;gap:6px;font-weight:500;"><span style="color:#60a5fa;">☁️</span> Antigravity Remote Agent Cloud Console <span style="opacity:0.6;font-size:11px;">(62.169.27.8:4155)</span></span><div style="margin-left:auto;display:flex;align-items:center;gap:8px;"><button id="__ag_remote_reload" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;" title="Reload Console">↻</button><button id="__ag_remote_open_ext" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;" title="Open in Browser">↗</button><button id="__ag_remote_close" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:15px;padding:0 5px;border-radius:4px;" title="Close Panel">✕</button></div>';
-            container.appendChild(header);
-
-            const iframe = document.createElement("iframe");
-            iframe.id = "__ag_remote_iframe";
-            iframe.src = getRemoteUrl();
-            iframe.style.cssText = "flex:1;width:100%;height:100%;border:none;background:#121212;";
-            container.appendChild(iframe);
-
-            document.body.appendChild(container);
-
-            header.querySelector("#__ag_remote_reload").onclick = () => {
-              iframe.src = getRemoteUrl();
-            };
-            header.querySelector("#__ag_remote_open_ext").onclick = () => {
-              window.open(getRemoteUrl(), "_blank");
-            };
-            header.querySelector("#__ag_remote_close").onclick = () => {
-              setRemoteConsoleVisible(false);
-              window.__ag_selected_env = "local";
-              updateTriggerButton();
-            };
-          }
-          container.style.display = "flex";
-        } else {
-          if (container) {
-            container.style.display = "none";
-          }
-        }
+      function saveRemoteConfig(host, token) {
+        try {
+          localStorage.setItem("ag_remote_host", host);
+          localStorage.setItem("ag_remote_token", token);
+          localStorage.setItem("ag_remote_configured", "true");
+        } catch (_) {}
       }
 
       function closeEnvironmentPopover() {
         try {
           window.dispatchEvent(new PointerEvent('pointerdown', { clientX: 10, clientY: 10, bubbles: true }));
         } catch (_) {}
+      }
+
+      function updateRemoteChatPill(active) {
+        let pill = document.getElementById("__ag_remote_chat_pill");
+        if (active) {
+          if (!pill) {
+            pill = document.createElement("div");
+            pill.id = "__ag_remote_chat_pill";
+            pill.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:3px 10px;margin:4px 8px;background:rgba(37,99,235,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:12px;font-size:11px;color:#93c5fd;font-family:-apple-system,BlinkMacSystemFont,sans-serif;";
+            pill.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span><span style="font-weight:500;">Runtime Agent Remote (VPS)</span><span style="opacity:0.6;font-size:10px;">62.169.27.8</span><button id="__ag_remote_pill_cfg" style="background:none;border:none;color:#93c5fd;cursor:pointer;font-size:12px;padding:0 2px;margin-left:4px;" title="Configurer">⚙️</button>';
+            const parent = document.getElementById("antigravity.agentSidePanelInputBox") || document.querySelector('.bg-card-border');
+            if (parent && parent.parentNode) {
+              parent.parentNode.insertBefore(pill, parent);
+            } else {
+              document.body.appendChild(pill);
+            }
+            const cfgBtn = pill.querySelector("#__ag_remote_pill_cfg");
+            if (cfgBtn) {
+              cfgBtn.onclick = (e) => {
+                e.stopPropagation();
+                openRemoteConfigModal();
+              };
+            }
+          }
+          pill.style.display = "inline-flex";
+        } else {
+          if (pill) pill.style.display = "none";
+        }
       }
 
       function updateTriggerButton() {
@@ -265,19 +273,110 @@ try {
           const labelSpan = btn.querySelector('span.truncate, span.select-none');
           const iconEl = btn.querySelector('[class*="shrink-0"], span:first-child');
           if (isRemote) {
-            if (labelSpan && labelSpan.textContent !== "Remote") labelSpan.textContent = "Remote";
+            if (labelSpan && labelSpan.textContent !== "Remote (VPS)") labelSpan.textContent = "Remote (VPS)";
             if (iconEl && iconEl.getAttribute("name") !== "cloud") {
               iconEl.textContent = "cloud";
               iconEl.setAttribute("name", "cloud");
             }
           } else if (window.__ag_selected_env === "local") {
-            if (labelSpan && labelSpan.textContent === "Remote") labelSpan.textContent = "Local";
+            if (labelSpan && labelSpan.textContent !== "Local") labelSpan.textContent = "Local";
             if (iconEl && iconEl.getAttribute("name") === "cloud") {
               iconEl.textContent = "computer";
               iconEl.setAttribute("name", "computer");
             }
           }
         });
+        updateRemoteChatPill(isRemote);
+      }
+
+      function openRemoteConfigModal() {
+        let modal = document.getElementById("__ag_remote_config_modal");
+        if (modal) modal.remove();
+
+        const cfg = getRemoteConfig();
+
+        modal = document.createElement("div");
+        modal.id = "__ag_remote_config_modal";
+        modal.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;";
+
+        modal.innerHTML = \`
+          <div style="width:460px;background:#1e1e1e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;box-shadow:0 20px 40px rgba(0,0,0,0.6);padding:20px;color:#e5e5e5;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <span style="font-size:18px;">☁️</span>
+              <span style="font-size:15px;font-weight:600;color:#fff;">Configuration Runtime Agent Remote (VPS)</span>
+            </div>
+            <p style="font-size:12px;color:#a3a3a3;margin:0 0 16px 0;">Configurez l'accès au daemon distant <code>ag-agentd</code> sur votre VPS.</p>
+
+            <div style="margin-bottom:12px;">
+              <label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Hôte / URL du Daemon (Cloudflare Ingress ou IP:Port)</label>
+              <input id="__ag_cfg_host" type="text" value="\${cfg.host}" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" />
+            </div>
+
+            <div style="margin-bottom:14px;">
+              <label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Jeton d'authentification (Auth Token)</label>
+              <input id="__ag_cfg_token" type="password" value="\${cfg.token}" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" />
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;background:rgba(255,255,255,0.03);padding:8px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.07);">
+              <button id="__ag_cfg_test" style="background:#333;border:1px solid rgba(255,255,255,0.15);color:#fff;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Tester la connexion</button>
+              <span id="__ag_cfg_status" style="font-size:11px;color:#a3a3a3;">Prêt</span>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;">
+              <button id="__ag_cfg_cancel" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#ccc;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;">Annuler</button>
+              <button id="__ag_cfg_save" style="background:#2563eb;border:none;color:#fff;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;">Sélectionner Runtime Remote</button>
+            </div>
+          </div>
+        \`;
+
+        document.body.appendChild(modal);
+
+        const hostInput = modal.querySelector("#__ag_cfg_host");
+        const tokenInput = modal.querySelector("#__ag_cfg_token");
+        const statusSpan = modal.querySelector("#__ag_cfg_status");
+
+        modal.querySelector("#__ag_cfg_test").onclick = async () => {
+          statusSpan.style.color = "#93c5fd";
+          statusSpan.textContent = "Test en cours...";
+          try {
+            const h = hostInput.value.trim().replace(/\\/+$/, '');
+            const t = tokenInput.value.trim();
+            if (!h) {
+              statusSpan.style.color = "#f87171";
+              statusSpan.textContent = "Veuillez entrer une URL";
+              return;
+            }
+            const res = window.nativeStorage && window.nativeStorage.testRemoteHealth
+              ? await window.nativeStorage.testRemoteHealth({ host: h, token: t })
+              : null;
+            if (res && res.ok) {
+              const d = res.data || {};
+              statusSpan.style.color = "#4ade80";
+              const tag = (d.platform || "linux") + " / ag-agentd v" + (d.version || "2.0.0");
+              statusSpan.textContent = t ? "● Connecté & Authentifié (" + tag + ")" : "● En ligne (" + tag + ")";
+            } else {
+              statusSpan.style.color = "#f87171";
+              statusSpan.textContent = "Échec : " + ((res && res.error) || "injoignable");
+            }
+          } catch (err) {
+            statusSpan.style.color = "#f87171";
+            statusSpan.textContent = "Échec : " + (err.message || "injoignable");
+          }
+        };
+
+        modal.querySelector("#__ag_cfg_cancel").onclick = () => {
+          modal.remove();
+        };
+
+        modal.querySelector("#__ag_cfg_save").onclick = () => {
+          const h = hostInput.value.trim().replace(/\\/+$/, '');
+          const t = tokenInput.value.trim();
+          saveRemoteConfig(h, t);
+          modal.remove();
+          window.__ag_selected_env = "remote";
+          updateTriggerButton();
+          closeEnvironmentPopover();
+        };
       }
 
       function hookReact(React) {
@@ -286,13 +385,13 @@ try {
         const origCreateElement = React.createElement;
 
         React.createElement = function(type, props, ...children) {
-          // 1. Intercept Select Environment trigger button to show "Remote" when active
+          // 1. Intercept Select Environment trigger button to show "Remote (VPS)"
           if (props && props["aria-label"] === "Select Environment") {
             if (window.__ag_selected_env === "remote") {
               const mappedChildren = children.map(c => {
                 if (c && typeof c === 'object') {
                   if (c.props && c.props.className && c.props.className.includes("truncate")) {
-                    return origCreateElement("span", c.props, "Remote");
+                    return origCreateElement("span", c.props, "Remote (VPS)");
                   }
                   if (c.props && (c.props.name === "computer" || c.props.name === "call_split")) {
                     return origCreateElement(c.type, Object.assign({}, c.props, { name: "cloud" }));
@@ -314,21 +413,24 @@ try {
             const remoteProps = Object.assign({}, props, {
               title: "Remote",
               icon: cloudIcon,
-              subtitle: "Remote Agent Cloud Console (62.169.27.8)",
+              subtitle: "Remote Agent Runtime (VPS — 62.169.27.8)",
               selected: isRemoteSelected,
               disabled: false,
               onClick: function(e) {
-                window.__ag_selected_env = "remote";
-                setRemoteConsoleVisible(true);
-                updateTriggerButton();
-                closeEnvironmentPopover();
+                const cfg = getRemoteConfig();
+                if (e && (e.shiftKey || e.altKey || !cfg.configured)) {
+                  openRemoteConfigModal();
+                } else {
+                  window.__ag_selected_env = "remote";
+                  updateTriggerButton();
+                  closeEnvironmentPopover();
+                }
               }
             });
 
             const origWorktreeClick = props.onClick;
             props.onClick = function(e) {
               window.__ag_selected_env = "worktree";
-              setRemoteConsoleVisible(false);
               updateTriggerButton();
               if (typeof origWorktreeClick === "function") origWorktreeClick.apply(this, arguments);
             };
@@ -342,7 +444,6 @@ try {
             const origLocalClick = props.onClick;
             props.onClick = function(e) {
               window.__ag_selected_env = "local";
-              setRemoteConsoleVisible(false);
               updateTriggerButton();
               if (typeof origLocalClick === "function") origLocalClick.apply(this, arguments);
             };
@@ -372,12 +473,18 @@ try {
       }
 
       // DOM fallback observer
-      if (!window.__ag_dom_observer) {
+      function startDomObserver() {
+        if (window.__ag_dom_observer) return;
+        const targetNode = document.body || document.documentElement;
+        if (!targetNode) {
+          window.addEventListener('DOMContentLoaded', startDomObserver, { once: true });
+          return;
+        }
         const observer = new MutationObserver(() => {
           updateTriggerButton();
           const items = document.querySelectorAll('button, div[role="menuitem"], div[role="option"]');
           for (const item of items) {
-            if (item.textContent.includes("New Worktree") && !item.parentElement.querySelector('[data-ag-remote]')) {
+            if (item.textContent && item.textContent.includes("New Worktree") && item.parentElement && !item.parentElement.querySelector('[data-ag-remote]')) {
               const clone = item.cloneNode(true);
               clone.setAttribute('data-ag-remote', 'true');
               const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
@@ -386,7 +493,7 @@ try {
                 if (node.textContent.includes("New Worktree")) {
                   node.textContent = "Remote";
                 } else if (node.textContent.includes("Worktree from") || node.textContent.includes("reuse")) {
-                  node.textContent = "Remote Agent Cloud Console (62.169.27.8)";
+                  node.textContent = "Remote Agent Runtime (VPS — 62.169.27.8)";
                 }
               }
               const icons = clone.querySelectorAll('[class*="call_split"], span');
@@ -398,22 +505,34 @@ try {
               }
               clone.onclick = (e) => {
                 e.stopPropagation();
-                window.__ag_selected_env = "remote";
-                setRemoteConsoleVisible(true);
-                updateTriggerButton();
-                closeEnvironmentPopover();
+                const cfg = getRemoteConfig();
+                if (e.shiftKey || e.altKey || !cfg.configured) {
+                  openRemoteConfigModal();
+                } else {
+                  window.__ag_selected_env = "remote";
+                  updateTriggerButton();
+                  closeEnvironmentPopover();
+                }
               };
               item.parentElement.insertBefore(clone, item.nextSibling);
             }
           }
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(targetNode, { childList: true, subtree: true });
         window.__ag_dom_observer = observer;
+      }
+
+      if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', startDomObserver, { once: true });
+      } else {
+        startDomObserver();
       }
 
       setInterval(updateTriggerButton, 300);
     })();
-  `);
+  `).catch((err) => {
+    preloadLog.warn('Non-fatal error in remote UI hook:', err);
+  });
 } catch (e) {
   preloadLog.error('Failed to install Remote environment hook', e);
 }
