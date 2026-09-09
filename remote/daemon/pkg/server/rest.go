@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -809,6 +810,227 @@ func (h *RESTHandler) HandleWorkspaceCommit(w http.ResponseWriter, r *http.Reque
 	_ = json.NewEncoder(w).Encode(res)
 }
 
+func (h *RESTHandler) HandleWorkspaceTree(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("id")
+	if wsID == "" {
+		wsID = r.URL.Query().Get("workspaceId")
+	}
+	if wsID == "" {
+		if sessID := r.URL.Query().Get("sessionId"); sessID != "" {
+			if sess, err := h.rt.store.GetSession(r.Context(), sessID); err == nil {
+				wsID = sess.WorkspaceID
+			}
+		}
+	}
+	if wsID == "" {
+		wsList := h.wsMgr.ListWorkspaces()
+		if len(wsList) > 0 {
+			wsID = wsList[0].ID
+		}
+	}
+	if wsID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "workspaceId required"})
+		return
+	}
+
+	path := r.URL.Query().Get("path")
+	depth := 3
+	if dStr := r.URL.Query().Get("depth"); dStr != "" {
+		if d, err := strconv.Atoi(dStr); err == nil && d > 0 && d <= 8 {
+			depth = d
+		}
+	}
+
+	files, err := h.wsMgr.ListDirectory(wsID, path, depth)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"files": files})
+}
+
+func (h *RESTHandler) HandleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		wsID := r.URL.Query().Get("id")
+		if wsID == "" {
+			wsID = r.URL.Query().Get("workspaceId")
+		}
+		if wsID == "" {
+			wsList := h.wsMgr.ListWorkspaces()
+			if len(wsList) > 0 {
+				wsID = wsList[0].ID
+			}
+		}
+		filePath := r.URL.Query().Get("path")
+		if filePath == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "path required"})
+			return
+		}
+
+		data, err := h.wsMgr.ReadFile(wsID, filePath)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"path":    filePath,
+			"content": string(data),
+			"size":    len(data),
+		})
+
+	case http.MethodPost, http.MethodPut:
+		ident := getIdentity(r)
+		if ident.Role == auth.RoleReadOnly {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: read-only user cannot write files"})
+			return
+		}
+
+		var body struct {
+			WorkspaceID string `json:"workspaceId"`
+			Path        string `json:"path"`
+			Content     string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json body"})
+			return
+		}
+
+		wsID := body.WorkspaceID
+		if wsID == "" {
+			wsList := h.wsMgr.ListWorkspaces()
+			if len(wsList) > 0 {
+				wsID = wsList[0].ID
+			}
+		}
+
+		if err := h.wsMgr.WriteFile(wsID, body.Path, []byte(body.Content)); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"path":    body.Path,
+			"size":    len(body.Content),
+		})
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *RESTHandler) HandleWorkspaceSearch(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("id")
+	if wsID == "" {
+		wsID = r.URL.Query().Get("workspaceId")
+	}
+	if wsID == "" {
+		wsList := h.wsMgr.ListWorkspaces()
+		if len(wsList) > 0 {
+			wsID = wsList[0].ID
+		}
+	}
+	query := r.URL.Query().Get("query")
+	maxResults := 50
+	if mStr := r.URL.Query().Get("max"); mStr != "" {
+		if m, err := strconv.Atoi(mStr); err == nil && m > 0 {
+			maxResults = m
+		}
+	}
+
+	results, err := h.wsMgr.SearchFiles(wsID, query, maxResults)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": results})
+}
+
+func (h *RESTHandler) HandleWorkspaceSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	ident := getIdentity(r)
+	if ident.Role == auth.RoleReadOnly {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden: read-only user cannot sync workspace"})
+		return
+	}
+
+	var body struct {
+		WorkspaceID string `json:"workspaceId"`
+		Action      string `json:"action"` // "pull" or "push"
+		Remote      string `json:"remote"`
+		Branch      string `json:"branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json body"})
+		return
+	}
+
+	wsID := body.WorkspaceID
+	if wsID == "" {
+		wsList := h.wsMgr.ListWorkspaces()
+		if len(wsList) > 0 {
+			wsID = wsList[0].ID
+		}
+	}
+
+	if body.Action == "push" {
+		res, err := h.wsMgr.Push(wsID, body.Remote, body.Branch)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error(), "result": res})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(res)
+		return
+	}
+
+	// Default action: pull
+	res, err := h.wsMgr.Pull(wsID, body.Remote, body.Branch)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error(), "result": res})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
 func (h *RESTHandler) HandleMCPServers(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
 		ident := getIdentity(r)
@@ -985,6 +1207,10 @@ func NewMuxWithRBAC(rt *RuntimeServer, wsMgr *workspace.Manager, rbacMgr *auth.R
 	mux.HandleFunc("/v2/workspaces/worktrees", rest.AuthMiddleware(rest.HandleWorktrees))
 	mux.HandleFunc("/v2/workspaces/diff", rest.AuthMiddleware(rest.HandleWorkspaceDiff))
 	mux.HandleFunc("/v2/workspaces/commit", rest.AuthMiddleware(rest.HandleWorkspaceCommit))
+	mux.HandleFunc("/v2/workspaces/tree", rest.AuthMiddleware(rest.HandleWorkspaceTree))
+	mux.HandleFunc("/v2/workspaces/file", rest.AuthMiddleware(rest.HandleWorkspaceFile))
+	mux.HandleFunc("/v2/workspaces/search", rest.AuthMiddleware(rest.HandleWorkspaceSearch))
+	mux.HandleFunc("/v2/workspaces/sync", rest.AuthMiddleware(rest.HandleWorkspaceSync))
 
 	// Session Git shortcuts
 	mux.HandleFunc("/v2/sessions/diff", rest.AuthMiddleware(rest.HandleWorkspaceDiff))
@@ -1001,12 +1227,13 @@ func NewMuxWithRBAC(rt *RuntimeServer, wsMgr *workspace.Manager, rbacMgr *auth.R
 	mux.HandleFunc("/v2/approvals", rest.AuthMiddleware(rest.HandleApprovals))
 	mux.HandleFunc("/v2/approvals/resolve", rest.AuthMiddleware(rest.HandleResolveApproval))
 
-	// Interactive Terminal WebSocket (/v2/terminal)
+	// Interactive Terminal WebSocket (/v2/terminal) and One-Shot Command Execution (/v2/terminal/exec)
 	termHandler := NewTerminalHandler(wsMgr, adminToken)
 	if rbacMgr != nil {
 		termHandler.SetRBACManager(rbacMgr)
 	}
 	mux.Handle("/v2/terminal", termHandler)
+	mux.HandleFunc("/v2/terminal/exec", termHandler.HandleExec)
 
 	// Web Console Single-Page App (GET / and GET /console)
 	mux.HandleFunc("/console", HandleWebConsole)

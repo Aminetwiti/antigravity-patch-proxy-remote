@@ -23,11 +23,11 @@ func nextEventID(prefix string) string {
 }
 
 var (
-	ErrSessionNotFound   = errors.New("session not found")
-	ErrCommandDuplicate  = errors.New("duplicate command detected with same payload")
-	ErrCommandConflict   = errors.New("conflicting payload for existing command id")
-	ErrInvalidCommand    = errors.New("invalid command payload or type")
-	ErrSessionClosed     = errors.New("session is already in a terminal state")
+	ErrSessionNotFound  = errors.New("session not found")
+	ErrCommandDuplicate = errors.New("duplicate command detected with same payload")
+	ErrCommandConflict  = errors.New("conflicting payload for existing command id")
+	ErrInvalidCommand   = errors.New("invalid command payload or type")
+	ErrSessionClosed    = errors.New("session is already in a terminal state")
 )
 
 type EventBroadcaster interface {
@@ -174,6 +174,23 @@ func (s *Service) EmitEvent(ctx context.Context, sessionID, eventType string, pa
 		s.broadcaster.BroadcastEvent(ev)
 	}
 	return ev, nil
+}
+
+// EmitEphemeralEvent broadcasts a high-frequency transient event (such as streaming thought/tool chunks)
+// directly to all attached clients without writing intermediate rows to SQLite.
+// Final consolidated events (agent.thought, tool.result) are persisted via EmitEvent.
+func (s *Service) EmitEphemeralEvent(sessionID, eventType string, payload []byte) {
+	if s.broadcaster != nil {
+		ev := &domain.Event{
+			SessionID: sessionID,
+			Sequence:  -1,
+			EventID:   nextEventID("ephem"),
+			Type:      eventType,
+			Timestamp: time.Now().UnixNano() / 1000,
+			Payload:   payload,
+		}
+		s.broadcaster.BroadcastEvent(ev)
+	}
 }
 
 func (s *Service) GetCatchupEvents(ctx context.Context, sessionID string, fromSeq int64, limit int) ([]domain.Event, error) {

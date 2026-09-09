@@ -104,6 +104,10 @@ export interface StorageAPI {
   importProviders: (base64Code?: string) => Promise<{ success: boolean; count?: number; error?: string }>;
   getDoctorDiagnostics: () => Promise<any>;
   testRemoteHealth?: (payload: { host: string; token?: string } | string) => Promise<{ ok: boolean; status?: number; data?: Record<string, unknown>; error?: string }>;
+  executeRemoteCommand?: (payload: { host?: string; token?: string; command: string; timeoutMs?: number }) => Promise<{ ok: boolean; stdout?: string; stderr?: string; exitCode?: number; error?: string }>;
+  listRemoteSessions?: (payload?: { host?: string; token?: string }) => Promise<{ ok: boolean; sessions?: any[]; error?: string }>;
+  createRemoteSession?: (payload?: { host?: string; token?: string; title?: string; workspaceId?: string }) => Promise<{ ok: boolean; session?: any; error?: string }>;
+  getRemoteWorkspaces?: (payload?: { host?: string; token?: string }) => Promise<{ ok: boolean; workspaces?: any[]; error?: string }>;
   injectUserStatus?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
   injectAvailableModels?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
 }

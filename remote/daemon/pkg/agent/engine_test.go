@@ -226,8 +226,8 @@ func TestAgentEngine_Cancellation(t *testing.T) {
 		Thought: "Starting long running task",
 		ToolCalls: []agent.ToolCall{
 			{
-				ID:   "call_long",
-				Name: "run_command",
+				ID:        "call_long",
+				Name:      "run_command",
 				Arguments: json.RawMessage(`{"command": "sleep 10"}`),
 			},
 		},
@@ -373,5 +373,68 @@ func TestAgentEngine_MultiTurnToolCallPreservation(t *testing.T) {
 
 	if !foundThoughtWithToolCall {
 		t.Fatalf("HIGH-03 REGRESSION: agent.thought event failed to preserve toolCalls in payload")
+	}
+}
+
+func TestAgentEngine_ContextCompaction(t *testing.T) {
+	// 1. Test CompactToolOutput directly
+	shortText := "hello world"
+	if out := agent.CompactToolOutput(shortText, 100); out != shortText {
+		t.Errorf("expected short text unchanged, got %q", out)
+	}
+
+	largeText := strings.Repeat("A", 1000) + strings.Repeat("B", 1000) + strings.Repeat("C", 1000) // 3000 bytes
+	compacted := agent.CompactToolOutput(largeText, 1000)
+	if len(compacted) >= 3000 {
+		t.Errorf("expected compacted output to be significantly smaller than 3000, got %d", len(compacted))
+	}
+	if !strings.HasPrefix(compacted, strings.Repeat("A", 500)) {
+		t.Errorf("expected head to be preserved")
+	}
+	if !strings.HasSuffix(compacted, strings.Repeat("C", 500)) {
+		t.Errorf("expected tail to be preserved")
+	}
+	if !strings.Contains(compacted, "omitted for context compaction") {
+		t.Errorf("expected omission notice in compacted text")
+	}
+
+	// 2. Test CompactContextMessages with older and recent messages
+	oldToolResult := strings.Repeat("X", 5000)
+	recentToolResult := strings.Repeat("Y", 5000)
+
+	msgs := []agent.LLMMessage{
+		{Role: "user", Content: "initial prompt"},
+		{Role: "assistant", Content: "thinking step 1"},
+		{Role: "tool", ToolCallID: "call_old", Content: oldToolResult},
+		// Pad with 6 messages so call_old is older than the recentMessageWindow
+		{Role: "user", Content: "turn 2"},
+		{Role: "assistant", Content: "turn 2 thought"},
+		{Role: "tool", ToolCallID: "call_pad1", Content: "pad1"},
+		{Role: "user", Content: "turn 3"},
+		{Role: "assistant", Content: "turn 3 thought"},
+		{Role: "tool", ToolCallID: "call_recent", Content: recentToolResult},
+	}
+
+	res := agent.CompactContextMessages(msgs)
+	if len(res) != len(msgs) {
+		t.Fatalf("expected %d messages, got %d", len(msgs), len(res))
+	}
+
+	// Old tool output must be compacted down to ~2000 chars + notice
+	if len(res[2].Content) >= 5000 {
+		t.Errorf("expected old tool message to be compacted, got length %d", len(res[2].Content))
+	}
+	if !strings.Contains(res[2].Content, "omitted for context compaction") {
+		t.Errorf("expected old tool output to contain compaction notice")
+	}
+
+	// Recent tool output must remain fully intact since 5000 < maxRecentToolOutput (32000)
+	if res[8].Content != recentToolResult {
+		t.Errorf("expected recent tool output to remain uncompacted, got %d bytes", len(res[8].Content))
+	}
+
+	// User and assistant messages must never be altered
+	if res[0].Content != "initial prompt" || res[1].Content != "thinking step 1" {
+		t.Errorf("user and assistant messages must not be altered")
 	}
 }

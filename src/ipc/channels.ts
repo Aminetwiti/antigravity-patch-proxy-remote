@@ -64,6 +64,7 @@ export const IPC_CHANNELS = {
 
   // Remote Agent Runtime
   REMOTE_TEST_HEALTH: 'remote:test-health',
+  REMOTE_EXECUTE_COMMAND: 'remote:execute-command',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

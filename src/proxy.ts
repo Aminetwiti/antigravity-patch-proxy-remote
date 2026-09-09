@@ -31,6 +31,43 @@ function newTraceId(): string {
 
 let server: http.Server | null = null;
 let proxyPort = 0;
+let isRemoteVpsActive = false;
+let remoteVpsHost = '62.169.27.8';
+
+function getRemoteStatePath(): string {
+  const home = os.homedir();
+  const dir = path.join(home, '.gemini', 'antigravity');
+  if (!fs.existsSync(dir)) {
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  }
+  return path.join(dir, 'remote_vps_state.json');
+}
+
+function loadRemoteState(): void {
+  try {
+    const p = getRemoteStatePath();
+    if (fs.existsSync(p)) {
+      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      isRemoteVpsActive = !!data.active;
+      if (data.host) remoteVpsHost = String(data.host);
+      log.info(`[Proxy] Loaded Remote VPS state from disk: active=${isRemoteVpsActive}, host=${remoteVpsHost}`);
+    }
+  } catch (e) {
+    log.warn('[Proxy] Failed to load remote VPS state from disk:', e);
+  }
+}
+
+function saveRemoteState(): void {
+  try {
+    const p = getRemoteStatePath();
+    fs.writeFileSync(p, JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost }, null, 2), 'utf-8');
+  } catch (e) {
+    log.warn('[Proxy] Failed to save remote VPS state to disk:', e);
+  }
+}
+
+// Initialize on boot
+loadRemoteState();
 
 import {
   GOOGLE_PROXY_TIMEOUT_MS,
@@ -239,6 +276,7 @@ async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse
     ...(req.headers as Record<string, string | string[] | undefined>),
   };
   headers['host'] = targetHost;
+  headers['content-length'] = String(reqBody.length);
   delete headers['connection'];
   delete headers['keep-alive'];
 
@@ -1521,6 +1559,34 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
 
+  // Remote VPS Agent State Sync (from IDE Webview or preload)
+  if (req.url === '/api/remote/status' || req.url?.startsWith('/api/remote/status?')) {
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost }));
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        try {
+          const b = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as { active?: boolean; host?: string };
+          isRemoteVpsActive = !!b.active;
+          if (b.host) remoteVpsHost = String(b.host);
+          saveRemoteState();
+          log.info(`[Proxy] Remote VPS session status updated: active=${isRemoteVpsActive}, host=${remoteVpsHost}`);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ ok: true, active: isRemoteVpsActive, host: remoteVpsHost }));
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
+  }
+
   if (req.method === 'GET' && (req.url === '/__diag__' || req.url?.startsWith('/__diag__?'))) {
     try {
       const accept = String(req.headers['accept'] ?? '');
@@ -1658,7 +1724,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   req.on('end', async () => {
     if (bodyRejected) return;
 
-    const fullBody = Buffer.concat(bodyChunks);
+    let fullBody = Buffer.concat(bodyChunks);
     const bodyStr = fullBody.toString('utf-8');
 
     log.info(`[Proxy] Request: ${req.method} ${req.url}`);
@@ -2211,6 +2277,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       try {
         const reqJson = JSON.parse(bodyStr) as Record<string, unknown>;
         const targetReq = (reqJson.request || reqJson) as Record<string, unknown>;
+
 
         const candidateNames = [
           reqJson.model,

@@ -37,6 +37,23 @@ function humanSize(bytes: number): string {
 function matchesLevel(line: string, level: string): boolean {
   const upper = level.toUpperCase();
   if (upper === 'ALL') return true;
+
+  // Handle Google glog prefix: "ERROR: logging before google.Init: [IWEF]MMDD..."
+  const glogMatch = line.match(/^ERROR: logging before google\.Init:\s*([IWEF])/);
+  if (glogMatch) {
+    const glogSeverity = glogMatch[1];
+    switch (upper) {
+      case 'ERROR':
+        return glogSeverity === 'E' || glogSeverity === 'F';
+      case 'WARN':
+        return glogSeverity === 'W' || glogSeverity === 'E' || glogSeverity === 'F';
+      case 'INFO':
+        return glogSeverity === 'I' || glogSeverity === 'W' || glogSeverity === 'E' || glogSeverity === 'F';
+      default:
+        return true;
+    }
+  }
+
   // Match explicit level tags: [ERROR], [WARN], [INFO], [DEBUG]
   // Also match daemon format: ok=0 warn=1 error=1
   switch (upper) {

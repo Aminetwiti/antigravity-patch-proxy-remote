@@ -350,3 +350,87 @@ func TestREST_WorkspaceDiffAndCommit(t *testing.T) {
 	}
 }
 
+func TestREST_WorkspaceFileTreeAndSync(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-sync")
+	defer cleanup()
+
+	// 1. POST /v2/workspaces/file -> write file
+	writeBody := []byte(`{"workspaceId": "default", "path": "docs/readme.txt", "content": "hello world from sync"}`)
+	writeReq := httptest.NewRequest("POST", "/v2/workspaces/file?token=token-sync", bytes.NewReader(writeBody))
+	writeW := httptest.NewRecorder()
+	mux.ServeHTTP(writeW, writeReq)
+
+	if writeW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on write file, got %d: %s", writeW.Code, writeW.Body.String())
+	}
+
+	// 2. GET /v2/workspaces/file -> read file
+	readReq := httptest.NewRequest("GET", "/v2/workspaces/file?token=token-sync&id=default&path=docs/readme.txt", nil)
+	readW := httptest.NewRecorder()
+	mux.ServeHTTP(readW, readReq)
+
+	if readW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on read file, got %d: %s", readW.Code, readW.Body.String())
+	}
+
+	var fileResp map[string]interface{}
+	if err := json.NewDecoder(readW.Body).Decode(&fileResp); err != nil {
+		t.Fatalf("decode read file resp failed: %v", err)
+	}
+	if fileResp["content"] != "hello world from sync" {
+		t.Errorf("expected content 'hello world from sync', got %v", fileResp["content"])
+	}
+
+	// 3. GET /v2/workspaces/tree -> list directory tree
+	treeReq := httptest.NewRequest("GET", "/v2/workspaces/tree?token=token-sync&id=default&depth=3", nil)
+	treeW := httptest.NewRecorder()
+	mux.ServeHTTP(treeW, treeReq)
+
+	if treeW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on tree, got %d: %s", treeW.Code, treeW.Body.String())
+	}
+
+	var treeResp struct {
+		Files []workspace.FileInfo `json:"files"`
+	}
+	if err := json.NewDecoder(treeW.Body).Decode(&treeResp); err != nil {
+		t.Fatalf("decode tree resp failed: %v", err)
+	}
+	found := false
+	for _, f := range treeResp.Files {
+		if strings.Contains(f.Path, "readme.txt") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected readme.txt to be listed in tree, got %+v", treeResp.Files)
+	}
+
+	// 4. GET /v2/workspaces/search -> search file contents
+	searchReq := httptest.NewRequest("GET", "/v2/workspaces/search?token=token-sync&id=default&query=sync", nil)
+	searchW := httptest.NewRecorder()
+	mux.ServeHTTP(searchW, searchReq)
+
+	if searchW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on search, got %d: %s", searchW.Code, searchW.Body.String())
+	}
+
+	var searchResp struct {
+		Results []workspace.SearchResult `json:"results"`
+	}
+	if err := json.NewDecoder(searchW.Body).Decode(&searchResp); err != nil {
+		t.Fatalf("decode search resp failed: %v", err)
+	}
+	if len(searchResp.Results) == 0 {
+		t.Errorf("expected search to return matches for 'sync'")
+	}
+
+	// 5. POST /v2/workspaces/sync with invalid json -> 400
+	badSyncReq := httptest.NewRequest("POST", "/v2/workspaces/sync?token=token-sync", bytes.NewReader([]byte("{invalid-json")))
+	badSyncW := httptest.NewRecorder()
+	mux.ServeHTTP(badSyncW, badSyncReq)
+	if badSyncW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on bad sync body, got %d", badSyncW.Code)
+	}
+}

@@ -509,7 +509,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
               doRequest('GET');
               return;
             }
-            
+
             // Distinguish auth failures (401/403) from network reachable.
             if (res.statusCode === 401 || res.statusCode === 403) {
               res.resume();
@@ -650,6 +650,77 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
         });
       } catch (err: any) {
         resolve({ ok: false, error: err.message || 'URL invalide' });
+      }
+    });
+  });
+
+  // Execute remote command on VPS daemon
+  ipcMain.handle('remote:execute-command', async (_event, payload: { host?: string; token?: string; command: string; timeoutMs?: number }) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const https = require('https');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const http = require('http');
+
+    return new Promise<{ ok: boolean; stdout?: string; stderr?: string; exitCode?: number; error?: string }>((resolve) => {
+      try {
+        const rawHost = (payload?.host || 'https://pharmaceuticals-willing-warrant-pound.trycloudflare.com').trim().replace(/\/+$/, '');
+        const token = (payload?.token || '').trim();
+        const command = (payload?.command || '').trim();
+        const timeoutMs = payload?.timeoutMs || 15000;
+
+        if (!command) {
+          resolve({ ok: false, error: 'Commande manquante' });
+          return;
+        }
+
+        const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
+        const client = parsed.protocol === 'https:' ? https : http;
+        const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
+
+        const postData = JSON.stringify({ command, timeout_ms: timeoutMs });
+        const req = client.request(
+          {
+            hostname: parsed.hostname,
+            port,
+            path: `/v2/terminal/exec?token=${encodeURIComponent(token)}`,
+            method: 'POST',
+            timeout: timeoutMs,
+            rejectUnauthorized: false,
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(postData),
+              'Authorization': `Bearer ${token}`,
+              'User-Agent': 'Antigravity-Remote-Client/2.0',
+            },
+          },
+          (res: any) => {
+            let body = '';
+            res.on('data', (c: any) => { body += c; });
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                try {
+                  const json = JSON.parse(body);
+                  resolve({ ok: true, stdout: json.stdout || body, stderr: json.stderr || '', exitCode: json.exitCode ?? 0 });
+                } catch (_) {
+                  resolve({ ok: true, stdout: body, stderr: '', exitCode: 0 });
+                }
+              } else {
+                resolve({ ok: false, error: `HTTP ${res.statusCode}`, stdout: body, exitCode: res.statusCode });
+              }
+            });
+          }
+        );
+        req.on('error', (err: any) => {
+          resolve({ ok: false, error: err.message || 'Échec exécution remote' });
+        });
+        req.on('timeout', () => {
+          req.destroy();
+          resolve({ ok: false, error: 'Délai d\'attente dépassé' });
+        });
+        req.write(postData);
+        req.end();
+      } catch (err: any) {
+        resolve({ ok: false, error: err.message || 'Erreur exécution' });
       }
     });
   });
@@ -930,10 +1001,10 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
     return new Promise((resolve) => {
       try {
         const parsedUrl = new URL(params.apiUrl);
-        
+
         // Determine the base URL and construct /v1/models endpoint
         let modelsUrl = params.apiUrl;
-        
+
         // If the URL ends with a specific endpoint like /chat/completions, extract base
         if (modelsUrl.includes('/chat/completions')) {
           modelsUrl = modelsUrl.replace(/\/chat\/completions.*$/, '/models');
@@ -947,26 +1018,26 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
           modelsUrl = cleanModelsUrl.endsWith('/v1') ? `${cleanModelsUrl}/models` : `${cleanModelsUrl}/v1/models`;
         }
         modelsUrl = modelsUrl.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
-        
+
         const protocol = parsedUrl.protocol === 'https:' ? https : http;
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
         };
-        
+
         if (params.apiKey && params.apiKey !== 'none') {
           const decryptedKey = cryptoStore.decryptString(params.apiKey) as string;
           headers['Authorization'] = `Bearer ${decryptedKey}`;
         }
-        
+
         const reqOptions = {
           method: 'GET',
           headers,
           timeout: 10000,
           rejectUnauthorized: !params.allowUnauthorized,
         };
-        
+
         log.info(`[IPC] Fetching models from: ${modelsUrl}`);
-        
+
         const req = protocol.request(modelsUrl, reqOptions, (res) => {
           let body = '';
           res.on('data', (chunk) => (body += chunk));
@@ -974,7 +1045,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             if (res.statusCode === 200) {
               try {
                 const parsed = JSON.parse(body) as { data?: Array<{ id: string; name?: string; object?: string; input_modalities?: string[] }> };
-                
+
                 if (parsed.data && Array.isArray(parsed.data)) {
                   const models = parsed.data
                     .filter((m) => m.id && m.object === 'model')
@@ -983,7 +1054,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
                       name: (m.name as string) || m.id,
                       inputModalities: m.input_modalities || ['text'], // Default to text-only if not specified
                     }));
-                  
+
                   resolve({ success: true, models });
                 } else {
                   resolve({ success: false, error: 'Invalid response format from API' });
@@ -996,7 +1067,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             }
           });
         });
-        
+
         req.on('error', (err) => {
           let message = err.message;
           if (message.includes('ECONNREFUSED')) {
@@ -1008,7 +1079,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
           }
           resolve({ success: false, error: message });
         });
-        
+
         req.end();
       } catch (err) {
         resolve({ success: false, error: `Invalid URL: ${(err as Error).message}` });

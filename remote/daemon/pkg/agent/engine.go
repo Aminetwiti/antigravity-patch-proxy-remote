@@ -144,7 +144,8 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 		}
 
 		onChunk := func(chunk string) {
-			_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "agent.thought_chunk", []byte(chunk))
+			chunkPayload, _ := json.Marshal(map[string]string{"chunk": chunk})
+			e.sessionSvc.EmitEphemeralEvent(sessionID, "agent.thought_chunk", chunkPayload)
 		}
 
 		resp, err := e.llmClient.Generate(ctx, messages, availableTools, onChunk)
@@ -244,7 +245,7 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 					"callId": tc.ID,
 					"chunk":  string(c),
 				})
-				_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "tool.output", chunkPayload)
+				e.sessionSvc.EmitEphemeralEvent(sessionID, "tool.output", chunkPayload)
 			}
 
 			result, execErr := e.toolsReg.Execute(ctx, sessionID, workspaceID, tc.Name, tc.Arguments, onOutputChunk)
@@ -325,7 +326,51 @@ func (e *Engine) buildContextMessages(events []domain.Event) []LLMMessage {
 			}
 		}
 	}
-	return msgs
+	return CompactContextMessages(msgs)
+}
+
+const (
+	maxRecentToolOutput = 32000
+	maxOlderToolOutput  = 2000
+	recentMessageWindow = 6
+)
+
+// CompactToolOutput truncates large tool outputs in the middle while preserving head and tail.
+func CompactToolOutput(out string, maxLen int) string {
+	if len(out) <= maxLen {
+		return out
+	}
+	half := maxLen / 2
+	head := out[:half]
+	tail := out[len(out)-half:]
+	omitted := len(out) - maxLen
+	return fmt.Sprintf("%s\n\n[... %d bytes omitted for context compaction ...]\n\n%s", head, omitted, tail)
+}
+
+// CompactContextMessages compacts older tool outputs to avoid token blowouts in long sessions.
+func CompactContextMessages(msgs []LLMMessage) []LLMMessage {
+	if len(msgs) == 0 {
+		return msgs
+	}
+	result := make([]LLMMessage, len(msgs))
+	copy(result, msgs)
+
+	cutoff := len(result) - recentMessageWindow
+	if cutoff < 0 {
+		cutoff = 0
+	}
+
+	for i := range result {
+		if result[i].Role != "tool" || len(result[i].Content) == 0 {
+			continue
+		}
+		if i < cutoff {
+			result[i].Content = CompactToolOutput(result[i].Content, maxOlderToolOutput)
+		} else {
+			result[i].Content = CompactToolOutput(result[i].Content, maxRecentToolOutput)
+		}
+	}
+	return result
 }
 
 // RunSubagent executes an isolated child agent session and returns its synthesized outcome.

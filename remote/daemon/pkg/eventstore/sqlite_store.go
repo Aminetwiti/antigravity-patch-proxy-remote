@@ -665,6 +665,6 @@ func (s *SQLiteEventStore) DeleteScheduledJob(ctx context.Context, id string) er
 }
 
 func (s *SQLiteEventStore) Close() error {
+	_, _ = s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
 	return s.db.Close()
 }
-

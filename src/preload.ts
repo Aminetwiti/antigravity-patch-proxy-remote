@@ -72,8 +72,11 @@ export const storageAPI: StorageAPI = {
   getProviders: () => ipcRenderer.invoke('storage:get-providers'),
   saveProvider: (provider) => ipcRenderer.invoke('storage:save-provider', provider),
   deleteProvider: (providerId) => ipcRenderer.invoke('storage:delete-provider', providerId),
-  exportProviders: () => ipcRenderer.invoke('storage:export-providers'),
-  importProviders: () => ipcRenderer.invoke('storage:import-providers'),
+  exportProviders: () => ipcRenderer.invoke('storage:export-providers-base64'),
+  importProviders: (base64Code?: string) =>
+    base64Code
+      ? ipcRenderer.invoke('storage:import-providers-base64', base64Code)
+      : ipcRenderer.invoke('storage:import-providers'),
   getDoctorDiagnostics: () => ipcRenderer.invoke('storage:get-doctor-diagnostics'),
   testRemoteHealth: (payload) => ipcRenderer.invoke('remote:test-health', payload),
   injectUserStatus: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-user-status', rawBuffer),
@@ -145,17 +148,131 @@ contextBridge.exposeInMainWorld('deepLink', deepLinkAPI);
 contextBridge.exposeInMainWorld('agent', agentAPI);
 contextBridge.exposeInMainWorld('electronNative', electronNativeAPI);
 
-// Intercept GetUserStatus and GetAvailableModels in the renderer without redirects (which break ConnectRPC)
+// Intercept GetUserStatus, GetAvailableModels, and RunCommand in the renderer without redirects (which break ConnectRPC)
 try {
   webFrame.executeJavaScript(`
     (function() {
       if (window.__ag_fetch_hooked) return;
       window.__ag_fetch_hooked = true;
       const origFetch = window.fetch;
+
+      function readVarintFromUint8(buf, offset) {
+        let res = 0, shift = 0, bytes = 0;
+        while (offset + bytes < buf.length) {
+          const b = buf[offset + bytes];
+          res |= (b & 0x7f) << shift;
+          bytes++;
+          if (!(b & 0x80)) break;
+          shift += 7;
+        }
+        return { value: res >>> 0, bytes };
+      }
+
+      function encodeVarint(val) {
+        const b = [];
+        let v = val >>> 0;
+        do {
+          let byte = v & 0x7f;
+          v >>>= 7;
+          if (v !== 0) byte |= 0x80;
+          b.push(byte);
+        } while (v !== 0);
+        return b;
+      }
+
+      function encodeStringField(fieldNum, str) {
+        const strBytes = new TextEncoder().encode(str || '');
+        const tag = (fieldNum << 3) | 2;
+        return [...encodeVarint(tag), ...encodeVarint(strBytes.length), ...strBytes];
+      }
+
+      function encodeVarintField(fieldNum, val) {
+        const tag = (fieldNum << 3) | 0;
+        return [...encodeVarint(tag), ...encodeVarint(val)];
+      }
+
+      function buildRunCommandResponse(stdout, stderr, exitCode, timedOut) {
+        const payload = [
+          ...encodeStringField(1, stdout || ''),
+          ...encodeStringField(2, stderr || ''),
+          ...encodeVarintField(3, exitCode || 0),
+          ...encodeVarintField(4, timedOut ? 1 : 0),
+        ];
+        const header = [0x00, (payload.length >>> 24) & 0xff, (payload.length >>> 16) & 0xff, (payload.length >>> 8) & 0xff, payload.length & 0xff];
+        return new Uint8Array([...header, ...payload]);
+      }
+
+      function parseRunCommandRequest(buffer) {
+        let offset = 0;
+        if (buffer.length >= 5 && (buffer[0] === 0x00 || buffer[0] === 0x80)) {
+          offset = 5;
+        }
+        let command = '';
+        const args = [];
+        let cwd = '';
+        while (offset < buffer.length) {
+          const tagVar = readVarintFromUint8(buffer, offset);
+          offset += tagVar.bytes;
+          const tag = tagVar.value;
+          const wireType = tag & 0x07;
+          const fieldNum = tag >>> 3;
+          if (wireType === 2) {
+            const lenVar = readVarintFromUint8(buffer, offset);
+            offset += lenVar.bytes;
+            const len = lenVar.value;
+            const strVal = new TextDecoder().decode(buffer.subarray(offset, offset + len));
+            offset += len;
+            if (fieldNum === 1) command = strVal;
+            else if (fieldNum === 2) args.push(strVal);
+            else if (fieldNum === 3) cwd = strVal;
+          } else if (wireType === 0) {
+            const v = readVarintFromUint8(buffer, offset);
+            offset += v.bytes;
+          } else {
+            break;
+          }
+        }
+        return { command, args, cwd };
+      }
+
       window.fetch = async function(...args) {
         const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : (args[0] && args[0].href ? args[0].href : ''));
         const isUserStatus = typeof url === 'string' && url.includes('LanguageServerService/GetUserStatus');
         const isAvailableModels = typeof url === 'string' && url.includes('LanguageServerService/GetAvailableModels');
+        const isRunCommand = typeof url === 'string' && url.includes('LanguageServerService/RunCommand');
+
+        // Handle RunCommand interception for remote sessions
+        if (isRunCommand && window.__ag_is_remote_session && window.__ag_is_remote_session()) {
+          try {
+            let reqBuf = null;
+            if (args[1] && args[1].body) {
+              if (args[1].body instanceof Uint8Array) reqBuf = args[1].body;
+              else if (args[1].body instanceof ArrayBuffer) reqBuf = new Uint8Array(args[1].body);
+            }
+            if (reqBuf) {
+              const parsed = parseRunCommandRequest(reqBuf);
+              let fullCmd = parsed.command;
+              if (parsed.args && parsed.args.length > 0) {
+                fullCmd += ' ' + parsed.args.join(' ');
+              }
+              if (fullCmd && window.__ag_execute_remote_command) {
+                console.log('[AG Remote] Intercepting RunCommand for Remote VPS:', fullCmd);
+                const res = await window.__ag_execute_remote_command(fullCmd);
+                const respBytes = buildRunCommandResponse(res.stdout || '', res.stderr || '', res.exitCode ?? 0, false);
+                return new Response(respBytes, {
+                  status: 200,
+                  statusText: 'OK',
+                  headers: {
+                    'content-type': 'application/grpc-web+proto',
+                    'content-length': String(respBytes.length)
+                  }
+                });
+              }
+            }
+          } catch (e) {
+            console.error('[AG Remote] RunCommand interception error, falling back:', e);
+          }
+        }
 
         if (!isUserStatus && !isAvailableModels) {
           return origFetch.apply(this, args);
@@ -203,24 +320,73 @@ try {
   webFrame.executeJavaScript(`
     (function() {
       const DEFAULT_HOST = "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com";
-      const DEFAULT_TOKEN = "";
+      const DEFAULT_TOKEN = "4d8b9f1a2c3e5a7b0e2f4a6c8d1e3b5a7c9e1f3a5b7d9f1a3c5e7b9d1f3a5b7d";
 
       // Remove any legacy admin console container if present
       const existingContainer = document.getElementById("__ag_remote_console_container");
       if (existingContainer) existingContainer.remove();
 
-      window.__ag_selected_env = window.__ag_selected_env || "local";
+      // --- Remote Session State Management ---
+      function getRemoteSessions() {
+        try {
+          return JSON.parse(localStorage.getItem("ag_remote_sessions") || "{}");
+        } catch (_) {
+          return {};
+        }
+      }
+
+      function setSessionRemote(cascadeId, isRemote) {
+        if (!cascadeId) return;
+        try {
+          const map = getRemoteSessions();
+          if (isRemote) {
+            map[cascadeId] = true;
+          } else {
+            delete map[cascadeId];
+          }
+          localStorage.setItem("ag_remote_sessions", JSON.stringify(map));
+        } catch (_) {}
+      }
+
+      function getActiveSessionId() {
+        const match = window.location.pathname.match(/\\/c\\/([a-zA-Z0-9_-]+)/);
+        if (match && match[1]) return match[1];
+
+        const promptBox = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+        if (promptBox) {
+          const key = Object.keys(promptBox).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+          let fiber = key ? promptBox[key] : null;
+          while (fiber) {
+            if (fiber.memoizedProps && (fiber.memoizedProps.cascadeId || fiber.memoizedProps.conversationId)) {
+              return fiber.memoizedProps.cascadeId || fiber.memoizedProps.conversationId;
+            }
+            fiber = fiber.return;
+          }
+        }
+        return null;
+      }
+
+      function isCurrentSessionRemote() {
+        const cid = getActiveSessionId();
+        if (cid) {
+          const map = getRemoteSessions();
+          return !!map[cid];
+        }
+        return !!window.__ag_draft_remote;
+      }
+
+      window.__ag_is_remote_session = isCurrentSessionRemote;
 
       function getRemoteConfig() {
         try {
-          const storedToken = localStorage.getItem("ag_remote_token") || "";
+          const storedToken = localStorage.getItem("ag_remote_token") || DEFAULT_TOKEN;
           return {
             host: localStorage.getItem("ag_remote_host") || DEFAULT_HOST,
             token: storedToken,
-            configured: localStorage.getItem("ag_remote_configured") === "true" && storedToken.length > 0
+            configured: localStorage.getItem("ag_remote_configured") === "true" || storedToken.length > 0
           };
         } catch (_) {
-          return { host: DEFAULT_HOST, token: "", configured: false };
+          return { host: DEFAULT_HOST, token: DEFAULT_TOKEN, configured: true };
         }
       }
 
@@ -238,15 +404,80 @@ try {
         } catch (_) {}
       }
 
+      // --- Command Execution on Remote VPS ---
+      function executeRemoteCommand(command, timeoutMs = 12000) {
+        return new Promise((resolve) => {
+          const cfg = getRemoteConfig();
+          const token = cfg.token;
+          const host = cfg.host;
+          if (!host) {
+            resolve({ ok: false, error: 'Hôte non configuré' });
+            return;
+          }
+          const wsProto = host.startsWith('https:') ? 'wss:' : 'ws:';
+          const cleanHost = host.replace(/^https?:\\/\\//, '');
+          const wsUrl = \`\${wsProto}//\${cleanHost}/v2/terminal?terminalId=exec_\${Date.now()}_\${Math.random().toString(36).slice(2, 7)}&token=\${encodeURIComponent(token)}\`;
+
+          let sock;
+          try {
+            sock = new WebSocket(wsUrl);
+          } catch (e) {
+            resolve({ ok: false, error: e.message || 'WebSocket init failed' });
+            return;
+          }
+
+          let output = '';
+          const endMarker = '___REMOTE_EXEC_DONE___';
+          const timer = setTimeout(() => {
+            try { sock.close(); } catch (_) {}
+            resolve({ ok: false, error: 'Timeout dépassé', stdout: output });
+          }, timeoutMs);
+
+          sock.onopen = () => {
+            const wrapped = \`\${command}\\necho "\\n\${endMarker} $?\\n"\\n\`;
+            sock.send(JSON.stringify({ type: 'input', data: wrapped }));
+          };
+
+          sock.onmessage = (evt) => {
+            try {
+              const msg = JSON.parse(evt.data);
+              if (msg.type === 'output') {
+                output += msg.data;
+                if (output.includes(endMarker)) {
+                  clearTimeout(timer);
+                  try { sock.close(); } catch (_) {}
+                  const parts = output.split(endMarker);
+                  const rawStdout = parts[0].trim();
+                  const exitCodeStr = (parts[1] || '').trim().split(/\\s+/)[0];
+                  const exitCode = parseInt(exitCodeStr, 10) || 0;
+                  resolve({ ok: exitCode === 0, stdout: rawStdout, stderr: '', exitCode });
+                }
+              }
+            } catch (_) {}
+          };
+
+          sock.onerror = () => {
+            clearTimeout(timer);
+            resolve({ ok: false, error: 'Erreur de connexion WebSocket', stdout: output });
+          };
+        });
+      }
+
+      window.__ag_execute_remote_command = executeRemoteCommand;
+
       function updateRemoteChatPill(active) {
         let pill = document.getElementById("__ag_remote_chat_pill");
+        if (pill && !document.body.contains(pill)) {
+          pill.remove();
+          pill = null;
+        }
         if (active) {
+          const parent = document.getElementById("antigravity.agentSidePanelInputBox") || document.querySelector('.bg-card-border');
           if (!pill) {
             pill = document.createElement("div");
             pill.id = "__ag_remote_chat_pill";
             pill.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:3px 10px;margin:4px 8px;background:rgba(37,99,235,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:12px;font-size:11px;color:#93c5fd;font-family:-apple-system,BlinkMacSystemFont,sans-serif;";
-            pill.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span><span style="font-weight:500;">Runtime Agent Remote (VPS)</span><span style="opacity:0.6;font-size:10px;">62.169.27.8</span><button id="__ag_remote_pill_cfg" style="background:none;border:none;color:#93c5fd;cursor:pointer;font-size:12px;padding:0 2px;margin-left:4px;" title="Configurer">⚙️</button>';
-            const parent = document.getElementById("antigravity.agentSidePanelInputBox") || document.querySelector('.bg-card-border');
+            pill.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span><span style="font-weight:500;">Runtime Agent Remote (VPS)</span><span style="opacity:0.6;font-size:10px;">62.169.27.8</span><button id="__ag_remote_pill_term" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 5px;margin-left:4px;" title="Ouvrir Terminal VPS">>_ Terminal</button><button id="__ag_remote_pill_cfg" style="background:none;border:none;color:#93c5fd;cursor:pointer;font-size:12px;padding:0 2px;margin-left:2px;" title="Configurer">⚙️</button>';
             if (parent && parent.parentNode) {
               parent.parentNode.insertBefore(pill, parent);
             } else {
@@ -259,6 +490,15 @@ try {
                 openRemoteConfigModal();
               };
             }
+            const termBtn = pill.querySelector("#__ag_remote_pill_term");
+            if (termBtn) {
+              termBtn.onclick = (e) => {
+                e.stopPropagation();
+                openRemoteTerminalModal();
+              };
+            }
+          } else if (parent && parent.parentNode && pill.nextElementSibling !== parent) {
+            parent.parentNode.insertBefore(pill, parent);
           }
           pill.style.display = "inline-flex";
         } else {
@@ -267,7 +507,14 @@ try {
       }
 
       function updateTriggerButton() {
-        const isRemote = (window.__ag_selected_env === "remote");
+        const cid = getActiveSessionId();
+        // If a new conversation draft just got its cascadeId created, promote it to remote session
+        if (cid && window.__ag_draft_remote) {
+          setSessionRemote(cid, true);
+          window.__ag_draft_remote = false;
+        }
+
+        const isRemote = isCurrentSessionRemote();
         const buttons = document.querySelectorAll('button[aria-label="Select Environment"]');
         buttons.forEach(btn => {
           const labelSpan = btn.querySelector('span.truncate, span.select-none');
@@ -278,8 +525,10 @@ try {
               iconEl.textContent = "cloud";
               iconEl.setAttribute("name", "cloud");
             }
-          } else if (window.__ag_selected_env === "local") {
-            if (labelSpan && labelSpan.textContent !== "Local") labelSpan.textContent = "Local";
+          } else {
+            if (labelSpan && labelSpan.textContent === "Remote (VPS)") {
+              labelSpan.textContent = "Local";
+            }
             if (iconEl && iconEl.getAttribute("name") === "cloud") {
               iconEl.textContent = "computer";
               iconEl.setAttribute("name", "computer");
@@ -287,6 +536,93 @@ try {
           }
         });
         updateRemoteChatPill(isRemote);
+      }
+
+      function openRemoteTerminalModal() {
+        let modal = document.getElementById("__ag_remote_term_modal");
+        if (modal) modal.remove();
+
+        modal = document.createElement("div");
+        modal.id = "__ag_remote_term_modal";
+        modal.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;";
+
+        modal.innerHTML = \`
+          <div style="width:620px;max-width:92vw;background:#18181b;border:1px solid rgba(255,255,255,0.15);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.7);display:flex;flex-direction:column;overflow:hidden;color:#e4e4e7;">
+            <div style="padding:12px 16px;background:#27272a;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;"></span>
+                <span style="font-size:13px;font-weight:600;color:#fff;">Terminal Remote VPS — vmi2743594 (62.169.27.8)</span>
+              </div>
+              <button id="__ag_term_close" style="background:none;border:none;color:#a1a1aa;cursor:pointer;font-size:16px;padding:0 4px;" title="Fermer">✕</button>
+            </div>
+
+            <div style="display:flex;gap:6px;padding:8px 14px;background:#202024;border-bottom:1px solid rgba(255,255,255,0.05);overflow-x:auto;">
+              <span style="font-size:11px;color:#a1a1aa;align-self:center;margin-right:2px;">Actions rapides :</span>
+              <button class="__ag_term_chip" data-cmd="uname -a" style="background:#27272a;border:1px solid rgba(255,255,255,0.12);color:#93c5fd;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">uname -a</button>
+              <button class="__ag_term_chip" data-cmd="whoami" style="background:#27272a;border:1px solid rgba(255,255,255,0.12);color:#93c5fd;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">whoami</button>
+              <button class="__ag_term_chip" data-cmd="uptime" style="background:#27272a;border:1px solid rgba(255,255,255,0.12);color:#93c5fd;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">uptime</button>
+              <button class="__ag_term_chip" data-cmd="hostname" style="background:#27272a;border:1px solid rgba(255,255,255,0.12);color:#93c5fd;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">hostname</button>
+              <button class="__ag_term_chip" data-cmd="df -h" style="background:#27272a;border:1px solid rgba(255,255,255,0.12);color:#93c5fd;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">df -h</button>
+              <button class="__ag_term_chip" data-cmd="ip a" style="background:#27272a;border:1px solid rgba(255,255,255,0.12);color:#93c5fd;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">ip a</button>
+            </div>
+
+            <pre id="__ag_term_output" style="margin:0;padding:14px;background:#09090b;color:#4ade80;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11.5px;line-height:1.5;height:280px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-bottom:1px solid rgba(255,255,255,0.08);">Connexion au shell Linux distant vmi2743594...\\n</pre>
+
+            <div style="padding:10px 14px;background:#18181b;display:flex;gap:8px;align-items:center;">
+              <span style="font-family:monospace;color:#93c5fd;font-weight:600;">$</span>
+              <input id="__ag_term_input" type="text" placeholder="Entrez une commande bash à exécuter sur le VPS..." style="flex:1;background:#27272a;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:7px 10px;font-size:12px;color:#fff;outline:none;font-family:ui-monospace,SFMono-Regular,monospace;" />
+              <button id="__ag_term_run" style="background:#2563eb;border:none;color:#fff;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;">Exécuter</button>
+            </div>
+          </div>
+        \`;
+
+        document.body.appendChild(modal);
+
+        const outPre = modal.querySelector("#__ag_term_output");
+        const inInput = modal.querySelector("#__ag_term_input");
+        const runBtn = modal.querySelector("#__ag_term_run");
+
+        async function runCmd(cmd) {
+          const c = cmd.trim();
+          if (!c) return;
+          outPre.textContent += '$ ' + c + '\\n';
+          outPre.scrollTop = outPre.scrollHeight;
+          runBtn.disabled = true;
+          runBtn.textContent = '...';
+          const res = await executeRemoteCommand(c);
+          if (res.stdout) {
+            outPre.textContent += res.stdout + '\\n';
+          }
+          if (res.stderr) {
+            outPre.textContent += '[stderr] ' + res.stderr + '\\n';
+          }
+          if (!res.ok && res.error) {
+            outPre.textContent += '[erreur] ' + res.error + '\\n';
+          }
+          outPre.textContent += '\\n';
+          outPre.scrollTop = outPre.scrollHeight;
+          runBtn.disabled = false;
+          runBtn.textContent = 'Exécuter';
+          inInput.value = '';
+          inInput.focus();
+        }
+
+        modal.querySelectorAll(".__ag_term_chip").forEach(b => {
+          b.onclick = () => runCmd(b.getAttribute("data-cmd"));
+        });
+
+        runBtn.onclick = () => runCmd(inInput.value);
+        inInput.onkeydown = (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            runCmd(inInput.value);
+          }
+        };
+
+        modal.querySelector("#__ag_term_close").onclick = () => modal.remove();
+
+        // Initial probe command
+        runCmd('uname -a && uptime');
       }
 
       function openRemoteConfigModal() {
@@ -373,7 +709,12 @@ try {
           const t = tokenInput.value.trim();
           saveRemoteConfig(h, t);
           modal.remove();
-          window.__ag_selected_env = "remote";
+          const cid = getActiveSessionId();
+          if (cid) {
+            setSessionRemote(cid, true);
+          } else {
+            window.__ag_draft_remote = true;
+          }
           updateTriggerButton();
           closeEnvironmentPopover();
         };
@@ -387,7 +728,7 @@ try {
         React.createElement = function(type, props, ...children) {
           // 1. Intercept Select Environment trigger button to show "Remote (VPS)"
           if (props && props["aria-label"] === "Select Environment") {
-            if (window.__ag_selected_env === "remote") {
+            if (isCurrentSessionRemote()) {
               const mappedChildren = children.map(c => {
                 if (c && typeof c === 'object') {
                   if (c.props && c.props.className && c.props.className.includes("truncate")) {
@@ -409,7 +750,7 @@ try {
             const iconComp = (props.icon && props.icon.type) ? props.icon.type : "span";
             const cloudIcon = origCreateElement(iconComp, { name: "cloud", size: 14, className: "mt-0.5" });
 
-            const isRemoteSelected = (window.__ag_selected_env === "remote");
+            const isRemoteSelected = isCurrentSessionRemote();
             const remoteProps = Object.assign({}, props, {
               title: "Remote",
               icon: cloudIcon,
@@ -421,7 +762,12 @@ try {
                 if (e && (e.shiftKey || e.altKey || !cfg.configured)) {
                   openRemoteConfigModal();
                 } else {
-                  window.__ag_selected_env = "remote";
+                  const cid = getActiveSessionId();
+                  if (cid) {
+                    setSessionRemote(cid, true);
+                  } else {
+                    window.__ag_draft_remote = true;
+                  }
                   updateTriggerButton();
                   closeEnvironmentPopover();
                 }
@@ -430,7 +776,9 @@ try {
 
             const origWorktreeClick = props.onClick;
             props.onClick = function(e) {
-              window.__ag_selected_env = "worktree";
+              const cid = getActiveSessionId();
+              if (cid) setSessionRemote(cid, false);
+              else window.__ag_draft_remote = false;
               updateTriggerButton();
               if (typeof origWorktreeClick === "function") origWorktreeClick.apply(this, arguments);
             };
@@ -443,11 +791,13 @@ try {
           if (props && props.title === "Local") {
             const origLocalClick = props.onClick;
             props.onClick = function(e) {
-              window.__ag_selected_env = "local";
+              const cid = getActiveSessionId();
+              if (cid) setSessionRemote(cid, false);
+              else window.__ag_draft_remote = false;
               updateTriggerButton();
               if (typeof origLocalClick === "function") origLocalClick.apply(this, arguments);
             };
-            if (window.__ag_selected_env === "remote") {
+            if (isCurrentSessionRemote()) {
               props.selected = false;
             }
           }
@@ -509,7 +859,9 @@ try {
                 if (e.shiftKey || e.altKey || !cfg.configured) {
                   openRemoteConfigModal();
                 } else {
-                  window.__ag_selected_env = "remote";
+                  const cid = getActiveSessionId();
+                  if (cid) setSessionRemote(cid, true);
+                  else window.__ag_draft_remote = true;
                   updateTriggerButton();
                   closeEnvironmentPopover();
                 }
@@ -527,6 +879,39 @@ try {
       } else {
         startDomObserver();
       }
+
+      // Listen to navigation events and user clicks on environment options
+      window.addEventListener('popstate', updateTriggerButton);
+      const origPush = history.pushState;
+      history.pushState = function() {
+        const ret = origPush.apply(this, arguments);
+        setTimeout(updateTriggerButton, 50);
+        return ret;
+      };
+      const origReplace = history.replaceState;
+      history.replaceState = function() {
+        const ret = origReplace.apply(this, arguments);
+        setTimeout(updateTriggerButton, 50);
+        return ret;
+      };
+
+      document.addEventListener('click', (e) => {
+        const target = e.target;
+        if (!target) return;
+        const item = (target.closest && (target.closest('button') || target.closest('[role="menuitem"]') || target.closest('[role="option"]'))) || target;
+        const text = item.textContent || '';
+        if (text.includes("Local") && !text.includes("Remote")) {
+          const cid = getActiveSessionId();
+          if (cid) setSessionRemote(cid, false);
+          else window.__ag_draft_remote = false;
+          setTimeout(updateTriggerButton, 50);
+        } else if (text.includes("New Worktree")) {
+          const cid = getActiveSessionId();
+          if (cid) setSessionRemote(cid, false);
+          else window.__ag_draft_remote = false;
+          setTimeout(updateTriggerButton, 50);
+        }
+      }, true);
 
       setInterval(updateTriggerButton, 300);
     })();

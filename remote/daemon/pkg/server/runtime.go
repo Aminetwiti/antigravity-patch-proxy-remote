@@ -306,7 +306,7 @@ func (r *RuntimeServer) AttachClient(conn *websocket.Conn, deviceID, sessionID s
 	client.CatchupDone = true
 	var pendingToSend []domain.Event
 	for _, pEvt := range client.pendingQueue {
-		if pEvt.Sequence > toSeq {
+		if pEvt.Sequence < 0 || pEvt.Sequence > toSeq {
 			pendingToSend = append(pendingToSend, pEvt)
 		}
 	}

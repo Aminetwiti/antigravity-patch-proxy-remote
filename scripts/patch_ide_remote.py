@@ -44,6 +44,14 @@ window.__ag_open_cfg=function(){
   };
 };
 window.__ag_update_pill=function(active){
+  try{
+    let h=localStorage.getItem("ag_remote_host")||"62.169.27.8";
+    fetch("http://127.0.0.1:51074/api/remote/status",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({active:!!active,host:h})
+    }).catch(function(){});
+  }catch(e){}
   let pill=document.getElementById("__ag_remote_chat_pill");
   if(active){
     if(!pill){

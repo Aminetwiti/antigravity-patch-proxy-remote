@@ -110,3 +110,94 @@ func TestWorkspaceManager_GitWorktreesAndBranches(t *testing.T) {
 		t.Errorf("expected ErrWorkspaceNotFound, got %v", err)
 	}
 }
+
+func TestWorkspaceManager_PullAndPush(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git executable not found, skipping sync test")
+	}
+
+	tmpDir := t.TempDir()
+	bareDir := filepath.Join(tmpDir, "bare.git")
+	repo1Dir := filepath.Join(tmpDir, "repo1")
+	repo2Dir := filepath.Join(tmpDir, "repo2")
+
+	// 1. Init bare repo
+	cmd := exec.Command("git", "init", "--bare", bareDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init bare failed: %s (%v)", string(out), err)
+	}
+
+	// 2. Clone repo1
+	cmd = exec.Command("git", "clone", bareDir, repo1Dir)
+	_ = cmd.Run()
+
+	// Configure repo1 and initial commit
+	runIn := func(dir string, args ...string) {
+		c := exec.Command("git", args...)
+		c.Dir = dir
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v in %s failed: %s (%v)", args, dir, string(out), err)
+		}
+	}
+	runIn(repo1Dir, "config", "user.email", "dev@example.com")
+	runIn(repo1Dir, "config", "user.name", "Dev Sync")
+	runIn(repo1Dir, "branch", "-M", "main")
+
+	_ = os.WriteFile(filepath.Join(repo1Dir, "initial.txt"), []byte("seed"), 0644)
+	runIn(repo1Dir, "add", "initial.txt")
+	runIn(repo1Dir, "commit", "-m", "Seed commit")
+	runIn(repo1Dir, "push", "origin", "HEAD:main")
+
+	// 3. Clone repo2 from bare
+	cmd = exec.Command("git", "clone", "-b", "main", bareDir, repo2Dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("clone repo2 failed: %s (%v)", string(out), err)
+	}
+	runIn(repo2Dir, "config", "user.email", "dev2@example.com")
+	runIn(repo2Dir, "config", "user.name", "Dev2 Sync")
+
+	mgr := NewManager()
+	ws1, err := mgr.RegisterWorkspace("ws1", "Repo 1", repo1Dir)
+	if err != nil {
+		t.Fatalf("register ws1 failed: %v", err)
+	}
+	ws2, err := mgr.RegisterWorkspace("ws2", "Repo 2", repo2Dir)
+	if err != nil {
+		t.Fatalf("register ws2 failed: %v", err)
+	}
+
+	// 4. In repo1: write new file and commit
+	if err := mgr.WriteFile(ws1.ID, "feature.txt", []byte("sync content 123")); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if _, err := mgr.Commit(ws1.ID, "Add feature file", "Dev <dev@example.com>"); err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+
+	// 5. Push from ws1
+	pushRes, err := mgr.Push(ws1.ID, "origin", "main")
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+	if !pushRes.Success {
+		t.Errorf("expected push success")
+	}
+
+	// 6. Pull in ws2
+	pullRes, err := mgr.Pull(ws2.ID, "origin", "main")
+	if err != nil {
+		t.Fatalf("Pull failed: %v", err)
+	}
+	if !pullRes.Success {
+		t.Errorf("expected pull success")
+	}
+
+	// 7. Verify ws2 now contains feature.txt with expected content
+	content, err := mgr.ReadFile(ws2.ID, "feature.txt")
+	if err != nil {
+		t.Fatalf("expected feature.txt to exist in ws2 after pull: %v", err)
+	}
+	if string(content) != "sync content 123" {
+		t.Errorf("expected content 'sync content 123', got %q", string(content))
+	}
+}

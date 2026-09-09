@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -437,4 +438,124 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// ExecRequest represents the JSON body for POST /v2/terminal/exec.
+type ExecRequest struct {
+	Command     string `json:"command"`
+	TimeoutMs   int    `json:"timeout_ms,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+}
+
+// ExecResponse represents the JSON output for POST /v2/terminal/exec.
+type ExecResponse struct {
+	OK       bool   `json:"ok"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exitCode"`
+	Error    string `json:"error,omitempty"`
+}
+
+// HandleExec executes a one-shot command synchronously on the host or workspace directory.
+func (h *TerminalHandler) HandleExec(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_ = json.NewEncoder(w).Encode(ExecResponse{OK: false, Error: "method not allowed", ExitCode: 405})
+		return
+	}
+
+	// 1. Auth verification
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
+	ident, err := h.rbacMgr.Authenticate(token)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(ExecResponse{OK: false, Error: "unauthorized: " + err.Error(), ExitCode: 401})
+		return
+	}
+
+	if ident.Role == auth.RoleReadOnly {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(ExecResponse{OK: false, Error: "forbidden: read-only user cannot execute commands", ExitCode: 403})
+		return
+	}
+
+	// 2. Decode payload
+	var req ExecRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ExecResponse{OK: false, Error: "invalid request body: " + err.Error(), ExitCode: 400})
+		return
+	}
+
+	cmdStr := strings.TrimSpace(req.Command)
+	if cmdStr == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ExecResponse{OK: false, Error: "command cannot be empty", ExitCode: 400})
+		return
+	}
+
+	// 3. Resolve directory
+	dir := "."
+	if req.WorkspaceID != "" && h.wsMgr != nil {
+		resolved, err := h.wsMgr.ResolvePath(req.WorkspaceID, ".")
+		if err == nil {
+			dir = resolved
+		}
+	}
+
+	// 4. Execution timeout
+	timeout := 15 * time.Second
+	if req.TimeoutMs > 0 {
+		timeout = time.Duration(req.TimeoutMs) * time.Millisecond
+		if timeout > 10*time.Minute {
+			timeout = 10 * time.Minute
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd.exe", "/C", cmdStr)
+	} else if _, err := exec.LookPath("bash"); err == nil {
+		cmd = exec.CommandContext(ctx, "bash", "-c", cmdStr)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	}
+	cmd.Dir = dir
+
+	var stdoutBuf, stderrBuf strings.Builder
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	runErr := cmd.Run()
+	exitCode := 0
+	if runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = 1
+		}
+	}
+
+	resp := ExecResponse{
+		OK:       runErr == nil,
+		Stdout:   stdoutBuf.String(),
+		Stderr:   stderrBuf.String(),
+		ExitCode: exitCode,
+	}
+	if runErr != nil {
+		resp.Error = runErr.Error()
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }

@@ -68,6 +68,12 @@ export const storageAPI: StorageAPI = {
   importProviders: (base64) => ipcRenderer.invoke('storage:import-providers-base64', base64),
   getDoctorDiagnostics: () => ipcRenderer.invoke('storage:get-doctor-diagnostics'),
   testRemoteHealth: (payload) => ipcRenderer.invoke('remote:test-health', payload),
+  executeRemoteCommand: (payload) => ipcRenderer.invoke('remote:execute-command', payload),
+  listRemoteSessions: (payload) => ipcRenderer.invoke('remote:list-sessions', payload),
+  createRemoteSession: (payload) => ipcRenderer.invoke('remote:create-session', payload),
+  getRemoteWorkspaces: (payload) => ipcRenderer.invoke('remote:get-workspaces', payload),
+  injectUserStatus: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-user-status', rawBuffer),
+  injectAvailableModels: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-available-models', rawBuffer),
 };
 
 const logsAPI: LogsAPI = {

@@ -328,12 +328,20 @@ func (a *V1Adapter) handleAction(conn *websocket.Conn, msg V1IncomingMessage) {
 			},
 		})
 
-	case "read_file":
+	case "read_file", "view_file":
 		wsID := "default-workspace"
 		if msg.WorkspacePath != "" {
 			wsID = msg.WorkspacePath
 		}
-		content, err := a.wsManager.ReadFile(wsID, msg.FilePath)
+		filePath := msg.FilePath
+		if filePath == "" && msg.Data != nil {
+			if p, ok := msg.Data["filePath"].(string); ok {
+				filePath = p
+			} else if p, ok := msg.Data["path"].(string); ok {
+				filePath = p
+			}
+		}
+		content, err := a.wsManager.ReadFile(wsID, filePath)
 		if err != nil {
 			a.writeJSON(conn, V1OutgoingMessage{
 				Type:      "error",
@@ -356,11 +364,25 @@ func (a *V1Adapter) handleAction(conn *websocket.Conn, msg V1IncomingMessage) {
 		if msg.WorkspacePath != "" {
 			wsID = msg.WorkspacePath
 		}
-		decoded, err := base64.StdEncoding.DecodeString(msg.Content)
-		if err != nil {
-			decoded = []byte(msg.Content)
+		filePath := msg.FilePath
+		if filePath == "" && msg.Data != nil {
+			if p, ok := msg.Data["filePath"].(string); ok {
+				filePath = p
+			} else if p, ok := msg.Data["path"].(string); ok {
+				filePath = p
+			}
 		}
-		err = a.wsManager.WriteFile(wsID, msg.FilePath, decoded)
+		rawContent := msg.Content
+		if rawContent == "" && msg.Data != nil {
+			if c, ok := msg.Data["content"].(string); ok {
+				rawContent = c
+			}
+		}
+		decoded, err := base64.StdEncoding.DecodeString(rawContent)
+		if err != nil {
+			decoded = []byte(rawContent)
+		}
+		err = a.wsManager.WriteFile(wsID, filePath, decoded)
 		if err != nil {
 			a.writeJSON(conn, V1OutgoingMessage{
 				Type:      "error",
@@ -385,6 +407,52 @@ func (a *V1Adapter) handleAction(conn *websocket.Conn, msg V1IncomingMessage) {
 			RequestID: msg.RequestID,
 			Data: map[string]interface{}{
 				"workspaces": list,
+			},
+		})
+
+	case "list_files", "list_dir":
+		wsID := "default-workspace"
+		if msg.WorkspacePath != "" {
+			wsID = msg.WorkspacePath
+		}
+		path, _ := msg.Data["path"].(string)
+		files, err := a.wsManager.ListDirectory(wsID, path, 6)
+		if err != nil {
+			a.writeJSON(conn, V1OutgoingMessage{
+				Type:      "error",
+				RequestID: msg.RequestID,
+				Error:     err.Error(),
+			})
+			return
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"files": files,
+			},
+		})
+
+	case "search_files":
+		wsID := "default-workspace"
+		if msg.WorkspacePath != "" {
+			wsID = msg.WorkspacePath
+		}
+		query, _ := msg.Data["query"].(string)
+		res, err := a.wsManager.SearchFiles(wsID, query, 50)
+		if err != nil {
+			a.writeJSON(conn, V1OutgoingMessage{
+				Type:      "error",
+				RequestID: msg.RequestID,
+				Error:     err.Error(),
+			})
+			return
+		}
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"results": res,
 			},
 		})
 

@@ -1,6 +1,8 @@
 package server_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -166,4 +168,62 @@ func TestTerminalHandler_DisconnectPersistsSubprocess(t *testing.T) {
 
 	// Kill to cleanup
 	_ = conn2.WriteJSON(map[string]string{"type": "kill"})
+}
+
+func TestTerminalHandler_HandleExec(t *testing.T) {
+	wsMgr := workspace.NewManager()
+	tmpDir := t.TempDir()
+	ws, err := wsMgr.RegisterWorkspace("ws-exec", "ExecWS", tmpDir)
+	if err != nil {
+		t.Fatalf("failed to register workspace: %v", err)
+	}
+
+	handler := server.NewTerminalHandler(wsMgr, "exec-secret")
+
+	// 1. Success execution
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"command":     "echo exec_success_token",
+		"timeout_ms":  5000,
+		"workspaceId": ws.ID,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v2/terminal/exec?token=exec-secret", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleExec(w, req)
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d", resp.StatusCode)
+	}
+
+	var res server.ExecResponse
+	if err := json.NewDecoder(w.Body).Decode(&res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !res.OK {
+		t.Fatalf("expected OK true, got error: %s", res.Error)
+	}
+	if !strings.Contains(res.Stdout, "exec_success_token") {
+		t.Errorf("expected stdout to contain 'exec_success_token', got: %s", res.Stdout)
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", res.ExitCode)
+	}
+}
+
+func TestTerminalHandler_HandleExec_Unauthorized(t *testing.T) {
+	wsMgr := workspace.NewManager()
+	handler := server.NewTerminalHandler(wsMgr, "required-secret")
+
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"command": "echo test",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v2/terminal/exec?token=wrong-secret", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+
+	handler.HandleExec(w, req)
+	resp := w.Result()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected HTTP 401 Unauthorized, got %d", resp.StatusCode)
+	}
 }

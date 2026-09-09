@@ -575,4 +575,78 @@ func (m *Manager) Commit(workspaceID, message, author string) (*GitCommitResult,
 	}, nil
 }
 
+type GitSyncResult struct {
+	Branch  string `json:"branch"`
+	Message string `json:"message"`
+	Success bool   `json:"success"`
+}
 
+// Pull fetches and integrates remote changes for the specified branch.
+func (m *Manager) Pull(workspaceID, remote, branch string) (*GitSyncResult, error) {
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if remote == "" {
+		remote = "origin"
+	}
+	currentBranch, _ := m.CurrentBranch(workspaceID)
+	if branch == "" {
+		branch = currentBranch
+	}
+	if branch == "" {
+		branch = "main"
+	}
+
+	cmd := exec.Command("git", "pull", remote, branch)
+	cmd.Dir = ws.Root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return &GitSyncResult{
+			Branch:  branch,
+			Message: string(out),
+			Success: false,
+		}, fmt.Errorf("git pull failed: %s (%w)", string(out), err)
+	}
+
+	return &GitSyncResult{
+		Branch:  branch,
+		Message: strings.TrimSpace(string(out)),
+		Success: true,
+	}, nil
+}
+
+// Push exports committed changes to the specified remote repository branch.
+func (m *Manager) Push(workspaceID, remote, branch string) (*GitSyncResult, error) {
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if remote == "" {
+		remote = "origin"
+	}
+	currentBranch, _ := m.CurrentBranch(workspaceID)
+	if branch == "" {
+		branch = currentBranch
+	}
+	if branch == "" {
+		branch = "main"
+	}
+
+	cmd := exec.Command("git", "push", remote, branch)
+	cmd.Dir = ws.Root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return &GitSyncResult{
+			Branch:  branch,
+			Message: string(out),
+			Success: false,
+		}, fmt.Errorf("git push failed: %s (%w)", string(out), err)
+	}
+
+	return &GitSyncResult{
+		Branch:  branch,
+		Message: strings.TrimSpace(string(out)),
+		Success: true,
+	}, nil
+}
