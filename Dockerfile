@@ -1,5 +1,5 @@
 # Root Dockerfile for Antigravity Remote Agent Cloud Daemon
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /src
 
