@@ -8,6 +8,7 @@ import {
   cleanFilePath,
   translateToolCallToNative,
   formatTranslatedResponse,
+  wrapCommandForRemoteExec,
 } from '../proxy/translators/utils';
 
 // ─── fixParamTypes ─────────────────────────────────────────────────────────
@@ -218,6 +219,25 @@ describe('translateToolCallToNative', () => {
       CommandLine: 'npm install',
     });
     expect(result.name).toBe('run_command');
+  });
+
+  it('should wrap run_command for remote execution when isRemoteOverride is true', () => {
+    const result = translateToolCallToNative(
+      'run_command',
+      { CommandLine: 'pwd && ls -la /data/workspaces' },
+      true,
+    );
+    expect(result.name).toBe('run_command');
+    expect(result.args.CommandLine).toContain('node --no-warnings');
+    expect(result.args.CommandLine).toContain('--b64');
+    const b64 = Buffer.from('pwd && ls -la /data/workspaces').toString('base64');
+    expect(result.args.CommandLine).toContain(b64);
+  });
+
+  it('should not wrap command if already wrapped', () => {
+    const alreadyWrapped = 'node --no-warnings "scripts/remote-exec.js" --b64 "abc"';
+    const wrapped = wrapCommandForRemoteExec(alreadyWrapped);
+    expect(wrapped).toBe(alreadyWrapped);
   });
 });
 

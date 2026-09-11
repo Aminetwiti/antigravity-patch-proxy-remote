@@ -613,7 +613,10 @@
           } else {
             const cid = getActiveSessionId();
             if (cid) setSessionRemote(cid, true);
-            else window.__ag_draft_remote = true;
+            else {
+              window.__ag_draft_remote = true;
+              syncRemoteStateToProxy(true, cfg.host, getRemoteSessions());
+            }
             updateTriggerButton();
             closeEnvironmentPopover();
           }

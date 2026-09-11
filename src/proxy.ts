@@ -379,15 +379,20 @@ function transformGoogleStreamForRemote(proxyRes: http.IncomingMessage, clientRe
             for (const cand of data.candidates) {
               if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
                 for (const part of cand.content.parts) {
-                  if (part.functionCall && part.functionCall.name === 'run_command') {
-                    const args = part.functionCall.args;
-                    if (args && typeof args.CommandLine === 'string') {
-                      const originalCmd = args.CommandLine;
-                      const wrapped = wrapCommandForRemoteExec(originalCmd);
-                      if (wrapped !== originalCmd) {
-                        args.CommandLine = wrapped;
-                        modified = true;
-                        log.info(`[Proxy] Google Cloud Code SSE: Bridged run_command "${originalCmd}" -> remote VPS`);
+                  if (part.functionCall && (part.functionCall.name === 'run_command' || part.functionCall.name === 'bash' || part.functionCall.name === 'sh')) {
+                    const args = part.functionCall.args as Record<string, unknown> | undefined;
+                    if (args) {
+                      const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
+                      if (typeof originalCmd === 'string' && originalCmd.trim()) {
+                        const wrapped = wrapCommandForRemoteExec(originalCmd.trim());
+                        if (wrapped !== originalCmd) {
+                          args.CommandLine = wrapped;
+                          if (args.commandLine !== undefined) args.commandLine = wrapped;
+                          if (args.command !== undefined) args.command = wrapped;
+                          if (args.cmd !== undefined) args.cmd = wrapped;
+                          modified = true;
+                          log.info(`[Proxy] Google Cloud Code SSE: Bridged run_command "${originalCmd}" -> remote VPS`);
+                        }
                       }
                     }
                   }
@@ -540,7 +545,58 @@ async function proxyToGoogle(
         }
       });
     } else if (isRemoteSession && isGeneration) {
-      transformGoogleStreamForRemote(proxyRes, res);
+      const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+      if (isStream) {
+        transformGoogleStreamForRemote(proxyRes, res);
+      } else {
+        const responseChunks: Buffer[] = [];
+        proxyRes.on('data', (chunk) => responseChunks.push(chunk));
+        proxyRes.on('end', () => {
+          if (res.headersSent || res.writableEnded) return;
+          const fullResBody = Buffer.concat(responseChunks);
+          let text = fullResBody.toString('utf-8');
+          try {
+            const data = JSON.parse(text);
+            let modified = false;
+            if (Array.isArray(data.candidates)) {
+              for (const cand of data.candidates) {
+                if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
+                  for (const part of cand.content.parts) {
+                    if (part.functionCall && (part.functionCall.name === 'run_command' || part.functionCall.name === 'bash' || part.functionCall.name === 'sh')) {
+                      const args = part.functionCall.args as Record<string, unknown> | undefined;
+                      if (args) {
+                        const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
+                        if (typeof originalCmd === 'string' && originalCmd.trim()) {
+                          const wrapped = wrapCommandForRemoteExec(originalCmd.trim());
+                          if (wrapped !== originalCmd) {
+                            args.CommandLine = wrapped;
+                            if (args.commandLine !== undefined) args.commandLine = wrapped;
+                            if (args.command !== undefined) args.command = wrapped;
+                            if (args.cmd !== undefined) args.cmd = wrapped;
+                            modified = true;
+                            log.info(`[Proxy] Google Cloud Code JSON: Bridged run_command "${originalCmd}" -> remote VPS`);
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            if (modified) {
+              text = JSON.stringify(data);
+            }
+          } catch (_) {}
+          const modifiedHeaders = { ...proxyRes.headers };
+          delete modifiedHeaders['content-encoding'];
+          delete modifiedHeaders['transfer-encoding'];
+          const modifiedBuffer = Buffer.from(text, 'utf-8');
+          modifiedHeaders['content-length'] = String(modifiedBuffer.length);
+          if (safeWriteHead(res, proxyRes.statusCode || 200, modifiedHeaders as Record<string, string>)) {
+            safeEnd(res, modifiedBuffer);
+          }
+        });
+      }
     } else {
       if (safeHead(proxyRes.statusCode || 200, proxyRes.headers as Record<string, string>)) {
         proxyRes.pipe(res);
@@ -2503,6 +2559,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     }
 
     // 3. Intercept Cloud Code generation stream or non-stream requests
+    let isSessionRemote = false;
     const isCloudCodeStream =
       req.url!.includes('/v1internal:streamGenerateContent') || req.url!.includes('/v1internal:generateContent');
     if (req.method === 'POST' && isCloudCodeStream) {
@@ -2519,7 +2576,22 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         }
 
         loadRemoteState();
-        const isSessionRemote = convId ? (remoteSessionsMap[convId] !== undefined ? !!remoteSessionsMap[convId] : isRemoteVpsActive) : isRemoteVpsActive;
+        let promptHasRemote = false;
+        if (Array.isArray(targetReq.contents)) {
+          for (const content of targetReq.contents as Array<{ parts?: Array<{ text?: string }> }>) {
+            if (Array.isArray(content.parts)) {
+              for (const part of content.parts) {
+                if (part.text && /(?:mode\s*remote|\(remote\)|\[remote\]|\/remote|\bmode\s*:\s*remote\b)/i.test(part.text)) {
+                  promptHasRemote = true;
+                  break;
+                }
+              }
+            }
+            if (promptHasRemote) break;
+          }
+        }
+
+        isSessionRemote = promptHasRemote || (convId ? (remoteSessionsMap[convId] !== undefined ? !!remoteSessionsMap[convId] : isRemoteVpsActive) : isRemoteVpsActive);
 
         if (isSessionRemote) {
           if (convId && !remoteSessionsMap[convId]) {
@@ -2549,7 +2621,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           const remoteWorkspaceBase = '/data/workspaces';
           const targetRemoteWs = detectedProject ? `${remoteWorkspaceBase}/${detectedProject}` : `${remoteWorkspaceBase}/antigravity-add-model-main`;
 
-          const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur Cloud Daemon (${remoteVpsHost}).\nTon espace de travail exclusif est sur ce serveur Linux distant : ${targetRemoteWs}.\nSystème d'exploitation : Linux (Ubuntu 24.04 LTS x86_64)\nInterpréteur de commandes (Shell) : bash\nEspace de travail : ${targetRemoteWs}\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows.\nPour toute demande d'environnement ou de rapport ("quelle est votre envirenement"), réponds clairement et précisément que ton environnement d'exécution est le serveur Linux distant (hôte: ${remoteVpsHost}, workspace: ${targetRemoteWs}, shell: bash).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux sur le VPS distant.\n\n`;
+          const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur Cloud Daemon (${remoteVpsHost}).\nTon espace de travail exclusif est sur ce serveur Linux distant : ${targetRemoteWs}.\nSystème d'exploitation : Linux (Ubuntu 24.04 LTS x86_64)\nInterpréteur de commandes (Shell) : bash\nEspace de travail : ${targetRemoteWs}\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows.\nPour toute action (analyse de projet, lecture de fichiers avec cat, listage avec ls, recherche avec grep/find, git, tests, etc.), tu dois IMPÉRATIVEMENT utiliser l'outil run_command avec des commandes bash Linux standard. N'utilise pas les outils de fichiers locaux (view_file, list_dir, write_to_file) qui ne s'appliquent qu'au disque local.\nPour toute demande d'environnement ou de rapport ("quelle est votre envirenement"), réponds clairement et précisément que ton environnement d'exécution est le serveur Linux distant (hôte: ${remoteVpsHost}, workspace: ${targetRemoteWs}, shell: bash).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux sur le VPS distant.\n\n`;
 
           let injected = false;
           if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
@@ -2581,7 +2653,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
           // Also sanitize tools schema (function declarations)
           if (Array.isArray(targetReq.tools)) {
-            for (const toolGroup of targetReq.tools as Array<{ functionDeclarations?: Array<{ description?: string }> }>) {
+            for (const toolGroup of targetReq.tools as Array<{ functionDeclarations?: Array<{ name?: string; description?: string }> }>) {
               if (Array.isArray(toolGroup.functionDeclarations)) {
                 for (const fn of toolGroup.functionDeclarations) {
                   if (fn.description) {
@@ -2590,6 +2662,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                       .replace(/The USER's OS version is windows\./gi, "The USER's OS version is linux.")
                       .replace(/Shell:\s*powershell/gi, 'Shell: bash')
                       .replace(/powershell/gi, 'bash');
+                  }
+                  if (fn.name === 'run_command') {
+                    fn.description = `Execute a bash command directly on the remote Linux VPS container (Ubuntu 24.04 LTS). Workspace: ${targetRemoteWs}. Use this tool for all file operations (cat, ls, grep, find, sed), git commands, and shell execution on the remote VPS.`;
                   }
                 }
               }
@@ -2703,7 +2778,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     }
 
     // 5. Fallback: transparent proxy to Google
-    await proxyToGoogle(req, res, fullBody);
+    await proxyToGoogle(req, res, fullBody, isSessionRemote);
   });
 }
 
