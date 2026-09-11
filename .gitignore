@@ -32,7 +32,6 @@ tsc_*.txt
 
 # Temporary development & extract directories
 scratch/
-.env
 test-extract/
 .kimchi/
 
@@ -77,3 +76,4 @@ remote/tools2/*
 remote/tools3/*
 remote/vendor/*
 antigravity_accounts_*.json
+config.bat

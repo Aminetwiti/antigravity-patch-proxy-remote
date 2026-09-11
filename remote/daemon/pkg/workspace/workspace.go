@@ -1408,40 +1408,28 @@ func (m *Manager) CreatePullRequest(baseWsID, sessionID, title, body string) (*P
 
 	cleanID := strings.ReplaceAll(sessionID, "-", "_")
 	shadowBranch := fmt.Sprintf("agent/shadow_%s", cleanID)
-	shadowWsID := fmt.Sprintf("shadow_%s_%s", baseWsID, cleanID)
 
 	baseBranch, _ := m.CurrentBranch(baseWsID)
 	if baseBranch == "" {
 		baseBranch = "main"
 	}
 
-	// 1. Commit pending changes in shadow worktree if any
-	shadowWs, err := m.GetWorkspace(shadowWsID)
-	if err == nil {
-		diff, diffErr := m.Diff(shadowWs.ID)
-		if diffErr == nil && !diff.Clean {
-			msg := title
-			if msg == "" {
-				msg = fmt.Sprintf("Agent changes for session %s", sessionID)
-			}
-			if _, err := m.Commit(shadowWs.ID, msg, "Antigravity Agent <agent@antigravity.ai>"); err != nil {
-				return nil, fmt.Errorf("failed to commit shadow changes: %w", err)
-			}
-		}
+	// 1. Ensure session worktree and shadow branch exist
+	shadowWs, err := m.EnsureSessionWorktree(baseWsID, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure session worktree: %w", err)
 	}
 
-	// 2. Push shadow branch to origin
-	pushCmd := exec.Command("git", "push", "-u", "origin", shadowBranch)
-	pushCmd.Dir = baseWs.Root
-	pushCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	pushOut, pushErr := pushCmd.CombinedOutput()
-	if pushErr != nil {
-		return &PullRequestResult{
-			Success: false,
-			Branch:  shadowBranch,
-			Base:    baseBranch,
-			Message: fmt.Sprintf("git push failed: %s (%v)", string(pushOut), pushErr),
-		}, fmt.Errorf("git push failed: %s (%w)", string(pushOut), pushErr)
+	// 2. Commit pending changes in shadow worktree if any
+	diff, diffErr := m.Diff(shadowWs.ID)
+	if diffErr == nil && !diff.Clean {
+		msg := title
+		if msg == "" {
+			msg = fmt.Sprintf("Agent changes for session %s", sessionID)
+		}
+		if _, err := m.Commit(shadowWs.ID, msg, "Antigravity Agent <agent@antigravity.ai>"); err != nil {
+			return nil, fmt.Errorf("failed to commit shadow changes: %w", err)
+		}
 	}
 
 	// 3. Extract remote repo owner and name
@@ -1457,7 +1445,7 @@ func (m *Manager) CreatePullRequest(baseWsID, sessionID, title, body string) (*P
 		compareURL = fmt.Sprintf("https://github.com/%s/%s/compare/%s...%s?expand=1", owner, repo, baseBranch, shadowBranch)
 	}
 
-	// 4. Try creating GitHub PR if token is available
+	// Check for GitHub credentials token
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
 		token = os.Getenv("GH_TOKEN")
@@ -1466,6 +1454,34 @@ func (m *Manager) CreatePullRequest(baseWsID, sessionID, title, body string) (*P
 		token = os.Getenv("AG_GITHUB_TOKEN")
 	}
 
+	// 4. Push shadow branch to origin
+	pushArgs := []string{"push", "-u", "origin", shadowBranch}
+	if token != "" {
+		pushArgs = append([]string{"-c", fmt.Sprintf("http.extraHeader=Authorization: Bearer %s", token)}, pushArgs...)
+	}
+	pushCmd := exec.Command("git", pushArgs...)
+	pushCmd.Dir = baseWs.Root
+	pushCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	pushOut, pushErr := pushCmd.CombinedOutput()
+	if pushErr != nil {
+		if compareURL != "" {
+			return &PullRequestResult{
+				Success: false,
+				Branch:  shadowBranch,
+				Base:    baseBranch,
+				URL:     compareURL,
+				Message: fmt.Sprintf("Git push note: %s. 1-click PR comparison URL: %s", strings.TrimSpace(string(pushOut)), compareURL),
+			}, nil
+		}
+		return &PullRequestResult{
+			Success: false,
+			Branch:  shadowBranch,
+			Base:    baseBranch,
+			Message: fmt.Sprintf("git push failed: %s (%v)", string(pushOut), pushErr),
+		}, fmt.Errorf("git push failed: %s (%w)", string(pushOut), pushErr)
+	}
+
+	// 5. Try creating GitHub PR if token is available
 	if token != "" && owner != "" && repo != "" {
 		prTitle := title
 		if prTitle == "" {

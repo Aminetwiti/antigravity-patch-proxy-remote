@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -168,3 +169,37 @@ func TestAutonomousLifecycle_CloneWorkspace_Validation(t *testing.T) {
 		t.Errorf("expected registered ws root %q, got %+v", tmpDir, ws)
 	}
 }
+
+func TestAutonomousLifecycle_CreatePullRequest(t *testing.T) {
+	mgr := NewManager()
+	tmpDir := t.TempDir()
+
+	// Initialize git repo
+	exec.Command("git", "-C", tmpDir, "init", "-b", "main").Run()
+	exec.Command("git", "-C", tmpDir, "config", "user.name", "Test Agent").Run()
+	exec.Command("git", "-C", tmpDir, "config", "user.email", "agent@test.local").Run()
+	exec.Command("git", "-C", tmpDir, "remote", "add", "origin", "https://github.com/Aminetwiti/test-repo.git").Run()
+
+	testFile := filepath.Join(tmpDir, "README.md")
+	os.WriteFile(testFile, []byte("# Test Repo\n"), 0644)
+	exec.Command("git", "-C", tmpDir, "add", "-A").Run()
+	exec.Command("git", "-C", tmpDir, "commit", "-m", "initial commit").Run()
+
+	ws, err := mgr.RegisterWorkspace("test_pr_ws", "Test PR WS", tmpDir)
+	if err != nil {
+		t.Fatalf("RegisterWorkspace failed: %v", err)
+	}
+
+	res, err := mgr.CreatePullRequest(ws.ID, "sess-pr-123", "Feature Title", "Feature Description")
+	if err != nil {
+		t.Fatalf("CreatePullRequest failed: %v", err)
+	}
+
+	if res.Branch != "agent/shadow_sess_pr_123" {
+		t.Errorf("expected branch 'agent/shadow_sess_pr_123', got %q", res.Branch)
+	}
+	if res.URL == "" {
+		t.Errorf("expected non-empty comparison or PR URL")
+	}
+}
+
