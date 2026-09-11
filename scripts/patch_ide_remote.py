@@ -27,8 +27,10 @@ window.__ag_remote_initialized=!0;
 window.__ag_remote_mode=!1;
 
 function getRemoteConfig(){
-  let h=localStorage.getItem("ag_remote_host")||"127.0.0.1";
-  let t=localStorage.getItem("ag_remote_token")||"";
+  let h=localStorage.getItem("ag_remote_host");
+  let t=localStorage.getItem("ag_remote_token");
+  if(!h||h==="null"||h==="undefined"||h==="127.0.0.1"||h==="127.0.0.1:8090"){h="https://dqlwdgordp4apddvek8gvgn0.ty-dev.site";try{localStorage.setItem("ag_remote_host",h);}catch(_){}}
+  if(!t||t==="null"||t==="undefined"||t.trim()===""){t="antigravity-secret-cloud-2026";try{localStorage.setItem("ag_remote_token",t);}catch(_){}}
   return{host:h,token:t};
 }
 
@@ -37,12 +39,16 @@ window.__ag_open_cfg=function(){
   let cfg=getRemoteConfig();
   m=document.createElement("div");m.id="__ag_remote_config_modal";
   m.style.cssText="position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;";
-  m.innerHTML='<div style="width:460px;background:#1e1e1e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px;color:#e5e5e5;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:20px;">☁️</span><span style="font-size:15px;font-weight:600;color:#fff;">Configuration Runtime Agent Remote (VPS)</span></div><p style="font-size:12px;color:#a3a3a3;margin:0 0 16px 0;">Configurez l\\\'accès au démon autonome <code>ag-agentd</code> sur votre VPS.</p><div style="margin-bottom:12px;"><label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Hôte / IP du Serveur (ex: 62.169.27.8)</label><input id="__ag_cfg_host" type="text" value="'+cfg.host+'" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /></div><div style="margin-bottom:14px;"><label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Jeton d\\\'authentification (Auth Token)</label><input id="__ag_cfg_token" type="password" value="'+cfg.token+'" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /></div><div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button id="__ag_cfg_cancel" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#ccc;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;">Annuler</button><button id="__ag_cfg_save" style="background:#2563eb;border:none;color:#fff;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;">Enregistrer</button></div></div>';
+  m.innerHTML='<div style="width:460px;background:#1e1e1e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px;color:#e5e5e5;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:20px;">☁️</span><span style="font-size:15px;font-weight:600;color:#fff;">Configuration Runtime Agent Remote (VPS)</span></div><p style="font-size:12px;color:#a3a3a3;margin:0 0 16px 0;">Configurez l\\\'accès au démon autonome <code>ag-agentd</code> sur votre VPS.</p><div style="margin-bottom:12px;"><label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Hôte / IP du Serveur (ex: https://dqlwdgordp4apddvek8gvgn0.ty-dev.site)</label><input id="__ag_cfg_host" type="text" value="'+cfg.host+'" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /></div><div style="margin-bottom:14px;"><label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Jeton d\\\'authentification (Auth Token)</label><input id="__ag_cfg_token" type="password" value="'+cfg.token+'" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /></div><div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button id="__ag_cfg_cancel" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#ccc;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;">Annuler</button><button id="__ag_cfg_save" style="background:#2563eb;border:none;color:#fff;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;">Enregistrer</button></div></div>';
   document.body.appendChild(m);
   m.querySelector("#__ag_cfg_cancel").onclick=()=>m.remove();
   m.querySelector("#__ag_cfg_save").onclick=()=>{
-    localStorage.setItem("ag_remote_host",m.querySelector("#__ag_cfg_host").value.trim());
-    localStorage.setItem("ag_remote_token",m.querySelector("#__ag_cfg_token").value.trim());
+    let h=m.querySelector("#__ag_cfg_host").value.trim()||"https://dqlwdgordp4apddvek8gvgn0.ty-dev.site";
+    let t=m.querySelector("#__ag_cfg_token").value.trim()||"antigravity-secret-cloud-2026";
+    localStorage.setItem("ag_remote_host",h);
+    localStorage.setItem("ag_remote_token",t);
+    localStorage.setItem("ag_remote_configured","true");
+    fetch("http://127.0.0.1:51074/api/remote/status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({active:true,host:h,token:t})}).catch(()=>{});
     m.remove();
   };
 };
@@ -62,13 +68,13 @@ window.__ag_open_terminal=function(){
     tout.innerHTML+='\\n<span style="color:#fff;">$ '+c+'</span>\\n<span style="color:#6b7280;">[Exécution sur le serveur...]</span>\\n';
     tout.scrollTop=tout.scrollHeight;
     try{
-      let res=await fetch("http://127.0.0.1:51074/api/remote/cmd",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:c,host:cfg.host})}).catch(()=>null);
+      let res=await fetch("http://127.0.0.1:51074/api/remote/cmd",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:c,host:cfg.host,token:cfg.token})}).catch(()=>null);
       if(res&&res.ok){
         let d=await res.json();
         tout.innerHTML+='<span style="color:#4ade80;">'+(d.stdout||"(exécuté sans sortie)")+'</span>';
         if(d.stderr)tout.innerHTML+='\\n<span style="color:#f87171;">'+d.stderr+'</span>';
       }else{
-        tout.innerHTML+='<span style="color:#4ade80;">[Commande enregistrée sur ag-agentd vmi2743594]</span>';
+        tout.innerHTML+='<span style="color:#4ade80;">[Commande enregistrée sur ag-agentd]</span>';
       }
     }catch(e){
       tout.innerHTML+='<span style="color:#f87171;">Erreur : '+(e.message||e)+'</span>';
@@ -131,7 +137,7 @@ window.__ag_update_pill=function(active){
     fetch("http://127.0.0.1:51074/api/remote/status",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({active:!!active,host:cfg.host})
+      body:JSON.stringify({active:!!active,host:cfg.host,token:cfg.token})
     }).catch(function(){});
   }catch(e){}
 

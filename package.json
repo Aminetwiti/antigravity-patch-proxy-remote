@@ -16,7 +16,7 @@
   ],
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').copyFileSync('src/rendererHook.js', 'dist/rendererHook.js')\"",
     "watch": "tsc --watch",
     "lint": "tsc --noEmit",
     "test": "npm run build && vitest run",

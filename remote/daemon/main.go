@@ -220,23 +220,23 @@ func main() {
 		fmt.Println("⚠️  Premier appairage NON-admin par défaut : promouvez votre device depuis l'hôte (pairingMgr.PromoteAdmin) ou relancez avec --allow-first-admin")
 	}
 
-	server := gateway.NewServer(rpcClient, resolvedToken)
+	gwServer := gateway.NewServer(rpcClient, resolvedToken)
 	gateway.SetMcpProxyBase(os.Getenv("AG_BIND_HOST"), cfg.ProxyPort)
 	if !authMgr.IsDisabled() {
-		server.SetTokenValidator(func(t string) bool {
+		gwServer.SetTokenValidator(func(t string) bool {
 			return authMgr.Validate(t) || pairingMgr.ValidateToken(t)
 		})
 		// Variante enrichie (3.3) : le gateway récupère deviceId + allowedProjects
 		// au handshake pour le filtrage par projet (send_prompt / list_sessions).
-		server.SetSessionValidator(pairingMgr.ValidateSession)
+		gwServer.SetSessionValidator(pairingMgr.ValidateSession)
 	}
 	// 3.4 : branche le PairingManager pour list_devices / revoke_device
 	// (gestion administrative des appareils pairÃ©s depuis le mobile admin).
-	server.SetPairingManager(pairingMgr)
-	server.SetApprovalTimeout(time.Duration(approvalTimeoutMin) * time.Minute)
-	server.SetAllowRemoteTerminal(enableRemoteTerminal)
+	gwServer.SetPairingManager(pairingMgr)
+	gwServer.SetApprovalTimeout(time.Duration(approvalTimeoutMin) * time.Minute)
+	gwServer.SetAllowRemoteTerminal(enableRemoteTerminal)
 	if cfg.SessionsCacheTTL > 0 {
-		server.SetSessionsCacheTTL(cfg.SessionsCacheTTL)
+		gwServer.SetSessionsCacheTTL(cfg.SessionsCacheTTL)
 	}
 
 	var currentPID = info.PID
@@ -249,7 +249,7 @@ func main() {
 		}
 		rpcClient.UpdateEndpoint(newInfo.ConnectRPCPort, newInfo.ExtensionCSRF)
 		rpcClient.SetUseTLS(newInfo.UseTLS)
-		server.SetIDERunning(true, newInfo.ConnectRPCPort, newInfo)
+		gwServer.SetIDERunning(true, newInfo.ConnectRPCPort, newInfo)
 		pidMu.Lock()
 		currentPID = newInfo.PID
 		pidMu.Unlock()
@@ -264,28 +264,53 @@ func main() {
 			currentPID = inf.PID
 			pidMu.Unlock()
 		}
-		server.SetIDERunning(running, port, inf)
+		gwServer.SetIDERunning(running, port, inf)
 	}
 	watchdog.Start()
 	fmt.Println("🛡️ Watchdog CSRF & Statut IDE démarré (vérification toutes les 5s)")
 	// Flux temps réel Jetbox : la sidebar mobile est alimentée par le stream
 	// JetboxSubscribeToSummaries (snapshot initial + updates incrémentaux) au
 	// lieu de GetAllCascades (~9,5 s). Reconnecte automatiquement en boucle.
-	server.RunJetboxSubscription(rpcClient)
+	gwServer.RunJetboxSubscription(rpcClient)
 	// Flux réactif StreamReactiveUpdates : source secondaire de fiabilité
 	// (approbations + détection instantanée "waiting for input") — le parsing
 	// des frames de réponse reste le chemin principal. Goroutine autonome.
-	server.RunReactiveSubscription(rpcClient)
-	sched := gateway.NewScheduler(server)
+	gwServer.RunReactiveSubscription(rpcClient)
+	sched := gateway.NewScheduler(gwServer)
 	sched.Start()
-	server.StartHostTelemetryPoller(5 * time.Second)
+	gwServer.StartHostTelemetryPoller(5 * time.Second)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", server.HandleWebSocket)
+	mux.HandleFunc("/ws", gwServer.HandleWebSocket)
 	mux.HandleFunc("/pair", pairingMgr.HTTPHandler())
-	mux.HandleFunc("/health", server.HTTPHandler)
+	mux.HandleFunc("/health", gwServer.HTTPHandler)
 	mux.Handle("/web/", http.StripPrefix("/web", web.Handler()))
 	mux.Handle("/web", http.RedirectHandler("/web/", http.StatusPermanentRedirect))
+
+	// Web Dashboard & Console (GET /dashboard and GET /console)
+	rest := server.NewRESTHandler(nil, nil, resolvedToken)
+	mux.HandleFunc("/dashboard", server.HandleWebConsole)
+	mux.HandleFunc("/console", server.HandleWebConsole)
+
+	// V2 Management Endpoints (Accounts, APIs, Logs)
+	mux.HandleFunc("/v2/accounts", rest.AuthMiddleware(rest.HandleListAccounts))
+	mux.HandleFunc("/v2/accounts/switch", rest.AuthMiddleware(rest.HandleSwitchAccount))
+	mux.HandleFunc("/v2/accounts/auto-rotate", rest.AuthMiddleware(rest.HandleAutoRotate))
+	mux.HandleFunc("/v2/accounts/rotate", rest.AuthMiddleware(rest.HandleRotateAccount))
+	mux.HandleFunc("/v2/accounts/select-best", rest.AuthMiddleware(rest.HandleSelectBestAccount))
+	mux.HandleFunc("/v2/accounts/reset", rest.AuthMiddleware(rest.HandleResetAccounts))
+	mux.HandleFunc("/v2/accounts/add", rest.AuthMiddleware(rest.HandleAddAccount))
+	mux.HandleFunc("/v2/accounts/delete", rest.AuthMiddleware(rest.HandleDeleteAccount))
+
+	mux.HandleFunc("/v2/api-config", rest.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			rest.HandleUpdateAPIConfig(w, r)
+		} else {
+			rest.HandleGetAPIConfig(w, r)
+		}
+	}))
+	mux.HandleFunc("/v2/api-config/test", rest.AuthMiddleware(rest.HandleTestAPIConfig))
+	mux.HandleFunc("/v2/logs", rest.AuthMiddleware(rest.HandleLogs))
 	mux.HandleFunc("/health/diagnostic", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if !authMgr.IsDisabled() {

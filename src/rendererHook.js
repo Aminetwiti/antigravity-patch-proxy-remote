@@ -15,37 +15,56 @@
 
   function getRemoteConfig() {
     try {
-      const storedToken = localStorage.getItem('ag_remote_token') || DEFAULT_TOKEN;
+      let storedHost = localStorage.getItem('ag_remote_host');
+      let storedToken = localStorage.getItem('ag_remote_token');
+      if (!storedHost || storedHost === 'null' || storedHost === 'undefined' || storedHost === '127.0.0.1' || storedHost === '127.0.0.1:8090') {
+        storedHost = DEFAULT_HOST;
+        localStorage.setItem('ag_remote_host', DEFAULT_HOST);
+      }
+      if (!storedToken || storedToken === 'null' || storedToken === 'undefined' || storedToken.trim() === '') {
+        storedToken = DEFAULT_TOKEN;
+        localStorage.setItem('ag_remote_token', DEFAULT_TOKEN);
+      }
       return {
-        host: localStorage.getItem('ag_remote_host') || DEFAULT_HOST,
+        host: storedHost,
         token: storedToken,
-        configured: localStorage.getItem('ag_remote_configured') === 'true' || storedToken.length > 0,
+        configured: true,
       };
     } catch (e) {
       console.warn('[RemoteHook] Failed to read remote config:', e);
-      return { host: DEFAULT_HOST, token: DEFAULT_TOKEN, configured: false };
+      return { host: DEFAULT_HOST, token: DEFAULT_TOKEN, configured: true };
     }
   }
 
-  function syncRemoteStateToProxy(active, host, remoteSessions) {
+  function syncRemoteStateToProxy(active, host, remoteSessions, token) {
+    const cfg = getRemoteConfig();
+    const finalToken = (token && token !== 'null' && token !== 'undefined' && token.trim().length > 0)
+      ? token.trim()
+      : cfg.token;
+    const finalHost = host || cfg.host;
+
     if (window.nativeStorage && typeof window.nativeStorage.setRemoteState === 'function') {
-      window.nativeStorage.setRemoteState({ active, host, remoteSessions }).catch(() => {});
+      window.nativeStorage.setRemoteState({ active, host: finalHost, token: finalToken, remoteSessions }).catch(() => {});
     }
     try {
       fetch('http://127.0.0.1:51074/api/remote/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active, host, remoteSessions }),
+        body: JSON.stringify({ active, host: finalHost, token: finalToken, remoteSessions }),
       }).catch(() => {});
     } catch (_) {}
   }
 
   function saveRemoteConfig(host, token) {
     try {
-      localStorage.setItem('ag_remote_host', host);
-      localStorage.setItem('ag_remote_token', token);
+      const finalHost = host || DEFAULT_HOST;
+      const finalToken = (token && token !== 'null' && token !== 'undefined' && token.trim().length > 0)
+        ? token.trim()
+        : DEFAULT_TOKEN;
+      localStorage.setItem('ag_remote_host', finalHost);
+      localStorage.setItem('ag_remote_token', finalToken);
       localStorage.setItem('ag_remote_configured', 'true');
-      syncRemoteStateToProxy(true, host, getRemoteSessions());
+      syncRemoteStateToProxy(true, finalHost, getRemoteSessions(), finalToken);
     } catch (_) {}
   }
 
@@ -158,11 +177,29 @@
         wsUrl += `&sessionId=${encodeURIComponent(boundSessionId)}`;
       }
 
+      async function fallbackViaProxy() {
+        try {
+          const resp = await fetch('http://127.0.0.1:51074/api/remote/cmd', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command, host, token, workspaceId: targetWs })
+          });
+          if (resp.ok) {
+            const d = await resp.json();
+            return { ok: d.ok !== false, stdout: d.stdout || '', stderr: d.stderr || '', exitCode: d.exitCode ?? 0 };
+          }
+        } catch (_) {}
+        return null;
+      }
+
       let sock;
       try {
         sock = new WebSocket(wsUrl);
       } catch (e) {
-        resolve({ ok: false, error: e.message || 'WebSocket init failed' });
+        fallbackViaProxy().then((res) => {
+          if (res) resolve(res);
+          else resolve({ ok: false, error: e.message || 'WebSocket init failed' });
+        });
         return;
       }
 
@@ -170,7 +207,10 @@
       const endMarker = '___REMOTE_EXEC_DONE___';
       const timer = setTimeout(() => {
         try { sock.close(); } catch (_) {}
-        resolve({ ok: false, error: 'Timeout dépassé', stdout: output });
+        fallbackViaProxy().then((res) => {
+          if (res) resolve(res);
+          else resolve({ ok: false, error: 'Timeout dépassé', stdout: output });
+        });
       }, timeoutMs);
 
       sock.onopen = () => {
@@ -198,7 +238,11 @@
 
       sock.onerror = () => {
         clearTimeout(timer);
-        resolve({ ok: false, error: 'Erreur de connexion WebSocket', stdout: output });
+        try { sock.close(); } catch (_) {}
+        fallbackViaProxy().then((res) => {
+          if (res) resolve(res);
+          else resolve({ ok: false, error: 'Erreur de connexion WebSocket', stdout: output });
+        });
       };
     });
   }

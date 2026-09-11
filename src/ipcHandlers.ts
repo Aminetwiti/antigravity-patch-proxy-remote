@@ -17,7 +17,7 @@ import * as customModelStore from './customModelStore';
 import type { CustomModelFileEntry as CustomModelFileEntryFromTypes } from './proxy/types';
 import { WELL_KNOWN_PRESETS } from './presets';
 import * as configExchange from './services/configExchange';
-import { DEFAULT_PROXY_PORT, DEFAULT_REMOTE_HOST } from './constants';
+import { DEFAULT_PROXY_PORT, DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from './constants';
 import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from './proxy/protoInjector';
 import { loadCustomModels as loadProxyCustomModels } from './proxy/modelLoader';
 
@@ -577,7 +577,8 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
     return new Promise<{ ok: boolean; status?: number; data?: Record<string, unknown>; error?: string }>((resolve) => {
       try {
         const rawHost = (typeof payload === 'string' ? payload : (payload && payload.host ? payload.host : '')).trim().replace(/\/+$/, '');
-        const token = (typeof payload === 'object' && payload && payload.token) ? payload.token.trim() : '';
+        const rawToken = (typeof payload === 'object' && payload && payload.token) ? payload.token.trim() : '';
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
         if (!rawHost) {
           resolve({ ok: false, error: 'URL ou hôte manquant' });
           return;
@@ -694,8 +695,9 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
 
     return new Promise<{ ok: boolean; stdout?: string; stderr?: string; exitCode?: number; error?: string }>((resolve) => {
       try {
-        const rawHost = (payload?.host || 'https://pharmaceuticals-willing-warrant-pound.trycloudflare.com').trim().replace(/\/+$/, '');
-        const token = (payload?.token || '').trim();
+        const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
+        const rawToken = (payload?.token || '').trim();
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
         const command = (payload?.command || '').trim();
         const timeoutMs = payload?.timeoutMs || 15000;
 
@@ -766,7 +768,8 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
     return new Promise<{ ok: boolean; sessions?: any[]; error?: string }>((resolve) => {
       try {
         const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
-        const token = (payload?.token || '').trim();
+        const rawToken = (payload?.token || '').trim();
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
         const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
         const client = parsed.protocol === 'https:' ? https : http;
         const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
@@ -818,7 +821,8 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
     return new Promise<{ ok: boolean; session?: any; error?: string }>((resolve) => {
       try {
         const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
-        const token = (payload?.token || '').trim();
+        const rawToken = (payload?.token || '').trim();
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
         const title = payload?.title || 'Nouvelle tâche distante';
         const workspaceId = payload?.workspaceId || '';
         const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
@@ -878,7 +882,8 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
     return new Promise<{ ok: boolean; workspaces?: any[]; error?: string }>((resolve) => {
       try {
         const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
-        const token = (payload?.token || '').trim();
+        const rawToken = (payload?.token || '').trim();
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
         const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
         const client = parsed.protocol === 'https:' ? https : http;
         const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
@@ -920,8 +925,8 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
     });
   });
 
-  // Save / update remote VPS runtime state (active, host, remoteSessions)
-  ipcMain.handle('remote:set-state', async (_event, payload: { active?: boolean; host?: string; remoteSessions?: Record<string, boolean> }) => {
+  // Save / update remote VPS runtime state (active, host, token, remoteSessions)
+  ipcMain.handle('remote:set-state', async (_event, payload: { active?: boolean; host?: string; token?: string; remoteSessions?: Record<string, boolean> }) => {
     try {
       const os = require('os');
       const nodeFs = require('fs');
@@ -938,14 +943,20 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
           log.warn('[IPC] Failed to parse remote_vps_state.json:', err);
         }
       }
+      const rawToken = payload.token ? String(payload.token).trim() : '';
+      const finalToken = (rawToken && rawToken !== 'null' && rawToken !== 'undefined')
+        ? rawToken
+        : (current.token ? String(current.token) : DEFAULT_REMOTE_TOKEN);
+
       const updated = {
         ...current,
         ...(payload.active !== undefined ? { active: payload.active } : {}),
         ...(payload.host !== undefined ? { host: payload.host } : {}),
+        token: finalToken,
         ...(payload.remoteSessions !== undefined ? { remoteSessions: { ...((current.remoteSessions as Record<string, boolean>) || {}), ...payload.remoteSessions } } : {}),
       };
       await fs.writeFile(p, JSON.stringify(updated, null, 2), 'utf-8');
-      log.info(`[IPC] remote:set-state updated: active=${updated.active}, host=${updated.host}`);
+      log.info(`[IPC] remote:set-state updated: active=${updated.active}, host=${updated.host}, tokenSet=${!!updated.token}`);
       return { ok: true, state: updated };
     } catch (err: any) {
       log.warn('[IPC] remote:set-state error:', err);
@@ -961,9 +972,12 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
       const p = path.join(os.homedir(), '.gemini', 'antigravity', 'remote_vps_state.json');
       if (nodeFs.existsSync(p)) {
         const state = JSON.parse(nodeFs.readFileSync(p, 'utf-8'));
+        if (!state.token || state.token === 'null' || state.token === 'undefined') {
+          state.token = DEFAULT_REMOTE_TOKEN;
+        }
         return { ok: true, state };
       }
-      return { ok: true, state: { active: true, host: '127.0.0.1:8090', remoteSessions: {} } };
+      return { ok: true, state: { active: true, host: DEFAULT_REMOTE_HOST, token: DEFAULT_REMOTE_TOKEN, remoteSessions: {} } };
     } catch (err: any) {
       return { ok: false, error: err.message || 'Erreur lecture' };
     }

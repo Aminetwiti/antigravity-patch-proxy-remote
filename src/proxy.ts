@@ -21,6 +21,7 @@ function traceLog(...args: unknown[]): void {
 import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from './metrics';
 import { randomBytes } from 'crypto';
 import { GOOGLE_HOSTS, DEFAULT_PROXY_PORT, WINDOW_ORIGIN, LOOPBACK_HOSTS, DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from './constants';
+import { wrapCommandForRemoteExec } from './proxy/translators/utils';
 
 const proxyLog = createLogger('Proxy');
 
@@ -33,6 +34,7 @@ let server: http.Server | null = null;
 let proxyPort = 0;
 let isRemoteVpsActive = false;
 let remoteVpsHost = DEFAULT_REMOTE_HOST;
+let remoteVpsToken = DEFAULT_REMOTE_TOKEN;
 let remoteSessionsMap: Record<string, boolean> = {};
 
 function getRemoteStatePath(): string {
@@ -44,17 +46,46 @@ function getRemoteStatePath(): string {
   return path.join(dir, 'remote_vps_state.json');
 }
 
+function ensureRemoteExecScriptOnDisk(): void {
+  try {
+    const targetDir = path.join(os.homedir(), '.gemini', 'antigravity', 'scripts');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    const targetPath = path.join(targetDir, 'remote-exec.js');
+    const candidates = [
+      path.resolve(__dirname, '../scripts/remote-exec.js'),
+      path.resolve(__dirname, '../../scripts/remote-exec.js'),
+      path.resolve(__dirname, 'scripts/remote-exec.js'),
+    ];
+    for (const src of candidates) {
+      if (fs.existsSync(src)) {
+        fs.copyFileSync(src, targetPath);
+        break;
+      }
+    }
+  } catch (e) {
+    log.warn('[Proxy] Could not sync remote-exec.js to ~/.gemini/antigravity/scripts:', e);
+  }
+}
+
 function loadRemoteState(): void {
   try {
+    ensureRemoteExecScriptOnDisk();
     const p = getRemoteStatePath();
     if (fs.existsSync(p)) {
       const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
       isRemoteVpsActive = !!data.active;
       if (data.host) remoteVpsHost = String(data.host);
+      if (data.token && data.token !== 'null' && data.token !== 'undefined' && String(data.token).trim().length > 0) {
+        remoteVpsToken = String(data.token).trim();
+      } else {
+        remoteVpsToken = DEFAULT_REMOTE_TOKEN;
+      }
       if (data.remoteSessions && typeof data.remoteSessions === 'object') {
         remoteSessionsMap = data.remoteSessions;
       }
-      log.info(`[Proxy] Loaded Remote VPS state: active=${isRemoteVpsActive}, host=${remoteVpsHost}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
+      log.info(`[Proxy] Loaded Remote VPS state: active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
     }
   } catch (e) {
     log.warn('[Proxy] Failed to load remote VPS state from disk:', e);
@@ -64,7 +95,12 @@ function loadRemoteState(): void {
 function saveRemoteState(): void {
   try {
     const p = getRemoteStatePath();
-    fs.writeFileSync(p, JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost, remoteSessions: remoteSessionsMap }, null, 2), 'utf-8');
+    fs.writeFileSync(p, JSON.stringify({
+      active: isRemoteVpsActive,
+      host: remoteVpsHost,
+      token: remoteVpsToken || DEFAULT_REMOTE_TOKEN,
+      remoteSessions: remoteSessionsMap,
+    }, null, 2), 'utf-8');
   } catch (e) {
     log.warn('[Proxy] Failed to save remote VPS state to disk:', e);
   }
@@ -88,7 +124,7 @@ export async function executeOnRemoteDaemon(
 
   const payload = JSON.stringify({
     command,
-    workspaceId: workspaceId || 'default',
+    workspaceId: (workspaceId && workspaceId !== 'default') ? workspaceId : 'antigravity-add-model-main',
     sessionId: sessionId || '',
     timeoutMs,
   });
@@ -323,7 +359,82 @@ import { detectModelCapabilities } from './proxy/modelUtils';
 
 // ─── Google Proxy ─────────────────────────────────────────────────────────
 
-async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse, reqBody: Buffer): Promise<void> {
+function transformGoogleStreamForRemote(proxyRes: http.IncomingMessage, clientRes: http.ServerResponse): void {
+  const headers = { ...proxyRes.headers };
+  delete headers['content-length'];
+  delete headers['content-encoding'];
+  safeWriteHead(clientRes, proxyRes.statusCode || 200, headers as Record<string, string>);
+
+  let buffer = '';
+
+  const processLine = (line: string): void => {
+    const trimmed = line.trimEnd();
+    if (trimmed.startsWith('data:')) {
+      const jsonStr = trimmed.slice(5).trim();
+      if (jsonStr && jsonStr !== '[DONE]') {
+        try {
+          const data = JSON.parse(jsonStr);
+          let modified = false;
+          if (Array.isArray(data.candidates)) {
+            for (const cand of data.candidates) {
+              if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
+                for (const part of cand.content.parts) {
+                  if (part.functionCall && part.functionCall.name === 'run_command') {
+                    const args = part.functionCall.args;
+                    if (args && typeof args.CommandLine === 'string') {
+                      const originalCmd = args.CommandLine;
+                      const wrapped = wrapCommandForRemoteExec(originalCmd);
+                      if (wrapped !== originalCmd) {
+                        args.CommandLine = wrapped;
+                        modified = true;
+                        log.info(`[Proxy] Google Cloud Code SSE: Bridged run_command "${originalCmd}" -> remote VPS`);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          if (modified) {
+            clientRes.write(`data: ${JSON.stringify(data)}\n`);
+            return;
+          }
+        } catch (_) {}
+      }
+    }
+    clientRes.write(line + '\n');
+  };
+
+  proxyRes.on('data', (chunk: Buffer) => {
+    buffer += chunk.toString('utf-8');
+    let lineEndIdx: number;
+    while ((lineEndIdx = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, lineEndIdx);
+      buffer = buffer.slice(lineEndIdx + 1);
+      processLine(line);
+    }
+  });
+
+  proxyRes.on('end', () => {
+    if (buffer.length > 0) {
+      processLine(buffer);
+      buffer = '';
+    }
+    safeEnd(clientRes);
+  });
+
+  proxyRes.on('error', (err) => {
+    log.error('[Proxy] Upstream Google stream error in remote mode:', err);
+    clientRes.destroy(err);
+  });
+}
+
+async function proxyToGoogle(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reqBody: Buffer,
+  isRemoteSession = false,
+): Promise<void> {
   const traceId = newTraceId();
   const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode');
   const targetHost = isCloudCodeUrl ? GOOGLE_HOSTS.CLOUD_CODE : GOOGLE_HOSTS.GENERATIVE_LANGUAGE;
@@ -357,7 +468,7 @@ async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse
   const isGeneration = req.url!.includes('generateContent') || req.url!.includes('streamGenerateContent');
   const shouldBufferAndModify = isCloudCodeUrl && !isGeneration;
 
-  if (shouldBufferAndModify) {
+  if (shouldBufferAndModify || (isRemoteSession && isGeneration)) {
     delete headers['accept-encoding'];
   }
 
@@ -428,6 +539,8 @@ async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse
           safeEnd(res, modifiedBuffer);
         }
       });
+    } else if (isRemoteSession && isGeneration) {
+      transformGoogleStreamForRemote(proxyRes, res);
     } else {
       if (safeHead(proxyRes.statusCode || 200, proxyRes.headers as Record<string, string>)) {
         proxyRes.pipe(res);
@@ -1637,7 +1750,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   if (req.url === '/api/remote/status' || req.url?.startsWith('/api/remote/status?')) {
     if (req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost, remoteSessions: remoteSessionsMap }));
+      res.end(JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost, token: remoteVpsToken || DEFAULT_REMOTE_TOKEN, remoteSessions: remoteSessionsMap }));
       return;
     }
     if (req.method === 'POST') {
@@ -1648,17 +1761,21 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           const b = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
             active?: boolean;
             host?: string;
+            token?: string;
             remoteSessions?: Record<string, boolean>;
           };
           if (b.active !== undefined) isRemoteVpsActive = !!b.active;
           if (b.host) remoteVpsHost = String(b.host);
+          if (b.token && b.token !== 'null' && b.token !== 'undefined' && String(b.token).trim().length > 0) {
+            remoteVpsToken = String(b.token).trim();
+          }
           if (b.remoteSessions && typeof b.remoteSessions === 'object') {
             remoteSessionsMap = { ...remoteSessionsMap, ...b.remoteSessions };
           }
           saveRemoteState();
-          log.info(`[Proxy] Remote VPS session status updated: active=${isRemoteVpsActive}, host=${remoteVpsHost}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
+          log.info(`[Proxy] Remote VPS session status updated: active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          res.end(JSON.stringify({ ok: true, active: isRemoteVpsActive, host: remoteVpsHost, remoteSessions: remoteSessionsMap }));
+          res.end(JSON.stringify({ ok: true, active: isRemoteVpsActive, host: remoteVpsHost, token: remoteVpsToken || DEFAULT_REMOTE_TOKEN, remoteSessions: remoteSessionsMap }));
         } catch {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -1684,7 +1801,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             timeoutMs?: number;
           };
           const targetHost = b.host || remoteVpsHost || DEFAULT_REMOTE_HOST;
-          const token = b.token || DEFAULT_REMOTE_TOKEN;
+          const rawToken = b.token ? String(b.token).trim() : '';
+          const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined')
+            ? rawToken
+            : (remoteVpsToken || DEFAULT_REMOTE_TOKEN);
           const cmd = b.command || '';
           const result = await executeOnRemoteDaemon(targetHost, token, cmd, b.workspaceId, b.sessionId, b.timeoutMs);
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -1696,6 +1816,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       });
       return;
     }
+    return;
   }
 
   if (req.method === 'GET' && (req.url === '/__diag__' || req.url?.startsWith('/__diag__?'))) {

@@ -4,6 +4,8 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import log from 'electron-log';
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -489,15 +491,80 @@ export function fixParamTypes(properties: Record<string, unknown> | undefined): 
 }
 
 /**
+ * Resolves the absolute path to the remote-exec bridge script.
+ * Prefers the persistent ~/.gemini/antigravity/scripts/remote-exec.js path.
+ */
+export function getRemoteExecScriptPath(): string {
+  const userGeminiPath = path.join(os.homedir(), '.gemini', 'antigravity', 'scripts', 'remote-exec.js');
+  if (fs.existsSync(userGeminiPath)) return userGeminiPath;
+
+  const rel1 = path.resolve(__dirname, '../../../scripts/remote-exec.js');
+  if (fs.existsSync(rel1)) return rel1;
+
+  const rel2 = path.resolve(__dirname, '../../scripts/remote-exec.js');
+  if (fs.existsSync(rel2)) return rel2;
+
+  return userGeminiPath;
+}
+
+/**
+ * Wraps a shell command to execute remotely via the remote-exec daemon bridge.
+ */
+export function wrapCommandForRemoteExec(cmd: string): string {
+  if (!cmd || cmd.startsWith('node ') || cmd.includes('remote-exec.js')) {
+    return cmd;
+  }
+  const b64 = Buffer.from(cmd, 'utf-8').toString('base64');
+  const scriptPath = getRemoteExecScriptPath();
+  return `node --no-warnings "${scriptPath}" --b64 "${b64}"`;
+}
+
+/**
  * Translates generic shell/terminal commands (run_command) into native Antigravity file tools.
  */
-export function translateToolCallToNative(name: string, args: ToolCallArgs): TranslatedToolCall {
+export function translateToolCallToNative(
+  name: string,
+  args: ToolCallArgs,
+  isRemoteOverride?: boolean,
+): TranslatedToolCall {
   if (name !== 'run_command' || !args || !args.CommandLine) {
     return { name, args: args as Record<string, unknown> };
   }
 
   const cmd = args.CommandLine.trim();
   const cwd = args.Cwd || process.cwd();
+
+  // Check if remote VPS mode is active (skip in unit test environments unless explicitly forced)
+  const isUnitTest = !!process.env.VITEST || process.env.NODE_ENV === 'test';
+  if (!isUnitTest || isRemoteOverride !== undefined) {
+    let isRemote = isRemoteOverride === true;
+    if (!isRemote && !isUnitTest) {
+      try {
+        const remoteStateFile = path.join(os.homedir(), '.gemini', 'antigravity', 'remote_vps_state.json');
+        if (fs.existsSync(remoteStateFile)) {
+          const state = JSON.parse(fs.readFileSync(remoteStateFile, 'utf-8'));
+          if (state.active || (state.remoteSessions && Object.values(state.remoteSessions).some(Boolean))) {
+            isRemote = true;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (isRemote) {
+      const wrapped = wrapCommandForRemoteExec(cmd);
+      if (wrapped !== cmd) {
+        log.info(`[Proxy] Bridging run_command "${cmd}" to Remote VPS daemon`);
+        return {
+          name: 'run_command',
+          args: {
+            ...args,
+            CommandLine: wrapped,
+          },
+        };
+      }
+      return { name: 'run_command', args: { ...args } };
+    }
+  }
 
   // 1. list_dir translation
   const isListDir = /^(ls|dir)(\s+[\w\-\/\\\.\*]+)*$/i.test(cmd);
