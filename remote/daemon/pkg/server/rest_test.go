@@ -469,3 +469,161 @@ func TestREST_AutonomousLifecycleEndpoints(t *testing.T) {
 	}
 }
 
+func TestREST_AccountsEndpoints(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-acc")
+	defer cleanup()
+
+	// 1. Unauthorized access without token
+	unauthReq := httptest.NewRequest("GET", "/v2/accounts", nil)
+	unauthW := httptest.NewRecorder()
+	mux.ServeHTTP(unauthW, unauthReq)
+	if unauthW.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized without token, got %d", unauthW.Code)
+	}
+
+	// 2. GET /v2/accounts
+	getReq := httptest.NewRequest("GET", "/v2/accounts?token=token-acc", nil)
+	getW := httptest.NewRecorder()
+	mux.ServeHTTP(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on GET /v2/accounts, got %d: %s", getW.Code, getW.Body.String())
+	}
+	var accList struct {
+		ActiveAccount string                   `json:"activeAccount"`
+		AutoRotate    bool                     `json:"autoRotate"`
+		Accounts      []map[string]interface{} `json:"accounts"`
+	}
+	if err := json.NewDecoder(getW.Body).Decode(&accList); err != nil {
+		t.Fatalf("failed to decode accounts list: %v", err)
+	}
+
+	// 3. POST /v2/accounts/auto-rotate
+	arReq := httptest.NewRequest("POST", "/v2/accounts/auto-rotate?token=token-acc", bytes.NewReader([]byte(`{"enabled":true}`)))
+	arW := httptest.NewRecorder()
+	mux.ServeHTTP(arW, arReq)
+	if arW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on auto-rotate, got %d", arW.Code)
+	}
+
+	// 4. POST /v2/accounts/add
+	addReq := httptest.NewRequest("POST", "/v2/accounts/add?token=token-acc", bytes.NewReader([]byte(`{"email":"test.cloud@gmail.com","refreshToken":"1//testtoken"}`)))
+	addW := httptest.NewRecorder()
+	mux.ServeHTTP(addW, addReq)
+	if addW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on add account, got %d: %s", addW.Code, addW.Body.String())
+	}
+
+	// 5. POST /v2/accounts/switch
+	swReq := httptest.NewRequest("POST", "/v2/accounts/switch?token=token-acc", bytes.NewReader([]byte(`{"email":"test.cloud@gmail.com"}`)))
+	swW := httptest.NewRecorder()
+	mux.ServeHTTP(swW, swReq)
+	if swW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on switch account, got %d: %s", swW.Code, swW.Body.String())
+	}
+
+	// 6. POST /v2/accounts/rotate
+	rotReq := httptest.NewRequest("POST", "/v2/accounts/rotate?token=token-acc", bytes.NewReader([]byte(`{"reason":"test"}`)))
+	rotW := httptest.NewRecorder()
+	mux.ServeHTTP(rotW, rotReq)
+	if rotW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on rotate account, got %d: %s", rotW.Code, rotW.Body.String())
+	}
+
+	// 7. POST /v2/accounts/select-best
+	bestReq := httptest.NewRequest("POST", "/v2/accounts/select-best?token=token-acc", bytes.NewReader([]byte(`{"model":"gemini-2.5-pro"}`)))
+	bestW := httptest.NewRecorder()
+	mux.ServeHTTP(bestW, bestReq)
+	if bestW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on select-best, got %d: %s", bestW.Code, bestW.Body.String())
+	}
+
+	// 8. POST /v2/accounts/reset
+	rstReq := httptest.NewRequest("POST", "/v2/accounts/reset?token=token-acc", bytes.NewReader([]byte(`{}`)))
+	rstW := httptest.NewRecorder()
+	mux.ServeHTTP(rstW, rstReq)
+	if rstW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on reset, got %d: %s", rstW.Code, rstW.Body.String())
+	}
+
+	// 9. POST /v2/accounts/delete
+	delReq := httptest.NewRequest("POST", "/v2/accounts/delete?token=token-acc", bytes.NewReader([]byte(`{"email":"test.cloud@gmail.com"}`)))
+	delW := httptest.NewRecorder()
+	mux.ServeHTTP(delW, delReq)
+	if delW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on delete account, got %d: %s", delW.Code, delW.Body.String())
+	}
+}
+
+func TestREST_APIConfigAndLogsEndpoints(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-config")
+	defer cleanup()
+
+	// 1. GET /v2/api-config
+	cfgReq := httptest.NewRequest("GET", "/v2/api-config?token=token-config", nil)
+	cfgW := httptest.NewRecorder()
+	mux.ServeHTTP(cfgW, cfgReq)
+	if cfgW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on GET /v2/api-config, got %d: %s", cfgW.Code, cfgW.Body.String())
+	}
+	var cfgResp struct {
+		Provider string            `json:"provider"`
+		Model    string            `json:"model"`
+		Keys     map[string]string `json:"keys"`
+	}
+	if err := json.NewDecoder(cfgW.Body).Decode(&cfgResp); err != nil {
+		t.Fatalf("failed to parse api config: %v", err)
+	}
+
+	// 2. POST /v2/api-config
+	postBody := []byte(`{"provider":"openai","model":"gpt-4o","apiKey":"sk-proj-test12345678"}`)
+	postReq := httptest.NewRequest("POST", "/v2/api-config?token=token-config", bytes.NewReader(postBody))
+	postW := httptest.NewRecorder()
+	mux.ServeHTTP(postW, postReq)
+	if postW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on POST /v2/api-config, got %d: %s", postW.Code, postW.Body.String())
+	}
+
+	// 3. Log an entry and verify GET /v2/logs
+	server.GetGlobalLogBuffer().Add(server.LogEntry{
+		Timestamp: "2026-09-11T12:00:00Z",
+		Level:     "INFO",
+		Message:   "Test dashboard log entry",
+	})
+
+	logsReq := httptest.NewRequest("GET", "/v2/logs?token=token-config&search=Test+dashboard", nil)
+	logsW := httptest.NewRecorder()
+	mux.ServeHTTP(logsW, logsReq)
+	if logsW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on GET /v2/logs, got %d: %s", logsW.Code, logsW.Body.String())
+	}
+	var logsResp struct {
+		Entries []server.LogEntry `json:"entries"`
+		Count   int               `json:"count"`
+	}
+	if err := json.NewDecoder(logsW.Body).Decode(&logsResp); err != nil {
+		t.Fatalf("failed to decode logs: %v", err)
+	}
+	if logsResp.Count == 0 {
+		t.Fatalf("expected at least 1 log entry, got 0")
+	}
+
+	// 4. GET /dashboard and GET /console
+	dashReq := httptest.NewRequest("GET", "/dashboard", nil)
+	dashW := httptest.NewRecorder()
+	mux.ServeHTTP(dashW, dashReq)
+	if dashW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on /dashboard, got %d", dashW.Code)
+	}
+	if !strings.Contains(dashW.Body.String(), "Pool de Comptes Google") {
+		t.Fatalf("expected dashboard HTML to contain 'Pool de Comptes Google'")
+	}
+
+	consoleReq := httptest.NewRequest("GET", "/console", nil)
+	consoleW := httptest.NewRecorder()
+	mux.ServeHTTP(consoleW, consoleReq)
+	if consoleW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on /console, got %d", consoleW.Code)
+	}
+}
+
+

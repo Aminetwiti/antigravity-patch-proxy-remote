@@ -14,14 +14,17 @@
 | **Accès réseau distant** | Cloudflare Tunnel / Pinggy SSH | Zero Trust, URL publique sécurisée en 1 seconde sans port ouvert sur le routeur |
 | **Découverte LAN locale** | UDP Broadcast (Zero-Config) | Annonces périodiques sur le port UDP `41234` sans transmission de secrets |
 | **Sérialisation RPC interne** | ConnectRPC / gRPC-Web natif | Communication directe avec le `language_server` sans intermédiaire |
-| **Source de Vérité Protobuf** | `remote/tools/` & `remote/proto/` | Référence canonique des schémas Protobuf officiels |
+| **Source de Vérité Protobuf** | `remote/proto/` | Référence canonique des schémas Protobuf officiels |
+| **Persistance Événements (Cloud)** | SQLite WAL (`modernc.org/sqlite`) | CGO-free, append-only EventStore, checkpoints WAL, zéro dépendance dynamique |
+| **Sandboxing Outils (Cloud)** | Docker Conteneurisé (`alpine:latest`) | Éphémère, capacités `ALL` supprimées, filesystem RO, réseau coupé |
+| **Console d'Administration Web** | Single-Page Application embarquée | HTML/JS vanilla servi sur `/console` sans dépendance CDN externe |
 
 ---
 
 ## 2. Source de Vérité Protobuf & Référence Officielle
 
 L'ensemble des définitions de services et schémas Protobuf est consigné dans :
-1. **Schémas gRPC & Protobuf** : [`remote/tools/protocols/grpc-schemas/`](file:///C:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/tools/protocols/grpc-schemas) et [`remote/proto/remote_service.proto`](file:///C:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/remote_service.proto).
+1. **Schémas gRPC & Protobuf canoniques** : [`remote/proto/remote_service.proto`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/remote_service.proto) ainsi que les définitions annexes sous [`remote/proto/exa/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/exa) et [`remote/proto/google/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/google).
 2. **Schémas de sessions et planners** :
    - `StartCascadeRequest`, `CascadeConfig`, `CascadePlannerConfig`.
    - `TextOrScopeItem`, `Metadata`, `ModelOrAlias`.
@@ -29,6 +32,7 @@ L'ensemble des définitions de services et schémas Protobuf est consigné dans 
 3. **Flux Temps Réel Hybrides** :
    - **`JetboxSubscribeToSummaries`** : flux push JSON ConnectRPC alimentant la sidebar de sessions sans polling.
    - **`StreamReactiveUpdates`** : flux réactif de notification d'état (`IDLE`, `RUNNING`, `CANCELING`) et d'interactions (`requestedInteraction`).
+   - **WebSocket v2 Multiplexé** (`/v2/ws`) : flux authoritaire avec curseur de rejeu `lastSequence`.
 
 ---
 

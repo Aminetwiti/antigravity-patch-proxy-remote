@@ -20,7 +20,7 @@ function traceLog(...args: unknown[]): void {
 }
 import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from './metrics';
 import { randomBytes } from 'crypto';
-import { GOOGLE_HOSTS, DEFAULT_PROXY_PORT, WINDOW_ORIGIN, LOOPBACK_HOSTS, DEFAULT_REMOTE_HOST } from './constants';
+import { GOOGLE_HOSTS, DEFAULT_PROXY_PORT, WINDOW_ORIGIN, LOOPBACK_HOSTS, DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from './constants';
 
 const proxyLog = createLogger('Proxy');
 
@@ -68,6 +68,76 @@ function saveRemoteState(): void {
   } catch (e) {
     log.warn('[Proxy] Failed to save remote VPS state to disk:', e);
   }
+}
+
+export async function executeOnRemoteDaemon(
+  rawHost: string,
+  token: string,
+  command: string,
+  workspaceId?: string,
+  sessionId?: string,
+  timeoutMs = 15000,
+): Promise<{ ok: boolean; stdout: string; stderr: string; exitCode: number; error?: string }> {
+  let cleanHost = (rawHost || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
+  if (!cleanHost.startsWith('http://') && !cleanHost.startsWith('https://')) {
+    cleanHost = 'https://' + cleanHost;
+  }
+  const url = new URL(cleanHost + '/v2/terminal/exec');
+  const isHttps = url.protocol === 'https:';
+  const transport = isHttps ? https : http;
+
+  const payload = JSON.stringify({
+    command,
+    workspaceId: workspaceId || 'default',
+    sessionId: sessionId || '',
+    timeoutMs,
+  });
+
+  return new Promise((resolve) => {
+    const r = transport.request(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+          Authorization: `Bearer ${token || DEFAULT_REMOTE_TOKEN}`,
+          'User-Agent': 'AntigravityPatchProxy/3.5.0',
+        },
+        timeout: timeoutMs,
+      },
+      (resp) => {
+        const chunks: Buffer[] = [];
+        resp.on('data', (c) => chunks.push(c));
+        resp.on('end', () => {
+          try {
+            const data = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+            resolve(data);
+          } catch {
+            const raw = Buffer.concat(chunks).toString('utf-8');
+            resolve({
+              ok: resp.statusCode === 200,
+              stdout: raw,
+              stderr: '',
+              exitCode: resp.statusCode === 200 ? 0 : 1,
+            });
+          }
+        });
+      },
+    );
+
+    r.on('error', (err) => {
+      resolve({ ok: false, stdout: '', stderr: err.message, exitCode: 1, error: err.message });
+    });
+
+    r.on('timeout', () => {
+      r.destroy();
+      resolve({ ok: false, stdout: '', stderr: 'Request timed out', exitCode: 124, error: 'timeout' });
+    });
+
+    r.write(payload);
+    r.end();
+  });
 }
 
 // Initialize on boot
@@ -1598,6 +1668,36 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     }
   }
 
+  // Remote VPS Command Execution Bridge (POST /api/remote/cmd)
+  if (req.url === '/api/remote/cmd' || req.url?.startsWith('/api/remote/cmd?')) {
+    if (req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', async () => {
+        try {
+          const b = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
+            command?: string;
+            host?: string;
+            token?: string;
+            workspaceId?: string;
+            sessionId?: string;
+            timeoutMs?: number;
+          };
+          const targetHost = b.host || remoteVpsHost || DEFAULT_REMOTE_HOST;
+          const token = b.token || DEFAULT_REMOTE_TOKEN;
+          const cmd = b.command || '';
+          const result = await executeOnRemoteDaemon(targetHost, token, cmd, b.workspaceId, b.sessionId, b.timeoutMs);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify(result));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
+        }
+      });
+      return;
+    }
+  }
+
   if (req.method === 'GET' && (req.url === '/__diag__' || req.url?.startsWith('/__diag__?'))) {
     try {
       const accept = String(req.headers['accept'] ?? '');
@@ -2325,10 +2425,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               }
             }
           }
-          const remoteWorkspaceBase = '/root/.antigravity/workspaces';
+          const remoteWorkspaceBase = '/data/workspaces';
           const targetRemoteWs = detectedProject ? `${remoteWorkspaceBase}/${detectedProject}` : `${remoteWorkspaceBase}/antigravity-add-model-main`;
 
-          const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur Cloud Daemon (${remoteVpsHost}).\nTon espace de travail exclusif est sur ce serveur Linux distant : ${targetRemoteWs}.\nSystème d'exploitation : Linux (Alpine 3.20 x86_64)\nInterpréteur de commandes (Shell) : bash\nEspace de travail : ${targetRemoteWs}\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows.\nPour toute demande d'environnement ou de rapport ("quelle est votre envirenement"), réponds clairement et précisément que ton environnement d'exécution est le serveur Linux distant (hôte: ${remoteVpsHost}, workspace: ${targetRemoteWs}, shell: bash).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux sur le VPS distant.\n\n`;
+          const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur Cloud Daemon (${remoteVpsHost}).\nTon espace de travail exclusif est sur ce serveur Linux distant : ${targetRemoteWs}.\nSystème d'exploitation : Linux (Ubuntu 24.04 LTS x86_64)\nInterpréteur de commandes (Shell) : bash\nEspace de travail : ${targetRemoteWs}\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows.\nPour toute demande d'environnement ou de rapport ("quelle est votre envirenement"), réponds clairement et précisément que ton environnement d'exécution est le serveur Linux distant (hôte: ${remoteVpsHost}, workspace: ${targetRemoteWs}, shell: bash).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux sur le VPS distant.\n\n`;
 
           let injected = false;
           if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {

@@ -104,6 +104,19 @@ func (e *Engine) GitPolicy() GitPolicy {
 	return e.gitPolicy
 }
 
+func (e *Engine) SetLLMClient(client LLMClient) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.llmClient = client
+}
+
+func (e *Engine) LLMClient() LLMClient {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.llmClient
+}
+
+
 func (e *Engine) GetSessionTelemetry(ctx context.Context, sessionID string) (*SessionTelemetry, error) {
 	sess, err := e.sessionSvc.GetSession(ctx, sessionID)
 	if err != nil {
@@ -250,7 +263,8 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, effectiveWsID,
 		// ponytail: re-compact older tool outputs on every turn to prevent token bloat
 		messages = CompactContextMessages(messages)
 
-		resp, err := e.llmClient.Generate(ctx, messages, availableTools, onChunk)
+		client := e.LLMClient()
+		resp, err := client.Generate(ctx, messages, availableTools, onChunk)
 		if err != nil {
 			_ = e.sessionSvc.TransitionState(ctx, sessionID, domain.SessionStateFailed, fmt.Sprintf("LLM generation failed: %v", err))
 			errPayload, _ := json.Marshal(map[string]string{"error": err.Error()})

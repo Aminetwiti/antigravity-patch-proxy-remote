@@ -129,7 +129,8 @@ class DaemonApi {
         },
       );
       return true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[DaemonApi] sendWithResult failed for $type ($id): $e');
       return false;
     }
   }
@@ -577,7 +578,9 @@ class DaemonApi {
       if (res['data'] is Map && (res['data'] as Map)['text'] is String) {
         return (res['data'] as Map)['text'] as String;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[DaemonApi] getDesktopClipboard error: $e');
+    }
     return null;
   }
 
@@ -586,7 +589,8 @@ class DaemonApi {
     try {
       final res = await rpc('clipboard.set', {'data': {'text': text}});
       return res['success'] == true || (res['data'] is Map && (res['data'] as Map)['success'] == true);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[DaemonApi] setDesktopClipboard error: $e');
       return false;
     }
   }
@@ -1442,7 +1446,9 @@ class DaemonApi {
       if (tasks is List) {
         return tasks.map((e) => Map<String, dynamic>.from(e is Map ? e : {})).toList();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[DaemonApi] listRunningTasks error: $e');
+    }
     return [];
   }
 
@@ -1451,7 +1457,8 @@ class DaemonApi {
     try {
       final res = await rpc('kill_running_task', {'taskId': taskId});
       return res['success'] == true || (res['data'] is Map && res['data']['success'] == true);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[DaemonApi] killRunningTask error: $e');
       return false;
     }
   }
@@ -1467,7 +1474,8 @@ class DaemonApi {
         return Map<String, dynamic>.from(res['data'] as Map);
       }
       return res;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[DaemonApi] getTaskLog error: $e');
       return {};
     }
   }

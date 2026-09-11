@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -116,6 +117,12 @@ func main() {
 
 	// Silencer le logger standard Go pour éliminer le spam brut de gorilla/websocket (qui échappe à slog)
 	log.SetOutput(io.Discard)
+
+	baseLogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: gateway.LogLevelFromEnv()})
+	bufferedLogHandler := server.NewLogBufferHandler(server.GetGlobalLogBuffer(), baseLogHandler)
+	globalLogger := slog.New(bufferedLogHandler)
+	slog.SetDefault(globalLogger)
+	gateway.SetLogJSON(globalLogger)
 
 	if noAuth {
 		authToken = "none"

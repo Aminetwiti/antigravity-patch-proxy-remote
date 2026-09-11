@@ -381,6 +381,89 @@ const WebConsoleHTML = `<!DOCTYPE html>
       outline: none;
     }
     .hidden { display: none !important; }
+    .accounts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 16px;
+    }
+    .account-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: border-color 0.2s;
+    }
+    .account-card.active-card {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.04);
+    }
+    .quota-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    .quota-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .progress-bar-bg {
+      height: 8px;
+      background: #1e293b;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+    .fill-high { background: #10b981; }
+    .fill-med { background: #f59e0b; }
+    .fill-low { background: #ef4444; }
+    .log-stream {
+      background: #090d13;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 12px;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .log-entry {
+      display: flex;
+      gap: 10px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      line-height: 1.4;
+    }
+    .log-entry:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .log-time { color: #64748b; white-space: nowrap; }
+    .log-badge {
+      font-size: 10px;
+      font-weight: bold;
+      padding: 1px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .lvl-INFO { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+    .lvl-WARN { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .lvl-ERROR { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .lvl-DEBUG { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+    .log-msg { color: #e2e8f0; flex: 1; word-break: break-all; }
+    .log-fields { color: #94a3b8; font-size: 11px; }
   </style>
 </head>
 <body>
@@ -410,6 +493,20 @@ const WebConsoleHTML = `<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- Add Account Modal -->
+  <div id="accountModal" class="modal-overlay hidden">
+    <div class="modal" style="width:480px;">
+      <h2>Ajouter un Compte Google</h2>
+      <p>Intégrez un compte Google avec son Refresh Token pour le pool dynamique.</p>
+      <input type="email" id="accEmailInput" class="input-field" placeholder="Adresse email (ex: user@gmail.com)" />
+      <input type="password" id="accTokenInput" class="input-field" placeholder="Google OAuth Refresh Token (1//0...)" />
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="closeAddAccountModal()">Annuler</button>
+        <button class="btn btn-success" onclick="submitAddAccount()">Ajouter au Pool</button>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div style="display:flex;align-items:center;gap:20px;">
       <div class="brand">
@@ -418,6 +515,9 @@ const WebConsoleHTML = `<!DOCTYPE html>
       </div>
       <div class="nav-tabs">
         <button id="tabConsole" class="tab-btn active" onclick="switchTab('console')">💬 Agent Console</button>
+        <button id="tabAccounts" class="tab-btn" onclick="switchTab('accounts')">👥 Comptes</button>
+        <button id="tabAPIs" class="tab-btn" onclick="switchTab('apis')">🔑 APIs</button>
+        <button id="tabLogs" class="tab-btn" onclick="switchTab('logs')">📋 Logs Live</button>
         <button id="tabTerminal" class="tab-btn" onclick="switchTab('terminal')">💻 Workspace Terminal</button>
         <button id="tabGit" class="tab-btn" onclick="switchTab('git')">🌿 Git Changes</button>
         <button id="tabMCP" class="tab-btn" onclick="switchTab('mcp')">🔌 MCP Servers</button>
@@ -429,6 +529,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
         <span id="statusText">Connecting...</span>
       </div>
       <span id="serverInfo">ag-agentd</span>
+      <button class="btn btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="promptAuthToken()" title="Configurer ou modifier le jeton d'authentification">🔑 Auth / Jeton</button>
     </div>
   </header>
 
@@ -529,6 +630,102 @@ const WebConsoleHTML = `<!DOCTYPE html>
         <button class="btn" onclick="openMCPModal()">+ Register Server</button>
       </div>
       <div id="mcpServersGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;"></div>
+    </div>
+
+    <!-- Accounts Pool Management View -->
+    <div id="accountsPane" class="terminal-container hidden" style="background:var(--bg);padding:24px;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+        <div>
+          <h2 style="font-size:20px;margin-bottom:6px;display:flex;align-items:center;gap:10px;">
+            👥 Pool de Comptes Google
+            <span id="accActiveBadge" class="badge badge-ready" style="font-size:12px;padding:3px 8px;">Actif: ...</span>
+          </h2>
+          <p style="color:var(--text-muted);font-size:13px;">Rotation intelligente et surveillance multi-comptes des quotas Gemini et Claude.</p>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);cursor:pointer;background:var(--card);padding:6px 12px;border-radius:6px;border:1px solid var(--border);">
+            <input type="checkbox" id="autoRotateCheckbox" onchange="toggleAutoRotate(this.checked)" />
+            <span>Auto-Rotation</span>
+          </label>
+          <button class="btn btn-secondary" onclick="optimizeQuotas()" title="Sélectionne le compte avec le meilleur quota disponible">⚡ Optimiser Quotas</button>
+          <button class="btn btn-secondary" onclick="rotateAccount()" title="Bascule vers le compte suivant">🔄 Rotation Manuelle</button>
+          <button class="btn btn-secondary" onclick="resetExhaustedAccounts()" title="Réinitialise les comptes dont le délai est expiré">♻️ Reset Épuisés</button>
+          <button class="btn btn-success" onclick="openAddAccountModal()">+ Ajouter Compte</button>
+        </div>
+      </div>
+      <div id="accountsGrid" class="accounts-grid"></div>
+    </div>
+
+    <!-- API Providers & Model Configuration View -->
+    <div id="apisPane" class="terminal-container hidden" style="background:var(--bg);padding:24px;overflow-y:auto;">
+      <div style="margin-bottom:20px;">
+        <h2 style="font-size:20px;margin-bottom:6px;">🔑 Configuration des APIs & Moteurs IA</h2>
+        <p style="color:var(--text-muted);font-size:13px;">Basculez à chaud entre les fournisseurs LLM sans redémarrer le daemon.</p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;">
+          <h3 style="font-size:16px;margin-bottom:14px;">Paramètres du Moteur Actif</h3>
+          
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;">Fournisseur IA (Provider)</label>
+          <select id="apiProviderSelect" class="input-field" onchange="onProviderSelectChange(this.value)">
+            <option value="anthropic">Anthropic Claude (Direct API)</option>
+            <option value="openai">OpenAI ChatGPT (Direct API)</option>
+            <option value="proxy">Proxy Antigravity Local (Port 51074)</option>
+            <option value="ollama">Ollama Local (Self-Hosted)</option>
+          </select>
+
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;">Nom du Modèle</label>
+          <input type="text" id="apiModelInput" class="input-field" placeholder="ex: claude-3-7-sonnet-20250219, gpt-4o, gemini-2.0-flash" />
+
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;">Clé d'API (Nouvelle valeur ou vide pour conserver)</label>
+          <div style="position:relative;">
+            <input type="password" id="apiKeyInput" class="input-field" placeholder="sk-ant-... ou sk-..." />
+            <button type="button" onclick="togglePasswordVisibility('apiKeyInput')" style="position:absolute;right:10px;top:10px;background:none;border:none;color:var(--text-muted);cursor:pointer;">👁️</button>
+          </div>
+
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;">Base URL / Endpoint Personnalisé (Optionnel)</label>
+          <input type="text" id="apiBaseURLInput" class="input-field" placeholder="ex: https://api.anthropic.com ou http://127.0.0.1:51074/v1" />
+
+          <div style="display:flex;gap:10px;margin-top:10px;">
+            <button id="testApiBtn" class="btn btn-secondary" onclick="testAPIConfig()">🧪 Tester Connexion</button>
+            <button class="btn btn-success" style="flex:1;" onclick="saveAPIConfig()">💾 Enregistrer & Appliquer</button>
+          </div>
+          <div id="testApiResult" style="margin-top:14px;font-size:13px;" class="hidden"></div>
+        </div>
+
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;">
+          <h3 style="font-size:16px;margin-bottom:14px;">Variables d'Environnement Détectées</h3>
+          <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px;">État des clés configurées dans l'environnement du conteneur / serveur :</p>
+          <div id="envKeysList" style="display:flex;flex-direction:column;gap:10px;font-family:var(--font-mono);font-size:13px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Logs View -->
+    <div id="logsPane" class="terminal-container hidden" style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:14px 20px;background:var(--sidebar);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;max-width:500px;">
+          <input type="text" id="logSearchInput" class="input-field" style="margin-bottom:0;" placeholder="🔍 Filtrer les logs (message, niveau, session)..." oninput="filterLogsLocally()" />
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <select id="logLevelSelect" class="input-field" style="margin-bottom:0;width:120px;" onchange="loadLogs()">
+            <option value="">Tous Niveaux</option>
+            <option value="INFO">INFO+</option>
+            <option value="WARN">WARN+</option>
+            <option value="ERROR">ERROR Seul</option>
+            <option value="DEBUG">DEBUG</option>
+          </select>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" id="logAutoRefreshCheckbox" checked onchange="toggleLogAutoRefresh(this.checked)" />
+            <span>Auto (2s)</span>
+          </label>
+          <button class="btn btn-secondary" onclick="loadLogs()">🔄 Rafraîchir</button>
+          <button class="btn btn-secondary" onclick="exportLogs()">📥 Exporter</button>
+          <button class="btn btn-secondary" onclick="clearLogsView()">🧹 Effacer</button>
+        </div>
+      </div>
+      <div id="logsContainer" class="log-stream"></div>
     </div>
   </div>
 
@@ -836,14 +1033,40 @@ const WebConsoleHTML = `<!DOCTYPE html>
     }
 
     let termWs = null;
+    function apiFetch(url, options) {
+      options = options || {};
+      options.headers = options.headers || {};
+      if (token) {
+        options.headers['Authorization'] = 'Bearer ' + token;
+      }
+      return fetch(url, options).then(function(res) {
+        if (res.status === 401) {
+          document.getElementById('authModal').classList.remove('hidden');
+          throw new Error('Non autorise (401)');
+        }
+        return res;
+      });
+    }
+
+    function promptAuthToken() {
+      document.getElementById('authTokenInput').value = token || '';
+      document.getElementById('authModal').classList.remove('hidden');
+    }
+
     function switchTab(tab) {
       document.getElementById('tabConsole').classList.toggle('active', tab === 'console');
+      document.getElementById('tabAccounts').classList.toggle('active', tab === 'accounts');
+      document.getElementById('tabAPIs').classList.toggle('active', tab === 'apis');
+      document.getElementById('tabLogs').classList.toggle('active', tab === 'logs');
       document.getElementById('tabTerminal').classList.toggle('active', tab === 'terminal');
       document.getElementById('tabGit').classList.toggle('active', tab === 'git');
       document.getElementById('tabMCP').classList.toggle('active', tab === 'mcp');
 
       document.getElementById('mainConsole').classList.toggle('hidden', tab !== 'console');
       document.getElementById('asideConsole').classList.toggle('hidden', tab !== 'console');
+      document.getElementById('accountsPane').classList.toggle('hidden', tab !== 'accounts');
+      document.getElementById('apisPane').classList.toggle('hidden', tab !== 'apis');
+      document.getElementById('logsPane').classList.toggle('hidden', tab !== 'logs');
       document.getElementById('terminalPane').classList.toggle('hidden', tab !== 'terminal');
       document.getElementById('gitPane').classList.toggle('hidden', tab !== 'git');
       document.getElementById('mcpPane').classList.toggle('hidden', tab !== 'mcp');
@@ -852,15 +1075,377 @@ const WebConsoleHTML = `<!DOCTYPE html>
         if (!termWs || termWs.readyState !== WebSocket.OPEN) {
           initTerminal();
         }
-        setTimeout(() => {
+        setTimeout(function() {
           const inp = document.getElementById('terminalInput');
           if (inp) inp.focus();
         }, 100);
+      } else if (tab === 'accounts') {
+        loadAccounts();
+      } else if (tab === 'apis') {
+        loadAPIConfig();
+      } else if (tab === 'logs') {
+        loadLogs();
+        if (document.getElementById('logAutoRefreshCheckbox').checked && !logAutoInterval) {
+          toggleLogAutoRefresh(true);
+        }
       } else if (tab === 'git') {
         loadGitDiff();
       } else if (tab === 'mcp') {
         loadMCPServers();
       }
+
+      if (tab !== 'logs' && logAutoInterval) {
+        clearInterval(logAutoInterval);
+        logAutoInterval = null;
+      }
+    }
+
+    // --- Accounts Management ---
+    function loadAccounts() {
+      apiFetch('/v2/accounts')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          document.getElementById('accActiveBadge').innerText = 'Actif: ' + (data.activeAccount || 'Aucun');
+          document.getElementById('autoRotateCheckbox').checked = !!data.autoRotate;
+          const grid = document.getElementById('accountsGrid');
+          grid.innerHTML = '';
+          (data.accounts || []).forEach(function(acc) {
+            const card = document.createElement('div');
+            card.className = 'account-card' + (acc.isActive ? ' active-card' : '');
+
+            let quotasHtml = '';
+            (acc.quotas || []).forEach(function(q) {
+              const pct = q.percentage !== undefined ? q.percentage : 100;
+              const fillClass = pct > 50 ? 'fill-high' : pct > 20 ? 'fill-med' : 'fill-low';
+              quotasHtml += '<div class="quota-row">' +
+                '<div class="quota-meta">' +
+                  '<span>' + escapeHtml(q.displayName || q.name) + '</span>' +
+                  '<span style="font-weight:600">' + pct + '%</span>' +
+                '</div>' +
+                '<div class="progress-bar-bg"><div class="progress-bar-fill ' + fillClass + '" style="width:' + pct + '%"></div></div>' +
+              '</div>';
+            });
+            if (!quotasHtml) {
+              quotasHtml = '<div style="font-size:12px;color:var(--text-muted);margin:8px 0;">Aucun quota répertorié</div>';
+            }
+
+            const statusClass = acc.status === 'active' ? 'badge-ready' : acc.status === 'exhausted' ? 'badge-waiting' : 'badge-running';
+
+            card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<span style="font-weight:600;font-size:14px;word-break:break-all;">' + escapeHtml(acc.email) + '</span>' +
+              '<span class="badge ' + statusClass + '">' + escapeHtml(acc.status) + '</span>' +
+            '</div>' +
+            '<div style="margin:10px 0;">' + quotasHtml + '</div>' +
+            '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:auto;">' +
+              (!acc.isActive ? '<button class="btn btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="switchAccount(\'' + escapeHtml(acc.email) + '\')">Activer</button>' : '') +
+              '<button class="btn btn-danger" style="font-size:11px;padding:4px 8px;" onclick="deleteAccount(\'' + escapeHtml(acc.email) + '\')">Supprimer</button>' +
+            '</div>';
+
+            grid.appendChild(card);
+          });
+        })
+        .catch(function(err) { console.error('Failed to load accounts:', err); });
+    }
+
+    function switchAccount(email) {
+      apiFetch('/v2/accounts/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function() { loadAccounts(); })
+      .catch(function(err) { alert('Switch failed: ' + err.message); });
+    }
+
+    function toggleAutoRotate(enabled) {
+      apiFetch('/v2/accounts/auto-rotate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: enabled })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function() { loadAccounts(); })
+      .catch(function(err) { alert('Toggle failed: ' + err.message); });
+    }
+
+    function rotateAccount() {
+      apiFetch('/v2/accounts/rotate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'manual' })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function() { loadAccounts(); })
+      .catch(function(err) { alert('Rotate failed: ' + err.message); });
+    }
+
+    function optimizeQuotas() {
+      apiFetch('/v2/accounts/select-best', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'gemini-2.5-pro' })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        alert('Compte optimisé sélectionné : ' + data.activeAccount);
+        loadAccounts();
+      })
+      .catch(function(err) { alert('Optimization failed: ' + err.message); });
+    }
+
+    function resetExhaustedAccounts() {
+      apiFetch('/v2/accounts/reset', { method: 'POST' })
+        .then(function(res) { return res.json(); })
+        .then(function() { loadAccounts(); })
+        .catch(function(err) { alert('Reset failed: ' + err.message); });
+    }
+
+    function openAddAccountModal() {
+      document.getElementById('accEmailInput').value = '';
+      document.getElementById('accTokenInput').value = '';
+      document.getElementById('accountModal').classList.remove('hidden');
+    }
+
+    function closeAddAccountModal() {
+      document.getElementById('accountModal').classList.add('hidden');
+    }
+
+    function submitAddAccount() {
+      const email = document.getElementById('accEmailInput').value.trim();
+      const refreshToken = document.getElementById('accTokenInput').value.trim();
+      if (!email) {
+        alert('Adresse email requise');
+        return;
+      }
+      apiFetch('/v2/accounts/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, refreshToken: refreshToken })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function() {
+        closeAddAccountModal();
+        loadAccounts();
+      })
+      .catch(function(err) { alert('Ajout échoué: ' + err.message); });
+    }
+
+    function deleteAccount(email) {
+      if (!confirm('Supprimer définitivement le compte ' + email + ' du pool ?')) return;
+      apiFetch('/v2/accounts/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function() { loadAccounts(); })
+      .catch(function(err) { alert('Suppression échouée: ' + err.message); });
+    }
+
+    // --- API Configuration ---
+    function loadAPIConfig() {
+      apiFetch('/v2/api-config')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          document.getElementById('apiProviderSelect').value = data.provider || 'proxy';
+          document.getElementById('apiModelInput').value = data.model || '';
+          document.getElementById('apiBaseURLInput').value = data.baseURL || '';
+
+          const envList = document.getElementById('envKeysList');
+          envList.innerHTML = '';
+          const keys = data.keys || {};
+          for (let k in keys) {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.justifyContent = 'space-between';
+            row.style.background = 'var(--sidebar)';
+            row.style.padding = '8px 12px';
+            row.style.borderRadius = '6px';
+            row.style.border = '1px solid var(--border)';
+            row.innerHTML = '<span style="color:var(--accent);">' + escapeHtml(k) + '</span>' +
+              '<span style="color:' + (keys[k] ? '#10b981' : '#64748b') + ';">' + escapeHtml(keys[k] || '(non configuré)') + '</span>';
+            envList.appendChild(row);
+          }
+        })
+        .catch(function(err) { console.error('Failed to load API config:', err); });
+    }
+
+    function onProviderSelectChange(val) {
+      const modelInput = document.getElementById('apiModelInput');
+      const baseInput = document.getElementById('apiBaseURLInput');
+      if (val === 'anthropic' && !modelInput.value) {
+        modelInput.value = 'claude-3-7-sonnet-20250219';
+        baseInput.value = 'https://api.anthropic.com';
+      } else if (val === 'openai' && !modelInput.value) {
+        modelInput.value = 'gpt-4o';
+        baseInput.value = 'https://api.openai.com/v1';
+      } else if (val === 'proxy') {
+        baseInput.value = 'http://127.0.0.1:51074/v1';
+      } else if (val === 'ollama') {
+        baseInput.value = 'http://localhost:11434/v1';
+      }
+    }
+
+    function saveAPIConfig() {
+      const provider = document.getElementById('apiProviderSelect').value;
+      const model = document.getElementById('apiModelInput').value.trim();
+      const apiKey = document.getElementById('apiKeyInput').value.trim();
+      const baseURL = document.getElementById('apiBaseURLInput').value.trim();
+
+      apiFetch('/v2/api-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: provider,
+          model: model,
+          apiKey: apiKey,
+          baseURL: baseURL
+        })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        alert('Configuration enregistrée : ' + data.provider + ' (' + data.model + ')');
+        document.getElementById('apiKeyInput').value = '';
+        loadAPIConfig();
+      })
+      .catch(function(err) { alert('Save failed: ' + err.message); });
+    }
+
+    function testAPIConfig() {
+      const resultBox = document.getElementById('testApiResult');
+      resultBox.classList.remove('hidden');
+      resultBox.style.color = 'var(--text-muted)';
+      resultBox.innerText = 'Test de connectivité en cours...';
+
+      const provider = document.getElementById('apiProviderSelect').value;
+      const model = document.getElementById('apiModelInput').value.trim();
+      const apiKey = document.getElementById('apiKeyInput').value.trim();
+      const baseURL = document.getElementById('apiBaseURLInput').value.trim();
+
+      apiFetch('/v2/api-config/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: provider,
+          model: model,
+          apiKey: apiKey,
+          baseURL: baseURL
+        })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          resultBox.style.color = 'var(--success)';
+          resultBox.innerHTML = '✅ Connexion réussie (' + data.latencyMs + ' ms) : "' + escapeHtml(data.message) + '"';
+        } else {
+          resultBox.style.color = 'var(--danger)';
+          resultBox.innerHTML = '❌ Échec : ' + escapeHtml(data.error);
+        }
+      })
+      .catch(function(err) {
+        resultBox.style.color = 'var(--danger)';
+        resultBox.innerHTML = '❌ Erreur réseau : ' + escapeHtml(err.message);
+      });
+    }
+
+    function togglePasswordVisibility(id) {
+      const inp = document.getElementById(id);
+      if (inp) {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+      }
+    }
+
+    // --- Live System Logs ---
+    let logAutoInterval = null;
+    let cachedLogEntries = [];
+
+    function loadLogs() {
+      const level = document.getElementById('logLevelSelect').value;
+      const search = document.getElementById('logSearchInput').value.trim();
+      let url = '/v2/logs?limit=250';
+      if (level) url += '&level=' + encodeURIComponent(level);
+      if (search) url += '&search=' + encodeURIComponent(search);
+
+      apiFetch(url)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          cachedLogEntries = data.entries || [];
+          renderLogs(cachedLogEntries);
+        })
+        .catch(function(err) { console.error('Failed to load logs:', err); });
+    }
+
+    function renderLogs(entries) {
+      const container = document.getElementById('logsContainer');
+      const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+      container.innerHTML = '';
+
+      if (!entries || entries.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-muted);padding:10px;">Aucun log trouvé pour ces critères.</div>';
+        return;
+      }
+
+      entries.forEach(function(e) {
+        const row = document.createElement('div');
+        row.className = 'log-entry';
+
+        const timeStr = e.timestamp ? e.timestamp.replace('T', ' ').substring(0, 19) : '';
+        const lvl = e.level || 'INFO';
+        let fieldsStr = '';
+        if (e.fields && Object.keys(e.fields).length > 0) {
+          fieldsStr = ' <span class="log-fields">' + escapeHtml(JSON.stringify(e.fields)) + '</span>';
+        }
+
+        row.innerHTML = '<span class="log-time">' + escapeHtml(timeStr) + '</span>' +
+          '<span class="log-badge lvl-' + lvl + '">' + lvl + '</span>' +
+          '<span class="log-msg">' + escapeHtml(e.message) + fieldsStr + '</span>';
+
+        container.appendChild(row);
+      });
+
+      if (wasAtBottom) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    function filterLogsLocally() {
+      const query = document.getElementById('logSearchInput').value.toLowerCase().trim();
+      if (!query) {
+        renderLogs(cachedLogEntries);
+        return;
+      }
+      const filtered = cachedLogEntries.filter(function(e) {
+        return (e.message && e.message.toLowerCase().includes(query)) ||
+          (e.level && e.level.toLowerCase().includes(query)) ||
+          (e.fields && JSON.stringify(e.fields).toLowerCase().includes(query));
+      });
+      renderLogs(filtered);
+    }
+
+    function toggleLogAutoRefresh(enabled) {
+      if (logAutoInterval) {
+        clearInterval(logAutoInterval);
+        logAutoInterval = null;
+      }
+      if (enabled) {
+        logAutoInterval = setInterval(loadLogs, 2000);
+      }
+    }
+
+    function clearLogsView() {
+      document.getElementById('logsContainer').innerHTML = '';
+      cachedLogEntries = [];
+    }
+
+    function exportLogs() {
+      const blob = new Blob([JSON.stringify(cachedLogEntries, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'daemon_logs_' + Date.now() + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
     }
 
     function loadGitDiff() {
@@ -1096,7 +1681,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
 
 // HandleWebConsole serves the single-page web console on GET / and GET /console.
 func HandleWebConsole(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" && r.URL.Path != "/console" {
+	if r.URL.Path != "/" && r.URL.Path != "/console" && r.URL.Path != "/dashboard" {
 		http.NotFound(w, r)
 		return
 	}

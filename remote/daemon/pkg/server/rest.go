@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/antigravity/remote-daemon/pkg/agent"
 	"github.com/antigravity/remote-daemon/pkg/auth"
 	"github.com/antigravity/remote-daemon/pkg/domain"
+	"github.com/antigravity/remote-daemon/pkg/gateway"
 	"github.com/antigravity/remote-daemon/pkg/mcp"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 )
@@ -1398,6 +1400,385 @@ func (h *RESTHandler) HandleMCPCall(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// --- Accounts Management Endpoints ---
+
+func (h *RESTHandler) HandleListAccounts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	pool := gateway.GetGlobalAccountPool()
+	active := pool.GetActiveAccount()
+	summaries := pool.ListAccounts()
+	autoRotate := pool.IsAutoRotateEnabled()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"activeAccount": active.Email,
+		"autoRotate":    autoRotate,
+		"accounts":      summaries,
+	})
+}
+
+func (h *RESTHandler) HandleSwitchAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		http.Error(w, `{"error":"missing email field"}`, http.StatusBadRequest)
+		return
+	}
+	pool := gateway.GetGlobalAccountPool()
+	acc, err := pool.SwitchAccount(req.Email)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":       true,
+		"activeAccount": acc.Email,
+	})
+}
+
+func (h *RESTHandler) HandleAutoRotate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json body"}`, http.StatusBadRequest)
+		return
+	}
+	pool := gateway.GetGlobalAccountPool()
+	pool.SetAutoRotate(req.Enabled)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"autoRotate": pool.IsAutoRotateEnabled(),
+	})
+}
+
+func (h *RESTHandler) HandleRotateAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.Reason == "" {
+		req.Reason = "manual"
+	}
+	pool := gateway.GetGlobalAccountPool()
+	acc, err := pool.RotateNext(req.Reason)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":       true,
+		"activeAccount": acc.Email,
+	})
+}
+
+func (h *RESTHandler) HandleSelectBestAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Model string `json:"model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Model == "" {
+		http.Error(w, `{"error":"missing model field"}`, http.StatusBadRequest)
+		return
+	}
+	pool := gateway.GetGlobalAccountPool()
+	acc, err := pool.SelectBestAccountForModel(req.Model)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":       true,
+		"activeAccount": acc.Email,
+	})
+}
+
+func (h *RESTHandler) HandleResetAccounts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	pool := gateway.GetGlobalAccountPool()
+	pool.CheckAndResetExhaustedAccounts()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"accounts": pool.ListAccounts(),
+	})
+}
+
+func (h *RESTHandler) HandleAddAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Email        string `json:"email"`
+		RefreshToken string `json:"refreshToken"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		http.Error(w, `{"error":"missing email"}`, http.StatusBadRequest)
+		return
+	}
+	pool := gateway.GetGlobalAccountPool()
+	acc, err := pool.AddAccount(req.Email, req.RefreshToken)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"account": acc,
+	})
+}
+
+func (h *RESTHandler) HandleDeleteAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		http.Error(w, `{"error":"missing email"}`, http.StatusBadRequest)
+		return
+	}
+	pool := gateway.GetGlobalAccountPool()
+	ok := pool.RemoveAccount(req.Email)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": ok,
+	})
+}
+
+// --- API Configuration Endpoints ---
+
+func maskAPIKey(k string) string {
+	if len(k) == 0 {
+		return ""
+	}
+	if len(k) <= 8 {
+		return "********"
+	}
+	return k[:4] + "..." + k[len(k)-4:]
+}
+
+func (h *RESTHandler) HandleGetAPIConfig(w http.ResponseWriter, r *http.Request) {
+	activeProvider := "proxy"
+	activeModel := "claude-3-5-sonnet-20241022"
+	baseURL := ""
+
+	if h.rt != nil && h.rt.AgentEngine() != nil {
+		if cli, ok := h.rt.AgentEngine().LLMClient().(*agent.HTTPProviderClient); ok {
+			cfg := cli.Config()
+			activeProvider = string(cfg.Type)
+			activeModel = cfg.Model
+			baseURL = cfg.BaseURL
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"provider": activeProvider,
+		"model":    activeModel,
+		"baseURL":  baseURL,
+		"keys": map[string]string{
+			"anthropic":  maskAPIKey(os.Getenv("ANTHROPIC_API_KEY")),
+			"openai":     maskAPIKey(os.Getenv("OPENAI_API_KEY")),
+			"gemini":     maskAPIKey(os.Getenv("GEMINI_API_KEY")),
+			"google":     maskAPIKey(os.Getenv("GOOGLE_API_KEY")),
+			"ollamaHost": os.Getenv("OLLAMA_HOST"),
+		},
+	})
+}
+
+func (h *RESTHandler) HandleUpdateAPIConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+		APIKey   string `json:"apiKey"`
+		BaseURL  string `json:"baseURL"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json body"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Update environment variables if real key is provided (not masked)
+	if req.APIKey != "" && !strings.Contains(req.APIKey, "...") {
+		switch req.Provider {
+		case "anthropic":
+			os.Setenv("ANTHROPIC_API_KEY", req.APIKey)
+		case "openai":
+			os.Setenv("OPENAI_API_KEY", req.APIKey)
+		case "gemini":
+			os.Setenv("GEMINI_API_KEY", req.APIKey)
+		}
+	}
+	if req.BaseURL != "" {
+		switch req.Provider {
+		case "openai":
+			os.Setenv("OPENAI_BASE_URL", req.BaseURL)
+		case "ollama":
+			os.Setenv("OLLAMA_HOST", req.BaseURL)
+		}
+	}
+
+	cfg := agent.AutoDetectProviderConfig()
+	if req.Provider != "" {
+		cfg.Type = agent.ProviderType(req.Provider)
+	}
+	if req.Model != "" {
+		cfg.Model = req.Model
+	}
+	if req.APIKey != "" && !strings.Contains(req.APIKey, "...") {
+		cfg.APIKey = req.APIKey
+	}
+	if req.BaseURL != "" {
+		cfg.BaseURL = req.BaseURL
+	}
+
+	newClient := agent.NewHTTPProviderClient(cfg)
+	if h.rt != nil && h.rt.AgentEngine() != nil {
+		h.rt.AgentEngine().SetLLMClient(newClient)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"provider": cfg.Type,
+		"model":    cfg.Model,
+		"baseURL":  cfg.BaseURL,
+	})
+}
+
+func (h *RESTHandler) HandleTestAPIConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+		APIKey   string `json:"apiKey"`
+		BaseURL  string `json:"baseURL"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	var client agent.LLMClient
+	if req.Provider != "" {
+		cfg := agent.ProviderConfig{
+			Type:    agent.ProviderType(req.Provider),
+			Model:   req.Model,
+			APIKey:  req.APIKey,
+			BaseURL: req.BaseURL,
+		}
+		if cfg.APIKey == "" || strings.Contains(cfg.APIKey, "...") {
+			switch cfg.Type {
+			case agent.ProviderAnthropic:
+				cfg.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+			case agent.ProviderOpenAI:
+				cfg.APIKey = os.Getenv("OPENAI_API_KEY")
+			}
+		}
+		client = agent.NewHTTPProviderClient(cfg)
+	} else if h.rt != nil && h.rt.AgentEngine() != nil {
+		client = h.rt.AgentEngine().LLMClient()
+	}
+
+	if client == nil {
+		http.Error(w, `{"error":"no AI client configured"}`, http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	testMsgs := []agent.LLMMessage{
+		{Role: "user", Content: "Reply with 'pong' only."},
+	}
+	resp, err := client.Generate(ctx, testMsgs, nil, nil)
+	latency := time.Since(start).Milliseconds()
+
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":   false,
+			"error":     err.Error(),
+			"latencyMs": latency,
+		})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":   true,
+		"latencyMs": latency,
+		"message":   resp.Message,
+	})
+}
+
+// --- Live System Logs Endpoint ---
+
+func (h *RESTHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	minLevel := r.URL.Query().Get("level")
+	search := r.URL.Query().Get("search")
+	entries := GetGlobalLogBuffer().GetEntries(limit, minLevel, search)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"entries": entries,
+		"count":   len(entries),
+	})
+}
+
 func NewMux(rt *RuntimeServer, wsMgr *workspace.Manager, authToken string) http.Handler {
 	return NewMuxWithRBAC(rt, wsMgr, auth.NewRBACManager(authToken))
 }
@@ -1482,9 +1863,33 @@ func NewMuxWithRBAC(rt *RuntimeServer, wsMgr *workspace.Manager, rbacMgr *auth.R
 	mux.Handle("/v2/terminal", termHandler)
 	mux.HandleFunc("/v2/terminal/exec", termHandler.HandleExec)
 
-	// Web Console Single-Page App (GET / and GET /console)
+	// Web Console & Dashboard Single-Page App (GET /, GET /console, GET /dashboard)
 	mux.HandleFunc("/console", HandleWebConsole)
+	mux.HandleFunc("/dashboard", HandleWebConsole)
 	mux.HandleFunc("/", HandleWebConsole)
+
+	// Account Management REST API
+	mux.HandleFunc("/v2/accounts", rest.AuthMiddleware(rest.HandleListAccounts))
+	mux.HandleFunc("/v2/accounts/switch", rest.AuthMiddleware(rest.HandleSwitchAccount))
+	mux.HandleFunc("/v2/accounts/auto-rotate", rest.AuthMiddleware(rest.HandleAutoRotate))
+	mux.HandleFunc("/v2/accounts/rotate", rest.AuthMiddleware(rest.HandleRotateAccount))
+	mux.HandleFunc("/v2/accounts/select-best", rest.AuthMiddleware(rest.HandleSelectBestAccount))
+	mux.HandleFunc("/v2/accounts/reset", rest.AuthMiddleware(rest.HandleResetAccounts))
+	mux.HandleFunc("/v2/accounts/add", rest.AuthMiddleware(rest.HandleAddAccount))
+	mux.HandleFunc("/v2/accounts/delete", rest.AuthMiddleware(rest.HandleDeleteAccount))
+
+	// API Configuration REST API
+	mux.HandleFunc("/v2/api-config", rest.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			rest.HandleUpdateAPIConfig(w, r)
+		} else {
+			rest.HandleGetAPIConfig(w, r)
+		}
+	}))
+	mux.HandleFunc("/v2/api-config/test", rest.AuthMiddleware(rest.HandleTestAPIConfig))
+
+	// Live System Logs REST API
+	mux.HandleFunc("/v2/logs", rest.AuthMiddleware(rest.HandleLogs))
 
 	// Protocol v1 Compatibility WebSocket Endpoint (/ws)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {

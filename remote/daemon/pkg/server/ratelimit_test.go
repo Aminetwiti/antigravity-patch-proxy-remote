@@ -45,8 +45,12 @@ func TestSlidingWindowLimiter_Allow(t *testing.T) {
 		t.Fatalf("expected client-2 to be allowed")
 	}
 
-	// Wait for window to expire
-	time.Sleep(120 * time.Millisecond)
+	// Wait for window to expire deterministically
+	if retryAfter > 0 {
+		time.Sleep(retryAfter + 20*time.Millisecond)
+	} else {
+		time.Sleep(120 * time.Millisecond)
+	}
 
 	// Should be allowed again
 	allowed, remaining, _ = limiter.Allow(key)

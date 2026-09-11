@@ -47,7 +47,10 @@ func TestSecurityRemediation_ReadFile_TraversalRejection(t *testing.T) {
 		t.Fatalf("Lecture réponse WS échouée: %v", err)
 	}
 
-	// Doit soit retourner une erreur d'accès refusé, soit ne JAMAIS renvoyer le contenu du fichier secret
+	// Doit explicitement rejeter la tentative (Erreur non vide) et ne JAMAIS renvoyer le contenu secret
+	if resp.Error == "" {
+		t.Fatalf("FAILLE DE SÉCURITÉ : La tentative de Directory Traversal n'a retourné aucune erreur")
+	}
 	if resp.Data != nil {
 		if dataMap, ok := resp.Data.(map[string]interface{}); ok {
 			if content, ok := dataMap["content"].(string); ok && strings.Contains(content, "super-secret-system-data") {
@@ -105,9 +108,5 @@ func TestSecurityRemediation_UploadMemoryBounds(t *testing.T) {
 
 	if !strings.Contains(resp.Error, "dépassée") {
 		t.Fatalf("Attendu rejet de mémoire dépassée, reçu: %v", resp.Error)
-	}
-
-	if resp.Error != "" && !strings.Contains(resp.Error, "dépassée") {
-		t.Logf("Upload a retourné: %v", resp.Error)
 	}
 }

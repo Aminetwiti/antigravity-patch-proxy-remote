@@ -42,4 +42,4 @@ ENV AG_HOST="0.0.0.0" \
 
 VOLUME ["/data", "/workspaces"]
 
-ENTRYPOINT ["sh", "-c", "exec ag-agentd --mode=server --host=${AG_HOST} --port=${AG_PORT} --db-path=${AG_DB_PATH} --workspaces-dir=${AG_WORKSPACES_DIR} --sandbox=${AG_SANDBOX} --allow-public-bind --auth-token=${AG_AUTH_TOKEN:-none} --provider=${AG_PROVIDER} --model=${AG_MODEL} --tunnel=${AG_TUNNEL}"]
+ENTRYPOINT ["sh", "-c", "exec ag-agentd --mode=server --host=${AG_HOST} --port=${AG_PORT} --db-path=${AG_DB_PATH} --workspaces-dir=${AG_WORKSPACES_DIR} --sandbox=${AG_SANDBOX} --allow-public-bind --auth-token=${AG_AUTH_TOKEN} --provider=${AG_PROVIDER} --model=${AG_MODEL} --tunnel=${AG_TUNNEL}"]

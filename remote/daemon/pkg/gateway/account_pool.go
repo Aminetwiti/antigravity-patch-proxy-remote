@@ -794,3 +794,58 @@ func savePersistedAutoRotate(enabled bool) {
 		_ = os.WriteFile(path, b, 0644)
 	}
 }
+
+// AddAccount ajoute dynamiquement un compte au pool en mémoire.
+func (p *AccountPool) AddAccount(email, refreshToken string) (*AccountEntry, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	cleanEmail := strings.TrimSpace(email)
+	if cleanEmail == "" {
+		return nil, errors.New("email is required")
+	}
+
+	for _, acc := range p.accounts {
+		if strings.EqualFold(acc.Email, cleanEmail) {
+			if refreshToken != "" {
+				acc.RefreshToken = refreshToken
+			}
+			return acc, nil
+		}
+	}
+
+	entry := &AccountEntry{
+		Email:        cleanEmail,
+		RefreshToken: refreshToken,
+		Status:       "standby",
+	}
+	p.accounts = append(p.accounts, entry)
+	return entry, nil
+}
+
+// RemoveAccount retire un compte du pool par son adresse email.
+func (p *AccountPool) RemoveAccount(email string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	cleanEmail := strings.TrimSpace(email)
+	for i, acc := range p.accounts {
+		if strings.EqualFold(acc.Email, cleanEmail) {
+			p.accounts = append(p.accounts[:i], p.accounts[i+1:]...)
+			if p.activeIndex >= len(p.accounts) {
+				p.activeIndex = 0
+			}
+			if len(p.accounts) > 0 {
+				p.accounts[p.activeIndex].Status = "active"
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// IsAutoRotateEnabled est un alias pour IsAutoRotate.
+func (p *AccountPool) IsAutoRotateEnabled() bool {
+	return p.IsAutoRotate()
+}
+

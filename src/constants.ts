@@ -22,7 +22,10 @@ function getEnvInt(key: string, fallback: number): number {
 export const DEFAULT_BIND_HOST = getEnvString('AG_BIND_HOST', '127.0.0.1');
 
 /** Default host for remote runtime connection. Configurable via AG_REMOTE_HOST. */
-export const DEFAULT_REMOTE_HOST = getEnvString('AG_REMOTE_HOST', '127.0.0.1');
+export const DEFAULT_REMOTE_HOST = getEnvString('AG_REMOTE_HOST', 'https://dqlwdgordp4apddvek8gvgn0.ty-dev.site');
+
+/** Default auth token for remote runtime connection. Configurable via AG_REMOTE_TOKEN. */
+export const DEFAULT_REMOTE_TOKEN = getEnvString('AG_REMOTE_TOKEN', 'antigravity-secret-cloud-2026');
 
 // ─── Multi-Account Pool Environment Variables ─────────────────────────────
 export const ENV_ACCOUNTS_JSON = 'AG_ACCOUNTS_JSON';

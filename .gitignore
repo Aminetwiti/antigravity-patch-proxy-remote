@@ -76,4 +76,8 @@ remote/tools1/*
 remote/tools2/*
 remote/tools3/*
 remote/vendor/*
+
+# Account tokens & secrets
 antigravity_accounts_*.json
+accounts.env
+

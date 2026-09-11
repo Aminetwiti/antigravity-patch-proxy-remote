@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/protocol/messages.dart';
@@ -18,6 +19,8 @@ void main() {
         approvalType: 'approval',
       );
 
+      final completer = Completer<void>();
+
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -27,8 +30,7 @@ void main() {
                   {ApprovalScope scope = ApprovalScope.once,
                   String denyReason = ''}) async {
                 tapCount++;
-                // Simulate a network delay of 500ms
-                await Future.delayed(const Duration(milliseconds: 500));
+                await completer.future;
               },
             ),
           ),
@@ -44,15 +46,15 @@ void main() {
       await tester.tap(approveButton);
       await tester.tap(approveButton);
 
-      // Wait a bit but not full 500ms
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
 
       // The button should be in submitting state (CircularProgressIndicator visible) and tapCount should be exactly 1
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(tapCount, 1);
 
-      // Wait for the simulated network delay to finish
-      await tester.pumpAndSettle(const Duration(milliseconds: 500));
+      // Complete async operation and settle
+      completer.complete();
+      await tester.pumpAndSettle();
 
       // Button should be active again
       expect(approveButton, findsOneWidget);

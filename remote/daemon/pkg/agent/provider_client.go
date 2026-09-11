@@ -128,6 +128,10 @@ func NewHTTPProviderClient(cfg ProviderConfig) *HTTPProviderClient {
 	}
 }
 
+func (c *HTTPProviderClient) Config() ProviderConfig {
+	return c.cfg
+}
+
 func (c *HTTPProviderClient) Generate(ctx context.Context, messages []LLMMessage, availableTools []tools.ToolDefinition, onChunk func(chunk string)) (*LLMResponse, error) {
 	switch c.cfg.Type {
 	case ProviderAnthropic:
