@@ -88,18 +88,12 @@ func checkOrigin(r *http.Request) bool {
 			}
 		}
 	}
-	// Si la requête arrive sur un tunnel distant, l'Origin doit correspondre à l'Host de la requête ou à un domaine de tunnel valide
+	// Si la requête arrive sur un tunnel distant, l'Origin doit correspondre à l'Host de la requête
 	reqHost := r.Host
 	if host, _, err := net.SplitHostPort(reqHost); err == nil {
 		reqHost = host
 	}
-	if strings.EqualFold(h, reqHost) {
-		return true
-	}
-	if strings.HasSuffix(h, ".trycloudflare.com") || strings.HasSuffix(h, ".pinggy.link") || strings.HasSuffix(h, ".loca.lt") {
-		return true
-	}
-	return false
+	return strings.EqualFold(h, reqHost)
 }
 
 // pendingApproval : une approbation ├®mise mais pas encore r├®pondue, avec les

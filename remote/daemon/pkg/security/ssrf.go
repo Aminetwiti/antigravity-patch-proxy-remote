@@ -151,6 +151,61 @@ func ValidateURL(rawURL string) error {
 	return nil
 }
 
+// ValidateBaseURL validates an LLM provider endpoint URL.
+// It permits loopback connections (localhost, 127.0.0.1, ::1) for local model proxies (e.g. Antigravity proxy, Ollama)
+// while strictly blocking cloud metadata services (169.254.169.254, metadata.google.internal, etc.) and internal RFC1918/CGNAT networks.
+func ValidateBaseURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidURL, err)
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("%w: scheme %q not supported", ErrInvalidURL, scheme)
+	}
+
+	hostname := strings.ToLower(u.Hostname())
+	if hostname == "" {
+		return fmt.Errorf("%w: host cannot be empty", ErrInvalidURL)
+	}
+
+	cleanHost := strings.TrimSuffix(hostname, ".")
+
+	// Explicitly block cloud metadata and internal cloud domains
+	if strings.HasSuffix(cleanHost, "metadata.google.internal") || strings.HasSuffix(cleanHost, "metadata.aws") || cleanHost == "instance-data" || strings.HasSuffix(cleanHost, ".internal") {
+		return fmt.Errorf("%w: %s", ErrSSRFBlocked, hostname)
+	}
+
+	// Allow loopback hostnames
+	if cleanHost == "localhost" || strings.HasSuffix(cleanHost, ".localhost") {
+		return nil
+	}
+
+	// Resolve IP literal or alternative notation
+	ip := net.ParseIP(cleanHost)
+	if ip == nil {
+		ip = parseAlternativeIPv4(cleanHost)
+	}
+
+	if ip != nil {
+		// Normalize IPv4-mapped IPv6 addresses
+		if ipv4 := ip.To4(); ipv4 != nil {
+			ip = ipv4
+		}
+		// Allow loopback IPs (127.0.0.1, ::1)
+		if ip.IsLoopback() {
+			return nil
+		}
+		// Block cloud metadata (169.254.169.254), private RFC1918, CGNAT, link-local, multicast, etc.
+		if IsPrivateOrReservedIP(ip) {
+			return fmt.Errorf("%w: %s", ErrSSRFBlocked, ip.String())
+		}
+	}
+
+	return nil
+}
+
 // SafeDialer creates a DialContext function that validates all resolved IPs against SSRF restrictions
 // and dials directly to the validated IP to defeat DNS rebinding attacks.
 func SafeDialer(dialTimeout time.Duration) func(ctx context.Context, network, addr string) (net.Conn, error) {

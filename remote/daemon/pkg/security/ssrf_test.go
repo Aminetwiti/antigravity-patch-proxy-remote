@@ -99,3 +99,40 @@ func TestSafeDialer_BlocksLoopback(t *testing.T) {
 		t.Errorf("expected error to mention 'blocked', got: %v", err)
 	}
 }
+
+func TestValidateBaseURL(t *testing.T) {
+	blockedURLs := []string{
+		"http://169.254.169.254/latest/meta-data/",
+		"http://metadata.google.internal/computeMetadata/v1/",
+		"http://metadata.aws/latest/meta-data/",
+		"http://instance-data/latest/meta-data/",
+		"http://10.0.0.5/",
+		"http://192.168.1.100:3000",
+		"http://172.16.0.1:8080",
+		"ftp://example.com/file",
+		"file:///etc/passwd",
+		"gopher://example.com",
+	}
+
+	for _, u := range blockedURLs {
+		if err := ValidateBaseURL(u); err == nil {
+			t.Errorf("ValidateBaseURL(%q) expected error, got nil", u)
+		}
+	}
+
+	allowedURLs := []string{
+		"http://localhost:11434/v1",
+		"http://127.0.0.1:51074/v1",
+		"http://[::1]:8080/v1",
+		"https://api.openai.com/v1",
+		"https://api.anthropic.com",
+		"https://generativelanguage.googleapis.com",
+	}
+
+	for _, u := range allowedURLs {
+		if err := ValidateBaseURL(u); err != nil {
+			t.Errorf("ValidateBaseURL(%q) unexpected error: %v", u, err)
+		}
+	}
+}
+

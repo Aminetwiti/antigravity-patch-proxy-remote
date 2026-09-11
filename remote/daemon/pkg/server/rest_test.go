@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/antigravity/remote-daemon/pkg/approval"
+	"github.com/antigravity/remote-daemon/pkg/auth"
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/eventstore"
 	"github.com/antigravity/remote-daemon/pkg/mcp"
@@ -623,6 +624,97 @@ func TestREST_APIConfigAndLogsEndpoints(t *testing.T) {
 	mux.ServeHTTP(consoleW, consoleReq)
 	if consoleW.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK on /console, got %d", consoleW.Code)
+	}
+}
+
+func setupMuxTestWithRBAC(t *testing.T, rbacMgr *auth.RBACManager) (http.Handler, func()) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "rest_rbac_test.db")
+
+	store, err := eventstore.NewSQLiteEventStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create sqlite store: %v", err)
+	}
+
+	serverInfo := domain.Server{
+		ID:        "srv-rest-rbac",
+		Hostname:  "test-host",
+		Version:   "2.0.0",
+		CreatedAt: time.Now(),
+	}
+
+	rt := server.NewRuntimeServer(serverInfo, store)
+	wsMgr := workspace.NewManager()
+	_, _ = wsMgr.RegisterWorkspace("default", "Default Workspace", tmpDir)
+
+	mcpMgr := mcp.NewManager(nil)
+	rt.SetMCPManager(mcpMgr)
+
+	sched := server.NewScheduler(rt.SessionService(), nil)
+	rt.SetScheduler(sched)
+
+	apprMgr := approval.NewManager(nil, 5*time.Minute)
+	rt.SetAgentEngine(nil, apprMgr)
+
+	mux := server.NewMuxWithRBAC(rt, wsMgr, rbacMgr)
+
+	cleanup := func() {
+		_ = store.Close()
+	}
+
+	return mux, cleanup
+}
+
+func TestREST_APIConfig_SecurityRolesAndSSRF(t *testing.T) {
+	rbacMgr := auth.NewRBACManager("admin-secret")
+	if err := rbacMgr.RegisterUser("user1", "user-secret", auth.RoleUser); err != nil {
+		t.Fatalf("failed to register user: %v", err)
+	}
+
+	mux, cleanup := setupMuxTestWithRBAC(t, rbacMgr)
+	defer cleanup()
+
+	// 1. Non-admin (RoleUser) POST /v2/api-config -> 403 Forbidden
+	userBody := []byte(`{"provider":"openai","model":"gpt-4o","apiKey":"sk-user-test"}`)
+	req1 := httptest.NewRequest("POST", "/v2/api-config?token=user-secret", bytes.NewReader(userBody))
+	w1 := httptest.NewRecorder()
+	mux.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden on POST /v2/api-config for non-admin, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	// 2. Non-admin (RoleUser) POST /v2/api-config/test -> 403 Forbidden
+	req2 := httptest.NewRequest("POST", "/v2/api-config/test?token=user-secret", bytes.NewReader(userBody))
+	w2 := httptest.NewRecorder()
+	mux.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden on POST /v2/api-config/test for non-admin, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	// 3. Admin POST /v2/api-config with SSRF baseURL (metadata service) -> 400 Bad Request
+	ssrfBody := []byte(`{"provider":"openai","model":"gpt-4o","baseURL":"http://169.254.169.254/latest/meta-data"}`)
+	req3 := httptest.NewRequest("POST", "/v2/api-config?token=admin-secret", bytes.NewReader(ssrfBody))
+	w3 := httptest.NewRecorder()
+	mux.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request on SSRF baseURL, got %d: %s", w3.Code, w3.Body.String())
+	}
+
+	// 4. Admin POST /v2/api-config/test with SSRF baseURL -> 400 Bad Request
+	req4 := httptest.NewRequest("POST", "/v2/api-config/test?token=admin-secret", bytes.NewReader(ssrfBody))
+	w4 := httptest.NewRecorder()
+	mux.ServeHTTP(w4, req4)
+	if w4.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request on SSRF test baseURL, got %d: %s", w4.Code, w4.Body.String())
+	}
+
+	// 5. Admin POST /v2/api-config with legitimate local loopback baseURL -> 200 OK
+	validBody := []byte(`{"provider":"ollama","model":"llama3","baseURL":"http://localhost:11434/v1"}`)
+	req5 := httptest.NewRequest("POST", "/v2/api-config?token=admin-secret", bytes.NewReader(validBody))
+	w5 := httptest.NewRecorder()
+	mux.ServeHTTP(w5, req5)
+	if w5.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for localhost baseURL, got %d: %s", w5.Code, w5.Body.String())
 	}
 }
 

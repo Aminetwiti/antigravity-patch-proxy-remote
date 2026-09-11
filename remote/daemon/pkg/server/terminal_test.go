@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/antigravity/remote-daemon/pkg/auth"
 	"github.com/antigravity/remote-daemon/pkg/server"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 	"github.com/gorilla/websocket"
@@ -225,6 +226,26 @@ func TestTerminalHandler_HandleExec_Unauthorized(t *testing.T) {
 	resp := w.Result()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected HTTP 401 Unauthorized, got %d", resp.StatusCode)
+	}
+}
+
+func TestTerminalHandler_HandleExec_ForbiddenNonAdmin(t *testing.T) {
+	wsMgr := workspace.NewManager()
+	handler := server.NewTerminalHandler(wsMgr, "admin-secret")
+	if err := handler.RBACManager().RegisterUser("developer", "user-secret", auth.RoleUser); err != nil {
+		t.Fatalf("failed to register user: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"command": "echo test",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v2/terminal/exec?token=user-secret", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+
+	handler.HandleExec(w, req)
+	resp := w.Result()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected HTTP 403 Forbidden for RoleUser, got %d", resp.StatusCode)
 	}
 }
 

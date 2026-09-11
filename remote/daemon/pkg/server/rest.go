@@ -16,6 +16,7 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/domain"
 	"github.com/antigravity/remote-daemon/pkg/gateway"
 	"github.com/antigravity/remote-daemon/pkg/mcp"
+	"github.com/antigravity/remote-daemon/pkg/security"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 )
 
@@ -1630,6 +1631,11 @@ func (h *RESTHandler) HandleUpdateAPIConfig(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	ident := getIdentity(r)
+	if ident.Role != auth.RoleAdmin {
+		http.Error(w, `{"error":"forbidden: admin access required"}`, http.StatusForbidden)
+		return
+	}
 	var req struct {
 		Provider string `json:"provider"`
 		Model    string `json:"model"`
@@ -1639,6 +1645,13 @@ func (h *RESTHandler) HandleUpdateAPIConfig(w http.ResponseWriter, r *http.Reque
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid json body"}`, http.StatusBadRequest)
 		return
+	}
+
+	if req.BaseURL != "" {
+		if err := security.ValidateBaseURL(req.BaseURL); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"invalid or unsafe baseURL: %v"}`, err), http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Update environment variables if real key is provided (not masked)
@@ -1694,6 +1707,11 @@ func (h *RESTHandler) HandleTestAPIConfig(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	ident := getIdentity(r)
+	if ident.Role != auth.RoleAdmin {
+		http.Error(w, `{"error":"forbidden: admin access required"}`, http.StatusForbidden)
+		return
+	}
 	var req struct {
 		Provider string `json:"provider"`
 		Model    string `json:"model"`
@@ -1701,6 +1719,13 @@ func (h *RESTHandler) HandleTestAPIConfig(w http.ResponseWriter, r *http.Request
 		BaseURL  string `json:"baseURL"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	if req.BaseURL != "" {
+		if err := security.ValidateBaseURL(req.BaseURL); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"invalid or unsafe baseURL: %v"}`, err), http.StatusBadRequest)
+			return
+		}
+	}
 
 	var client agent.LLMClient
 	if req.Provider != "" {

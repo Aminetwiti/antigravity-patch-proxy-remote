@@ -289,6 +289,10 @@ func (h *TerminalHandler) SetRBACManager(m *auth.RBACManager) {
 	}
 }
 
+func (h *TerminalHandler) RBACManager() *auth.RBACManager {
+	return h.rbacMgr
+}
+
 func (h *TerminalHandler) Manager() *TerminalManager {
 	return h.mgr
 }
@@ -498,9 +502,9 @@ func (h *TerminalHandler) HandleExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ident.Role == auth.RoleReadOnly {
+	if ident.Role != auth.RoleAdmin {
 		w.WriteHeader(http.StatusForbidden)
-		_ = json.NewEncoder(w).Encode(ExecResponse{OK: false, Error: "forbidden: read-only user cannot execute commands", ExitCode: 403})
+		_ = json.NewEncoder(w).Encode(ExecResponse{OK: false, Error: "forbidden: only admin can execute shell commands", ExitCode: 403})
 		return
 	}
 
