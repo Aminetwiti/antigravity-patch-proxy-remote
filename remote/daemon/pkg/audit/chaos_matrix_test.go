@@ -239,12 +239,16 @@ func TestChaos_ReconnectMatrix24_7(t *testing.T) {
 	for time.Now().Before(deadlineA) && desktop1EventCount < 2 {
 		_ = wsDesktop1.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 		var liveMsg protocol.LiveEventMessage
-		if err := wsDesktop1.ReadJSON(&liveMsg); err == nil && liveMsg.Type == protocol.TypeSessionEvent {
-			if liveMsg.SessionID != invariantSessionID {
-				t.Fatalf("INVARIANT 1 VIOLATION: event sessionID %s != %s", liveMsg.SessionID, invariantSessionID)
+		if err := wsDesktop1.ReadJSON(&liveMsg); err == nil {
+			if liveMsg.Type == protocol.TypeSessionEvent {
+				if liveMsg.SessionID != invariantSessionID {
+					t.Fatalf("INVARIANT 1 VIOLATION: event sessionID %s != %s", liveMsg.SessionID, invariantSessionID)
+				}
+				recordSeq(liveMsg.Event.Sequence)
+				desktop1EventCount++
 			}
-			recordSeq(liveMsg.Event.Sequence)
-			desktop1EventCount++
+		} else if !strings.Contains(err.Error(), "timeout") {
+			break
 		}
 	}
 
@@ -280,9 +284,13 @@ func TestChaos_ReconnectMatrix24_7(t *testing.T) {
 	for time.Now().Before(deadlineB) && mobileEventCount < 1 {
 		_ = wsMobile1.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 		var liveMsg protocol.LiveEventMessage
-		if err := wsMobile1.ReadJSON(&liveMsg); err == nil && liveMsg.Type == protocol.TypeSessionEvent {
-			recordSeq(liveMsg.Event.Sequence)
-			mobileEventCount++
+		if err := wsMobile1.ReadJSON(&liveMsg); err == nil {
+			if liveMsg.Type == protocol.TypeSessionEvent {
+				recordSeq(liveMsg.Event.Sequence)
+				mobileEventCount++
+			}
+		} else if !strings.Contains(err.Error(), "timeout") {
+			break
 		}
 	}
 	t.Logf("Phase D: Mobile received catchup (%d events) + live (%d events), current maxSeq=%d",

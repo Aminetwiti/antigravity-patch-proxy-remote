@@ -278,7 +278,7 @@ func NewTerminalHandler(wsMgr *workspace.Manager, authToken string) *TerminalHan
 		rbacMgr:   auth.NewRBACManager(authToken),
 		mgr:       NewTerminalManager(),
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin: checkOrigin,
 		},
 	}
 }
@@ -312,19 +312,31 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.URL.Query().Get("workspaceId")
 	sessionID := r.URL.Query().Get("sessionId")
 	dir := "."
-	if workspaceID != "" && h.wsMgr != nil {
+	if h.wsMgr != nil {
 		targetWsID := workspaceID
+		if targetWsID == "" || targetWsID == "default" {
+			for _, w := range h.wsMgr.ListWorkspaces() {
+				if w.ID != "default" && !strings.HasPrefix(w.ID, "shadow_") {
+					targetWsID = w.ID
+					break
+				}
+			}
+			if targetWsID == "" {
+				targetWsID = "default"
+			}
+		}
 		if sessionID != "" {
-			if sw, err := h.wsMgr.EnsureSessionWorktree(workspaceID, sessionID); err == nil && sw != nil {
+			if sw, err := h.wsMgr.EnsureSessionWorktree(targetWsID, sessionID); err == nil && sw != nil {
 				targetWsID = sw.ID
 			}
 		}
 		resolved, err := h.wsMgr.ResolvePath(targetWsID, ".")
-		if err != nil {
+		if err == nil {
+			dir = resolved
+		} else if workspaceID != "" && workspaceID != "default" {
 			http.Error(w, "invalid workspace: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		dir = resolved
 	}
 
 	termID := r.URL.Query().Get("terminalId")
@@ -509,10 +521,21 @@ func (h *TerminalHandler) HandleExec(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Resolve directory
 	dir := "."
-	if req.WorkspaceID != "" && h.wsMgr != nil {
+	if h.wsMgr != nil {
 		targetWsID := req.WorkspaceID
+		if targetWsID == "" || targetWsID == "default" {
+			for _, w := range h.wsMgr.ListWorkspaces() {
+				if w.ID != "default" && !strings.HasPrefix(w.ID, "shadow_") {
+					targetWsID = w.ID
+					break
+				}
+			}
+			if targetWsID == "" {
+				targetWsID = "default"
+			}
+		}
 		if req.SessionID != "" {
-			if sw, err := h.wsMgr.EnsureSessionWorktree(req.WorkspaceID, req.SessionID); err == nil && sw != nil {
+			if sw, err := h.wsMgr.EnsureSessionWorktree(targetWsID, req.SessionID); err == nil && sw != nil {
 				targetWsID = sw.ID
 			}
 		}

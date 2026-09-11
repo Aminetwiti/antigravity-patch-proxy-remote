@@ -21,6 +21,9 @@ function getEnvInt(key: string, fallback: number): number {
 
 export const DEFAULT_BIND_HOST = getEnvString('AG_BIND_HOST', '127.0.0.1');
 
+/** Default host for remote runtime connection. Configurable via AG_REMOTE_HOST. */
+export const DEFAULT_REMOTE_HOST = getEnvString('AG_REMOTE_HOST', '127.0.0.1');
+
 /** Origin used by the main BrowserWindow. */
 export const WINDOW_ORIGIN = `https://${DEFAULT_BIND_HOST}`;
 

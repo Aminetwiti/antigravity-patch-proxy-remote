@@ -27,8 +27,8 @@ window.__ag_remote_initialized=!0;
 window.__ag_remote_mode=!1;
 
 function getRemoteConfig(){
-  let h=localStorage.getItem("ag_remote_host")||"62.169.27.8";
-  let t=localStorage.getItem("ag_remote_token")||"4d8b9f1a2c3e5a7b0e2f4a6c8d1e3b5a7c9e1f3a5b7d9f1a3c5e7b9d1f3a5b7d";
+  let h=localStorage.getItem("ag_remote_host")||"127.0.0.1";
+  let t=localStorage.getItem("ag_remote_token")||"";
   return{host:h,token:t};
 }
 

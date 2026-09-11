@@ -93,6 +93,7 @@ var AllowedTransitions = map[SessionState][]SessionState{
 		SessionStateRunning,
 		SessionStatePaused,
 		SessionStateFailed,
+		SessionStateCancelled,
 	},
 	SessionStateCompleted: {},
 	SessionStateFailed:    {},

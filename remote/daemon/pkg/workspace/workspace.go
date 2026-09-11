@@ -16,10 +16,11 @@ import (
 )
 
 var (
-	ErrWorkspaceNotFound = fmt.Errorf("workspace not found")
-	ErrPathOutsideRoot   = fmt.Errorf("access denied: path outside workspace root")
-	ErrTargetNotFound    = fmt.Errorf("target string not found in file")
-	ErrFileTooLarge      = fmt.Errorf("file exceeds maximum size limit")
+	ErrWorkspaceNotFound   = fmt.Errorf("workspace not found")
+	ErrPathOutsideRoot     = fmt.Errorf("access denied: path outside workspace root")
+	ErrSensitiveFileAccess = fmt.Errorf("access denied: sensitive system file is protected")
+	ErrTargetNotFound      = fmt.Errorf("target string not found in file")
+	ErrFileTooLarge        = fmt.Errorf("file exceeds maximum size limit")
 )
 
 const (
@@ -119,7 +120,20 @@ func ResolveAndValidatePath(workspaceRoot, targetPath string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrPathOutsideRoot, targetPath)
 	}
 
+	if isProtectedSystemFile(resolved) {
+		return "", fmt.Errorf("%w: %s", ErrSensitiveFileAccess, targetPath)
+	}
+
 	return resolved, nil
+}
+
+func isProtectedSystemFile(name string) bool {
+	base := strings.ToLower(filepath.Base(name))
+	if base == "runtime.db" || base == "memory.db" ||
+		strings.HasPrefix(base, "runtime.db") || strings.HasPrefix(base, "memory.db") {
+		return true
+	}
+	return false
 }
 
 func (m *Manager) RegisterWorkspace(id, name, root string) (*Workspace, error) {
@@ -160,8 +174,38 @@ func (m *Manager) GetWorkspace(id string) (*Workspace, error) {
 	m.mu.RUnlock()
 
 	if !ok {
-		if fi, err := os.Stat(id); err == nil && fi.IsDir() {
-			return m.RegisterWorkspace(id, filepath.Base(id), id)
+		// Also check if id matches a safe subdirectory under the default workspace
+		m.mu.RLock()
+		defaultWs := m.workspaces["default"]
+		m.mu.RUnlock()
+		if defaultWs != nil {
+			baseName := filepath.Base(id)
+			subPath := filepath.Join(defaultWs.Root, baseName)
+			if rel, err := filepath.Rel(defaultWs.Root, subPath); err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+				if fi, err := os.Stat(subPath); err == nil && fi.IsDir() {
+					if autoWs, regErr := m.RegisterWorkspace(baseName, baseName, subPath); regErr == nil {
+						if id != baseName {
+							m.mu.Lock()
+							m.workspaces[id] = autoWs
+							m.mu.Unlock()
+						}
+						return autoWs, nil
+					}
+				}
+			}
+			subProjPath := filepath.Join(defaultWs.Root, "projects", baseName)
+			if rel, err := filepath.Rel(defaultWs.Root, subProjPath); err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+				if fi, err := os.Stat(subProjPath); err == nil && fi.IsDir() {
+					if autoWs, regErr := m.RegisterWorkspace(baseName, baseName, subProjPath); regErr == nil {
+						if id != baseName {
+							m.mu.Lock()
+							m.workspaces[id] = autoWs
+							m.mu.Unlock()
+						}
+						return autoWs, nil
+					}
+				}
+			}
 		}
 		return nil, ErrWorkspaceNotFound
 	}
@@ -478,6 +522,11 @@ func (m *Manager) CreateWorktree(baseWsID, branch, newWsID string) (*Workspace, 
 	}
 	_ = os.MkdirAll(filepath.Dir(worktreeRoot), 0755)
 
+	// Autonomous fetch: refresh origin so worktree is created from latest remote state
+	fetchCmd := exec.Command("git", "fetch", "origin", "--quiet")
+	fetchCmd.Dir = baseWs.Root
+	_ = fetchCmd.Run()
+
 	branches, _ := m.ListBranches(baseWsID)
 	branchExists := false
 	for _, b := range branches {
@@ -548,8 +597,10 @@ func (m *Manager) CreateShadowWorktree(baseWsID, sessionID string) (*Workspace, 
 
 // EnsureSessionWorktree guarantees an isolated shadow Git worktree for the session.
 // If the base workspace is a Git repository, it creates or returns the dedicated shadow worktree
-// on branch agent/shadow_<sessionID>. If the base workspace is not a Git repo or worktree creation fails,
-// it falls back cleanly to the base workspace.
+// on branch agent/shadow_<sessionID>.
+// If the base workspace is not a Git repo:
+//   1. It checks if there is an active child Git repository registered under this base workspace.
+//   2. Fallback: it isolates the session into a dedicated session folder under .antigravity/worktrees/session_<sessionID>.
 func (m *Manager) EnsureSessionWorktree(baseWsID, sessionID string) (*Workspace, error) {
 	if sessionID == "" {
 		return m.GetWorkspace(baseWsID)
@@ -568,13 +619,84 @@ func (m *Manager) EnsureSessionWorktree(baseWsID, sessionID string) (*Workspace,
 		return existingWs, nil
 	}
 
-	// Try to create the worktree
+	// 1. Try to create the worktree
 	ws, err := m.CreateWorktree(baseWs.ID, shadowBranch, shadowWsID)
-	if err != nil {
-		// Non-git directory or worktree error: return base workspace
-		return baseWs, nil
+	if err == nil {
+		return ws, nil
 	}
-	return ws, nil
+
+	// 2. If baseWs is a container/parent folder without .git, check if it contains child Git workspaces
+	m.mu.RLock()
+	var childGitWs *Workspace
+	for _, w := range m.workspaces {
+		if w.ID != baseWs.ID && strings.HasPrefix(w.Root, baseWs.Root+string(filepath.Separator)) {
+			gitPath := filepath.Join(w.Root, ".git")
+			if fi, sErr := os.Stat(gitPath); sErr == nil && (fi.IsDir() || fi.Mode().IsRegular()) {
+				childGitWs = w
+				break
+			}
+		}
+	}
+	m.mu.RUnlock()
+
+	if childGitWs != nil {
+		return m.EnsureSessionWorktree(childGitWs.ID, sessionID)
+	}
+
+	// Non-git directory: return base workspace
+	return baseWs, nil
+}
+
+// AutoDiscoverWorkspaces scans the given root directory up to depth 2 looking for child Git repositories.
+// Each discovered repository is registered as a workspace named after its directory name.
+func (m *Manager) AutoDiscoverWorkspaces(rootDir string) ([]*Workspace, error) {
+	cleanRoot, err := filepath.Abs(rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("invalid root dir: %w", err)
+	}
+
+	var discovered []*Workspace
+
+	checkAndRegister := func(dir string) {
+		gitPath := filepath.Join(dir, ".git")
+		if fi, sErr := os.Stat(gitPath); sErr == nil && (fi.IsDir() || fi.Mode().IsRegular()) {
+			name := filepath.Base(dir)
+			m.mu.RLock()
+			_, exists := m.workspaces[name]
+			m.mu.RUnlock()
+			if !exists {
+				if ws, regErr := m.RegisterWorkspace(name, name, dir); regErr == nil {
+					discovered = append(discovered, ws)
+				}
+			}
+		}
+	}
+
+	entries, err := os.ReadDir(cleanRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() || isIgnored(entry.Name()) {
+			continue
+		}
+		childDir := filepath.Join(cleanRoot, entry.Name())
+		checkAndRegister(childDir)
+
+		// Also check depth 2 (e.g. root/projects/*, root/workspaces/*)
+		if entry.Name() == "projects" || entry.Name() == "workspaces" {
+			if subEntries, subErr := os.ReadDir(childDir); subErr == nil {
+				for _, subEntry := range subEntries {
+					if subEntry.IsDir() && !isIgnored(subEntry.Name()) {
+						checkAndRegister(filepath.Join(childDir, subEntry.Name()))
+					}
+				}
+			}
+		}
+	}
+
+	return discovered, nil
 }
 
 // ShadowPromoteResult encapsulates the outcome of merging an ephemeral shadow worktree into the main workspace.

@@ -9,46 +9,55 @@ Antigravity is a desktop application built on Electron, Node.js, and TypeScript.
 
 ```
 src/
-├── main/                        # Electron Main Process Entry & Windows
-│   ├── main.ts                  # Main process bootstrap & application lifecycle
-│   ├── windowManager.ts         # Window bounds, loading overlay, & viewport state
-│   ├── tray.ts                  # System tray icon & active agent counter
-│   ├── menu.ts                  # Application menus & global keyboard shortcuts
-│   └── updater.ts               # Electron auto-updater event listeners
+├── main.ts                      # Electron bootstrap, lifecycle, and LS proxy invocation
+├── proxy.ts                     # Core HTTP proxy server orchestration & interception
+├── preload.ts                   # Injected Settings UI, model management & preload bridge
+├── ipcHandlers.ts               # Canonical IPC registry & handler dispatcher
+├── languageServer.ts            # Language Server process supervisor & port discovery
+├── constants.ts                 # Source of truth (providers, default ports, timeouts, limits)
+├── schemaValidator.ts           # Runtime response & custom model schema validation
+├── paths.ts                     # User data & application path resolvers
+├── utils.ts                     # Utility helpers & API key masking
+├── metrics.ts                   # Upstream latency & error metrics registry
+├── updater.ts                   # Electron auto-updater event listeners
+├── tray.ts                      # System tray icon & status controls
+├── menu.ts                      # Application menus & keyboard shortcuts
 │
-├── ipc/                         # Inter-Process Communication (IPC Layer)
-│   ├── index.ts                 # Centralized IPC registration orchestrator
-│   └── handlers/                # Domain-driven IPC Handlers
-│       ├── modelHandler.ts      # Provider & custom model IPC (CRUD, export/import base64)
-│       ├── settingsHandler.ts   # Persistent user preferences & dialogs
-│       ├── doctorHandler.ts     # System diagnostics & ag-doctor metrics
-│       └── systemHandler.ts     # Window controls, shell execution, & notifications
+├── proxy/                       # Proxy internals & protocol translation
+│   ├── registry.ts              # Auto-discovering translator module registry
+│   ├── protoInjector.ts         # Protobuf payload injection for native model picker
+│   ├── protobuf.ts              # Manual varint protobuf encoding/decoding
+│   ├── jsonRepair.ts            # Safe non-eval SSE JSON repair
+│   ├── circuitBreaker.ts        # Per-model circuit breaker & failure isolation
+│   ├── retryStrategy.ts         # Adaptive exponential backoff retry logic
+│   ├── retryBudget.ts           # Provider retry budget manager
+│   ├── idGenerator.ts           # DJB2 hash generator for model placeholder IDs
+│   ├── urlBuilder.ts            # URL sanitization & binary padding stripping
+│   └── translators/             # Format mapping modules (openai.ts, anthropic.ts, google.ts, ollama.ts)
 │
-├── gateway/                     # HTTP Proxy Engine & Protocol Router
-│   ├── server.ts                # HTTP Proxy server bootstrap & graceful connection shutdown
-│   ├── router.ts                # Route dispatcher for completion & discovery endpoints
-│   ├── handlers/                # Request handlers per API protocol (Gemini, OpenAI, Claude)
-│   └── middleware/              # Authentication, header injection, & log throttling
+├── services/                    # Core domain services & persistent stores
+│   ├── modelStore.ts            # Custom model storage with write-lock mutex (`withWriteLock`)
+│   ├── cryptoStore.ts           # AES-256-GCM encryption wrapper (`safeStorage`)
+│   ├── configExchange.ts        # Model configuration import/export & backup
+│   ├── settingsService.ts       # Application persistent preferences
+│   ├── telemetryStore.ts        # Local telemetry & metrics persistence
+│   ├── certificateService.ts    # MITM CA certificate provisioning & inspection
+│   ├── localModelDetector.ts    # Auto-detection of local Ollama / LM Studio instances
+│   └── healthProbe.ts           # Upstream provider health checks
 │
-├── services/                    # Core Domain Services & Stores
-│   ├── modelStore.ts            # Atomic custom model & provider store (`withWriteLock`)
-│   ├── cryptoStore.ts           # SafeStorage OS keychain encryption & base64 fallback
-│   ├── settingsService.ts       # Application configuration service
-│   └── languageServer.ts        # LSP / IDE integration client
+├── ipc/                         # IPC channel definitions
+│   └── channels.ts              # Canonical IPC channel constants & types
 │
-├── preload/                     # Renderer Preload & ContextBridge
-│   ├── index.ts                 # Preload module entry point
-│   ├── api.ts                   # Type-safe `contextBridge` exposure (`window.nativeStorage`, etc.)
-│   └── doctor-ui.ts             # Doctor UI management panel & modal components
+├── preload/                     # Renderer preload components & modular managers
+│   ├── api.ts                   # Type-safe contextBridge exposure
+│   ├── doctor-ui.ts             # Diagnostic UI bridge & panel components
+│   ├── provider-manager.ts      # UI modal controller for provider settings
+│   └── types.ts                 # Preload interface type definitions
 │
-├── shared/                      # Shared Utilities, Schemas & Constants
-│   ├── logger.ts                # Structured facade logger (`createLogger`)
-│   ├── constants.ts             # Application-wide configuration constants
-│   ├── schemaValidator.ts       # Runtime JSON schema validation
-│   ├── paths.ts                 # User data & application path resolvers
-│   └── utils.ts                 # Pure helper functions
+├── presets/                     # Provider presets & reasoning configuration
+│   └── reasoningEffort.ts       # Reasoning parameter detectors (o1, o3-mini, DeepSeek R1)
 │
-└── presets/                     # Pre-configured model presets & reasoning parameters
+└── __tests__/                   # 1000+ unit tests across 58 test files (Vitest)
 ```
 
 ---
@@ -65,8 +74,9 @@ src/
 3. **Secure Encryption at Rest**
    - API keys are encrypted using OS keychain credentials via Electron `safeStorage`. Fallback encoding is provided for systems without keychains.
 
-4. **Modular IPC Architecture**
-   - IPC channels are segregated by domain (`modelHandler`, `settingsHandler`, `doctorHandler`, `systemHandler`), eliminating monolithic handler files.
+4. **IPC Architecture & Channel Isolation**
+   - Centralized IPC channels are strictly typed under `src/ipc/channels.ts`.
+   - Handlers are executed through the canonical registry `src/ipcHandlers.ts` with safe argument validation, input sanitization, and structured error boundaries.
 
 5. **Slim Preload Scripts**
    - The root `preload.ts` is lightweight, delegating contextBridge registrations to `src/preload/api.ts`.

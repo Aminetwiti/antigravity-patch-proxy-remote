@@ -608,6 +608,27 @@ func (e *Engine) RunSubagent(ctx context.Context, parentSessionID, role, task, w
 		}
 
 		for _, tc := range resp.ToolCalls {
+			if e.toolsReg.NeedsApproval(tc.Name, tc.Arguments) {
+				if e.apprMgr != nil {
+					approved, err := e.apprMgr.RequestApproval(ctx, childSess.ID, tc.Name, tc.Arguments, fmt.Sprintf("Subagent [%s] execution requires confirmation", role), 300)
+					if err != nil || !approved {
+						messages = append(messages, LLMMessage{
+							Role:       "tool",
+							ToolCallID: tc.ID,
+							Content:    fmt.Sprintf("Tool execution denied or timed out: %v", err),
+						})
+						continue
+					}
+				} else {
+					messages = append(messages, LLMMessage{
+						Role:       "tool",
+						ToolCallID: tc.ID,
+						Content:    "Tool execution denied: approval required but no approval manager configured",
+					})
+					continue
+				}
+			}
+
 			result, execErr := e.toolsReg.Execute(ctx, childSess.ID, effectiveWsID, tc.Name, tc.Arguments, onChunk)
 			if execErr != nil {
 				result = &tools.ToolResult{Success: false, Error: execErr.Error()}

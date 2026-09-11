@@ -1,8 +1,23 @@
 # Changelog
 
-All notable changes to the Antigravity Remote Agent Cloud Runtime (`ag-agentd`) are documented here.
+All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
-## [2.0.0] - 2026-09-08
+## [3.5.0] - 2026-09-10 (Desktop Patch Proxy & IDE Integration)
+
+### Added
+- **Antigravity IDE (VS Code Platform Fork v1.107.0+) Support**: Integrated autonomous background proxy starter hook in `main.js` and `jetski.cloudCodeUrl` override alongside classic Antigravity 2.0 Electron binary patching.
+- **In-Stream Model Auto-Fallback**: Emits inline markdown warning notices (`> ⚠️ Auto-fallback: <model-1> failed... Retrying with <model-2>`) into active chat streams on 429 rate-limit or upstream timeouts without breaking session context.
+- **ag-doctor CLI & UI Suite**: 26 diagnostic and maintenance subcommands including `models rekey` (re-encrypting language server v10 keys), `repair-asar`, `check-asar`, live traffic inspection, and error scenario simulation.
+- **Zero-Config Windows Auto-Heal**: Automatic backup restoration and binary re-patching across official Antigravity updates via `scripts/auto-heal.ps1` and `scripts/supervise-daemon.ps1`.
+- **Extended Provider Matrix**: Full streaming and function calling support across 19+ providers (Claude 3.5 Sonnet, GPT-4o, DeepSeek R1 / V3, Ollama, LM Studio, OpenRouter, Google AI Studio).
+
+### Changed
+- Default request body limit configured to 100 MB (`DEFAULT_MAX_BODY_SIZE`) to accommodate complex multimodal and long-context trajectories.
+- Hardened key storage using Electron `safeStorage` (AES-256-GCM) with automatic migration from plaintext legacy configs.
+
+---
+
+## [2.0.0] - 2026-09-08 (Antigravity Remote Agent Cloud Runtime `ag-agentd`)
 
 ### Added
 - **Pure Static Linux & Windows Binaries**: Cross-compiled standalone executables for Linux AMD64, Linux ARM64, and Windows AMD64 using pure Go SQLite (`modernc.org/sqlite`) with zero dynamic dependencies.

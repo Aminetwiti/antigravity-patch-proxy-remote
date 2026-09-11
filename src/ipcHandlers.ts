@@ -17,7 +17,7 @@ import * as customModelStore from './customModelStore';
 import type { CustomModelFileEntry as CustomModelFileEntryFromTypes } from './proxy/types';
 import { WELL_KNOWN_PRESETS } from './presets';
 import * as configExchange from './services/configExchange';
-import { DEFAULT_PROXY_PORT } from './constants';
+import { DEFAULT_PROXY_PORT, DEFAULT_REMOTE_HOST } from './constants';
 import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from './proxy/protoInjector';
 import { loadCustomModels as loadProxyCustomModels } from './proxy/modelLoader';
 
@@ -600,7 +600,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             port,
             path: '/health',
             timeout: 10000,
-            rejectUnauthorized: false,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
             headers: { 'User-Agent': 'Antigravity-Remote-Client/2.0' },
           },
           (healthRes: any) => {
@@ -612,7 +612,11 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
                 return;
               }
               let healthData: Record<string, unknown> = {};
-              try { healthData = JSON.parse(healthBody); } catch (_) {}
+              try {
+                healthData = JSON.parse(healthBody);
+              } catch (parseErr) {
+                log.warn('[IPC:remote:check-health] Failed to parse health JSON response:', parseErr);
+              }
 
               if (!token) {
                 resolve({ ok: true, status: healthRes.statusCode, data: healthData });
@@ -627,7 +631,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
                   port,
                   path: authPath,
                   timeout: 10000,
-                  rejectUnauthorized: false,
+                  rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
                   headers: {
                     'User-Agent': 'Antigravity-Remote-Client/2.0',
                     'Authorization': `Bearer ${token}`,
@@ -641,7 +645,11 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
                       resolve({ ok: false, status: 401, error: "Jeton d'authentification invalide (HTTP 401)" });
                     } else if (authRes.statusCode >= 200 && authRes.statusCode < 300) {
                       let authData: Record<string, unknown> = {};
-                      try { authData = JSON.parse(authBody); } catch (_) {}
+                      try {
+                        authData = JSON.parse(authBody);
+                      } catch (parseErr) {
+                        log.warn('[IPC:remote:check-health] Failed to parse auth diagnostic JSON:', parseErr);
+                      }
                       resolve({ ok: true, status: 200, data: { ...healthData, ...authData, authenticated: true } });
                     } else {
                       // Fallback to /v2/sessions if diagnostic endpoint not found
@@ -708,7 +716,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             path: `/v2/terminal/exec?token=${encodeURIComponent(token)}`,
             method: 'POST',
             timeout: timeoutMs,
-            rejectUnauthorized: false,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
             headers: {
               'Content-Type': 'application/json',
               'Content-Length': Buffer.byteLength(postData),
@@ -757,7 +765,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
 
     return new Promise<{ ok: boolean; sessions?: any[]; error?: string }>((resolve) => {
       try {
-        const rawHost = (payload?.host || '62.169.27.8').trim().replace(/\/+$/, '');
+        const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
         const token = (payload?.token || '').trim();
         const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
         const client = parsed.protocol === 'https:' ? https : http;
@@ -769,7 +777,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             port,
             path: `/v2/sessions?token=${encodeURIComponent(token)}`,
             timeout: 10000,
-            rejectUnauthorized: false,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
             headers: {
               'User-Agent': 'Antigravity-Remote-Client/2.0',
               'Authorization': `Bearer ${token}`,
@@ -809,7 +817,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
 
     return new Promise<{ ok: boolean; session?: any; error?: string }>((resolve) => {
       try {
-        const rawHost = (payload?.host || '62.169.27.8').trim().replace(/\/+$/, '');
+        const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
         const token = (payload?.token || '').trim();
         const title = payload?.title || 'Nouvelle tâche distante';
         const workspaceId = payload?.workspaceId || '';
@@ -825,7 +833,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             path: `/v2/sessions?token=${encodeURIComponent(token)}`,
             method: 'POST',
             timeout: 10000,
-            rejectUnauthorized: false,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
             headers: {
               'Content-Type': 'application/json',
               'Content-Length': Buffer.byteLength(postData),
@@ -869,7 +877,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
 
     return new Promise<{ ok: boolean; workspaces?: any[]; error?: string }>((resolve) => {
       try {
-        const rawHost = (payload?.host || '62.169.27.8').trim().replace(/\/+$/, '');
+        const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
         const token = (payload?.token || '').trim();
         const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
         const client = parsed.protocol === 'https:' ? https : http;
@@ -881,7 +889,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             port,
             path: `/v2/workspaces?token=${encodeURIComponent(token)}`,
             timeout: 10000,
-            rejectUnauthorized: false,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
             headers: {
               'User-Agent': 'Antigravity-Remote-Client/2.0',
               'Authorization': `Bearer ${token}`,
@@ -924,7 +932,11 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
       const p = path.join(dir, 'remote_vps_state.json');
       let current: Record<string, unknown> = {};
       if (nodeFs.existsSync(p)) {
-        try { current = JSON.parse(nodeFs.readFileSync(p, 'utf-8')); } catch (_) {}
+        try {
+          current = JSON.parse(nodeFs.readFileSync(p, 'utf-8'));
+        } catch (err) {
+          log.warn('[IPC] Failed to parse remote_vps_state.json:', err);
+        }
       }
       const updated = {
         ...current,
@@ -957,8 +969,40 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
     }
   });
 
+  interface NormalizedModelEntry {
+    id: string;
+    name: string;
+  }
+
+  function parseModelListResponse(parsed: Record<string, unknown>): NormalizedModelEntry[] {
+    if (Array.isArray(parsed.data)) {
+      return (parsed.data as Array<Record<string, unknown>>).map((m) => ({
+        id: String(m.id || ''),
+        name: String(m.id || m.name || ''),
+      }));
+    }
+    if (Array.isArray(parsed.models)) {
+      return (parsed.models as Array<Record<string, unknown>>).map((m) => ({
+        id: String(m.name || ''),
+        name: String(m.displayName || m.name || ''),
+      }));
+    }
+    if (Array.isArray(parsed.model_ids)) {
+      return (parsed.model_ids as string[]).map((id) => ({
+        id: String(id),
+        name: String(id),
+      }));
+    }
+    if (parsed.data && typeof parsed.data === 'object' && Array.isArray((parsed.data as Record<string, unknown>).data)) {
+      return ((parsed.data as Record<string, unknown>).data as Array<Record<string, unknown>>).map((m) => ({
+        id: String(m.id || ''),
+        name: String(m.id || m.name || ''),
+      }));
+    }
+    return [];
+  }
+
   // ─── Fetch Models from /v1/models endpoint ──────────────────────────────────────
-  // P3-18: Query a provider's /v1/models endpoint to discover available models
   ipcMain.handle('storage:fetch-models', async (_event, params: FetchModelsParams) => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const https = require('https');
@@ -1063,45 +1107,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             }
             try {
               const parsed = JSON.parse(body) as Record<string, unknown>;
-
-              // Handle different response formats:
-              // 1. OpenAI/OpenAI-compatible: { data: [{ id: 'gpt-4o', ... }] }
-              // 2. Google: { models: [{ name: 'models/gemini-pro', ... }] }
-              // 3. Anthropic: { data: [{ type: 'model', id: 'claude-3-5-sonnet-latest', ... }] }
-
-              let models: { id: string; name: string }[] = [];
-
-              if (Array.isArray(parsed.data)) {
-                // OpenAI format
-                models = (parsed.data as Array<Record<string, unknown>>).map((m) => ({
-                  id: (m.id as string) || '',
-                  name: (m.id as string) || (m.name as string) || '',
-                }));
-              } else if (Array.isArray(parsed.models)) {
-                // Google format
-                models = (parsed.models as Array<Record<string, unknown>>).map((m) => ({
-                  id: (m.name as string) || '',
-                  name: (m.displayName as string) || (m.name as string) || '',
-                }));
-              } else if (Array.isArray(parsed.model_ids)) {
-                // Some providers use model_ids
-                models = (parsed.model_ids as string[]).map((id) => ({
-                  id,
-                  name: id,
-                }));
-              }
-
-              // Also check for nested data property
-              if (models.length === 0 && parsed.data && typeof parsed.data === 'object') {
-                const nestedData = (parsed.data as Record<string, unknown>).data;
-                if (Array.isArray(nestedData)) {
-                  models = (nestedData as Array<Record<string, unknown>>).map((m) => ({
-                    id: (m.id as string) || '',
-                    name: (m.id as string) || (m.name as string) || '',
-                  }));
-                }
-              }
-
+              const models = parseModelListResponse(parsed);
               resolve({
                 success: true,
                 models,

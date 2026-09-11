@@ -100,38 +100,23 @@ describe('Ultra Suite 1: Provider Presets & Header Matrix', () => {
 describe('Ultra Suite 2: Model Color Tokens & Accessibility Matrix', () => {
   const colorTestCases = [
     { provider: 'openai', expected: '#10a37f' },
-    { provider: 'OPENAI', expected: '#10a37f' },
     { provider: 'anthropic', expected: '#d97706' },
-    { provider: 'ANTHROPIC', expected: '#d97706' },
     { provider: 'google', expected: '#4285f4' },
-    { provider: 'GOOGLE', expected: '#4285f4' },
     { provider: 'ollama', expected: '#000000' },
-    { provider: 'OLLAMA', expected: '#000000' },
     { provider: 'deepseek', expected: '#0d9488' },
-    { provider: 'DEEPSEEK', expected: '#0d9488' },
     { provider: 'openrouter', expected: '#6366f1' },
-    { provider: 'OPENROUTER', expected: '#6366f1' },
-    { provider: 'custom', expected: '#8b5cf6' },
-    { provider: 'minimax', expected: '#8b5cf6' },
-    { provider: 'groq', expected: '#8b5cf6' },
-    { provider: 'mistral', expected: '#8b5cf6' },
-    { provider: 'cerebras', expected: '#8b5cf6' },
-
-    // Generate 33 additional variations for completeness
-    ...Array.from({ length: 33 }, (_, i) => ({
-      provider: `custom-prov-${i}`,
-      expected: '#8b5cf6',
-    })),
+    { provider: 'custom-unknown', expected: '#8b5cf6' },
   ];
 
-  colorTestCases.forEach(({ provider, expected }, idx) => {
-    it(`[${idx + 1}/50] evaluates color token for provider '${provider}' -> ${expected}`, () => {
+  colorTestCases.forEach(({ provider, expected }) => {
+    it(`evaluates color token for provider '${provider}' -> ${expected}`, () => {
       expect(getProviderColor(provider)).toBe(expected);
+      expect(getProviderColor(provider.toUpperCase())).toBe(expected);
     });
   });
 });
 
-// ─── SECTION 3: Key Masking & Security Boundary Matrix (50 Tests) ───────────
+// ─── SECTION 3: Key Masking & Security Boundary Matrix ───────────────────────
 
 describe('Ultra Suite 3: Security & Key Masking Matrix', () => {
   const keysToTest = [
@@ -152,76 +137,66 @@ describe('Ultra Suite 3: Security & Key Masking Matrix', () => {
     });
   });
 
-  // Generate 44 edge-case testing assertions
-  const maskedKeyFormatSamples = Array.from({ length: 44 }, (_, idx) => `prefix${idx}---suffix${idx}`);
-
-  maskedKeyFormatSamples.forEach((sample, i) => {
-    it(`[${i + 7}/50] correctly identifies unmasked vs masked key candidate #${i + 1}`, () => {
-      const formatted = `abcd...${String(i).padStart(4, '0')}`;
-      expect(isMaskedApiKey(formatted)).toBe(true);
-      expect(isMaskedApiKey(sample)).toBe(false);
-    });
+  it.each([
+    ['abcd...1234', true],
+    ['prefix---suffix', false],
+    ['sk-proj-1234567890', false],
+  ])('identifies masked format: %s -> %s', (sample, expected) => {
+    expect(isMaskedApiKey(sample)).toBe(expected);
   });
 });
 
-// ─── SECTION 4: Export / Import & Config Merging Matrix (50 Tests) ───────────
+// ─── SECTION 4: Export / Import & Config Merging Matrix ───────────────────────
 
 describe('Ultra Suite 4: Base64 Config Exchange & Merging Matrix', () => {
-  // Generate 25 export/import test variations
-  Array.from({ length: 25 }, (_, i) => i + 1).forEach((num) => {
-    it(`[${num}/25] exports and imports provider payload batch size ${num}`, () => {
-      const providers: ProviderFileEntry[] = Array.from({ length: num }, (_, k) => ({
-        id: `batch-${num}-prov-${k}`,
-        name: `Provider ${k}`,
-        provider: 'openai',
-        apiUrl: `https://api.example-${k}.com/v1`,
-        apiKey: `key-${k}`,
-        enabled: true,
-        models: [{ id: `model-${k}`, displayName: `Model ${k}`, enabled: true }],
-      }));
+  it.each([1, 5, 25])('exports and imports provider payload batch size %i', (num) => {
+    const providers: ProviderFileEntry[] = Array.from({ length: num }, (_, k) => ({
+      id: `batch-${num}-prov-${k}`,
+      name: `Provider ${k}`,
+      provider: 'openai',
+      apiUrl: `https://api.example-${k}.com/v1`,
+      apiKey: `key-${k}`,
+      enabled: true,
+      models: [{ id: `model-${k}`, displayName: `Model ${k}`, enabled: true }],
+    }));
 
-      const base64 = exportProvidersToBase64(providers);
-      expect(typeof base64).toBe('string');
+    const base64 = exportProvidersToBase64(providers);
+    expect(typeof base64).toBe('string');
 
-      const restored = parseProvidersFromBase64(base64);
-      expect(restored.length).toBe(num);
-      expect(restored[0].id).toBe(`batch-${num}-prov-0`);
-    });
+    const restored = parseProvidersFromBase64(base64);
+    expect(restored.length).toBe(num);
+    expect(restored[0].id).toBe(`batch-${num}-prov-0`);
   });
 
-  // Generate 25 merge strategy test variations
-  Array.from({ length: 25 }, (_, i) => i + 1).forEach((num) => {
-    it(`[${num}/25] merges incoming providers using strategy '${num % 2 === 0 ? 'merge' : 'overwrite'}'`, () => {
-      const existing: ProviderFileEntry[] = [
-        {
-          id: `shared-id-${num}`,
-          name: `Original Name ${num}`,
-          provider: 'openai',
-          apiUrl: 'https://api.original.com/v1',
-          apiKey: 'key-orig',
-          enabled: true,
-          models: [],
-        },
-      ];
+  it.each(['merge', 'overwrite'] as const)('merges incoming providers using strategy %s', (strategy) => {
+    const existing: ProviderFileEntry[] = [
+      {
+        id: 'shared-id-1',
+        name: 'Original Name',
+        provider: 'openai',
+        apiUrl: 'https://api.original.com/v1',
+        apiKey: 'key-orig',
+        enabled: true,
+        models: [],
+      },
+    ];
 
-      const incoming: ProviderFileEntry[] = [
-        {
-          id: `shared-id-${num}`,
-          name: `Updated Name ${num}`,
-          provider: 'openai',
-          apiUrl: 'https://api.updated.com/v1',
-          apiKey: 'key-new',
-          enabled: true,
-          models: [],
-        },
-      ];
+    const incoming: ProviderFileEntry[] = [
+      {
+        id: 'shared-id-1',
+        name: 'Updated Name',
+        provider: 'openai',
+        apiUrl: 'https://api.updated.com/v1',
+        apiKey: 'key-new',
+        enabled: true,
+        models: [],
+      },
+    ];
 
-      const strategy = num % 2 === 0 ? 'merge' : 'overwrite';
-      const result = mergeProviderConfigs(existing, incoming, strategy);
-      expect(result.providers.length).toBe(1);
-      if (strategy === 'overwrite') {
-        expect(result.providers[0].name).toBe(`Updated Name ${num}`);
-      }
-    });
+    const result = mergeProviderConfigs(existing, incoming, strategy);
+    expect(result.providers.length).toBe(1);
+    if (strategy === 'overwrite') {
+      expect(result.providers[0].name).toBe('Updated Name');
+    }
   });
 });

@@ -680,5 +680,76 @@ func TestRuntimeServer_PromptOnCancelledSession_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestRuntimeServer_ApprovalCrossSession_IsRejected(t *testing.T) {
+	rt, httpSrv, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	svc := rt.SessionService()
+	sess1, err := svc.CreateSession(ctx, "srv-1", "ws-1", "Victim Session")
+	if err != nil {
+		t.Fatalf("failed to create session 1: %v", err)
+	}
+	_ = svc.TransitionState(ctx, sess1.ID, domain.SessionStateStarting, "start")
+	_ = svc.TransitionState(ctx, sess1.ID, domain.SessionStateRunning, "run")
+
+	sess2, err := svc.CreateSession(ctx, "srv-1", "ws-1", "Attacker Session")
+	if err != nil {
+		t.Fatalf("failed to create session 2: %v", err)
+	}
+
+	apprMgr := approval.NewManager(svc, 10*time.Second)
+	rt.SetAgentEngine(nil, apprMgr)
+	go func() {
+		_, _ = apprMgr.RequestApproval(ctx, sess1.ID, "run_command", []byte(`{"command":"rm -rf /"}`), "Dangerous command", 10)
+	}()
+
+	var apprID string
+	for i := 0; i < 20; i++ {
+		reqs := apprMgr.GetPendingRequests(sess1.ID)
+		if len(reqs) > 0 {
+			apprID = reqs[0].ID
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if apprID == "" {
+		t.Fatalf("failed to acquire pending approval id")
+	}
+
+	wsURL := toWsURL(httpSrv.URL) + "/v2/runtime/ws"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	// Attempt 1: Resolve approval using attacker's session ID (sess2.ID) for sess1's approval
+	respPayload, _ := json.Marshal(protocol.ApprovalRespondPayload{
+		ApprovalID: apprID,
+		Approved:   true,
+		Reason:     "spoofed by attacker",
+	})
+	spoofedMsg := protocol.V2Envelope{
+		Version:   protocol.ProtocolVersion,
+		Type:      protocol.TypeApprovalRespond,
+		RequestID: "req-spoof-001",
+		SessionID: sess2.ID, // Attacker session ID
+		Payload:   respPayload,
+	}
+	if err := conn.WriteJSON(spoofedMsg); err != nil {
+		t.Fatalf("failed to write spoofed approval: %v", err)
+	}
+
+	var errResp protocol.ErrorResponse
+	if err := conn.ReadJSON(&errResp); err != nil {
+		t.Fatalf("failed to read error response: %v", err)
+	}
+	if errResp.Type != protocol.TypeErrorResponse || !strings.Contains(errResp.Error, "mismatch") {
+		t.Fatalf("expected session mismatch error, got: %+v", errResp)
+	}
+}
+
+
 
 

@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -67,6 +70,39 @@ type RuntimeServer struct {
 	upgrader websocket.Upgrader
 }
 
+// checkOrigin prevents Cross-Site WebSocket Hijacking (CSWSH) while accepting
+// native clients (no Origin header), loopback, private LANs, and matching host/domain.
+func checkOrigin(r *http.Request) bool {
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return true // native clients (mobile app, electron, CLI)
+	}
+	if o == "null" {
+		return false // reject sandboxed iframes
+	}
+	u, err := url.Parse(o)
+	if err != nil {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	if h == "localhost" || h == "127.0.0.1" || h == "::1" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	if ip != nil {
+		for _, cidr := range []string{"192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"} {
+			if _, n, err := net.ParseCIDR(cidr); err == nil && n.Contains(ip) {
+				return true
+			}
+		}
+	}
+	reqHost := r.Host
+	if host, _, err := net.SplitHostPort(reqHost); err == nil {
+		reqHost = host
+	}
+	return strings.EqualFold(h, reqHost)
+}
+
 func NewRuntimeServer(serverInfo domain.Server, store eventstore.EventStore) *RuntimeServer {
 	rt := &RuntimeServer{
 		serverInfo:       serverInfo,
@@ -75,7 +111,7 @@ func NewRuntimeServer(serverInfo domain.Server, store eventstore.EventStore) *Ru
 		clientSessions:   make(map[*websocket.Conn]string),
 		clientIdentities: make(map[*websocket.Conn]*auth.Identity),
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin: checkOrigin,
 		},
 	}
 
@@ -570,14 +606,23 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		if ident.Role == auth.RoleReadOnly {
 			return r.sendError(conn, env.RequestID, "forbidden: read-only role cannot resolve approvals")
 		}
-		if sess, err := r.store.GetSession(ctx, env.SessionID); err == nil {
-			if domain.IsTerminalState(sess.State) {
-				return r.sendError(conn, env.RequestID, fmt.Sprintf("cannot resolve approval: session is %s", sess.State))
-			}
-			if r.rbacMgr != nil {
-				if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
-					return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
-				}
+		apprReq, ok := r.apprMgr.GetApprovalRequest(arp.ApprovalID)
+		if !ok {
+			return r.sendError(conn, env.RequestID, "approval request not found or already resolved")
+		}
+		if env.SessionID != "" && env.SessionID != apprReq.SessionID {
+			return r.sendError(conn, env.RequestID, "session id mismatch for approval request")
+		}
+		sess, err := r.store.GetSession(ctx, apprReq.SessionID)
+		if err != nil {
+			return r.sendError(conn, env.RequestID, fmt.Sprintf("session for approval not found: %v", err))
+		}
+		if domain.IsTerminalState(sess.State) {
+			return r.sendError(conn, env.RequestID, fmt.Sprintf("cannot resolve approval: session is %s", sess.State))
+		}
+		if r.rbacMgr != nil {
+			if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
+				return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
 			}
 		}
 		actorID := "client"

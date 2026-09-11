@@ -126,6 +126,7 @@ func (r *Reconciler) ReconcileOnce(ctx context.Context) (int, error) {
 			}
 
 			if !recovered {
+				_ = r.sessionSvc.TransitionState(ctx, s.ID, domain.SessionStatePaused, "Reconciler paused dead session for user resume")
 				payload, _ := json.Marshal(map[string]interface{}{
 					"sessionId":     s.ID,
 					"reason":        "reconciler_recovered_dead_process",

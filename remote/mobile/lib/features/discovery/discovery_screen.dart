@@ -692,6 +692,35 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ActionChip(
+                        avatar: const Text('☁️', style: TextStyle(fontSize: 12)),
+                        label: const Text('Cloud VPS (ty-dev.site)', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                        onPressed: () {
+                          setState(() {
+                            _hostController.text = 'https://dqlwdgordp4apddvek8gvgn0.ty-dev.site';
+                            _portController.text = '443';
+                            _csrfController.text = '37aeea86418dcd4b9bae9daeb79c90e5';
+                          });
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Text('⚡', style: TextStyle(fontSize: 12)),
+                        label: const Text('Local (127.0.0.1:8090)', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                        onPressed: () {
+                          setState(() {
+                            _hostController.text = '127.0.0.1';
+                            _portController.text = '8090';
+                            _csrfController.text = '11';
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final hostWidget = Column(

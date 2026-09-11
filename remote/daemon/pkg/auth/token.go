@@ -27,6 +27,9 @@ func NewTokenManager(flagToken string) (*TokenManager, string, error) {
 	if token == "" {
 		token = strings.TrimSpace(os.Getenv("AG_DAEMON_AUTH_TOKEN"))
 	}
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("AUTH_TOKEN"))
+	}
 
 	if token == "" && flagToken != "" && flagToken != "mysecret" {
 		token = strings.TrimSpace(flagToken)

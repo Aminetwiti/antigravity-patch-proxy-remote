@@ -27,8 +27,8 @@ This project is built with security as a core priority:
 If you discover a security vulnerability within this project, please follow these steps:
 
 1. **Do NOT open a public GitHub issue** for security vulnerabilities.
-2. Report the vulnerability privately by opening a [GitHub Security Advisory](https://github.com/vahapogut/antigravity-add-model/security/advisories/new) or contacting project maintainers directly.
-3. Include detailed steps to reproduce the issue and any proof-of-concept material.
+2. Report the vulnerability privately via GitHub Security Advisories or by contacting the repository maintainers directly.
+3. Include detailed steps to reproduce the issue, environment information, and any proof-of-concept material.
 
 ### Response Timeline
 - **Acknowledgement**: Within 48 hours.

@@ -10,8 +10,8 @@
 
   console.log('[Antigravity 2.0] Initializing Remote Environment Hook...');
 
-  const DEFAULT_HOST = 'https://dqlwdgordp4apddvek8gvgn0.ty-dev.site';
-  const DEFAULT_TOKEN = 'antigravity-secret-cloud-2026';
+  const DEFAULT_HOST = 'http://127.0.0.1:8090';
+  const DEFAULT_TOKEN = '';
 
   function getRemoteConfig() {
     try {
@@ -21,8 +21,9 @@
         token: storedToken,
         configured: localStorage.getItem('ag_remote_configured') === 'true' || storedToken.length > 0,
       };
-    } catch (_) {
-      return { host: DEFAULT_HOST, token: DEFAULT_TOKEN, configured: true };
+    } catch (e) {
+      console.warn('[RemoteHook] Failed to read remote config:', e);
+      return { host: DEFAULT_HOST, token: DEFAULT_TOKEN, configured: false };
     }
   }
 
@@ -109,6 +110,24 @@
     } catch (_) {}
   }
 
+  function getActiveProjectName() {
+    try {
+      const headerTitle = document.querySelector('header, [role="banner"], .chat-header');
+      if (headerTitle) {
+        const txt = headerTitle.textContent || '';
+        if (txt.includes('/')) {
+          const p = txt.split('/')[0].trim();
+          if (p && !p.includes('\n') && p.length < 60) return p;
+        }
+      }
+      if (document.title && document.title.includes('—')) {
+        const p = document.title.split('—')[0].trim();
+        if (p && p.length < 60) return p;
+      }
+    } catch (_) {}
+    return '';
+  }
+
   // --- Command Execution on Remote VPS ---
   function executeRemoteCommand(command, timeoutMs = 15000) {
     return new Promise((resolve) => {
@@ -119,9 +138,25 @@
         resolve({ ok: false, error: 'Hôte non configuré' });
         return;
       }
+
+      const currentConvId = getActiveSessionId();
+      const bindings = getSessionBindings();
+      const currentBinding = currentConvId ? bindings[currentConvId] : null;
+      const boundSessionId = currentBinding ? currentBinding.remoteSessionId : '';
+      let targetWs = currentBinding ? currentBinding.workspaceId : '';
+      if (!targetWs) {
+        targetWs = getActiveProjectName();
+      }
+
       const wsProto = host.startsWith('https:') ? 'wss:' : 'ws:';
       const cleanHost = host.replace('https://', '').replace('http://', '');
-      const wsUrl = `${wsProto}//${cleanHost}/v2/terminal?terminalId=exec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}&token=${encodeURIComponent(token)}`;
+      let wsUrl = `${wsProto}//${cleanHost}/v2/terminal?terminalId=exec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}&token=${encodeURIComponent(token)}`;
+      if (targetWs) {
+        wsUrl += `&workspaceId=${encodeURIComponent(targetWs)}`;
+      }
+      if (boundSessionId) {
+        wsUrl += `&sessionId=${encodeURIComponent(boundSessionId)}`;
+      }
 
       let sock;
       try {
@@ -268,9 +303,7 @@
           <label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Hôte / URL du Daemon (IP:Port ou Domaine)</label>
           <input id="__ag_cfg_host" type="text" value="${cfg.host}" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" />
           <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
-            <button type="button" class="__ag_preset_btn" data-host="127.0.0.1:8090" data-token="11" style="background:#262626;border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;">⚡ Local (127.0.0.1:8090)</button>
-            <button type="button" class="__ag_preset_btn" data-host="https://formula-hosting-substantially-hearing.trycloudflare.com" data-token="11" style="background:#262626;border:1px solid rgba(255,255,255,0.15);color:#a78bfa;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;">🌐 Tunnel Cloudflare</button>
-            <button type="button" class="__ag_preset_btn" data-host="62.169.27.8:8090" data-token="11" style="background:#262626;border:1px solid rgba(255,255,255,0.15);color:#34d399;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;">☁️ VPS (62.169.27.8)</button>
+            <button type="button" class="__ag_preset_btn" data-host="127.0.0.1:8090" data-token="" style="background:#262626;border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;">⚡ Local (127.0.0.1:8090)</button>
           </div>
         </div>
 
@@ -511,7 +544,8 @@
             sp.textContent = 'Remote (VPS)';
             foundTitle = true;
           } else if (foundTitle && txt.length > 3 && !txt.includes('Remote')) {
-            sp.textContent = '62.169.27.8 — Ubuntu 24.04 (24/7 Autonome)';
+            const cfg = getRemoteConfig();
+            sp.textContent = `${cfg.host || 'Daemon distant'} (24/7 Autonome)`;
           }
         }
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -92,7 +93,7 @@ func NewV1Adapter(
 		approvalMgr: approvalMgr,
 		authToken:   authToken,
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin: checkOrigin,
 		},
 		connections:    make(map[*websocket.Conn]bool),
 		writeLocks:     make(map[*websocket.Conn]*sync.Mutex),
@@ -112,7 +113,7 @@ func (a *V1Adapter) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				token = strings.TrimPrefix(authHeader, "Bearer ")
 			}
 		}
-		if token != a.authToken {
+		if subtle.ConstantTimeCompare([]byte(a.authToken), []byte(token)) != 1 {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}

@@ -69,18 +69,15 @@ export function getIdeInstallPath(): string {
  * 3. `~/.gemini/antigravity` DOES exist
  */
 export async function shouldShowIdeInstallWizard(storageManager: StorageManager): Promise<boolean> {
-  // 1. Already shown?
   const items = await storageManager.getItems();
   if (items[WIZARD_SHOWN_KEY] === 'true') {
     log.info('[IDE Wizard] Already shown, skipping.');
     return false;
   }
-  // 2. IDE already installed separately?
   if (fs.existsSync(IDE_NEW_DATA_DIR)) {
     log.info(`[IDE Wizard] ${IDE_NEW_DATA_DIR} exists — IDE already installed, skipping.`);
     return false;
   }
-  // 3. Old IDE data present (user was migrated)?
   if (!fs.existsSync(IDE_OLD_DATA_DIR)) {
     log.info(`[IDE Wizard] ${IDE_OLD_DATA_DIR} not found — user was not migrated, skipping.`);
     return false;

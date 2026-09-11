@@ -227,3 +227,28 @@ func TestTerminalHandler_HandleExec_Unauthorized(t *testing.T) {
 		t.Fatalf("expected HTTP 401 Unauthorized, got %d", resp.StatusCode)
 	}
 }
+
+func TestTerminalHandler_UntrustedOrigin_IsRejected(t *testing.T) {
+	wsMgr := workspace.NewManager()
+	tmpDir := t.TempDir()
+	ws, _ := wsMgr.RegisterWorkspace("ws-term", "TermWS", tmpDir)
+	handler := server.NewTerminalHandler(wsMgr, "term-secret")
+
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "?token=term-secret&workspaceId=" + ws.ID
+
+	// Attempt CSWSH from evil.com
+	headers := http.Header{}
+	headers.Set("Origin", "http://evil.com")
+
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	_, resp, err := dialer.Dial(wsURL, headers)
+	if err == nil {
+		t.Fatalf("expected WebSocket connection from untrusted origin evil.com to be rejected, but it succeeded!")
+	}
+	if resp != nil && resp.StatusCode != http.StatusForbidden {
+		t.Errorf("expected HTTP 403 Forbidden for untrusted origin, got: %d", resp.StatusCode)
+	}
+}

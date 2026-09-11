@@ -1,4 +1,4 @@
-﻿package server
+package server
 
 import (
 	"context"
@@ -43,14 +43,19 @@ func TestReconciler_DetectsDriftAndTransitionsToRecovering(t *testing.T) {
 		t.Errorf("expected 1 session reconciled, got %d", reconciled)
 	}
 
-	// Vérifier que la session a bien transitionné vers RECOVERING
+	// Vérifier que la session a bien transitionné vers PAUSED (via RECOVERING) pour permettre la reprise
 	updatedSess, err := store.GetSession(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("GetSession failed: %v", err)
 	}
 
-	if updatedSess.State != domain.SessionStateRecovering {
-		t.Errorf("expected session state %s, got %s", domain.SessionStateRecovering, updatedSess.State)
+	if updatedSess.State != domain.SessionStatePaused {
+		t.Errorf("expected session state %s, got %s", domain.SessionStatePaused, updatedSess.State)
+	}
+
+	// Invariant: From PAUSED, user can cancel or resume the session without ErrInvalidTransition
+	if err := sessionSvc.TransitionState(ctx, sess.ID, domain.SessionStateCancelled, "user cancelled reconciled session"); err != nil {
+		t.Fatalf("failed to cancel reconciled session: %v", err)
 	}
 
 	// Vérifier que l'événement session.reconciled a été émis

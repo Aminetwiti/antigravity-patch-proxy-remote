@@ -180,11 +180,16 @@ func (t *RunCommandTool) RequiresApproval(params json.RawMessage) bool {
 		return true
 	}
 	cmd := strings.TrimSpace(p.CommandLine)
-	// Safe read-only inspections can bypass approval if desired
-	if strings.HasPrefix(cmd, "git status") || strings.HasPrefix(cmd, "pwd") || strings.HasPrefix(cmd, "echo ") {
-		return false
+	if strings.ContainsAny(cmd, ";&|`$><\n\r()") {
+		return true
 	}
-	return true
+	// Safe read-only inspections can bypass approval
+	switch cmd {
+	case "pwd", "pwd -P", "pwd -L", "git status", "git status -s", "git status --short", "git status --porcelain":
+		return false
+	default:
+		return true
+	}
 }
 
 func (t *RunCommandTool) Execute(ctx context.Context, sessionID, workspaceID string, params json.RawMessage, onChunk func(chunk []byte)) (*ToolResult, error) {

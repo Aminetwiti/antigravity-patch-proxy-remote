@@ -36,33 +36,32 @@ export function repairPartialJson(input: string | null | undefined): unknown {
   // Apply repairs in order from cheapest to most invasive.
   const candidates: string[] = [input];
 
-  // 1. Strip BOM and trim
+  // Strip BOM and whitespace
   const stripped = input.replace(/^\uFEFF/, '').trim();
   if (stripped !== input) candidates.push(stripped);
 
-  // 2. Remove // line comments and /* block comments */
+  // Strip line and block comments
   const noComments = stripped
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
   if (noComments !== stripped) candidates.push(noComments);
 
-  // 3. Remove trailing commas before } or ]
+  // Strip trailing commas before closing braces/brackets
   const noTrailingCommas = noComments.replace(/,(\s*[}\]])/g, '$1');
   if (noTrailingCommas !== noComments) candidates.push(noTrailingCommas);
 
-  // 4. Quote unquoted object keys (best-effort, conservative)
+  // Quote unquoted object keys
   const quotedKeys = noTrailingCommas.replace(
     /([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g,
     '$1"$2":',
   );
   if (quotedKeys !== noTrailingCommas) candidates.push(quotedKeys);
 
-  // 5. Convert single quotes to double quotes (only outside of strings —
-  //    this is a heuristic that works for simple cases)
+  // Normalize single-quoted JSON strings
   const doubleQuoted = noTrailingCommas.replace(/'/g, '"');
   if (doubleQuoted !== noTrailingCommas) candidates.push(doubleQuoted);
 
-  // 6. Try to close truncated arrays/objects at the end
+  // Repair truncated arrays/objects by closing pending delimiters
   const lastOpen = stripped.lastIndexOf('[');
   const lastClose = stripped.lastIndexOf(']');
   if (lastOpen > lastClose) {

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"path/filepath"
@@ -433,6 +434,47 @@ func runServerRuntime(
 
 	defaultWs, _ := wsMgr.RegisterWorkspace("default", "Default Workspace", workspacesDir)
 	fmt.Printf("📁 Default workspace registered: %s (%s)\n", defaultWs.Name, defaultWs.Root)
+
+	// Auto-discover child Git repositories in workspacesDir and container directory
+	discovered, err := wsMgr.AutoDiscoverWorkspaces(workspacesDir)
+	if err == nil && len(discovered) > 0 {
+		for _, ws := range discovered {
+			fmt.Printf("🔍 Auto-discovered Git project: %s (%s)\n", ws.Name, ws.Root)
+		}
+	}
+	parentContainer := filepath.Dir(workspacesDir)
+	if parentContainer != workspacesDir && parentContainer != "." && parentContainer != "/" {
+		if discParent, err := wsMgr.AutoDiscoverWorkspaces(parentContainer); err == nil && len(discParent) > 0 {
+			for _, ws := range discParent {
+				fmt.Printf("🔍 Auto-discovered Git project in container: %s (%s)\n", ws.Name, ws.Root)
+			}
+			discovered = append(discovered, discParent...)
+		}
+	}
+
+	// Zero-touch Autonomous project initialization: if no Git repository exists in workspaces,
+	// auto-clone the configured or default repository so the daemon is immediately ready.
+	if len(discovered) == 0 {
+		defaultRepoURL := os.Getenv("AG_DEFAULT_REPO_URL")
+		if defaultRepoURL == "" {
+			defaultRepoURL = "https://github.com/Aminetwiti/antigravity-add-model-main.git"
+		}
+		defaultBranch := os.Getenv("COOLIFY_BRANCH")
+		if defaultBranch == "" {
+			defaultBranch = "feat/remote-agent-runtime"
+		}
+		repoName := strings.TrimSuffix(filepath.Base(defaultRepoURL), ".git")
+		targetDir := filepath.Join(workspacesDir, repoName)
+		fmt.Printf("📦 Auto-cloning autonomous project repository %s into %s (branch: %s)...\n", defaultRepoURL, targetDir, defaultBranch)
+		cloneCmd := exec.Command("git", "clone", "--depth", "1", "--branch", defaultBranch, defaultRepoURL, targetDir)
+		if out, err := cloneCmd.CombinedOutput(); err == nil {
+			if ws, regErr := wsMgr.RegisterWorkspace(repoName, repoName, targetDir); regErr == nil {
+				fmt.Printf("✅ Autonomous project initialized: %s (%s)\n", ws.Name, ws.Root)
+			}
+		} else {
+			fmt.Printf("⚠️ Auto-clone failed (offline or private): %v (%s)\n", err, string(out))
+		}
+	}
 
 	toolsReg := tools.NewRegistry(wsMgr, autoApprove)
 	var sb sandbox.Provider

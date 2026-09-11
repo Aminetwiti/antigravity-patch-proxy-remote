@@ -3,6 +3,8 @@ import {
   exportProvidersToBase64,
   parseProvidersFromBase64,
   mergeProviderConfigs,
+  exportEncryptedConfig,
+  importEncryptedConfig,
 } from '../services/configExchange';
 import type { ProviderFileEntry } from '../customModelStore';
 
@@ -137,4 +139,46 @@ describe('configExchange', () => {
     expect(result.skippedCount).toBe(1);
     expect(result.providers[0].name).toBe('Existing Name');
   });
+
+  describe('encrypted config exchange & security bounds', () => {
+    it('round-trips encrypted config with valid password', () => {
+      const encrypted = exportEncryptedConfig(mockProviders, 'SuperSecretPass123!');
+      const decrypted = importEncryptedConfig(encrypted, 'SuperSecretPass123!');
+      expect(decrypted).toHaveLength(1);
+      expect(decrypted[0].id).toBe('prov-1');
+      expect(decrypted[0].apiKey).toBe('sk-test-123');
+    });
+
+    it('fails decryption with wrong password', () => {
+      const encrypted = exportEncryptedConfig(mockProviders, 'SuperSecretPass123!');
+      expect(() => importEncryptedConfig(encrypted, 'WrongPassword')).toThrow();
+    });
+
+    it('rejects payload with excessive PBKDF2 iterations (iteration bomb DoS protection)', () => {
+      const payload = {
+        encrypted: true,
+        iterations: 10_000_000,
+        salt: '0123456789abcdef0123456789abcdef',
+        iv: '0123456789abcdef01234567',
+        tag: '0123456789abcdef0123456789abcdef',
+        data: Buffer.from('test').toString('base64'),
+      };
+      const rawBase64 = Buffer.from(JSON.stringify(payload)).toString('base64');
+      expect(() => importEncryptedConfig(rawBase64, 'password')).toThrow(/Invalid PBKDF2 iterations/);
+    });
+
+    it('rejects payload with dangerously low PBKDF2 iterations', () => {
+      const payload = {
+        encrypted: true,
+        iterations: 50,
+        salt: '0123456789abcdef0123456789abcdef',
+        iv: '0123456789abcdef01234567',
+        tag: '0123456789abcdef0123456789abcdef',
+        data: Buffer.from('test').toString('base64'),
+      };
+      const rawBase64 = Buffer.from(JSON.stringify(payload)).toString('base64');
+      expect(() => importEncryptedConfig(rawBase64, 'password')).toThrow(/Invalid PBKDF2 iterations/);
+    });
+  });
 });
+

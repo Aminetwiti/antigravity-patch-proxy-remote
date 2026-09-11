@@ -104,7 +104,9 @@ export function createWindow(url: string): BrowserWindowInstance {
     },
   });
   win.webContents.setWindowOpenHandler((details) => {
-    void shell.openExternal(details.url);
+    if (details.url.startsWith('https://') || details.url.startsWith('http://')) {
+      void shell.openExternal(details.url);
+    }
     return { action: 'deny' };
   });
   win.webContents.on('console-message', (_event, level, message, line, sourceId) => {

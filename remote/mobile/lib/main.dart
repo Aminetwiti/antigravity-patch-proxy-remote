@@ -300,13 +300,12 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
       _savedSettings = s;
       final host = (s['host'] as String?)?.trim() ?? '';
       final port = (s['port'] as int?) ?? EnvConfig.daemonPort;
-      final ssl = (s['ssl'] as bool?) ?? false;
       final csrf = (s['csrf'] as String?)?.trim() ?? '';
       if (host.isEmpty) {
         _wsClient.connect(authToken: EnvConfig.authToken);
         return;
       }
-      final url = '${ssl ? 'wss' : 'ws'}://$host:$port/ws';
+      final url = DaemonWebSocketClient.formatWsUrl(host, port);
       _wsClient.connect(
         customUrl: url,
         authToken: csrf.isNotEmpty ? csrf : EnvConfig.authToken,

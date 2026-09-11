@@ -29,6 +29,15 @@ func TestWebConsole_Endpoints(t *testing.T) {
 	if !strings.Contains(contentType, "text/html") {
 		t.Errorf("expected text/html, got %s", contentType)
 	}
+	if xfo := resp.Header.Get("X-Frame-Options"); xfo != "DENY" {
+		t.Errorf("expected X-Frame-Options: DENY, got %q", xfo)
+	}
+	if xcto := resp.Header.Get("X-Content-Type-Options"); xcto != "nosniff" {
+		t.Errorf("expected X-Content-Type-Options: nosniff, got %q", xcto)
+	}
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("expected frame-ancestors 'none' in CSP, got %q", csp)
+	}
 
 	// 2. GET /console
 	respConsole, err := http.Get(ts.URL + "/console")
