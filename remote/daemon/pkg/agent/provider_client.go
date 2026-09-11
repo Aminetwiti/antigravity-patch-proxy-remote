@@ -32,6 +32,32 @@ type ProviderConfig struct {
 }
 
 func AutoDetectProviderConfig() ProviderConfig {
+	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
+		model := os.Getenv("GEMINI_MODEL")
+		if model == "" {
+			model = "gemini-2.0-flash"
+		}
+		return ProviderConfig{
+			Type:    ProviderOpenAI,
+			BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+			APIKey:  key,
+			Model:   model,
+		}
+	}
+
+	if key := os.Getenv("GOOGLE_API_KEY"); key != "" {
+		model := os.Getenv("GEMINI_MODEL")
+		if model == "" {
+			model = "gemini-2.0-flash"
+		}
+		return ProviderConfig{
+			Type:    ProviderOpenAI,
+			BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+			APIKey:  key,
+			Model:   model,
+		}
+	}
+
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 		model := os.Getenv("ANTHROPIC_MODEL")
 		if model == "" {

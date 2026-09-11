@@ -247,7 +247,7 @@ func TestChaos_ReconnectMatrix24_7(t *testing.T) {
 				recordSeq(liveMsg.Event.Sequence)
 				desktop1EventCount++
 			}
-		} else if !strings.Contains(err.Error(), "timeout") {
+		} else {
 			break
 		}
 	}
@@ -289,7 +289,7 @@ func TestChaos_ReconnectMatrix24_7(t *testing.T) {
 				recordSeq(liveMsg.Event.Sequence)
 				mobileEventCount++
 			}
-		} else if !strings.Contains(err.Error(), "timeout") {
+		} else {
 			break
 		}
 	}

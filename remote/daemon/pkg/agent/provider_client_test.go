@@ -153,3 +153,22 @@ func TestHTTPProviderClient_Anthropic(t *testing.T) {
 		t.Errorf("unexpected tool call: %+v", resp.ToolCalls[0])
 	}
 }
+
+func TestAutoDetectProviderConfig_Gemini(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "AIzaSyFakeKey123")
+	t.Setenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+	cfg := agent.AutoDetectProviderConfig()
+	if cfg.Type != agent.ProviderOpenAI {
+		t.Errorf("expected ProviderOpenAI, got: %s", cfg.Type)
+	}
+	if cfg.APIKey != "AIzaSyFakeKey123" {
+		t.Errorf("expected APIKey AIzaSyFakeKey123, got: %s", cfg.APIKey)
+	}
+	if cfg.Model != "gemini-2.5-flash" {
+		t.Errorf("expected model gemini-2.5-flash, got: %s", cfg.Model)
+	}
+	if cfg.BaseURL != "https://generativelanguage.googleapis.com/v1beta/openai" {
+		t.Errorf("expected Gemini OpenAI baseURL, got: %s", cfg.BaseURL)
+	}
+}

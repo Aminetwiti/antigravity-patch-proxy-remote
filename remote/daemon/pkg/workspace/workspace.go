@@ -643,8 +643,12 @@ func (m *Manager) EnsureSessionWorktree(baseWsID, sessionID string) (*Workspace,
 		return m.EnsureSessionWorktree(childGitWs.ID, sessionID)
 	}
 
-	// Non-git directory: return base workspace
-	return baseWs, nil
+	// Non-git directory fallback: isolate session into dedicated folder under .antigravity/worktrees/session_<sessionID>
+	isolatedDir := filepath.Join(baseWs.Root, ".antigravity", "worktrees", fmt.Sprintf("session_%s", cleanID))
+	if err := os.MkdirAll(isolatedDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create isolated session directory: %w", err)
+	}
+	return m.RegisterWorkspace(shadowWsID, fmt.Sprintf("%s (Session %s)", baseWs.Name, sessionID), isolatedDir)
 }
 
 // AutoDiscoverWorkspaces scans the given root directory up to depth 2 looking for child Git repositories.

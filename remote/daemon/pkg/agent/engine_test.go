@@ -105,7 +105,11 @@ func TestAgentEngine_MultiStepLoop(t *testing.T) {
 	}
 
 	// Verify file was written to workspace
-	content, err := wsMgr.ReadFile(wsID, "greet.txt")
+	targetWsID := wsID
+	if shadowWs, sErr := wsMgr.EnsureSessionWorktree(wsID, sessID); sErr == nil {
+		targetWsID = shadowWs.ID
+	}
+	content, err := wsMgr.ReadFile(targetWsID, "greet.txt")
 	if err != nil {
 		t.Fatalf("expected greet.txt to exist: %v", err)
 	}
