@@ -339,6 +339,19 @@ func NewServer(client RPCClient, authToken string) *Server {
 		s.startTranscriptWatchdog()
 		s.startUploadReaper(2*time.Minute, 10*time.Minute)
 		StartScratchCleanupRoutine(context.Background(), 24*time.Hour, DefaultScratchMaxAge)
+		pool := GetGlobalAccountPool()
+		pool.StartWatchdog(context.Background(), 30*time.Second)
+		pool.SetOnAccountRecovered(func(acc AccountEntry) {
+			s.broadcast(OutgoingMessage{
+				Type: "account_recovered",
+				Data: map[string]interface{}{
+					"ok":       true,
+					"email":    acc.Email,
+					"status":   acc.Status,
+					"accounts": pool.ListAccounts(),
+				},
+			})
+		})
 	}
 	if flag.Lookup("test.v") == nil {
 		s.isIDERunning = true
@@ -7143,6 +7156,118 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		}
 		SetAccountPreferences(telemetry, marketing)
 		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"ok": true, "telemetryEnabled": telemetry, "marketingEmails": marketing}})
+		return
+
+	case "switch_account", "account.switch":
+		targetEmail := ""
+		if msg.Data != nil {
+			if em, ok := msg.Data["email"].(string); ok {
+				targetEmail = em
+			}
+		}
+		if targetEmail == "" {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "missing required 'email' parameter"})
+			return
+		}
+		pool := GetGlobalAccountPool()
+		acc, err := pool.SwitchAccount(targetEmail)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: err.Error()})
+			return
+		}
+		respData := map[string]interface{}{
+			"ok":       true,
+			"email":    acc.Email,
+			"status":   acc.Status,
+			"accounts": pool.ListAccounts(),
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: respData})
+		// Broadcast aux autres clients connectés
+		s.broadcast(OutgoingMessage{
+			Type: "account_switched",
+			Data: respData,
+		})
+		return
+
+	case "set_auto_rotate", "account.set_auto_rotate":
+		enabled := true
+		if msg.Data != nil {
+			if en, ok := msg.Data["enabled"].(bool); ok {
+				enabled = en
+			}
+		}
+		pool := GetGlobalAccountPool()
+		pool.SetAutoRotate(enabled)
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{
+			"ok":                true,
+			"autoRotateEnabled": enabled,
+		}})
+		return
+
+	case "rotate_account", "account.rotate":
+		reason := "manual"
+		if msg.Data != nil {
+			if r, ok := msg.Data["reason"].(string); ok && r != "" {
+				reason = r
+			}
+		}
+		pool := GetGlobalAccountPool()
+		acc, err := pool.RotateNext(reason)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: err.Error()})
+			return
+		}
+		respData := map[string]interface{}{
+			"ok":       true,
+			"email":    acc.Email,
+			"status":   acc.Status,
+			"accounts": pool.ListAccounts(),
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: respData})
+		s.broadcast(OutgoingMessage{
+			Type: "account_switched",
+			Data: respData,
+		})
+		return
+
+	case "select_best_account", "account.select_best":
+		modelName := ""
+		if msg.Data != nil {
+			if m, ok := msg.Data["model"].(string); ok {
+				modelName = m
+			}
+		}
+		pool := GetGlobalAccountPool()
+		acc, err := pool.SelectBestAccountForModel(modelName)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: err.Error()})
+			return
+		}
+		respData := map[string]interface{}{
+			"ok":       true,
+			"email":    acc.Email,
+			"status":   acc.Status,
+			"model":    modelName,
+			"quotas":   acc.Quotas,
+			"accounts": pool.ListAccounts(),
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: respData})
+		s.broadcast(OutgoingMessage{
+			Type: "account_switched",
+			Data: respData,
+		})
+		return
+
+	case "get_account_quotas", "account.get_quotas":
+		pool := GetGlobalAccountPool()
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"ok":       true,
+				"accounts": pool.ListAccounts(),
+			},
+		})
 		return
 
 	case "list_skills", "skills.list", "get_skills":

@@ -127,15 +127,164 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Verify switches
+    // Verify switches (telemetry, marketing, auto-rotate)
     final switches = find.byType(Switch);
-    expect(switches, findsNWidgets(2));
+    expect(switches, findsNWidgets(3));
 
     // Toggle marketing emails (second switch)
     await tester.tap(switches.at(1));
     await tester.pumpAndSettle();
 
     expect(sent.any((m) => m['type'] == 'set_account_preferences'), isTrue);
+
+    api.dispose();
+    await ctrl.close();
+  });
+
+  testWidgets('AccountSettingsSection displays multi-account pool and switches active account', (WidgetTester tester) async {
+    final ctrl = StreamController<dynamic>.broadcast();
+    final sent = <Map<String, dynamic>>[];
+
+    final api = DaemonApi(
+      incoming: ctrl.stream,
+      send: (d) {
+        final map = d as Map<String, dynamic>;
+        sent.add(map);
+        final reqId = map['requestId'] as String?;
+        final type = map['type'] as String?;
+        if (reqId != null && type == 'get_account_info') {
+          scheduleMicrotask(() {
+            if (!ctrl.isClosed) {
+              ctrl.add(jsonEncode({
+                'type': 'response',
+                'requestId': reqId,
+                'data': {
+                  'email': 'alpha@example.com',
+                  'plan': 'Google AI Pro',
+                  'autoRotateEnabled': true,
+                  'accounts': [
+                    {'email': 'alpha@example.com', 'isActive': true, 'status': 'active'},
+                    {'email': 'beta@example.com', 'isActive': false, 'status': 'standby'},
+                  ],
+                },
+              }));
+            }
+          });
+        } else if (reqId != null && type == 'switch_account') {
+          scheduleMicrotask(() {
+            if (!ctrl.isClosed) {
+              ctrl.add(jsonEncode({
+                'type': 'response',
+                'requestId': reqId,
+                'data': {
+                  'ok': true,
+                  'email': map['email'] ?? map['data']?['email'],
+                },
+              }));
+            }
+          });
+        }
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AccountSettingsSection(api: api),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pool Multi-Comptes'), findsOneWidget);
+    expect(find.text('2 comptes'), findsOneWidget);
+    expect(find.text('alpha@example.com'), findsNWidgets(2)); // in header + pool
+    expect(find.text('beta@example.com'), findsOneWidget);
+
+    // Tap on Activer for beta@example.com
+    final activateBtn = find.widgetWithText(OutlinedButton, 'Activer');
+    expect(activateBtn, findsOneWidget);
+    await tester.tap(activateBtn);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 4));
+
+    expect(sent.any((m) => m['type'] == 'switch_account' && (m['email'] == 'beta@example.com' || m['data']?['email'] == 'beta@example.com')), isTrue);
+
+    api.dispose();
+    await ctrl.close();
+  });
+
+  testWidgets('AccountSettingsSection displays model quotas and triggers optimize best account', (WidgetTester tester) async {
+    final ctrl = StreamController<dynamic>.broadcast();
+    final sent = <Map<String, dynamic>>[];
+
+    final api = DaemonApi(
+      incoming: ctrl.stream,
+      send: (d) {
+        final map = d as Map<String, dynamic>;
+        sent.add(map);
+        final reqId = map['requestId'] as String?;
+        final type = map['type'] as String?;
+        if (reqId != null && type == 'get_account_info') {
+          scheduleMicrotask(() {
+            if (!ctrl.isClosed) {
+              ctrl.add(jsonEncode({
+                'type': 'response',
+                'requestId': reqId,
+                'data': {
+                  'email': 'alpha@example.com',
+                  'plan': 'Google AI Pro',
+                  'autoRotateEnabled': true,
+                  'accounts': [
+                    {
+                      'email': 'alpha@example.com',
+                      'isActive': true,
+                      'status': 'active',
+                      'quotas': [
+                        {'name': 'gemini-2.5-pro', 'displayName': 'Gemini 2.5 Pro', 'percentage': 100},
+                        {'name': 'claude-sonnet-4-6', 'displayName': 'Claude Sonnet 4.6', 'percentage': 95},
+                      ],
+                    },
+                  ],
+                },
+              }));
+            }
+          });
+        } else if (reqId != null && type == 'select_best_account') {
+          scheduleMicrotask(() {
+            if (!ctrl.isClosed) {
+              ctrl.add(jsonEncode({
+                'type': 'response',
+                'requestId': reqId,
+                'data': {
+                  'ok': true,
+                  'email': 'alpha@example.com',
+                },
+              }));
+            }
+          });
+        }
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AccountSettingsSection(api: api),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Optimiser'), findsOneWidget);
+    expect(find.text('Pro 100%'), findsOneWidget);
+    expect(find.text('Claude 95%'), findsOneWidget);
+
+    await tester.tap(find.text('Optimiser'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 4));
+
+    expect(sent.any((m) => m['type'] == 'select_best_account'), isTrue);
 
     api.dispose();
     await ctrl.close();

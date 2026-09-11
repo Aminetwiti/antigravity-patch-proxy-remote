@@ -879,6 +879,121 @@ func (h *RESTHandler) HandleDiscardShadowWorktree(w http.ResponseWriter, r *http
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
+func (h *RESTHandler) HandleCreatePullRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		WorkspaceID string `json:"workspaceId"`
+		SessionID   string `json:"sessionId"`
+		Title       string `json:"title"`
+		Body        string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	if body.WorkspaceID == "" {
+		body.WorkspaceID = "default"
+	}
+	res, err := h.wsMgr.CreatePullRequest(body.WorkspaceID, body.SessionID, body.Title, body.Body)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (h *RESTHandler) HandleCloneWorkspace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		RepoURL string `json:"repoUrl"`
+		Branch  string `json:"branch"`
+		Name    string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	ws, err := h.wsMgr.CloneWorkspace(body.RepoURL, body.Branch, body.Name)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ws)
+}
+
+func (h *RESTHandler) HandlePruneWorktrees(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		MaxAgeHours int `json:"maxAgeHours"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	maxAge := 24 * time.Hour
+	if body.MaxAgeHours > 0 {
+		maxAge = time.Duration(body.MaxAgeHours) * time.Hour
+	}
+	res, err := h.wsMgr.PruneStaleWorktrees(maxAge)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (h *RESTHandler) HandleVerifyProject(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		WorkspaceID string `json:"workspaceId"`
+		TimeoutSec  int    `json:"timeoutSec"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	if body.WorkspaceID == "" {
+		body.WorkspaceID = "default"
+	}
+	timeout := 90 * time.Second
+	if body.TimeoutSec > 0 {
+		timeout = time.Duration(body.TimeoutSec) * time.Second
+	}
+	res, err := h.wsMgr.VerifyProject(body.WorkspaceID, timeout)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
 func (h *RESTHandler) HandleSessionTelemetry(w http.ResponseWriter, r *http.Request) {
 	sessID := r.URL.Query().Get("id")
 	if sessID == "" {
@@ -1338,6 +1453,10 @@ func NewMuxWithRBAC(rt *RuntimeServer, wsMgr *workspace.Manager, rbacMgr *auth.R
 	mux.HandleFunc("/v2/workspaces/sync", rest.AuthMiddleware(rest.HandleWorkspaceSync))
 	mux.HandleFunc("/v2/workspaces/shadow/promote", rest.AuthMiddleware(rest.HandlePromoteShadowWorktree))
 	mux.HandleFunc("/v2/workspaces/shadow/discard", rest.AuthMiddleware(rest.HandleDiscardShadowWorktree))
+	mux.HandleFunc("/v2/workspaces/clone", rest.AuthMiddleware(rest.HandleCloneWorkspace))
+	mux.HandleFunc("/v2/workspaces/pr", rest.AuthMiddleware(rest.HandleCreatePullRequest))
+	mux.HandleFunc("/v2/workspaces/verify", rest.AuthMiddleware(rest.HandleVerifyProject))
+	mux.HandleFunc("/v2/workspaces/worktrees/prune", rest.AuthMiddleware(rest.HandlePruneWorktrees))
 	mux.HandleFunc("/v2/sessions/telemetry", rest.AuthMiddleware(rest.HandleSessionTelemetry))
 
 	// Session Git shortcuts

@@ -40,6 +40,8 @@ func TestRegistry_RegistrationAndListing(t *testing.T) {
 		"replace_file_content": false,
 		"list_dir":             false,
 		"grep_search":          false,
+		"verify_project":       false,
+		"create_pull_request":  false,
 	}
 
 	for _, tl := range toolList {
@@ -203,3 +205,46 @@ func TestRegistry_SandboxDelegation(t *testing.T) {
 		t.Errorf("unexpected streamed chunks: %q", streamed)
 	}
 }
+
+func TestRegistry_VerifyProjectTool(t *testing.T) {
+	reg, _, wsID := setupTestTools(t)
+	ctx := context.Background()
+
+	tool, ok := reg.GetTool("verify_project")
+	if !ok {
+		t.Fatalf("verify_project tool not found")
+	}
+	if tool.RequiresApproval(nil) {
+		t.Errorf("verify_project should not require approval")
+	}
+
+	res, err := reg.Execute(ctx, "sess-vp", wsID, "verify_project", json.RawMessage(`{"timeoutSec":10}`), nil)
+	if err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if !res.Success {
+		t.Errorf("expected verify_project to pass on empty/unknown workspace: %s", res.Output)
+	}
+}
+
+func TestRegistry_CreatePullRequestTool(t *testing.T) {
+	reg, _, wsID := setupTestTools(t)
+
+	tool, ok := reg.GetTool("create_pull_request")
+	if !ok {
+		t.Fatalf("create_pull_request tool not found")
+	}
+	if !tool.RequiresApproval(nil) {
+		t.Errorf("create_pull_request must require approval")
+	}
+
+	// Executing without valid git origin should return gracefully with error inside ToolResult
+	res, err := reg.Execute(context.Background(), "sess-cpr", wsID, "create_pull_request", json.RawMessage(`{"title":"feat: test pr"}`), nil)
+	if err != nil {
+		t.Fatalf("execute returned unexpected fatal error: %v", err)
+	}
+	if res.Success {
+		t.Errorf("expected failure on non-git workspace")
+	}
+}
+

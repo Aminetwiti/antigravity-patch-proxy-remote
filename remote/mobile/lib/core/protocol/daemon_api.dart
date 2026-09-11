@@ -354,11 +354,13 @@ class DaemonApi {
       return await rpc('get_account_info');
     } catch (_) {
       return const {
-        'email': 'lesjardindelavie@gmail.com',
+        'email': 'account@antigravity.local',
         'plan': 'Google AI Pro',
         'planDisplayName': 'Google AI Pro Plan',
         'telemetryEnabled': true,
         'marketingEmails': false,
+        'accounts': <Map<String, dynamic>>[],
+        'autoRotateEnabled': true,
       };
     }
   }
@@ -371,6 +373,26 @@ class DaemonApi {
       if (telemetryEnabled != null) 'telemetryEnabled': telemetryEnabled,
       if (marketingEmails != null) 'marketingEmails': marketingEmails,
     });
+  }
+
+  Future<Map<String, dynamic>> switchAccount(String email) async {
+    return await rpc('switch_account', {'email': email});
+  }
+
+  Future<Map<String, dynamic>> setAutoRotate(bool enabled) async {
+    return await rpc('set_auto_rotate', {'enabled': enabled});
+  }
+
+  Future<Map<String, dynamic>> rotateAccount({String reason = 'manual'}) async {
+    return await rpc('rotate_account', {'reason': reason});
+  }
+
+  Future<Map<String, dynamic>> selectBestAccount({String model = ''}) async {
+    return await rpc('select_best_account', {'model': model});
+  }
+
+  Future<Map<String, dynamic>> getAccountQuotas() async {
+    return await rpc('get_account_quotas');
   }
 
   Future<List<Map<String, dynamic>>> listSkills() async {

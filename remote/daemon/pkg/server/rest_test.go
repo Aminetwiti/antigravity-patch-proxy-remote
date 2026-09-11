@@ -434,3 +434,38 @@ func TestREST_WorkspaceFileTreeAndSync(t *testing.T) {
 		t.Fatalf("expected 400 on bad sync body, got %d", badSyncW.Code)
 	}
 }
+
+func TestREST_AutonomousLifecycleEndpoints(t *testing.T) {
+	mux, cleanup := setupMuxTest(t, "token-lifecycle")
+	defer cleanup()
+
+	// 1. POST /v2/workspaces/verify -> 200 OK
+	verifyBody := []byte(`{"workspaceId": "default", "timeoutSec": 5}`)
+	verifyReq := httptest.NewRequest("POST", "/v2/workspaces/verify?token=token-lifecycle", bytes.NewReader(verifyBody))
+	verifyW := httptest.NewRecorder()
+	mux.ServeHTTP(verifyW, verifyReq)
+
+	if verifyW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on verify, got %d: %s", verifyW.Code, verifyW.Body.String())
+	}
+
+	// 2. POST /v2/workspaces/worktrees/prune -> 200 OK
+	pruneBody := []byte(`{"maxAgeHours": 1}`)
+	pruneReq := httptest.NewRequest("POST", "/v2/workspaces/worktrees/prune?token=token-lifecycle", bytes.NewReader(pruneBody))
+	pruneW := httptest.NewRecorder()
+	mux.ServeHTTP(pruneW, pruneReq)
+
+	if pruneW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on prune, got %d: %s", pruneW.Code, pruneW.Body.String())
+	}
+
+	// 3. POST /v2/workspaces/clone with invalid json -> 400
+	cloneReq := httptest.NewRequest("POST", "/v2/workspaces/clone?token=token-lifecycle", bytes.NewReader([]byte("{bad-json")))
+	cloneW := httptest.NewRecorder()
+	mux.ServeHTTP(cloneW, cloneReq)
+
+	if cloneW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on bad clone body, got %d", cloneW.Code)
+	}
+}
+

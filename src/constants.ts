@@ -24,6 +24,12 @@ export const DEFAULT_BIND_HOST = getEnvString('AG_BIND_HOST', '127.0.0.1');
 /** Default host for remote runtime connection. Configurable via AG_REMOTE_HOST. */
 export const DEFAULT_REMOTE_HOST = getEnvString('AG_REMOTE_HOST', '127.0.0.1');
 
+// ─── Multi-Account Pool Environment Variables ─────────────────────────────
+export const ENV_ACCOUNTS_JSON = 'AG_ACCOUNTS_JSON';
+export const ENV_ACCOUNTS_FILE = 'AG_ACCOUNTS_FILE';
+export const ENV_ACTIVE_ACCOUNT = 'AG_ACTIVE_ACCOUNT';
+export const ENV_AUTO_ROTATE = 'AG_AUTO_ROTATE';
+
 /** Origin used by the main BrowserWindow. */
 export const WINDOW_ORIGIN = `https://${DEFAULT_BIND_HOST}`;
 

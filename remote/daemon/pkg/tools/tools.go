@@ -140,6 +140,8 @@ func (r *Registry) registerDefaults() {
 	r.tools["invoke_subagent"] = NewInvokeSubagentTool(nil)
 	r.tools["web_search"] = NewWebSearchTool()
 	r.tools["fetch_web_page"] = NewFetchWebPageTool()
+	r.tools["verify_project"] = &VerifyProjectTool{wsMgr: r.wsMgr}
+	r.tools["create_pull_request"] = &CreatePullRequestTool{wsMgr: r.wsMgr}
 }
 
 // -----------------------------------------------------------------------------
@@ -572,6 +574,116 @@ func (t *GrepSearchTool) Execute(ctx context.Context, sessionID, workspaceID str
 		onChunk([]byte(out))
 	}
 	return &ToolResult{Success: true, Output: out}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Built-in Tool: verify_project
+// -----------------------------------------------------------------------------
+
+type VerifyProjectTool struct {
+	wsMgr *workspace.Manager
+}
+
+func (t *VerifyProjectTool) Name() string { return "verify_project" }
+func (t *VerifyProjectTool) Description() string {
+	return "Automatically detects project ecosystem (Go, Node, Python, Rust) and runs the test suite in the workspace, returning test outputs for self-healing."
+}
+
+func (t *VerifyProjectTool) ParametersSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"timeoutSec": map[string]interface{}{"type": "integer", "description": "Timeout in seconds (default: 90)."},
+		},
+	}
+}
+
+func (t *VerifyProjectTool) RequiresApproval(params json.RawMessage) bool {
+	return false // Running tests is safe and read-only
+}
+
+func (t *VerifyProjectTool) Execute(ctx context.Context, sessionID, workspaceID string, params json.RawMessage, onChunk func(chunk []byte)) (*ToolResult, error) {
+	if t.wsMgr == nil {
+		return &ToolResult{Success: false, Error: "workspace manager not configured"}, nil
+	}
+	timeout := 90 * time.Second
+	var p struct {
+		TimeoutSec int `json:"timeoutSec"`
+	}
+	_ = json.Unmarshal(params, &p)
+	if p.TimeoutSec > 0 {
+		timeout = time.Duration(p.TimeoutSec) * time.Second
+	}
+	res, err := t.wsMgr.VerifyProject(workspaceID, timeout)
+	if err != nil {
+		return &ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	out, _ := json.MarshalIndent(res, "", "  ")
+	if onChunk != nil {
+		onChunk(out)
+	}
+	exitCode := 0
+	if !res.Passed {
+		exitCode = 1
+	}
+	return &ToolResult{
+		Success:  res.Passed,
+		Output:   string(out),
+		ExitCode: exitCode,
+	}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Built-in Tool: create_pull_request
+// -----------------------------------------------------------------------------
+
+type CreatePullRequestTool struct {
+	wsMgr *workspace.Manager
+}
+
+func (t *CreatePullRequestTool) Name() string { return "create_pull_request" }
+func (t *CreatePullRequestTool) Description() string {
+	return "Pushes the current session shadow branch to origin and creates a GitHub Pull Request (or 1-click comparison URL)."
+}
+
+func (t *CreatePullRequestTool) ParametersSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"title": map[string]interface{}{"type": "string", "description": "Pull request title."},
+			"body":  map[string]interface{}{"type": "string", "description": "Pull request description / changelog."},
+		},
+		"required": []string{"title"},
+	}
+}
+
+func (t *CreatePullRequestTool) RequiresApproval(params json.RawMessage) bool {
+	return true // Pushing and creating PR requires user confirmation
+}
+
+func (t *CreatePullRequestTool) Execute(ctx context.Context, sessionID, workspaceID string, params json.RawMessage, onChunk func(chunk []byte)) (*ToolResult, error) {
+	if t.wsMgr == nil {
+		return &ToolResult{Success: false, Error: "workspace manager not configured"}, nil
+	}
+	var p struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+	res, err := t.wsMgr.CreatePullRequest(workspaceID, sessionID, p.Title, p.Body)
+	if err != nil {
+		return &ToolResult{Success: false, Error: err.Error()}, nil
+	}
+	out, _ := json.MarshalIndent(res, "", "  ")
+	if onChunk != nil {
+		onChunk(out)
+	}
+	return &ToolResult{
+		Success: res.Success,
+		Output:  string(out),
+	}, nil
 }
 
 // Ensure bufio is imported for potential streaming line reads
