@@ -161,6 +161,10 @@ func (e *Engine) StartTurn(ctx context.Context, sessionID, prompt string) error 
 		return err
 	}
 
+	if domain.IsTerminalState(sess.State) {
+		return fmt.Errorf("cannot start turn on terminal session %s (state=%s): %w", sessionID, sess.State, domain.ErrSessionTerminal)
+	}
+
 	e.mu.Lock()
 	if _, active := e.turnCancels[sessionID]; active {
 		e.mu.Unlock()
@@ -185,8 +189,15 @@ func (e *Engine) StartTurn(ctx context.Context, sessionID, prompt string) error 
 		_, _ = e.sessionSvc.EmitEvent(turnCtx, sessionID, "user.message", payload)
 	}
 
+	effectiveWsID := sess.WorkspaceID
+	if e.wsMgr != nil {
+		if sws, err := e.wsMgr.EnsureSessionWorktree(sess.WorkspaceID, sessionID); err == nil && sws != nil {
+			effectiveWsID = sws.ID
+		}
+	}
+
 	// 3. Launch background execution loop in isolated goroutine (survives client disconnection)
-	go e.runExecutionLoop(turnCtx, sessionID, sess.WorkspaceID)
+	go e.runExecutionLoop(turnCtx, sessionID, effectiveWsID, sess.WorkspaceID)
 
 	return nil
 }
@@ -205,7 +216,7 @@ func (e *Engine) CancelTurn(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID string) {
+func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, effectiveWsID, baseWsID string) {
 	defer func() {
 		e.mu.Lock()
 		delete(e.turnCancels, sessionID)
@@ -299,7 +310,7 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 		// If no tool calls or explicitly done -> turn complete
 		if len(resp.ToolCalls) == 0 || resp.Done {
 			// Staff Engineer Git policy: local commit on session branch, push is controlled by policy
-			e.checkpointGitPolicy(ctx, sessionID, workspaceID, workspaceID, turn, resp.Message)
+			e.checkpointGitPolicy(ctx, sessionID, effectiveWsID, baseWsID, turn, resp.Message)
 
 			completePayload, _ := json.Marshal(map[string]interface{}{
 				"summary": resp.Message,
@@ -347,7 +358,7 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 				e.sessionSvc.EmitEphemeralEvent(sessionID, "tool.output", chunkPayload)
 			}
 
-			result, execErr := e.toolsReg.Execute(ctx, sessionID, workspaceID, tc.Name, tc.Arguments, onOutputChunk)
+			result, execErr := e.toolsReg.Execute(ctx, sessionID, effectiveWsID, tc.Name, tc.Arguments, onOutputChunk)
 			if execErr != nil {
 				result = &tools.ToolResult{Success: false, Error: execErr.Error()}
 			}
@@ -375,7 +386,7 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 	}
 
 	// Reached max turns without completion
-	e.checkpointGitPolicy(ctx, sessionID, workspaceID, workspaceID, e.maxTurns, "max turns reached")
+	e.checkpointGitPolicy(ctx, sessionID, effectiveWsID, baseWsID, e.maxTurns, "max turns reached")
 	_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "agent.max_turns", []byte(`{"status":"limit_reached"}`))
 	_ = e.sessionSvc.TransitionState(ctx, sessionID, domain.SessionStateWaitingInput, "Max turn limit reached")
 }

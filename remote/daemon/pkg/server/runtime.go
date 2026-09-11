@@ -513,12 +513,17 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		return r.sendAck(conn, env.RequestID, env.SessionID, nil)
 
 	case protocol.TypeSessionPrompt:
+		sess, err := r.store.GetSession(ctx, env.SessionID)
+		if err != nil {
+			return r.sendError(conn, env.RequestID, fmt.Sprintf("session not found: %v", err))
+		}
+		if domain.IsTerminalState(sess.State) {
+			return r.sendError(conn, env.RequestID, fmt.Sprintf("cannot prompt terminal session: state is %s", sess.State))
+		}
 		if r.rbacMgr != nil {
-			if sess, err := r.store.GetSession(ctx, env.SessionID); err == nil {
-				ident := r.getClientIdentity(conn)
-				if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
-					return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
-				}
+			ident := r.getClientIdentity(conn)
+			if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
+				return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
 			}
 		}
 		if err := r.sessionSvc.CheckAndRegisterCommand(env.RequestID, env.SessionID, env.Payload); err != nil {
@@ -537,10 +542,13 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		}
 
 		if r.agentEng != nil {
-			if err := r.agentEng.StartTurn(ctx, env.SessionID, promptText); err != nil {
-				return r.sendError(conn, env.RequestID, err.Error())
+			if err := r.sendAck(conn, env.RequestID, env.SessionID, []byte(`{"status":"turn_started"}`)); err != nil {
+				return err
 			}
-			return r.sendAck(conn, env.RequestID, env.SessionID, []byte(`{"status":"turn_started"}`))
+			go func() {
+				_ = r.agentEng.StartTurn(context.Background(), env.SessionID, promptText)
+			}()
+			return nil
 		}
 
 		ev, err := r.sessionSvc.EmitEvent(ctx, env.SessionID, "user.message", env.Payload)
@@ -562,8 +570,11 @@ func (r *RuntimeServer) HandleClientMessage(conn *websocket.Conn, msgBytes []byt
 		if ident.Role == auth.RoleReadOnly {
 			return r.sendError(conn, env.RequestID, "forbidden: read-only role cannot resolve approvals")
 		}
-		if r.rbacMgr != nil {
-			if sess, err := r.store.GetSession(ctx, env.SessionID); err == nil {
+		if sess, err := r.store.GetSession(ctx, env.SessionID); err == nil {
+			if domain.IsTerminalState(sess.State) {
+				return r.sendError(conn, env.RequestID, fmt.Sprintf("cannot resolve approval: session is %s", sess.State))
+			}
+			if r.rbacMgr != nil {
 				if !r.rbacMgr.CanMutateSession(ident, sess.OwnerID) {
 					return r.sendError(conn, env.RequestID, "forbidden: cannot mutate session owned by another user")
 				}

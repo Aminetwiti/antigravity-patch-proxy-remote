@@ -28,6 +28,7 @@ type EventStore interface {
 	ListSessions(ctx context.Context) ([]domain.Session, error)
 	UpdateSessionState(ctx context.Context, sessionID string, state domain.SessionState) error
 	UpdateSessionStateWithVersion(ctx context.Context, sessionID string, state domain.SessionState, expectedVersion int64) error
+	UpdateSessionLineage(ctx context.Context, sessionID, baseCommit, baseBranch, originCommit string) error
 	AppendEvent(ctx context.Context, sessionID, eventID, eventType string, payload []byte) (*domain.Event, error)
 	AppendBatch(ctx context.Context, sessionID string, events []domain.Event) ([]domain.Event, error)
 	GetEventsSince(ctx context.Context, sessionID string, sinceSeq int64, limit int) ([]domain.Event, error)
@@ -115,6 +116,9 @@ func (s *SQLiteEventStore) InitSchema(ctx context.Context) error {
 		state TEXT NOT NULL,
 		version INTEGER NOT NULL DEFAULT 1,
 		last_sequence INTEGER NOT NULL DEFAULT 0,
+		base_commit TEXT DEFAULT '',
+		base_branch TEXT DEFAULT '',
+		origin_commit TEXT DEFAULT '',
 		created_at INTEGER NOT NULL,
 		updated_at INTEGER NOT NULL
 	);
@@ -181,6 +185,9 @@ func (s *SQLiteEventStore) InitSchema(ctx context.Context) error {
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE scheduled_jobs ADD COLUMN owner_id TEXT DEFAULT '';")
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE scheduled_jobs ADD COLUMN session_id TEXT DEFAULT '';")
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN version INTEGER NOT NULL DEFAULT 1;")
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN base_commit TEXT DEFAULT '';")
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN base_branch TEXT DEFAULT '';")
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN origin_commit TEXT DEFAULT '';")
 	return nil
 }
 
@@ -196,8 +203,8 @@ func (s *SQLiteEventStore) CreateSession(ctx context.Context, sess *domain.Sessi
 	}
 
 	query := `
-	INSERT INTO sessions (id, server_id, workspace_id, owner_id, title, state, version, last_sequence, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	INSERT INTO sessions (id, server_id, workspace_id, owner_id, title, state, version, last_sequence, base_commit, base_branch, origin_commit, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`
 	_, err := s.db.ExecContext(ctx, query,
 		sess.ID,
@@ -208,6 +215,9 @@ func (s *SQLiteEventStore) CreateSession(ctx context.Context, sess *domain.Sessi
 		string(sess.State),
 		sess.Version,
 		sess.LastSequence,
+		sess.BaseCommit,
+		sess.BaseBranch,
+		sess.OriginCommit,
 		sess.CreatedAt.UnixMilli(),
 		sess.UpdatedAt.UnixMilli(),
 	)
@@ -216,7 +226,7 @@ func (s *SQLiteEventStore) CreateSession(ctx context.Context, sess *domain.Sessi
 
 func (s *SQLiteEventStore) GetSession(ctx context.Context, sessionID string) (*domain.Session, error) {
 	query := `
-	SELECT id, server_id, workspace_id, owner_id, title, state, version, last_sequence, created_at, updated_at
+	SELECT id, server_id, workspace_id, owner_id, title, state, version, last_sequence, base_commit, base_branch, origin_commit, created_at, updated_at
 	FROM sessions WHERE id = ?;
 	`
 	row := s.db.QueryRowContext(ctx, query, sessionID)
@@ -234,6 +244,9 @@ func (s *SQLiteEventStore) GetSession(ctx context.Context, sessionID string) (*d
 		&stateStr,
 		&sess.Version,
 		&sess.LastSequence,
+		&sess.BaseCommit,
+		&sess.BaseBranch,
+		&sess.OriginCommit,
 		&createdMs,
 		&updatedMs,
 	)
@@ -253,7 +266,7 @@ func (s *SQLiteEventStore) GetSession(ctx context.Context, sessionID string) (*d
 
 func (s *SQLiteEventStore) ListSessions(ctx context.Context) ([]domain.Session, error) {
 	query := `
-	SELECT id, server_id, workspace_id, owner_id, title, state, version, last_sequence, created_at, updated_at
+	SELECT id, server_id, workspace_id, owner_id, title, state, version, last_sequence, base_commit, base_branch, origin_commit, created_at, updated_at
 	FROM sessions ORDER BY updated_at DESC;
 	`
 	rows, err := s.db.QueryContext(ctx, query)
@@ -277,6 +290,9 @@ func (s *SQLiteEventStore) ListSessions(ctx context.Context) ([]domain.Session, 
 			&stateStr,
 			&sess.Version,
 			&sess.LastSequence,
+			&sess.BaseCommit,
+			&sess.BaseBranch,
+			&sess.OriginCommit,
 			&createdMs,
 			&updatedMs,
 		); err != nil {
@@ -290,6 +306,16 @@ func (s *SQLiteEventStore) ListSessions(ctx context.Context) ([]domain.Session, 
 	}
 
 	return sessions, rows.Err()
+}
+
+func (s *SQLiteEventStore) UpdateSessionLineage(ctx context.Context, sessionID, baseCommit, baseBranch, originCommit string) error {
+	query := `
+	UPDATE sessions
+	SET base_commit = ?, base_branch = ?, origin_commit = ?, updated_at = ?
+	WHERE id = ?;
+	`
+	_, err := s.db.ExecContext(ctx, query, baseCommit, baseBranch, originCommit, time.Now().UnixMilli(), sessionID)
+	return err
 }
 
 func (s *SQLiteEventStore) UpdateSessionState(ctx context.Context, sessionID string, newState domain.SessionState) error {

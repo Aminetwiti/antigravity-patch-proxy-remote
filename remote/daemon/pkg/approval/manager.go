@@ -108,7 +108,6 @@ func (m *Manager) RequestApproval(ctx context.Context, sessionID, toolName strin
 	var resp ApprovalResponse
 	select {
 	case <-ctx.Done():
-		m.restoreRunningState(ctx, sessionID, "Approval aborted due to context cancellation")
 		return false, ctx.Err()
 
 	case <-timer.C:

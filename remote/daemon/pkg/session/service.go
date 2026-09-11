@@ -146,6 +146,10 @@ func (s *Service) CreateSessionWithOwner(ctx context.Context, serverID, workspac
 	return sess, nil
 }
 
+func (s *Service) UpdateSessionLineage(ctx context.Context, sessionID, baseCommit, baseBranch, originCommit string) error {
+	return s.store.UpdateSessionLineage(ctx, sessionID, baseCommit, baseBranch, originCommit)
+}
+
 func (s *Service) GetSession(ctx context.Context, sessionID string) (*domain.Session, error) {
 	return s.store.GetSession(ctx, sessionID)
 }

@@ -92,6 +92,33 @@ func ResolveAndValidatePath(workspaceRoot, targetPath string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrPathOutsideRoot, targetPath)
 	}
 
+	// Symlink escape guardrail: verify resolved canonical physical path remains within canonical root
+	realRoot, errRoot := filepath.EvalSymlinks(cleanRoot)
+	if errRoot != nil {
+		realRoot = cleanRoot
+	}
+	realTarget, errTarget := filepath.EvalSymlinks(resolved)
+	if errTarget != nil {
+		// Target may not exist yet (e.g. WriteFile creating a new file). Walk up to deepest existing ancestor.
+		parent := filepath.Dir(resolved)
+		for parent != filepath.Dir(parent) {
+			if realParent, pErr := filepath.EvalSymlinks(parent); pErr == nil {
+				relToParent, _ := filepath.Rel(parent, resolved)
+				realTarget = filepath.Join(realParent, relToParent)
+				break
+			}
+			parent = filepath.Dir(parent)
+		}
+		if realTarget == "" {
+			realTarget = resolved
+		}
+	}
+
+	relReal, errReal := filepath.Rel(realRoot, realTarget)
+	if errReal != nil || relReal == ".." || strings.HasPrefix(relReal, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: %s", ErrPathOutsideRoot, targetPath)
+	}
+
 	return resolved, nil
 }
 
@@ -410,6 +437,22 @@ func (m *Manager) CurrentBranch(workspaceID string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// GetGitHead returns the current Git HEAD commit hash of the workspace.
+func (m *Manager) GetGitHead(workspaceID string) (string, error) {
+	ws, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = ws.Root
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse HEAD failed: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // CreateWorktree creates an isolated Git worktree on a new or existing branch.
 func (m *Manager) CreateWorktree(baseWsID, branch, newWsID string) (*Workspace, error) {
 	baseWs, err := m.GetWorkspace(baseWsID)
@@ -501,6 +544,37 @@ func (m *Manager) CreateShadowWorktree(baseWsID, sessionID string) (*Workspace, 
 	}
 
 	return ws, cleanup, nil
+}
+
+// EnsureSessionWorktree guarantees an isolated shadow Git worktree for the session.
+// If the base workspace is a Git repository, it creates or returns the dedicated shadow worktree
+// on branch agent/shadow_<sessionID>. If the base workspace is not a Git repo or worktree creation fails,
+// it falls back cleanly to the base workspace.
+func (m *Manager) EnsureSessionWorktree(baseWsID, sessionID string) (*Workspace, error) {
+	if sessionID == "" {
+		return m.GetWorkspace(baseWsID)
+	}
+	baseWs, err := m.GetWorkspace(baseWsID)
+	if err != nil {
+		return nil, err
+	}
+
+	cleanID := strings.ReplaceAll(sessionID, "-", "_")
+	shadowBranch := fmt.Sprintf("agent/shadow_%s", cleanID)
+	shadowWsID := fmt.Sprintf("shadow_%s_%s", baseWs.ID, cleanID)
+
+	// If already created/registered in memory, return it directly
+	if existingWs, err := m.GetWorkspace(shadowWsID); err == nil {
+		return existingWs, nil
+	}
+
+	// Try to create the worktree
+	ws, err := m.CreateWorktree(baseWs.ID, shadowBranch, shadowWsID)
+	if err != nil {
+		// Non-git directory or worktree error: return base workspace
+		return baseWs, nil
+	}
+	return ws, nil
 }
 
 // ShadowPromoteResult encapsulates the outcome of merging an ephemeral shadow worktree into the main workspace.

@@ -159,6 +159,16 @@ func (h *RESTHandler) HandleCreateSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if h.wsMgr != nil && body.WorkspaceID != "" {
+		if head, errHead := h.wsMgr.GetGitHead(body.WorkspaceID); errHead == nil && head != "" {
+			sess.BaseCommit = head
+		}
+		if branch, errBranch := h.wsMgr.CurrentBranch(body.WorkspaceID); errBranch == nil && branch != "" {
+			sess.BaseBranch = branch
+		}
+		_ = h.rt.SessionService().UpdateSessionLineage(ctx, sess.ID, sess.BaseCommit, sess.BaseBranch, "")
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(sess)

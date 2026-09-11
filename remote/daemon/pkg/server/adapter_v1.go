@@ -63,6 +63,7 @@ type V1Adapter struct {
 	mu          sync.Mutex
 	connections map[*websocket.Conn]bool
 	writeLocks  map[*websocket.Conn]*sync.Mutex
+	clientSessions map[*websocket.Conn]string
 
 	// activePrompts tracks running prompts mapped to client requestIDs
 	activePrompts map[string]string // sessionID -> requestID
@@ -93,9 +94,10 @@ func NewV1Adapter(
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
-		connections:   make(map[*websocket.Conn]bool),
-		writeLocks:    make(map[*websocket.Conn]*sync.Mutex),
-		activePrompts: make(map[string]string),
+		connections:    make(map[*websocket.Conn]bool),
+		writeLocks:     make(map[*websocket.Conn]*sync.Mutex),
+		clientSessions: make(map[*websocket.Conn]string),
+		activePrompts:  make(map[string]string),
 	}
 }
 
@@ -131,6 +133,7 @@ func (a *V1Adapter) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
 		delete(a.connections, conn)
 		delete(a.writeLocks, conn)
+		delete(a.clientSessions, conn)
 		a.mu.Unlock()
 		conn.Close()
 	}()
@@ -171,6 +174,12 @@ func (a *V1Adapter) broadcast(msg V1OutgoingMessage) {
 	a.mu.Lock()
 	conns := make([]*websocket.Conn, 0, len(a.connections))
 	for c := range a.connections {
+		// Strict session isolation for streaming deltas: only deliver to connections bound to this CascadeID
+		if msg.CascadeID != "" && msg.Type == "stream_delta" {
+			if boundSess, ok := a.clientSessions[c]; ok && boundSess != "" && boundSess != msg.CascadeID {
+				continue
+			}
+		}
 		conns = append(conns, c)
 	}
 	a.mu.Unlock()
@@ -244,6 +253,9 @@ func (a *V1Adapter) handleAction(conn *websocket.Conn, msg V1IncomingMessage) {
 			a.writeJSON(conn, V1OutgoingMessage{Type: "error", RequestID: msg.RequestID, Error: "sessionId / cascadeId required"})
 			return
 		}
+		a.mu.Lock()
+		a.clientSessions[conn] = sessID
+		a.mu.Unlock()
 		fromSeq := msg.LastStepIndex
 		if fromSeq == 0 && msg.LastSeq > 0 {
 			fromSeq = msg.LastSeq
@@ -313,6 +325,10 @@ func (a *V1Adapter) handleAction(conn *websocket.Conn, msg V1IncomingMessage) {
 			return
 		}
 
+		a.mu.Lock()
+		a.clientSessions[conn] = newSess.ID
+		a.mu.Unlock()
+
 		a.writeJSON(conn, V1OutgoingMessage{
 			Type:      "response",
 			RequestID: msg.RequestID,
@@ -338,6 +354,7 @@ func (a *V1Adapter) handleAction(conn *websocket.Conn, msg V1IncomingMessage) {
 
 		a.mu.Lock()
 		a.activePrompts[sessID] = msg.RequestID
+		a.clientSessions[conn] = sessID
 		a.mu.Unlock()
 
 		// Send stream_start acknowledgment immediately

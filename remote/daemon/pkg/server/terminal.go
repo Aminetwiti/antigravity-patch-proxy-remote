@@ -310,9 +310,16 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Resolve workspace directory
 	workspaceID := r.URL.Query().Get("workspaceId")
+	sessionID := r.URL.Query().Get("sessionId")
 	dir := "."
 	if workspaceID != "" && h.wsMgr != nil {
-		resolved, err := h.wsMgr.ResolvePath(workspaceID, ".")
+		targetWsID := workspaceID
+		if sessionID != "" {
+			if sw, err := h.wsMgr.EnsureSessionWorktree(workspaceID, sessionID); err == nil && sw != nil {
+				targetWsID = sw.ID
+			}
+		}
+		resolved, err := h.wsMgr.ResolvePath(targetWsID, ".")
 		if err != nil {
 			http.Error(w, "invalid workspace: "+err.Error(), http.StatusBadRequest)
 			return
@@ -322,12 +329,10 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	termID := r.URL.Query().Get("terminalId")
 	if termID == "" {
-		termID = r.URL.Query().Get("sessionId")
-	}
-	if termID == "" {
-		termID = "default"
-		if workspaceID != "" {
-			termID = "ws_" + workspaceID
+		if sessionID != "" {
+			termID = "sess_" + sessionID
+		} else {
+			termID = fmt.Sprintf("term_%d_%s", time.Now().UnixNano(), ident.UserID)
 		}
 	}
 
@@ -445,6 +450,7 @@ type ExecRequest struct {
 	Command     string `json:"command"`
 	TimeoutMs   int    `json:"timeout_ms,omitempty"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
+	SessionID   string `json:"sessionId,omitempty"`
 }
 
 // ExecResponse represents the JSON output for POST /v2/terminal/exec.
@@ -504,7 +510,13 @@ func (h *TerminalHandler) HandleExec(w http.ResponseWriter, r *http.Request) {
 	// 3. Resolve directory
 	dir := "."
 	if req.WorkspaceID != "" && h.wsMgr != nil {
-		resolved, err := h.wsMgr.ResolvePath(req.WorkspaceID, ".")
+		targetWsID := req.WorkspaceID
+		if req.SessionID != "" {
+			if sw, err := h.wsMgr.EnsureSessionWorktree(req.WorkspaceID, req.SessionID); err == nil && sw != nil {
+				targetWsID = sw.ID
+			}
+		}
+		resolved, err := h.wsMgr.ResolvePath(targetWsID, ".")
 		if err == nil {
 			dir = resolved
 		}

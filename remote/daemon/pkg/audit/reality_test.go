@@ -255,6 +255,13 @@ func TestAudit_01_E2EGoldenPath(t *testing.T) {
 
 	// 7. Verify File Was Actually Created in Workspace Filesystem
 	calcPath := filepath.Join(repoDir, "calc.go")
+	cleanID := strings.ReplaceAll(createdSess.ID, "-", "_")
+	shadowWsID := fmt.Sprintf("shadow_%s_%s", ws.ID, cleanID)
+	diffWsID := ws.ID
+	if sws, errS := cluster.WsMgr.GetWorkspace(shadowWsID); errS == nil && sws != nil {
+		calcPath = filepath.Join(sws.Root, "calc.go")
+		diffWsID = shadowWsID
+	}
 	content, err := os.ReadFile(calcPath)
 	if err != nil {
 		t.Fatalf("calc.go was not created on filesystem: %v", err)
@@ -273,7 +280,7 @@ func TestAudit_01_E2EGoldenPath(t *testing.T) {
 	}
 
 	// 9. Verify Git Diff via Workspace REST API
-	diffReq, _ := http.NewRequest("GET", fmt.Sprintf("%s/v2/workspaces/diff?token=%s&id=%s", cluster.ServerURL, cluster.AuthToken, ws.ID), nil)
+	diffReq, _ := http.NewRequest("GET", fmt.Sprintf("%s/v2/workspaces/diff?token=%s&id=%s", cluster.ServerURL, cluster.AuthToken, diffWsID), nil)
 	diffResp, err := http.DefaultClient.Do(diffReq)
 	if err != nil {
 		t.Fatalf("git diff request failed: %v", err)

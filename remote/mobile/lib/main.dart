@@ -318,24 +318,7 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
   }
 
   static String _formatWsUrl(String host, int port) {
-    final cleanHost = host.trim();
-    if (cleanHost.startsWith('ws://') || cleanHost.startsWith('wss://')) {
-      return cleanHost.endsWith('/ws') ? cleanHost : '$cleanHost/ws';
-    }
-    if (cleanHost.startsWith('https://')) {
-      final bare = cleanHost.substring('https://'.length);
-      return 'wss://$bare/ws';
-    }
-    if (cleanHost.startsWith('http://')) {
-      final bare = cleanHost.substring('http://'.length);
-      return 'ws://$bare/ws';
-    }
-    if (port == 443 ||
-        cleanHost.contains('trycloudflare.com') ||
-        cleanHost.contains('pinggy')) {
-      return 'wss://$cleanHost/ws';
-    }
-    return 'ws://$cleanHost:$port/ws';
+    return DaemonWebSocketClient.formatWsUrl(host, port);
   }
 
   /// Applique les réglages daemon sauvegardés depuis Settings : reconnexion
@@ -344,9 +327,8 @@ class _AntigravityMainScreenState extends State<AntigravityMainScreen> {
     setState(() => _savedSettings = v);
     final host = (v['host'] as String?)?.trim() ?? '';
     final port = (v['port'] as int?) ?? EnvConfig.daemonPort;
-    final ssl = (v['ssl'] as bool?) ?? false;
     final csrf = (v['csrf'] as String?)?.trim() ?? '';
-    final url = '${ssl ? 'wss' : 'ws'}://$host:$port/ws';
+    final url = DaemonWebSocketClient.formatWsUrl(host, port);
     _wsClient.disconnect();
     _wsClient.connect(
       customUrl: url,

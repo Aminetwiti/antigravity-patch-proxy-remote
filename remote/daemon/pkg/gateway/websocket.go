@@ -4963,7 +4963,7 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			}
 		}
 		s.mu.Lock()
-		if s.sentRequestIDs[msg.RequestID] {
+		if msg.RequestID != "" && s.sentRequestIDs[msg.RequestID] {
 			s.mu.Unlock()
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"deduplicated": true}})
 			return
@@ -4979,17 +4979,19 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "trop de streams simultanés (max " + itoa(maxConcurrentStreams) + ")"})
 			return
 		}
-		s.sentRequestIDs[msg.RequestID] = true
-		// C1 — borne mémoire : la map d'idempotence ne doit pas grossir sans
-		// limite (un mobile qui spamme des requestId uniques). Purge FIFO simple.
-		if len(s.sentRequestIDs) > 10000 {
-			oldest := ""
-			for id := range s.sentRequestIDs {
-				if oldest == "" || id < oldest {
-					oldest = id
+		if msg.RequestID != "" {
+			s.sentRequestIDs[msg.RequestID] = true
+			// C1 — borne mémoire : la map d'idempotence ne doit pas grossir sans
+			// limite (un mobile qui spamme des requestId uniques). Purge FIFO simple.
+			if len(s.sentRequestIDs) > 10000 {
+				oldest := ""
+				for id := range s.sentRequestIDs {
+					if oldest == "" || id < oldest {
+						oldest = id
+					}
 				}
+				delete(s.sentRequestIDs, oldest)
 			}
-			delete(s.sentRequestIDs, oldest)
 		}
 		s.clientInFlight[conn]++
 		s.mu.Unlock()
@@ -5818,6 +5820,11 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		if cascadeID == "" && msg.Data != nil {
 			cascadeID, _ = msg.Data["cascadeId"].(string)
 		}
+		if cascadeID == "" && s != nil {
+			s.mu.Lock()
+			cascadeID = s.focusedCascadeID
+			s.mu.Unlock()
+		}
 		if cascadeID != "" {
 			if bDir := findBrainDir(cascadeID); bDir != "" {
 				candidates := []string{
@@ -5833,42 +5840,6 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 						if content, errRead := os.ReadFile(cand); errRead == nil {
 							respondWithFileContent(content)
 							return
-						}
-					}
-				}
-			}
-		}
-
-		// Scan active sessions or brain directories if not found in specific cascade
-		if home, errHome := os.UserHomeDir(); errHome == nil {
-			brainRoots := []string{
-				filepath.Join(home, ".gemini", "antigravity", "brain"),
-				filepath.Join(home, ".gemini", "antigravity-ide", "brain"),
-			}
-			for _, bRoot := range brainRoots {
-				entries, errEntries := os.ReadDir(bRoot)
-				if errEntries != nil {
-					continue
-				}
-				for _, e := range entries {
-					if !e.IsDir() {
-						continue
-					}
-					bDir := filepath.Join(bRoot, e.Name())
-					cands := []string{
-						filepath.Join(bDir, relCleanPath),
-						filepath.Join(bDir, ".user_uploaded", relCleanPath),
-						filepath.Join(bDir, "scratch", relCleanPath),
-						filepath.Join(bDir, ".user_uploaded", baseFileName),
-						filepath.Join(bDir, "scratch", baseFileName),
-						filepath.Join(bDir, baseFileName),
-					}
-					for _, cand := range cands {
-						if _, errRes := resolvePath(bDir, cand); errRes == nil {
-							if content, errRead := os.ReadFile(cand); errRead == nil {
-								respondWithFileContent(content)
-								return
-							}
 						}
 					}
 				}

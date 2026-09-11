@@ -121,10 +121,15 @@ func CanTransition(from, to SessionState) bool {
 	return false
 }
 
+func IsTerminalState(state SessionState) bool {
+	return state == SessionStateCancelled || state == SessionStateCompleted || state == SessionStateFailed
+}
+
 var (
 	ErrVersionConflict  = fmt.Errorf("optimistic concurrency conflict: session version has changed")
 	ErrCommandDuplicate = fmt.Errorf("command duplicate: already processed")
 	ErrCommandConflict  = fmt.Errorf("conflicting payload: command conflict for existing command id")
+	ErrSessionTerminal  = fmt.Errorf("session is in terminal state")
 )
 
 type Session struct {

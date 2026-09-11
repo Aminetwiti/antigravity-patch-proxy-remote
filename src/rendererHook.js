@@ -768,13 +768,14 @@
       const data = await resp.json();
       const sessions = data.sessions || [];
 
-      // Ponytail: scoped resolution — verify strong binding first, never guess by workspace alone
+      // Strict session scoping: only attach if explicitly bound to this conversation
+      // Never guess by arbitrary running state or workspace alone (prevents cross-session hijack)
       let targetSession = null;
       if (currentBinding && currentBinding.remoteSessionId) {
         targetSession = sessions.find((s) => s.id === currentBinding.remoteSessionId && (s.state === 'running' || s.state === 'waiting_input'));
-      } else if (isCurrentSessionRemote()) {
-        targetSession = sessions.find((s) => s.state === 'running' || s.state === 'waiting_input');
-        if (targetSession && currentConvId) {
+      } else if (currentConvId) {
+        targetSession = sessions.find((s) => s.metadata && s.metadata.conversationId === currentConvId && (s.state === 'running' || s.state === 'waiting_input'));
+        if (targetSession) {
           setSessionBinding(currentConvId, targetSession.id, targetSession.workspaceId);
         }
       }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../config/env_config.dart';
 import '../../core/discovery/lan_discovery.dart';
+import '../../core/network/websocket_client.dart';
 import '../../services/saved_connections_store.dart';
 import '../../services/settings_store.dart';
 import 'qr_scanner_screen.dart';
@@ -41,6 +42,20 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     _startLanDiscovery();
     _loadSavedConnections();
     _prefillFromSession();
+    _hostController.addListener(_onHostChanged);
+  }
+
+  void _onHostChanged() {
+    final text = _hostController.text.trim();
+    if (text.startsWith('https://') || text.startsWith('wss://')) {
+      if (_portController.text == '8090') {
+        _portController.text = '443';
+      }
+    } else if (text.startsWith('http://') || text.startsWith('ws://') || text.startsWith('192.168.') || text.startsWith('127.0.0.1')) {
+      if (_portController.text == '443') {
+        _portController.text = '8090';
+      }
+    }
   }
 
   Future<void> _loadSavedConnections() async {
@@ -82,8 +97,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (url.isNotEmpty) {
       final uri = Uri.tryParse(url);
       if (uri != null && uri.host.isNotEmpty) {
-        _hostController.text = uri.host;
-        if (uri.port > 0) _portController.text = uri.port.toString();
+        final isSecure = uri.scheme == 'wss' || uri.scheme == 'https';
+        _hostController.text = isSecure ? 'https://${uri.host}' : uri.host;
+        if (uri.port > 0 && uri.port != 443 && uri.port != 80) {
+          _portController.text = uri.port.toString();
+        } else if (isSecure) {
+          _portController.text = '443';
+        }
       }
     }
 
@@ -154,11 +174,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   Future<void> _connect({bool silent = false}) async {
-    final host = _hostController.text.trim();
-    final port = int.tryParse(_portController.text.trim());
-    if (host.isEmpty || port == null) {
+    final rawHost = _hostController.text.trim();
+    final rawPort = int.tryParse(_portController.text.trim());
+    if (rawHost.isEmpty) {
       if (!silent) {
-        setState(() => _errorMessage = 'Veuillez saisir un hôte et un port valides.');
+        setState(() => _errorMessage = 'Veuillez saisir un hôte ou un domaine.');
       }
       return;
     }
@@ -173,14 +193,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
 
-    final ok = widget.onConnect == null || await widget.onConnect!(host, port, token);
+    final wsUrl = DaemonWebSocketClient.formatWsUrl(rawHost, rawPort);
+    final wsUri = Uri.parse(wsUrl);
+    final cleanHost = wsUri.host;
+    final port = wsUri.port;
+    final isSsl = wsUri.scheme == 'wss';
+
+    final ok = widget.onConnect == null || await widget.onConnect!(cleanHost, port, token);
     if (!mounted) return;
     setState(() {
       _isConnecting = false;
       if (ok) {
-        final isSsl = host.startsWith('https') || host.startsWith('wss') || port == 443;
-        final cleanHost = host.replaceAll(RegExp(r'^https?://|^wss?://'), '').replaceAll(RegExp(r'/.*$'), '');
-        final wsUrl = '${isSsl ? 'wss' : 'ws'}://$cleanHost:$port/ws';
         SettingsStore.saveSession(
           wsUrl: wsUrl,
           token: token,
@@ -190,10 +213,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           ssl: isSsl,
         );
         _loadSavedConnections();
-        _successMessage = 'Appairé avec succès : $host:$port';
+        _successMessage = 'Appairé avec succès : $cleanHost';
       } else {
         if (!silent) {
-          _errorMessage = 'Connexion refusée. Vérifiez le port et le Token Auth ou PIN.';
+          _errorMessage = 'Connexion refusée. Vérifiez le domaine, le port et le Token Auth ou PIN.';
         }
       }
     });
@@ -202,10 +225,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   /// Appairage par code PIN 6 chiffres (P4) : interroge POST /pair sur le daemon,
   /// récupère le token de session et se connecte automatiquement.
   Future<void> _pairWithPin() async {
-    final host = _hostController.text.trim();
-    final port = int.tryParse(_portController.text.trim());
+    final rawHost = _hostController.text.trim();
+    final rawPort = int.tryParse(_portController.text.trim());
     final pin = _pinController.text.trim();
-    if (host.isEmpty || port == null || pin.isEmpty) {
+    if (rawHost.isEmpty || pin.isEmpty) {
       setState(() => _errorMessage = 'Veuillez saisir l\'hôte, le port et le code PIN 6 chiffres.');
       return;
     }
@@ -215,9 +238,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       _successMessage = null;
     });
     try {
-      final scheme = (host.startsWith('https') || host.startsWith('wss')) ? 'https' : 'http';
-      final cleanHost = host.replaceAll(RegExp(r'^https?://|^wss?://'), '').replaceAll(RegExp(r'/.*$'), '');
-      final uri = Uri.parse('$scheme://$cleanHost:$port/pair');
+      final wsUrl = DaemonWebSocketClient.formatWsUrl(rawHost, rawPort);
+      final wsUri = Uri.parse(wsUrl);
+      final httpScheme = wsUri.scheme == 'wss' ? 'https' : 'http';
+      final portSuffix = (wsUri.scheme == 'wss' && wsUri.port == 443) || (wsUri.scheme == 'ws' && wsUri.port == 80)
+          ? ''
+          : ':${wsUri.port}';
+      final uri = Uri.parse('$httpScheme://${wsUri.host}$portSuffix/pair');
       final res = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
@@ -420,6 +447,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   @override
   void dispose() {
+    _hostController.removeListener(_onHostChanged);
     _lanDiscoverySub?.cancel();
     _lanDiscovery.dispose();
     _hostController.dispose();

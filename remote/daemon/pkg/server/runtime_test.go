@@ -617,4 +617,68 @@ func TestRuntimeServer_EndToEndAgentPromptAndApproval(t *testing.T) {
 	}
 }
 
+func TestRuntimeServer_PromptOnCancelledSession_ReturnsError(t *testing.T) {
+	rt, httpSrv, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	svc := rt.SessionService()
+	sess, err := svc.CreateSession(ctx, "srv-1", "ws-1", "Test Session")
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	// Transition to CANCELLED
+	if err := svc.TransitionState(ctx, sess.ID, domain.SessionStateCancelled, "cancelled by user"); err != nil {
+		t.Fatalf("failed to cancel session: %v", err)
+	}
+
+	wsURL := toWsURL(httpSrv.URL) + "/v2/runtime/ws"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	// Attach to session
+	attachMsg := protocol.V2Envelope{
+		Version:   protocol.ProtocolVersion,
+		Type:      protocol.TypeSessionAttach,
+		RequestID: "req-attach-canc",
+		SessionID: sess.ID,
+		Payload:   []byte(`{"lastSequence": 0}`),
+	}
+	if err := conn.WriteJSON(attachMsg); err != nil {
+		t.Fatalf("failed to write attach: %v", err)
+	}
+
+	// Read attach catchup
+	var catchup protocol.CatchupResponse
+	if err := conn.ReadJSON(&catchup); err != nil {
+		t.Fatalf("failed to read attach catchup: %v", err)
+	}
+
+	// Now try to send a prompt to the cancelled session
+	promptMsg := protocol.V2Envelope{
+		Version:   protocol.ProtocolVersion,
+		Type:      protocol.TypeSessionPrompt,
+		RequestID: "req-prompt-canc",
+		SessionID: sess.ID,
+		Payload:   []byte(`{"text":"hello cancelled session"}`),
+	}
+	if err := conn.WriteJSON(promptMsg); err != nil {
+		t.Fatalf("failed to write prompt: %v", err)
+	}
+
+	// Read response - must be an error
+	var errResp protocol.ErrorResponse
+	if err := conn.ReadJSON(&errResp); err != nil {
+		t.Fatalf("failed to read error response: %v", err)
+	}
+	if errResp.Type != protocol.TypeErrorResponse || !strings.Contains(errResp.Error, "terminal") {
+		t.Fatalf("expected terminal session error, got: %+v", errResp)
+	}
+}
+
+
 
