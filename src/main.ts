@@ -24,6 +24,7 @@ import { registerCustomSchemes, registerCustomSchemeHandlers } from './customSch
 import { DEFAULTS, SettingsService, SettingKey } from './services/settingsService';
 import { maybeShowIdeInstallWizard } from './ideInstall';
 
+
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
@@ -114,6 +115,23 @@ if (!app.isDefaultProtocolClient(PROTOCOL)) {
 app.on('open-url', (event, url) => {
   event.preventDefault();
   handleDeepLink(url);
+});
+
+app.on('certificate-error', (event, _webContents, url, _error, _certificate, callback) => {
+  try {
+    const parsed = new URL(url);
+    if (
+      LOOPBACK_HOSTS.includes(parsed.hostname as any) ||
+      parsed.hostname === '127.0.0.1' ||
+      parsed.hostname === 'localhost' ||
+      parsed.hostname === '::1'
+    ) {
+      event.preventDefault();
+      callback(true);
+      return;
+    }
+  } catch (_) {}
+  callback(false);
 });
 
 /**
@@ -255,16 +273,11 @@ app
 
     // Initial window — opened once after the LS has successfully started.
     if (!HEADLESS) {
+      setupLocalCertTrust();
       setupApplicationMenu(url);
       const mainWindow = createWindow(url);
-      // Force a single reload after initial load to ensure fresh model list
       mainWindow.webContents.once('did-finish-load', () => {
-        console.log('[Startup] Initial page loaded. Reloading once to refresh models...');
-        setTimeout(() => {
-          if (!mainWindow.isDestroyed()) {
-            (mainWindow.webContents as any).reload();
-          }
-        }, 500);
+        console.log('[Startup] Initial page loaded successfully.');
       });
       if (app.dock) {
         const dockMenu = Menu.buildFromTemplate([

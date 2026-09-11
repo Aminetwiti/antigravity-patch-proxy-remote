@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/antigravity/remote-daemon/pkg/agent"
 	"github.com/antigravity/remote-daemon/pkg/approval"
@@ -56,6 +57,7 @@ type RuntimeServer struct {
 	memStore          *memory.MemoryStore
 	mcpMgr            *mcp.Manager
 	rbacMgr           *auth.RBACManager
+	reconciler        *Reconciler
 
 	mu               sync.RWMutex
 	attachedClients  map[string]map[*websocket.Conn]*AttachedClient
@@ -78,7 +80,15 @@ func NewRuntimeServer(serverInfo domain.Server, store eventstore.EventStore) *Ru
 	}
 
 	rt.sessionSvc = session.NewService(store, rt)
+	rt.reconciler = NewReconciler(store, rt.sessionSvc, nil, 15*time.Second)
+	rt.reconciler.Start()
 	return rt
+}
+
+func (r *RuntimeServer) Reconciler() *Reconciler {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.reconciler
 }
 
 func (r *RuntimeServer) SessionService() *session.Service {
@@ -249,14 +259,33 @@ func (r *RuntimeServer) getClientIdentity(conn *websocket.Conn) *auth.Identity {
 }
 
 func (r *RuntimeServer) AttachClient(conn *websocket.Conn, deviceID, sessionID string, lastSeq int64) error {
+	ctx := context.Background()
+
+	// 1. SessionID validation: must exist and be registered in store
+	if sessionID == "" {
+		return errors.New("invalid attach: sessionID is required")
+	}
+	sess, err := r.store.GetSession(ctx, sessionID)
+	if err != nil || sess == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	// 2. Authorization validation
 	if r.rbacMgr != nil {
-		sess, err := r.store.GetSession(context.Background(), sessionID)
-		if err == nil {
-			ident := r.getClientIdentity(conn)
-			if !r.rbacMgr.CanAccessSession(ident, sess.OwnerID) {
-				return errors.New("forbidden: cannot access session owned by another user")
-			}
+		ident := r.getClientIdentity(conn)
+		if !r.rbacMgr.CanAccessSession(ident, sess.OwnerID) {
+			return errors.New("forbidden: cannot access session owned by another user")
 		}
+	}
+
+	// 3. Sequence normalization: client cursor is never blindly trusted
+	if lastSeq < 0 {
+		lastSeq = 0
+	}
+	latestSeq, errSeq := r.store.GetLatestSequence(ctx, sessionID)
+	if errSeq == nil && latestSeq >= 0 && lastSeq > latestSeq {
+		// Client supplied an invalid future sequence: reset to 0 to safely resync
+		lastSeq = 0
 	}
 
 	r.mu.Lock()
@@ -277,7 +306,27 @@ func (r *RuntimeServer) AttachClient(conn *websocket.Conn, deviceID, sessionID s
 	r.clientSessions[conn] = sessionID
 	r.mu.Unlock()
 
-	ctx := context.Background()
+	snapshot, errSnap := r.store.GetLatestSnapshot(ctx, sessionID)
+	if errSnap == nil && snapshot != nil && lastSeq < snapshot.Sequence {
+		snapPayload, _ := json.Marshal(snapshot.PendingData)
+		snapEvent := domain.Event{
+			SessionID: sessionID,
+			Sequence:  snapshot.Sequence,
+			Type:      "session.snapshot",
+			Payload:   snapPayload,
+			Timestamp: snapshot.CapturedAt.UnixMilli(),
+		}
+		_ = client.SendJSON(protocol.LiveEventMessage{
+			Version:   protocol.ProtocolVersion,
+			Type:      protocol.TypeSessionEvent,
+			SessionID: sessionID,
+			Event:     snapEvent,
+		})
+		lastSeq = snapshot.Sequence
+		client.LastAckedSeq = lastSeq
+	}
+
+	// 5. Fetch catchup events strictly from validated sequence
 	missed, err := r.store.GetEventsSince(ctx, sessionID, lastSeq, 2000)
 	if err != nil {
 		return fmt.Errorf("failed to fetch catchup events: %w", err)

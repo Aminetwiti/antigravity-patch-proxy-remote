@@ -380,8 +380,12 @@ func runServerRuntime(
 	fmt.Printf("🚀 Starting Antigravity Standalone Cloud Server Runtime on %s:%d...\n", host, port)
 
 	if dbPath == "" {
-		home, _ := os.UserHomeDir()
-		dbPath = filepath.Join(home, ".antigravity", "runtime.db")
+		if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
+			dbPath = filepath.Join(dataDir, "runtime.db")
+		} else {
+			home, _ := os.UserHomeDir()
+			dbPath = filepath.Join(home, ".antigravity", "runtime.db")
+		}
 	}
 	_ = os.MkdirAll(filepath.Dir(dbPath), 0755)
 
@@ -418,8 +422,12 @@ func runServerRuntime(
 	wsMgr := workspace.NewManager()
 
 	if workspacesDir == "" {
-		home, _ := os.UserHomeDir()
-		workspacesDir = filepath.Join(home, ".antigravity", "workspaces")
+		if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
+			workspacesDir = filepath.Join(dataDir, "workspaces")
+		} else {
+			home, _ := os.UserHomeDir()
+			workspacesDir = filepath.Join(home, ".antigravity", "workspaces")
+		}
 	}
 	_ = os.MkdirAll(workspacesDir, 0755)
 

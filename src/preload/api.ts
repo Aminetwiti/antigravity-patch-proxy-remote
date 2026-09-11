@@ -74,6 +74,8 @@ export const storageAPI: StorageAPI = {
   getRemoteWorkspaces: (payload) => ipcRenderer.invoke('remote:get-workspaces', payload),
   injectUserStatus: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-user-status', rawBuffer),
   injectAvailableModels: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-available-models', rawBuffer),
+  setRemoteState: (payload) => ipcRenderer.invoke('remote:set-state', payload),
+  getRemoteState: () => ipcRenderer.invoke('remote:get-state'),
 };
 
 const logsAPI: LogsAPI = {

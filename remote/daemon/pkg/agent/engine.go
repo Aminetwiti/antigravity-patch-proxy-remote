@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -34,6 +35,15 @@ type SessionTelemetry struct {
 	LastUpdated      time.Time `json:"lastUpdated"`
 }
 
+// GitPolicy configures automated Git behavior per session.
+// Staff Engineer principle: Push is NOT an automatic consequence of completion.
+type GitPolicy struct {
+	Commit             string `json:"commit"` // "auto" (default) or "manual"
+	Push               string `json:"push"`   // "manual" (default), "auto", "approval"
+	Merge              string `json:"merge"`  // "approval" (default), "auto", "manual"
+	ExpectedBaseCommit string `json:"expectedBaseCommit,omitempty"` // Base commit to guard against stale push
+}
+
 type Engine struct {
 	sessionSvc *session.Service
 	wsMgr      *workspace.Manager
@@ -41,6 +51,7 @@ type Engine struct {
 	apprMgr    *approval.Manager
 	llmClient  LLMClient
 	maxTurns   int
+	gitPolicy  GitPolicy
 
 	mu              sync.Mutex
 	turnCancels     map[string]context.CancelFunc // sessionID -> cancel
@@ -58,12 +69,17 @@ func NewEngine(
 	llmClient LLMClient,
 ) *Engine {
 	eng := &Engine{
-		sessionSvc:      sessionSvc,
-		wsMgr:           wsMgr,
-		toolsReg:        toolsReg,
-		apprMgr:         apprMgr,
-		llmClient:       llmClient,
-		maxTurns:        25,
+		sessionSvc: sessionSvc,
+		wsMgr:      wsMgr,
+		toolsReg:   toolsReg,
+		apprMgr:    apprMgr,
+		llmClient:  llmClient,
+		maxTurns:   25,
+		gitPolicy: GitPolicy{
+			Commit: "manual",
+			Push:   "manual",
+			Merge:  "approval",
+		},
 		turnCancels:     make(map[string]context.CancelFunc),
 		sessionTokens:   make(map[string]*UsageInfo),
 		maxBudgets:      make(map[string]int),
@@ -74,6 +90,18 @@ func NewEngine(
 		toolsReg.SetSubagentRunner(eng)
 	}
 	return eng
+}
+
+func (e *Engine) SetGitPolicy(p GitPolicy) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.gitPolicy = p
+}
+
+func (e *Engine) GitPolicy() GitPolicy {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.gitPolicy
 }
 
 func (e *Engine) GetSessionTelemetry(ctx context.Context, sessionID string) (*SessionTelemetry, error) {
@@ -208,6 +236,9 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 			e.sessionSvc.EmitEphemeralEvent(sessionID, "agent.thought_chunk", chunkPayload)
 		}
 
+		// ponytail: re-compact older tool outputs on every turn to prevent token bloat
+		messages = CompactContextMessages(messages)
+
 		resp, err := e.llmClient.Generate(ctx, messages, availableTools, onChunk)
 		if err != nil {
 			_ = e.sessionSvc.TransitionState(ctx, sessionID, domain.SessionStateFailed, fmt.Sprintf("LLM generation failed: %v", err))
@@ -267,6 +298,9 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 
 		// If no tool calls or explicitly done -> turn complete
 		if len(resp.ToolCalls) == 0 || resp.Done {
+			// Staff Engineer Git policy: local commit on session branch, push is controlled by policy
+			e.checkpointGitPolicy(ctx, sessionID, workspaceID, workspaceID, turn, resp.Message)
+
 			completePayload, _ := json.Marshal(map[string]interface{}{
 				"summary": resp.Message,
 				"done":    true,
@@ -341,6 +375,7 @@ func (e *Engine) runExecutionLoop(ctx context.Context, sessionID, workspaceID st
 	}
 
 	// Reached max turns without completion
+	e.checkpointGitPolicy(ctx, sessionID, workspaceID, workspaceID, e.maxTurns, "max turns reached")
 	_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "agent.max_turns", []byte(`{"status":"limit_reached"}`))
 	_ = e.sessionSvc.TransitionState(ctx, sessionID, domain.SessionStateWaitingInput, "Max turn limit reached")
 }
@@ -579,4 +614,62 @@ func (e *Engine) RunSubagent(ctx context.Context, parentSessionID, role, task, w
 	}
 
 	return finalSummary, nil
+}
+
+// checkpointGitPolicy implements the Staff Engineer Git policy:
+// Local checkpoint commit on dedicated session branch; push/merge is governed by policy (never accidental).
+func (e *Engine) checkpointGitPolicy(ctx context.Context, sessionID, effectiveWsID, baseWsID string, turn int, summary string) {
+	if e.wsMgr == nil || effectiveWsID == "" {
+		return
+	}
+	policy := e.GitPolicy()
+	autoCommit := policy.Commit == "auto" || os.Getenv("AG_GIT_AUTO_COMMIT") == "true"
+	if !autoCommit {
+		return
+	}
+	diff, err := e.wsMgr.Diff(effectiveWsID)
+	if err != nil || diff == nil || diff.Clean {
+		return
+	}
+	branch, _ := e.wsMgr.CurrentBranch(effectiveWsID)
+	if branch == "" {
+		branch = "main"
+	}
+	shortSummary := summary
+	if len(shortSummary) > 60 {
+		shortSummary = shortSummary[:57] + "..."
+	}
+	if shortSummary == "" {
+		shortSummary = "apply workspace changes"
+	}
+	commitMsg := fmt.Sprintf("chore(antigravity): session %s turn %d - %s", sessionID, turn+1, shortSummary)
+	commitRes, err := e.wsMgr.Commit(effectiveWsID, commitMsg, "")
+	if err != nil {
+		return
+	}
+
+	autoPush := policy.Push == "auto" || os.Getenv("AG_GIT_AUTO_PUSH") == "true"
+	pushed := false
+	if autoPush {
+		var pushRes *workspace.GitSyncResult
+		if policy.ExpectedBaseCommit != "" {
+			pushRes, _ = e.wsMgr.Push(effectiveWsID, "origin", branch, policy.ExpectedBaseCommit)
+		} else {
+			pushRes, _ = e.wsMgr.Push(effectiveWsID, "origin", branch)
+		}
+		pushed = pushRes != nil && pushRes.Success
+	}
+
+	evtPayload, _ := json.Marshal(map[string]interface{}{
+		"commitHash":         commitRes.CommitHash,
+		"branch":             branch,
+		"effectiveWorkspace": effectiveWsID,
+		"baseWorkspace":      baseWsID,
+		"pushed":             pushed,
+		"pushPolicy":         policy.Push,
+		"filesCount":         len(diff.Files),
+		"message":            commitMsg,
+		"readyForReview":     true,
+	})
+	_, _ = e.sessionSvc.EmitEvent(ctx, sessionID, "git.checkpoint", evtPayload)
 }

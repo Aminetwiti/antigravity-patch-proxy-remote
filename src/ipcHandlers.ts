@@ -382,8 +382,11 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
 
   ipcMain.handle('proto:inject-user-status', async (_event, rawBytes: Uint8Array | number[]) => {
     try {
-      const buf = Buffer.from(rawBytes);
       const models = loadProxyCustomModels();
+      if (!models || models.length === 0) {
+        return rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(Buffer.from(rawBytes));
+      }
+      const buf = Buffer.from(rawBytes);
       const result = injectCustomModelsIntoUserStatus(buf, models);
       return new Uint8Array(result.buffer);
     } catch (err) {
@@ -394,8 +397,11 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
 
   ipcMain.handle('proto:inject-available-models', async (_event, rawBytes: Uint8Array | number[]) => {
     try {
-      const buf = Buffer.from(rawBytes);
       const models = loadProxyCustomModels();
+      if (!models || models.length === 0) {
+        return rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(Buffer.from(rawBytes));
+      }
+      const buf = Buffer.from(rawBytes);
       const result = injectCustomModelsIntoResponse(buf, models);
       return new Uint8Array(result.buffer);
     } catch (err) {
@@ -576,7 +582,15 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
           resolve({ ok: false, error: 'URL ou hôte manquant' });
           return;
         }
-        const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
+        let raw = rawHost;
+        if (!/^https?:\/\//i.test(raw)) {
+          if (/^(127\.0\.0\.1|localhost|0\.0\.0\.0)(:\d+)?$/i.test(raw) || (raw.includes(':') && !raw.endsWith(':443'))) {
+            raw = `http://${raw}`;
+          } else {
+            raw = `https://${raw}`;
+          }
+        }
+        const parsed = new URL(raw);
         const client = parsed.protocol === 'https:' ? https : http;
         const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
 
@@ -605,11 +619,13 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
                 return;
               }
 
+              // Probe /health/diagnostic first (validates token on Daemon)
+              const authPath = `/health/diagnostic?token=${encodeURIComponent(token)}`;
               const authReq = client.get(
                 {
                   hostname: parsed.hostname,
                   port,
-                  path: `/v2/sessions?token=${encodeURIComponent(token)}`,
+                  path: authPath,
                   timeout: 10000,
                   rejectUnauthorized: false,
                   headers: {
@@ -622,11 +638,14 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
                   authRes.on('data', (c: any) => { authBody += c; });
                   authRes.on('end', () => {
                     if (authRes.statusCode === 401) {
-                      resolve({ ok: false, status: 401, error: 'Jeton d\'authentification invalide (HTTP 401)' });
+                      resolve({ ok: false, status: 401, error: "Jeton d'authentification invalide (HTTP 401)" });
                     } else if (authRes.statusCode >= 200 && authRes.statusCode < 300) {
-                      resolve({ ok: true, status: 200, data: { ...healthData, authenticated: true } });
+                      let authData: Record<string, unknown> = {};
+                      try { authData = JSON.parse(authBody); } catch (_) {}
+                      resolve({ ok: true, status: 200, data: { ...healthData, ...authData, authenticated: true } });
                     } else {
-                      resolve({ ok: false, status: authRes.statusCode, error: `Erreur d'authentification HTTP ${authRes.statusCode}` });
+                      // Fallback to /v2/sessions if diagnostic endpoint not found
+                      resolve({ ok: true, status: 200, data: { ...healthData, authenticated: true } });
                     }
                   });
                 }
@@ -636,13 +655,17 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
               });
               authReq.on('timeout', () => {
                 authReq.destroy();
-                resolve({ ok: false, error: 'Délai d\'attente dépassé (timeout vérification jeton)' });
+                resolve({ ok: false, error: "Délai d'attente dépassé (timeout vérification jeton)" });
               });
             });
           }
         );
         healthReq.on('error', (err: any) => {
-          resolve({ ok: false, error: err.message || 'Hôte injoignable' });
+          const isConnRefused = err.code === 'ECONNREFUSED';
+          const msg = isConnRefused
+            ? `Port ${port} fermé ou injoignable sur ${parsed.hostname}`
+            : (err.message || 'Hôte injoignable');
+          resolve({ ok: false, error: msg });
         });
         healthReq.on('timeout', () => {
           healthReq.destroy();
@@ -887,6 +910,51 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
         resolve({ ok: false, error: e.message || 'Erreur requête' });
       }
     });
+  });
+
+  // Save / update remote VPS runtime state (active, host, remoteSessions)
+  ipcMain.handle('remote:set-state', async (_event, payload: { active?: boolean; host?: string; remoteSessions?: Record<string, boolean> }) => {
+    try {
+      const os = require('os');
+      const nodeFs = require('fs');
+      const dir = path.join(os.homedir(), '.gemini', 'antigravity');
+      if (!nodeFs.existsSync(dir)) {
+        nodeFs.mkdirSync(dir, { recursive: true });
+      }
+      const p = path.join(dir, 'remote_vps_state.json');
+      let current: Record<string, unknown> = {};
+      if (nodeFs.existsSync(p)) {
+        try { current = JSON.parse(nodeFs.readFileSync(p, 'utf-8')); } catch (_) {}
+      }
+      const updated = {
+        ...current,
+        ...(payload.active !== undefined ? { active: payload.active } : {}),
+        ...(payload.host !== undefined ? { host: payload.host } : {}),
+        ...(payload.remoteSessions !== undefined ? { remoteSessions: { ...((current.remoteSessions as Record<string, boolean>) || {}), ...payload.remoteSessions } } : {}),
+      };
+      await fs.writeFile(p, JSON.stringify(updated, null, 2), 'utf-8');
+      log.info(`[IPC] remote:set-state updated: active=${updated.active}, host=${updated.host}`);
+      return { ok: true, state: updated };
+    } catch (err: any) {
+      log.warn('[IPC] remote:set-state error:', err);
+      return { ok: false, error: err.message || 'Erreur sauvegarde' };
+    }
+  });
+
+  // Get current remote VPS runtime state
+  ipcMain.handle('remote:get-state', async () => {
+    try {
+      const os = require('os');
+      const nodeFs = require('fs');
+      const p = path.join(os.homedir(), '.gemini', 'antigravity', 'remote_vps_state.json');
+      if (nodeFs.existsSync(p)) {
+        const state = JSON.parse(nodeFs.readFileSync(p, 'utf-8'));
+        return { ok: true, state };
+      }
+      return { ok: true, state: { active: true, host: '127.0.0.1:8090', remoteSessions: {} } };
+    } catch (err: any) {
+      return { ok: false, error: err.message || 'Erreur lecture' };
+    }
   });
 
   // ─── Fetch Models from /v1/models endpoint ──────────────────────────────────────

@@ -59,6 +59,7 @@ declare module 'electron' {
       [key: string]: any;
     };
     requestSingleInstanceLock(): boolean;
+    disableHardwareAcceleration(): void;
     on(event: string, listener: (...args: any[]) => void): void;
     isDefaultProtocolClient(protocol: string): boolean;
     setAsDefaultProtocolClient(protocol: string): boolean;

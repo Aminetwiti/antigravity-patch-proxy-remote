@@ -337,3 +337,65 @@ func TestWorkspaceManager_DiscardShadowWorktree(t *testing.T) {
 		t.Errorf("expected shadow workspace to be unregistered")
 	}
 }
+
+func TestWorkspaceManager_DetectStaleBase(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git executable not found, skipping detect stale base test")
+	}
+
+	repoDir := setupGitRepo(t)
+	mgr := NewManager()
+
+	ws, err := mgr.RegisterWorkspace("main_repo", "Main Repo", repoDir)
+	if err != nil {
+		t.Fatalf("failed to register workspace: %v", err)
+	}
+
+	// 1. Initial commit SHA
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD failed: %v", err)
+	}
+	initialSHA := strings.TrimSpace(string(out))
+
+	// Not stale when compared to current HEAD
+	stale, cur, err := mgr.DetectStaleBase(ws.ID, initialSHA)
+	if err != nil {
+		t.Fatalf("DetectStaleBase failed: %v", err)
+	}
+	if stale {
+		t.Errorf("expected not stale, got stale=true (current: %s, base: %s)", cur, initialSHA)
+	}
+
+	// 2. Make a new commit
+	if err := mgr.WriteFile(ws.ID, "feature.txt", []byte("new feature")); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	commitRes, err := mgr.Commit(ws.ID, "Add feature", "Tester <test@example.com>")
+	if err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+
+	// Now initialSHA is stale compared to new HEAD
+	staleAfter, curAfter, err := mgr.DetectStaleBase(ws.ID, initialSHA)
+	if err != nil {
+		t.Fatalf("DetectStaleBase failed after commit: %v", err)
+	}
+	if !staleAfter {
+		t.Errorf("expected stale=true, got false (current: %s, base: %s)", curAfter, initialSHA)
+	}
+	if curAfter != commitRes.CommitHash {
+		t.Errorf("expected current commit %s, got %s", commitRes.CommitHash, curAfter)
+	}
+
+	// 3. Test Push guarded by expectedBaseCommit
+	_, pushErr := mgr.Push(ws.ID, "origin", "main", initialSHA)
+	if pushErr == nil {
+		t.Fatalf("expected Push to fail with stale base error, got nil")
+	}
+	if !strings.Contains(pushErr.Error(), "stale base detected") {
+		t.Errorf("expected 'stale base detected' error, got: %v", pushErr)
+	}
+}

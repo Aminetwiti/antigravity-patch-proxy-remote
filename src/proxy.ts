@@ -2297,10 +2297,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           if (match) convId = match[1];
         }
 
-        const isSessionRemote = convId ? !!remoteSessionsMap[convId] : isRemoteVpsActive;
+        loadRemoteState();
+        const isSessionRemote = convId ? (remoteSessionsMap[convId] !== undefined ? !!remoteSessionsMap[convId] : isRemoteVpsActive) : isRemoteVpsActive;
 
         if (isSessionRemote) {
-          if (convId && isRemoteVpsActive && !remoteSessionsMap[convId]) {
+          if (convId && !remoteSessionsMap[convId]) {
             remoteSessionsMap[convId] = true;
             saveRemoteState();
           }
@@ -2334,6 +2335,40 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               parts: [{ text: vpsNotice }],
             };
           }
+
+          // Also sanitize tools schema (function declarations)
+          if (Array.isArray(targetReq.tools)) {
+            for (const toolGroup of targetReq.tools as Array<{ functionDeclarations?: Array<{ description?: string }> }>) {
+              if (Array.isArray(toolGroup.functionDeclarations)) {
+                for (const fn of toolGroup.functionDeclarations) {
+                  if (fn.description) {
+                    fn.description = fn.description
+                      .replace(/Operating System:\s*windows/gi, 'Operating System: linux (Ubuntu 24.04 LTS)')
+                      .replace(/The USER's OS version is windows\./gi, "The USER's OS version is linux (Ubuntu 24.04 LTS).")
+                      .replace(/Shell:\s*powershell/gi, 'Shell: bash')
+                      .replace(/powershell/gi, 'bash');
+                  }
+                }
+              }
+            }
+          }
+
+          // Also sanitize previous conversation turns to prevent context conflict
+          if (Array.isArray(targetReq.contents)) {
+            for (const content of targetReq.contents as Array<{ role?: string; parts?: Array<{ text?: string }> }>) {
+              if (Array.isArray(content.parts)) {
+                for (const part of content.parts) {
+                  if (part.text && content.role === 'model') {
+                    part.text = part.text
+                      .replace(/Mon environnement d'ex[ée]cution actuel est Windows \(utilisant un shell PowerShell\)\./gi, `Mon environnement d'exécution actuel est le serveur Linux distant Ubuntu 24.04 (VPS: ${remoteVpsHost}, shell: bash, workspace: /var/lib/antigravity).`)
+                      .replace(/Operating System: windows/gi, 'Operating System: linux (Ubuntu 24.04 LTS)')
+                      .replace(/Shell: powershell/gi, 'Shell: bash');
+                  }
+                }
+              }
+            }
+          }
+
           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
           log.info(`[Proxy] Sanitized & injected strict Remote VPS context into Cloud Code request (convId=${convId || 'draft'}, host=${remoteVpsHost})`);
         }

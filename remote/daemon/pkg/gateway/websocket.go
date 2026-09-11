@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -37,6 +38,8 @@ import (
 	"github.com/antigravity/remote-daemon/pkg/adb"
 	"github.com/antigravity/remote-daemon/pkg/connectrpc"
 	"github.com/antigravity/remote-daemon/pkg/discovery"
+	"github.com/antigravity/remote-daemon/pkg/domain"
+	"github.com/antigravity/remote-daemon/pkg/eventstore"
 	"github.com/antigravity/remote-daemon/pkg/ide"
 	"github.com/antigravity/remote-daemon/pkg/workspace"
 	"github.com/gorilla/websocket"
@@ -183,7 +186,8 @@ type Server struct {
 	// sentRequestIDs : requestId d├®j├á trait├®s (C1, idempotence). Un send_prompt
 	// retransmis apr├¿s coupure Wi-Fi ne duplique pas le tour : le hub re├ºoit
 	// chaque requ├¬te au plus une fois.
-	sentRequestIDs map[string]bool
+	sentRequestIDs    map[string]bool
+	sentCommandHashes map[string]string
 	// clientInFlight : nombre de send_prompt en cours PAR CLIENT (C3, limite
 	// de streams simultan├®s ÔÇö un client ne peut pas saturer le hub).
 	clientInFlight map[*websocket.Conn]int
@@ -250,6 +254,7 @@ type Server struct {
 	ledger       *SessionOperationLedger
 	streamHub    *StreamHub
 	lineageStore *SessionLineageStore
+	eventStore   eventstore.EventStore
 }
 
 // ScheduledTask repr├®sente une t├óche planifi├®e / cron job g├®r├®e par le daemon.
@@ -306,6 +311,7 @@ func NewServer(client RPCClient, authToken string) *Server {
 		activeCascades:      make(map[string]bool),
 		startedAt:           time.Now(),
 		sentRequestIDs:      make(map[string]bool),
+		sentCommandHashes:   make(map[string]string),
 		clientInFlight:      make(map[*websocket.Conn]int),
 		writeLocks:          make(map[*websocket.Conn]*sync.Mutex),
 		streamBuffer:        NewSessionStreamBuffer(200),
@@ -1556,6 +1562,13 @@ func (s *Server) SetPairingManager(pm interface {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pairHandler = pm
+}
+
+// SetEventStore configures the persistent SQLite EventStore for durable cross-reboot event sourcing and idempotency.
+func (s *Server) SetEventStore(store eventstore.EventStore) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.eventStore = store
 }
 
 // sessionFor retourne les infos de session de la connexion (vide si aucune).
@@ -4077,6 +4090,49 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		defer close(c)
 	}
 
+	// Invariant 4 : Retry command != duplicate execution (Staff Engineer idempotency)
+	if msg.CommandID != "" && (msg.Type == "submit_approval" || msg.Type == "pause" || msg.Type == "resume" || msg.Type == "cancel_generation") {
+		cmdSig := CalculateSignature(msg.Type, map[string]interface{}{
+			"cascadeId":  msg.CascadeID,
+			"prompt":     msg.Prompt,
+			"decision":   msg.Decision,
+			"denyReason": msg.DenyReason,
+			"command":    msg.Command,
+		})
+		s.mu.Lock()
+		if s.sentCommandHashes == nil {
+			s.sentCommandHashes = make(map[string]string)
+		}
+		if prevHash, exists := s.sentCommandHashes[msg.CommandID]; exists {
+			s.mu.Unlock()
+			if prevHash != cmdSig {
+				s.writeJSON(conn, OutgoingMessage{
+					Type:      "response",
+					RequestID: msg.RequestID,
+					Error:     "COMMAND_ID_REUSED: commandId already used with different payload",
+					Data: map[string]interface{}{
+						"status":    "error",
+						"commandId": msg.CommandID,
+						"code":      "COMMAND_ID_REUSED",
+					},
+				})
+				return
+			}
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Data: map[string]interface{}{
+					"status":       "already_processed",
+					"commandId":    msg.CommandID,
+					"deduplicated": true,
+				},
+			})
+			return
+		}
+		s.sentCommandHashes[msg.CommandID] = cmdSig
+		s.mu.Unlock()
+	}
+
 	switch msg.Type {
 	// Administration multi-devices (3.4) : list_devices / revoke_device sont
 	// routés AVANT les RPC unary pour ne pas passer par la deadline 15 s et
@@ -4642,6 +4698,11 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		return
 
 	case "sync_session", "resume":
+		if msg.CascadeID == "" && msg.Data != nil {
+			if sid, ok := msg.Data["sessionId"].(string); ok {
+				msg.CascadeID = sid
+			}
+		}
 		if msg.CascadeID == "" {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "cascadeId requis"})
 			return
@@ -4650,7 +4711,40 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		if fromSeq == 0 && msg.LastSeq > 0 {
 			fromSeq = msg.LastSeq
 		}
+		if fromSeq == 0 && msg.Data != nil {
+			if as, ok := msg.Data["afterSequence"].(float64); ok {
+				fromSeq = int64(as)
+			} else if ls, ok := msg.Data["lastSequence"].(float64); ok {
+				fromSeq = int64(ls)
+			}
+		}
 		missed, currentSeq := s.streamBuffer.GetEventsSince(msg.CascadeID, fromSeq)
+		if len(missed) == 0 && s.eventStore != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			dbEvents, err := s.eventStore.GetEventsSince(ctx, msg.CascadeID, fromSeq, 1000)
+			if err == nil && len(dbEvents) > 0 {
+				for _, dEv := range dbEvents {
+					var payload map[string]interface{}
+					if len(dEv.Payload) > 0 {
+						_ = json.Unmarshal(dEv.Payload, &payload)
+					}
+					missed = append(missed, OutgoingMessage{
+						Type:      "stream_delta",
+						CascadeID: dEv.SessionID,
+						Data: map[string]interface{}{
+							"stepIndex": dEv.Sequence,
+							"type":      dEv.Type,
+							"timestamp": dEv.Timestamp,
+							"payload":   payload,
+						},
+					})
+				}
+				currentSeq = dbEvents[len(dbEvents)-1].Sequence
+			} else if latestSeq, err := s.eventStore.GetLatestSequence(ctx, msg.CascadeID); err == nil && latestSeq > currentSeq {
+				currentSeq = latestSeq
+			}
+		}
 		data := map[string]interface{}{
 			"cascadeId":        msg.CascadeID,
 			"missedEvents":     missed,
@@ -4659,6 +4753,20 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		}
 		if snapshot := s.streamBuffer.GetSessionSnapshot(msg.CascadeID); snapshot != nil {
 			data["snapshot"] = snapshot
+		} else if s.eventStore != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if dbSnap, err := s.eventStore.GetLatestSnapshot(ctx, msg.CascadeID); err == nil && dbSnap != nil {
+				snapMap := map[string]interface{}{
+					"sessionId":   dbSnap.SessionID,
+					"sequence":    dbSnap.Sequence,
+					"state":       string(dbSnap.State),
+					"title":       dbSnap.Title,
+					"capturedAt":  dbSnap.CapturedAt,
+					"pendingData": dbSnap.PendingData,
+				}
+				data["snapshot"] = snapMap
+			}
 		}
 		// Offline buffering (3.2) : les send_prompt non confirmés de cette
 		// cascade sont joints au catch-up — le mobile ré-affiche les messages
@@ -4761,6 +4869,88 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 			"prompt":    msg.Prompt,
 			"hasMedia":  hasMedia,
 		})
+		// Idempotence atomique et persistante via table commands SQLite (exigé pour commandId explicite)
+		if s.eventStore != nil && msg.CommandID != "" {
+			errReg := s.eventStore.RegisterCommand(context.Background(), &domain.CommandRecord{
+				CommandID:   msg.CommandID,
+				SessionID:   msg.CascadeID,
+				ActorID:     "remote-client",
+				CommandType: "send_prompt",
+				PayloadHash: sig,
+				Status:      "accepted",
+				CreatedAt:   time.Now().UnixMilli(),
+			})
+			if errReg != nil {
+				if errors.Is(errReg, domain.ErrCommandDuplicate) {
+					status := "already_processed"
+					if existingCmd, errGet := s.eventStore.GetCommand(context.Background(), msg.CommandID); errGet == nil && existingCmd != nil && existingCmd.Status != "" {
+						status = existingCmd.Status
+					}
+					s.writeJSON(conn, OutgoingMessage{
+						Type:      "response",
+						RequestID: msg.RequestID,
+						Data: map[string]interface{}{
+							"deduplicated": true,
+							"commandId":    msg.CommandID,
+							"status":       status,
+						},
+					})
+					return
+				}
+				if errors.Is(errReg, domain.ErrCommandConflict) {
+					s.writeJSON(conn, OutgoingMessage{
+						Type:      "response",
+						RequestID: msg.RequestID,
+						Error:     "COMMAND_ID_REUSED: commandId already used with different payload",
+						Data: map[string]interface{}{
+							"status":    "error",
+							"commandId": msg.CommandID,
+							"code":      "COMMAND_ID_REUSED",
+						},
+					})
+					return
+				}
+				s.writeJSON(conn, OutgoingMessage{
+					Type:      "response",
+					RequestID: msg.RequestID,
+					Error:     "storage error: " + errReg.Error(),
+				})
+				return
+			}
+		} else if msg.CommandID != "" {
+			s.mu.Lock()
+			if s.sentCommandHashes == nil {
+				s.sentCommandHashes = make(map[string]string)
+			}
+			if prevHash, exists := s.sentCommandHashes[msg.CommandID]; exists {
+				s.mu.Unlock()
+				if prevHash != sig {
+					s.writeJSON(conn, OutgoingMessage{
+						Type:      "response",
+						RequestID: msg.RequestID,
+						Error:     "COMMAND_ID_REUSED: commandId already used with different payload",
+						Data: map[string]interface{}{
+							"status":    "error",
+							"commandId": msg.CommandID,
+							"code":      "COMMAND_ID_REUSED",
+						},
+					})
+					return
+				}
+				s.writeJSON(conn, OutgoingMessage{
+					Type:      "response",
+					RequestID: msg.RequestID,
+					Data: map[string]interface{}{
+						"status":       "already_processed",
+						"commandId":    msg.CommandID,
+						"deduplicated": true,
+					},
+				})
+				return
+			}
+			s.sentCommandHashes[msg.CommandID] = sig
+			s.mu.Unlock()
+		}
 		if s.ledger != nil {
 			dup, state, entry, errLedger := s.ledger.Begin(msg.CascadeID, msg.RequestID, sig)
 			if errLedger != nil {
@@ -7245,6 +7435,107 @@ func (s *Server) handleAction(conn *websocket.Conn, msg IncomingMessage) {
 		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"success": true}})
 		return
 
+	case "clone_workspace", "workspace.clone", "git_clone":
+		repoURL := ""
+		if msg.Data != nil {
+			repoURL, _ = msg.Data["repoUrl"].(string)
+		}
+		if repoURL == "" {
+			repoURL = msg.Command
+		}
+		if repoURL == "" {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "repoUrl requis"})
+			return
+		}
+
+		branch := msg.Branch
+		authToken := ""
+		targetDir := ""
+		workspaceID := ""
+		depth := 0
+		if msg.Data != nil {
+			if b, ok := msg.Data["branch"].(string); ok {
+				branch = b
+			}
+			if t, ok := msg.Data["authToken"].(string); ok {
+				authToken = t
+			}
+			if td, ok := msg.Data["targetDir"].(string); ok {
+				targetDir = td
+			}
+			if wid, ok := msg.Data["workspaceId"].(string); ok {
+				workspaceID = wid
+			}
+			if d, ok := msg.Data["depth"].(float64); ok {
+				depth = int(d)
+			}
+		}
+
+		wm := workspace.NewManager()
+		res, errClone := wm.Clone(context.Background(), workspace.GitCloneOptions{
+			RepoURL:     repoURL,
+			Branch:      branch,
+			AuthToken:   authToken,
+			TargetDir:   targetDir,
+			WorkspaceID: workspaceID,
+			Depth:       depth,
+		})
+		if errClone != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: errClone.Error()})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: res})
+		return
+
+	case "sync_env", "workspace.sync_env":
+		targetWs := msg.WorkspacePath
+		if targetWs == "" && msg.Data != nil {
+			targetWs, _ = msg.Data["workspacePath"].(string)
+		}
+		if targetWs == "" {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "workspacePath requis"})
+			return
+		}
+		if !isPathInsideAllowedWorkspaces(targetWs) {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "accès refusé hors du workspace"})
+			return
+		}
+		envContent := ""
+		if msg.Data != nil {
+			envContent, _ = msg.Data["envContent"].(string)
+			if envContent == "" {
+				envContent, _ = msg.Data["content"].(string)
+			}
+		}
+		if envContent == "" {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "envContent requis"})
+			return
+		}
+
+		wm := workspace.NewManager()
+		if errEnv := wm.SyncEnv(targetWs, envContent); errEnv != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: errEnv.Error()})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"success": true, "file": ".env"}})
+		return
+
+	case "prune_worktrees", "workspace.prune":
+		maxAgeHours := 48.0
+		if msg.Data != nil {
+			if h, ok := msg.Data["maxAgeHours"].(float64); ok && h > 0 {
+				maxAgeHours = h
+			}
+		}
+		wm := workspace.NewManager()
+		pruned, errPrune := wm.PruneWorktrees("", time.Duration(maxAgeHours)*time.Hour)
+		if errPrune != nil {
+			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: errPrune.Error()})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Data: map[string]interface{}{"prunedCount": pruned}})
+		return
+
 	case "get_lint_errors", "lsp.get_lint_errors":
 		if msg.FilePath == "" {
 			s.writeJSON(conn, OutgoingMessage{Type: "response", RequestID: msg.RequestID, Error: "filePath requis"})
@@ -7596,6 +7887,24 @@ func isPathInsideAllowedWorkspaces(targetPath string) bool {
 		if errW == nil {
 			wdAbsLower := strings.ToLower(wdAbs)
 			if cleanTargetLower == wdAbsLower || strings.HasPrefix(cleanTargetLower, wdAbsLower+string(filepath.Separator)) {
+				return true
+			}
+		}
+	}
+
+	// Autoriser WORKSPACE_ROOT et /var/lib/antigravity (Environnement Cloud VPS)
+	extraRoots := []string{"/var/lib/antigravity"}
+	if envRoot := os.Getenv("WORKSPACE_ROOT"); envRoot != "" {
+		extraRoots = append(extraRoots, envRoot)
+	}
+	if envRoot := os.Getenv("AG_WORKSPACE_ROOT"); envRoot != "" {
+		extraRoots = append(extraRoots, envRoot)
+	}
+	for _, root := range extraRoots {
+		rootAbs, errR := filepath.Abs(homeRoot(root))
+		if errR == nil {
+			rootLower := strings.ToLower(rootAbs)
+			if cleanTargetLower == rootLower || strings.HasPrefix(cleanTargetLower, rootLower+string(filepath.Separator)) {
 				return true
 			}
 		}

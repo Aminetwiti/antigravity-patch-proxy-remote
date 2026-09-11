@@ -1142,10 +1142,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               }
             }
           }
+          // Always invoke StepRecovery to catch up missed events and sync status
+          widget.api?.syncSession(cascadeId: targetSession, lastStepIndex: 0).catchError((_) => <String, dynamic>{});
           if (isStreaming) {
             _onStreamStarted(targetSession);
-            // Catch up any in-flight live events from the daemon's StepRecovery buffer
-            widget.api?.syncSession(cascadeId: targetSession, lastStepIndex: 0);
             if (data['hasPendingApproval'] == true) {
               widget.api?.getPendingApproval(targetSession);
             }
@@ -2025,6 +2025,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           if (mounted) setState(() => _isSyncing = false);
         });
         final data = msg['data'] as Map<String, dynamic>? ?? const {};
+        final isStreamingFromSync = data['isStreaming'] == true;
+        if (isStreamingFromSync) {
+          _onStreamStarted(targetSessionId);
+        }
         final missedEvents = data['missedEvents'] as List<dynamic>? ?? const [];
         if (missedEvents.isNotEmpty) {
           for (final rawEv in missedEvents) {
@@ -2041,6 +2045,14 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 final cur = buf[idx];
                 final newText = textDelta.isNotEmpty ? cur.text + textDelta : cur.text;
                 buf[idx] = cur.copyWith(text: newText);
+              } else if (textDelta.isNotEmpty) {
+                buf.add(ChatMessage(
+                  id: 'ext-$reqId',
+                  sender: 'assistant',
+                  text: textDelta,
+                  timestamp: _timestamp(),
+                  isStreaming: isStreamingFromSync,
+                ));
               }
             }
           }

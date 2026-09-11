@@ -216,6 +216,7 @@ const OVERWRITE_FILES = [
   'dist/constants.js',
   'dist/utils.js',
   'dist/loadingOverlay.js',
+  'dist/main/windowManager.js',
   'dist/keybindings.js',
   'dist/menu.js',
   'dist/tray.js',

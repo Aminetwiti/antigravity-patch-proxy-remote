@@ -193,9 +193,12 @@ class OverviewPanelView extends StatelessWidget {
                       const SizedBox(width: 10),
                       Icon(Icons.hub_outlined, size: 12, color: scheme.primary),
                       const SizedBox(width: 4),
-                      Text(
-                        '${telemetry!['activeSubagents'] ?? 0} sous-agent(s) actif(s)',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: scheme.primary),
+                      Expanded(
+                        child: Text(
+                          '${telemetry!['activeSubagents'] ?? 0} sous-agent(s) actif(s)',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: scheme.primary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),

@@ -24,8 +24,8 @@ func nextEventID(prefix string) string {
 
 var (
 	ErrSessionNotFound  = errors.New("session not found")
-	ErrCommandDuplicate = errors.New("duplicate command detected with same payload")
-	ErrCommandConflict  = errors.New("conflicting payload for existing command id")
+	ErrCommandDuplicate = domain.ErrCommandDuplicate
+	ErrCommandConflict  = domain.ErrCommandConflict
 	ErrInvalidCommand   = errors.New("invalid command payload or type")
 	ErrSessionClosed    = errors.New("session is already in a terminal state")
 )
@@ -35,26 +35,18 @@ type EventBroadcaster interface {
 	BroadcastSessionUpdate(session *domain.Session)
 }
 
-type CommandRecord struct {
-	CommandID   string `json:"commandId"`
-	SessionID   string `json:"sessionId"`
-	PayloadHash string `json:"payloadHash"`
-	Status      string `json:"status"`
-	CreatedAt   int64  `json:"createdAt"`
-}
-
 type Service struct {
 	store       eventstore.EventStore
 	broadcaster EventBroadcaster
 	commandsMu  sync.RWMutex
-	commands    map[string]*CommandRecord // key: commandId
+	commands    map[string]*domain.CommandRecord // hot cache
 }
 
 func NewService(store eventstore.EventStore, broadcaster EventBroadcaster) *Service {
 	return &Service{
 		store:       store,
 		broadcaster: broadcaster,
-		commands:    make(map[string]*CommandRecord),
+		commands:    make(map[string]*domain.CommandRecord),
 	}
 }
 
@@ -69,25 +61,48 @@ func HashPayload(payload interface{}) string {
 }
 
 func (s *Service) CheckAndRegisterCommand(commandID, sessionID string, payload interface{}) error {
+	return s.CheckAndRegisterCommandCtx(context.Background(), commandID, sessionID, payload)
+}
+
+func (s *Service) CheckAndRegisterCommandCtx(ctx context.Context, commandID, sessionID string, payload interface{}) error {
 	s.commandsMu.Lock()
 	defer s.commandsMu.Unlock()
 
 	hash := HashPayload(payload)
-	existing, ok := s.commands[commandID]
-	if ok {
+	// 1. Vérification dans le cache chaud en mémoire
+	if existing, ok := s.commands[commandID]; ok {
 		if existing.PayloadHash == hash {
 			return ErrCommandDuplicate
 		}
 		return ErrCommandConflict
 	}
 
-	s.commands[commandID] = &CommandRecord{
+	// 2. Vérification dans la base SQLite persistante (survit aux reboots VPS / crashs daemon)
+	if s.store != nil {
+		dbCmd, err := s.store.GetCommand(ctx, commandID)
+		if err == nil && dbCmd != nil {
+			s.commands[commandID] = dbCmd
+			if dbCmd.PayloadHash == hash {
+				return ErrCommandDuplicate
+			}
+			return ErrCommandConflict
+		}
+	}
+
+	cmdRecord := &domain.CommandRecord{
 		CommandID:   commandID,
 		SessionID:   sessionID,
 		PayloadHash: hash,
 		Status:      "accepted",
 		CreatedAt:   time.Now().UnixMilli(),
 	}
+
+	if s.store != nil {
+		if err := s.store.RegisterCommand(ctx, cmdRecord); err != nil {
+			return err
+		}
+	}
+	s.commands[commandID] = cmdRecord
 	return nil
 }
 
@@ -136,6 +151,10 @@ func (s *Service) GetSession(ctx context.Context, sessionID string) (*domain.Ses
 }
 
 func (s *Service) TransitionState(ctx context.Context, sessionID string, targetState domain.SessionState, reason string) error {
+	return s.TransitionStateWithVersion(ctx, sessionID, targetState, reason, 0)
+}
+
+func (s *Service) TransitionStateWithVersion(ctx context.Context, sessionID string, targetState domain.SessionState, reason string, expectedVersion int64) error {
 	sess, err := s.store.GetSession(ctx, sessionID)
 	if err != nil {
 		return err
@@ -145,15 +164,18 @@ func (s *Service) TransitionState(ctx context.Context, sessionID string, targetS
 		return domain.ErrInvalidTransition{From: sess.State, To: targetState}
 	}
 
-	if err := s.store.UpdateSessionState(ctx, sessionID, targetState); err != nil {
+	if err := s.store.UpdateSessionStateWithVersion(ctx, sessionID, targetState, expectedVersion); err != nil {
 		return fmt.Errorf("failed to persist state transition: %w", err)
 	}
 
 	sess.State = targetState
 	sess.UpdatedAt = time.Now()
+	if expectedVersion > 0 {
+		sess.Version = expectedVersion + 1
+	}
 
 	eventID := nextEventID("evt_state")
-	payload := []byte(fmt.Sprintf(`{"from": %q, "to": %q, "reason": %q}`, sess.State, targetState, reason))
+	payload := []byte(fmt.Sprintf(`{"from": %q, "to": %q, "reason": %q, "version": %d}`, sess.State, targetState, reason, sess.Version))
 	ev, err := s.store.AppendEvent(ctx, sessionID, eventID, "session.state_changed", payload)
 	if err == nil && s.broadcaster != nil {
 		s.broadcaster.BroadcastEvent(ev)

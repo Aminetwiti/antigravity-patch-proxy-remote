@@ -353,3 +353,74 @@ func TestV1Adapter_FileOperations(t *testing.T) {
 		t.Fatalf("unexpected list_workspaces response: %+v", listWsRes)
 	}
 }
+
+func TestV1Adapter_SyncSessionCatchup(t *testing.T) {
+	adapter, ts, cleanup := setupV1AdapterTestServer(t, "")
+	defer cleanup()
+
+	ctx := context.Background()
+	sess, err := adapter.sessionSvc.CreateSession(ctx, "srv-1", "default-workspace", "Sync Session Test")
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	// Append 3 events to the session in SQLite
+	_, _ = adapter.eventStore.AppendEvent(ctx, sess.ID, "evt-1", "user.prompt", []byte(`{"text":"hello"}`))
+	_, _ = adapter.eventStore.AppendEvent(ctx, sess.ID, "evt-2", "agent.thought", []byte(`{"thought":"working"}`))
+	_, _ = adapter.eventStore.AppendEvent(ctx, sess.ID, "evt-3", "agent.finish", []byte(`{"result":"done"}`))
+
+	// Save snapshot
+	_ = adapter.eventStore.SaveSnapshot(ctx, &domain.Snapshot{
+		SessionID:  sess.ID,
+		Sequence:   3,
+		State:      domain.SessionStateRunning,
+		Title:      sess.Title,
+		CapturedAt: time.Now(),
+	})
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	// Send sync_session request asking for events since step 1
+	syncReq := map[string]interface{}{
+		"type":          "sync_session",
+		"requestId":     "req-sync-v1",
+		"cascadeId":     sess.ID,
+		"lastStepIndex": 1,
+	}
+	if err := conn.WriteJSON(syncReq); err != nil {
+		t.Fatalf("failed to send sync_session: %v", err)
+	}
+
+	var syncRes V1OutgoingMessage
+	if err := conn.ReadJSON(&syncRes); err != nil {
+		t.Fatalf("failed to read sync_catchup: %v", err)
+	}
+
+	if syncRes.Type != "sync_catchup" || syncRes.RequestID != "req-sync-v1" {
+		t.Fatalf("expected sync_catchup response, got: %+v", syncRes)
+	}
+
+	dataMap, _ := syncRes.Data.(map[string]interface{})
+	if dataMap == nil {
+		t.Fatalf("expected data map in sync_catchup response: %+v", syncRes)
+	}
+
+	missed, _ := dataMap["missedEvents"].([]interface{})
+	if len(missed) != 3 {
+		t.Errorf("expected 3 missed events, got: %d", len(missed))
+	}
+
+	currStep, _ := dataMap["currentStepIndex"].(float64)
+	if int64(currStep) != 4 {
+		t.Errorf("expected currentStepIndex 4, got: %v", currStep)
+	}
+
+	if dataMap["snapshot"] == nil {
+		t.Errorf("expected snapshot in sync_catchup, got nil")
+	}
+}

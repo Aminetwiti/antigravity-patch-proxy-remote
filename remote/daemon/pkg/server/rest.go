@@ -1074,9 +1074,10 @@ func (h *RESTHandler) HandleWorkspaceSync(w http.ResponseWriter, r *http.Request
 
 	var body struct {
 		WorkspaceID string `json:"workspaceId"`
-		Action      string `json:"action"` // "pull" or "push"
+		Action      string `json:"action"` // "pull", "push", "preflight", "safe_pull"
 		Remote      string `json:"remote"`
 		Branch      string `json:"branch"`
+		Force       bool   `json:"force"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -1093,6 +1094,19 @@ func (h *RESTHandler) HandleWorkspaceSync(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	if body.Action == "preflight" {
+		preflight, err := h.wsMgr.PreflightSync(wsID, body.Remote, body.Branch)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(preflight)
+		return
+	}
+
 	if body.Action == "push" {
 		res, err := h.wsMgr.Push(wsID, body.Remote, body.Branch)
 		if err != nil {
@@ -1106,7 +1120,20 @@ func (h *RESTHandler) HandleWorkspaceSync(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Default action: pull
+	if body.Action == "safe_pull" || (!body.Force && body.Action == "pull") {
+		res, err := h.wsMgr.SafeSync(wsID, body.Remote, body.Branch)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error(), "result": res})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(res)
+		return
+	}
+
+	// Default fallback action: forced pull
 	res, err := h.wsMgr.Pull(wsID, body.Remote, body.Branch)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")

@@ -238,7 +238,25 @@ function atomicWriteJson(filePath: string, payload: unknown): Promise<void> {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2), 'utf-8');
-    await fs.rename(tmp, filePath);
+    // ponytail: Windows NTFS retry on EPERM/EBUSY caused by active fs.watch or antivirus locks
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        await fs.rename(tmp, filePath);
+        return;
+      } catch (err: any) {
+        if ((err?.code === 'EPERM' || err?.code === 'EBUSY') && attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+          continue;
+        }
+        try {
+          await fs.copyFile(tmp, filePath);
+          await fs.unlink(tmp).catch(() => {});
+          return;
+        } catch {
+          throw err;
+        }
+      }
+    }
   })();
 }
 

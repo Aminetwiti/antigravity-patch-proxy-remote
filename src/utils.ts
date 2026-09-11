@@ -107,6 +107,15 @@ export function createWindow(url: string): BrowserWindowInstance {
     void shell.openExternal(details.url);
     return { action: 'deny' };
   });
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    console.log(`[Renderer Console] [${level}] ${message} (${sourceId}:${line})`);
+  });
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[Renderer] Failed to load ${validatedURL}: ${errorCode} ${errorDescription}`);
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[Renderer] Render process gone: ${details.reason} (exitCode: ${details.exitCode})`);
+  });
   attachLoadingOverlay(win, foregroundColor, backgroundColor);
   registerKeybindings(win, {
     createNewWindow: () => {

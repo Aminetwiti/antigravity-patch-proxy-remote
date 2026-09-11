@@ -58,6 +58,7 @@ var AllowedTransitions = map[SessionState][]SessionState{
 	},
 	SessionStateStarting: {
 		SessionStateRunning,
+		SessionStateRecovering,
 		SessionStateFailed,
 		SessionStateCancelled,
 	},
@@ -65,6 +66,7 @@ var AllowedTransitions = map[SessionState][]SessionState{
 		SessionStateWaitingInput,
 		SessionStateWaitingApproval,
 		SessionStatePaused,
+		SessionStateRecovering,
 		SessionStateCompleted,
 		SessionStateFailed,
 		SessionStateCancelled,
@@ -72,12 +74,14 @@ var AllowedTransitions = map[SessionState][]SessionState{
 	SessionStateWaitingInput: {
 		SessionStateRunning,
 		SessionStatePaused,
+		SessionStateRecovering,
 		SessionStateCancelled,
 		SessionStateFailed,
 	},
 	SessionStateWaitingApproval: {
 		SessionStateRunning,
 		SessionStatePaused,
+		SessionStateRecovering,
 		SessionStateCancelled,
 		SessionStateFailed,
 	},
@@ -117,6 +121,12 @@ func CanTransition(from, to SessionState) bool {
 	return false
 }
 
+var (
+	ErrVersionConflict  = fmt.Errorf("optimistic concurrency conflict: session version has changed")
+	ErrCommandDuplicate = fmt.Errorf("command duplicate: already processed")
+	ErrCommandConflict  = fmt.Errorf("conflicting payload: command conflict for existing command id")
+)
+
 type Session struct {
 	ID           string       `json:"id"`
 	ServerID     string       `json:"serverId"`
@@ -124,10 +134,38 @@ type Session struct {
 	OwnerID      string       `json:"ownerId,omitempty"`
 	Title        string       `json:"title"`
 	State        SessionState `json:"state"`
+	Version      int64        `json:"version"`
 	CreatedAt    time.Time    `json:"createdAt"`
 	UpdatedAt    time.Time    `json:"updatedAt"`
 	LastSequence int64        `json:"lastSequence"`
+	BaseCommit   string       `json:"baseCommit,omitempty"`
+	BaseBranch   string       `json:"baseBranch,omitempty"`
+	OriginCommit string       `json:"originCommit,omitempty"`
 }
+
+type CommandRecord struct {
+	CommandID   string `json:"commandId"`
+	SessionID   string `json:"sessionId"`
+	ActorID     string `json:"actorId"`
+	CommandType string `json:"commandType"`
+	PayloadHash string `json:"payloadHash"`
+	Status      string `json:"status"`
+	CreatedAt   int64  `json:"createdAt"`
+}
+
+const (
+	EventSessionCreated     = "session.created"
+	EventSessionStarted     = "session.started"
+	EventRuntimeAttached    = "runtime.attached"
+	EventRuntimeDetached    = "runtime.detached"
+	EventRuntimeRecovered   = "runtime.recovered"
+	EventSessionReconnected = "session.reconnected"
+	EventSessionReconciled  = "session.reconciled"
+	EventSessionPaused      = "session.paused"
+	EventSessionResumed     = "session.resumed"
+	EventSessionCompleted   = "session.completed"
+	EventSessionFailed      = "session.failed"
+)
 
 type Workspace struct {
 	ID        string    `json:"id"`

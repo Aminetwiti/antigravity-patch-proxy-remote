@@ -15,11 +15,13 @@ type IncomingMessage struct {
 	WorkspacePath string `json:"workspacePath,omitempty"`
 	ProjectID     string `json:"projectId,omitempty"`
 	CascadeID     string `json:"cascadeId,omitempty"`
-	CallID        string `json:"callId,omitempty"`
-	TrajectoryID  string `json:"trajectoryID,omitempty"`
-	StepIndex     int64  `json:"stepIndex,omitempty"`
-	ApprovalType  string `json:"approvalType,omitempty"`
-	Decision      string `json:"decision,omitempty"`
+	CallID          string `json:"callId,omitempty"`
+	TrajectoryID    string `json:"trajectoryID,omitempty"`
+	StepIndex       int64  `json:"stepIndex,omitempty"`
+	CommandID       string `json:"commandId,omitempty"`
+	ExpectedVersion int64  `json:"expectedVersion,omitempty"`
+	ApprovalType    string `json:"approvalType,omitempty"`
+	Decision        string `json:"decision,omitempty"`
 	Scope         string `json:"scope,omitempty"`
 	// DenyReason : instruction libre envoyée à l'agent quand l'utilisateur
 	// refuse une approbation run_command (ex. « fais un revert d'abord »).

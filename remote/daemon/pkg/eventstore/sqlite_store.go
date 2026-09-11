@@ -27,12 +27,15 @@ type EventStore interface {
 	GetSession(ctx context.Context, sessionID string) (*domain.Session, error)
 	ListSessions(ctx context.Context) ([]domain.Session, error)
 	UpdateSessionState(ctx context.Context, sessionID string, state domain.SessionState) error
+	UpdateSessionStateWithVersion(ctx context.Context, sessionID string, state domain.SessionState, expectedVersion int64) error
 	AppendEvent(ctx context.Context, sessionID, eventID, eventType string, payload []byte) (*domain.Event, error)
 	AppendBatch(ctx context.Context, sessionID string, events []domain.Event) ([]domain.Event, error)
 	GetEventsSince(ctx context.Context, sessionID string, sinceSeq int64, limit int) ([]domain.Event, error)
 	GetLatestSequence(ctx context.Context, sessionID string) (int64, error)
 	SaveSnapshot(ctx context.Context, snap *domain.Snapshot) error
 	GetLatestSnapshot(ctx context.Context, sessionID string) (*domain.Snapshot, error)
+	RegisterCommand(ctx context.Context, cmd *domain.CommandRecord) error
+	GetCommand(ctx context.Context, commandID string) (*domain.CommandRecord, error)
 	SaveScheduledJob(ctx context.Context, job *domain.ScheduledJob) error
 	GetScheduledJob(ctx context.Context, id string) (*domain.ScheduledJob, error)
 	ListScheduledJobs(ctx context.Context) ([]domain.ScheduledJob, error)
@@ -110,6 +113,7 @@ func (s *SQLiteEventStore) InitSchema(ctx context.Context) error {
 		owner_id TEXT DEFAULT '',
 		title TEXT NOT NULL,
 		state TEXT NOT NULL,
+		version INTEGER NOT NULL DEFAULT 1,
 		last_sequence INTEGER NOT NULL DEFAULT 0,
 		created_at INTEGER NOT NULL,
 		updated_at INTEGER NOT NULL
@@ -176,6 +180,7 @@ func (s *SQLiteEventStore) InitSchema(ctx context.Context) error {
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE workspaces ADD COLUMN owner_id TEXT DEFAULT '';")
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE scheduled_jobs ADD COLUMN owner_id TEXT DEFAULT '';")
 	_, _ = s.db.ExecContext(ctx, "ALTER TABLE scheduled_jobs ADD COLUMN session_id TEXT DEFAULT '';")
+	_, _ = s.db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN version INTEGER NOT NULL DEFAULT 1;")
 	return nil
 }
 
@@ -186,10 +191,13 @@ func (s *SQLiteEventStore) CreateSession(ctx context.Context, sess *domain.Sessi
 	}
 	sess.UpdatedAt = now
 	sess.State = domain.SessionStateCreated
+	if sess.Version <= 0 {
+		sess.Version = 1
+	}
 
 	query := `
-	INSERT INTO sessions (id, server_id, workspace_id, owner_id, title, state, last_sequence, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+	INSERT INTO sessions (id, server_id, workspace_id, owner_id, title, state, version, last_sequence, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`
 	_, err := s.db.ExecContext(ctx, query,
 		sess.ID,
@@ -198,6 +206,7 @@ func (s *SQLiteEventStore) CreateSession(ctx context.Context, sess *domain.Sessi
 		sess.OwnerID,
 		sess.Title,
 		string(sess.State),
+		sess.Version,
 		sess.LastSequence,
 		sess.CreatedAt.UnixMilli(),
 		sess.UpdatedAt.UnixMilli(),
@@ -207,7 +216,7 @@ func (s *SQLiteEventStore) CreateSession(ctx context.Context, sess *domain.Sessi
 
 func (s *SQLiteEventStore) GetSession(ctx context.Context, sessionID string) (*domain.Session, error) {
 	query := `
-	SELECT id, server_id, workspace_id, owner_id, title, state, last_sequence, created_at, updated_at
+	SELECT id, server_id, workspace_id, owner_id, title, state, version, last_sequence, created_at, updated_at
 	FROM sessions WHERE id = ?;
 	`
 	row := s.db.QueryRowContext(ctx, query, sessionID)
@@ -223,6 +232,7 @@ func (s *SQLiteEventStore) GetSession(ctx context.Context, sessionID string) (*d
 		&sess.OwnerID,
 		&sess.Title,
 		&stateStr,
+		&sess.Version,
 		&sess.LastSequence,
 		&createdMs,
 		&updatedMs,
@@ -243,7 +253,7 @@ func (s *SQLiteEventStore) GetSession(ctx context.Context, sessionID string) (*d
 
 func (s *SQLiteEventStore) ListSessions(ctx context.Context) ([]domain.Session, error) {
 	query := `
-	SELECT id, server_id, workspace_id, owner_id, title, state, last_sequence, created_at, updated_at
+	SELECT id, server_id, workspace_id, owner_id, title, state, version, last_sequence, created_at, updated_at
 	FROM sessions ORDER BY updated_at DESC;
 	`
 	rows, err := s.db.QueryContext(ctx, query)
@@ -265,6 +275,7 @@ func (s *SQLiteEventStore) ListSessions(ctx context.Context) ([]domain.Session, 
 			&sess.OwnerID,
 			&sess.Title,
 			&stateStr,
+			&sess.Version,
 			&sess.LastSequence,
 			&createdMs,
 			&updatedMs,
@@ -282,6 +293,10 @@ func (s *SQLiteEventStore) ListSessions(ctx context.Context) ([]domain.Session, 
 }
 
 func (s *SQLiteEventStore) UpdateSessionState(ctx context.Context, sessionID string, newState domain.SessionState) error {
+	return s.UpdateSessionStateWithVersion(ctx, sessionID, newState, 0)
+}
+
+func (s *SQLiteEventStore) UpdateSessionStateWithVersion(ctx context.Context, sessionID string, newState domain.SessionState, expectedVersion int64) error {
 	mu := s.getSessionMutex(sessionID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -291,13 +306,75 @@ func (s *SQLiteEventStore) UpdateSessionState(ctx context.Context, sessionID str
 		return err
 	}
 
+	if expectedVersion > 0 && current.Version != expectedVersion {
+		return domain.ErrVersionConflict
+	}
+
 	if !domain.CanTransition(current.State, newState) {
 		return domain.ErrInvalidTransition{From: current.State, To: newState}
 	}
 
-	query := `UPDATE sessions SET state = ?, updated_at = ? WHERE id = ?;`
-	_, err = s.db.ExecContext(ctx, query, string(newState), time.Now().UnixMilli(), sessionID)
-	return err
+	var res sql.Result
+	now := time.Now().UnixMilli()
+	if expectedVersion > 0 {
+		query := `UPDATE sessions SET state = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?;`
+		res, err = s.db.ExecContext(ctx, query, string(newState), now, sessionID, expectedVersion)
+	} else {
+		query := `UPDATE sessions SET state = ?, version = version + 1, updated_at = ? WHERE id = ?;`
+		res, err = s.db.ExecContext(ctx, query, string(newState), now, sessionID)
+	}
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrVersionConflict
+	}
+	return nil
+}
+
+func (s *SQLiteEventStore) RegisterCommand(ctx context.Context, cmd *domain.CommandRecord) error {
+	query := `
+	INSERT INTO commands (command_id, session_id, actor_id, command_type, payload_hash, status, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?);
+	`
+	_, err := s.db.ExecContext(ctx, query,
+		cmd.CommandID,
+		cmd.SessionID,
+		cmd.ActorID,
+		cmd.CommandType,
+		cmd.PayloadHash,
+		cmd.Status,
+		cmd.CreatedAt,
+	)
+	if err != nil {
+		existing, getErr := s.GetCommand(ctx, cmd.CommandID)
+		if getErr == nil && existing != nil {
+			if existing.PayloadHash == cmd.PayloadHash {
+				return domain.ErrCommandDuplicate
+			}
+			return domain.ErrCommandConflict
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *SQLiteEventStore) GetCommand(ctx context.Context, commandID string) (*domain.CommandRecord, error) {
+	query := `SELECT command_id, session_id, actor_id, command_type, payload_hash, status, created_at FROM commands WHERE command_id = ?;`
+	row := s.db.QueryRowContext(ctx, query, commandID)
+	var cmd domain.CommandRecord
+	err := row.Scan(&cmd.CommandID, &cmd.SessionID, &cmd.ActorID, &cmd.CommandType, &cmd.PayloadHash, &cmd.Status, &cmd.CreatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &cmd, nil
 }
 
 func (s *SQLiteEventStore) AppendEvent(ctx context.Context, sessionID, eventID, eventType string, payload []byte) (*domain.Event, error) {

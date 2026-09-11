@@ -110,6 +110,8 @@ export interface StorageAPI {
   getRemoteWorkspaces?: (payload?: { host?: string; token?: string }) => Promise<{ ok: boolean; workspaces?: any[]; error?: string }>;
   injectUserStatus?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
   injectAvailableModels?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
+  setRemoteState?: (payload: { active?: boolean; host?: string; remoteSessions?: Record<string, boolean> }) => Promise<{ ok: boolean; state?: any; error?: string }>;
+  getRemoteState?: () => Promise<{ ok: boolean; state?: any; error?: string }>;
 }
 
 export interface LogsAPI {

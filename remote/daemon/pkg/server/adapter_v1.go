@@ -34,6 +34,8 @@ type V1IncomingMessage struct {
 	Content       string                 `json:"content,omitempty"`
 	Overwrite     bool                   `json:"overwrite,omitempty"`
 	ModelUID      string                 `json:"modelUID,omitempty"`
+	LastStepIndex int64                  `json:"lastStepIndex,omitempty"`
+	LastSeq       int64                  `json:"lastSeq,omitempty"`
 	Data          map[string]interface{} `json:"data,omitempty"`
 }
 
@@ -230,6 +232,71 @@ func (a *V1Adapter) handleAction(conn *websocket.Conn, msg V1IncomingMessage) {
 				"sessions": items,
 			},
 		})
+
+	case "sync_session", "resume":
+		sessID := msg.CascadeID
+		if sessID == "" && msg.Data != nil {
+			if s, ok := msg.Data["sessionId"].(string); ok {
+				sessID = s
+			}
+		}
+		if sessID == "" {
+			a.writeJSON(conn, V1OutgoingMessage{Type: "error", RequestID: msg.RequestID, Error: "sessionId / cascadeId required"})
+			return
+		}
+		fromSeq := msg.LastStepIndex
+		if fromSeq == 0 && msg.LastSeq > 0 {
+			fromSeq = msg.LastSeq
+		}
+		if fromSeq == 0 && msg.Data != nil {
+			if as, ok := msg.Data["afterSequence"].(float64); ok {
+				fromSeq = int64(as)
+			} else if ls, ok := msg.Data["lastSequence"].(float64); ok {
+				fromSeq = int64(ls)
+			}
+		}
+
+		var items []map[string]interface{}
+		var currentSeq int64 = fromSeq
+		if a.eventStore != nil {
+			missedEvents, err := a.eventStore.GetEventsSince(ctx, sessID, fromSeq, 1000)
+			if err == nil {
+				for _, ev := range missedEvents {
+					var p map[string]interface{}
+					if len(ev.Payload) > 0 {
+						_ = json.Unmarshal(ev.Payload, &p)
+					}
+					items = append(items, map[string]interface{}{
+						"stepIndex": ev.Sequence,
+						"type":      ev.Type,
+						"timestamp": ev.Timestamp,
+						"payload":   p,
+					})
+					if ev.Sequence > currentSeq {
+						currentSeq = ev.Sequence
+					}
+				}
+			}
+		}
+
+		respData := map[string]interface{}{
+			"cascadeId":        sessID,
+			"missedEvents":     items,
+			"currentStepIndex": currentSeq,
+			"isStreaming":      false,
+		}
+		if a.eventStore != nil {
+			if snap, err := a.eventStore.GetLatestSnapshot(ctx, sessID); err == nil && snap != nil {
+				respData["snapshot"] = snap
+			}
+		}
+
+		a.writeJSON(conn, V1OutgoingMessage{
+			Type:      "sync_catchup",
+			RequestID: msg.RequestID,
+			Data:      respData,
+		})
+		return
 
 	case "create_cascade", "new_conversation":
 		wsID := "default-workspace"

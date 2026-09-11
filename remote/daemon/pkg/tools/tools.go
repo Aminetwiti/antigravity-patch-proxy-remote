@@ -233,6 +233,8 @@ func (t *RunCommandTool) Execute(ctx context.Context, sessionID, workspaceID str
 		cmd = exec.CommandContext(cmdCtx, "sh", "-c", p.CommandLine)
 	}
 	cmd.Dir = wsDir
+	// ponytail: prevent hanging forever if detached child process keeps I/O pipes open
+	cmd.WaitDelay = 3 * time.Second
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {

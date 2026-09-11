@@ -4076,6 +4076,28 @@ func listWorkspaces() []map[string]interface{} {
 		add(p.Name, p.Path, "registry")
 	}
 
+	// Découverte automatique des projets sous WORKSPACE_ROOT ou /var/lib/antigravity/projects
+	var scanRoots []string
+	if envRoot := os.Getenv("WORKSPACE_ROOT"); envRoot != "" {
+		scanRoots = append(scanRoots, envRoot)
+	}
+	if envRoot := os.Getenv("AG_WORKSPACE_ROOT"); envRoot != "" {
+		scanRoots = append(scanRoots, envRoot)
+	}
+	scanRoots = append(scanRoots, "/var/lib/antigravity/projects")
+
+	for _, sRoot := range scanRoots {
+		if fi, err := os.Stat(sRoot); err == nil && fi.IsDir() {
+			if entries, err := os.ReadDir(sRoot); err == nil {
+				for _, e := range entries {
+					if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && e.Name() != "worktrees" && e.Name() != "logs" {
+						add(e.Name(), filepath.Join(sRoot, e.Name()), "workspace_root")
+					}
+				}
+			}
+		}
+	}
+
 	// Uniquement en fallback si aucun projet officiel n'est configuré
 	if len(out) == 0 {
 		if home, err := os.UserHomeDir(); err == nil {
