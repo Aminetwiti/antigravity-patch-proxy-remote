@@ -625,6 +625,15 @@ export function translateToolCallToNative(
       searchPath = path.isAbsolute(pathToken) ? pathToken : path.resolve(cwd, pathToken);
     }
     if (query) {
+      try {
+        if (fs.existsSync(searchPath) && fs.statSync(searchPath).isFile()) {
+          log.info(`[Proxy] run_command grep target "${searchPath}" is a file. Leaving as native shell command to avoid IDE parse bugs.`);
+          return { name, args: args as Record<string, unknown> };
+        }
+      } catch (err) {
+        // Ignore stat errors
+      }
+
       log.info(`[Proxy] Translating run_command "${cmd}" to grep_search (Query: "${query}", Path: "${searchPath}")`);
       return {
         name: 'grep_search',

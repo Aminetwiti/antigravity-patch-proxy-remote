@@ -17,8 +17,8 @@ export { DJB2_SEED, PLACEHOLDER_ID_BASE, PLACEHOLDER_ID_RANGE };
  */
 export function generateModelPlaceholderId(model: CustomModel): string {
   const effortTag = model._effortSuffix || '';
-  // Google models are pooled behind canonical model IDs without per-account tags
-  const accountTag = model.provider === 'google' ? '' : (model.accountName || model.accountEmail || '');
+  // Google models used to be pooled, but this caused conflicts when multiple Google accounts were added
+  const accountTag = (model.accountName || model.accountEmail || '');
   const cleanDisplayName = (model.displayName || model.name || 'custom-model').replace(/^\[[^\]]+\]\s*/, '');
   const input = `${model.provider}-${model.apiUrl}-${model.externalModelName}-${cleanDisplayName}${accountTag ? `-${accountTag}` : ''}${effortTag}`.toLowerCase();
   let hash = DJB2_SEED;
@@ -37,8 +37,8 @@ export function generateModelPlaceholderId(model: CustomModel): string {
 export function toSlug(model: CustomModel): string {
   const provider = (model.provider || 'custom').toLowerCase();
   const effortTag = model._effortSuffix || '';
-  // Google models are pooled behind canonical model slugs without per-account tags
-  const accountTag = model.provider === 'google' ? '' : (model.accountName || model.accountEmail || '');
+  // Google models used to be pooled, but this caused conflicts when multiple Google accounts were added
+  const accountTag = (model.accountName || model.accountEmail || '');
   const input = `${provider}-${model.apiUrl}-${model.externalModelName || model.name}${accountTag ? `-${accountTag}` : ''}${effortTag}`
     .replace(/^models\//, '')
     .replace(/[^a-zA-Z0-9]+/g, '-')

@@ -43,9 +43,8 @@ export function deduplicateModels(models: CustomModel[]): CustomModel[] {
     const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
     const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
     const effort = m._effortSuffix || '';
-    const key = m.provider === 'google'
-      ? `google:${cleanDisp || rawName}${effort}`
-      : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+    const accountTag = (m.accountName || m.accountEmail || '');
+    const key = `${m.provider}:${cleanDisp || rawName}:${rawName}${accountTag ? `:${accountTag}` : ''}${effort}`;
     if (seenKeys.has(key)) return false;
     seenKeys.add(key);
     return true;
@@ -208,10 +207,10 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       }
       (result as Record<string, unknown>)[slug] = entry;
       (result as Record<string, unknown>)[pid] = entry;
-      if (m.name && m.name !== pid && m.name !== slug) {
+      if (m.name && m.name !== pid && m.name !== slug && !(m.name in (target as object))) {
         (result as Record<string, unknown>)[m.name] = entry;
       }
-      if (m.externalModelName && m.externalModelName !== pid && m.externalModelName !== slug) {
+      if (m.externalModelName && m.externalModelName !== pid && m.externalModelName !== slug && !(m.externalModelName in (target as object))) {
         (result as Record<string, unknown>)[m.externalModelName] = entry;
       }
       log.info(
@@ -287,7 +286,6 @@ export function injectCustomSlugsIntoAgentModelSorts(
               !customSlugs.includes(id) &&
               !id.startsWith('custom-') &&
               !id.startsWith('MODEL_PLACEHOLDER_') &&
-              !customExternalNames.has(id) &&
               !customPlaceholders.has(id),
           );
           // Original models first, custom models appended cleanly after without repetition

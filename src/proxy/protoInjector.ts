@@ -122,9 +122,8 @@ export function injectCustomModelsIntoResponse(
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = m.provider === 'google'
-        ? `google:${cleanDisp || rawName}${effort}`
-        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+      const accountTag = (m.accountName || m.accountEmail || '');
+      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${accountTag ? `:${accountTag}` : ''}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
       seenModelKeys.add(modelDedupKey);
@@ -222,9 +221,8 @@ function injectCustomModelsIntoUserStatusJson(
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = m.provider === 'google'
-        ? `google:${cleanDisp || rawName}${effort}`
-        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+      const accountTag = (m.accountName || m.accountEmail || '');
+      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${accountTag ? `:${accountTag}` : ''}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
@@ -357,9 +355,8 @@ export function injectCustomModelsIntoUserStatus(
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = m.provider === 'google'
-        ? `google:${cleanDisp || rawName}${effort}`
-        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+      const accountTag = (m.accountName || m.accountEmail || '');
+      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${accountTag ? `:${accountTag}` : ''}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
