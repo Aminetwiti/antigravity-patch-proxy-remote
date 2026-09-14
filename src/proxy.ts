@@ -1593,7 +1593,18 @@ function handleCustomModelRequest(
   }
 
   const provider = resolveProvider(model);
-  const cleanModelName = getBaseModelId(model.externalModelName);
+  let cleanModelName = getBaseModelId(model.externalModelName);
+
+  // Auto-fallback for reasoning models when tools are present (avoids HTTP 400 Bad Request)
+  if (geminiBody.tools && Array.isArray(geminiBody.tools) && geminiBody.tools.length > 0) {
+    if (cleanModelName.includes('thinking')) {
+      cleanModelName = cleanModelName.replace('-thinking', '');
+      log.info(`[Proxy] Tools detected in payload. Downgrading thinking model to ${cleanModelName}`);
+    } else if (cleanModelName === 'deepseek-reasoner') {
+      cleanModelName = 'deepseek-chat';
+      log.info(`[Proxy] Tools detected in payload. Downgrading deepseek-reasoner to ${cleanModelName}`);
+    }
+  }
 
   const payload = registry.translateRequest(provider, geminiBody, cleanModelName, model.extraBody);
   const headers = registry.getProviderHeaders(provider, model.apiKey, model.extraHeaders);
