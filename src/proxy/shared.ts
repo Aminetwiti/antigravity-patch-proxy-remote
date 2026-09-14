@@ -16,6 +16,7 @@ export interface StateTimestamps {
   toolCallIds: Map<string, number>;
   translatedCalls: Map<string, number>;
   reasoning: Map<string, number>;
+  thoughtSigs: Map<string, number>;
 }
 
 export interface TranslatedCallInfo {
@@ -39,12 +40,20 @@ export const activeStreamContexts = new Map<string, StreamContext>();
 /** toolCallId → { originalName, translatedName, cmd, cwd } */
 export const translatedToolCalls = new Map<string, TranslatedCallInfo>();
 
+/**
+ * `convId:funcName` → last seen thought_signature string.
+ * Gemini 3+ requires thought_signature on every functionCall part in history.
+ * The LS strips it when building subsequent requests; we cache and restore it.
+ */
+export const thoughtSignatureCache = new Map<string, string>();
+
 /** State entry timestamps for periodic cleanup */
 export const stateTimestamps: StateTimestamps = {
   streamCtx: new Map(),
   toolCallIds: new Map(),
   translatedCalls: new Map(),
   reasoning: new Map(),
+  thoughtSigs: new Map(),
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -97,6 +106,12 @@ export function startCleanupInterval(): void {
       if (now - ts > TOOL_TTL) {
         modelReasoningContent.delete(key);
         stateTimestamps.reasoning.delete(key);
+      }
+    }
+    for (const [key, ts] of stateTimestamps.thoughtSigs) {
+      if (now - ts > TOOL_TTL) {
+        thoughtSignatureCache.delete(key);
+        stateTimestamps.thoughtSigs.delete(key);
       }
     }
   }, 300_000);

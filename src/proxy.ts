@@ -201,6 +201,7 @@ import {
   activeStreamContexts,
   translatedToolCalls,
   stateTimestamps,
+  thoughtSignatureCache,
   touchStateTimestamp,
   getSessionModelKey,
   startCleanupInterval,
@@ -360,7 +361,12 @@ import { detectModelCapabilities } from './proxy/modelUtils';
 
 // ─── Google Proxy ─────────────────────────────────────────────────────────
 
-function transformGoogleStreamForRemote(proxyRes: http.IncomingMessage, clientRes: http.ServerResponse): void {
+function transformGoogleStreamForRemote(
+  proxyRes: http.IncomingMessage,
+  clientRes: http.ServerResponse,
+  convId = '',
+  isRemote = true,
+): void {
   const headers = { ...proxyRes.headers };
   delete headers['content-length'];
   delete headers['content-encoding'];
@@ -375,8 +381,10 @@ function transformGoogleStreamForRemote(proxyRes: http.IncomingMessage, clientRe
       if (jsonStr && jsonStr !== '[DONE]') {
         try {
           const data = JSON.parse(jsonStr);
+          // Cache any thought_signature values from this response chunk
+          extractAndCacheThoughtSignatures(data, convId);
           let modified = false;
-          if (Array.isArray(data.candidates)) {
+          if (isRemote && Array.isArray(data.candidates)) {
             for (const cand of data.candidates) {
               if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
                 for (const part of cand.content.parts) {
@@ -448,12 +456,89 @@ function transformGoogleStreamForRemote(proxyRes: http.IncomingMessage, clientRe
   });
 }
 
+// ─── Thought Signature Cache Helpers ──────────────────────────────────────
+
+/**
+ * Scans Gemini SSE/JSON response data for functionCall parts that carry a
+ * thought_signature sibling field and caches them keyed by convId:funcName.
+ *
+ * Gemini 3+ attaches thought_signature to each functionCall part; the LS
+ * must echo it back in subsequent turns. When the LS strips it (its bug),
+ * restoreThoughtSignatures() re-injects cached values before forwarding.
+ */
+function extractAndCacheThoughtSignatures(data: unknown, convId: string): void {
+  if (!data || typeof data !== 'object') return;
+  const d = data as { candidates?: unknown[] };
+  if (!Array.isArray(d.candidates)) return;
+  for (const cand of d.candidates) {
+    const c = cand as { content?: { parts?: unknown[] } };
+    if (!Array.isArray(c?.content?.parts)) continue;
+    for (const part of c.content!.parts!) {
+      const p = part as Record<string, unknown>;
+      const fc = p.functionCall as Record<string, unknown> | undefined;
+      const fnName = (fc?.name as string) || (p.name as string);
+      const sig = (typeof p.thought_signature === 'string' && p.thought_signature) ||
+                  (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
+                  (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
+                  (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature);
+      if (fnName && sig) {
+        if (convId) {
+          const scopedKey = `${convId}:${fnName}`;
+          thoughtSignatureCache.set(scopedKey, sig);
+          touchStateTimestamp(stateTimestamps.thoughtSigs, scopedKey);
+        }
+        thoughtSignatureCache.set(fnName, sig);
+        touchStateTimestamp(stateTimestamps.thoughtSigs, fnName);
+        log.info(`[Proxy] Cached thought_signature for ${fnName} (conv: ${convId || 'none'})`);
+      }
+    }
+  }
+}
+
+/**
+ * Scans outgoing request contents[] for functionCall parts missing
+ * thought_signature and restores cached values where available.
+ * Returns true if any signature was restored.
+ */
+function restoreThoughtSignatures(contents: unknown[], convId: string): boolean {
+  let restoredCount = 0;
+  for (const content of contents) {
+    const c = content as { parts?: unknown[] };
+    if (!Array.isArray(c?.parts)) continue;
+    for (const part of c.parts) {
+      const p = part as Record<string, unknown>;
+      const fc = p.functionCall as Record<string, unknown> | undefined;
+      if (!fc || typeof fc.name !== 'string' || !fc.name) continue;
+
+      const existingSig = (typeof p.thought_signature === 'string' && p.thought_signature) ||
+                          (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
+                          (typeof fc.thought_signature === 'string' && fc.thought_signature) ||
+                          (typeof fc.thoughtSignature === 'string' && fc.thoughtSignature);
+      if (existingSig) continue;
+
+      const scopedKey = convId ? `${convId}:${fc.name}` : '';
+      const cached = (scopedKey && thoughtSignatureCache.get(scopedKey)) ||
+                     thoughtSignatureCache.get(fc.name as string);
+      const sigToUse = cached || 'skip_thought_signature_validator';
+
+      p.thought_signature = sigToUse;
+      p.thoughtSignature = sigToUse;
+      fc.thought_signature = sigToUse;
+      fc.thoughtSignature = sigToUse;
+      restoredCount++;
+      log.info(`[Proxy] Restored thought_signature for ${fc.name} (conv: ${convId || 'none'}, fromCache=${!!cached})`);
+    }
+  }
+  return restoredCount > 0;
+}
+
 async function proxyToGoogle(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   reqBody: Buffer,
   isRemoteSession = false,
   customAuthHeader?: string,
+  convId = '',
 ): Promise<void> {
   const traceId = newTraceId();
   const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode');
@@ -487,6 +572,10 @@ async function proxyToGoogle(
   if (customAuthHeader) {
     headers['authorization'] = customAuthHeader;
     headers['Authorization'] = customAuthHeader;
+  }
+  if (isCloudCodeUrl) {
+    headers['user-agent'] = 'antigravity';
+    headers['User-Agent'] = 'antigravity';
   }
 
   const isGeneration = req.url!.includes('generateContent') || req.url!.includes('streamGenerateContent');
@@ -563,10 +652,10 @@ async function proxyToGoogle(
           safeEnd(res, modifiedBuffer);
         }
       });
-    } else if (isRemoteSession && isGeneration) {
+    } else if (isGeneration) {
       const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
       if (isStream) {
-        transformGoogleStreamForRemote(proxyRes, res);
+        transformGoogleStreamForRemote(proxyRes, res, convId, isRemoteSession);
       } else {
         const responseChunks: Buffer[] = [];
         proxyRes.on('data', (chunk) => responseChunks.push(chunk));
@@ -576,8 +665,10 @@ async function proxyToGoogle(
           let text = fullResBody.toString('utf-8');
           try {
             const data = JSON.parse(text);
+            // Cache any thought_signature values from this response
+            extractAndCacheThoughtSignatures(data, convId);
             let modified = false;
-            if (Array.isArray(data.candidates)) {
+            if (isRemoteSession && Array.isArray(data.candidates)) {
               for (const cand of data.candidates) {
                 if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
                   for (const part of cand.content.parts) {
@@ -1289,6 +1380,9 @@ export function getAccountQuotaKey(item: CustomModel): string {
 }
 
 export function getModelQuotaScore(m: CustomModel): number {
+  if (isGoogleCloudCodeModel(m) && !m.refreshToken && (!m.apiKey || !m.apiKey.startsWith('ya29.'))) {
+    return 0;
+  }
   if (!m.quotas) return 50;
   const q = m.quotas as Record<string, any>;
   const isClaude = (m.externalModelName || m.name || '').toLowerCase().includes('claude');
@@ -1316,8 +1410,12 @@ export function selectBestModelByQuota(candidates: CustomModel[], allModels?: Cu
   const healthy = candidates.filter((m) => !getOpenBreaker(m));
   const pool = healthy.length > 0 ? healthy : candidates;
 
-  const withQuota = pool.filter((m) => getModelQuotaScore(m) > 0);
-  const candidatesToSort = withQuota.length > 0 ? withQuota : pool;
+  // Prefer candidates with refreshable credentials if Google Cloud Code
+  const withRefresh = pool.filter((m) => !isGoogleCloudCodeModel(m) || Boolean(m.refreshToken));
+  const candidatePool = withRefresh.length > 0 ? withRefresh : pool;
+
+  const withQuota = candidatePool.filter((m) => getModelQuotaScore(m) > 0);
+  const candidatesToSort = withQuota.length > 0 ? withQuota : candidatePool;
 
   return [...candidatesToSort].sort((a, b) => getModelQuotaScore(b) - getModelQuotaScore(a))[0];
 }
@@ -2966,6 +3064,14 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                   reqJson.model = targetModel;
                   if (reqJson.request && typeof reqJson.request === 'object') {
                     (reqJson.request as Record<string, unknown>).model = targetModel;
+                    // Google Cloud Code returns HTTP 400 if gpt-oss receives negative or zero thinkingBudget
+                    const reqObj = reqJson.request as Record<string, unknown>;
+                    if (targetModel.includes('gpt-oss') && reqObj.generationConfig && typeof reqObj.generationConfig === 'object') {
+                      const genCfg = reqObj.generationConfig as { thinkingConfig?: { thinkingBudget?: number } };
+                      if (genCfg.thinkingConfig && (typeof genCfg.thinkingConfig.thinkingBudget !== 'number' || genCfg.thinkingConfig.thinkingBudget <= 0)) {
+                        delete genCfg.thinkingConfig;
+                      }
+                    }
                   }
                   if (!reqJson.project) {
                     reqJson.project = (matchedCustomModel as { projectId?: string }).projectId || 'aicode-consumers';
@@ -3026,6 +3132,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               try {
                 const accessToken = await getValidGoogleAccessToken(matchedCustomModel);
                 const targetModel = normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
+                if (targetModel.includes('gpt-oss') && geminiBody.generationConfig && typeof geminiBody.generationConfig === 'object') {
+                  const genCfg = geminiBody.generationConfig as { thinkingConfig?: { thinkingBudget?: number } };
+                  if (genCfg.thinkingConfig && (typeof genCfg.thinkingConfig.thinkingBudget !== 'number' || genCfg.thinkingConfig.thinkingBudget <= 0)) {
+                    delete genCfg.thinkingConfig;
+                  }
+                }
                 const cloudCodePayload = {
                   project: (matchedCustomModel as { projectId?: string }).projectId || 'aicode-consumers',
                   model: targetModel,

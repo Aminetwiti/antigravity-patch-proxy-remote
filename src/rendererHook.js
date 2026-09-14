@@ -767,6 +767,139 @@
     }
   }
 
+  // --- Message Suggestion Pills Bar Above Input ---
+  const DEFAULT_SUGGESTIONS = [
+    { label: 'Continue', text: 'Continue' },
+    { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
+    { label: 'Keep going', text: 'Keep going' },
+    { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
+    { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' }
+  ];
+
+  function insertTextIntoPrompt(text, autoSubmit = false) {
+    const promptBox = document.querySelector('[contenteditable="true"]');
+    if (!promptBox) return;
+
+    const key = Object.keys(promptBox).find((k) => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+    let fiber = key ? promptBox[key] : null;
+    let editor = null;
+    while (fiber) {
+      if (fiber.memoizedProps && fiber.memoizedProps.editor) {
+        editor = fiber.memoizedProps.editor;
+        break;
+      }
+      fiber = fiber.return;
+    }
+
+    if (editor && editor._nodes) {
+      const TextNode = editor._nodes.get('text')?.klass;
+      if (TextNode) {
+        editor.update(() => {
+          const state = editor._pendingEditorState || editor._editorState;
+          const root = state ? state._nodeMap.get('root') : null;
+          if (root) {
+            root.clear();
+            const sel = root.selectEnd();
+            sel.insertNodes([new TextNode(text)]);
+          }
+        });
+        editor.focus();
+
+        if (autoSubmit) {
+          setTimeout(() => {
+            const sendBtn = document.querySelector('button[data-testid="send-button"]') ||
+                            document.querySelector('button[aria-label="Send message"]');
+            if (sendBtn) sendBtn.click();
+          }, 80);
+        }
+        return;
+      }
+    }
+
+    // Fallback: execCommand / input event
+    promptBox.focus();
+    try {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(promptBox);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand('insertText', false, text);
+    } catch (_) {
+      promptBox.innerText = text;
+      promptBox.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+    }
+
+    if (autoSubmit) {
+      setTimeout(() => {
+        const sendBtn = document.querySelector('button[data-testid="send-button"]') ||
+                        document.querySelector('button[aria-label="Send message"]');
+        if (sendBtn) sendBtn.click();
+      }, 80);
+    }
+  }
+
+  function injectSuggestionPills() {
+    let inputCard = document.querySelector('#antigravity\\.agentSidePanelInputBox') ||
+                    document.querySelector('.relative.flex.flex-col.p-px.rounded-2xl.bg-card-border');
+    if (!inputCard) {
+      const promptBox = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+      if (promptBox) {
+        inputCard = promptBox.closest('.relative.flex.flex-col.p-px') || promptBox.closest('.rounded-2xl') || promptBox.parentElement?.parentElement?.parentElement?.parentElement;
+      }
+    }
+    if (!inputCard || !inputCard.parentElement) return;
+
+    let bar = document.getElementById('__ag_suggestion_pills_bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = '__ag_suggestion_pills_bar';
+      bar.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 2px 8px 2px;width:100%;user-select:none;z-index:10;';
+    }
+
+    if (bar.children.length !== DEFAULT_SUGGESTIONS.length) {
+      bar.innerHTML = '';
+      DEFAULT_SUGGESTIONS.forEach((sug) => {
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = '__ag_suggestion_pill';
+        pill.setAttribute('data-ag-suggestion', sug.text);
+        pill.title = `Insérer: "${sug.text}"`;
+        pill.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:12px;font-size:11.5px;font-weight:500;font-family:system-ui,-apple-system,sans-serif;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);cursor:pointer;transition:all 0.15s ease-in-out;backdrop-filter:blur(4px);white-space:nowrap;';
+
+        pill.innerHTML = `
+          <span style="opacity:0.65;font-size:10px;">✦</span>
+          <span>${sug.label}</span>
+        `;
+
+        pill.onmouseenter = () => {
+          pill.style.background = 'rgba(255,255,255,0.14)';
+          pill.style.borderColor = 'rgba(255,255,255,0.25)';
+          pill.style.color = '#ffffff';
+          pill.style.transform = 'translateY(-1px)';
+        };
+        pill.onmouseleave = () => {
+          pill.style.background = 'rgba(255,255,255,0.06)';
+          pill.style.borderColor = 'rgba(255,255,255,0.12)';
+          pill.style.color = 'rgba(255,255,255,0.85)';
+          pill.style.transform = 'translateY(0)';
+        };
+
+        pill.onclick = (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          insertTextIntoPrompt(sug.text, false);
+        };
+
+        bar.appendChild(pill);
+      });
+    }
+
+    if (inputCard.previousElementSibling !== bar) {
+      inputCard.parentElement.insertBefore(bar, inputCard);
+    }
+  }
+
   // --- Observer & Listeners ---
   let isUpdating = false;
   let rafId = null;
@@ -782,6 +915,7 @@
         injectTopBarButton();
         updateTriggerButton();
         injectRetryButton();
+        injectSuggestionPills();
       } catch (err) {
         console.warn('[AG Remote Hook] Error in scheduleUpdate:', err);
       } finally {
@@ -798,7 +932,7 @@
       let onlyOurs = true;
       for (let i = 0; i < mutations.length; i++) {
         const t = mutations[i].target;
-        if (!t || !t.closest || !t.closest('#__ag_topbar_remote_btn, #__ag_remote_pill, #__ag_inline_remote_btn, #__ag_inline_retry_btn, [data-ag-remote]')) {
+        if (!t || !t.closest || !t.closest('#__ag_topbar_remote_btn, #__ag_remote_pill, #__ag_inline_remote_btn, #__ag_inline_retry_btn, #__ag_suggestion_pills_bar, [data-ag-remote]')) {
           onlyOurs = false;
           break;
         }

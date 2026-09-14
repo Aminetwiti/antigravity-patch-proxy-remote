@@ -30,6 +30,8 @@ interface RawProviderEntry {
   supportsVision?: boolean;
   name?: string;
   email?: string;
+  refreshToken?: string;
+  projectId?: string;
   quotas?: {
     fiveHourPercentage?: number;
     weeklyPercentage?: number;
@@ -197,6 +199,8 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
         extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
         accountName: p.name,
         accountEmail: p.email,
+        refreshToken: p.refreshToken,
+        projectId: p.projectId,
         quotas: p.quotas,
       };
       const placeholderId = generateModelPlaceholderId(partialModel);

@@ -219,10 +219,12 @@ function injectCustomModelsIntoUserStatusJson(
     let injectedCount = 0;
 
     for (const m of expandedModels) {
-      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').toLowerCase();
-      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = `${m.provider}:${rawName || cleanDisp}${effort}`;
+      const modelDedupKey = m.provider === 'google'
+        ? `google:${cleanDisp || rawName}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
@@ -352,10 +354,12 @@ export function injectCustomModelsIntoUserStatus(
 
     const seenModelKeys = new Set<string>();
     for (const m of expandedModels) {
-      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').toLowerCase();
-      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = `${m.provider}:${rawName || cleanDisp}${effort}`;
+      const modelDedupKey = m.provider === 'google'
+        ? `google:${cleanDisp || rawName}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 

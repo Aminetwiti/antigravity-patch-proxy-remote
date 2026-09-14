@@ -152,17 +152,42 @@ export function pingCustomModel(model: CustomModel): Promise<ModelHealthResult> 
   return pingPromise;
 }
 
-/** Check health of all custom models concurrently */
+/** Check health of all custom models with endpoint deduplication and bounded concurrency */
 export async function checkAllModelsHealth(models: CustomModel[]): Promise<Map<string, ModelHealthResult>> {
   const results = new Map<string, ModelHealthResult>();
-  log.info(`[HealthChecker] Checking health for ${models.length} custom models concurrently...`);
+  if (models.length === 0) return results;
 
-  const checks = models.map(async (model) => {
-    const health = await pingCustomModel(model);
-    results.set(model.name, health);
+  // Group models by unique endpoint (apiUrl + apiKey) so 10 accounts pointing to the same endpoint don't spam 10 sockets
+  const endpointMap = new Map<string, CustomModel[]>();
+  for (const m of models) {
+    const key = `${m.apiUrl}::${m.apiKey || ''}`;
+    const group = endpointMap.get(key) || [];
+    group.push(m);
+    endpointMap.set(key, group);
+  }
+
+  log.info(`[HealthChecker] Checking health for ${models.length} models across ${endpointMap.size} unique endpoints...`);
+
+  // Bounded concurrency pool (max 6 parallel pings)
+  const uniqueEndpoints = Array.from(endpointMap.values()).map(group => group[0]);
+  const limit = 6;
+  const queue = [...uniqueEndpoints];
+
+  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const model = queue.shift();
+      if (!model) break;
+      const health = await pingCustomModel(model);
+      const group = endpointMap.get(`${model.apiUrl}::${model.apiKey || ''}`) || [model];
+      for (const m of group) {
+        results.set(m.name, health);
+        // Also ensure individual cache entries are set
+        healthCache.set(m.name, { result: health, expiresAt: Date.now() + CACHE_TTL_MS });
+      }
+    }
   });
 
-  await Promise.allSettled(checks);
+  await Promise.allSettled(workers);
   return results;
 }
 

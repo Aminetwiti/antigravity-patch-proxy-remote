@@ -75,6 +75,8 @@ export interface CustomModel {
   /** Optional account metadata for multi-account pools. */
   accountName?: string;
   accountEmail?: string;
+  refreshToken?: string;
+  projectId?: string;
   quotas?: {
     fiveHourPercentage?: number;
     weeklyPercentage?: number;

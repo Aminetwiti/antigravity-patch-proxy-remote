@@ -147,7 +147,6 @@ export function isGoogleCloudCodeModel(m: {
   return Boolean(
     m.refreshToken ||
     (m.apiKey && m.apiKey.startsWith('ya29.')) ||
-    m.apiUrl?.includes('cloudcode') ||
-    m.apiUrl?.includes('generativelanguage')
+    m.apiUrl?.includes('cloudcode')
   );
 }

@@ -33,6 +33,8 @@ export interface CustomModelFileEntry {
   useRawBaseUrl?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
+  refreshToken?: string;
+  projectId?: string;
   [key: string]: unknown;
 }
 
@@ -86,6 +88,8 @@ export interface ProviderFileEntry {
   useRawBaseUrl?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
+  refreshToken?: string;
+  projectId?: string;
   models: ProviderModelEntry[];
   usage?: {
     promptTokens: number;
@@ -136,6 +140,8 @@ export async function loadCustomModels(): Promise<CustomModelFileEntry[]> {
           supportsVision: m.supportsVision ?? p.supportsVision ?? true,
           extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
           extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
+          refreshToken: p.refreshToken,
+          projectId: p.projectId,
         });
       }
     }
