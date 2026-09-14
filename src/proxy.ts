@@ -1333,6 +1333,8 @@ export function getModelQuotaScore(m: CustomModel): number {
   return (fiveHour * 0.7) + (weekly * 0.3);
 }
 
+let roundRobinCounter = 0;
+
 export function selectBestModelByQuota(candidates: CustomModel[], allModels?: CustomModel[]): CustomModel | undefined {
   if (!candidates || candidates.length === 0) return undefined;
   if (candidates.length === 1) return candidates[0];
@@ -1347,7 +1349,16 @@ export function selectBestModelByQuota(candidates: CustomModel[], allModels?: Cu
   const withQuota = candidatePool.filter((m) => getModelQuotaScore(m) > 0);
   const candidatesToSort = withQuota.length > 0 ? withQuota : candidatePool;
 
-  return [...candidatesToSort].sort((a, b) => getModelQuotaScore(b) - getModelQuotaScore(a))[0];
+  const sorted = [...candidatesToSort].sort((a, b) => getModelQuotaScore(b) - getModelQuotaScore(a));
+  const topScore = getModelQuotaScore(sorted[0]);
+  const topTier = sorted.filter((m) => topScore - getModelQuotaScore(m) <= 5);
+
+  if (topTier.length > 1) {
+    const selected = topTier[Math.abs(roundRobinCounter++) % topTier.length];
+    return selected;
+  }
+
+  return sorted[0];
 }
 
 interface SessionAffinity {
