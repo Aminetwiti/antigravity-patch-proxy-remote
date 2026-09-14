@@ -92,6 +92,10 @@
         <li class="nav-group">
           <ul>
             <li><span class="nav-group-label">Configuration</span></li>
+            <li><button class="nav-item" data-view="google-accounts" type="button" title="Google Accounts">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><circle cx="12" cy="12" r="2"/></svg>
+              <span>Google Accounts</span>
+            </button></li>
             <li><button class="nav-item" data-view="models" type="button" title="Models">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08l4.24 4.24M1 12h6m10 0h6M4.22 19.78l4.24-4.24m7.08-7.08l4.24-4.24"/></svg>
               <span>Models</span>
@@ -556,6 +560,90 @@
           <div class="panel-body">
             <div id="doctorExecutionFeed"></div>
             <pre class="terminal" id="doctorOutput" tabindex="0" role="region" aria-label="Diagnostic terminal output">$ ag-doctor doctor</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Google Accounts view -->
+      <div class="view" id="view-google-accounts">
+        <div class="view-header">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h1>Google Accounts</h1>
+              <span class="badge badge-primary" id="gaAccountCountBadge">0 accounts</span>
+            </div>
+            <p class="subtitle">Add multiple Google accounts, fetch models per account, and use them in Antigravity without relogging.</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" id="gaTestAllBtn" type="button" aria-label="Test all Google accounts">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              Test all
+            </button>
+            <button class="btn btn-ghost" id="gaSyncAllBtn" type="button" aria-label="Sync models for all Google accounts">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Sync all models
+            </button>
+            <button class="btn btn-primary" id="gaAddAccountBtn" type="button" aria-label="Add a Google Account">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Google Account
+            </button>
+          </div>
+        </div>
+
+        <!-- Smart Auto-Pool Banner -->
+        <div class="patch-banner info" style="margin-bottom: 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div>
+              <div class="patch-banner-title">Seamless Multi-Account Failover &amp; No-Relog Dropdown</div>
+              <div class="patch-banner-text">
+                Every account's models appear directly in Antigravity's model list (e.g. <code>[Perso] Gemini 2.5 Pro</code>, <code>[Work] Gemini 2.5 Pro</code>). If an account runs out of quota (HTTP 429), the proxy automatically retries on an alternate active Google account with zero session downtime.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stat summary cards -->
+        <div class="stat-grid" style="margin-bottom: 20px;">
+          <div class="stat-card">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Google Accounts</div>
+              <div class="stat-value" id="gaStatTotalAccounts">0</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon ok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Healthy &amp; Active</div>
+              <div class="stat-value" id="gaStatActiveAccounts">0</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon models">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Exposed Models in AGY</div>
+              <div class="stat-value" id="gaStatTotalModels">0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Accounts List Panel -->
+        <div class="panel">
+          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>Configured Accounts</h2>
+            <div style="font-size: 11.5px; color: var(--text-2);">AES-256 encrypted in <code>custom_models.json</code></div>
+          </div>
+          <div class="panel-body">
+            <div id="gaAccountsContainer">
+              <!-- Rendered dynamically -->
+            </div>
           </div>
         </div>
       </div>
@@ -1035,6 +1123,76 @@
       <div class="modal-footer">
         <button class="btn btn-ghost" id="modalCancel" type="button" aria-label="Cancel">Cancel</button>
         <button class="btn btn-primary" id="modalConfirm" type="button" aria-label="Confirm action">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Google Account Manager -->
+  <div class="modal-backdrop" id="googleAccountModalBackdrop" hidden>
+    <div class="modal modal-lg" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div class="modal-header-title-wrap">
+          <div class="modal-header-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><circle cx="12" cy="12" r="2"/></svg>
+          </div>
+          <h2 id="gaModalTitle" class="pm-modal-title">Add Google Account</h2>
+        </div>
+        <button class="modal-close" id="googleAccountModalClose" type="button" aria-label="Close modal">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="gaFormContainer" class="pm-form" onsubmit="return false;">
+          <div class="pm-form-section">
+            <h3 class="pm-form-section-title">1. Account Credentials</h3>
+            <div class="pm-form-grid">
+              <label class="form-field" for="gaFormName">
+                <span>Account Label / Name</span>
+                <input type="text" id="gaFormName" placeholder="e.g. Perso, Pro, Secondary" autocomplete="off" />
+              </label>
+              <label class="form-field" for="gaFormUrl">
+                <span>API Endpoint URL</span>
+                <input type="url" id="gaFormUrl" value="https://generativelanguage.googleapis.com/v1beta" autocomplete="off" />
+              </label>
+            </div>
+
+            <label class="form-field" for="gaFormKey">
+              <span>Google AI Studio API Key</span>
+              <div class="input-with-action">
+                <input type="password" id="gaFormKey" placeholder="AIzaSy…" autocomplete="off" />
+                <button type="button" class="agy-icon-btn" id="gaKeyToggle" title="Show/Hide API Key" aria-label="Show or hide API key">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+              <small style="color: var(--text-2); font-size: 11px; margin-top: 4px; display: block;">
+                Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" id="gaOpenAiStudioLink" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.
+              </small>
+            </label>
+          </div>
+
+          <div class="pm-form-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 class="pm-form-section-title" style="margin: 0;">2. Models Available for this Account</h3>
+              <button type="button" class="btn btn-primary btn-sm" id="gaFormFetchModelsBtn">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Get Models from Endpoint
+              </button>
+            </div>
+            <div id="gaFormModelsCountBadge" class="badge badge-muted" style="margin-bottom: 8px;">0 models selected</div>
+            <div id="gaFormModelsList" class="pm-models-list" style="max-height: 220px; overflow-y: auto; background: var(--bg-0); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px;">
+              <div class="pm-models-hint" style="font-size: 12px; color: var(--text-2); text-align: center; padding: 20px;">
+                Enter your API key and click "Get Models from Endpoint" to discover models for this account.
+              </div>
+            </div>
+          </div>
+
+          <div id="gaFormError" class="patch-banner err" hidden style="margin-top: 10px;"></div>
+
+          <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+            <button type="button" class="btn btn-ghost" id="gaFormCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="gaFormSaveBtn">Save Account</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

@@ -18,8 +18,8 @@ const api = {
     get: (): Promise<unknown[]> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_GET),
     save: (p: unknown): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, p),
     delete: (id: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_DELETE, id),
-    fetchModels: (params: { apiUrl: string; apiKey: string }): Promise<{ success: boolean; models?: Array<{ id: string; displayName?: string; enabled?: boolean }>; error?: string }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, params),
-    test: (params: { apiUrl: string; apiKey: string; id?: string; modelId?: string }): Promise<{ success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string }> =>
+    fetchModels: (params: { apiUrl: string; apiKey: string; provider?: string }): Promise<{ success: boolean; models?: Array<{ id: string; displayName?: string; enabled?: boolean }>; error?: string }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, params),
+    test: (params: { apiUrl: string; apiKey: string; id?: string; modelId?: string; provider?: string }): Promise<{ success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string }> =>
       ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, params),
     onChanged: (handler: () => void): (() => void) => {
       const listener = () => handler();

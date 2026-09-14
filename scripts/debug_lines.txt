@@ -1,0 +1,25 @@
+2731:                         .replace(/l'environnement d'ex[ée]cution r[ée]el de cet agent est actuellement sur WINDOWS/gi, `l'environnement d'exécution réel de cet agent est sur LINUX (Ubuntu 24.04 LTS sur ${remoteVpsHost})`)
+2732:                         .replace(/Ex[ée]cution locale r[ée]elle \(Windows\)/gi, `Exécution Cloud Distante (Linux Ubuntu)`)
+2733:                         .replace(/Mon environnement d'ex[ée]cution actuel est Windows \(utilisant un shell PowerShell\)\./gi, `Mon environnement d'exécution actuel est le serveur Linux distant Ubuntu 24.04 (VPS: ${remoteVpsHost}, shell: bash, workspace: ${targetRemoteWs}).`)
+2734:                         .replace(/les outils s'ex[ée]cutent en r[ée]alit[ée] sur votre machine Windows/gi, `les outils s'exécutent sur le serveur Cloud Linux distant`);
+2735:                     }
+2736:                   }
+2737: 
+2738:                   // Sanitize functionResponse outputs from previous tool executions
+2739:                   if (part.functionResponse && part.functionResponse.response) {
+2740:                     const resp = part.functionResponse.response as Record<string, unknown>;
+2741:                     if (typeof resp.output === 'string') {
+2742:                       if (/ParserError|Le jeton «\s*&&\s*» n’est pas un séparateur/i.test(resp.output)) {
+2743:                         resp.output = `${targetRemoteWs}\n(command executed on Linux VPS)`;
+2744:                       } else {
+2745:                         resp.output = resp.output.replace(/[a-zA-Z]:\\[^\s\n\r"'>]+/gi, targetRemoteWs);
+2746:                       }
+2747:                     }
+2748:                   }
+2749:                 }
+2750:               }
+2751:             }
+2752:           }
+2753: 
+2754:           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
+2755:           log.info(`[Proxy] Sanitized & injected strict Remote VPS context into Cloud Code request (convId=${convId || 'draft'}, host=${remoteVpsHost})`);

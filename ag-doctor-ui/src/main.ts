@@ -891,7 +891,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_DELETE, async (_, id) => {
   }
 });
 
-ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: { apiUrl: string; apiKey: string }) => {
+ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: { apiUrl: string; apiKey: string; provider?: string }) => {
   try {
     const { net } = require('electron') as typeof import('electron');
     const baseUrl = params.apiUrl.replace(/\/+$/, '');
@@ -904,10 +904,16 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
       return { success: false, error: 'Blocked: metadata endpoint' };
     }
 
+    const isGoogle = url.hostname.includes('googleapis.com') || params.provider === 'google';
+
     return new Promise((resolve) => {
       const req = net.request({ url: url.toString(), method: 'GET' });
       if (params.apiKey && !params.apiKey.startsWith('enc:')) {
-        req.setHeader('Authorization', 'Bearer ' + params.apiKey);
+        if (isGoogle) {
+          req.setHeader('x-goog-api-key', params.apiKey);
+        } else {
+          req.setHeader('Authorization', 'Bearer ' + params.apiKey);
+        }
       }
       req.on('response', (res: Electron.IncomingMessage) => {
         let data = '';
@@ -921,11 +927,22 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
               else if (Array.isArray(parsed.models)) rawList = parsed.models;
               else if (Array.isArray(parsed)) rawList = parsed;
 
-              const models = rawList.map((m: any) => {
-                const id = typeof m === 'string' ? m : (m.id || m.name || 'unknown');
-                const displayName = typeof m === 'string' ? m : (m.displayName || m.name || m.id || 'unknown');
-                return { id, displayName, enabled: true };
-              });
+              const models = rawList
+                .filter((m: any) => {
+                  if (isGoogle && Array.isArray(m.supportedGenerationMethods)) {
+                    return m.supportedGenerationMethods.includes('generateContent');
+                  }
+                  return true;
+                })
+                .map((m: any) => {
+                  let id = typeof m === 'string' ? m : (m.id || m.name || 'unknown');
+                  let displayName = typeof m === 'string' ? m : (m.displayName || m.name || m.id || 'unknown');
+                  if (isGoogle) {
+                    id = id.replace(/^models\//, '');
+                    displayName = displayName.replace(/^models\//, '');
+                  }
+                  return { id, displayName, enabled: true };
+                });
               resolve({ success: true, models });
             } catch {
               resolve({ success: false, error: 'Invalid JSON response from /models endpoint' });
@@ -943,7 +960,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
   }
 });
 
-ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMainInvokeEvent, params: { apiUrl: string; apiKey: string; id?: string; modelId?: string }) => {
+ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMainInvokeEvent, params: { apiUrl: string; apiKey: string; id?: string; modelId?: string; provider?: string }) => {
    try {
        const { net } = require('electron') as typeof import('electron');
        const baseUrl = params.apiUrl.replace(/\/+$/, '');
@@ -957,12 +974,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
         return { success: false, healthStatus: 'offline' as const, error: 'Blocked: metadata endpoint' };
       }
       const startTime = Date.now();
+      const isGoogle = parsedBase.hostname.includes('googleapis.com') || params.provider === 'google';
 
      const doRequest = (targetUrl: string, method: string, body?: string): Promise<{ statusCode: number; data: string; latencyMs: number }> => {
        return new Promise((resolve, reject) => {
          const req = net.request({ url: targetUrl, method });
          if (params.apiKey && !params.apiKey.startsWith('enc:')) {
-           req.setHeader('Authorization', 'Bearer ' + params.apiKey);
+           if (isGoogle) {
+             req.setHeader('x-goog-api-key', params.apiKey);
+           } else {
+             req.setHeader('Authorization', 'Bearer ' + params.apiKey);
+           }
          }
          if (body) {
            req.setHeader('Content-Type', 'application/json');
@@ -984,64 +1006,76 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
      let responseData = '';
      let latencyMs = 0;
 
-     if (params.modelId) {
-       try {
-         const postBody = JSON.stringify({
-           model: params.modelId,
-           messages: [{ role: 'user', content: 'ping' }],
-           max_tokens: 16
-         });
-         const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
-         statusCode = postRes.statusCode;
-         responseData = postRes.data;
-         latencyMs = postRes.latencyMs;
-       } catch (err) {
-         responseData = (err as Error).message;
-       }
-     } else {
-       try {
-         const res = await doRequest(`${baseUrl}/models`, 'GET');
-         statusCode = res.statusCode;
-         responseData = res.data;
-         latencyMs = res.latencyMs;
-       } catch (err) {
-         responseData = (err as Error).message;
-       }
+      if (params.modelId) {
+        try {
+          if (isGoogle) {
+            const cleanModel = params.modelId.replace(/^models\//, '');
+            const postBody = JSON.stringify({
+              contents: [{ parts: [{ text: 'ping' }] }],
+              generationConfig: { maxOutputTokens: 5 },
+            });
+            const postRes = await doRequest(`${baseUrl}/models/${cleanModel}:generateContent`, 'POST', postBody);
+            statusCode = postRes.statusCode;
+            responseData = postRes.data;
+            latencyMs = postRes.latencyMs;
+          } else {
+            const postBody = JSON.stringify({
+              model: params.modelId,
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 16
+            });
+            const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
+            statusCode = postRes.statusCode;
+            responseData = postRes.data;
+            latencyMs = postRes.latencyMs;
+          }
+        } catch (err) {
+          responseData = (err as Error).message;
+        }
+      } else {
+        try {
+          const res = await doRequest(`${baseUrl}/models`, 'GET');
+          statusCode = res.statusCode;
+          responseData = res.data;
+          latencyMs = res.latencyMs;
+        } catch (err) {
+          responseData = (err as Error).message;
+        }
 
-       if (statusCode < 200 || statusCode >= 300) {
-         let testModel: string | undefined = undefined;
-         if (params.id) {
-           try {
-             const fp = getCustomModelsPath();
-             const c = await fs.promises.readFile(fp, 'utf8');
-             const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
-             const prov = (parsed.providers || []).find((x: any) => x.id === params.id);
-             if (prov && prov.models && prov.models.length > 0) {
-               testModel = prov.models[0].id || prov.models[0].name;
-             }
-           } catch { /* ignore */ }
-         }
-         if (!testModel) testModel = 'MiniMax-M3';
+        if (!isGoogle && (statusCode < 200 || statusCode >= 300)) {
+          let testModel: string | undefined = undefined;
+          if (params.id) {
+            try {
+              const fp = getCustomModelsPath();
+              const c = await fs.promises.readFile(fp, 'utf8');
+              const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+              const prov = (parsed.providers || []).find((x: any) => x.id === params.id);
+              if (prov && prov.models && prov.models.length > 0) {
+                testModel = prov.models[0].id || prov.models[0].name;
+              }
+            } catch { /* ignore */ }
+          }
+          if (!testModel) testModel = 'MiniMax-M3';
 
-         try {
-           const postBody = JSON.stringify({
-             model: testModel,
-             messages: [{ role: 'user', content: 'ping' }],
-             max_tokens: 16
-           });
-           const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
-           if (postRes.statusCode >= 200 && postRes.statusCode < 300) {
-             statusCode = postRes.statusCode;
-             responseData = postRes.data;
-             latencyMs = postRes.latencyMs;
-           } else if (postRes.statusCode === 401 || postRes.statusCode === 403) {
-             statusCode = postRes.statusCode;
-             responseData = postRes.data;
-             latencyMs = postRes.latencyMs;
-           }
-         } catch { /* keep original */ }
-       }
-     }
+          try {
+            const postBody = JSON.stringify({
+              model: testModel,
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 16
+            });
+            const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
+            if (postRes.statusCode >= 200 && postRes.statusCode < 300) {
+              statusCode = postRes.statusCode;
+              responseData = postRes.data;
+              latencyMs = postRes.latencyMs;
+            } else if (postRes.statusCode === 401 || postRes.statusCode === 403) {
+              statusCode = postRes.statusCode;
+              responseData = postRes.data;
+              latencyMs = postRes.latencyMs;
+            }
+          } catch { /* keep original */ }
+        }
+      }
 
      const isSuccess = statusCode >= 200 && statusCode < 300;
      const healthStatus = isSuccess

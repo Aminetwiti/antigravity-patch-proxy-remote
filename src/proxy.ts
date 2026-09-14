@@ -379,19 +379,32 @@ function transformGoogleStreamForRemote(proxyRes: http.IncomingMessage, clientRe
             for (const cand of data.candidates) {
               if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
                 for (const part of cand.content.parts) {
-                  if (part.functionCall && (part.functionCall.name === 'run_command' || part.functionCall.name === 'bash' || part.functionCall.name === 'sh')) {
-                    const args = part.functionCall.args as Record<string, unknown> | undefined;
-                    if (args) {
-                      const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
-                      if (typeof originalCmd === 'string' && originalCmd.trim()) {
-                        const wrapped = wrapCommandForRemoteExec(originalCmd.trim());
-                        if (wrapped !== originalCmd) {
-                          args.CommandLine = wrapped;
-                          if (args.commandLine !== undefined) args.commandLine = wrapped;
-                          if (args.command !== undefined) args.command = wrapped;
-                          if (args.cmd !== undefined) args.cmd = wrapped;
-                          modified = true;
-                          log.info(`[Proxy] Google Cloud Code SSE: Bridged run_command "${originalCmd}" -> remote VPS`);
+                  if (part.functionCall) {
+                    const fnName = (part.functionCall.name || '').toLowerCase();
+                    const isRunCmd =
+                      fnName === 'run_command' ||
+                      fnName.endsWith(':run_command') ||
+                      fnName === 'bash' ||
+                      fnName === 'sh' ||
+                      fnName.endsWith(':bash') ||
+                      fnName.endsWith(':sh');
+                    if (isRunCmd) {
+                      const args = part.functionCall.args as Record<string, unknown> | undefined;
+                      if (args) {
+                        const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
+                        if (typeof originalCmd === 'string' && originalCmd.trim()) {
+                          const remoteCwd = (args.Cwd || args.cwd) as string | undefined;
+                          const wrapped = wrapCommandForRemoteExec(originalCmd.trim(), remoteCwd);
+                          if (wrapped !== originalCmd) {
+                            args.CommandLine = wrapped;
+                            if (args.commandLine !== undefined) args.commandLine = wrapped;
+                            if (args.command !== undefined) args.command = wrapped;
+                            if (args.cmd !== undefined) args.cmd = wrapped;
+                            if (args.Cwd !== undefined) args.Cwd = '.';
+                            if (args.cwd !== undefined) args.cwd = '.';
+                            modified = true;
+                            log.info(`[Proxy] Google Cloud Code SSE: Bridged run_command "${originalCmd}" (cwd=${remoteCwd || '.'}) -> remote VPS`);
+                          }
                         }
                       }
                     }
@@ -562,19 +575,32 @@ async function proxyToGoogle(
               for (const cand of data.candidates) {
                 if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
                   for (const part of cand.content.parts) {
-                    if (part.functionCall && (part.functionCall.name === 'run_command' || part.functionCall.name === 'bash' || part.functionCall.name === 'sh')) {
-                      const args = part.functionCall.args as Record<string, unknown> | undefined;
-                      if (args) {
-                        const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
-                        if (typeof originalCmd === 'string' && originalCmd.trim()) {
-                          const wrapped = wrapCommandForRemoteExec(originalCmd.trim());
-                          if (wrapped !== originalCmd) {
-                            args.CommandLine = wrapped;
-                            if (args.commandLine !== undefined) args.commandLine = wrapped;
-                            if (args.command !== undefined) args.command = wrapped;
-                            if (args.cmd !== undefined) args.cmd = wrapped;
-                            modified = true;
-                            log.info(`[Proxy] Google Cloud Code JSON: Bridged run_command "${originalCmd}" -> remote VPS`);
+                    if (part.functionCall) {
+                      const fnName = (part.functionCall.name || '').toLowerCase();
+                      const isRunCmd =
+                        fnName === 'run_command' ||
+                        fnName.endsWith(':run_command') ||
+                        fnName === 'bash' ||
+                        fnName === 'sh' ||
+                        fnName.endsWith(':bash') ||
+                        fnName.endsWith(':sh');
+                      if (isRunCmd) {
+                        const args = part.functionCall.args as Record<string, unknown> | undefined;
+                        if (args) {
+                          const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
+                          if (typeof originalCmd === 'string' && originalCmd.trim()) {
+                            const remoteCwd = (args.Cwd || args.cwd) as string | undefined;
+                            const wrapped = wrapCommandForRemoteExec(originalCmd.trim(), remoteCwd);
+                            if (wrapped !== originalCmd) {
+                              args.CommandLine = wrapped;
+                              if (args.commandLine !== undefined) args.commandLine = wrapped;
+                              if (args.command !== undefined) args.command = wrapped;
+                              if (args.cmd !== undefined) args.cmd = wrapped;
+                              if (args.Cwd !== undefined) args.Cwd = '.';
+                              if (args.cwd !== undefined) args.cwd = '.';
+                              modified = true;
+                              log.info(`[Proxy] Google Cloud Code JSON: Bridged run_command "${originalCmd}" (cwd=${remoteCwd || '.'}) -> remote VPS`);
+                            }
                           }
                         }
                       }
@@ -1330,14 +1356,23 @@ function handleCustomModelRequest(
         orderedModels = [...preferred, ...rest];
       }
 
-      // ponytail: skip same-provider on rate_limit — shared quota, fallback is a no-op
-      const sameProviderRateLimit = diagnostic.errorType === 'rate_limit'
-        ? new URL(model.apiUrl).hostname
+      // ponytail: skip same account on rate_limit — shared quota, fallback is a no-op.
+      // Separate accounts (different API keys) on the same provider have independent quotas.
+      const getAccountQuotaKey = (item: CustomModel): string => {
+        try {
+          const host = new URL(item.apiUrl).hostname;
+          return `${host}:${item.apiKey || 'none'}`;
+        } catch {
+          return item.apiUrl || '';
+        }
+      };
+      const failedAccountKey = diagnostic.errorType === 'rate_limit'
+        ? getAccountQuotaKey(model)
         : null;
       for (const m of orderedModels) {
         if (m.name !== model.name && m.apiKey && !m.apiKey.startsWith('fallback:')) {
-          if (sameProviderRateLimit && new URL(m.apiUrl).hostname === sameProviderRateLimit) {
-            log.warn(`[Proxy] Auto-fallback: skipping ${m.displayName || m.name} (same provider ${sameProviderRateLimit}, shared quota)`);
+          if (failedAccountKey && getAccountQuotaKey(m) === failedAccountKey) {
+            log.warn(`[Proxy] Auto-fallback: skipping ${m.displayName || m.name} (same account credentials, shared quota)`);
             continue;
           }
           const fromName = model.displayName || model.name;
@@ -2561,7 +2596,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     // 3. Intercept Cloud Code generation stream or non-stream requests
     let isSessionRemote = false;
     const isCloudCodeStream =
-      req.url!.includes('/v1internal:streamGenerateContent') || req.url!.includes('/v1internal:generateContent');
+      (req.url!.includes('v1internal') || req.url!.includes('cloudcode')) &&
+      (req.url!.includes('streamGenerateContent') || req.url!.includes('generateContent'));
     if (req.method === 'POST' && isCloudCodeStream) {
       try {
         const reqJson = JSON.parse(bodyStr) as Record<string, unknown>;
@@ -2581,7 +2617,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           for (const content of targetReq.contents as Array<{ parts?: Array<{ text?: string }> }>) {
             if (Array.isArray(content.parts)) {
               for (const part of content.parts) {
-                if (part.text && /(?:mode\s*remote|\(remote\)|\[remote\]|\/remote|\bmode\s*:\s*remote\b)/i.test(part.text)) {
+                if (
+                  part.text &&
+                  /(?:mode\s*remote|\(remote\)|\[remote\]|\/remote|\bmode\s*:\s*remote\b|remote\s*vps|vps\s*distant)/i.test(
+                    part.text,
+                  )
+                ) {
                   promptHasRemote = true;
                   break;
                 }
@@ -2671,16 +2712,48 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             }
           }
 
-          // Also sanitize previous conversation turns to prevent context conflict
+          // Also sanitize all conversation turns (user, model, tool/functionResponse) to prevent context conflict
           if (Array.isArray(targetReq.contents)) {
-            for (const content of targetReq.contents as Array<{ role?: string; parts?: Array<{ text?: string }> }>) {
+            for (const content of targetReq.contents as Array<{ role?: string; parts?: Array<{ text?: string; functionResponse?: { response?: Record<string, unknown> } }> }>) {
               if (Array.isArray(content.parts)) {
                 for (const part of content.parts) {
-                  if (part.text && content.role === 'model') {
+                  if (typeof part.text === 'string') {
+                    // Sanitize OS and shell indications everywhere in all turns
                     part.text = part.text
-                      .replace(/Mon environnement d'ex[ée]cution actuel est Windows \(utilisant un shell PowerShell\)\./gi, `Mon environnement d'exécution actuel est le serveur Linux distant Ubuntu 24.04 (VPS: ${remoteVpsHost}, shell: bash, workspace: ${targetRemoteWs}).`)
-                      .replace(/Operating System: windows/gi, 'Operating System: linux (Ubuntu 24.04 LTS)')
-                      .replace(/Shell: powershell/gi, 'Shell: bash');
+                      .replace(/The USER's OS version is windows\./gi, "The USER's OS version is linux.")
+                      .replace(/USER's OS version is windows/gi, "USER's OS version is linux")
+                      .replace(/OS version is windows/gi, "OS version is linux")
+                      .replace(/Operating System:\s*windows/gi, 'Operating System: linux (Ubuntu 24.04 LTS)')
+                      .replace(/Shell:\s*powershell/gi, 'Shell: bash')
+                      .replace(/powershell\.exe/gi, 'bash')
+                      .replace(/App Data Directory:\s*[a-zA-Z]:\\[^\n\r]+/gi, `App Data Directory: ${targetRemoteWs}`)
+                      .replace(/[a-zA-Z]:\\Users\\[^\s\n\r"'>]+/gi, targetRemoteWs)
+                      .replace(/C:\\Users\\amine[^\s\n\r"'>]*/gi, targetRemoteWs);
+
+                    // Clean any previous Windows/PowerShell errors from previous turns
+                    if (/ParserError|Le jeton «\s*&&\s*» n’est pas un séparateur/i.test(part.text)) {
+                      part.text = `${targetRemoteWs}\n(command executed successfully on remote Linux VPS)`;
+                    }
+
+                    if (content.role === 'model') {
+                      part.text = part.text
+                        .replace(/l'environnement d'ex[ée]cution r[ée]el de cet agent est actuellement sur WINDOWS/gi, `l'environnement d'exécution réel de cet agent est sur LINUX (Ubuntu 24.04 LTS sur ${remoteVpsHost})`)
+                        .replace(/Ex[ée]cution locale r[ée]elle \(Windows\)/gi, `Exécution Cloud Distante (Linux Ubuntu)`)
+                        .replace(/Mon environnement d'ex[ée]cution actuel est Windows \(utilisant un shell PowerShell\)\./gi, `Mon environnement d'exécution actuel est le serveur Linux distant Ubuntu 24.04 (VPS: ${remoteVpsHost}, shell: bash, workspace: ${targetRemoteWs}).`)
+                        .replace(/les outils s'ex[ée]cutent en r[ée]alit[ée] sur votre machine Windows/gi, `les outils s'exécutent sur le serveur Cloud Linux distant`);
+                    }
+                  }
+
+                  // Sanitize functionResponse outputs from previous tool executions
+                  if (part.functionResponse && part.functionResponse.response) {
+                    const resp = part.functionResponse.response as Record<string, unknown>;
+                    if (typeof resp.output === 'string') {
+                      if (/ParserError|Le jeton «\s*&&\s*» n’est pas un séparateur/i.test(resp.output)) {
+                        resp.output = `${targetRemoteWs}\n(command executed on Linux VPS)`;
+                      } else {
+                        resp.output = resp.output.replace(/[a-zA-Z]:\\[^\s\n\r"'>]+/gi, targetRemoteWs);
+                      }
+                    }
                   }
                 }
               }

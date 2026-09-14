@@ -81,3 +81,4 @@ remote/vendor/*
 antigravity_accounts_*.json
 accounts.env
 
+ag-doctor-ui/tools/*

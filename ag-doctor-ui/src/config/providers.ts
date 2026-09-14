@@ -53,6 +53,12 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     defaultApiUrl: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'gemini-2.0-flash',
   },
+  google: {
+    id: 'google',
+    name: 'Google Gemini',
+    defaultApiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-2.5-flash',
+  },
 };
 
 export function getProviderDefaultUrl(providerType: string): string {

@@ -185,4 +185,45 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
       expect(res2?.content?.parts?.[0]?.functionCall?.args?.AbsolutePath).toBe('c:/src/main.ts');
     });
   });
+
+  describe('Workflow C: Multi-Account Provider Quota Separation', () => {
+    it('differentiates quota domains by API key so alternate accounts can be used as fallback', () => {
+      const getAccountQuotaKey = (item: { apiUrl: string; apiKey?: string }): string => {
+        try {
+          const host = new URL(item.apiUrl).hostname;
+          return `${host}:${item.apiKey || 'none'}`;
+        } catch {
+          return item.apiUrl || '';
+        }
+      };
+
+      const accountPerso = {
+        name: 'google-perso-gemini-2.5-pro',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'AIzaSyKeyPerso12345',
+      };
+
+      const accountWork = {
+        name: 'google-work-gemini-2.5-pro',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'AIzaSyKeyWork67890',
+      };
+
+      const sameAccountModel = {
+        name: 'google-perso-gemini-2.5-flash',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'AIzaSyKeyPerso12345',
+      };
+
+      const keyPerso = getAccountQuotaKey(accountPerso);
+      const keyWork = getAccountQuotaKey(accountWork);
+      const keySame = getAccountQuotaKey(sameAccountModel);
+
+      // Same account shares quota key -> skip fallback
+      expect(keyPerso).toBe(keySame);
+
+      // Separate accounts have distinct quota keys -> eligible for instant failover!
+      expect(keyPerso).not.toBe(keyWork);
+    });
+  });
 });

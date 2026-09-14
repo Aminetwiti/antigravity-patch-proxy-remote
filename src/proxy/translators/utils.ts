@@ -510,11 +510,15 @@ export function getRemoteExecScriptPath(): string {
 /**
  * Wraps a shell command to execute remotely via the remote-exec daemon bridge.
  */
-export function wrapCommandForRemoteExec(cmd: string): string {
+export function wrapCommandForRemoteExec(cmd: string, remoteCwd?: string): string {
   if (!cmd || cmd.startsWith('node ') || cmd.includes('remote-exec.js')) {
     return cmd;
   }
-  const b64 = Buffer.from(cmd, 'utf-8').toString('base64');
+  let finalCmd = cmd;
+  if (remoteCwd && typeof remoteCwd === 'string' && (remoteCwd.startsWith('/') || remoteCwd.startsWith('~'))) {
+    finalCmd = `cd "${remoteCwd}" 2>/dev/null || true; ${cmd}`;
+  }
+  const b64 = Buffer.from(finalCmd, 'utf-8').toString('base64');
   const scriptPath = getRemoteExecScriptPath();
   return `node --no-warnings "${scriptPath}" --b64 "${b64}"`;
 }
@@ -551,18 +555,20 @@ export function translateToolCallToNative(
     }
 
     if (isRemote) {
-      const wrapped = wrapCommandForRemoteExec(cmd);
+      const remoteCwd = (args.Cwd || (args as any).cwd) as string | undefined;
+      const wrapped = wrapCommandForRemoteExec(cmd, remoteCwd);
       if (wrapped !== cmd) {
-        log.info(`[Proxy] Bridging run_command "${cmd}" to Remote VPS daemon`);
+        log.info(`[Proxy] Bridging run_command "${cmd}" (cwd=${remoteCwd || '.'}) to Remote VPS daemon`);
         return {
           name: 'run_command',
           args: {
             ...args,
             CommandLine: wrapped,
+            Cwd: '.',
           },
         };
       }
-      return { name: 'run_command', args: { ...args } };
+      return { name: 'run_command', args: { ...args, Cwd: '.' } };
     }
   }
 
