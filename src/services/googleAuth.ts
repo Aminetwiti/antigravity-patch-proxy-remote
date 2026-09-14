@@ -11,6 +11,21 @@ interface CachedToken {
 
 const tokenCache = new Map<string, CachedToken>();
 const inFlightRefreshes = new Map<string, Promise<string | null>>();
+const prewarmTimers = new Map<string, NodeJS.Timeout>();
+
+function schedulePrewarm(cleanRefresh: string, safeExpiry: number) {
+  if (prewarmTimers.has(cleanRefresh)) {
+    clearTimeout(prewarmTimers.get(cleanRefresh)!);
+  }
+  const delay = Math.max(safeExpiry - Date.now() - 60_000, 5_000);
+  const timer = setTimeout(() => {
+    prewarmTimers.delete(cleanRefresh);
+    log.info('[GoogleAuth] Background pre-warming token before expiration');
+    refreshGoogleToken(cleanRefresh).catch(() => {});
+  }, delay);
+  if (timer.unref) timer.unref();
+  prewarmTimers.set(cleanRefresh, timer);
+}
 
 /**
  * Refreshes a Google OAuth access token using a refresh token.
@@ -58,6 +73,7 @@ export async function refreshGoogleToken(refreshToken: string): Promise<string |
                 accessToken: parsed.access_token,
                 expiresAt: safeExpiry,
               });
+              schedulePrewarm(cleanRefresh, safeExpiry);
               log.info(`[GoogleAuth] Successfully refreshed access token (expires in ${expiresIn}s)`);
               resolve(parsed.access_token);
               return;
