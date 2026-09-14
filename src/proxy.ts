@@ -202,6 +202,8 @@ import {
   translatedToolCalls,
   stateTimestamps,
   thoughtSignatureCache,
+  extractAndCacheThoughtSignatures,
+  restoreThoughtSignatures,
   touchStateTimestamp,
   getSessionModelKey,
   startCleanupInterval,
@@ -457,80 +459,6 @@ function transformGoogleStreamForRemote(
 }
 
 // ─── Thought Signature Cache Helpers ──────────────────────────────────────
-
-/**
- * Scans Gemini SSE/JSON response data for functionCall parts that carry a
- * thought_signature sibling field and caches them keyed by convId:funcName.
- *
- * Gemini 3+ attaches thought_signature to each functionCall part; the LS
- * must echo it back in subsequent turns. When the LS strips it (its bug),
- * restoreThoughtSignatures() re-injects cached values before forwarding.
- */
-function extractAndCacheThoughtSignatures(data: unknown, convId: string): void {
-  if (!data || typeof data !== 'object') return;
-  const d = data as { candidates?: unknown[] };
-  if (!Array.isArray(d.candidates)) return;
-  for (const cand of d.candidates) {
-    const c = cand as { content?: { parts?: unknown[] } };
-    if (!Array.isArray(c?.content?.parts)) continue;
-    for (const part of c.content!.parts!) {
-      const p = part as Record<string, unknown>;
-      const fc = p.functionCall as Record<string, unknown> | undefined;
-      const fnName = (fc?.name as string) || (p.name as string);
-      const sig = (typeof p.thought_signature === 'string' && p.thought_signature) ||
-                  (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
-                  (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
-                  (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature);
-      if (fnName && sig) {
-        if (convId) {
-          const scopedKey = `${convId}:${fnName}`;
-          thoughtSignatureCache.set(scopedKey, sig);
-          touchStateTimestamp(stateTimestamps.thoughtSigs, scopedKey);
-        }
-        thoughtSignatureCache.set(fnName, sig);
-        touchStateTimestamp(stateTimestamps.thoughtSigs, fnName);
-        log.info(`[Proxy] Cached thought_signature for ${fnName} (conv: ${convId || 'none'})`);
-      }
-    }
-  }
-}
-
-/**
- * Scans outgoing request contents[] for functionCall parts missing
- * thought_signature and restores cached values where available.
- * Returns true if any signature was restored.
- */
-function restoreThoughtSignatures(contents: unknown[], convId: string): boolean {
-  let restoredCount = 0;
-  for (const content of contents) {
-    const c = content as { parts?: unknown[] };
-    if (!Array.isArray(c?.parts)) continue;
-    for (const part of c.parts) {
-      const p = part as Record<string, unknown>;
-      const fc = p.functionCall as Record<string, unknown> | undefined;
-      if (!fc || typeof fc.name !== 'string' || !fc.name) continue;
-
-      const existingSig = (typeof p.thought_signature === 'string' && p.thought_signature) ||
-                          (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
-                          (typeof fc.thought_signature === 'string' && fc.thought_signature) ||
-                          (typeof fc.thoughtSignature === 'string' && fc.thoughtSignature);
-      if (existingSig) continue;
-
-      const scopedKey = convId ? `${convId}:${fc.name}` : '';
-      const cached = (scopedKey && thoughtSignatureCache.get(scopedKey)) ||
-                     thoughtSignatureCache.get(fc.name as string);
-      const sigToUse = cached || 'skip_thought_signature_validator';
-
-      p.thought_signature = sigToUse;
-      p.thoughtSignature = sigToUse;
-      fc.thought_signature = sigToUse;
-      fc.thoughtSignature = sigToUse;
-      restoredCount++;
-      log.info(`[Proxy] Restored thought_signature for ${fc.name} (conv: ${convId || 'none'}, fromCache=${!!cached})`);
-    }
-  }
-  return restoredCount > 0;
-}
 
 async function proxyToGoogle(
   req: http.IncomingMessage,
@@ -1031,6 +959,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
           const mapped = registry.translateStreamChunk(provider, parsed, model.name);
 
           if (mapped) {
+            extractAndCacheThoughtSignatures({ candidates: [mapped] }, '');
             const cloudCodeResponse = {
               response: { candidates: [mapped] },
               traceId: '',
@@ -1080,6 +1009,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
           const parsed = JSON.parse(dataStr);
           const mapped = registry.translateStreamChunk(provider, parsed, model.name);
           if (mapped) {
+            extractAndCacheThoughtSignatures({ candidates: [mapped] }, '');
             const cloudCodeResponse = {
               response: { candidates: [mapped] },
               traceId: '',
@@ -1504,6 +1434,11 @@ function handleCustomModelRequest(
   fallbackDepth = 0,
 ): void {
   const geminiBody = trimContextPayload(rawGeminiBody);
+  const bodyContents = geminiBody.contents || ((geminiBody as Record<string, unknown>).request as Record<string, unknown> | undefined)?.contents;
+  if (Array.isArray(bodyContents)) {
+    const sessId = extractSessionId(geminiBody as Record<string, unknown>, {});
+    restoreThoughtSignatures(bodyContents, sessId || '');
+  }
   const traceId = (geminiBody as Record<string, unknown>)?.requestId as string || '';
 
   // P3-18: Configurable max retries per model (default 1, min 0, max 5).
@@ -2835,6 +2770,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
     // 3. Intercept Cloud Code generation stream or non-stream requests
     let isSessionRemote = false;
+    let convId: string | null = null;
     const isCloudCodeStream =
       (req.url!.includes('v1internal') || req.url!.includes('cloudcode')) &&
       (req.url!.includes('streamGenerateContent') || req.url!.includes('generateContent'));
@@ -2843,12 +2779,17 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         const reqJson = JSON.parse(bodyStr) as Record<string, unknown>;
         const targetReq = (reqJson.request || reqJson) as Record<string, unknown>;
 
-        let convId: string | null = null;
         if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
           const si = targetReq.systemInstruction as { parts?: Array<{ text?: string }> };
           const fullSysText = (si.parts || []).map((p) => p.text || '').join('\n');
           const match = fullSysText.match(/Conversation ID:\s*([a-f0-9\-]+)/i);
           if (match) convId = match[1];
+        }
+
+        // Restore any missing thought_signatures in conversation history for Gemini 3+ function calls
+        let signaturesRestored = false;
+        if (Array.isArray(targetReq.contents)) {
+          signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '');
         }
 
         loadRemoteState();
@@ -3002,6 +2943,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
           log.info(`[Proxy] Sanitized & injected strict Remote VPS context into Cloud Code request (convId=${convId || 'draft'}, host=${remoteVpsHost})`);
+        } else if (signaturesRestored) {
+          fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
+          log.info(`[Proxy] Injected restored thought_signatures into Cloud Code request (convId=${convId || 'draft'})`);
         }
 
         const candidateNames = [
@@ -3081,7 +3025,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                   const authHeader = accessToken ? `Bearer ${accessToken}` : undefined;
 
                   log.info(`[Proxy] Forwarding Cloud Code request directly to Google for model ${targetModel} (account: ${matchedCustomModel.accountEmail || matchedCustomModel.name})`);
-                  await proxyToGoogle(req, res, updatedBody, isSessionRemote, authHeader);
+                  await proxyToGoogle(req, res, updatedBody, isSessionRemote, authHeader, convId || '');
                   return;
                 } catch (err) {
                   log.error('[Proxy] Failed to forward Cloud Code request natively, falling back to translator:', err);
@@ -3148,7 +3092,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
                 const origUrl = req.url;
                 req.url = isStandardStream ? '/v1internal:streamGenerateContent?alt=sse' : '/v1internal:generateContent';
-                await proxyToGoogle(req, res, updatedBody, false, authHeader);
+                await proxyToGoogle(req, res, updatedBody, false, authHeader, convId || '');
                 req.url = origUrl;
                 return;
               } catch (err) {
@@ -3170,7 +3114,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     }
 
     // 5. Fallback: transparent proxy to Google
-    await proxyToGoogle(req, res, fullBody, isSessionRemote);
+    await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || '');
   });
 }
 

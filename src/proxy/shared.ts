@@ -73,6 +73,75 @@ export function getSessionModelKey(modelName: string, sessionId?: string): strin
   return modelName;
 }
 
+/**
+ * Scans Gemini SSE/JSON response data for functionCall parts that carry a
+ * thought_signature sibling field and caches them keyed by convId:funcName.
+ * Also caches by funcName as a global fallback.
+ */
+export function extractAndCacheThoughtSignatures(data: unknown, convId: string): void {
+  if (!data || typeof data !== 'object') return;
+  const d = data as { candidates?: unknown[] };
+  if (!Array.isArray(d.candidates)) return;
+  for (const cand of d.candidates) {
+    const c = cand as { content?: { parts?: unknown[] } };
+    if (!Array.isArray(c?.content?.parts)) continue;
+    for (const part of c.content!.parts!) {
+      const p = part as Record<string, unknown>;
+      const fc = p.functionCall as Record<string, unknown> | undefined;
+      const fnName = (fc?.name as string) || (p.name as string);
+      const sig = (typeof p.thought_signature === 'string' && p.thought_signature) ||
+                  (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
+                  (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
+                  (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature);
+      if (fnName && sig) {
+        if (convId) {
+          const scopedKey = `${convId}:${fnName}`;
+          thoughtSignatureCache.set(scopedKey, sig);
+          touchStateTimestamp(stateTimestamps.thoughtSigs, scopedKey);
+        }
+        thoughtSignatureCache.set(fnName, sig);
+        touchStateTimestamp(stateTimestamps.thoughtSigs, fnName);
+      }
+    }
+  }
+}
+
+/**
+ * Scans outgoing request contents[] for functionCall parts missing
+ * thought_signature and restores cached values where available.
+ * Returns true if any signature was restored.
+ */
+export function restoreThoughtSignatures(contents: unknown[], convId: string): boolean {
+  let restoredCount = 0;
+  for (const content of contents) {
+    const c = content as { parts?: unknown[] };
+    if (!Array.isArray(c?.parts)) continue;
+    for (const part of c.parts) {
+      const p = part as Record<string, unknown>;
+      const fc = p.functionCall as Record<string, unknown> | undefined;
+      if (!fc || typeof fc.name !== 'string' || !fc.name) continue;
+
+      const existingSig = (typeof p.thought_signature === 'string' && p.thought_signature) ||
+                          (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
+                          (typeof fc.thought_signature === 'string' && fc.thought_signature) ||
+                          (typeof fc.thoughtSignature === 'string' && fc.thoughtSignature);
+      if (existingSig) continue;
+
+      const scopedKey = convId ? `${convId}:${fc.name}` : '';
+      const cached = (scopedKey && thoughtSignatureCache.get(scopedKey)) ||
+                     thoughtSignatureCache.get(fc.name as string);
+      const sigToUse = cached || 'skip_thought_signature_validator';
+
+      p.thought_signature = sigToUse;
+      p.thoughtSignature = sigToUse;
+      fc.thought_signature = sigToUse;
+      fc.thoughtSignature = sigToUse;
+      restoredCount++;
+    }
+  }
+  return restoredCount > 0;
+}
+
 // ─── Periodic Cleanup (managed lifecycle) ─────────────────────────────────
 
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
