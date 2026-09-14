@@ -15,6 +15,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getRendererDefaultUrl } from './providers-config';
+import {
+  parseAccountsJson,
+  normalizeAccountEntry,
+  findMatchingAccount,
+  mergeAccountWithExisting,
+} from './account-import';
 
 // (See globals.d.ts for the window.ag interface)
 
@@ -3823,6 +3829,17 @@ interface ProviderEntry {
   latencyMs?: number;
   lastTestedAt?: string;
   lastError?: string;
+  picture?: string;
+  quotas?: any;
+  refreshToken?: string;
+  source?: string;
+  email?: string;
+  tier?: string;
+  isCurrent?: boolean;
+  lastUsed?: number;
+  updatedAt?: number;
+  createdAt?: number;
+  label?: string;
 }
 
 const pmBackdrop = $('#providerManagerModalBackdrop') as HTMLDivElement;
@@ -5047,10 +5064,24 @@ const gaFormError = $('#gaFormError') as HTMLDivElement | null;
 const gaFormCancelBtn = $('#gaFormCancelBtn') as HTMLButtonElement | null;
 const gaFormSaveBtn = $('#gaFormSaveBtn') as HTMLButtonElement | null;
 const gaOpenAiStudioLink = $('#gaOpenAiStudioLink') as HTMLAnchorElement | null;
+const gaAccountTypeBanner = $('#gaAccountTypeBanner') as HTMLDivElement | null;
+const gaFormKeyLabel = $('#gaFormKeyLabel') as HTMLSpanElement | null;
+const gaFormKeyHelper = $('#gaFormKeyHelper') as HTMLElement | null;
+const gaFormCustomModelInput = $('#gaFormCustomModelInput') as HTMLInputElement | null;
+const gaFormAddCustomModelBtn = $('#gaFormAddCustomModelBtn') as HTMLButtonElement | null;
+const gaFormSelectAllBtn = $('#gaFormSelectAllBtn') as HTMLButtonElement | null;
+const gaFormDeselectAllBtn = $('#gaFormDeselectAllBtn') as HTMLButtonElement | null;
 
 let editingGoogleAccountId: string | null = null;
 let currentGaFetchedModels: Array<{ id: string; displayName: string; enabled: boolean }> = [];
 let googleAccountsCache: ProviderEntry[] = [];
+let gaCurrentQuotaWindow: '5h' | 'weekly' = 'weekly';
+let gaCurrentViewMode: 'list' | 'grid' = 'list';
+let gaCurrentFilter: 'all' | 'pro' | 'ultra' | 'free' = 'all';
+let gaSearchQuery: string = '';
+let gaShowAllQuotas: boolean = false;
+let gaSelectedIds: Set<string> = new Set();
+let gaToolbarInitialized: boolean = false;
 
 function maskKeyPreview(key: string): string {
   if (!key || key === 'none') return '(none)';
@@ -5059,21 +5090,653 @@ function maskKeyPreview(key: string): string {
   return `${key.slice(0, 4)}••••${key.slice(-4)}`;
 }
 
+function formatResetCountdown(isoDateStr?: string): string {
+  if (!isoDateStr) return '';
+  const target = new Date(isoDateStr).getTime();
+  const diffMs = target - Date.now();
+  if (isNaN(diffMs) || diffMs <= 0) return 'Reset imminent';
+  const mins = Math.floor(diffMs / 60000);
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    return `Reset dans ${days}j ${hours % 24}h`;
+  }
+  if (hours > 0) {
+    return `Reset dans ${hours}h ${remMins}m`;
+  }
+  return `Reset dans ${remMins}m`;
+}
+
+function formatCompactCountdown(isoDateStr?: string): string {
+  if (!isoDateStr) return '';
+  const target = new Date(isoDateStr).getTime();
+  const diffMs = target - Date.now();
+  if (isNaN(diffMs) || diffMs <= 0) return '0m';
+  const mins = Math.floor(diffMs / 60000);
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    const remHours = hours % 24;
+    return `${days}d ${remHours}h`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${remMins}m`;
+  }
+  return `${remMins}m`;
+}
+
+function formatLastUsed(ts?: number | string): string {
+  if (!ts) return 'Never';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return 'Never';
+  return d.toLocaleString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+}
+
+function getQuotaColor(pct: number): string {
+  if (pct > 50) return '#10b981'; // Emerald
+  if (pct >= 20) return '#f59e0b'; // Amber
+  return '#f43f5e'; // Rose
+}
+
+function getAccountTier(acc: any): 'PRO' | 'ULTRA' | 'FREE' {
+  if (acc.tier) {
+    const t = String(acc.tier).toUpperCase();
+    if (t.includes('ULTRA')) return 'ULTRA';
+    if (t.includes('PRO')) return 'PRO';
+    if (t.includes('FREE')) return 'FREE';
+  }
+  const name = (acc.name || '').toUpperCase();
+  if (name.includes('ULTRA')) return 'ULTRA';
+  if (name.includes('FREE')) return 'FREE';
+  return 'PRO';
+}
+
+function updateGoogleAccountToolbarCounts(accounts: any[]): void {
+  const total = accounts.length;
+  let pro = 0;
+  let ultra = 0;
+  let free = 0;
+  for (const a of accounts) {
+    const tier = getAccountTier(a);
+    if (tier === 'ULTRA') ultra++;
+    else if (tier === 'FREE') free++;
+    else pro++;
+  }
+  const elAll = $('#gaCntAll');
+  const elPro = $('#gaCntPro');
+  const elUltra = $('#gaCntUltra');
+  const elFree = $('#gaCntFree');
+  if (elAll) elAll.textContent = String(total);
+  if (elPro) elPro.textContent = String(pro);
+  if (elUltra) elUltra.textContent = String(ultra);
+  if (elFree) elFree.textContent = String(free);
+}
+
+function initGoogleAccountsToolbarOnce(): void {
+  if (gaToolbarInitialized) return;
+  gaToolbarInitialized = true;
+
+  // Search input with debounce
+  const searchInput = $('#gaSearchInput') as HTMLInputElement | null;
+  let searchDebounceTimer: any = null;
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        gaSearchQuery = searchInput.value.trim().toLowerCase();
+        renderGoogleAccountsList(googleAccountsCache);
+      }, 150);
+    });
+  }
+
+  // 5H vs Weekly toggle
+  const w5hBtn = $('#gaWindow5hBtn') as HTMLButtonElement | null;
+  const wWkBtn = $('#gaWindowWeeklyBtn') as HTMLButtonElement | null;
+  w5hBtn?.addEventListener('click', () => {
+    gaCurrentQuotaWindow = '5h';
+    w5hBtn.classList.add('active');
+    wWkBtn?.classList.remove('active');
+    renderGoogleAccountsList(googleAccountsCache);
+  });
+  wWkBtn?.addEventListener('click', () => {
+    gaCurrentQuotaWindow = 'weekly';
+    wWkBtn.classList.add('active');
+    w5hBtn?.classList.remove('active');
+    renderGoogleAccountsList(googleAccountsCache);
+  });
+
+  // List vs Grid view toggle
+  const vListBtn = $('#gaViewListBtn') as HTMLButtonElement | null;
+  const vGridBtn = $('#gaViewGridBtn') as HTMLButtonElement | null;
+  vListBtn?.addEventListener('click', () => {
+    gaCurrentViewMode = 'list';
+    vListBtn.classList.add('active');
+    vGridBtn?.classList.remove('active');
+    renderGoogleAccountsList(googleAccountsCache);
+  });
+  vGridBtn?.addEventListener('click', () => {
+    gaCurrentViewMode = 'grid';
+    vGridBtn.classList.add('active');
+    vListBtn?.classList.remove('active');
+    renderGoogleAccountsList(googleAccountsCache);
+  });
+
+  // Filter chips (All, PRO, ULTRA, FREE)
+  const chips = $$<HTMLButtonElement>('#gaFilterGroup .ga-chip');
+  chips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      chips.forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      gaCurrentFilter = (chip.dataset.filter as any) || 'all';
+      renderGoogleAccountsList(googleAccountsCache);
+    });
+  });
+
+  // Quick toolbar buttons
+  $('#gaToolbarAddBtn')?.addEventListener('click', () => openGoogleAccountModal());
+
+  const refreshAllBtn = $('#gaToolbarRefreshAllBtn') as HTMLButtonElement | null;
+  refreshAllBtn?.addEventListener('click', async () => {
+    if (googleAccountsCache.length === 0) {
+      toast('No Google accounts to refresh', 'warn');
+      return;
+    }
+    refreshAllBtn.setAttribute('disabled', 'true');
+    const origHtml = refreshAllBtn.innerHTML;
+    refreshAllBtn.innerHTML = `<span class="spinner"></span> Refreshing…`;
+    try {
+      let updatedCount = 0;
+      await Promise.allSettled(
+        googleAccountsCache.map(async (acc) => {
+          let tokenToUse = acc.apiKey;
+          if (acc.refreshToken) {
+            try {
+              const r = await window.ag.providers.refreshToken(acc.refreshToken);
+              if (r.success && r.accessToken) {
+                tokenToUse = r.accessToken;
+                acc.apiKey = r.accessToken;
+                if (r.quotas) acc.quotas = r.quotas;
+                if (r.picture && !acc.picture) acc.picture = r.picture;
+                if (r.name && (!acc.name || acc.name.includes('@'))) acc.name = r.name;
+              }
+            } catch {}
+          }
+          if (tokenToUse) {
+            try {
+              const res = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+              if (res.success && res.quotas) {
+                acc.quotas = res.quotas;
+              }
+            } catch {}
+          }
+          if (acc.apiKey) {
+            await window.ag.providers.save(acc);
+            updatedCount++;
+          }
+        })
+      );
+      toast(`Refreshed quotas for ${updatedCount} accounts`, 'ok');
+      await loadGoogleAccounts();
+    } finally {
+      refreshAllBtn.removeAttribute('disabled');
+      refreshAllBtn.innerHTML = origHtml;
+    }
+  });
+
+  const warmupBtn = $('#gaToolbarWarmupBtn') as HTMLButtonElement | null;
+  warmupBtn?.addEventListener('click', async () => {
+    if (googleAccountsCache.length === 0) {
+      toast('No Google accounts to warmup', 'warn');
+      return;
+    }
+    warmupBtn.setAttribute('disabled', 'true');
+    const origHtml = warmupBtn.innerHTML;
+    warmupBtn.innerHTML = `<span class="spinner"></span> Warming…`;
+    try {
+      let warmedCount = 0;
+      for (const acc of googleAccountsCache) {
+        let tokenToUse = acc.apiKey;
+        if (acc.refreshToken) {
+          try {
+            const r = await window.ag.providers.refreshToken(acc.refreshToken);
+            if (r.success && r.accessToken) {
+              tokenToUse = r.accessToken;
+              acc.apiKey = r.accessToken;
+            }
+          } catch {}
+        }
+        if (tokenToUse) {
+          try {
+            const res = await window.ag.providers.warmupAccount(tokenToUse);
+            if (res.success) warmedCount++;
+            // fetch fresh quota
+            const q = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+            if (q.success && q.quotas) {
+              acc.quotas = q.quotas;
+              await window.ag.providers.save(acc);
+            }
+          } catch {}
+        }
+      }
+      toast(`Warmup completed for ${warmedCount} accounts (weekly cycles activated)`, warmedCount > 0 ? 'ok' : 'warn');
+      await loadGoogleAccounts();
+    } finally {
+      warmupBtn.removeAttribute('disabled');
+      warmupBtn.innerHTML = origHtml;
+    }
+  });
+
+  const showAllSwitch = $('#gaShowAllQuotasSwitch') as HTMLInputElement | null;
+  if (showAllSwitch) {
+    showAllSwitch.addEventListener('change', () => {
+      gaShowAllQuotas = showAllSwitch.checked;
+      renderGoogleAccountsList(googleAccountsCache);
+    });
+  }
+
+  // Export JSON
+  $('#gaExportJsonBtn')?.addEventListener('click', () => {
+    if (googleAccountsCache.length === 0) {
+      toast('No Google accounts to export', 'warn');
+      return;
+    }
+    const cleanData = JSON.stringify(googleAccountsCache, null, 2);
+    const blob = new Blob([cleanData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `antigravity-accounts-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`Exported ${googleAccountsCache.length} Google accounts`, 'ok');
+  });
+
+  // Import JSON
+  const importFileInput = $('#gaImportFileInput') as HTMLInputElement | null;
+  $('#gaImportJsonBtn')?.addEventListener('click', () => {
+    importFileInput?.click();
+  });
+  importFileInput?.addEventListener('change', async () => {
+    const file = importFileInput.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const rawAccounts = parseAccountsJson(text);
+      if (!rawAccounts || rawAccounts.length === 0) {
+        toast('Invalid JSON or no accounts detected in file', 'err');
+        return;
+      }
+
+      toast(`Importing ${rawAccounts.length} Google account(s)...`, 'info', 4000);
+
+      let savedCount = 0;
+      let refreshedCount = 0;
+
+      for (let i = 0; i < rawAccounts.length; i++) {
+        const raw = rawAccounts[i];
+        const normalized = normalizeAccountEntry(raw, i);
+        if (!normalized) continue;
+
+        const existing = findMatchingAccount(normalized, googleAccountsCache);
+
+        let finalApiKey = normalized.apiKey || (existing ? existing.apiKey : '');
+        let finalPicture = normalized.picture || (existing ? existing.picture : undefined);
+        let finalName = existing && existing.name ? existing.name : normalized.name;
+        let finalQuotas = normalized.quotas || (existing ? existing.quotas : undefined);
+
+        // Attempt live token exchange if refreshToken is present
+        if (normalized.refreshToken) {
+          try {
+            const rRes = await window.ag.providers.refreshToken(normalized.refreshToken);
+            if (rRes.success && rRes.accessToken) {
+              finalApiKey = rRes.accessToken;
+              if (rRes.name && (!finalName || finalName.includes('@') || finalName === normalized.email?.split('@')[0])) {
+                finalName = rRes.name;
+              }
+              if (rRes.picture && !finalPicture) finalPicture = rRes.picture;
+              if (rRes.quotas) finalQuotas = rRes.quotas;
+              refreshedCount++;
+            }
+          } catch {
+            // continue with unrefreshed token
+          }
+        }
+
+        const candidateToMerge = {
+          ...normalized,
+          name: finalName,
+          apiKey: finalApiKey,
+          picture: finalPicture,
+          quotas: finalQuotas,
+        };
+
+        const merged = mergeAccountWithExisting(candidateToMerge, existing);
+
+        const saveRes = await window.ag.providers.save(merged);
+        if (saveRes.success) {
+          savedCount++;
+        }
+      }
+
+      toast(
+        `Imported ${savedCount} Google account(s) (${refreshedCount} refreshed live)!`,
+        'ok',
+        5000
+      );
+      await loadGoogleAccounts();
+      void loadModels();
+    } catch (err) {
+      toast(`Import error: ${(err as Error).message}`, 'err');
+    } finally {
+      importFileInput.value = '';
+    }
+  });
+
+  // Delegated event listeners for gaAccountsContainer
+  if (gaAccountsContainer) {
+    gaAccountsContainer.addEventListener('click', async (e) => {
+      const target = e.target as HTMLElement;
+
+      // Empty state buttons
+      if (target.closest('#gaEmptyAddBtn')) {
+        openGoogleAccountModal();
+        return;
+      }
+      if (target.closest('#gaEmptyDiscoverBtn')) {
+        void triggerIdeAccountDiscovery();
+        return;
+      }
+
+      // Action buttons
+      const btn = target.closest('.ga-action-btn') as HTMLButtonElement | null;
+      if (!btn) return;
+      const row = btn.closest('[data-id]') as HTMLElement | null;
+      const id = row?.dataset.id;
+      if (!id) return;
+      const account = googleAccountsCache.find((x) => x.id === id);
+
+      // Switch
+      if (btn.classList.contains('ga-switch')) {
+        for (const a of googleAccountsCache) {
+          a.isCurrent = (a.id === id);
+          if (a.id === id) {
+            a.lastUsed = Date.now();
+            if (a.refreshToken) {
+              try {
+                const r = await window.ag.providers.refreshToken(a.refreshToken);
+                if (r.success && r.accessToken) {
+                  a.apiKey = r.accessToken;
+                  if (r.quotas) a.quotas = r.quotas;
+                  if (r.picture && !a.picture) a.picture = r.picture;
+                }
+              } catch {}
+            }
+          }
+          await window.ag.providers.save(a);
+        }
+        toast(`Switched active Antigravity account to ${account?.name || id}`, 'ok');
+        renderGoogleAccountsList(googleAccountsCache);
+        return;
+      }
+
+      // Details
+      if (btn.classList.contains('ga-details')) {
+        if (!account) return;
+        const tier = getAccountTier(account);
+        const quotas = account.quotas;
+        const detailsHtml = `
+          <div style="font-size: 12.5px; line-height: 1.6;">
+            <div style="display: grid; grid-template-columns: 130px 1fr; gap: 8px 12px; margin-bottom: 16px;">
+              <span style="color: var(--text-2);">Name / Label:</span>
+              <strong>${escapeHtml(account.name)}</strong>
+              <span style="color: var(--text-2);">Email / User ID:</span>
+              <span>${escapeHtml(account.email || account.name || '(unspecified)')}</span>
+              <span style="color: var(--text-2);">Plan / Tier:</span>
+              <span><span class="ga-badge ga-badge-${tier.toLowerCase()}">${tier}</span></span>
+              <span style="color: var(--text-2);">Current Active:</span>
+              <span>${account.isCurrent ? '<span class="ga-badge ga-badge-current">CURRENT (Primary AGY)</span>' : 'No'}</span>
+              <span style="color: var(--text-2);">Last Used:</span>
+              <span>${formatLastUsed(account.lastUsed || account.updatedAt)}</span>
+              <span style="color: var(--text-2);">API Key / Token:</span>
+              <code>${escapeHtml(maskKeyPreview(account.apiKey))}</code>
+              <span style="color: var(--text-2);">Total Models:</span>
+              <span>${(account.models || []).length} models (${(account.models || []).filter((m: any) => m.enabled !== false).length} enabled)</span>
+            </div>
+            <div style="background: var(--bg-1); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+              <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-1);">Live Quota Metrics</div>
+              ${quotas ? `
+                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11.5px;">
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Gemini Weekly:</span>
+                    <strong>${quotas.geminiWeeklyPct ?? quotas.weeklyPercentage ?? 100}% (${formatResetCountdown(quotas.geminiWeeklyReset ?? quotas.weeklyResetTime)})</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Gemini 5H:</span>
+                    <strong>${quotas.geminiFiveHourPct ?? quotas.fiveHourPercentage ?? 100}% (${formatResetCountdown(quotas.geminiFiveHourReset ?? quotas.fiveHourResetTime)})</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Claude/GPT Weekly:</span>
+                    <strong>${quotas.claudeWeeklyPct ?? quotas.weeklyPercentage ?? 100}% (${formatResetCountdown(quotas.claudeWeeklyReset ?? quotas.weeklyResetTime)})</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Claude/GPT 5H:</span>
+                    <strong>${quotas.claudeFiveHourPct ?? quotas.fiveHourPercentage ?? 100}% (${formatResetCountdown(quotas.claudeFiveHourReset ?? quotas.fiveHourResetTime)})</strong>
+                  </div>
+                </div>
+              ` : '<span style="color: var(--text-3); font-style: italic;">No live quota data available.</span>'}
+            </div>
+          </div>
+        `;
+        await modals.confirm(`Account Details: ${account.name}`, detailsHtml, { confirmLabel: 'Close' });
+        return;
+      }
+
+      // Refresh
+      if (btn.classList.contains('ga-refresh')) {
+        if (!account || (!account.apiKey && !account.refreshToken)) {
+          toast('No API key/token available for this account', 'warn');
+          return;
+        }
+        btn.setAttribute('disabled', 'true');
+        btn.classList.add('spinning');
+        try {
+          let tokenToUse = account.apiKey;
+          if (account.refreshToken) {
+            const rRes = await window.ag.providers.refreshToken(account.refreshToken);
+            if (rRes.success && rRes.accessToken) {
+              tokenToUse = rRes.accessToken;
+              account.apiKey = rRes.accessToken;
+              if (rRes.quotas) account.quotas = rRes.quotas;
+              if (rRes.picture && !account.picture) account.picture = rRes.picture;
+              if (rRes.name && (!account.name || account.name.includes('@'))) account.name = rRes.name;
+            }
+          }
+          if (tokenToUse) {
+            const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+            if (qRes.success && qRes.quotas) {
+              account.quotas = qRes.quotas;
+            }
+          }
+          await window.ag.providers.save(account);
+          toast(`Quotas updated for ${account.name}`, 'ok');
+        } catch (err) {
+          toast(`Quota error: ${(err as Error).message}`, 'err');
+        } finally {
+          btn.removeAttribute('disabled');
+          btn.classList.remove('spinning');
+          renderGoogleAccountsList(googleAccountsCache);
+        }
+        return;
+      }
+
+      // Warmup
+      if (btn.classList.contains('ga-warmup')) {
+        if (!account || (!account.apiKey && !account.refreshToken)) {
+          toast('No token available for warmup', 'warn');
+          return;
+        }
+        btn.setAttribute('disabled', 'true');
+        btn.classList.add('spinning');
+        try {
+          let tokenToUse = account.apiKey;
+          if (account.refreshToken) {
+            try {
+              const r = await window.ag.providers.refreshToken(account.refreshToken);
+              if (r.success && r.accessToken) {
+                tokenToUse = r.accessToken;
+                account.apiKey = r.accessToken;
+              }
+            } catch {}
+          }
+          const wRes = await window.ag.providers.warmupAccount(tokenToUse);
+          if (wRes.success) {
+            toast(`Warmup successful for ${account.name}`, 'ok');
+            const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+            if (qRes.success && qRes.quotas) {
+              account.quotas = qRes.quotas;
+              await window.ag.providers.save(account);
+            }
+          } else {
+            toast(`Warmup failed: ${wRes.error || 'Request rejected'}`, 'err');
+          }
+        } catch (err) {
+          toast(`Warmup error: ${(err as Error).message}`, 'err');
+        } finally {
+          btn.removeAttribute('disabled');
+          btn.classList.remove('spinning');
+          renderGoogleAccountsList(googleAccountsCache);
+        }
+        return;
+      }
+
+      // Edit
+      if (btn.classList.contains('ga-edit')) {
+        openGoogleAccountModal(id);
+        return;
+      }
+
+      // Delete
+      if (btn.classList.contains('ga-delete')) {
+        if (!account) return;
+        const ok = await modals.confirm(
+          'Delete Google Account?',
+          `Remove Google account <strong>${escapeHtml(account.name)}</strong> and its associated models from Antigravity?`,
+          { danger: true, confirmLabel: 'Delete Account' }
+        );
+        if (!ok) return;
+        const res = (await window.ag.providers.delete(id)) as { success: boolean; error?: string };
+        if (res.success) {
+          toast('Google account deleted', 'ok');
+          await loadGoogleAccounts();
+        } else {
+          toast(`Delete failed: ${res.error}`, 'err');
+        }
+        return;
+      }
+    });
+
+    gaAccountsContainer.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.id === 'gaMasterCheckbox') {
+        const isChecked = target.checked;
+        gaAccountsContainer.querySelectorAll<HTMLInputElement>('.ga-row-cb').forEach((cb) => {
+          cb.checked = isChecked;
+          const id = cb.dataset.id;
+          if (id) {
+            if (isChecked) gaSelectedIds.add(id);
+            else gaSelectedIds.delete(id);
+          }
+        });
+      } else if (target.classList.contains('ga-row-cb')) {
+        const id = target.dataset.id;
+        if (id) {
+          if (target.checked) gaSelectedIds.add(id);
+          else gaSelectedIds.delete(id);
+        }
+        const masterCb = $('#gaMasterCheckbox') as HTMLInputElement | null;
+        if (masterCb) {
+          const all = gaAccountsContainer.querySelectorAll<HTMLInputElement>('.ga-row-cb');
+          masterCb.checked = all.length > 0 && Array.from(all).every((c) => c.checked);
+        }
+      }
+    });
+  }
+}
+
 async function loadGoogleAccounts(): Promise<void> {
   if (!gaAccountsContainer) return;
   showSkeleton(gaAccountsContainer, 'cards', 2);
   try {
-    const allProviders = (await window.ag.providers.get()) as ProviderEntry[];
+    const allProviders = (await window.ag.providers.get()) as any[];
     googleAccountsCache = (allProviders || []).filter(
-      (p) => p.provider === 'google' || p.provider === 'gemini' || p.apiUrl.includes('googleapis.com')
+      (p) => p.provider === 'google' || p.provider === 'gemini' || (p.apiUrl && p.apiUrl.includes('googleapis.com'))
     );
+
+    // Refresh live quotas in parallel for accounts with Google OAuth access tokens or refresh tokens
+    await Promise.allSettled(
+      googleAccountsCache.map(async (acc) => {
+        let tokenToUse = acc.apiKey;
+        let qRes: { success: boolean; quotas?: any } | null = null;
+        if (tokenToUse && tokenToUse.startsWith('ya29.')) {
+          try {
+            qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+          } catch {}
+        }
+        // If fetch failed or returned no quotas, and we have a refreshToken, refresh now!
+        if ((!qRes || !qRes.success) && acc.refreshToken) {
+          try {
+            const r = await window.ag.providers.refreshToken(acc.refreshToken);
+            if (r.success && r.accessToken) {
+              acc.apiKey = r.accessToken;
+              tokenToUse = r.accessToken;
+              if (r.quotas) acc.quotas = r.quotas;
+              if (r.picture && !acc.picture) acc.picture = r.picture;
+              if (r.name && (!acc.name || acc.name.includes('@'))) acc.name = r.name;
+              await window.ag.providers.save(acc);
+              if (!acc.quotas) {
+                qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+              }
+            }
+          } catch {}
+        }
+        if (qRes && qRes.success && qRes.quotas) {
+          acc.quotas = qRes.quotas;
+        }
+      })
+    );
+
+    // Auto-clean any bracketed model display names on load
+    for (const a of googleAccountsCache) {
+      if (Array.isArray(a.models)) {
+        let changed = false;
+        a.models.forEach((m: any) => {
+          if (m.displayName && /^\[[^\]]+\]\s*/.test(m.displayName)) {
+            m.displayName = m.displayName.replace(/^\[[^\]]+\]\s*/, '');
+            changed = true;
+          }
+        });
+        if (changed) {
+          void window.ag.providers.save(a);
+        }
+      }
+    }
 
     const totalAccounts = googleAccountsCache.length;
     const activeAccounts = googleAccountsCache.filter((a) => a.enabled !== false).length;
     let totalModels = 0;
     googleAccountsCache.forEach((a) => {
       if (a.enabled !== false && Array.isArray(a.models)) {
-        totalModels += a.models.filter((m) => m.enabled !== false).length;
+        totalModels += a.models.filter((m: any) => m.enabled !== false).length;
       }
     });
 
@@ -5082,6 +5745,8 @@ async function loadGoogleAccounts(): Promise<void> {
     if (gaStatActiveAccounts) gaStatActiveAccounts.textContent = String(activeAccounts);
     if (gaStatTotalModels) gaStatTotalModels.textContent = String(totalModels);
 
+    initGoogleAccountsToolbarOnce();
+    updateGoogleAccountToolbarCounts(googleAccountsCache);
     renderGoogleAccountsList(googleAccountsCache);
   } catch (err) {
     gaAccountsContainer.innerHTML = `<div class="empty-state"><p>Could not load Google accounts: ${escapeHtml((err as Error).message)}</p></div>`;
@@ -5090,7 +5755,7 @@ async function loadGoogleAccounts(): Promise<void> {
   }
 }
 
-function renderGoogleAccountsList(accounts: ProviderEntry[]): void {
+function renderGoogleAccountsList(accounts: any[]): void {
   if (!gaAccountsContainer) return;
   if (!accounts || accounts.length === 0) {
     gaAccountsContainer.innerHTML = `
@@ -5100,194 +5765,261 @@ function renderGoogleAccountsList(accounts: ProviderEntry[]): void {
         </div>
         <div class="agy-empty-title" style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">No Google Accounts Added</div>
         <div class="agy-empty-text" style="color: var(--text-2); font-size: 13px; max-width: 440px; margin: 0 auto 16px;">
-          Add your Google AI Studio API keys (personal, work, or trial accounts) to use their models in Antigravity without ever switching accounts in the IDE.
+          Add your Google accounts or click "Importer depuis IDE" to automatically detect the account already connected to Antigravity without manual configuration.
         </div>
-        <button class="btn btn-primary" type="button" id="gaEmptyAddBtn">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add First Google Account
-        </button>
+        <div style="display: flex; justify-content: center; gap: 10px;">
+          <button class="btn btn-secondary" type="button" id="gaEmptyDiscoverBtn" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Importer depuis IDE
+          </button>
+          <button class="btn btn-primary" type="button" id="gaEmptyAddBtn">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Google Account
+          </button>
+        </div>
       </div>
     `;
     $('#gaEmptyAddBtn')?.addEventListener('click', () => openGoogleAccountModal());
+    $('#gaEmptyDiscoverBtn')?.addEventListener('click', () => triggerIdeAccountDiscovery());
     return;
   }
 
-  let html = `<div class="agy-provider-list">`;
-  for (const a of accounts) {
-    const activeModels = (a.models || []).filter((m) => m.enabled !== false);
-    html += `
-      <div class="agy-provider-row" data-id="${escapeHtml(a.id)}" style="flex-direction: column; align-items: stretch; gap: 10px; padding: 14px 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-          <div class="agy-provider-row-main" style="display: flex; align-items: center; gap: 12px;">
-            <div class="agy-provider-row-name" style="display: flex; align-items: center; gap: 8px;">
-              ${renderHealthStatusIndicator(a)}
-              <strong style="font-size: 14px;">${escapeHtml(a.name)}</strong>
-              ${a.enabled === false ? '<span class="badge badge-muted" style="font-size: 10px;">Disabled</span>' : '<span class="badge badge-ok" style="font-size: 10px;">Active</span>'}
-            </div>
-            <div class="agy-provider-row-meta" style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-2);">
-              <span>Key: <code>${escapeHtml(maskKeyPreview(a.apiKey))}</code></span>
-              <span class="agy-dot">·</span>
-              <span>${activeModels.length} model${activeModels.length === 1 ? '' : 's'}</span>
-            </div>
-          </div>
-          <div class="agy-provider-row-actions" style="display: flex; align-items: center; gap: 6px;">
-            <button class="btn btn-ghost btn-sm ga-sync" title="Sync models from endpoint" aria-label="Sync models for ${escapeHtml(a.name)}" style="font-size: 11.5px; padding: 3px 8px; display: flex; align-items: center; gap: 5px;">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              Sync
-            </button>
-            <button class="agy-icon-btn ga-test" title="Test endpoint connection" aria-label="Test connection for ${escapeHtml(a.name)}">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            </button>
-            <button class="agy-icon-btn ga-toggle" title="${a.enabled ? 'Disable' : 'Enable'} account" aria-label="${a.enabled ? 'Disable' : 'Enable'} account ${escapeHtml(a.name)}">
-              ${a.enabled
-                ? `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>`
-                : `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.64 18.36a9 9 0 1 0 12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/><polyline points="16 8 12 12 8 8"/></svg>`
-              }
-            </button>
-            <button class="agy-icon-btn ga-edit" title="Edit account" aria-label="Edit account ${escapeHtml(a.name)}">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>
-            <button class="agy-icon-btn ga-delete" title="Delete account" aria-label="Delete account ${escapeHtml(a.name)}">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-            </button>
-          </div>
-        </div>
+  // Filter by search query & tier filter
+  const filtered = accounts.filter((a) => {
+    const tier = getAccountTier(a).toLowerCase();
+    if (gaCurrentFilter !== 'all' && tier !== gaCurrentFilter) return false;
+    if (gaSearchQuery) {
+      const name = (a.name || '').toLowerCase();
+      const email = (a.email || '').toLowerCase();
+      const id = (a.id || '').toLowerCase();
+      if (!name.includes(gaSearchQuery) && !email.includes(gaSearchQuery) && !id.includes(gaSearchQuery)) {
+        return false;
+      }
+    }
+    return true;
+  });
 
-        <div style="display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.04);">
-          ${activeModels.length > 0
-            ? activeModels.map((m) => `
-                <span class="badge badge-muted" style="font-size: 11px; padding: 2px 8px; border-radius: var(--r-pill); display: inline-flex; align-items: center; gap: 4px;">
-                  <span style="width: 5px; height: 5px; border-radius: 50%; background: var(--ok); display: inline-block;"></span>
-                  ${escapeHtml(m.displayName || m.id)}
-                </span>
-              `).join('')
-            : '<span style="font-size: 11.5px; color: var(--text-2); font-style: italic;">No models enabled. Click "Sync" to fetch models.</span>'
-          }
-        </div>
+  if (filtered.length === 0) {
+    gaAccountsContainer.innerHTML = `
+      <div style="padding: 32px 16px; text-align: center; color: var(--text-2); font-size: 13px;">
+        No Google accounts match the current filter or search criteria.
       </div>
     `;
+    return;
   }
-  html += `</div>`;
+
+  const isWeekly = gaCurrentQuotaWindow === 'weekly';
+  const quotaHeaderLabel = gaShowAllQuotas ? 'ALL QUOTAS (5H & WEEKLY)' : (isWeekly ? 'WEEKLY QUOTA' : '5H QUOTA');
+
+  let html = '';
+  if (gaCurrentViewMode === 'list') {
+    html += `
+      <div class="ga-table-wrapper">
+        <table class="ga-table">
+          <thead>
+            <tr>
+              <th style="width: 32px; text-align: center;">
+                <input type="checkbox" id="gaMasterCheckbox" aria-label="Select all accounts" ${filtered.length > 0 && filtered.every((a) => gaSelectedIds.has(a.id)) ? 'checked' : ''} style="cursor: pointer;" />
+              </th>
+              <th style="min-width: 220px;">EMAIL / ACCOUNT</th>
+              <th style="min-width: 280px;">${quotaHeaderLabel}</th>
+              <th style="width: 170px;">LAST USED</th>
+              <th style="width: 170px; text-align: right;">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    for (const a of filtered) {
+      const tier = getAccountTier(a);
+      const tierIcon = tier === 'ULTRA' ? '💎' : (tier === 'PRO' ? '◆' : '⬡');
+      const quotas = a.quotas;
+      const isSelected = gaSelectedIds.has(a.id);
+      const isCurrent = Boolean(a.isCurrent);
+
+      // Quotas calculation
+      const geminiPct = quotas ? (isWeekly ? (quotas.geminiWeeklyPct ?? quotas.weeklyPercentage ?? 100) : (quotas.geminiFiveHourPct ?? quotas.fiveHourPercentage ?? 100)) : null;
+      const geminiReset = quotas ? formatCompactCountdown(isWeekly ? (quotas.geminiWeeklyReset ?? quotas.weeklyResetTime) : (quotas.geminiFiveHourReset ?? quotas.fiveHourResetTime)) : '';
+      const claudePct = quotas ? (isWeekly ? (quotas.claudeWeeklyPct ?? quotas.weeklyPercentage ?? 100) : (quotas.claudeFiveHourPct ?? quotas.fiveHourPercentage ?? 100)) : null;
+      const claudeReset = quotas ? formatCompactCountdown(isWeekly ? (quotas.claudeWeeklyReset ?? quotas.weeklyResetTime) : (quotas.claudeFiveHourReset ?? quotas.fiveHourResetTime)) : '';
+
+      html += `
+        <tr class="${isCurrent ? 'is-current' : ''}" data-id="${escapeHtml(a.id)}">
+          <td style="text-align: center;">
+            <input type="checkbox" class="ga-row-cb" data-id="${escapeHtml(a.id)}" aria-label="Select account ${escapeHtml(a.name || a.email)}" ${isSelected ? 'checked' : ''} style="cursor: pointer;" />
+          </td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              ${a.picture
+                ? `<img src="${escapeHtml(a.picture)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; flex-shrink: 0;" alt="Avatar" />`
+                : `<div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; flex-shrink: 0;">G</div>`
+              }
+              <div style="min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <span style="font-weight: 600; font-size: 12.5px; color: var(--text-0);">${escapeHtml(a.email || a.name)}</span>
+                  ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span>` : ''}
+                  <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
+                </div>
+                ${a.email && a.name && a.email !== a.name ? `<div style="font-size: 11px; color: var(--text-2);">${escapeHtml(a.name)}</div>` : ''}
+              </div>
+            </div>
+          </td>
+          <td>
+            ${quotas && geminiPct !== null ? `
+              <div class="ga-quota-container">
+                <div class="ga-quota-row">
+                  <span class="ga-quota-name">Gemini</span>
+                  <div class="ga-quota-bar">
+                    <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, geminiPct))}%; background: ${getQuotaColor(geminiPct)};"></div>
+                  </div>
+                  <span class="ga-quota-pct" style="color: ${getQuotaColor(geminiPct)};">${geminiPct}%</span>
+                  <span class="ga-quota-reset">${geminiReset}</span>
+                </div>
+                <div class="ga-quota-row">
+                  <span class="ga-quota-name">Claude/GPT</span>
+                  <div class="ga-quota-bar">
+                    <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claudePct))}%; background: ${getQuotaColor(claudePct)};"></div>
+                  </div>
+                  <span class="ga-quota-pct" style="color: ${getQuotaColor(claudePct)};">${claudePct}%</span>
+                  <span class="ga-quota-reset">${claudeReset}</span>
+                </div>
+                ${gaShowAllQuotas ? `
+                  <div class="ga-quota-row" style="opacity: 0.75; font-size: 10px;">
+                    <span class="ga-quota-name" style="font-size: 10px;">Gemini 5H</span>
+                    <div class="ga-quota-bar">
+                      <div class="ga-quota-fill" style="width: ${quotas.geminiFiveHourPct ?? 100}%; background: ${getQuotaColor(quotas.geminiFiveHourPct ?? 100)};"></div>
+                    </div>
+                    <span class="ga-quota-pct" style="font-size: 10px;">${quotas.geminiFiveHourPct ?? 100}%</span>
+                    <span class="ga-quota-reset">${formatCompactCountdown(quotas.geminiFiveHourReset)}</span>
+                  </div>
+                  <div class="ga-quota-row" style="opacity: 0.75; font-size: 10px;">
+                    <span class="ga-quota-name" style="font-size: 10px;">Claude 5H</span>
+                    <div class="ga-quota-bar">
+                      <div class="ga-quota-fill" style="width: ${quotas.claudeFiveHourPct ?? 100}%; background: ${getQuotaColor(quotas.claudeFiveHourPct ?? 100)};"></div>
+                    </div>
+                    <span class="ga-quota-pct" style="font-size: 10px;">${quotas.claudeFiveHourPct ?? 100}%</span>
+                    <span class="ga-quota-reset">${formatCompactCountdown(quotas.claudeFiveHourReset)}</span>
+                  </div>
+                ` : ''}
+              </div>
+            ` : `
+              <span style="font-size: 11px; color: var(--text-3); font-style: italic;">No quota metrics · Click ↻ to load</span>
+            `}
+          </td>
+          <td style="font-size: 11px; color: var(--text-2); font-family: var(--font-mono);">
+            ${formatLastUsed(a.lastUsed || a.updatedAt)}
+          </td>
+          <td style="text-align: right;">
+            <div style="display: inline-flex; align-items: center; gap: 4px;">
+              <button type="button" class="ga-action-btn ga-details" title="Details" aria-label="Details for ${escapeHtml(a.name)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-switch ${isCurrent ? 'active-switch' : ''}" title="${isCurrent ? 'Current active account' : '1-click switch to this account'}" aria-label="Switch to ${escapeHtml(a.name)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-refresh" title="Refresh quotas" aria-label="Refresh quotas for ${escapeHtml(a.name)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-warmup" title="One-click Warmup" aria-label="Warmup ${escapeHtml(a.name)}" style="color: #ea580c;">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-edit" title="Edit account" aria-label="Edit account ${escapeHtml(a.name)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-delete" title="Delete account" aria-label="Delete account ${escapeHtml(a.name)}" style="color: #ef4444;">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+  } else {
+    // Grid View
+    html += `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px;">`;
+    for (const a of filtered) {
+      const tier = getAccountTier(a);
+      const tierIcon = tier === 'ULTRA' ? '💎' : (tier === 'PRO' ? '◆' : '⬡');
+      const quotas = a.quotas;
+      const isCurrent = Boolean(a.isCurrent);
+      const activeModels = (a.models || []).filter((m: any) => m.enabled !== false);
+
+      const geminiPct = quotas ? (isWeekly ? (quotas.geminiWeeklyPct ?? quotas.weeklyPercentage ?? 100) : (quotas.geminiFiveHourPct ?? quotas.fiveHourPercentage ?? 100)) : null;
+      const geminiReset = quotas ? formatCompactCountdown(isWeekly ? (quotas.geminiWeeklyReset ?? quotas.weeklyResetTime) : (quotas.geminiFiveHourReset ?? quotas.fiveHourResetTime)) : '';
+      const claudePct = quotas ? (isWeekly ? (quotas.claudeWeeklyPct ?? quotas.weeklyPercentage ?? 100) : (quotas.claudeFiveHourPct ?? quotas.fiveHourPercentage ?? 100)) : null;
+      const claudeReset = quotas ? formatCompactCountdown(isWeekly ? (quotas.claudeWeeklyReset ?? quotas.weeklyResetTime) : (quotas.claudeFiveHourReset ?? quotas.fiveHourResetTime)) : '';
+
+      html += `
+        <div class="agy-provider-row ${isCurrent ? 'is-current' : ''}" data-id="${escapeHtml(a.id)}" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; border-radius: var(--r-card, 10px); border: 1px solid ${isCurrent ? 'rgba(59, 130, 246, 0.4)' : 'var(--border)'}; background: var(--bg-1);">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+              ${a.picture
+                ? `<img src="${escapeHtml(a.picture)}" style="width: 26px; height: 26px; border-radius: 50%; object-fit: cover;" alt="Avatar" />`
+                : `<div style="width: 26px; height: 26px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px;">G</div>`
+              }
+              <div style="min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <strong style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(a.name)}</strong>
+                  ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span>` : ''}
+                  <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
+                </div>
+                <div style="font-size: 11px; color: var(--text-2);">${activeModels.length} models · ${escapeHtml(maskKeyPreview(a.apiKey))}</div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <button type="button" class="ga-action-btn ga-details" title="Details" aria-label="Details for ${escapeHtml(a.name || a.email)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-switch ${isCurrent ? 'active-switch' : ''}" title="${isCurrent ? 'Current active account' : '1-click switch to this account'}" aria-label="Switch to ${escapeHtml(a.name || a.email)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-refresh" title="Refresh quotas" aria-label="Refresh quotas for ${escapeHtml(a.name || a.email)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-warmup" title="One-click Warmup" aria-label="Warmup ${escapeHtml(a.name || a.email)}" style="color: var(--warn-orange, #ea580c);">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-edit" title="Edit account" aria-label="Edit account ${escapeHtml(a.name || a.email)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-delete" title="Delete account" aria-label="Delete account ${escapeHtml(a.name || a.email)}" style="color: var(--err, #ef4444);">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          ${quotas && geminiPct !== null ? `
+            <div class="ga-quota-container" style="background: rgba(255,255,255,0.02); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
+              <div class="ga-quota-row">
+                <span class="ga-quota-name">Gemini</span>
+                <div class="ga-quota-bar">
+                  <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, geminiPct))}%; background: ${getQuotaColor(geminiPct)};"></div>
+                </div>
+                <span class="ga-quota-pct" style="color: ${getQuotaColor(geminiPct)};">${geminiPct}%</span>
+                <span class="ga-quota-reset">${geminiReset}</span>
+              </div>
+              <div class="ga-quota-row">
+                <span class="ga-quota-name">Claude/GPT</span>
+                <div class="ga-quota-bar">
+                  <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claudePct))}%; background: ${getQuotaColor(claudePct)};"></div>
+                </div>
+                <span class="ga-quota-pct" style="color: ${getQuotaColor(claudePct)};">${claudePct}%</span>
+                <span class="ga-quota-reset">${claudeReset}</span>
+              </div>
+            </div>
+          ` : '<div style="font-size: 11px; color: var(--text-3); font-style: italic;">No live quotas loaded</div>'}
+        </div>
+      `;
+    }
+    html += `</div>`;
+  }
+
   gaAccountsContainer.innerHTML = html;
-
-  // Event handlers
-  gaAccountsContainer.querySelectorAll<HTMLButtonElement>('.ga-sync').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const row = (e.currentTarget as HTMLElement).closest('.agy-provider-row') as HTMLElement;
-      const id = row.dataset.id!;
-      const account = googleAccountsCache.find((x) => x.id === id);
-      if (!account) return;
-      btn.setAttribute('disabled', 'true');
-      btn.innerHTML = `<span class="spinner"></span> Syncing…`;
-      try {
-        const res = (await window.ag.providers.fetchModels({
-          provider: 'google',
-          apiUrl: account.apiUrl,
-          apiKey: account.apiKey,
-        })) as { success: boolean; models?: Array<{ id: string; displayName?: string }>; error?: string };
-        if (res.success && res.models && res.models.length > 0) {
-          account.models = res.models.map((m) => ({
-            id: m.id,
-            displayName: `[${account.name}] ${m.displayName || m.id}`,
-            enabled: true,
-          }));
-          await window.ag.providers.save(account);
-          toast(`Synced ${res.models.length} models for ${account.name}`, 'ok');
-          await loadGoogleAccounts();
-        } else {
-          toast(`Sync failed: ${res.error || 'No models returned'}`, 'err', 5000);
-        }
-      } catch (err) {
-        toast(`Sync error: ${(err as Error).message}`, 'err');
-      } finally {
-        btn.removeAttribute('disabled');
-        btn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Sync`;
-      }
-    });
-  });
-
-  gaAccountsContainer.querySelectorAll<HTMLButtonElement>('.ga-test').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const row = (e.currentTarget as HTMLElement).closest('.agy-provider-row') as HTMLElement;
-      const id = row.dataset.id!;
-      const account = googleAccountsCache.find((x) => x.id === id);
-      if (!account) return;
-      btn.setAttribute('disabled', 'true');
-      const orig = btn.innerHTML;
-      btn.innerHTML = `<span class="spinner"></span>`;
-      try {
-        const res = (await window.ag.providers.test({
-          apiUrl: account.apiUrl,
-          apiKey: account.apiKey,
-          id: account.id,
-          provider: 'google',
-        })) as { success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string };
-        if (res.success) {
-          account.status = res.healthStatus ?? 'healthy';
-          account.latencyMs = res.latencyMs;
-          toast(`${account.name} healthy (${res.latencyMs ?? 0}ms)`, 'ok');
-        } else {
-          account.status = res.healthStatus ?? 'offline';
-          account.lastError = res.error;
-          toast(`Test failed: ${res.error || res.status}`, 'err', 6000);
-        }
-        await loadGoogleAccounts();
-      } catch (err) {
-        toast(`Test error: ${(err as Error).message}`, 'err');
-      } finally {
-        btn.removeAttribute('disabled');
-        btn.innerHTML = orig;
-      }
-    });
-  });
-
-  gaAccountsContainer.querySelectorAll<HTMLButtonElement>('.ga-toggle').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const row = (e.currentTarget as HTMLElement).closest('.agy-provider-row') as HTMLElement;
-      const id = row.dataset.id!;
-      const account = googleAccountsCache.find((x) => x.id === id);
-      if (!account) return;
-      account.enabled = !account.enabled;
-      const res = (await window.ag.providers.save(account)) as { success: boolean; error?: string };
-      if (res.success) {
-        toast(account.enabled ? `Enabled ${account.name}` : `Disabled ${account.name}`, 'ok');
-        await loadGoogleAccounts();
-      } else {
-        toast(`Save failed: ${res.error}`, 'err');
-        account.enabled = !account.enabled;
-      }
-    });
-  });
-
-  gaAccountsContainer.querySelectorAll<HTMLButtonElement>('.ga-edit').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      const row = (e.currentTarget as HTMLElement).closest('.agy-provider-row') as HTMLElement;
-      const id = row.dataset.id!;
-      openGoogleAccountModal(id);
-    });
-  });
-
-  gaAccountsContainer.querySelectorAll<HTMLButtonElement>('.ga-delete').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const row = (e.currentTarget as HTMLElement).closest('.agy-provider-row') as HTMLElement;
-      const id = row.dataset.id!;
-      const account = googleAccountsCache.find((x) => x.id === id);
-      if (!account) return;
-      const ok = await modals.confirm(
-        'Delete Google Account?',
-        `Remove Google account <strong>${escapeHtml(account.name)}</strong> and its associated models from Antigravity?`,
-        { danger: true, confirmLabel: 'Delete Account' }
-      );
-      if (!ok) return;
-      const res = (await window.ag.providers.delete(id)) as { success: boolean; error?: string };
-      if (res.success) {
-        toast('Google account deleted', 'ok');
-        await loadGoogleAccounts();
-      } else {
-        toast(`Delete failed: ${res.error}`, 'err');
-      }
-    });
-  });
 }
 
 function updateGaModelsCounter(): void {
@@ -5310,7 +6042,7 @@ function renderGaFormModelsList(): void {
   if (currentGaFetchedModels.length === 0) {
     gaFormModelsList.innerHTML = `
       <div class="pm-models-hint" style="font-size: 12px; color: var(--text-2); text-align: center; padding: 20px;">
-        Click <strong>"Get Models from Endpoint"</strong> above to query this account's models.
+        Click <strong>"Get Models from Endpoint"</strong> or choose a Preset above to add models.
       </div>
     `;
     return;
@@ -5325,7 +6057,12 @@ function renderGaFormModelsList(): void {
           <input type="checkbox" class="ga-model-cb" data-idx="${idx}" ${isChecked ? 'checked' : ''} style="width: 15px; height: 15px; cursor: pointer;" />
           <span style="font-size: 13px; font-weight: 500;">${escapeHtml(m.displayName || m.id)}</span>
         </div>
-        <span style="font-size: 11px; color: var(--text-2); font-family: var(--font-mono);">${escapeHtml(m.id)}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 11px; color: var(--text-2); font-family: var(--font-mono);">${escapeHtml(m.id)}</span>
+          <button type="button" class="agy-icon-btn ga-remove-model-btn" data-idx="${idx}" title="Remove model" style="opacity: 0.6; padding: 2px;">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
       </label>
     `;
   });
@@ -5342,10 +6079,25 @@ function renderGaFormModelsList(): void {
       }
     });
   });
+
+  gaFormModelsList.querySelectorAll<HTMLButtonElement>('.ga-remove-model-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const idx = parseInt(btn.dataset.idx || '0', 10);
+      if (currentGaFetchedModels[idx]) {
+        currentGaFetchedModels.splice(idx, 1);
+        renderGaFormModelsList();
+      }
+    });
+  });
 }
+
+let lastFocusedGaElement: HTMLElement | null = null;
 
 function openGoogleAccountModal(existingId?: string): void {
   if (!gaModalBackdrop || !gaFormName || !gaFormUrl || !gaFormKey) return;
+  lastFocusedGaElement = document.activeElement as HTMLElement | null;
   editingGoogleAccountId = null;
   currentGaFetchedModels = [];
   if (gaFormError) {
@@ -5357,27 +6109,60 @@ function openGoogleAccountModal(existingId?: string): void {
     const account = googleAccountsCache.find((x) => x.id === existingId);
     if (account) {
       editingGoogleAccountId = account.id;
+      const isIde = account.id.startsWith('google-ide-') || (account.apiKey && account.apiKey.startsWith('ya29.')) || (account as any).source === 'antigravity-ide';
       if (gaModalTitle) gaModalTitle.textContent = `Edit Google Account: ${account.name}`;
       gaFormName.value = account.name;
       gaFormUrl.value = account.apiUrl || 'https://generativelanguage.googleapis.com/v1beta';
       gaFormKey.value = account.apiKey || '';
+
+      if (gaAccountTypeBanner) {
+        gaAccountTypeBanner.hidden = !isIde;
+      }
+      if (gaFormKeyLabel) {
+        gaFormKeyLabel.textContent = isIde ? 'Antigravity IDE Token / Clé API' : 'Google AI Studio API Key';
+      }
+      if (gaFormKeyHelper) {
+        gaFormKeyHelper.innerHTML = isIde
+          ? 'Compte authentifié via session IDE (OAuth ya29…). Vous pouvez conserver ce jeton ou entrer une clé <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a> (AIzaSy…).'
+          : 'Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.';
+      }
+      if (gaFormKey) {
+        gaFormKey.placeholder = isIde ? 'Géré automatiquement (OAuth ya29…) — ou entrez une clé AIzaSy…' : 'AIzaSy…';
+      }
+
       currentGaFetchedModels = (account.models || []).map((m) => {
         let cleanName = m.displayName || m.id;
-        if (cleanName.startsWith(`[${account.name}] `)) {
-          cleanName = cleanName.slice(`[${account.name}] `.length);
-        }
+        cleanName = cleanName.replace(/^\[[^\]]+\]\s*/, '');
         return {
           id: m.id,
           displayName: cleanName,
           enabled: m.enabled !== false,
         };
       });
+
+      if (currentGaFetchedModels.length === 0) {
+        currentGaFetchedModels = [
+          { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
+          { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+          { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
+        ];
+      }
     }
   } else {
     if (gaModalTitle) gaModalTitle.textContent = 'Add Google Account';
+    if (gaAccountTypeBanner) gaAccountTypeBanner.hidden = true;
+    if (gaFormKeyLabel) gaFormKeyLabel.textContent = 'Google AI Studio API Key';
+    if (gaFormKeyHelper) {
+      gaFormKeyHelper.innerHTML = 'Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.';
+    }
+    if (gaFormKey) gaFormKey.placeholder = 'AIzaSy…';
     gaFormName.value = '';
     gaFormUrl.value = 'https://generativelanguage.googleapis.com/v1beta';
     gaFormKey.value = '';
+    currentGaFetchedModels = [
+      { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
+      { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+    ];
   }
 
   renderGaFormModelsList();
@@ -5387,8 +6172,10 @@ function openGoogleAccountModal(existingId?: string): void {
 
 function closeGoogleAccountModal(): void {
   if (gaModalBackdrop) gaModalBackdrop.hidden = true;
+  if (gaAccountTypeBanner) gaAccountTypeBanner.hidden = true;
   editingGoogleAccountId = null;
   currentGaFetchedModels = [];
+  lastFocusedGaElement?.focus();
 }
 
 // Bind modal controls
@@ -5400,13 +6187,117 @@ if (gaModalBackdrop) {
   });
 }
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && gaModalBackdrop && !gaModalBackdrop.hidden) {
+  if (!gaModalBackdrop || gaModalBackdrop.hidden) return;
+  if (e.key === 'Escape') {
     closeGoogleAccountModal();
+    return;
+  }
+  if (e.key === 'Tab') {
+    const focusable = Array.from(
+      gaModalBackdrop.querySelectorAll<HTMLElement>(
+        'button:not([disabled]):not([hidden]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => el.offsetParent !== null);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   }
 });
 
 // Bind Add buttons
 gaAddAccountBtn?.addEventListener('click', () => openGoogleAccountModal());
+
+const gaDiscoverIdeBtn = $('#gaDiscoverIdeBtn') as HTMLButtonElement | null;
+
+async function triggerIdeAccountDiscovery(): Promise<void> {
+  const btn = gaDiscoverIdeBtn;
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spin" style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Détection...`;
+  }
+
+  try {
+    const res = await window.ag.providers.discoverIdeAccount();
+    if (res.success && res.account) {
+      const acc = res.account;
+      const accountEmail = acc.email || 'antigravity-account@google.com';
+      const cleanPrefix = acc.name ? acc.name : accountEmail.split('@')[0];
+      const accountName = `${cleanPrefix} (IDE)`;
+
+      // Look for existing account by key or name
+      const existing = googleAccountsCache.find(
+        (a) => a.apiKey === acc.accessToken || a.name.includes(cleanPrefix) || a.name === accountName
+      );
+
+      const targetId = existing ? existing.id : 'google-ide-' + Date.now();
+      const newProvider: any = {
+        id: targetId,
+        name: existing ? existing.name : accountName,
+        provider: 'google',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: acc.accessToken,
+        enabled: true,
+        picture: acc.picture,
+        quotas: acc.quotas,
+        models: existing?.models?.length
+          ? existing.models.map((m: any) => ({
+              id: m.id,
+              displayName: (m.displayName || m.id).replace(/^\[[^\]]+\]\s*/, ''),
+              enabled: m.enabled !== false,
+            }))
+          : [
+              { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
+              { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+              { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
+            ],
+      };
+
+      if (!existing?.models?.length && acc.accessToken) {
+        try {
+          const mRes = await window.ag.providers.fetchModels({
+            provider: 'google',
+            apiUrl: newProvider.apiUrl,
+            apiKey: acc.accessToken,
+          });
+          if (mRes.success && mRes.models && mRes.models.length > 0) {
+            newProvider.models = mRes.models.map((m) => ({
+              id: m.id,
+              displayName: (m.displayName || m.id).replace(/^models\//, '').replace(/^\[[^\]]+\]\s*/, ''),
+              enabled: true,
+            }));
+          }
+        } catch {}
+      }
+
+      const saveRes = await window.ag.providers.save(newProvider);
+      if (saveRes.success) {
+        toast(`Compte ${accountEmail} importé avec succès depuis Antigravity IDE !`, 'ok');
+        await loadGoogleAccounts();
+      } else {
+        toast(`Erreur d'enregistrement: ${saveRes.error}`, 'err');
+      }
+    } else {
+      toast(res.error || 'Aucun compte Antigravity actif détecté.', 'warn');
+    }
+  } catch (err) {
+    toast(`Erreur: ${(err as Error).message}`, 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+}
+
+gaDiscoverIdeBtn?.addEventListener('click', () => triggerIdeAccountDiscovery());
 
 // Key visibility toggle
 if (gaKeyToggle && gaFormKey) {
@@ -5426,13 +6317,70 @@ gaOpenAiStudioLink?.addEventListener('click', (e) => {
   void window.ag.openExternal('https://aistudio.google.com/apikey');
 });
 
+// Model management toolbar handlers
+gaFormSelectAllBtn?.addEventListener('click', () => {
+  currentGaFetchedModels.forEach((m) => { m.enabled = true; });
+  renderGaFormModelsList();
+});
+
+gaFormDeselectAllBtn?.addEventListener('click', () => {
+  currentGaFetchedModels.forEach((m) => { m.enabled = false; });
+  renderGaFormModelsList();
+});
+
+function addCustomModelToGaList(id: string, name?: string): void {
+  const cleanId = id.trim().replace(/^models\//, '');
+  if (!cleanId) return;
+  const existing = currentGaFetchedModels.find((m) => m.id === cleanId);
+  if (existing) {
+    existing.enabled = true;
+  } else {
+    currentGaFetchedModels.push({
+      id: cleanId,
+      displayName: name || cleanId,
+      enabled: true,
+    });
+  }
+  renderGaFormModelsList();
+}
+
+gaFormAddCustomModelBtn?.addEventListener('click', () => {
+  if (!gaFormCustomModelInput) return;
+  const val = gaFormCustomModelInput.value.trim();
+  if (val) {
+    addCustomModelToGaList(val);
+    gaFormCustomModelInput.value = '';
+  }
+});
+
+gaFormCustomModelInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const val = gaFormCustomModelInput.value.trim();
+    if (val) {
+      addCustomModelToGaList(val);
+      gaFormCustomModelInput.value = '';
+    }
+  }
+});
+
+document.querySelectorAll<HTMLButtonElement>('.ga-preset-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.id;
+    const name = btn.dataset.name;
+    if (id) addCustomModelToGaList(id, name);
+  });
+});
+
 // Fetch Models from Endpoint button in modal
 gaFormFetchModelsBtn?.addEventListener('click', async () => {
   if (!gaFormUrl || !gaFormKey) return;
   const apiUrl = gaFormUrl.value.trim();
   const apiKey = gaFormKey.value.trim();
+  const isIde = apiKey.startsWith('ya29.') || (editingGoogleAccountId && editingGoogleAccountId.startsWith('google-ide-'));
+
   if (!apiKey) {
-    toast('Please enter your Google AI Studio API key first', 'warn');
+    toast(isIde ? 'Jeton Antigravity IDE manquant' : 'Please enter your Google AI Studio API key first', 'warn');
     gaFormKey.focus();
     return;
   }
@@ -5449,17 +6397,28 @@ gaFormFetchModelsBtn?.addEventListener('click', async () => {
     })) as { success: boolean; models?: Array<{ id: string; displayName?: string }>; error?: string };
 
     if (res.success && res.models && res.models.length > 0) {
-      currentGaFetchedModels = res.models.map((m) => {
+      const fetched = res.models.map((m) => {
         const cleanId = m.id.replace(/^models\//, '');
-        const cleanName = (m.displayName || m.id).replace(/^models\//, '');
+        const cleanName = (m.displayName || m.id).replace(/^models\//, '').replace(/^\[[^\]]+\]\s*/, '');
         return {
           id: cleanId,
           displayName: cleanName,
           enabled: true,
         };
       });
+
+      // Retain already selected models if user previously selected them
+      fetched.forEach((m) => {
+        const existing = currentGaFetchedModels.find((x) => x.id === m.id);
+        if (!existing) {
+          currentGaFetchedModels.push(m);
+        }
+      });
+      if (currentGaFetchedModels.length === 0) {
+        currentGaFetchedModels = fetched;
+      }
       renderGaFormModelsList();
-      toast(`Found ${res.models.length} models for this account!`, 'ok');
+      toast(isIde ? `Modèles Antigravity IDE synchronisés (${res.models.length} modèles)` : `Found ${res.models.length} models for this account!`, 'ok');
     } else {
       const errMsg = res.error || 'No generative models found on this endpoint.';
       if (gaFormError) {
@@ -5501,41 +6460,47 @@ gaFormSaveBtn?.addEventListener('click', async () => {
   }
   if (!apiKey) {
     if (gaFormError) {
-      gaFormError.textContent = 'Google AI Studio API key is required.';
+      gaFormError.textContent = 'Google AI Studio API key (or IDE session token) is required.';
       gaFormError.hidden = false;
     }
     gaFormKey.focus();
     return;
   }
 
-  const selectedModels = currentGaFetchedModels.filter((m) => m.enabled !== false);
-  if (selectedModels.length === 0) {
-    // If user hasn't fetched models yet, provide sensible default Gemini models
-    selectedModels.push(
+  if (currentGaFetchedModels.length === 0) {
+    currentGaFetchedModels.push(
       { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
       { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true }
     );
   }
 
-  const accountEntry: ProviderEntry = {
+  const existingAccount = editingGoogleAccountId
+    ? googleAccountsCache.find((x) => x.id === editingGoogleAccountId)
+    : undefined;
+
+  const accountEntry: any = {
+    ...(existingAccount || {}),
     id: editingGoogleAccountId || `provider-google-${Date.now()}`,
     name,
     provider: 'google',
     apiUrl,
     apiKey,
-    enabled: true,
-    models: selectedModels.map((m) => {
+    enabled: existingAccount ? existingAccount.enabled !== false : true,
+    models: currentGaFetchedModels.map((m) => {
       let cleanName = m.displayName || m.id;
-      if (!cleanName.startsWith(`[${name}]`)) {
-        cleanName = `[${name}] ${cleanName}`;
-      }
+      cleanName = cleanName.replace(/^\[[^\]]+\]\s*/, '');
       return {
         id: m.id,
         displayName: cleanName,
-        enabled: true,
+        enabled: m.enabled !== false,
       };
     }),
   };
+
+  if (existingAccount?.picture) accountEntry.picture = existingAccount.picture;
+  if (existingAccount?.quotas) accountEntry.quotas = existingAccount.quotas;
+  if (existingAccount?.refreshToken) accountEntry.refreshToken = existingAccount.refreshToken;
+  if (existingAccount?.source) accountEntry.source = existingAccount.source;
 
   gaFormSaveBtn.disabled = true;
   gaFormSaveBtn.textContent = 'Saving…';
@@ -5577,16 +6542,27 @@ gaTestAllBtn?.addEventListener('click', async () => {
     let successCount = 0;
     for (const a of googleAccountsCache) {
       try {
+        let tokenToUse = a.apiKey;
+        if (a.refreshToken) {
+          try {
+            const r = await window.ag.providers.refreshToken(a.refreshToken);
+            if (r.success && r.accessToken) {
+              tokenToUse = r.accessToken;
+              a.apiKey = r.accessToken;
+            }
+          } catch {}
+        }
         const res = (await window.ag.providers.test({
           apiUrl: a.apiUrl,
-          apiKey: a.apiKey,
+          apiKey: tokenToUse,
           id: a.id,
           provider: 'google',
         })) as { success: boolean; latencyMs?: number };
         if (res.success) successCount++;
       } catch { /* ignore individual failures */ }
     }
-    toast(`Tested ${googleAccountsCache.length} accounts: ${successCount} healthy`, 'ok');
+    const toastType = successCount === 0 ? 'err' : (successCount < googleAccountsCache.length ? 'warn' : 'ok');
+    toast(`Tested ${googleAccountsCache.length} accounts: ${successCount} healthy`, toastType);
     await loadGoogleAccounts();
   } finally {
     gaTestAllBtn.disabled = false;
@@ -5607,17 +6583,30 @@ gaSyncAllBtn?.addEventListener('click', async () => {
     let totalSyncedModels = 0;
     for (const a of googleAccountsCache) {
       try {
+        let tokenToUse = a.apiKey;
+        if (a.refreshToken) {
+          try {
+            const r = await window.ag.providers.refreshToken(a.refreshToken);
+            if (r.success && r.accessToken) {
+              tokenToUse = r.accessToken;
+              a.apiKey = r.accessToken;
+            }
+          } catch {}
+        }
         const res = (await window.ag.providers.fetchModels({
           provider: 'google',
           apiUrl: a.apiUrl,
-          apiKey: a.apiKey,
+          apiKey: tokenToUse,
         })) as { success: boolean; models?: Array<{ id: string; displayName?: string }> };
         if (res.success && res.models && res.models.length > 0) {
-          a.models = res.models.map((m) => ({
-            id: m.id,
-            displayName: `[${a.name}] ${m.displayName || m.id}`,
-            enabled: true,
-          }));
+          a.models = res.models.map((m) => {
+            const cleanName = (m.displayName || m.id).replace(/^\[[^\]]+\]\s*/, '');
+            return {
+              id: m.id,
+              displayName: cleanName,
+              enabled: true,
+            };
+          });
           await window.ag.providers.save(a);
           totalSyncedModels += res.models.length;
         }

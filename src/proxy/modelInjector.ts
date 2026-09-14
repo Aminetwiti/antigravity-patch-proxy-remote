@@ -40,26 +40,30 @@ function sortCustomModels(models: CustomModel[]): CustomModel[] {
 function formatDisplayName(m: CustomModel): string {
   const health = getCachedHealth(m.name);
   const isFav = isRecentModel(m.name);
+  let dispName = m.displayName || m.name;
+  if (m.provider === 'google') {
+    dispName = dispName.replace(/^\[[^\]]+\]\s*/, '');
+  }
   
   if (!health) {
     const favTag = isFav ? '⭐ ' : '';
-    return `${favTag}🟢 --ms • ${m.displayName}`;
+    return `${favTag}🟢 --ms • ${dispName}`;
   }
   
   if (health.status === 'healthy') {
     const favTag = isFav ? '⭐ ' : '';
-    return `${favTag}🟢 ${health.latencyMs}ms • ${m.displayName}`;
+    return `${favTag}🟢 ${health.latencyMs}ms • ${dispName}`;
   }
   
   if (health.status === 'slow') {
     const favTag = isFav ? '⭐ ' : '';
-    return `${favTag}🟡 ${health.latencyMs}ms • ${m.displayName}`;
+    return `${favTag}🟡 ${health.latencyMs}ms • ${dispName}`;
   }
   
   // For unhealthy models, display error tag cleanly
   const favTag = isFav ? '⭐ ' : '';
   const err = health.error || 'Offline';
-  return `${favTag}🔴 [${err}] • ${m.displayName}`;
+  return `${favTag}🔴 [${err}] • ${dispName}`;
 }
 
 export function getMappedCustomModels() {
@@ -99,7 +103,15 @@ export function getCustomModelsList() {
 }
 
 export function mergeModels(target: unknown, customModels: CustomModel[]): unknown {
-  const sortedCustomModels = sortCustomModels(expandModelsWithEffort(customModels));
+  const seenKeys = new Set<string>();
+  const sortedCustomModels = sortCustomModels(expandModelsWithEffort(customModels)).filter((m) => {
+    const key = m.provider === 'google'
+      ? `google:${(m.externalModelName || m.name).replace(/^models\//, '').toLowerCase()}${m._effortSuffix || ''}`
+      : generateModelPlaceholderId(m);
+    if (seenKeys.has(key)) return false;
+    seenKeys.add(key);
+    return true;
+  });
   if (Array.isArray(target)) {
     const mapped = sortedCustomModels.map((m) => {
       const cap = detectModelCapabilities(m, true);

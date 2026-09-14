@@ -174,7 +174,11 @@ export function getProviderHeaders(
     headers['x-api-key'] = apiKey;
     headers['anthropic-version'] = '2025-04-01';
   } else if (provider === 'google') {
-    headers['x-goog-api-key'] = apiKey;
+    if (apiKey.startsWith('ya29.')) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    } else {
+      headers['x-goog-api-key'] = apiKey;
+    }
   } else if (provider === 'openrouter') {
     headers['Authorization'] = `Bearer ${apiKey}`;
     headers['HTTP-Referer'] = 'https://antigravity.google';

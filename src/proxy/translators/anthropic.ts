@@ -182,9 +182,14 @@ function mapGeminiToolsToAnthropic(geminiTools: GeminiTool[]): AnthropicTool[] {
   return anthropicTools;
 }
 
+function generateSyntheticToolId(): string {
+  return 'toolu_vrtx_' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+}
+
 export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: string): AnthropicRequestBody {
   const messages: AnthropicMessage[] = [];
   let system: string | undefined = undefined;
+  const pendingToolCallsByName = new Map<string, string[]>();
 
   if (geminiBody.systemInstruction && geminiBody.systemInstruction.parts) {
     system = geminiBody.systemInstruction.parts.map((p) => p.text || '').join('');
@@ -199,11 +204,20 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
         if (hasFunctionCall && item.role === 'model') {
           const contentBlocks: AnthropicContentBlock[] = [];
           for (const p of item.parts) {
-            if (p.text) contentBlocks.push({ type: 'text', text: p.text });
+            if (p.text) {
+              const textVal = p.text.trim().length === 0 ? '.' : p.text;
+              contentBlocks.push({ type: 'text', text: textVal });
+            }
             if (p.functionCall) {
-              const callId = p.functionCall.id || 'call_' + Math.random().toString(36).slice(2, 10);
+              const callId = p.functionCall.id || generateSyntheticToolId();
               let originalName = p.functionCall.name;
               let originalArgs = p.functionCall.args;
+              if (originalName) {
+                if (!pendingToolCallsByName.has(originalName)) {
+                  pendingToolCallsByName.set(originalName, []);
+                }
+                pendingToolCallsByName.get(originalName)!.push(callId);
+              }
               const translatedInfo = translatedToolCalls.get(callId);
               if (translatedInfo) {
                 originalName = translatedInfo.originalName;
@@ -226,9 +240,11 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
           for (const p of item.parts) {
             if (p.functionResponse) {
               const funcName = p.functionResponse.name || '';
+              const pendingList = pendingToolCallsByName.get(funcName);
+              const pairedId = pendingList && pendingList.length > 0 ? pendingList.shift() : undefined;
               const modelKey = getSessionModelKey(modelName, (geminiBody as any)?.sessionId || (geminiBody as any)?.conversationId);
               const modelTCIds = modelToolCallIds.get(modelKey) || modelToolCallIds.get(modelName) || {};
-              const toolCallId = p.functionResponse.id || modelTCIds[funcName] || 'call_' + funcName;
+              const toolCallId = p.functionResponse.id || pairedId || modelTCIds[funcName] || 'call_' + funcName;
               const responseData = p.functionResponse.response;
               let contentStr = '';
               const translatedInfo = translatedToolCalls.get(toolCallId);
@@ -251,13 +267,19 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
           if (item.parts) {
             const partsContent: AnthropicContentBlock[] = [];
             for (const p of item.parts) {
-              if (p.text) { partsContent.push({ type: 'text', text: p.text }); }
+              if (p.text !== undefined && p.text !== null) {
+                const textVal = p.text.trim().length === 0 ? '.' : p.text;
+                partsContent.push({ type: 'text', text: textVal });
+              }
               else if ((p as any).fileData) { const fd = (p as any).fileData; if (fd.mimeType?.startsWith('image/')) { partsContent.push({ type: 'image', source: { type: 'url', media_type: fd.mimeType, data: fd.fileUri } }); } else { try { const url = new URL(fd.fileUri); if (url.protocol === 'file:') { const fs = require('fs'); partsContent.push({ type: 'text', text: `[File:\n${fs.readFileSync(url.pathname.replace(/^\//, '').replace(/\//g, path.sep), 'utf-8')}\n]` }); } else { partsContent.push({ type: 'text', text: `[File: ${fd.fileUri} (${fd.mimeType})]` }); } } catch { partsContent.push({ type: 'text', text: `[File: ${fd.fileUri} (${fd.mimeType})]` }); } } }
               else if ((p as any).inlineData) { const id = (p as any).inlineData; if (id.mimeType?.startsWith('image/')) { partsContent.push({ type: 'image', source: { type: 'base64', media_type: id.mimeType, data: id.data } }); } else if (id.mimeType === 'application/pdf') { partsContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: id.data } } as any); } else { partsContent.push({ type: 'text', text: `[${id.mimeType}: ${id.data}]` }); } }
             }
             // Preserve legacy behavior: a single plain-text part stays a string.
-            if (partsContent.length === 1 && partsContent[0].type === 'text') {
-              content = partsContent[0].text;
+            if (partsContent.length === 0) {
+              content = '.';
+            } else if (partsContent.length === 1 && partsContent[0].type === 'text') {
+              const txt = partsContent[0].text;
+              content = typeof txt === 'string' && txt.trim().length === 0 ? '.' : txt;
             } else {
               content = partsContent;
             }

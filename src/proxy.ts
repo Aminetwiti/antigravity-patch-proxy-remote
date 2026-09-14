@@ -1271,6 +1271,92 @@ export function parseRetryAfter(headers: Record<string, string | string[] | unde
   return 0;
 }
 
+// ─── Multi-Account Session Affinity (Sticky Sessions) ─────────────────────────
+
+export function getAccountQuotaKey(item: CustomModel): string {
+  try {
+    const host = new URL(item.apiUrl).hostname;
+    return `${host}:${item.apiKey || 'none'}`;
+  } catch {
+    return item.apiUrl || '';
+  }
+}
+
+interface SessionAffinity {
+  modelName: string;
+  accountKey: string;
+  lastUsed: number;
+}
+
+const sessionAffinities = new Map<string, SessionAffinity>();
+const SESSION_AFFINITY_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+export function extractSessionId(body: Record<string, unknown>, headers?: Record<string, unknown>): string | null {
+  if (body?.sessionId && typeof body.sessionId === 'string') return body.sessionId;
+  if ((body?.context as any)?.sessionId && typeof (body.context as any).sessionId === 'string') {
+    return (body.context as any).sessionId;
+  }
+  if (headers) {
+    const h = headers['x-session-id'] || headers['x-request-session-id'];
+    if (typeof h === 'string' && h) return h;
+  }
+  const contents = body?.contents as Array<any> | undefined;
+  if (Array.isArray(contents) && contents.length > 0) {
+    const firstUser = contents.find((c) => c && c.role === 'user');
+    if (firstUser && Array.isArray(firstUser.parts) && firstUser.parts[0]?.text) {
+      const snippet = String(firstUser.parts[0].text).slice(0, 120);
+      let hash = 5381;
+      for (let i = 0; i < snippet.length; i++) {
+        hash = ((hash << 5) + hash) + snippet.charCodeAt(i);
+        hash |= 0;
+      }
+      return 'conv_' + (hash >>> 0).toString(16);
+    }
+  }
+  return null;
+}
+
+export function getSessionBoundModel(
+  sessionId: string,
+  targetModel: CustomModel,
+  allModels: CustomModel[],
+): CustomModel {
+  const now = Date.now();
+  const affinity = sessionAffinities.get(sessionId);
+  if (!affinity) return targetModel;
+
+  if (now - affinity.lastUsed > SESSION_AFFINITY_TTL_MS) {
+    sessionAffinities.delete(sessionId);
+    return targetModel;
+  }
+
+  // Find candidate models that share the same base external model (e.g. Gemini 2.5 Pro across accounts)
+  const targetBase = getBaseModelId(targetModel.externalModelName);
+  const bound = allModels.find((m) => {
+    const mBase = getBaseModelId(m.externalModelName);
+    return mBase === targetBase && getAccountQuotaKey(m) === affinity.accountKey;
+  });
+
+  if (bound && !getOpenBreaker(bound)) {
+    affinity.lastUsed = now;
+    return bound;
+  }
+
+  return targetModel;
+}
+
+export function bindSessionToModel(sessionId: string, model: CustomModel): void {
+  sessionAffinities.set(sessionId, {
+    modelName: model.name,
+    accountKey: getAccountQuotaKey(model),
+    lastUsed: Date.now(),
+  });
+}
+
+export function clearSessionAffinities(): void {
+  sessionAffinities.clear();
+}
+
 function handleCustomModelRequest(
   res: http.ServerResponse,
   model: CustomModel,
@@ -1343,9 +1429,21 @@ function handleCustomModelRequest(
 
     try {
       const allModels = loadCustomModels();
-      // If a specific fallback model is configured on the model, prioritize it!
+      const currentAccountKey = getAccountQuotaKey(model);
+      const targetBase = getBaseModelId(model.externalModelName || model.name);
+
+      // Sibling accounts in the pool offering the exact same model
+      const poolSiblings = allModels.filter((m) => {
+        if (m.name === model.name) return false;
+        const mBase = getBaseModelId(m.externalModelName || m.name);
+        return mBase === targetBase && getAccountQuotaKey(m) !== currentAccountKey && !getOpenBreaker(m);
+      });
+
       let orderedModels = allModels;
-      if (model.fallbackModel) {
+      if (poolSiblings.length > 0) {
+        const rest = allModels.filter((m) => !poolSiblings.includes(m));
+        orderedModels = [...poolSiblings, ...rest];
+      } else if (model.fallbackModel) {
         const preferred = allModels.filter(m =>
           m.name === model.fallbackModel ||
           m.displayName === model.fallbackModel ||
@@ -1358,14 +1456,6 @@ function handleCustomModelRequest(
 
       // ponytail: skip same account on rate_limit — shared quota, fallback is a no-op.
       // Separate accounts (different API keys) on the same provider have independent quotas.
-      const getAccountQuotaKey = (item: CustomModel): string => {
-        try {
-          const host = new URL(item.apiUrl).hostname;
-          return `${host}:${item.apiKey || 'none'}`;
-        } catch {
-          return item.apiUrl || '';
-        }
-      };
       const failedAccountKey = diagnostic.errorType === 'rate_limit'
         ? getAccountQuotaKey(model)
         : null;
@@ -1378,6 +1468,12 @@ function handleCustomModelRequest(
           const fromName = model.displayName || model.name;
           const toName = m.displayName || m.name;
           log.warn(`[Proxy] Auto-fallback: ${fromName} → ${toName} (reason: ${diagnostic.errorType} — ${diagnostic.title})`);
+
+          // Update session affinity on fallback to preserve subsequent queries on healthy account
+          const sessId = extractSessionId(geminiBody as Record<string, unknown>);
+          if (sessId) {
+            bindSessionToModel(sessId, m);
+          }
 
           // L-1: Notify the user in the stream so the fallback is transparent.
           // We send a brief markdown notice as the first SSE event before
@@ -2792,6 +2888,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         if (candidateNames.length > 0) {
           const customModels = expandModelsWithEffort(loadCustomModels());
           let matchedCustomModel = customModels.find((m) =>
+            candidateNames.some((cn) => matchesCustomModel(m, cn)) && !getOpenBreaker(m),
+          ) || customModels.find((m) =>
             candidateNames.some((cn) => matchesCustomModel(m, cn)),
           );
           // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298)
@@ -2799,11 +2897,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             matchedCustomModel = customModels[0];
           }
           if (matchedCustomModel) {
-            log.info(
-              `[Proxy] Intercepting Cloud Code generation for custom model: ${matchedCustomModel.displayName}`,
-            );
             const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
             const actualGeminiBody = (reqJson.request || reqJson) as GeminiRequestBody;
+
+            // Apply Sticky Session affinity (preserves Cloud Code prompt cache)
+            const sessId = extractSessionId(actualGeminiBody as Record<string, unknown>, req.headers as Record<string, unknown>);
+            if (sessId) {
+              matchedCustomModel = getSessionBoundModel(sessId, matchedCustomModel, customModels);
+              bindSessionToModel(sessId, matchedCustomModel);
+            }
+
+            log.info(
+              `[Proxy] Intercepting Cloud Code generation for custom model: ${matchedCustomModel.displayName}${sessId ? ` (session: ${sessId})` : ''}`,
+            );
+
             // Resolve fileData URIs then route to translator
             resolveFileData(actualGeminiBody, req.headers as Record<string, string | string[] | undefined>).then(() => {
               handleCustomModelRequest(res, matchedCustomModel, actualGeminiBody, isStream);
@@ -2827,6 +2934,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       const matchedModelName = isGenerate ? generateMatch![1] : streamMatch![1];
       const customModels = expandModelsWithEffort(loadCustomModels());
       let matchedCustomModel = customModels.find((m) =>
+        matchesCustomModel(m, matchedModelName) && !getOpenBreaker(m),
+      ) || customModels.find((m) =>
         matchesCustomModel(m, matchedModelName),
       );
       if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
@@ -2836,6 +2945,14 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       if (matchedCustomModel) {
         try {
           const geminiBody = JSON.parse(bodyStr) as GeminiRequestBody;
+
+          // Apply Sticky Session affinity (preserves prompt cache across multi-account pool)
+          const sessId = extractSessionId(geminiBody as Record<string, unknown>, req.headers as Record<string, unknown>);
+          if (sessId) {
+            matchedCustomModel = getSessionBoundModel(sessId, matchedCustomModel, customModels);
+            bindSessionToModel(sessId, matchedCustomModel);
+          }
+
           resolveFileData(geminiBody, req.headers as Record<string, string | string[] | undefined>).then(() => {
             handleCustomModelRequest(res, matchedCustomModel, geminiBody, isStandardStream);
           });

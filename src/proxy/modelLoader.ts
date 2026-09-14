@@ -163,9 +163,14 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
       const mergedHeaders = { ...p.extraHeaders, ...(m as { extraHeaders?: Record<string, string> }).extraHeaders };
       const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
+      let displayName = m.displayName ?? m.id ?? '';
+      if (p.provider === 'google') {
+        displayName = displayName.replace(/^\[[^\]]+\]\s*/, '');
+      }
+
       const partialModel: CustomModel = {
         name: m.id ?? '',
-        displayName: m.displayName ?? m.id ?? '',
+        displayName,
         description: (m as { description?: string }).description ?? '',
         provider: (p.provider ?? 'openai') as ProviderName,
         apiKey: p.apiKey ?? 'none',

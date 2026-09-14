@@ -26,6 +26,24 @@ const api = {
       ipcRenderer.on(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED, listener);
       return () => ipcRenderer.removeListener(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED, listener);
     },
+    discoverIdeAccount: (): Promise<{ success: boolean; account?: any; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_DISCOVER_IDE_ACCOUNT),
+    fetchAccountQuotas: (accessToken: string): Promise<{ success: boolean; quotas?: any; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, accessToken),
+    warmupAccount: (accessToken: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_WARMUP_ACCOUNT, accessToken),
+    refreshToken: (refreshToken: string): Promise<{
+      success: boolean;
+      accessToken?: string;
+      expiresIn?: number;
+      email?: string;
+      name?: string;
+      picture?: string;
+      quotas?: any;
+      projectId?: string;
+      tierId?: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_REFRESH_TOKEN, refreshToken),
   },
   info: (): Promise<{
     platform: string;

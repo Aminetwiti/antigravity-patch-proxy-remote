@@ -56,6 +56,21 @@ interface AgAPI {
     fetchModels(params: { apiUrl: string; apiKey: string; provider?: string }): Promise<{ success: boolean; models?: Array<{ id: string; displayName?: string; enabled?: boolean }>; error?: string }>;
     test(params: { apiUrl: string; apiKey: string; id?: string; modelId?: string; provider?: string }): Promise<{ success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string }>;
     onChanged(handler: () => void): () => void;
+    discoverIdeAccount(): Promise<{ success: boolean; account?: any; error?: string }>;
+    fetchAccountQuotas(accessToken: string): Promise<{ success: boolean; quotas?: any; error?: string }>;
+    warmupAccount(accessToken: string): Promise<{ success: boolean; message?: string; error?: string }>;
+    refreshToken(refreshToken: string): Promise<{
+      success: boolean;
+      accessToken?: string;
+      expiresIn?: number;
+      email?: string;
+      name?: string;
+      picture?: string;
+      quotas?: any;
+      projectId?: string;
+      tierId?: string;
+      error?: string;
+    }>;
   };
 
   // MITM Proxy Server Management

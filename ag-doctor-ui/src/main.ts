@@ -27,6 +27,14 @@ import {
   DEFAULT_STUB_PORT,
 } from './constants';
 import { detectAntigravityInstallations } from './services/installationDetector';
+import {
+  discoverIdeAccount,
+  fetchGoogleAccountQuotas,
+  warmupGoogleAccount,
+  refreshGoogleToken,
+  fetchGoogleUserInfo,
+  ensureCloudCodeProject,
+} from './services/ideAccountDiscovery';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
@@ -845,8 +853,21 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
 
     if (!parsed.providers) parsed.providers = [];
     const idx = parsed.providers.findIndex((x: any) => x.id === p.id);
-    if (idx !== -1) parsed.providers[idx] = p;
-    else parsed.providers.push(p);
+    if (idx !== -1) {
+      const existing = parsed.providers[idx];
+      parsed.providers[idx] = {
+        ...existing,
+        ...p,
+        picture: p.picture ?? existing.picture,
+        quotas: p.quotas ?? existing.quotas,
+        refreshToken: p.refreshToken ?? existing.refreshToken,
+        source: p.source ?? existing.source,
+        status: p.status ?? existing.status,
+        latencyMs: p.latencyMs ?? existing.latencyMs,
+      };
+    } else {
+      parsed.providers.push(p);
+    }
 
     if (Array.isArray(parsed.models) && Array.isArray(p.models)) {
       for (const pm of p.models) {
@@ -894,6 +915,59 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_DELETE, async (_, id) => {
 ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: { apiUrl: string; apiKey: string; provider?: string }) => {
   try {
     const { net } = require('electron') as typeof import('electron');
+    const rawKey = (params.apiKey || '').trim();
+    const isIdeToken = rawKey.startsWith('ya29.');
+
+    // If an Antigravity IDE OAuth access token is provided, query Cloud Code fetchAvailableModels live
+    if (isIdeToken || (params.provider === 'google' && isIdeToken)) {
+      try {
+        const cloudCodeRes = await fetch('https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${rawKey}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'antigravity',
+          },
+          body: JSON.stringify({}),
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (cloudCodeRes.ok) {
+          const data = (await cloudCodeRes.json()) as any;
+          const rawModels = data.models || data.availableModels || {};
+          const models = Object.keys(rawModels)
+            .filter((k) => !k.startsWith('chat_') && !k.startsWith('tab_'))
+            .map((k) => {
+              const m = rawModels[k];
+              const rawDisplayName = (m.displayName || k).replace(/^\[[^\]]+\]\s*/, '');
+              return {
+                id: k,
+                displayName: rawDisplayName || k,
+                enabled: true,
+              };
+            });
+
+          if (models.length > 0) {
+            return { success: true, models };
+          }
+        }
+      } catch {
+        // Continue to fallback below if network fails
+      }
+
+      const fallbackModels = [
+        { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)', enabled: true },
+        { id: 'gemini-3.7-flash-high', displayName: 'Gemini 3.7 Flash (High)', enabled: true },
+        { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro (High)', enabled: true },
+        { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
+        { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+        { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+        { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
+        { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', enabled: true },
+      ];
+      return { success: true, models: fallbackModels };
+    }
+
     const baseUrl = params.apiUrl.replace(/\/+$/, '');
     const url = new URL(baseUrl.endsWith('/models') ? baseUrl : `${baseUrl}/models`);
     if (!['http:', 'https:'].includes(url.protocol)) {
@@ -905,14 +979,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
     }
 
     const isGoogle = url.hostname.includes('googleapis.com') || params.provider === 'google';
+    if (isGoogle && rawKey && !rawKey.startsWith('enc:')) {
+      url.searchParams.set('key', rawKey);
+    }
 
     return new Promise((resolve) => {
       const req = net.request({ url: url.toString(), method: 'GET' });
-      if (params.apiKey && !params.apiKey.startsWith('enc:')) {
+      if (rawKey && !rawKey.startsWith('enc:')) {
         if (isGoogle) {
-          req.setHeader('x-goog-api-key', params.apiKey);
+          req.setHeader('x-goog-api-key', rawKey);
         } else {
-          req.setHeader('Authorization', 'Bearer ' + params.apiKey);
+          req.setHeader('Authorization', 'Bearer ' + rawKey);
         }
       }
       req.on('response', (res: Electron.IncomingMessage) => {
@@ -948,7 +1025,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
               resolve({ success: false, error: 'Invalid JSON response from /models endpoint' });
             }
           } else {
-            resolve({ success: false, error: `HTTP ${res.statusCode}: ${data ? data.slice(0, 150) : 'Failed to fetch models'}` });
+            let errDetail = data ? data.slice(0, 150) : 'Failed to fetch models';
+            try {
+              const parsedErr = JSON.parse(data);
+              if (parsedErr?.error?.message) {
+                errDetail = parsedErr.error.message;
+              }
+            } catch {}
+            if (isGoogle && errDetail.toLowerCase().includes('api key not valid')) {
+              errDetail = 'API key not valid. Please enter a valid Google AI Studio API key starting with "AIzaSy…" from https://aistudio.google.com/apikey. (If connecting Antigravity IDE, use "Importer depuis IDE").';
+            }
+            resolve({ success: false, error: `HTTP ${res.statusCode}: ${errDetail}` });
           }
         });
       });
@@ -974,6 +1061,64 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
         return { success: false, healthStatus: 'offline' as const, error: 'Blocked: metadata endpoint' };
       }
       const startTime = Date.now();
+      const isIdeToken = !!(params.apiKey && params.apiKey.startsWith('ya29.'));
+      if (isIdeToken) {
+        try {
+          let quotaRes = await fetchGoogleAccountQuotas(params.apiKey);
+          let freshToken: string | undefined;
+          if (!quotaRes && params.id) {
+            try {
+              const fp = getCustomModelsPath();
+              const c = await fs.promises.readFile(fp, 'utf8');
+              const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+              if (parsed.providers && Array.isArray(parsed.providers)) {
+                const prov = parsed.providers.find((x: any) => x.id === params.id);
+                if (prov && prov.refreshToken) {
+                  const refreshed = await refreshGoogleToken(prov.refreshToken);
+                  if (refreshed && refreshed.accessToken) {
+                    freshToken = refreshed.accessToken;
+                    quotaRes = await fetchGoogleAccountQuotas(refreshed.accessToken);
+                  }
+                }
+              }
+            } catch { /* ignore */ }
+          }
+          const latencyMs = Date.now() - startTime;
+          const isSuccess = quotaRes !== null;
+          const healthStatus = isSuccess ? (latencyMs >= 1500 ? 'degraded' : 'healthy') : 'offline';
+          const result = {
+            success: isSuccess,
+            status: isSuccess ? 200 : 401,
+            latencyMs,
+            healthStatus,
+            error: isSuccess ? undefined : 'Jeton Antigravity IDE expiré ou inaccessible',
+          };
+
+          if (params.id) {
+            try {
+              const fp = getCustomModelsPath();
+              const c = await fs.promises.readFile(fp, 'utf8');
+              const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+              if (parsed.providers && Array.isArray(parsed.providers)) {
+                const idx = parsed.providers.findIndex((x: any) => x.id === params.id);
+                if (idx !== -1) {
+                  parsed.providers[idx].status = result.healthStatus;
+                  parsed.providers[idx].latencyMs = result.latencyMs;
+                  parsed.providers[idx].lastTestedAt = new Date().toISOString();
+                  parsed.providers[idx].lastError = result.error;
+                  if (freshToken) parsed.providers[idx].apiKey = freshToken;
+                  if (quotaRes) parsed.providers[idx].quotas = quotaRes;
+                  await atomicWriteCustomModels(fp, parsed);
+                }
+              }
+            } catch { /* ignore */ }
+          }
+          return result;
+        } catch (err) {
+          return { success: false, healthStatus: 'offline' as const, error: (err as Error).message };
+        }
+      }
+
       const isGoogle = parsedBase.hostname.includes('googleapis.com') || params.provider === 'google';
 
      const doRequest = (targetUrl: string, method: string, body?: string): Promise<{ statusCode: number; data: string; latencyMs: number }> => {
@@ -1115,6 +1260,81 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
      const err = e as Error;
      return { success: false, healthStatus: 'offline' as const, error: err.message };
    }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_DISCOVER_IDE_ACCOUNT, async () => {
+  try {
+    const account = await discoverIdeAccount();
+    if (!account) {
+      return { success: false, error: 'Aucun compte Google actif détecté dans Antigravity IDE ou le trousseau système.' };
+    }
+    return { success: true, account };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la découverte du compte.' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, async (_evt, tokenOrKey: string) => {
+  try {
+    if (!tokenOrKey) return { success: false, error: 'Token requis.' };
+    let effectiveToken = tokenOrKey;
+    let freshAccessToken: string | undefined;
+    if (tokenOrKey.startsWith('1//') || tokenOrKey.startsWith('g1//')) {
+      const refreshed = await refreshGoogleToken(tokenOrKey);
+      if (refreshed) {
+        effectiveToken = refreshed.accessToken;
+        freshAccessToken = refreshed.accessToken;
+      }
+    }
+    const quotas = await fetchGoogleAccountQuotas(effectiveToken);
+    if (!quotas) {
+      return { success: false, error: 'Impossible de récupérer les quotas Google.' };
+    }
+    return { success: true, quotas, accessToken: freshAccessToken };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la récupération des quotas.' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_WARMUP_ACCOUNT, async (_evt, accessToken: string) => {
+  try {
+    if (!accessToken) return { success: false, error: 'Access token requis.' };
+    let effectiveToken = accessToken;
+    if (accessToken.startsWith('1//') || accessToken.startsWith('g1//')) {
+      const refreshed = await refreshGoogleToken(accessToken);
+      if (refreshed) effectiveToken = refreshed.accessToken;
+    }
+    const ok = await warmupGoogleAccount(effectiveToken);
+    return { success: ok };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors du warmup du compte.' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_REFRESH_TOKEN, async (_evt, refreshToken: string) => {
+  try {
+    if (!refreshToken) return { success: false, error: 'Refresh token requis.' };
+    const res = await refreshGoogleToken(refreshToken);
+    if (!res) {
+      return { success: false, error: 'Échec du rafraîchissement du token Google (révoqué ou réseau indisponible).' };
+    }
+    const userInfo = await fetchGoogleUserInfo(res.accessToken);
+    const quotas = await fetchGoogleAccountQuotas(res.accessToken);
+    const projectInfo = await ensureCloudCodeProject(res.accessToken);
+    return {
+      success: true,
+      accessToken: res.accessToken,
+      expiresIn: res.expiresIn,
+      email: userInfo?.email || projectInfo?.accountEmail,
+      name: userInfo?.name,
+      picture: userInfo?.picture,
+      quotas: quotas || undefined,
+      projectId: projectInfo?.projectId,
+      tierId: projectInfo?.tierId,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors du rafraîchissement du token.' };
+  }
 });
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.RUN, async (_evt, args: string[]) => {

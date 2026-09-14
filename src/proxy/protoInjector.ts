@@ -53,7 +53,10 @@ export function parseGrpcWebHeader(buf: Buffer): { flags: number; msgLen: number
 export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResult): string {
   const isFav = isRecentModel(m.name) || isRecentModel(m.displayName);
   const star = isFav ? '⭐ ' : '';
-  const name = m.displayName || m.name;
+  let name = m.displayName || m.name;
+  if (m.provider === 'google') {
+    name = name.replace(/^\[[^\]]+\]\s*/, '');
+  }
 
   if (!health) {
     return `${star}🟢 | ${name}`;
@@ -115,8 +118,16 @@ export function injectCustomModelsIntoResponse(
     let injectedCount = 0;
 
     const expandedModels = expandModelsWithEffort(customModels);
+    const seenModelKeys = new Set<string>();
 
     for (const m of expandedModels) {
+      const modelDedupKey = m.provider === 'google'
+        ? `google:${(m.externalModelName || m.name).replace(/^models\//, '').toLowerCase()}${m._effortSuffix || ''}`
+        : generateModelPlaceholderId(m);
+
+      if (seenModelKeys.has(modelDedupKey)) continue;
+      seenModelKeys.add(modelDedupKey);
+
       const health = healthMap?.get(m.name);
       
       // Unhealthy models are still injected (with red dot status) so the user knows they are loaded.
@@ -203,15 +214,23 @@ function injectCustomModelsIntoUserStatusJson(
 
     const existingLabels = new Set<string>(cascade.clientModelConfigs.map((c: any) => c.label));
     const expandedModels = expandModelsWithEffort(customModels);
+    const seenModelKeys = new Set<string>();
     let injectedCount = 0;
 
     for (const m of expandedModels) {
+      const modelDedupKey = m.provider === 'google'
+        ? `google:${(m.externalModelName || m.name).replace(/^models\//, '').toLowerCase()}${m._effortSuffix || ''}`
+        : generateModelPlaceholderId(m);
+
+      if (seenModelKeys.has(modelDedupKey)) continue;
+
       const health = healthMap?.get(m.name);
       const placeholderId = generateModelPlaceholderId(m);
       const label = formatModelDisplayName(m, health);
 
       if (existingLabels.has(label)) continue;
       existingLabels.add(label);
+      seenModelKeys.add(modelDedupKey);
 
       const cap = detectModelCapabilities(m);
 
@@ -329,7 +348,14 @@ export function injectCustomModelsIntoUserStatus(
       }
     }
 
+    const seenModelKeys = new Set<string>();
     for (const m of expandedModels) {
+      const modelDedupKey = m.provider === 'google'
+        ? `google:${(m.externalModelName || m.name).replace(/^models\//, '').toLowerCase()}${m._effortSuffix || ''}`
+        : generateModelPlaceholderId(m);
+
+      if (seenModelKeys.has(modelDedupKey)) continue;
+
       const health = healthMap?.get(m.name);
       const placeholderId = generateModelPlaceholderId(m);
       const match = placeholderId.match(/_M(\d+)$/);
@@ -339,6 +365,7 @@ export function injectCustomModelsIntoUserStatus(
 
       if (existingLabels.has(label)) continue;
       existingLabels.add(label);
+      seenModelKeys.add(modelDedupKey);
 
       const cap = detectModelCapabilities(m);
       newModels.push({

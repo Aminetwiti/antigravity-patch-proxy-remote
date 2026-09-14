@@ -30,6 +30,12 @@ export const DOCTOR_IPC_CHANNELS = {
   PROVIDERS_TEST: 'ag:providers:test',
   PROVIDERS_CHANGED: 'ag:providers:changed',
 
+  // Google Multi-Account Discovery & Quotas
+  GOOGLE_DISCOVER_IDE_ACCOUNT: 'ag:google:discover-ide-account',
+  GOOGLE_FETCH_ACCOUNT_QUOTAS: 'ag:google:fetch-account-quotas',
+  GOOGLE_WARMUP_ACCOUNT: 'ag:google:warmup-account',
+  GOOGLE_REFRESH_TOKEN: 'ag:google:refresh-token',
+
   // Proxy & MITM
   PROXY_START: 'ag:proxy:start',
   PROXY_STOP: 'ag:proxy:stop',

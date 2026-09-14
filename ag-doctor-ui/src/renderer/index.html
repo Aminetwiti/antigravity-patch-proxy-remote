@@ -583,6 +583,10 @@
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
               Sync all models
             </button>
+            <button class="btn btn-secondary" id="gaDiscoverIdeBtn" type="button" aria-label="Import from Antigravity IDE" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Import from IDE
+            </button>
             <button class="btn btn-primary" id="gaAddAccountBtn" type="button" aria-label="Add a Google Account">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Google Account
@@ -634,13 +638,81 @@
           </div>
         </div>
 
-        <!-- Accounts List Panel -->
+        <!-- Accounts List Panel with High-Density Toolbar -->
         <div class="panel">
-          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <h2>Configured Accounts</h2>
-            <div style="font-size: 11.5px; color: var(--text-2);">AES-256 encrypted in <code>custom_models.json</code></div>
-          </div>
-          <div class="panel-body">
+          <div class="panel-body" style="padding: 16px;">
+            <!-- Antigravity Tools High-Density Toolbar -->
+            <div class="ga-toolbar">
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                <!-- Search email... -->
+                <div class="ga-search-box">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input type="text" id="gaSearchInput" placeholder="Search email..." aria-label="Search accounts">
+                </div>
+
+                <!-- 5H / Weekly toggle -->
+                <div class="ga-btn-group" id="gaWindowToggleGroup">
+                  <button type="button" class="ga-window-btn" id="gaWindow5hBtn" data-window="5h" title="5-Hour Rolling Limit">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 5H
+                  </button>
+                  <button type="button" class="ga-window-btn active" id="gaWindowWeeklyBtn" data-window="weekly" title="7-Day Weekly Limit">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Weekly
+                  </button>
+                </div>
+
+                <!-- List / Grid view switcher -->
+                <div class="ga-btn-group" id="gaViewToggleGroup">
+                  <button type="button" class="ga-view-btn active" id="gaViewListBtn" data-view="list" title="Compact Table View">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  </button>
+                  <button type="button" class="ga-view-btn" id="gaViewGridBtn" data-view="grid" title="Card Grid View">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  </button>
+                </div>
+
+                <!-- Filter chips: All, PRO, ULTRA, FREE -->
+                <div style="display: inline-flex; gap: 4px;" id="gaFilterGroup">
+                  <button type="button" class="ga-chip active" data-filter="all">
+                    All <span class="ga-chip-cnt" id="gaCntAll">0</span>
+                  </button>
+                  <button type="button" class="ga-chip" data-filter="pro">
+                    PRO <span class="ga-chip-cnt" id="gaCntPro">0</span>
+                  </button>
+                  <button type="button" class="ga-chip" data-filter="ultra">
+                    ULTRA <span class="ga-chip-cnt" id="gaCntUltra">0</span>
+                  </button>
+                  <button type="button" class="ga-chip" data-filter="free">
+                    FREE <span class="ga-chip-cnt" id="gaCntFree">0</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Right action buttons -->
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <button type="button" class="btn btn-ghost" id="gaToolbarAddBtn" title="Add Google Account" aria-label="Add Google Account" style="padding: 5px 9px; font-weight: bold; font-size: 13px; border-radius: 7px; border: 1px solid var(--border);">
+                  +
+                </button>
+                <button type="button" class="btn btn-primary" id="gaToolbarRefreshAllBtn" style="background: var(--accent-blue, #2563eb); color: #fff; padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Refresh All
+                </button>
+                <button type="button" class="btn" id="gaToolbarWarmupBtn" style="background: var(--warn-orange, #ea580c); color: #fff; padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; border: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> One-click Warmup
+                </button>
+                <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-2); cursor: pointer; user-select: none; margin-left: 4px;">
+                  <span>Show All Quotas</span>
+                  <input type="checkbox" id="gaShowAllQuotasSwitch" aria-label="Show All Quotas (5-Hour & Weekly)" style="cursor: pointer;" />
+                </label>
+                <div style="width: 1px; height: 16px; background: var(--border); margin: 0 2px;"></div>
+                <button type="button" class="btn btn-ghost btn-sm" id="gaImportJsonBtn" title="Import Accounts JSON" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="gaExportJsonBtn" title="Export Accounts JSON" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export
+                </button>
+                <input type="file" id="gaImportFileInput" accept=".json" style="display: none;" />
+              </div>
+            </div>
+
             <div id="gaAccountsContainer">
               <!-- Rendered dynamically -->
             </div>
@@ -1143,6 +1215,14 @@
       </div>
       <div class="modal-body">
         <form id="gaFormContainer" class="pm-form" onsubmit="return false;">
+          <div id="gaAccountTypeBanner" class="patch-banner info" hidden style="margin-bottom: 14px; font-size: 12px; display: flex; align-items: flex-start; gap: 10px;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <div id="gaAccountTypeBannerText">
+              <strong>Compte connecté via Antigravity IDE (OAuth)</strong><br />
+              Ce compte utilise votre session active Antigravity IDE. Les quotas et modèles natifs sont synchronisés automatiquement.
+            </div>
+          </div>
+
           <div class="pm-form-section">
             <h3 class="pm-form-section-title">1. Account Credentials</h3>
             <div class="pm-form-grid">
@@ -1157,14 +1237,14 @@
             </div>
 
             <label class="form-field" for="gaFormKey">
-              <span>Google AI Studio API Key</span>
+              <span id="gaFormKeyLabel">Google AI Studio API Key</span>
               <div class="input-with-action">
                 <input type="password" id="gaFormKey" placeholder="AIzaSy…" autocomplete="off" />
                 <button type="button" class="agy-icon-btn" id="gaKeyToggle" title="Show/Hide API Key" aria-label="Show or hide API key">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </button>
               </div>
-              <small style="color: var(--text-2); font-size: 11px; margin-top: 4px; display: block;">
+              <small id="gaFormKeyHelper" style="color: var(--text-2); font-size: 11px; margin-top: 4px; display: block;">
                 Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" id="gaOpenAiStudioLink" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.
               </small>
             </label>
@@ -1179,6 +1259,20 @@
               </button>
             </div>
             <div id="gaFormModelsCountBadge" class="badge badge-muted" style="margin-bottom: 8px;">0 models selected</div>
+            <div class="pm-manual-model-row" style="display: flex; gap: 6px; margin-bottom: 8px;">
+              <input type="text" id="gaFormCustomModelInput" placeholder="Add model ID (e.g. gemini-2.0-flash)…" class="input-sm" style="flex: 1;" autocomplete="off" />
+              <button type="button" class="btn btn-ghost btn-sm" id="gaFormAddCustomModelBtn">+ Add</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gaFormSelectAllBtn">Select all</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gaFormDeselectAllBtn">Deselect all</button>
+            </div>
+            <div class="ga-model-presets" style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; font-size: 11px;">
+              <span style="color: var(--text-2); margin-right: 2px;">Presets:</span>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-3.8-flash-high" data-name="Gemini 3.8 Flash (High)" style="cursor: pointer;">+ Gemini 3.8 Flash</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-3.7-flash-high" data-name="Gemini 3.7 Flash (High)" style="cursor: pointer;">+ Gemini 3.7 Flash</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-3.1-pro-high" data-name="Gemini 3.1 Pro (High)" style="cursor: pointer;">+ Gemini 3.1 Pro</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-2.5-pro" data-name="Gemini 2.5 Pro" style="cursor: pointer;">+ Gemini 2.5 Pro</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="claude-sonnet-4-6" data-name="Claude Sonnet 4.6 (Thinking)" style="cursor: pointer;">+ Claude Sonnet 4.6</button>
+            </div>
             <div id="gaFormModelsList" class="pm-models-list" style="max-height: 220px; overflow-y: auto; background: var(--bg-0); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px;">
               <div class="pm-models-hint" style="font-size: 12px; color: var(--text-2); text-align: center; padding: 20px;">
                 Enter your API key and click "Get Models from Endpoint" to discover models for this account.
@@ -1351,6 +1445,7 @@
   <script src="smart-banner.js"></script>
   <script src="traffic-inspector.js"></script>
   <script src="config-export-import.js"></script>
+  <script src="account-import.js"></script>
   <script src="health-sentinel.js"></script>
   <script src="failure-scenario-showcase.js"></script>
   <script src="custom-error-scenarios.js"></script>

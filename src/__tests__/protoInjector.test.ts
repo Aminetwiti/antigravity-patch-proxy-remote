@@ -348,4 +348,56 @@ describe('injectCustomModelsIntoUserStatus', () => {
     expect(sortLabels[0]).toBe('Stock Model 1');
     expect(sortLabels[1]).toContain('My Custom Model');
   });
+
+  it('unifies and deduplicates Google models across multiple accounts into a single entry in UserStatus', () => {
+    const jsonPayload = JSON.stringify({
+      userStatus: {
+        cascadeModelConfigData: {
+          clientModelConfigs: [{ label: 'Stock Model 1', modelOrAlias: { model: 'stock-1' } }],
+          clientModelSorts: [{ name: 'Recommended', groups: [{ modelLabels: ['Stock Model 1'] }] }],
+        },
+      },
+    });
+    const jsonBuf = Buffer.from(jsonPayload, 'utf8');
+    const header = Buffer.alloc(5);
+    header[0] = 0;
+    header.writeUInt32BE(jsonBuf.length, 1);
+    const framedBuf = Buffer.concat([header, jsonBuf]);
+
+    // Two different Google accounts both defining gemini-3.8-flash-high (e.g. Account 1 and Account 2)
+    const multiAccountModels: CustomModel[] = [
+      {
+        name: 'models/MODEL_PLACEHOLDER_M1',
+        displayName: '[Compte 1] Gemini 3.8 Flash High',
+        provider: 'google',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'ya29.acc1',
+        externalModelName: 'gemini-3.8-flash-high',
+      },
+      {
+        name: 'models/MODEL_PLACEHOLDER_M2',
+        displayName: '[Compte 2] Gemini 3.8 Flash High',
+        provider: 'google',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'ya29.acc2',
+        externalModelName: 'gemini-3.8-flash-high',
+      },
+    ];
+
+    const result = injectCustomModelsIntoUserStatus(framedBuf, multiAccountModels);
+    expect(result.modified).toBe(true);
+    // Crucial: exactly ONE model should be injected, NOT two!
+    expect(result.injectedCount).toBe(1);
+
+    const bodyLen = result.buffer.readUInt32BE(1);
+    const parsed = JSON.parse(result.buffer.subarray(5, 5 + bodyLen).toString('utf8'));
+    const configs = parsed.userStatus.cascadeModelConfigData.clientModelConfigs;
+    expect(configs.length).toBe(2); // Stock Model 1 + exactly 1 Google Gemini model
+    expect(configs[1].label).toContain('Gemini 3.8 Flash High');
+    expect(configs[1].label).not.toContain('[Compte 1]');
+    expect(configs[1].label).not.toContain('[Compte 2]');
+
+    const sortLabels = parsed.userStatus.cascadeModelConfigData.clientModelSorts[0].groups[0].modelLabels;
+    expect(sortLabels.length).toBe(2);
+  });
 });
