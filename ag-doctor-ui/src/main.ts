@@ -34,7 +34,9 @@ import {
   refreshGoogleToken,
   fetchGoogleUserInfo,
   ensureCloudCodeProject,
+  switchActiveIdeAccount,
 } from './services/ideAccountDiscovery';
+import { startGoogleOAuthLogin } from './services/googleOAuthServer';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
@@ -956,11 +958,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
       }
 
       const fallbackModels = [
-        { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-        { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+        { id: 'gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)', enabled: true },
+        { id: 'gemini-3.8-flash-medium', displayName: 'Gemini 3.8 Flash (Medium)', enabled: true },
+        { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)', enabled: true },
+        { id: 'gemini-3.7-flash-low', displayName: 'Gemini 3.7 Flash (Low)', enabled: true },
+        { id: 'gemini-3.7-flash-medium', displayName: 'Gemini 3.7 Flash (Medium)', enabled: true },
+        { id: 'gemini-3.7-flash-high', displayName: 'Gemini 3.7 Flash (High)', enabled: true },
+        { id: 'gemini-3.6-flash-low', displayName: 'Gemini 3.6 Flash (Low)', enabled: true },
+        { id: 'gemini-3.6-flash-medium', displayName: 'Gemini 3.6 Flash (Medium)', enabled: true },
+        { id: 'gemini-3.6-flash-high', displayName: 'Gemini 3.6 Flash (High)', enabled: true },
+        { id: 'gemini-3.1-pro-low', displayName: 'Gemini 3.1 Pro (Low)', enabled: true },
         { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro (High)', enabled: true },
-        { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
-        { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
         { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
         { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
         { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', enabled: true },
@@ -1334,6 +1342,29 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_REFRESH_TOKEN, async (_evt, refreshTok
     };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erreur lors du rafraîchissement du token.' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_LOGIN, async () => {
+  try {
+    const res = await startGoogleOAuthLogin();
+    return res;
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la connexion OAuth' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_SWITCH_IDE_ACCOUNT, async (_evt, params: {
+  accessToken: string;
+  refreshToken?: string;
+  email?: string;
+  picture?: string;
+}) => {
+  try {
+    const res = switchActiveIdeAccount(params);
+    return res;
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors du changement de compte IDE' };
   }
 });
 

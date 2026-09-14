@@ -44,6 +44,18 @@ const api = {
       tierId?: string;
       error?: string;
     }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_REFRESH_TOKEN, refreshToken),
+    startOAuthLogin: (): Promise<{
+      success: boolean;
+      account?: any;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_LOGIN),
+    switchIdeAccount: (params: {
+      accessToken: string;
+      refreshToken?: string;
+      email?: string;
+      picture?: string;
+    }): Promise<{ success: boolean; error?: string; dbPath?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_SWITCH_IDE_ACCOUNT, params),
   },
   info: (): Promise<{
     platform: string;

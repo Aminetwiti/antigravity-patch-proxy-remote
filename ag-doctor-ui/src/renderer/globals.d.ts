@@ -71,6 +71,17 @@ interface AgAPI {
       tierId?: string;
       error?: string;
     }>;
+    startOAuthLogin(): Promise<{
+      success: boolean;
+      account?: any;
+      error?: string;
+    }>;
+    switchIdeAccount(params: {
+      accessToken: string;
+      refreshToken?: string;
+      email?: string;
+      picture?: string;
+    }): Promise<{ success: boolean; error?: string; dbPath?: string }>;
   };
 
   // MITM Proxy Server Management

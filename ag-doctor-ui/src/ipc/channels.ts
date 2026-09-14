@@ -35,6 +35,8 @@ export const DOCTOR_IPC_CHANNELS = {
   GOOGLE_FETCH_ACCOUNT_QUOTAS: 'ag:google:fetch-account-quotas',
   GOOGLE_WARMUP_ACCOUNT: 'ag:google:warmup-account',
   GOOGLE_REFRESH_TOKEN: 'ag:google:refresh-token',
+  GOOGLE_OAUTH_LOGIN: 'ag:google:oauth-login',
+  GOOGLE_SWITCH_IDE_ACCOUNT: 'ag:google:switch-ide-account',
 
   // Proxy & MITM
   PROXY_START: 'ag:proxy:start',

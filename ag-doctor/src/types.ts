@@ -29,6 +29,9 @@ export interface CustomModel {
   enabled?: boolean;
   /** True when apiKey is stored in an encrypted/opaque format. */
   encrypted?: boolean;
+  accountName?: string;
+  accountEmail?: string;
+  providerId?: string;
 }
 
 export interface CustomModelsFile {

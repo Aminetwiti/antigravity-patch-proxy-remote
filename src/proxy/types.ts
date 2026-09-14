@@ -60,9 +60,9 @@ export interface CustomModel {
   reasoningEffort?: string;
   /**
    * Thinking budget for this model (fetched from /v1/models, not hardcoded).
-   * Values: 'auto' | 'enabled' | 'disabled'
+   * Values: 'auto' | 'enabled' | 'disabled' | number (token count like 1000, 4000, 10001)
    */
-  thinkingBudget?: string;
+  thinkingBudget?: string | number;
   /**
    * Mode for this model (fetched from /v1/models, not hardcoded).
    * Values: 'thinking' | 'reasoning' | 'non-thinking' | 'auto'

@@ -123,41 +123,43 @@ export function mapGoogleChunkToGemini(chunk: unknown, _modelName: string): Gemi
 
 // ─── URL Helpers ──────────────────────────────────────────────────────────
 
-/**
- * Constructs the correct Google AI Studio endpoint URL based on streaming mode.
- *
- * Google AI Studio uses different endpoints:
- *   - Non-streaming: :generateContent
- *   - Streaming:     :streamGenerateContent
- *
- * If the user's URL already contains one of these endpoints, it's kept as-is.
- */
 export function getGoogleApiUrl(baseUrl: string, modelName: string, isStream: boolean): string {
-  let url = baseUrl;
+  let urlObj: URL;
+  try {
+    urlObj = new URL(baseUrl);
+  } catch {
+    // Fallback if somehow not a valid URL (e.g. just a path)
+    log.warn(`[GoogleTranslator] Invalid baseUrl provided: ${baseUrl}`);
+    return baseUrl;
+  }
 
-  // If the URL doesn't already specify a method, append one
-  if (!url.includes(':generateContent') && !url.includes(':streamGenerateContent')) {
-    // Strip trailing slash if present
-    url = url.replace(/\/$/, '');
+  const method = isStream ? ':streamGenerateContent' : ':generateContent';
+
+  if (!urlObj.pathname.includes(':generateContent') && !urlObj.pathname.includes(':streamGenerateContent')) {
+    urlObj.pathname = urlObj.pathname.replace(/\/$/, '');
 
     // Check if the URL ends with the model path (e.g. /models/gemini-1.5-pro)
     const modelPathPattern = /\/models\/([^\/]+)$/;
-    const modelMatch = modelPathPattern.exec(url);
+    const modelMatch = modelPathPattern.exec(urlObj.pathname);
 
     if (modelMatch) {
       // URL like .../v1beta/models/gemini-1.5-pro → append :method
-      const method = isStream ? ':streamGenerateContent?alt=sse' : ':generateContent';
-      url += method;
+      urlObj.pathname += method;
     } else if (modelName) {
       // Append full path with model name
-      const method = isStream ? ':streamGenerateContent?alt=sse' : ':generateContent';
-      const cleanName = modelName.replace(/^models\//, '');
-      url += `/models/${cleanName}${method}`;
+      // Strip "models/" and any provider prefix like "google/" or "vertex/"
+      const cleanName = modelName.replace(/^(?:models\/|[^/]+\/)/, '');
+      urlObj.pathname += `/models/${cleanName}${method}`;
     } else {
       // Fallback: assume the URL is already complete
       log.warn('[GoogleTranslator] Could not determine model name for URL construction');
     }
   }
 
-  return url;
+  // Add alt=sse for streaming if not already present
+  if (isStream && !urlObj.searchParams.has('alt')) {
+    urlObj.searchParams.set('alt', 'sse');
+  }
+
+  return urlObj.toString();
 }

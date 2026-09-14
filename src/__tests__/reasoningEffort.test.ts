@@ -120,6 +120,9 @@ describe('isReasoningLikeModel', () => {
     expect(isReasoningLikeModel('deepseek-r1')).toBe(true);
     expect(isReasoningLikeModel('claude-3-7-sonnet')).toBe(true);
     expect(isReasoningLikeModel('reasoning-model')).toBe(true);
+    expect(isReasoningLikeModel('gemini-3.8-flash')).toBe(true);
+    expect(isReasoningLikeModel('gemini-3.7-pro')).toBe(true);
+    expect(isReasoningLikeModel('gpt-oss-120b')).toBe(true);
   });
 
   it('returns false for plain chat models', () => {

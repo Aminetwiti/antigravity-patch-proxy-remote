@@ -170,15 +170,24 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
   const flatModels: CustomModel[] = [];
   for (const p of providers) {
     if (p.enabled === false) continue;
-    const models = Array.isArray(p.models) ? p.models : [];
-    for (const m of models) {
+
+    const accounts = Array.isArray((p as any).accounts) && (p as any).accounts.length > 0
+      ? (p as any).accounts
+      : [{ id: p.id, name: p.name, email: p.email, apiKey: p.apiKey, refreshToken: p.refreshToken, quotas: p.quotas, projectId: p.projectId, enabled: p.enabled }];
+
+    for (const acc of accounts) {
+      if (acc.enabled === false) continue;
+      const models = Array.isArray(p.models) ? p.models : [];
+      for (const m of models) {
       if (m.enabled === false) continue;
       const mergedHeaders = { ...p.extraHeaders, ...(m as { extraHeaders?: Record<string, string> }).extraHeaders };
       const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
       let displayName = m.displayName ?? m.id ?? '';
-      if (p.provider === 'google') {
-        displayName = displayName.replace(/^\[[^\]]+\]\s*/, '');
+      const accountLabel = p.name || (p.email ? p.email.split('@')[0] : '');
+      if (accountLabel && (p.provider === 'google' || providers.filter(x => x.provider === p.provider).length > 1)) {
+        const cleanBase = displayName.replace(/^\[[^\]]+\]\s*/, '');
+        displayName = `[${accountLabel}] ${cleanBase}`;
       }
 
       const partialModel: CustomModel = {
@@ -186,7 +195,7 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
         displayName,
         description: (m as { description?: string }).description ?? '',
         provider: (p.provider ?? 'openai') as ProviderName,
-        apiKey: p.apiKey ?? 'none',
+        apiKey: acc.apiKey ?? p.apiKey ?? 'none',
         apiUrl: p.apiUrl ?? '',
         externalModelName: m.id ?? '',
         allowUnauthorized: p.allowUnauthorized,
@@ -197,11 +206,11 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
         supportsVision: m.supportsVision ?? p.supportsVision ?? true,
         extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
         extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
-        accountName: p.name,
-        accountEmail: p.email,
-        refreshToken: p.refreshToken,
-        projectId: p.projectId,
-        quotas: p.quotas,
+        accountName: acc.name || p.name,
+        accountEmail: acc.email || p.email,
+        refreshToken: acc.refreshToken || p.refreshToken,
+        projectId: acc.projectId || p.projectId,
+        quotas: acc.quotas || p.quotas,
       };
       const placeholderId = generateModelPlaceholderId(partialModel);
 
@@ -209,6 +218,7 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
         ...partialModel,
         name: `models/${placeholderId}`,
       });
+      }
     }
   }
   const decrypted = cryptoStore.decryptModels(flatModels as unknown as Record<string, unknown>[]) as unknown as CustomModel[];

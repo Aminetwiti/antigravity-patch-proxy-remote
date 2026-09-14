@@ -211,6 +211,9 @@ interface CustomModel {
   externalModelName: string;
   encrypted?: boolean;
   enabled?: boolean;
+  accountName?: string;
+  accountEmail?: string;
+  providerId?: string;
 }
 
 interface ModelsFile {
@@ -1208,9 +1211,15 @@ function getFilteredModels(): typeof allLoadedModels {
     if (modelsCategoryFilter === 'active' && !isActive) return false;
     if (modelsCategoryFilter === 'disabled' && isActive) return false;
 
-    // Provider filter
-    if (modelsProviderFilter !== 'all' && (m.provider || '').toLowerCase() !== modelsProviderFilter.toLowerCase()) {
-      return false;
+    // Provider / Account filter
+    if (modelsProviderFilter !== 'all') {
+      if (modelsProviderFilter.startsWith('account:')) {
+        const targetAcc = modelsProviderFilter.slice(8).toLowerCase();
+        const acc = String(m.accountName || m.accountEmail || m.providerId || '').toLowerCase();
+        if (acc !== targetAcc) return false;
+      } else if ((m.provider || '').toLowerCase() !== modelsProviderFilter.toLowerCase()) {
+        return false;
+      }
     }
 
     // Capability filter
@@ -1225,12 +1234,14 @@ function getFilteredModels(): typeof allLoadedModels {
     const provider = (m.provider ?? '').toLowerCase();
     const externalName = (m.externalModelName ?? '').toLowerCase();
     const apiUrl = (m.apiUrl ?? '').toLowerCase();
+    const account = `${m.accountName ?? ''} ${m.accountEmail ?? ''}`.toLowerCase();
     return (
       name.includes(query) ||
       displayName.includes(query) ||
       provider.includes(query) ||
       externalName.includes(query) ||
-      apiUrl.includes(query)
+      apiUrl.includes(query) ||
+      account.includes(query)
     );
   });
 
@@ -1239,7 +1250,13 @@ function getFilteredModels(): typeof allLoadedModels {
   } else if (modelsSortOrder === 'name-desc') {
     list = [...list].sort((a, b) => (b.displayName || b.name).localeCompare(a.displayName || a.name));
   } else if (modelsSortOrder === 'provider') {
-    list = [...list].sort((a, b) => (a.provider || '').localeCompare(b.provider || ''));
+    list = [...list].sort((a, b) => {
+      const pCmp = (a.provider || '').localeCompare(b.provider || '');
+      if (pCmp !== 0) return pCmp;
+      const accA = a.accountName || a.accountEmail || '';
+      const accB = b.accountName || b.accountEmail || '';
+      return accA.localeCompare(accB);
+    });
   } else if (modelsSortOrder === 'status') {
     list = [...list].sort((a, b) => {
       const aActive = a.enabled !== false ? 1 : 0;
@@ -1349,20 +1366,40 @@ function renderModelsView(): void {
     else if (cat === 'disabled') el.textContent = `Disabled (${disabledCount})`;
   });
 
-  // Dynamically populate Provider Filter select options
+  // Dynamically populate Provider & Account Filter select options
   if (modelsProviderFilterSelect) {
     const currentVal = modelsProviderFilter;
     const providersMap = new Map<string, number>();
+    const accountsMap = new Map<string, { label: string; count: number; filterKey: string }>();
     for (const m of allLoadedModels) {
       const p = m.provider || 'custom';
       providersMap.set(p, (providersMap.get(p) || 0) + 1);
+      const acc = m.accountName || m.accountEmail || m.providerId;
+      if (acc) {
+        const key = String(acc).toLowerCase();
+        const existing = accountsMap.get(key);
+        if (existing) {
+          existing.count++;
+        } else {
+          accountsMap.set(key, { label: `${p} · ${acc}`, count: 1, filterKey: `account:${key}` });
+        }
+      }
     }
-    let opts = `<option value="all">All providers (${allLoadedModels.length})</option>`;
+    let opts = `<option value="all">All providers & accounts (${allLoadedModels.length})</option>`;
+    if (accountsMap.size > 1) {
+      opts += `<optgroup label="Filter by Account">`;
+      for (const item of accountsMap.values()) {
+        opts += `<option value="${escapeHtml(item.filterKey)}">${escapeHtml(item.label)} (${item.count})</option>`;
+      }
+      opts += `</optgroup>`;
+    }
+    opts += `<optgroup label="Filter by Provider Type">`;
     for (const [p, count] of providersMap.entries()) {
       opts += `<option value="${escapeHtml(p)}">${escapeHtml(p)} (${count})</option>`;
     }
+    opts += `</optgroup>`;
     modelsProviderFilterSelect.innerHTML = opts;
-    if (providersMap.has(currentVal) || currentVal === 'all') {
+    if (providersMap.has(currentVal) || currentVal.startsWith('account:') || currentVal === 'all') {
       modelsProviderFilterSelect.value = currentVal;
     } else {
       modelsProviderFilter = 'all';
@@ -1453,26 +1490,28 @@ function renderModelsView(): void {
                 ${capsHtml}
               </div>
               <div class="model-meta">
-                <code>${escapeHtml(m.name)}</code> · <span class="agy-provider-badge ${providerBadgeClass}">${escapeHtml(m.provider)}</span> · ${escapeHtml(m.externalModelName)}
+                <code>${escapeHtml(m.name)}</code> · <span class="agy-provider-badge ${providerBadgeClass}">${escapeHtml(m.provider)}</span>
+                ${m.provider === 'google' ? ` · <span class="ga-badge ga-badge-account" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;">👥 Dynamic Account Pool</span>` : (m.accountName || m.accountEmail ? ` · <span class="ga-badge ga-badge-account" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;">👤 ${escapeHtml(m.accountName || m.accountEmail || "")}</span>` : "")}
+                · ${escapeHtml(m.externalModelName)}
               </div>
               <div class="model-meta" style="margin-top:4px">
                 <code style="font-size:10px">${escapeHtml(m.apiUrl)}</code> · key: ${escapeHtml(maskKey(m.apiKey))}${m.encrypted ? ' · <span style="color:var(--ok)">encrypted</span>' : ''}
               </div>
             </div>
             <div class="model-actions">
-              <button class="btn btn-ghost btn-sm model-action-test" data-action="test" data-name="${escapeHtml(m.name)}" title="Test connection to ${escapeHtml(m.name)}">
+              <button class="btn btn-ghost btn-sm model-action-test" data-action="test" data-name="${escapeHtml(m.name)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="Test connection to ${escapeHtml(m.name)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                 Test
               </button>
-              <button class="btn btn-ghost btn-sm model-action-edit" data-action="edit" data-name="${escapeHtml(m.name)}" data-provider="${escapeHtml(m.provider)}" data-url="${escapeHtml(m.apiUrl)}" title="Edit provider for ${escapeHtml(m.name)}">
+              <button class="btn btn-ghost btn-sm model-action-edit" data-action="edit" data-name="${escapeHtml(m.name)}" data-provider="${escapeHtml(m.provider)}" data-url="${escapeHtml(m.apiUrl)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="Edit provider for ${escapeHtml(m.name)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 Edit
               </button>
-              <button class="btn btn-ghost btn-sm model-action-toggle ${isEnabled ? 'is-active' : 'is-disabled'}" data-action="toggle" data-name="${escapeHtml(m.name)}" title="${isEnabled ? 'Disable model' : 'Enable model'}">
+              <button class="btn btn-ghost btn-sm model-action-toggle ${isEnabled ? 'is-active' : 'is-disabled'}" data-action="toggle" data-name="${escapeHtml(m.name)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="${isEnabled ? 'Disable model' : 'Enable model'}">
                 <span class="status-dot-sm ${isEnabled ? 'ok' : 'off'}"></span>
                 ${isEnabled ? 'Active' : 'Disabled'}
               </button>
-              <button class="btn btn-danger btn-sm model-action-delete" data-action="remove" data-name="${escapeHtml(m.name)}" data-url="${escapeHtml(m.apiUrl)}" title="Delete model ${escapeHtml(m.name)}">
+              <button class="btn btn-danger btn-sm model-action-delete" data-action="remove" data-name="${escapeHtml(m.name)}" data-url="${escapeHtml(m.apiUrl)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="Delete model ${escapeHtml(m.name)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
                 Delete
               </button>
@@ -4110,6 +4149,14 @@ async function renderProviderList(): Promise<void> {
               <span class="agy-dot">·</span>
               <span>${p.models.length} model${p.models.length === 1 ? '' : 's'}</span>
             </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;">
+              ${(p.models || []).slice(0, 6).map((m: any) => {
+                const isEn = m.enabled !== false;
+                const cleanName = (m.displayName || m.name || m.id || '').replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
+                return `<span style="font-size: 10px; padding: 1px 6px; border-radius: 4px; background: ${isEn ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)'}; color: ${isEn ? 'var(--text-1)' : 'var(--text-3)'}; border: 1px solid rgba(255,255,255,0.08); font-family: var(--font-mono);">${escapeHtml(cleanName)}</span>`;
+              }).join('')}
+              ${(p.models || []).length > 6 ? `<span style="font-size: 10px; color: var(--text-3); align-self: center;">+${p.models.length - 6} more</span>` : ''}
+            </div>
           </div>
           <div class="agy-provider-row-status">${renderProviderStatus(p)}</div>
           <div class="agy-provider-row-actions">
@@ -5149,14 +5196,20 @@ function getQuotaColor(pct: number): string {
 }
 
 function getAccountTier(acc: any): 'PRO' | 'ULTRA' | 'FREE' {
+  if (acc.tierId) {
+    const t = String(acc.tierId).toUpperCase();
+    if (t.includes('ULTRA') || t.includes('PREMIUM') || t.includes('ADVANCED')) return 'ULTRA';
+    if (t.includes('PRO') || t.includes('STANDARD')) return 'PRO';
+    if (t.includes('FREE')) return 'FREE';
+  }
   if (acc.tier) {
     const t = String(acc.tier).toUpperCase();
-    if (t.includes('ULTRA')) return 'ULTRA';
+    if (t.includes('ULTRA') || t.includes('PREMIUM') || t.includes('ADVANCED')) return 'ULTRA';
     if (t.includes('PRO')) return 'PRO';
     if (t.includes('FREE')) return 'FREE';
   }
   const name = (acc.name || '').toUpperCase();
-  if (name.includes('ULTRA')) return 'ULTRA';
+  if (name.includes('ULTRA') || name.includes('PREMIUM') || name.includes('ADVANCED')) return 'ULTRA';
   if (name.includes('FREE')) return 'FREE';
   return 'PRO';
 }
@@ -5467,24 +5520,39 @@ function initGoogleAccountsToolbarOnce(): void {
 
       // Switch
       if (btn.classList.contains('ga-switch')) {
+        let switchedToName = account?.name || id;
         for (const a of googleAccountsCache) {
           a.isCurrent = (a.id === id);
           if (a.id === id) {
             a.lastUsed = Date.now();
+            let effectiveToken = a.apiKey;
             if (a.refreshToken) {
               try {
                 const r = await window.ag.providers.refreshToken(a.refreshToken);
                 if (r.success && r.accessToken) {
                   a.apiKey = r.accessToken;
+                  effectiveToken = r.accessToken;
                   if (r.quotas) a.quotas = r.quotas;
                   if (r.picture && !a.picture) a.picture = r.picture;
                 }
               } catch {}
             }
+            // Inject new account into Antigravity IDE's state.vscdb
+            if (effectiveToken && typeof window.ag.providers.switchIdeAccount === 'function') {
+              try {
+                await window.ag.providers.switchIdeAccount({
+                  accessToken: effectiveToken,
+                  refreshToken: a.refreshToken,
+                  email: a.email || a.name,
+                  picture: a.picture,
+                });
+              } catch {}
+            }
+            switchedToName = a.name || id;
           }
           await window.ag.providers.save(a);
         }
-        toast(`Switched active Antigravity account to ${account?.name || id}`, 'ok');
+        toast(`Compte actif basculé sur ${switchedToName} (synchronisé dans l'IDE)`, 'ok');
         renderGoogleAccountsList(googleAccountsCache);
         return;
       }
@@ -5733,12 +5801,15 @@ async function loadGoogleAccounts(): Promise<void> {
 
     const totalAccounts = googleAccountsCache.length;
     const activeAccounts = googleAccountsCache.filter((a) => a.enabled !== false).length;
-    let totalModels = 0;
+    const uniqueExposedModelIds = new Set<string>();
     googleAccountsCache.forEach((a) => {
       if (a.enabled !== false && Array.isArray(a.models)) {
-        totalModels += a.models.filter((m: any) => m.enabled !== false).length;
+        a.models.filter((m: any) => m.enabled !== false).forEach((m: any) => {
+          uniqueExposedModelIds.add(m.id || m.name);
+        });
       }
     });
+    const totalModels = uniqueExposedModelIds.size;
 
     if (gaAccountCountBadge) gaAccountCountBadge.textContent = `${totalAccounts} account${totalAccounts === 1 ? '' : 's'}`;
     if (gaStatTotalAccounts) gaStatTotalAccounts.textContent = String(totalAccounts);
@@ -5767,18 +5838,23 @@ function renderGoogleAccountsList(accounts: any[]): void {
         <div class="agy-empty-text" style="color: var(--text-2); font-size: 13px; max-width: 440px; margin: 0 auto 16px;">
           Add your Google accounts or click "Importer depuis IDE" to automatically detect the account already connected to Antigravity without manual configuration.
         </div>
-        <div style="display: flex; justify-content: center; gap: 10px;">
+        <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+          <button class="btn btn-primary" type="button" id="gaEmptyOAuthBtn" style="background: #1a73e8; color: #fff; border: 1px solid rgba(66, 133, 244, 0.5); display: inline-flex; align-items: center; gap: 7px; font-weight: 500;">
+            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg>
+            Se connecter avec Google
+          </button>
           <button class="btn btn-secondary" type="button" id="gaEmptyDiscoverBtn" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Importer depuis IDE
           </button>
-          <button class="btn btn-primary" type="button" id="gaEmptyAddBtn">
+          <button class="btn btn-ghost" type="button" id="gaEmptyAddBtn">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Google Account
+            Clé manuelle
           </button>
         </div>
       </div>
     `;
+    $('#gaEmptyOAuthBtn')?.addEventListener('click', () => triggerGoogleOAuthLogin());
     $('#gaEmptyAddBtn')?.addEventListener('click', () => openGoogleAccountModal());
     $('#gaEmptyDiscoverBtn')?.addEventListener('click', () => triggerIdeAccountDiscovery());
     return;
@@ -5861,6 +5937,14 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
                 </div>
                 ${a.email && a.name && a.email !== a.name ? `<div style="font-size: 11px; color: var(--text-2);">${escapeHtml(a.name)}</div>` : ''}
+                <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">
+                  ${(a.models || []).slice(0, 5).map((m: any) => {
+                    const isEn = m.enabled !== false;
+                    const cleanName = (m.displayName || m.id || '').replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
+                    return `<span style="font-size: 9.5px; padding: 1px 5px; border-radius: 3px; background: ${isEn ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.05)'}; color: ${isEn ? '#60a5fa' : 'var(--text-3)'}; border: 1px solid ${isEn ? 'rgba(59,130,246,0.2)' : 'transparent'}; font-family: var(--font-mono);">${escapeHtml(cleanName)}</span>`;
+                  }).join('')}
+                  ${(a.models || []).length > 5 ? `<span style="font-size: 9.5px; color: var(--text-3); padding: 1px 4px;">+${(a.models || []).length - 5} more</span>` : ''}
+                </div>
               </div>
             </div>
           </td>
@@ -5993,7 +6077,20 @@ function renderGoogleAccountsList(accounts: any[]): void {
             </div>
           </div>
 
-          ${quotas && geminiPct !== null ? `
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-size: 10.5px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; display: flex; justify-content: space-between;">
+              <span>Models (${activeModels.length}/${(a.models || []).length})</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+              ${(a.models || []).map((m: any) => {
+                const isEn = m.enabled !== false;
+                const cleanName = (m.displayName || m.id || '').replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
+                return `<span style="font-size: 9.5px; padding: 2px 6px; border-radius: 4px; background: ${isEn ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.04)'}; color: ${isEn ? '#93c5fd' : 'var(--text-3)'}; border: 1px solid ${isEn ? 'rgba(59,130,246,0.25)' : 'rgba(255,255,255,0.05)'}; font-family: var(--font-mono);">${escapeHtml(cleanName)}</span>`;
+              }).join('') || '<span style="font-size: 10px; color: var(--text-3); font-style: italic;">No models configured</span>'}
+            </div>
+          </div>
+
+${quotas && geminiPct !== null ? `
             <div class="ga-quota-container" style="background: rgba(255,255,255,0.02); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
               <div class="ga-quota-row">
                 <span class="ga-quota-name">Gemini</span>
@@ -6298,6 +6395,37 @@ async function triggerIdeAccountDiscovery(): Promise<void> {
 }
 
 gaDiscoverIdeBtn?.addEventListener('click', () => triggerIdeAccountDiscovery());
+
+const gaOAuthLoginBtn = $('#gaOAuthLoginBtn') as HTMLButtonElement | null;
+
+async function triggerGoogleOAuthLogin(): Promise<void> {
+  const btn = gaOAuthLoginBtn;
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spin" style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Connexion...`;
+  }
+  try {
+    toast('Ouverture du navigateur pour la connexion Google...', 'info');
+    const res = await window.ag.providers.startOAuthLogin();
+    if (res.success && res.account) {
+      const email = res.account.email || res.account.name || 'compte Google';
+      toast(`Compte ${email} connecté et synchronisé avec succès !`, 'ok');
+      await loadGoogleAccounts();
+    } else {
+      toast(res.error || 'Connexion Google annulée ou échouée.', 'warn');
+    }
+  } catch (err) {
+    toast(`Erreur: ${(err as Error).message}`, 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+}
+
+gaOAuthLoginBtn?.addEventListener('click', () => triggerGoogleOAuthLogin());
 
 // Key visibility toggle
 if (gaKeyToggle && gaFormKey) {

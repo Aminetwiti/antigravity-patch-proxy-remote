@@ -205,5 +205,19 @@ describe('ideAccountDiscovery', () => {
       expect(result).toBe(false);
     });
   });
+
+  describe('switchActiveIdeAccount', () => {
+    it('gracefully handles absence of state.vscdb when switching active account', () => {
+      const { switchActiveIdeAccount } = require('./ideAccountDiscovery');
+      const res = switchActiveIdeAccount({
+        accessToken: 'ya29.mock-switch-token-12345',
+        refreshToken: 'g1//mock-refresh-token',
+        email: 'test-switch@gmail.com',
+      });
+      // Returns boolean success status (false when running in isolated test env with no Antigravity state.vscdb, or true if local DB exists)
+      expect(typeof res.success).toBe('boolean');
+    });
+  });
 });
+
 

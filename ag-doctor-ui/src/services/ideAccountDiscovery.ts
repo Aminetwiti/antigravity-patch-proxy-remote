@@ -576,3 +576,75 @@ export async function discoverIdeAccount(): Promise<DiscoveredAccount | null> {
 
   return null;
 }
+
+/**
+ * Switches the active account in Antigravity's local SQLite database (`state.vscdb`).
+ * Safely backs up `state.vscdb` to `state.vscdb.backup` before applying changes.
+ */
+export function switchActiveIdeAccount(params: {
+  accessToken: string;
+  refreshToken?: string;
+  email?: string;
+  picture?: string;
+}): { success: boolean; error?: string; dbPath?: string } {
+  const candidateDbs = getCandidateDbPaths();
+  let updatedAny = false;
+  let lastDbPath = '';
+
+  for (const dbPath of candidateDbs) {
+    if (!fs.existsSync(dbPath)) continue;
+
+    try {
+      // Backup state.vscdb
+      const backupPath = `${dbPath}.backup`;
+      try {
+        fs.copyFileSync(dbPath, backupPath);
+      } catch {}
+
+      const { DatabaseSync } = require('node:sqlite');
+      const db = new DatabaseSync(dbPath);
+
+      const row = db.prepare("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.oauthToken'").get() as { value: string } | undefined;
+
+      if (row && row.value) {
+        let text = Buffer.from(row.value, 'base64').toString('utf8');
+        text = text.replace(/ya29\.[A-Za-z0-9_-]+/, params.accessToken);
+        if (params.refreshToken) {
+          text = text.replace(/(?:g1\/\/|1\/\/)[A-Za-z0-9_-]+/, params.refreshToken);
+        }
+        const newVal = Buffer.from(text, 'utf8').toString('base64');
+        db.prepare("UPDATE ItemTable SET value = ? WHERE key = 'antigravityUnifiedStateSync.oauthToken'").run(newVal);
+      } else {
+        // Construct basic JSON token blob if none existed
+        const tokenObj = {
+          access_token: params.accessToken,
+          refresh_token: params.refreshToken || '',
+          token_type: 'Bearer',
+          expiry_date: Date.now() + 3600 * 1000,
+        };
+        const newVal = Buffer.from(JSON.stringify(tokenObj), 'utf8').toString('base64');
+        db.prepare("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.oauthToken', ?)").run(newVal);
+      }
+
+      if (params.picture) {
+        db.prepare("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravity.profileUrl', ?)").run(params.picture);
+      }
+
+      if (params.email) {
+        db.prepare("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravity.accountEmail', ?)").run(params.email);
+      }
+
+      db.close();
+      updatedAny = true;
+      lastDbPath = dbPath;
+    } catch (err: any) {
+      console.warn(`[ideAccountDiscovery] Failed to update DB ${dbPath}:`, err.message);
+    }
+  }
+
+  if (updatedAny) {
+    return { success: true, dbPath: lastDbPath };
+  }
+
+  return { success: false, error: 'Aucune base de données Antigravity IDE (state.vscdb) trouvée sur ce système.' };
+}

@@ -5,7 +5,14 @@ import * as path from 'path';
 import * as os from 'os';
 
 // Mock Electron environment
-const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-proxy-test-home-'));
+const { tempHome } = vi.hoisted(() => {
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  return {
+    tempHome: fs.mkdtempSync(path.join(os.tmpdir(), 'ag-proxy-test-home-')),
+  };
+});
 
 vi.mock('electron', () => ({
   app: {
