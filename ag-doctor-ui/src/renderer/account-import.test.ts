@@ -53,7 +53,7 @@ describe('Account Import & Normalization', () => {
     expect(normalized?.apiUrl).toBe('https://generativelanguage.googleapis.com/v1beta');
     expect(normalized?.models).toHaveLength(3);
     expect(normalized?.models[0].id).toBe('gemini-2.5-pro');
-    expect(normalized?.models[0].displayName).toBe('[amine.benammar17] Gemini 2.5 Pro');
+    expect(normalized?.models[0].displayName).toBe('Gemini 2.5 Pro');
   });
 
   it('detects token aliases (raw.token starting with 1// vs ya29.)', () => {

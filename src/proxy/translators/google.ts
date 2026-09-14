@@ -146,12 +146,13 @@ export function getGoogleApiUrl(baseUrl: string, modelName: string, isStream: bo
 
     if (modelMatch) {
       // URL like .../v1beta/models/gemini-1.5-pro → append :method
-      const method = isStream ? ':streamGenerateContent' : ':generateContent';
+      const method = isStream ? ':streamGenerateContent?alt=sse' : ':generateContent';
       url += method;
     } else if (modelName) {
       // Append full path with model name
-      const method = isStream ? ':streamGenerateContent' : ':generateContent';
-      url += `models/${modelName}${method}`;
+      const method = isStream ? ':streamGenerateContent?alt=sse' : ':generateContent';
+      const cleanName = modelName.replace(/^models\//, '');
+      url += `/models/${cleanName}${method}`;
     } else {
       // Fallback: assume the URL is already complete
       log.warn('[GoogleTranslator] Could not determine model name for URL construction');

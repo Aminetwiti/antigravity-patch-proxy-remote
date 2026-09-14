@@ -28,6 +28,17 @@ interface RawProviderEntry {
   fallbackModel?: string;
   supportsImages?: boolean;
   supportsVision?: boolean;
+  name?: string;
+  email?: string;
+  quotas?: {
+    fiveHourPercentage?: number;
+    weeklyPercentage?: number;
+    geminiFiveHourPct?: number;
+    geminiWeeklyPct?: number;
+    claudeFiveHourPct?: number;
+    claudeWeeklyPct?: number;
+    [key: string]: unknown;
+  };
   models?: RawModelEntry[];
 }
 
@@ -184,6 +195,9 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
         supportsVision: m.supportsVision ?? p.supportsVision ?? true,
         extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
         extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
+        accountName: p.name,
+        accountEmail: p.email,
+        quotas: p.quotas,
       };
       const placeholderId = generateModelPlaceholderId(partialModel);
 

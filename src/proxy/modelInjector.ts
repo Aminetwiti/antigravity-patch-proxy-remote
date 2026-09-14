@@ -37,13 +37,26 @@ function sortCustomModels(models: CustomModel[]): CustomModel[] {
   });
 }
 
+export function deduplicateModels(models: CustomModel[]): CustomModel[] {
+  const seenKeys = new Set<string>();
+  return models.filter((m) => {
+    const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+    const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
+    const effort = m._effortSuffix || '';
+    const key = m.provider === 'google'
+      ? `google:${cleanDisp || rawName}${effort}`
+      : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+    if (seenKeys.has(key)) return false;
+    seenKeys.add(key);
+    return true;
+  });
+}
+
 function formatDisplayName(m: CustomModel): string {
   const health = getCachedHealth(m.name);
   const isFav = isRecentModel(m.name);
   let dispName = m.displayName || m.name;
-  if (m.provider === 'google') {
-    dispName = dispName.replace(/^\[[^\]]+\]\s*/, '');
-  }
+  dispName = dispName.replace(/^\[[^\]]+\]\s*/, '');
   
   if (!health) {
     const favTag = isFav ? '⭐ ' : '';
@@ -67,7 +80,7 @@ function formatDisplayName(m: CustomModel): string {
 }
 
 export function getMappedCustomModels() {
-  const customModels = sortCustomModels(expandModelsWithEffort(loadCustomModels()));
+  const customModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(loadCustomModels())));
   const mappedCustom: Record<string, unknown> = {};
   customModels.forEach((m) => {
     const slug = toSlug(m);
@@ -87,7 +100,7 @@ export function getMappedCustomModels() {
 }
 
 export function getCustomModelsList() {
-  const customModels = sortCustomModels(expandModelsWithEffort(loadCustomModels()));
+  const customModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(loadCustomModels())));
   return customModels.map((m) => ({
     name: 'models/' + generateModelPlaceholderId(m),
     version: '1.0',
@@ -103,15 +116,7 @@ export function getCustomModelsList() {
 }
 
 export function mergeModels(target: unknown, customModels: CustomModel[]): unknown {
-  const seenKeys = new Set<string>();
-  const sortedCustomModels = sortCustomModels(expandModelsWithEffort(customModels)).filter((m) => {
-    const key = m.provider === 'google'
-      ? `google:${(m.externalModelName || m.name).replace(/^models\//, '').toLowerCase()}${m._effortSuffix || ''}`
-      : generateModelPlaceholderId(m);
-    if (seenKeys.has(key)) return false;
-    seenKeys.add(key);
-    return true;
-  });
+  const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(customModels)));
   if (Array.isArray(target)) {
     const mapped = sortedCustomModels.map((m) => {
       const cap = detectModelCapabilities(m, true);
@@ -213,6 +218,22 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         `[Proxy] Custom model "${m.displayName}" => slug: ${slug} => model: ${generateModelPlaceholderId(m)} => thinking: ${cap.isThinking} => images: ${cap.supportsImages}`,
       );
     });
+
+    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M50)
+    // resolve cleanly in Language Server without "unknown model key: model not found"
+    if (sortedCustomModels.length > 0) {
+      const fallbackPid = generateModelPlaceholderId(sortedCustomModels[0]);
+      const fallbackEntry = (result as Record<string, unknown>)[fallbackPid];
+      if (fallbackEntry) {
+        for (let i = 0; i <= 600; i++) {
+          const legacyKey = `MODEL_PLACEHOLDER_M${i}`;
+          if (!(result as Record<string, unknown>)[legacyKey]) {
+            (result as Record<string, unknown>)[legacyKey] = fallbackEntry;
+          }
+        }
+      }
+    }
+
     return result;
   }
   return target;
@@ -232,7 +253,7 @@ export function injectCustomSlugsIntoAgentModelSorts(
 ): void {
   if (!customModels || customModels.length === 0) return;
 
-  const sortedCustomModels = sortCustomModels(expandModelsWithEffort(customModels));
+  const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(customModels)));
   const customSlugs: string[] = [];
 
   sortedCustomModels.forEach((m) => {

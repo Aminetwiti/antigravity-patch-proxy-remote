@@ -657,6 +657,116 @@
     }
   }
 
+  // --- Permanent Inline Retry Button ---
+  function injectRetryButton() {
+    const sendBtn = document.querySelector('button[data-testid="send-button"]') ||
+                    document.querySelector('[data-tooltip-id="input-send-button-send-tooltip"]') ||
+                    document.querySelector('[data-testid="send-button-pending"]') ||
+                    document.querySelector('button[data-tooltip-id="input-send-button-cancel-tooltip"]');
+
+    let container = null;
+    if (sendBtn && sendBtn.parentElement) {
+      container = sendBtn.parentElement;
+    } else {
+      const inputCard = document.querySelector('#antigravity\\.agentSidePanelInputBox') ||
+                        document.querySelector('.relative.flex.flex-col.p-px.rounded-2xl.bg-card-border');
+      if (inputCard) {
+        container = inputCard.querySelector('.flex.items-center.gap-1');
+      }
+    }
+
+    if (!container) return;
+
+    let retryBtn = document.getElementById('__ag_inline_retry_btn');
+    if (!retryBtn) {
+      retryBtn = document.createElement('button');
+      retryBtn.id = '__ag_inline_retry_btn';
+      retryBtn.type = 'button';
+      retryBtn.setAttribute('aria-label', 'Retry');
+      retryBtn.setAttribute('data-testid', 'inline-retry-button');
+      retryBtn.title = 'Retry / Continue (Reprendre)';
+      retryBtn.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 10px;margin-left:4px;border-radius:9999px;font-size:12px;font-weight:600;font-family:system-ui,-apple-system,sans-serif;cursor:pointer;user-select:none;transition:all 0.15s ease-in-out;background:#0b57d0;color:#ffffff;border:none;box-shadow:0 1px 2px rgba(0,0,0,0.25);';
+      retryBtn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;">
+          <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+        </svg>
+        <span>Retry</span>
+      `;
+      retryBtn.onmouseenter = () => { retryBtn.style.background = '#1b6ef3'; };
+      retryBtn.onmouseleave = () => { retryBtn.style.background = '#0b57d0'; };
+
+      retryBtn.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        console.log('[Antigravity 2.0] Retry button clicked!');
+
+        // 1. Check if native error notification with "Retry" or "Try again" exists in DOM
+        const nativeButtons = Array.from(document.querySelectorAll('button')).filter((b) => {
+          if (b === retryBtn || b.id === '__ag_inline_retry_btn') return false;
+          const txt = (b.innerText || b.textContent || '').trim();
+          return txt === 'Retry' || txt === 'Try again';
+        });
+        if (nativeButtons.length > 0) {
+          console.log('[Antigravity 2.0] Clicking native Retry button from error notification');
+          nativeButtons[0].click();
+          return;
+        }
+
+        // 2. Extract sendMessage from React Fiber
+        const anchor = document.querySelector('[contenteditable="true"]') ||
+                       document.querySelector('textarea') ||
+                       sendBtn;
+        let foundSend = null;
+        if (anchor) {
+          const key = Object.keys(anchor).find((k) => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+          let fiber = key ? anchor[key] : null;
+          while (fiber) {
+            if (fiber.memoizedProps && typeof fiber.memoizedProps.sendMessage === 'function') {
+              foundSend = fiber.memoizedProps.sendMessage;
+              break;
+            }
+            fiber = fiber.return;
+          }
+        }
+
+        const cid = getActiveSessionId();
+        if (foundSend && cid) {
+          console.log('[Antigravity 2.0] Invoking sendMessage({ type: 7 }) via React Fiber for cascadeId:', cid);
+          foundSend({ type: 7, cascadeId: cid });
+          return;
+        }
+
+        // 3. Fallback: prompt "Continue" into input and click send
+        const promptBox = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+        if (promptBox) {
+          console.log('[Antigravity 2.0] Fallback: injecting Continue into prompt box');
+          promptBox.focus();
+          if (promptBox.tagName === 'TEXTAREA' || promptBox.tagName === 'INPUT') {
+            promptBox.value = 'Continue';
+            promptBox.dispatchEvent(new Event('input', { bubbles: true }));
+          } else {
+            promptBox.innerText = 'Continue';
+            promptBox.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'Continue' }));
+          }
+          setTimeout(() => {
+            const currentSend = document.querySelector('button[data-testid="send-button"]') ||
+                                document.querySelector('button[aria-label="Send message"]');
+            if (currentSend) currentSend.click();
+          }, 60);
+        }
+      };
+    }
+
+    // Ensure it is positioned to the right of the send button
+    if (sendBtn && sendBtn.parentElement === container) {
+      if (sendBtn.nextSibling !== retryBtn) {
+        container.insertBefore(retryBtn, sendBtn.nextSibling);
+      }
+    } else if (!container.contains(retryBtn)) {
+      container.appendChild(retryBtn);
+    }
+  }
+
   // --- Observer & Listeners ---
   let isUpdating = false;
   let rafId = null;
@@ -671,6 +781,7 @@
         injectRemoteOption();
         injectTopBarButton();
         updateTriggerButton();
+        injectRetryButton();
       } catch (err) {
         console.warn('[AG Remote Hook] Error in scheduleUpdate:', err);
       } finally {
@@ -687,7 +798,7 @@
       let onlyOurs = true;
       for (let i = 0; i < mutations.length; i++) {
         const t = mutations[i].target;
-        if (!t || !t.closest || !t.closest('#__ag_topbar_remote_btn, #__ag_remote_pill, #__ag_inline_remote_btn, [data-ag-remote]')) {
+        if (!t || !t.closest || !t.closest('#__ag_topbar_remote_btn, #__ag_remote_pill, #__ag_inline_remote_btn, #__ag_inline_retry_btn, [data-ag-remote]')) {
           onlyOurs = false;
           break;
         }
@@ -738,6 +849,7 @@
   };
 
   setInterval(scheduleUpdate, 1500);
+  startObserver();
 
   // Prompt submit interceptor: guarantees active session is registered on proxy before LLM dispatch
   document.addEventListener('keydown', (e) => {

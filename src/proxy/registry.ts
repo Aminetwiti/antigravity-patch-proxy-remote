@@ -205,15 +205,17 @@ export function getProviderUrl(
   baseUrl: string,
   modelName: string,
   isStream: boolean,
-  translator: TranslatorModule | null,
+  translator?: TranslatorModule | null,
 ): string {
+  const t = translator || (baseUrl.includes('googleapis.com') ? getTranslator('google') : null);
   // Google AI Studio: dynamic streaming vs non-streaming URL
-  if (translator && typeof translator['getGoogleApiUrl'] === 'function') {
-    return (translator['getGoogleApiUrl'] as (...args: unknown[]) => string)(baseUrl, modelName, isStream);
+  if (t && typeof t['getGoogleApiUrl'] === 'function') {
+    return (t['getGoogleApiUrl'] as (...args: unknown[]) => string)(baseUrl, modelName, isStream);
   }
+  const o = translator || (baseUrl.includes('11434') ? getTranslator('ollama') : null);
   // Ollama: normalize to standard /v1/chat/completions endpoint
-  if (translator && typeof translator['getOllamaApiUrl'] === 'function') {
-    return (translator['getOllamaApiUrl'] as (...args: unknown[]) => string)(baseUrl);
+  if (o && typeof o['getOllamaApiUrl'] === 'function') {
+    return (o['getOllamaApiUrl'] as (...args: unknown[]) => string)(baseUrl);
   }
   return baseUrl;
 }

@@ -72,6 +72,18 @@ export interface CustomModel {
   supportsImages?: boolean;
   /** Alias for supportsImages. */
   supportsVision?: boolean;
+  /** Optional account metadata for multi-account pools. */
+  accountName?: string;
+  accountEmail?: string;
+  quotas?: {
+    fiveHourPercentage?: number;
+    weeklyPercentage?: number;
+    geminiFiveHourPct?: number;
+    geminiWeeklyPct?: number;
+    claudeFiveHourPct?: number;
+    claudeWeeklyPct?: number;
+    [key: string]: unknown;
+  };
 }
 
 

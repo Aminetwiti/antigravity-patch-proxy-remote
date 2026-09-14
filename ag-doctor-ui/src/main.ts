@@ -956,8 +956,8 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
       }
 
       const fallbackModels = [
-        { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)', enabled: true },
-        { id: 'gemini-3.7-flash-high', displayName: 'Gemini 3.7 Flash (High)', enabled: true },
+        { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+        { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
         { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro (High)', enabled: true },
         { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
         { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },

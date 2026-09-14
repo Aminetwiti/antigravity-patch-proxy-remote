@@ -279,6 +279,7 @@ import { recordRecentModel, restoreRecentModels } from './proxy/recentModelsStor
 // MCP relay bridge (mobile companion): lists MCP servers configured on the
 // desktop session and forwards tool calls to the local MCP runtime.
 import { mcpListServers, mcpCallTool } from './proxy/mcpRelay';
+import { getValidGoogleAccessToken, normalizeCloudCodeModelId, isGoogleCloudCodeModel } from './services/googleAuth';
 
 // ─── Proxy Error Emitter ──────────────────────────────────────────────────
 // Lets the main process fan-out notable diagnostics to the renderer without
@@ -452,6 +453,7 @@ async function proxyToGoogle(
   res: http.ServerResponse,
   reqBody: Buffer,
   isRemoteSession = false,
+  customAuthHeader?: string,
 ): Promise<void> {
   const traceId = newTraceId();
   const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode');
@@ -482,6 +484,10 @@ async function proxyToGoogle(
   headers['content-length'] = String(reqBody.length);
   delete headers['connection'];
   delete headers['keep-alive'];
+  if (customAuthHeader) {
+    headers['authorization'] = customAuthHeader;
+    headers['Authorization'] = customAuthHeader;
+  }
 
   const isGeneration = req.url!.includes('generateContent') || req.url!.includes('streamGenerateContent');
   const shouldBufferAndModify = isCloudCodeUrl && !isGeneration;
@@ -1282,6 +1288,40 @@ export function getAccountQuotaKey(item: CustomModel): string {
   }
 }
 
+export function getModelQuotaScore(m: CustomModel): number {
+  if (!m.quotas) return 50;
+  const q = m.quotas as Record<string, any>;
+  const isClaude = (m.externalModelName || m.name || '').toLowerCase().includes('claude');
+
+  const fiveHour = typeof (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct) === 'number'
+    ? (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct)
+    : typeof q.fiveHourPercentage === 'number'
+      ? q.fiveHourPercentage
+      : 50;
+
+  const weekly = typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
+    ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
+    : typeof q.weeklyPercentage === 'number'
+      ? q.weeklyPercentage
+      : 50;
+
+  if (fiveHour === 0) return 0;
+  return (fiveHour * 0.7) + (weekly * 0.3);
+}
+
+export function selectBestModelByQuota(candidates: CustomModel[], allModels?: CustomModel[]): CustomModel | undefined {
+  if (!candidates || candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+
+  const healthy = candidates.filter((m) => !getOpenBreaker(m));
+  const pool = healthy.length > 0 ? healthy : candidates;
+
+  const withQuota = pool.filter((m) => getModelQuotaScore(m) > 0);
+  const candidatesToSort = withQuota.length > 0 ? withQuota : pool;
+
+  return [...candidatesToSort].sort((a, b) => getModelQuotaScore(b) - getModelQuotaScore(a))[0];
+}
+
 interface SessionAffinity {
   modelName: string;
   accountKey: string;
@@ -1337,7 +1377,7 @@ export function getSessionBoundModel(
     return mBase === targetBase && getAccountQuotaKey(m) === affinity.accountKey;
   });
 
-  if (bound && !getOpenBreaker(bound)) {
+  if (bound && !getOpenBreaker(bound) && getModelQuotaScore(bound) > 0) {
     affinity.lastUsed = now;
     return bound;
   }
@@ -1418,13 +1458,15 @@ function handleCustomModelRequest(
   // Shared by both the open-breaker short-circuit path and the regular
   // upstream-error paths. It only picks a different model and re-dispatches.
   function attemptFallback(diagnostic: ErrorDiagnostic): boolean {
-    if (fallbackDepth >= 2) return false;
+    if (fallbackDepth >= 5) return false;
     const isEligibleForFallback =
       diagnostic.errorType === 'rate_limit' ||
       diagnostic.errorType === 'server' ||
       diagnostic.errorType === 'network' ||
       diagnostic.errorType === 'billing' ||
-      diagnostic.errorType === 'timeout';
+      diagnostic.errorType === 'timeout' ||
+      diagnostic.title.includes('404') ||
+      diagnostic.message.includes('404');
     if (!isEligibleForFallback) return false;
 
     try {
@@ -1432,12 +1474,14 @@ function handleCustomModelRequest(
       const currentAccountKey = getAccountQuotaKey(model);
       const targetBase = getBaseModelId(model.externalModelName || model.name);
 
-      // Sibling accounts in the pool offering the exact same model
-      const poolSiblings = allModels.filter((m) => {
-        if (m.name === model.name) return false;
-        const mBase = getBaseModelId(m.externalModelName || m.name);
-        return mBase === targetBase && getAccountQuotaKey(m) !== currentAccountKey && !getOpenBreaker(m);
-      });
+      // Sibling accounts in the pool offering the exact same model, sorted by remaining quota score
+      const poolSiblings = allModels
+        .filter((m) => {
+          if (m.name === model.name) return false;
+          const mBase = getBaseModelId(m.externalModelName || m.name);
+          return mBase === targetBase && getAccountQuotaKey(m) !== currentAccountKey && !getOpenBreaker(m);
+        })
+        .sort((a, b) => getModelQuotaScore(b) - getModelQuotaScore(a));
 
       let orderedModels = allModels;
       if (poolSiblings.length > 0) {
@@ -1867,7 +1911,9 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
     (Boolean(extLower) && (candLower === extLower || cleanLower === extLower || candLower === `models/${extLower}`)) ||
     (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
     (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower)) ||
-    (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower))
+    (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower)) ||
+    (candLower.includes('gemini-3.8-flash') && (extLower.includes('gemini-3.8-flash') || idLower.includes('gemini-3.8-flash') || dispLower.includes('gemini 3.8 flash'))) ||
+    (candLower.includes('gemini-3.7-flash') && (extLower.includes('gemini-3.7-flash') || idLower.includes('gemini-3.7-flash') || dispLower.includes('gemini 3.7 flash')))
   );
 }
 
@@ -2887,14 +2933,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
         if (candidateNames.length > 0) {
           const customModels = expandModelsWithEffort(loadCustomModels());
-          let matchedCustomModel = customModels.find((m) =>
-            candidateNames.some((cn) => matchesCustomModel(m, cn)) && !getOpenBreaker(m),
-          ) || customModels.find((m) =>
+          const matchingCandidates = customModels.filter((m) =>
             candidateNames.some((cn) => matchesCustomModel(m, cn)),
           );
-          // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298)
+          let matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
+          // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298/M50)
           if (!matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
-            matchedCustomModel = customModels[0];
+            matchedCustomModel = selectBestModelByQuota(customModels, customModels) || customModels[0];
           }
           if (matchedCustomModel) {
             const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
@@ -2912,7 +2957,31 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             );
 
             // Resolve fileData URIs then route to translator
-            resolveFileData(actualGeminiBody, req.headers as Record<string, string | string[] | undefined>).then(() => {
+            resolveFileData(actualGeminiBody, req.headers as Record<string, string | string[] | undefined>).then(async () => {
+              if (isGoogleCloudCodeModel(matchedCustomModel)) {
+                try {
+                  const accessToken = await getValidGoogleAccessToken(matchedCustomModel);
+                  const targetModel = normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
+
+                  reqJson.model = targetModel;
+                  if (reqJson.request && typeof reqJson.request === 'object') {
+                    (reqJson.request as Record<string, unknown>).model = targetModel;
+                  }
+                  if (!reqJson.project) {
+                    reqJson.project = (matchedCustomModel as { projectId?: string }).projectId || 'aicode-consumers';
+                  }
+
+                  const updatedBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
+                  const authHeader = accessToken ? `Bearer ${accessToken}` : undefined;
+
+                  log.info(`[Proxy] Forwarding Cloud Code request directly to Google for model ${targetModel} (account: ${matchedCustomModel.accountEmail || matchedCustomModel.name})`);
+                  await proxyToGoogle(req, res, updatedBody, isSessionRemote, authHeader);
+                  return;
+                } catch (err) {
+                  log.error('[Proxy] Failed to forward Cloud Code request natively, falling back to translator:', err);
+                }
+              }
+
               handleCustomModelRequest(res, matchedCustomModel, actualGeminiBody, isStream);
             });
             return;
@@ -2933,13 +3002,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (req.method === 'POST' && (isGenerate || isStandardStream)) {
       const matchedModelName = isGenerate ? generateMatch![1] : streamMatch![1];
       const customModels = expandModelsWithEffort(loadCustomModels());
-      let matchedCustomModel = customModels.find((m) =>
-        matchesCustomModel(m, matchedModelName) && !getOpenBreaker(m),
-      ) || customModels.find((m) =>
+      const matchingCandidates = customModels.filter((m) =>
         matchesCustomModel(m, matchedModelName),
       );
+      let matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
       if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
-        matchedCustomModel = customModels[0];
+        matchedCustomModel = selectBestModelByQuota(customModels, customModels) || customModels[0];
       }
 
       if (matchedCustomModel) {
@@ -2953,7 +3021,29 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             bindSessionToModel(sessId, matchedCustomModel);
           }
 
-          resolveFileData(geminiBody, req.headers as Record<string, string | string[] | undefined>).then(() => {
+          resolveFileData(geminiBody, req.headers as Record<string, string | string[] | undefined>).then(async () => {
+            if (isGoogleCloudCodeModel(matchedCustomModel)) {
+              try {
+                const accessToken = await getValidGoogleAccessToken(matchedCustomModel);
+                const targetModel = normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
+                const cloudCodePayload = {
+                  project: (matchedCustomModel as { projectId?: string }).projectId || 'aicode-consumers',
+                  model: targetModel,
+                  request: geminiBody,
+                };
+                const updatedBody = Buffer.from(JSON.stringify(cloudCodePayload), 'utf-8');
+                const authHeader = accessToken ? `Bearer ${accessToken}` : undefined;
+
+                const origUrl = req.url;
+                req.url = isStandardStream ? '/v1internal:streamGenerateContent?alt=sse' : '/v1internal:generateContent';
+                await proxyToGoogle(req, res, updatedBody, false, authHeader);
+                req.url = origUrl;
+                return;
+              } catch (err) {
+                log.error('[Proxy] Failed to route standard generateContent to Cloud Code natively:', err);
+              }
+            }
+
             handleCustomModelRequest(res, matchedCustomModel, geminiBody, isStandardStream);
           });
           return;

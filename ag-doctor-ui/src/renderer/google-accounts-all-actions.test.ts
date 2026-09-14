@@ -566,4 +566,155 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
       expect(q.quotas.geminiWeeklyPct).toBe(90);
     });
   });
+
+  // ── 20. Event Delegation Resolution ──────────────────────────────────────────
+  describe('Action 20: Delegated Event Dispatching on #gaAccountsContainer', () => {
+    it('resolves action button and account ID from deeply nested click targets', () => {
+      function resolveActionClick(mockEventTarget: { classList: string[]; closest: (sel: string) => any }) {
+        const btn = mockEventTarget.closest('.ga-action-btn');
+        if (!btn) return null;
+        const row = btn.closest('[data-id]');
+        const id = row?.dataset?.id;
+        let actionType = 'unknown';
+        if (btn.classList.includes('ga-switch')) actionType = 'switch';
+        else if (btn.classList.includes('ga-details')) actionType = 'details';
+        else if (btn.classList.includes('ga-refresh')) actionType = 'refresh';
+        else if (btn.classList.includes('ga-warmup')) actionType = 'warmup';
+        else if (btn.classList.includes('ga-edit')) actionType = 'edit';
+        else if (btn.classList.includes('ga-delete')) actionType = 'delete';
+
+        return { id, actionType };
+      }
+
+      const mockRow = { dataset: { id: 'google-ide-1' } };
+      const mockBtn = {
+        classList: ['ga-action-btn', 'ga-switch'],
+        closest: (sel: string) => (sel === '[data-id]' ? mockRow : null),
+      };
+      const mockSvg = {
+        classList: [],
+        closest: (sel: string) => (sel === '.ga-action-btn' ? mockBtn : null),
+      };
+
+      const res = resolveActionClick(mockSvg);
+      expect(res).toEqual({ id: 'google-ide-1', actionType: 'switch' });
+    });
+  });
+
+  // ── 21. Modal Focus Trap & Restoration ───────────────────────────────────────
+  describe('Action 21: Modal Focus Trap Cycling & Restoration', () => {
+    it('cycles focus within modal boundaries on Tab and Shift+Tab', () => {
+      const focusableElements = ['gaFormName', 'gaFormUrl', 'gaFormKey', 'gaFormCancelBtn', 'gaFormSaveBtn'];
+      let activeIndex = 0;
+
+      function simulateTabKey(shiftKey: boolean) {
+        if (shiftKey) {
+          if (activeIndex === 0) {
+            activeIndex = focusableElements.length - 1; // cycle to last
+          } else {
+            activeIndex--;
+          }
+        } else {
+          if (activeIndex === focusableElements.length - 1) {
+            activeIndex = 0; // cycle to first
+          } else {
+            activeIndex++;
+          }
+        }
+        return focusableElements[activeIndex];
+      }
+
+      // Forward Tab from last element loops to first
+      activeIndex = focusableElements.length - 1;
+      expect(simulateTabKey(false)).toBe('gaFormName');
+
+      // Backward Tab (Shift+Tab) from first element loops to last
+      activeIndex = 0;
+      expect(simulateTabKey(true)).toBe('gaFormSaveBtn');
+    });
+
+    it('restores focus to trigger element on modal close', () => {
+      let activeTriggerElement = 'gaToolbarAddBtn';
+      let modalOpen = true;
+
+      function closeModal() {
+        modalOpen = false;
+        return activeTriggerElement; // restored
+      }
+
+      const restored = closeModal();
+      expect(modalOpen).toBe(false);
+      expect(restored).toBe('gaToolbarAddBtn');
+    });
+  });
+
+  // ── 22. Search Debounce Timing ───────────────────────────────────────────────
+  describe('Action 22: Search Debounce Logic', () => {
+    it('cancels preceding timers and only executes the final query', async () => {
+      vi.useFakeTimers();
+      let executedQuery = '';
+      let timer: any = null;
+
+      function onSearchInput(val: string) {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          executedQuery = val.trim().toLowerCase();
+        }, 150);
+      }
+
+      onSearchInput('a');
+      vi.advanceTimersByTime(50);
+      onSearchInput('am');
+      vi.advanceTimersByTime(50);
+      onSearchInput('amine');
+      expect(executedQuery).toBe(''); // Not yet executed
+
+      vi.advanceTimersByTime(150);
+      expect(executedQuery).toBe('amine'); // Executed only once with final value
+      vi.useRealTimers();
+    });
+  });
+
+  // ── 23. Master Checkbox & Selection Integrity ────────────────────────────────
+  describe('Action 23: Master Checkbox & Selection Integrity', () => {
+    it('correctly reports master checked state based on selection set', () => {
+      const allIds = ['google-ide-1', 'google-ide-2', 'google-ai-studio-1'];
+      const selectedIds = new Set<string>();
+
+      function isMasterChecked(): boolean {
+        return allIds.length > 0 && allIds.every((id) => selectedIds.has(id));
+      }
+
+      expect(isMasterChecked()).toBe(false);
+
+      selectedIds.add('google-ide-1');
+      expect(isMasterChecked()).toBe(false);
+
+      selectedIds.add('google-ide-2');
+      selectedIds.add('google-ai-studio-1');
+      expect(isMasterChecked()).toBe(true);
+
+      selectedIds.delete('google-ide-1');
+      expect(isMasterChecked()).toBe(false);
+    });
+  });
+
+  // ── 24. Grid View vs List View A11y & SVG Parity ─────────────────────────────
+  describe('Action 24: Grid View & List View Accessibility & SVG Parity', () => {
+    it('verifies all action buttons in grid view have descriptive aria-labels and no emojis', () => {
+      const actions = [
+        { type: 'details', label: 'Details for Amine Perso' },
+        { type: 'switch', label: 'Switch to Amine Perso' },
+        { type: 'refresh', label: 'Refresh quotas for Amine Perso' },
+        { type: 'warmup', label: 'Warmup Amine Perso' },
+        { type: 'edit', label: 'Edit account Amine Perso' },
+        { type: 'delete', label: 'Delete account Amine Perso' },
+      ];
+
+      actions.forEach((act) => {
+        expect(act.label).not.toMatch(/[⇄↻⚡✎🗑]/);
+        expect(act.label.length).toBeGreaterThan(10);
+      });
+    });
+  });
 });

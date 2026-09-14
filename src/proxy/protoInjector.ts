@@ -54,9 +54,7 @@ export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResul
   const isFav = isRecentModel(m.name) || isRecentModel(m.displayName);
   const star = isFav ? '⭐ ' : '';
   let name = m.displayName || m.name;
-  if (m.provider === 'google') {
-    name = name.replace(/^\[[^\]]+\]\s*/, '');
-  }
+  name = name.replace(/^\[[^\]]+\]\s*/, '');
 
   if (!health) {
     return `${star}🟢 | ${name}`;
@@ -121,9 +119,12 @@ export function injectCustomModelsIntoResponse(
     const seenModelKeys = new Set<string>();
 
     for (const m of expandedModels) {
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
+      const effort = m._effortSuffix || '';
       const modelDedupKey = m.provider === 'google'
-        ? `google:${(m.externalModelName || m.name).replace(/^models\//, '').toLowerCase()}${m._effortSuffix || ''}`
-        : generateModelPlaceholderId(m);
+        ? `google:${cleanDisp || rawName}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
       seenModelKeys.add(modelDedupKey);
@@ -218,9 +219,10 @@ function injectCustomModelsIntoUserStatusJson(
     let injectedCount = 0;
 
     for (const m of expandedModels) {
-      const modelDedupKey = m.provider === 'google'
-        ? `google:${(m.externalModelName || m.name).replace(/^models\//, '').toLowerCase()}${m._effortSuffix || ''}`
-        : generateModelPlaceholderId(m);
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').toLowerCase();
+      const effort = m._effortSuffix || '';
+      const modelDedupKey = `${m.provider}:${rawName || cleanDisp}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
@@ -350,9 +352,10 @@ export function injectCustomModelsIntoUserStatus(
 
     const seenModelKeys = new Set<string>();
     for (const m of expandedModels) {
-      const modelDedupKey = m.provider === 'google'
-        ? `google:${(m.externalModelName || m.name).replace(/^models\//, '').toLowerCase()}${m._effortSuffix || ''}`
-        : generateModelPlaceholderId(m);
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').toLowerCase();
+      const effort = m._effortSuffix || '';
+      const modelDedupKey = `${m.provider}:${rawName || cleanDisp}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
