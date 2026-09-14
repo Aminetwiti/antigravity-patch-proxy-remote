@@ -19,7 +19,9 @@ export function resolveProvider(model: CustomModel): string {
 export function getBaseModelId(modelId: string): string {
   if (!modelId) return '';
   const hashIdx = modelId.indexOf('#');
-  return hashIdx !== -1 ? modelId.substring(0, hashIdx) : modelId;
+  let base = hashIdx !== -1 ? modelId.substring(0, hashIdx) : modelId;
+  base = base.replace(/-(low|medium|high)$/i, '');
+  return base;
 }
 
 /**
