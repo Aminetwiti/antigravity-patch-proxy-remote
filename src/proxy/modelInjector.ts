@@ -57,9 +57,14 @@ function formatDisplayName(m: CustomModel): string {
   let dispName = m.displayName || m.name;
   dispName = dispName.replace(/^\[[^\]]+\]\s*/, '');
   
+  const accountTag = m.accountName || m.accountEmail || '';
+  if (accountTag) {
+    dispName = `${dispName} (${accountTag})`;
+  }
+  
   if (!health) {
     const favTag = isFav ? '⭐ ' : '';
-    return `${favTag}🟢 --ms • ${dispName}`;
+    return `${favTag}⚪ --ms   ${dispName}`;
   }
   
   if (health.status === 'healthy') {

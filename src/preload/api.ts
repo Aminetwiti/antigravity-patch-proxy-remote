@@ -64,6 +64,7 @@ export const storageAPI: StorageAPI = {
   getProviders: () => ipcRenderer.invoke('storage:get-providers'),
   saveProvider: (provider) => ipcRenderer.invoke('storage:save-provider', provider),
   deleteProvider: (providerId) => ipcRenderer.invoke('storage:delete-provider', providerId),
+  discoverLocalAntigravityAccount: () => ipcRenderer.invoke('storage:discover-local-antigravity-account'),
   exportProviders: () => ipcRenderer.invoke('storage:export-providers-base64'),
   importProviders: (base64) => ipcRenderer.invoke('storage:import-providers-base64', base64),
   getDoctorDiagnostics: () => ipcRenderer.invoke('storage:get-doctor-diagnostics'),

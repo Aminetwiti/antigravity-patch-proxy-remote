@@ -414,12 +414,14 @@ function readWindowsCredentialManager(): Promise<DiscoveredAccount | null> {
 
   return new Promise((resolve) => {
     const psScript = `
-Add-Type -TypeDefinition @"
+Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public class CredReader {
     [DllImport("Advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool CredRead(string target, int type, int reservedFlag, out IntPtr CredentialPtr);
+    [DllImport("Advapi32.dll", SetLastError = true)]
+    public static extern void CredFree(IntPtr buffer);
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct CREDENTIAL {
         public int Flags;
@@ -441,16 +443,19 @@ public class CredReader {
             CREDENTIAL cred = (CREDENTIAL)Marshal.PtrToStructure(credPtr, typeof(CREDENTIAL));
             byte[] blob = new byte[cred.CredentialBlobSize];
             Marshal.Copy(cred.CredentialBlob, blob, 0, cred.CredentialBlobSize);
+            CredFree(credPtr);
             return System.Text.Encoding.UTF8.GetString(blob);
         }
         return null;
     }
 }
-"@ -ErrorAction SilentlyContinue
-[CredReader]::Read("gemini:antigravity")
-`.trim();
+'@
+$res = [CredReader]::Read('gemini:antigravity')
+if ($res) { Write-Output $res }
+`;
 
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psScript], { timeout: 4000 }, async (err, stdout) => {
+    const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], { timeout: 4000 }, async (err, stdout) => {
       if (err || !stdout.trim()) {
         resolve(null);
         return;

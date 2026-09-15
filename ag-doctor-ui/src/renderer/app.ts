@@ -3887,6 +3887,7 @@ const pmListContainer = $('#pmListContainer') as HTMLDivElement;
 const pmFormContainer = $('#pmFormContainer') as HTMLDivElement;
 const pmModalFooterList = $('#pmModalFooterList') as HTMLDivElement;
 const pmAddBtn = $('#pmAddBtn') as HTMLButtonElement;
+const pmImportLocalBtn = $('#pmImportLocalBtn') as HTMLButtonElement;
 const pmFormBack = $('#pmFormBack') as HTMLButtonElement;
 const pmFormBack2 = $('#pmFormBack2') as HTMLButtonElement;
 const pmFormTitle = $('#pmFormTitle') as HTMLHeadingElement;
@@ -4133,8 +4134,57 @@ async function renderProviderList(): Promise<void> {
       return;
     }
 
+    const googleAccounts = providersCache.filter((x) => x.provider === 'google');
+    const nonGoogle = providersCache.filter((x) => x.provider !== 'google');
+
+    const displayRows: any[] = [];
+
+    if (googleAccounts.length > 0) {
+      const primary = googleAccounts[0];
+      const modelMap = new Map();
+      for (const acc of googleAccounts) {
+        for (const m of acc.models || []) {
+          const cleanName = (m.displayName || (m as any).name || m.id || '').replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
+          if (!modelMap.has(cleanName)) {
+            modelMap.set(cleanName, { ...m, displayName: cleanName });
+          }
+        }
+      }
+      
+      const anyHealthy = googleAccounts.some((a) => a.status === 'healthy');
+      const allOffline = googleAccounts.every((a) => a.status === 'offline');
+      const poolStatus = anyHealthy ? 'healthy' : allOffline ? 'offline' : 'degraded';
+      
+      let lat = 0;
+      let count = 0;
+      for (const a of googleAccounts) {
+        if (a.latencyMs) { lat += a.latencyMs; count++; }
+      }
+
+      displayRows.push({
+        id: primary.id,
+        name: 'Google (Cloud Code & Gemini Pool)',
+        provider: 'google',
+        apiUrl: primary.apiUrl || 'https://generativelanguage.googleapis.com/v1beta',
+        enabled: googleAccounts.some((a) => a.enabled !== false),
+        status: poolStatus,
+        latencyMs: count > 0 ? Math.round(lat / count) : undefined,
+        models: Array.from(modelMap.values()),
+        accounts: googleAccounts,
+        isPooled: true,
+      });
+    }
+
+    for (const p of nonGoogle) {
+      displayRows.push({
+        ...p,
+        accounts: [p],
+        isPooled: false
+      });
+    }
+
     let html = `<div class="agy-provider-list">`;
-    for (const p of providersCache) {
+    for (const p of displayRows) {
       html += `
         <div class="agy-provider-row" data-id="${escapeHtml(p.id)}">
           <div class="agy-provider-row-main">
@@ -4147,8 +4197,15 @@ async function renderProviderList(): Promise<void> {
               <span class="agy-dot">·</span>
               <span>${escapeHtml(p.apiUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span>
               <span class="agy-dot">·</span>
-              <span>${p.models.length} model${p.models.length === 1 ? '' : 's'}</span>
+              <span>${p.isPooled ? p.accounts.length + ' Accounts Pooled' : p.models.length + ' models'}</span>
             </div>
+            ${p.isPooled ? `<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; align-items:center;">
+              <span style="font-size:10px; color:var(--text-3); font-weight:500;">Accounts (${p.accounts.length}):</span>
+              ${p.accounts.map((a: any) => `<span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(59,130,246,0.12); color:#60a5fa; border:1px solid rgba(59,130,246,0.25); display:inline-flex; align-items:center; gap:4px;">
+                  <span style="width:6px; height:6px; border-radius:50%; background:${a.status === 'offline' ? '#f87171' : a.status === 'degraded' ? '#fbbf24' : '#4ade80'}"></span>
+                  ${escapeHtml(a.name || a.email || 'Google Account')} ${a.latencyMs ? '(' + a.latencyMs + 'ms)' : ''}
+              </span>`).join('')}
+            </div>` : ''}
             <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;">
               ${(p.models || []).slice(0, 6).map((m: any) => {
                 const isEn = m.enabled !== false;
@@ -4343,6 +4400,62 @@ document.addEventListener('keydown', (e) => {
 pmBackdrop.addEventListener('click', (e) => { if (e.target === pmBackdrop) pmBackdrop.hidden = true; });
 if (pmModalClose2) pmModalClose2.addEventListener('click', () => { pmBackdrop.hidden = true; });
 pmAddBtn.addEventListener('click', () => openProviderForm());
+if (pmImportLocalBtn) {
+  pmImportLocalBtn.addEventListener('click', async () => {
+    const orig = pmImportLocalBtn.innerHTML;
+    pmImportLocalBtn.disabled = true;
+    pmImportLocalBtn.textContent = 'Detecting account...';
+    try {
+      const res = await window.ag.providers.discoverIdeAccount();
+      if (!res || !res.success || !res.account) {
+        toast(res?.error || 'No Antigravity account found in system keyring.', 'warn', 5000);
+        return;
+      }
+
+      const acc = res.account;
+      const email = acc.email || 'antigravity-user@google.com';
+      const refreshToken = acc.refreshToken || acc.accessToken;
+      if (!refreshToken) {
+        toast('Discovered account has no valid credentials.', 'err');
+        return;
+      }
+
+      // Check if already in providers
+      const existing = providersCache.find(
+        (x) => x.provider === 'google' && (x.apiKey === refreshToken || x.name.includes(email)),
+      );
+
+      const entry: ProviderEntry = {
+        id: existing?.id || `provider-google-local-${Date.now()}`,
+        name: existing?.name || `Google (${email})`,
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        apiKey: refreshToken,
+        enabled: true,
+        allowUnauthorized: false,
+        models: [
+          { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+          { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
+          { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
+        ],
+      };
+
+      const saveRes = (await window.ag.providers.save(entry)) as { success: boolean; error?: string };
+      if (saveRes.success) {
+        toast(`Imported Google account (${email}) from IDE!`, 'ok');
+        await renderProviderList();
+        await loadModels();
+      } else {
+        toast(`Import failed: ${saveRes.error}`, 'err');
+      }
+    } catch (err) {
+      toast(`Import error: ${(err as Error).message}`, 'err');
+    } finally {
+      pmImportLocalBtn.disabled = false;
+      pmImportLocalBtn.innerHTML = orig;
+    }
+  });
+}
 pmFormBack.addEventListener('click', () => showPmView('list'));
 if (pmFormBack2) pmFormBack2.addEventListener('click', () => showPmView('list'));
 
@@ -5932,11 +6045,13 @@ function renderGoogleAccountsList(accounts: any[]): void {
               }
               <div style="min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <span style="font-weight: 600; font-size: 12.5px; color: var(--text-0);">${escapeHtml(a.email || a.name)}</span>
+                  <span style="font-weight: 600; font-size: 12.5px; color: var(--text-0);">${escapeHtml(a.email || (a.name === 'google' ? 'Google API Key (Default)' : (a.name || a.id)))}</span>
                   ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span>` : ''}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
                 </div>
-                ${a.email && a.name && a.email !== a.name ? `<div style="font-size: 11px; color: var(--text-2);">${escapeHtml(a.name)}</div>` : ''}
+                ${a.email && a.name && a.email !== a.name 
+                  ? `<div style="font-size: 11px; color: var(--text-2);">${escapeHtml(a.name)}</div>` 
+                  : (!a.email ? `<div style="font-size: 11px; color: var(--text-2); font-style: italic;">Provider Configuration</div>` : '')}
                 <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">
                   ${(a.models || []).slice(0, 5).map((m: any) => {
                     const isEn = m.enabled !== false;

@@ -264,12 +264,42 @@ export function loadCustomModels(): CustomModel[] {
     }
     const parsed = JSON.parse(content) as CustomModelsFile;
 
+    let loadedModels: CustomModel[] = [];
     if (parsed.providers && Array.isArray(parsed.providers)) {
-      return parseProvidersSchema(parsed.providers);
+      loadedModels = parseProvidersSchema(parsed.providers);
+    } else {
+      const models = parsed.models || [];
+      loadedModels = parseModelsSchema(models, filePath);
     }
 
-    const models = parsed.models || [];
-    return parseModelsSchema(models, filePath);
+    // Inject Auto-Balance Virtual Models
+    const baseModelCounts = new Map<string, number>();
+    loadedModels.forEach(m => {
+      const baseId = m.externalModelName || m.name || '';
+      const cleanBase = baseId.replace(/^models\//, '');
+      if (m.provider === 'google' && m.apiKey && !m.apiKey.startsWith('fallback:')) {
+        baseModelCounts.set(cleanBase, (baseModelCounts.get(cleanBase) || 0) + 1);
+      }
+    });
+
+    const virtualModels: CustomModel[] = [];
+    baseModelCounts.forEach((count, baseId) => {
+      if (count > 1) {
+        const template = loadedModels.find(m => (m.externalModelName || m.name || '').replace(/^models\//, '') === baseId)!;
+        virtualModels.push({
+          ...template,
+          name: `models/${template.provider}:${baseId}:auto-pool`,
+          displayName: `${template.displayName ? template.displayName.split(' (')[0] : baseId} (Auto-Balance)`,
+          externalModelName: baseId,
+          apiKey: 'auto',
+          accountName: '',
+          accountEmail: '',
+          _effortSuffix: template._effortSuffix || ''
+        });
+      }
+    });
+
+    return [...virtualModels, ...loadedModels];
   } catch (e) {
     log.error('[Proxy] Failed to parse custom_models.json (preserving file on disk):', e);
     return [];

@@ -2810,8 +2810,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
         // Restore any missing thought_signatures in conversation history for Gemini 3+ function calls
         let signaturesRestored = false;
+        let contentsNormalized = false;
         if (Array.isArray(targetReq.contents)) {
           signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '');
+
+          // Antigravity / Gemini turn validator: history must end on user turn.
+          // If a previous turn failed (e.g. 503 or abort) and left a dangling model turn, remove or close it.
+          while (
+            targetReq.contents.length > 0 &&
+            (targetReq.contents[targetReq.contents.length - 1] as { role?: string })?.role === 'model'
+          ) {
+            log.warn(`[Proxy] Pruned trailing model turn to prevent 'request would have ended on a model turn' error (convId=${convId || 'draft'})`);
+            targetReq.contents.pop();
+            contentsNormalized = true;
+          }
         }
 
         loadRemoteState();
@@ -2965,9 +2977,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
           log.info(`[Proxy] Sanitized & injected strict Remote VPS context into Cloud Code request (convId=${convId || 'draft'}, host=${remoteVpsHost})`);
-        } else if (signaturesRestored) {
+        } else if (signaturesRestored || contentsNormalized) {
           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
-          log.info(`[Proxy] Injected restored thought_signatures into Cloud Code request (convId=${convId || 'draft'})`);
+          log.info(`[Proxy] Re-encoded Cloud Code request with normalized turns/signatures (convId=${convId || 'draft'})`);
         }
 
         const candidateNames = [
@@ -3005,6 +3017,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           if (!matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
             matchedCustomModel = selectBestModelByQuota(customModels, customModels) || customModels[0];
           }
+          
+          if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
+            const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
+            const realSiblings = customModels.filter(m => m.apiKey !== 'auto' && getBaseModelId(m.externalModelName || m.name) === baseName && !getOpenBreaker(m));
+            matchedCustomModel = selectBestModelByQuota(realSiblings, customModels) || matchedCustomModel;
+          }
+          
           if (matchedCustomModel) {
             const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
             const actualGeminiBody = (reqJson.request || reqJson) as GeminiRequestBody;
@@ -3040,7 +3059,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                     }
                   }
                   if (!reqJson.project) {
-                    reqJson.project = (matchedCustomModel as { projectId?: string }).projectId || 'aicode-consumers';
+                    reqJson.project = (matchedCustomModel as { projectId?: string }).projectId || process.env.AG_CLOUD_CODE_PROJECT_ID || 'bamboo-precept-lgxtn';
                   }
 
                   const updatedBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
@@ -3081,6 +3100,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
         matchedCustomModel = selectBestModelByQuota(customModels, customModels) || customModels[0];
       }
+      
+      if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
+        const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
+        const realSiblings = customModels.filter(m => m.apiKey !== 'auto' && getBaseModelId(m.externalModelName || m.name) === baseName && !getOpenBreaker(m));
+        matchedCustomModel = selectBestModelByQuota(realSiblings, customModels) || matchedCustomModel;
+      }
 
       if (matchedCustomModel) {
         try {
@@ -3105,7 +3130,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                   }
                 }
                 const cloudCodePayload = {
-                  project: (matchedCustomModel as { projectId?: string }).projectId || 'aicode-consumers',
+                  project: (matchedCustomModel as { projectId?: string }).projectId || process.env.AG_CLOUD_CODE_PROJECT_ID || 'bamboo-precept-lgxtn',
                   model: targetModel,
                   request: geminiBody,
                 };

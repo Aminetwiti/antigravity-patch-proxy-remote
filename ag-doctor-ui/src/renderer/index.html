@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data: https://*.googleusercontent.com https://*.ggpht.com;" />
   <title>ag-doctor — Diagnostic &amp; Repair</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="styles-extra.css" />
@@ -1431,6 +1431,10 @@
       <!-- LIST VIEW FOOTER — canonical footer, toggled by showPmView() -->
       <div class="modal-footer" id="pmModalFooterList" hidden>
         <button class="btn btn-ghost" id="pmModalClose2" type="button">Close</button>
+        <button class="btn btn-ghost" id="pmImportLocalBtn" type="button" title="Auto-detect and import Google account from Antigravity IDE">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Import from IDE
+        </button>
         <button class="btn btn-primary" id="pmAddBtn" type="button">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Add provider

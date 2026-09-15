@@ -55,6 +55,11 @@ export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResul
   const star = isFav ? '⭐ ' : '';
   let name = m.displayName || m.name;
   name = name.replace(/^\[[^\]]+\]\s*/, '');
+  
+  const accountTag = m.accountName || m.accountEmail || '';
+  if (accountTag) {
+    name = `${name} (${accountTag})`;
+  }
 
   if (!health) {
     return `${star}🟢 | ${name}`;

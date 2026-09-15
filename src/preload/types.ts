@@ -100,6 +100,7 @@ export interface StorageAPI {
   getProviders: () => Promise<ProviderFileEntry[]>;
   saveProvider: (provider: ProviderFileEntry) => Promise<{ success: boolean; error?: string }>;
   deleteProvider: (providerId: string) => Promise<{ success: boolean; error?: string }>;
+  discoverLocalAntigravityAccount?: () => Promise<{ success: boolean; credential?: any; error?: string }>;
   exportProviders: () => Promise<{ success: boolean; base64?: string; count?: number; error?: string }>;
   importProviders: (base64Code?: string) => Promise<{ success: boolean; count?: number; error?: string }>;
   getDoctorDiagnostics: () => Promise<any>;

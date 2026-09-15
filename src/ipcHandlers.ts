@@ -20,6 +20,7 @@ import * as configExchange from './services/configExchange';
 import { DEFAULT_PROXY_PORT, DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from './constants';
 import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from './proxy/protoInjector';
 import { loadCustomModels as loadProxyCustomModels } from './proxy/modelLoader';
+import { discoverLocalAntigravityCredential } from './services/localCredentialDiscovery';
 
 
 
@@ -237,6 +238,19 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
       return { success: true };
     } catch (err) {
       console.error('[IPC] Failed to delete provider:', err);
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('storage:discover-local-antigravity-account', async () => {
+    try {
+      const cred = await discoverLocalAntigravityCredential();
+      if (!cred || !cred.refreshToken) {
+        return { success: false, error: 'No authenticated Antigravity account found in system keyring.' };
+      }
+      return { success: true, credential: cred };
+    } catch (err) {
+      log.warn('[IPC] Local credential discovery error:', err);
       return { success: false, error: (err as Error).message };
     }
   });
