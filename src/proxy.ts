@@ -467,10 +467,11 @@ async function proxyToGoogle(
   isRemoteSession = false,
   customAuthHeader?: string,
   convId = '',
+  hostOverride?: string,
 ): Promise<void> {
   const traceId = newTraceId();
   const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode');
-  const targetHost = isCloudCodeUrl ? GOOGLE_HOSTS.CLOUD_CODE : GOOGLE_HOSTS.GENERATIVE_LANGUAGE;
+  const targetHost = hostOverride || (isCloudCodeUrl ? GOOGLE_HOSTS.CLOUD_CODE : GOOGLE_HOSTS.GENERATIVE_LANGUAGE);
   const targetUrl = `https://${targetHost}`;
   const parsedUrl = new URL(req.url!, targetUrl);
   const endTimer = metricTimer('proxy_request_ms', { upstream: targetHost });
@@ -531,6 +532,12 @@ async function proxyToGoogle(
         safeEnd(res, JSON.stringify({ error: { message: 'Google API request timed out' } }));
       }
     });
+
+    if (!hostOverride && isCloudCodeUrl && (proxyRes.statusCode === 429 || proxyRes.statusCode === 503)) {
+      log.warn(`[Proxy] Google Cloud Code returned ${proxyRes.statusCode} on ${targetHost}. Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
+      proxyToGoogle(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD);
+      return;
+    }
 
     if (shouldBufferAndModify) {
       const responseChunks: Buffer[] = [];
@@ -656,6 +663,11 @@ async function proxyToGoogle(
   });
 
   proxyReq.on('error', (err) => {
+    if (!hostOverride && isCloudCodeUrl && !res.headersSent && !res.writableEnded) {
+      log.warn(`[Proxy] Google Cloud Code network error on ${targetHost} (${err.message}). Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
+      proxyToGoogle(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD);
+      return;
+    }
     metricInc('proxy_errors_total', { upstream: targetHost, stage: 'forward', trace_id: traceId });
     const ms = endTimer();
     proxyLog.error('Google forwarding error traceId=', traceId, 'after', ms, 'ms:', err.message);
@@ -1448,7 +1460,7 @@ function handleCustomModelRequest(
   const bodyContents = geminiBody.contents || ((geminiBody as Record<string, unknown>).request as Record<string, unknown> | undefined)?.contents;
   if (Array.isArray(bodyContents)) {
     const sessId = extractSessionId(geminiBody as Record<string, unknown>, {});
-    restoreThoughtSignatures(bodyContents, sessId || '');
+    restoreThoughtSignatures(bodyContents, sessId || '', model.name || '');
   }
   const traceId = (geminiBody as Record<string, unknown>)?.requestId as string || '';
 

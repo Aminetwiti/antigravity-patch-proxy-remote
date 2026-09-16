@@ -132,7 +132,7 @@ export async function getValidGoogleAccessToken(account: {
  * Maps legacy/alias names (e.g. gemini-3.8-flash-high) to upstream names (e.g. gemini-3.8-flash-tiered).
  */
 export function normalizeCloudCodeModelId(modelId: string): string {
-  if (!modelId) return 'gemini-2.5-flash';
+  if (!modelId) return 'gemini-3.6-flash';
   const clean = modelId.replace(/^models\//, '').trim();
   const map: Record<string, string> = {
     'gemini-3.8-flash-low': 'gemini-3.8-flash-tiered',

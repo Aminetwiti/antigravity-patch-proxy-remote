@@ -19,7 +19,7 @@ import { generateModelPlaceholderId } from './idGenerator';
 import log from 'electron-log';
 import type { CustomModel } from './types';
 import { isRecentModel } from './recentModelsStore';
-import type { ModelHealthResult } from './modelHealthChecker';
+import { getCachedHealth, type ModelHealthResult } from './modelHealthChecker';
 import { expandModelsWithEffort } from './effortExpander';
 import { detectModelCapabilities } from './modelUtils';
 
@@ -50,7 +50,7 @@ export function parseGrpcWebHeader(buf: Buffer): { flags: number; msgLen: number
 /**
  * Formats a model's display name with Status Dot, Latency, and Favorite Star.
  */
-export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResult): string {
+export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResult | null): string {
   const isFav = isRecentModel(m.name) || isRecentModel(m.displayName);
   const star = isFav ? '⭐ ' : '';
   let name = m.displayName || m.name;
@@ -62,19 +62,73 @@ export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResul
   }
 
   if (!health) {
-    return `${star}🟢 | ${name}`;
+    return `${star}🟢 • ${name}`;
   }
 
   if (health.status === 'unhealthy') {
     const errNotice = health.error ? ` [${health.error}]` : ' [Offline]';
-    return `${star}🔴${errNotice} | ${name}`;
+    return `${star}🔴${errNotice} • ${name}`;
   }
 
   if (health.status === 'slow') {
-    return `${star}🟡 ⚡ ${health.latencyMs}ms | ${name}`;
+    return `${star}🟡 ${health.latencyMs}ms • ${name}`;
   }
 
-  return `${star}🟢 ⚡ ${health.latencyMs}ms | ${name}`;
+  return `${star}🟢 ${health.latencyMs}ms • ${name}`;
+}
+
+function extractExistingModelKeys(msgBody: Buffer, modelTag: number): {
+  modelIds: Set<string>;
+  labels: Set<string>;
+  placeholderNames: Set<string>;
+} {
+  const modelIds = new Set<string>();
+  const labels = new Set<string>();
+  const placeholderNames = new Set<string>();
+  const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
+
+  for (const f of rawFields) {
+    if (f.tag === modelTag && f.raw) {
+      const subFields = parseProtoRaw(f.raw, 0, f.raw.length);
+      let idStr = '';
+      let labelStr = '';
+      for (const sf of subFields) {
+        if (sf.raw) {
+          if (sf.fieldNum === 1) {
+            idStr = sf.raw.toString('utf8').trim();
+          } else if (sf.fieldNum === 2) {
+            labelStr = sf.raw.toString('utf8').trim();
+          }
+        }
+      }
+
+      if (idStr) {
+        const lowerId = idStr.toLowerCase();
+        modelIds.add(lowerId);
+        modelIds.add(lowerId.replace(/^models\//, ''));
+      }
+      if (labelStr) {
+        labels.add(labelStr);
+        const lowerLabel = labelStr.toLowerCase();
+        labels.add(lowerLabel);
+        if (
+          idStr.toLowerCase().includes('model_placeholder_') ||
+          labelStr.includes('•') ||
+          labelStr.includes('|') ||
+          labelStr.includes('⭐')
+        ) {
+          const norm = labelStr
+            .replace(/^⭐\s*/, '')
+            .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+            .trim()
+            .toLowerCase();
+          if (norm) placeholderNames.add(norm);
+        }
+      }
+    }
+  }
+
+  return { modelIds, labels, placeholderNames };
 }
 
 /**
@@ -116,6 +170,7 @@ export function injectCustomModelsIntoResponse(
     }
 
     const fieldMapping = extractFieldMapping(sampleEntry.value);
+    const existing = extractExistingModelKeys(msgBody, modelTag);
     const newParts: Buffer[] = [msgBody];
 
     let injectedCount = 0;
@@ -131,15 +186,30 @@ export function injectCustomModelsIntoResponse(
       const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${accountTag ? `:${accountTag}` : ''}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
-      seenModelKeys.add(modelDedupKey);
 
-      const health = healthMap?.get(m.name);
-      
-      // Unhealthy models are still injected (with red dot status) so the user knows they are loaded.
-      // Removed the filter that was skipping them.
-
+      const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
       const placeholderId = generateModelPlaceholderId(m);
+      const pidKey = placeholderId.toLowerCase();
+
+      // Skip if already in the incoming protobuf message
+      if (existing.modelIds.has(pidKey) || existing.modelIds.has(`models/${pidKey}`)) {
+        continue;
+      }
       const formattedName = formatModelDisplayName(m, health);
+      if (existing.labels.has(formattedName) || existing.labels.has(formattedName.toLowerCase())) {
+        continue;
+      }
+      if (cleanDisp && existing.placeholderNames.has(cleanDisp)) {
+        continue;
+      }
+      if (rawName && existing.placeholderNames.has(rawName)) {
+        continue;
+      }
+
+      seenModelKeys.add(modelDedupKey);
+      existing.modelIds.add(pidKey);
+      existing.labels.add(formattedName);
+
       const cap = detectModelCapabilities(m);
       const entry = encodeModelEntryForGetModels(
         `models/${placeholderId}`,
@@ -217,7 +287,37 @@ function injectCustomModelsIntoUserStatusJson(
       sortGroup.modelLabels = [];
     }
 
-    const existingLabels = new Set<string>(cascade.clientModelConfigs.map((c: any) => c.label));
+    const existingLabels = new Set<string>();
+    const existingModelIds = new Set<string>();
+    const existingPlaceholderNames = new Set<string>();
+
+    for (const c of cascade.clientModelConfigs) {
+      const label = (c.label || '').trim();
+      const modelId = String(c.modelId || c.modelOrAlias?.model || '').trim();
+      if (label) {
+        existingLabels.add(label);
+        existingLabels.add(label.toLowerCase());
+        if (
+          modelId.toLowerCase().includes('model_placeholder_') ||
+          label.includes('•') ||
+          label.includes('|') ||
+          label.includes('⭐')
+        ) {
+          const norm = label
+            .replace(/^⭐\s*/, '')
+            .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+            .trim()
+            .toLowerCase();
+          if (norm) existingPlaceholderNames.add(norm);
+        }
+      }
+      if (modelId) {
+        const mid = modelId.toLowerCase();
+        existingModelIds.add(mid);
+        existingModelIds.add(mid.replace(/^models\//, ''));
+      }
+    }
+
     const expandedModels = expandModelsWithEffort(customModels);
     const seenModelKeys = new Set<string>();
     let injectedCount = 0;
@@ -231,12 +331,18 @@ function injectCustomModelsIntoUserStatusJson(
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
-      const health = healthMap?.get(m.name);
+      const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
       const placeholderId = generateModelPlaceholderId(m);
-      const label = formatModelDisplayName(m, health);
+      const pidKey = placeholderId.toLowerCase();
 
-      if (existingLabels.has(label)) continue;
+      if (existingModelIds.has(pidKey) || existingModelIds.has(`models/${pidKey}`)) continue;
+      const label = formatModelDisplayName(m, health);
+      if (existingLabels.has(label) || existingLabels.has(label.toLowerCase())) continue;
+      if (cleanDisp && existingPlaceholderNames.has(cleanDisp)) continue;
+      if (rawName && existingPlaceholderNames.has(rawName)) continue;
+
       existingLabels.add(label);
+      existingModelIds.add(pidKey);
       seenModelKeys.add(modelDedupKey);
 
       const cap = detectModelCapabilities(m);
@@ -345,12 +451,44 @@ export function injectCustomModelsIntoUserStatus(
     }> = [];
 
     const existingLabels = new Set<string>();
+    const existingModelIds = new Set<string>();
+    const existingPlaceholderNames = new Set<string>();
+
     for (const cf of cascadeFields) {
       if (cf.fieldNum === 1 && cf.raw) {
         const sub = parseProtoRaw(cf.raw, 0, cf.raw.length);
-        const lField = sub.find((f) => f.fieldNum === 1 && f.raw);
-        if (lField && lField.raw) {
-          existingLabels.add(lField.raw.toString('utf8'));
+        let label = '';
+        let modelId = '';
+        for (const sf of sub) {
+          if (sf.raw) {
+            if (sf.fieldNum === 1) {
+              label = sf.raw.toString('utf8').trim();
+            } else if (sf.fieldNum === 21) {
+              modelId = sf.raw.toString('utf8').trim();
+            }
+          }
+        }
+        if (label) {
+          existingLabels.add(label);
+          existingLabels.add(label.toLowerCase());
+          if (
+            modelId.toLowerCase().includes('model_placeholder_') ||
+            label.includes('•') ||
+            label.includes('|') ||
+            label.includes('⭐')
+          ) {
+            const norm = label
+              .replace(/^⭐\s*/, '')
+              .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+              .trim()
+              .toLowerCase();
+            if (norm) existingPlaceholderNames.add(norm);
+          }
+        }
+        if (modelId) {
+          const mid = modelId.toLowerCase();
+          existingModelIds.add(mid);
+          existingModelIds.add(mid.replace(/^models\//, ''));
         }
       }
     }
@@ -365,16 +503,23 @@ export function injectCustomModelsIntoUserStatus(
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
-      const health = healthMap?.get(m.name);
+      const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
       const placeholderId = generateModelPlaceholderId(m);
+      const pidKey = placeholderId.toLowerCase();
+
+      if (existingModelIds.has(pidKey) || existingModelIds.has(`models/${pidKey}`)) continue;
+      const label = formatModelDisplayName(m, health);
+      if (existingLabels.has(label) || existingLabels.has(label.toLowerCase())) continue;
+      if (cleanDisp && existingPlaceholderNames.has(cleanDisp)) continue;
+      if (rawName && existingPlaceholderNames.has(rawName)) continue;
+
+      existingLabels.add(label);
+      existingModelIds.add(pidKey);
+      seenModelKeys.add(modelDedupKey);
+
       const match = placeholderId.match(/_M(\d+)$/);
       const num = match ? parseInt(match[1], 10) : 400;
       const modelEnum = 1000 + num;
-      const label = formatModelDisplayName(m, health);
-
-      if (existingLabels.has(label)) continue;
-      existingLabels.add(label);
-      seenModelKeys.add(modelDedupKey);
 
       const cap = detectModelCapabilities(m);
       newModels.push({

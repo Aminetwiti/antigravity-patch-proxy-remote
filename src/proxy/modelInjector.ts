@@ -225,15 +225,17 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
 
     // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M50)
     // resolve cleanly in Language Server without "unknown model key: model not found"
-    if (sortedCustomModels.length > 0) {
-      const fallbackPid = generateModelPlaceholderId(sortedCustomModels[0]);
-      const fallbackEntry = (result as Record<string, unknown>)[fallbackPid];
-      if (fallbackEntry) {
-        for (let i = 0; i <= 600; i++) {
-          const legacyKey = `MODEL_PLACEHOLDER_M${i}`;
-          if (!(result as Record<string, unknown>)[legacyKey]) {
-            (result as Record<string, unknown>)[legacyKey] = fallbackEntry;
-          }
+    const fallbackPid = sortedCustomModels.length > 0 ? generateModelPlaceholderId(sortedCustomModels[0]) : '';
+    const fallbackEntry = (fallbackPid && (result as Record<string, unknown>)[fallbackPid]) ||
+      (result as Record<string, unknown>)['gemini-3.6-flash'] ||
+      (result as Record<string, unknown>)['gemini-3.8-flash'] ||
+      DEFAULT_CANONICAL_GOOGLE_MODELS['gemini-3.6-flash'];
+
+    if (fallbackEntry) {
+      for (let i = 0; i <= 600; i++) {
+        const legacyKey = `MODEL_PLACEHOLDER_M${i}`;
+        if (!(result as Record<string, unknown>)[legacyKey]) {
+          (result as Record<string, unknown>)[legacyKey] = fallbackEntry;
         }
       }
     }
@@ -242,6 +244,102 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
   }
   return target;
 }
+
+export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unknown>> = {
+  'gemini-3.8-flash': {
+    displayName: 'Gemini 3.8 Flash High Fast',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.8-flash',
+    planModel: 'gemini-3.8-flash',
+    requestedModel: 'gemini-3.8-flash',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.7-flash': {
+    displayName: 'Gemini 3.7 Flash Medium',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.7-flash',
+    planModel: 'gemini-3.7-flash',
+    requestedModel: 'gemini-3.7-flash',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.6-flash': {
+    displayName: 'Gemini 3.6 Flash Medium Fast',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.6-flash',
+    planModel: 'gemini-3.6-flash',
+    requestedModel: 'gemini-3.6-flash',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.1-pro': {
+    displayName: 'Gemini 3.1 Pro Low',
+    maxTokens: 2097152,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.1-pro',
+    planModel: 'gemini-3.1-pro',
+    requestedModel: 'gemini-3.1-pro',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'claude-sonnet-4-6': {
+    displayName: 'Claude Sonnet 4.6 (Thinking)',
+    maxTokens: 200000,
+    maxOutputTokens: 64000,
+    model: 'claude-sonnet-4-6',
+    planModel: 'claude-sonnet-4-6',
+    requestedModel: 'claude-sonnet-4-6',
+    apiProvider: 'API_PROVIDER_ANTHROPIC',
+    modelProvider: 'MODEL_PROVIDER_ANTHROPIC',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'claude-opus-4-6': {
+    displayName: 'Claude Opus 4.6 (Thinking)',
+    maxTokens: 200000,
+    maxOutputTokens: 64000,
+    model: 'claude-opus-4-6',
+    planModel: 'claude-opus-4-6',
+    requestedModel: 'claude-opus-4-6',
+    apiProvider: 'API_PROVIDER_ANTHROPIC',
+    modelProvider: 'MODEL_PROVIDER_ANTHROPIC',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gpt-oss-120b': {
+    displayName: 'GPT-OSS 120B (Medium)',
+    maxTokens: 131072,
+    maxOutputTokens: 16384,
+    model: 'gpt-oss-120b',
+    planModel: 'gpt-oss-120b',
+    requestedModel: 'gpt-oss-120b',
+    apiProvider: 'API_PROVIDER_OPENAI',
+    modelProvider: 'MODEL_PROVIDER_OPENAI',
+    supportsImages: false,
+    supportsVision: false,
+    supportsThinking: false,
+  },
+};
+
+export const DEFAULT_CANONICAL_MODEL_IDS: string[] = Object.keys(DEFAULT_CANONICAL_GOOGLE_MODELS);
 
 /**
  * Injects custom model slugs into `agentModelSorts` for Antigravity IDE (VS Code-based).
@@ -255,9 +353,9 @@ export function injectCustomSlugsIntoAgentModelSorts(
   googleJson: Record<string, unknown>,
   customModels: CustomModel[],
 ): void {
-  if (!customModels || customModels.length === 0) return;
-
-  const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(customModels)));
+  const sortedCustomModels = customModels && customModels.length > 0
+    ? deduplicateModels(sortCustomModels(expandModelsWithEffort(customModels)))
+    : [];
   const customSlugs: string[] = [];
 
   sortedCustomModels.forEach((m) => {
@@ -268,10 +366,8 @@ export function injectCustomSlugsIntoAgentModelSorts(
     }
   });
 
-  if (customSlugs.length === 0) return;
-
   if (!googleJson.agentModelSorts || !Array.isArray(googleJson.agentModelSorts)) {
-    googleJson.agentModelSorts = [{ displayName: 'Recommended', groups: [{ modelIds: [] }] }];
+    googleJson.agentModelSorts = [{ displayName: 'Recommended', groups: [{ modelIds: [...DEFAULT_CANONICAL_MODEL_IDS] }] }];
   }
 
   const customExternalNames = new Set(
@@ -286,17 +382,45 @@ export function injectCustomSlugsIntoAgentModelSorts(
       sort.groups.forEach((group) => {
         if (group.modelIds && Array.isArray(group.modelIds)) {
           // Keep genuine original models first; filter out any duplicate or stale custom entries
-          const originalModelIds = group.modelIds.filter(
+          let originalModelIds = group.modelIds.filter(
             (id) =>
               !customSlugs.includes(id) &&
               !id.startsWith('custom-') &&
               !id.startsWith('MODEL_PLACEHOLDER_') &&
               !customPlaceholders.has(id),
           );
+          if (originalModelIds.length === 0) {
+            originalModelIds = [...DEFAULT_CANONICAL_MODEL_IDS];
+          }
           // Original models first, custom models appended cleanly after without repetition
           group.modelIds = [...originalModelIds, ...customSlugs];
         }
       });
     }
   });
+}
+
+/**
+ * Builds a complete synthetic response for /v1internal:fetchAvailableModels
+ * containing canonical Google/partner models and all loaded custom models,
+ * with agentModelSorts and MODEL_PLACEHOLDER_M* compatibility entries.
+ */
+export function buildSyntheticModelsResponse(customModels?: CustomModel[]): Record<string, unknown> {
+  const models = { ...DEFAULT_CANONICAL_GOOGLE_MODELS };
+  const merged = mergeModels(models, customModels) as Record<string, unknown>;
+  const response: Record<string, unknown> = {
+    models: merged,
+    agentModelSorts: [
+      {
+        displayName: 'Recommended',
+        groups: [
+          {
+            modelIds: [...DEFAULT_CANONICAL_MODEL_IDS],
+          },
+        ],
+      },
+    ],
+  };
+  injectCustomSlugsIntoAgentModelSorts(response, customModels);
+  return response;
 }

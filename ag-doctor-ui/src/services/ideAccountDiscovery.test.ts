@@ -6,6 +6,7 @@ import {
   refreshGoogleToken,
   ensureCloudCodeProject,
   warmupGoogleAccount,
+  switchActiveIdeAccount,
 } from './ideAccountDiscovery';
 
 describe('ideAccountDiscovery', () => {
@@ -208,7 +209,6 @@ describe('ideAccountDiscovery', () => {
 
   describe('switchActiveIdeAccount', () => {
     it('gracefully handles absence of state.vscdb when switching active account', () => {
-      const { switchActiveIdeAccount } = require('./ideAccountDiscovery');
       const res = switchActiveIdeAccount({
         accessToken: 'ya29.mock-switch-token-12345',
         refreshToken: 'g1//mock-refresh-token',

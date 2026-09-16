@@ -221,6 +221,7 @@ export const PUBLIC_DNS_SERVERS = ['8.8.8.8', '1.1.1.1', '8.8.4.4'];
 
 export const GOOGLE_HOSTS = {
   CLOUD_CODE: getEnvString('AG_GOOGLE_CLOUDCODE_HOST', 'daily-cloudcode-pa.googleapis.com'),
+  CLOUD_CODE_PROD: getEnvString('AG_GOOGLE_CLOUDCODE_PROD_HOST', 'cloudcode-pa.googleapis.com'),
   GENERATIVE_LANGUAGE: getEnvString('AG_GOOGLE_GENLANG_HOST', 'generativelanguage.googleapis.com'),
 } as const;
 

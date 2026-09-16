@@ -175,6 +175,17 @@ export async function ensureCloudCodeProject(accessToken: string): Promise<Cloud
 
   for (const baseUrl of baseUrls) {
     try {
+      const platformNum = process.platform === 'win32' ? 5 : (process.platform === 'darwin' ? 2 : 3);
+      const metadataPayload = {
+        ideType: 9,
+        ide_type: 'ANTIGRAVITY',
+        pluginType: 2,
+        plugin_type: 2,
+        platform: platformNum,
+        ideName: 'antigravity',
+        ide_name: 'antigravity',
+      };
+
       // 1. Try loadCodeAssist
       const loadRes = await fetch(`${baseUrl}/v1internal:loadCodeAssist`, {
         method: 'POST',
@@ -183,7 +194,7 @@ export async function ensureCloudCodeProject(accessToken: string): Promise<Cloud
           'Content-Type': 'application/json',
           'User-Agent': 'antigravity',
         },
-        body: JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } }),
+        body: JSON.stringify({ metadata: metadataPayload }),
         signal: AbortSignal.timeout(6000),
       });
 
@@ -219,10 +230,7 @@ export async function ensureCloudCodeProject(accessToken: string): Promise<Cloud
           },
           body: JSON.stringify({
             tier_id: baseTier,
-            metadata: {
-              ide_type: 'ANTIGRAVITY',
-              ide_name: 'antigravity',
-            },
+            metadata: metadataPayload,
           }),
           signal: AbortSignal.timeout(8000),
         });
@@ -277,21 +285,26 @@ export async function fetchGoogleUserInfo(accessToken: string): Promise<{ email:
  * Queries Google Cloud Code for live user quota summary (5h and weekly buckets).
  */
 export async function fetchGoogleAccountQuotas(accessToken: string): Promise<AccountQuotaSummary | null> {
-  try {
-    const res = await fetch('https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'antigravity',
-      },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(7000),
-    });
+  const hosts = ['https://daily-cloudcode-pa.googleapis.com', 'https://cloudcode-pa.googleapis.com'];
+  for (const host of hosts) {
+    try {
+      const res = await fetch(`${host}/v1internal:retrieveUserQuotaSummary`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'antigravity',
+        },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(7000),
+      });
 
-    if (!res.ok) return null;
-    const data = (await res.json()) as any;
-    const rawGroups = data.groups || [];
+      if (!res.ok) {
+        if (res.status === 429 || res.status === 503) continue; // failover
+        return null;
+      }
+      const data = (await res.json()) as any;
+      const rawGroups = data.groups || [];
 
     const groups: QuotaGroup[] = [];
     let fiveHourPercentage = 100;
@@ -365,45 +378,52 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
       groups.push({ displayName: groupName, buckets });
     }
 
-    return {
-      fiveHourPercentage,
-      fiveHourResetTime,
-      weeklyPercentage,
-      weeklyResetTime,
-      geminiFiveHourPct: geminiFiveHourPct ?? fiveHourPercentage,
-      geminiFiveHourReset: geminiFiveHourReset ?? fiveHourResetTime,
-      geminiWeeklyPct: geminiWeeklyPct ?? weeklyPercentage,
-      geminiWeeklyReset: geminiWeeklyReset ?? weeklyResetTime,
-      claudeFiveHourPct: claudeFiveHourPct ?? 100,
-      claudeFiveHourReset,
-      claudeWeeklyPct: claudeWeeklyPct ?? 100,
-      claudeWeeklyReset,
-      groups,
-    };
-  } catch {
-    return null;
+      return {
+        fiveHourPercentage,
+        fiveHourResetTime,
+        weeklyPercentage,
+        weeklyResetTime,
+        geminiFiveHourPct: geminiFiveHourPct ?? fiveHourPercentage,
+        geminiFiveHourReset: geminiFiveHourReset ?? fiveHourResetTime,
+        geminiWeeklyPct: geminiWeeklyPct ?? weeklyPercentage,
+        geminiWeeklyReset: geminiWeeklyReset ?? weeklyResetTime,
+        claudeFiveHourPct: claudeFiveHourPct ?? 100,
+        claudeFiveHourReset,
+        claudeWeeklyPct: claudeWeeklyPct ?? 100,
+        claudeWeeklyReset,
+        groups,
+      };
+    } catch {
+      // Continue to next host on network failure
+    }
   }
+  return null;
 }
 
 /**
  * Triggers a minimal quota warmup ping to Google Cloud Code.
  */
 export async function warmupGoogleAccount(accessToken: string): Promise<boolean> {
-  try {
-    const res = await fetch('https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'antigravity',
-      },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(7000),
-    });
-    return res.ok;
-  } catch {
-    return false;
+  const hosts = ['https://daily-cloudcode-pa.googleapis.com', 'https://cloudcode-pa.googleapis.com'];
+  for (const host of hosts) {
+    try {
+      const res = await fetch(`${host}/v1internal:retrieveUserQuotaSummary`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'antigravity',
+        },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(7000),
+      });
+      if (res.ok) return true;
+      if (res.status === 429 || res.status === 503) continue; // failover
+    } catch {
+      // Try next host
+    }
   }
+  return false;
 }
 
 /**

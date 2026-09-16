@@ -74,14 +74,41 @@ export function getSessionModelKey(modelName: string, sessionId?: string): strin
 }
 
 /**
- * Scans Gemini SSE/JSON response data for functionCall parts that carry a
- * thought_signature sibling field and caches them keyed by convId:funcName.
- * Also caches by funcName as a global fallback.
+ * Track signature metadata: model family and message count at generation time.
+ * Layer 2 & 3 from Antigravity-Manager signature cache architecture.
  */
-export function extractAndCacheThoughtSignatures(data: unknown, convId: string): void {
+export interface ThoughtSignatureMetadata {
+  signature: string;
+  family: 'gemini' | 'claude' | 'unknown';
+  messageCount?: number;
+}
+
+export const thoughtSignatureMeta = new Map<string, ThoughtSignatureMetadata>();
+
+/** Detects model family from model name or string identifier */
+export function detectSignatureFamily(modelOrSig?: string): 'gemini' | 'claude' | 'unknown' {
+  if (!modelOrSig) return 'unknown';
+  const lower = modelOrSig.toLowerCase();
+  if (lower.includes('claude') || lower.includes('anthropic') || lower.startsWith('c-')) return 'claude';
+  if (lower.includes('gemini') || lower.includes('google') || lower.startsWith('g-')) return 'gemini';
+  return 'unknown';
+}
+
+/**
+ * Extracts thought_signature from response candidates and stores them in cache.
+ * Scoped by convId:funcName and funcName, with rewind detection.
+ */
+export function extractAndCacheThoughtSignatures(
+  data: unknown,
+  convId: string,
+  modelName?: string,
+  currentMessageCount?: number,
+): void {
   if (!data || typeof data !== 'object') return;
   const d = data as { candidates?: unknown[] };
   if (!Array.isArray(d.candidates)) return;
+  const family = detectSignatureFamily(modelName);
+
   for (const cand of d.candidates) {
     const c = cand as { content?: { parts?: unknown[] } };
     if (!Array.isArray(c?.content?.parts)) continue;
@@ -94,12 +121,28 @@ export function extractAndCacheThoughtSignatures(data: unknown, convId: string):
                   (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
                   (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature);
       if (fnName && sig) {
+        const meta: ThoughtSignatureMetadata = {
+          signature: sig,
+          family,
+          messageCount: currentMessageCount,
+        };
+
         if (convId) {
           const scopedKey = `${convId}:${fnName}`;
+          // Rewind detection: if stored messageCount is greater than current, clear forward history
+          const existing = thoughtSignatureMeta.get(scopedKey);
+          if (existing?.messageCount && currentMessageCount && existing.messageCount > currentMessageCount) {
+            thoughtSignatureCache.delete(scopedKey);
+            thoughtSignatureMeta.delete(scopedKey);
+          }
+
           thoughtSignatureCache.set(scopedKey, sig);
+          thoughtSignatureMeta.set(scopedKey, meta);
           touchStateTimestamp(stateTimestamps.thoughtSigs, scopedKey);
         }
+
         thoughtSignatureCache.set(fnName, sig);
+        thoughtSignatureMeta.set(fnName, meta);
         touchStateTimestamp(stateTimestamps.thoughtSigs, fnName);
       }
     }
@@ -109,10 +152,17 @@ export function extractAndCacheThoughtSignatures(data: unknown, convId: string):
 /**
  * Scans outgoing request contents[] for functionCall parts missing
  * thought_signature and restores cached values where available.
+ * Strips cross-model incompatible signatures (e.g. Claude thought signatures on Gemini models).
  * Returns true if any signature was restored.
  */
-export function restoreThoughtSignatures(contents: unknown[], convId: string): boolean {
+export function restoreThoughtSignatures(
+  contents: unknown[],
+  convId: string,
+  targetModel?: string,
+): boolean {
   let restoredCount = 0;
+  const targetFamily = detectSignatureFamily(targetModel);
+
   for (const content of contents) {
     const c = content as { parts?: unknown[] };
     if (!Array.isArray(c?.parts)) continue;
@@ -125,11 +175,33 @@ export function restoreThoughtSignatures(contents: unknown[], convId: string): b
                           (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
                           (typeof fc.thought_signature === 'string' && fc.thought_signature) ||
                           (typeof fc.thoughtSignature === 'string' && fc.thoughtSignature);
-      if (existingSig) continue;
+
+      // Cross-model sanitize: if targeting Gemini and existing signature is from Claude, strip it
+      if (existingSig) {
+        const sigMeta = thoughtSignatureMeta.get(existingSig) ||
+                        (convId ? thoughtSignatureMeta.get(`${convId}:${fc.name}`) : undefined) ||
+                        thoughtSignatureMeta.get(fc.name);
+        if (targetFamily === 'gemini' && sigMeta?.family === 'claude') {
+          delete p.thought_signature;
+          delete p.thoughtSignature;
+          delete fc.thought_signature;
+          delete fc.thoughtSignature;
+        } else {
+          continue;
+        }
+      }
 
       const scopedKey = convId ? `${convId}:${fc.name}` : '';
       const cached = (scopedKey && thoughtSignatureCache.get(scopedKey)) ||
                      thoughtSignatureCache.get(fc.name as string);
+
+      // If cached signature is from an incompatible model family, skip it
+      const cachedMeta = (scopedKey && thoughtSignatureMeta.get(scopedKey)) ||
+                         thoughtSignatureMeta.get(fc.name as string);
+      if (targetFamily === 'gemini' && cachedMeta?.family === 'claude') {
+        continue;
+      }
+
       const sigToUse = cached || 'skip_thought_signature_validator';
 
       p.thought_signature = sigToUse;
