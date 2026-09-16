@@ -184,11 +184,6 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
       const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
       let displayName = m.displayName ?? m.id ?? '';
-      const accountLabel = p.name || (p.email ? p.email.split('@')[0] : '');
-      if (accountLabel && (p.provider === 'google' || providers.filter(x => x.provider === p.provider).length > 1)) {
-        const cleanBase = displayName.replace(/^\[[^\]]+\]\s*/, '');
-        displayName = `[${accountLabel}] ${cleanBase}`;
-      }
 
       const partialModel: CustomModel = {
         name: m.id ?? '',
@@ -272,34 +267,41 @@ export function loadCustomModels(): CustomModel[] {
       loadedModels = parseModelsSchema(models, filePath);
     }
 
-    // Inject Auto-Balance Virtual Models
-    const baseModelCounts = new Map<string, number>();
-    loadedModels.forEach(m => {
-      const baseId = m.externalModelName || m.name || '';
-      const cleanBase = baseId.replace(/^models\//, '');
-      if (m.provider === 'google' && m.apiKey && !m.apiKey.startsWith('fallback:')) {
-        baseModelCounts.set(cleanBase, (baseModelCounts.get(cleanBase) || 0) + 1);
+    // For Google accounts: collapse to ONE pooled entry per unique model ID.
+    // The proxy routes to the best real account at dispatch time (apiKey === 'auto' path).
+    // Non-Google providers: keep their entries as-is.
+    const googleModels = loadedModels.filter(m => m.provider === 'google' && m.apiKey && !m.apiKey.startsWith('fallback:'));
+    const otherModels = loadedModels.filter(m => m.provider !== 'google' || !m.apiKey || m.apiKey.startsWith('fallback:'));
+
+    const seenBaseIds = new Map<string, CustomModel>();
+    for (const m of googleModels) {
+      const baseId = (m.externalModelName || m.name || '').replace(/^models\//, '');
+      if (!seenBaseIds.has(baseId)) {
+        seenBaseIds.set(baseId, m);
       }
+    }
+
+    const pooledGoogleModels: CustomModel[] = [];
+    seenBaseIds.forEach((template, baseId) => {
+      const accountCount = googleModels.filter(m => (m.externalModelName || m.name || '').replace(/^models\//, '') === baseId).length;
+      pooledGoogleModels.push({
+        ...template,
+        name: `models/${template.provider}:${baseId}:auto-pool`,
+        displayName: (template.displayName || baseId).replace(/^\[[^\]]+\]\s*/, ''),
+        externalModelName: baseId,
+        // Always use 'auto' dispatch for Google — the proxy picks the best account.
+        // For a single account, 'auto' falls through to that one account.
+        apiKey: 'auto',
+        accountName: '',
+        accountEmail: '',
+        _effortSuffix: template._effortSuffix || '',
+      });
     });
 
-    const virtualModels: CustomModel[] = [];
-    baseModelCounts.forEach((count, baseId) => {
-      if (count > 1) {
-        const template = loadedModels.find(m => (m.externalModelName || m.name || '').replace(/^models\//, '') === baseId)!;
-        virtualModels.push({
-          ...template,
-          name: `models/${template.provider}:${baseId}:auto-pool`,
-          displayName: `${template.displayName ? template.displayName.split(' (')[0] : baseId} (Auto-Balance)`,
-          externalModelName: baseId,
-          apiKey: 'auto',
-          accountName: '',
-          accountEmail: '',
-          _effortSuffix: template._effortSuffix || ''
-        });
-      }
-    });
+    // Mark real per-account entries as dispatch-only (hidden from dropdown)
+    const realGoogleModels = googleModels.map(m => ({ ...m, _poolOnly: true as const }));
 
-    return [...virtualModels, ...loadedModels];
+    return [...pooledGoogleModels, ...realGoogleModels, ...otherModels];
   } catch (e) {
     log.error('[Proxy] Failed to parse custom_models.json (preserving file on disk):', e);
     return [];

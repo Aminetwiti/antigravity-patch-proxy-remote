@@ -65,7 +65,7 @@ export const PATCH_REGISTRY: PatchDefinition[] = [
     maxVersion: null,
     originalUrl: 'https://cloudcode-pa.googleapis.com',
     patchedUrl: `http://${DEFAULT_BIND_HOST}:${DEFAULT_MITM_PORT}/v1internal/x`,
-    description: 'Patch for Antigravity 2.6.0+ (35 bytes; binary URL shortened)',
+    description: 'Patch for Antigravity 2.6.0+ / 2.14.x+ (35 bytes; binary URL shortened)',
   },
   {
     versionRange: '2.3.0+',

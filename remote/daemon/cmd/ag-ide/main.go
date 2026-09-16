@@ -43,7 +43,7 @@ func main() {
 		if len(os.Args) >= 3 {
 			wsPath = os.Args[2]
 		}
-		model := "gemini-2.5-flash"
+		model := "gemini-2.0-flash"
 		if len(os.Args) >= 4 {
 			model = os.Args[3]
 		}

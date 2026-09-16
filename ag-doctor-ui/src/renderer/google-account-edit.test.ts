@@ -37,7 +37,7 @@ describe('Google Account Edit & Discovery Logic', () => {
       status: 'healthy',
       latencyMs: 142,
       models: [
-        { id: 'gemini-2.5-pro', displayName: '[sneakers (IDE)] Gemini 2.5 Pro', enabled: true },
+        { id: 'gemini-1.5-pro', displayName: '[sneakers (IDE)] Gemini 1.5 Pro', enabled: true },
       ],
     };
 
@@ -49,8 +49,8 @@ describe('Google Account Edit & Discovery Logic', () => {
       apiKey: 'ya29.newToken',
       enabled: true,
       models: [
-        { id: 'gemini-2.5-pro', displayName: '[sneakers (IDE) Renamed] Gemini 2.5 Pro', enabled: true },
-        { id: 'gemini-2.5-flash', displayName: '[sneakers (IDE) Renamed] Gemini 2.5 Flash', enabled: false },
+        { id: 'gemini-1.5-pro', displayName: '[sneakers (IDE) Renamed] Gemini 1.5 Pro', enabled: true },
+        { id: 'gemini-2.0-flash', displayName: '[sneakers (IDE) Renamed] Gemini 2.0 Flash', enabled: false },
       ],
     };
 

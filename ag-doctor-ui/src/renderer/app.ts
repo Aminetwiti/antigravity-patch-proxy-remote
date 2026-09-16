@@ -4134,54 +4134,10 @@ async function renderProviderList(): Promise<void> {
       return;
     }
 
-    const googleAccounts = providersCache.filter((x) => x.provider === 'google');
-    const nonGoogle = providersCache.filter((x) => x.provider !== 'google');
-
-    const displayRows: any[] = [];
-
-    if (googleAccounts.length > 0) {
-      const primary = googleAccounts[0];
-      const modelMap = new Map();
-      for (const acc of googleAccounts) {
-        for (const m of acc.models || []) {
-          const cleanName = (m.displayName || (m as any).name || m.id || '').replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
-          if (!modelMap.has(cleanName)) {
-            modelMap.set(cleanName, { ...m, displayName: cleanName });
-          }
-        }
-      }
-      
-      const anyHealthy = googleAccounts.some((a) => a.status === 'healthy');
-      const allOffline = googleAccounts.every((a) => a.status === 'offline');
-      const poolStatus = anyHealthy ? 'healthy' : allOffline ? 'offline' : 'degraded';
-      
-      let lat = 0;
-      let count = 0;
-      for (const a of googleAccounts) {
-        if (a.latencyMs) { lat += a.latencyMs; count++; }
-      }
-
-      displayRows.push({
-        id: primary.id,
-        name: 'Google (Cloud Code & Gemini Pool)',
-        provider: 'google',
-        apiUrl: primary.apiUrl || 'https://generativelanguage.googleapis.com/v1beta',
-        enabled: googleAccounts.some((a) => a.enabled !== false),
-        status: poolStatus,
-        latencyMs: count > 0 ? Math.round(lat / count) : undefined,
-        models: Array.from(modelMap.values()),
-        accounts: googleAccounts,
-        isPooled: true,
-      });
-    }
-
-    for (const p of nonGoogle) {
-      displayRows.push({
-        ...p,
-        accounts: [p],
-        isPooled: false
-      });
-    }
+    const displayRows = providersCache.map((p) => ({
+      ...p,
+      models: p.models || [],
+    }));
 
     let html = `<div class="agy-provider-list">`;
     for (const p of displayRows) {
@@ -4195,17 +4151,10 @@ async function renderProviderList(): Promise<void> {
             <div class="agy-provider-row-meta">
               <span class="agy-provider-badge ${escapeHtml(p.provider)}">${escapeHtml(p.provider)}</span>
               <span class="agy-dot">·</span>
-              <span>${escapeHtml(p.apiUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span>
+              <span>${escapeHtml((p.apiUrl || '').replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span>
               <span class="agy-dot">·</span>
-              <span>${p.isPooled ? p.accounts.length + ' Accounts Pooled' : p.models.length + ' models'}</span>
+              <span>${(p.models || []).length} models</span>
             </div>
-            ${p.isPooled ? `<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; align-items:center;">
-              <span style="font-size:10px; color:var(--text-3); font-weight:500;">Accounts (${p.accounts.length}):</span>
-              ${p.accounts.map((a: any) => `<span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(59,130,246,0.12); color:#60a5fa; border:1px solid rgba(59,130,246,0.25); display:inline-flex; align-items:center; gap:4px;">
-                  <span style="width:6px; height:6px; border-radius:50%; background:${a.status === 'offline' ? '#f87171' : a.status === 'degraded' ? '#fbbf24' : '#4ade80'}"></span>
-                  ${escapeHtml(a.name || a.email || 'Google Account')} ${a.latencyMs ? '(' + a.latencyMs + 'ms)' : ''}
-              </span>`).join('')}
-            </div>` : ''}
             <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;">
               ${(p.models || []).slice(0, 6).map((m: any) => {
                 const isEn = m.enabled !== false;
@@ -4434,8 +4383,8 @@ if (pmImportLocalBtn) {
         enabled: true,
         allowUnauthorized: false,
         models: [
-          { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
-          { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
+          { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
+          { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
           { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
         ],
       };
@@ -6354,8 +6303,8 @@ function openGoogleAccountModal(existingId?: string): void {
 
       if (currentGaFetchedModels.length === 0) {
         currentGaFetchedModels = [
-          { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
-          { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+          { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
+          { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
           { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
         ];
       }
@@ -6372,8 +6321,8 @@ function openGoogleAccountModal(existingId?: string): void {
     gaFormUrl.value = 'https://generativelanguage.googleapis.com/v1beta';
     gaFormKey.value = '';
     currentGaFetchedModels = [
-      { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
-      { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+      { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
+      { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
     ];
   }
 
@@ -6466,8 +6415,8 @@ async function triggerIdeAccountDiscovery(): Promise<void> {
               enabled: m.enabled !== false,
             }))
           : [
-              { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
-              { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+              { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
+              { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
               { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
             ],
       };
@@ -6712,8 +6661,8 @@ gaFormSaveBtn?.addEventListener('click', async () => {
 
   if (currentGaFetchedModels.length === 0) {
     currentGaFetchedModels.push(
-      { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
-      { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true }
+      { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
+      { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true }
     );
   }
 

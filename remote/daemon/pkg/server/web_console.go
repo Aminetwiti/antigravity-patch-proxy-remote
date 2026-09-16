@@ -768,7 +768,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
 
           <div class="form-group">
             <label for="apiModelInput" class="input-label">Nom du Modèle</label>
-            <input type="text" id="apiModelInput" class="input-field" placeholder="ex: claude-3-7-sonnet-20250219, gpt-4o, gemini-2.5-pro" />
+            <input type="text" id="apiModelInput" class="input-field" placeholder="ex: claude-3-7-sonnet-20250219, gpt-4o, gemini-2.0-flash" />
           </div>
 
           <div class="form-group">
@@ -1132,7 +1132,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
       apiFetch('/v2/accounts/select-best', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'gemini-2.5-pro' })
+        body: JSON.stringify({ model: 'gemini-2.0-flash' })
       })
       .then(function(res) { return res.json(); })
       .then(function(data) {

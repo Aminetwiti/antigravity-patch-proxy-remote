@@ -132,7 +132,7 @@ export async function getValidGoogleAccessToken(account: {
  * Maps legacy/alias names (e.g. gemini-3.8-flash-high) to upstream names (e.g. gemini-3.8-flash-tiered).
  */
 export function normalizeCloudCodeModelId(modelId: string): string {
-  if (!modelId) return 'gemini-3.6-flash';
+  if (!modelId) return 'gemini-2.5-flash';
   const clean = modelId.replace(/^models\//, '').trim();
   const map: Record<string, string> = {
     'gemini-3.8-flash-low': 'gemini-3.8-flash-tiered',
@@ -151,6 +151,61 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.1-pro': 'gemini-3.1-pro-high',
   };
   return map[clean] || clean;
+}
+
+/**
+ * Normalizes Google AI Studio / Gemini model identifiers, mapping unknown, tiered, or legacy
+ * model names to canonical Google models (e.g. gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash) without throwing 404.
+ */
+export function normalizeGoogleModelId(modelName: string): string {
+  if (!modelName) return 'gemini-2.5-flash';
+  let clean = modelName.replace(/^(?:models\/|[^/]+\/)/, '').trim().toLowerCase();
+  clean = clean.replace(/-(tiered|low|medium|high)$/i, '');
+
+  const validModels = new Set([
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash-8b',
+  ]);
+
+  if (validModels.has(clean)) {
+    return clean;
+  }
+
+  const aliasMap: Record<string, string> = {
+    'gemini-3.8-flash': 'gemini-2.5-flash',
+    'gemini-3.7-flash': 'gemini-2.5-flash',
+    'gemini-3.6-flash': 'gemini-2.5-flash',
+    'gemini-3.5-flash': 'gemini-2.5-flash',
+    'gemini-flash': 'gemini-2.5-flash',
+    'gemini-flash-2.5': 'gemini-2.5-flash',
+    'gemini-flash-2.0': 'gemini-2.0-flash',
+    'gemini-flash-1.5': 'gemini-1.5-flash',
+    'gemini-3.1-pro': 'gemini-2.5-pro',
+    'gemini-3.0-pro': 'gemini-2.5-pro',
+    'gemini-pro': 'gemini-2.5-pro',
+    'gemini-pro-2.5': 'gemini-2.5-pro',
+    'gemini-pro-1.5': 'gemini-1.5-pro',
+  };
+
+  if (aliasMap[clean]) {
+    return aliasMap[clean];
+  }
+
+  if (clean.includes('claude') || clean.includes('gpt') || clean.includes('deepseek') || clean.includes('qwen')) {
+    return clean.includes('pro') || clean.includes('opus') || clean.includes('sonnet')
+      ? 'gemini-2.5-pro'
+      : 'gemini-2.5-flash';
+  }
+
+  if (clean.includes('pro')) {
+    return 'gemini-2.5-pro';
+  }
+  return 'gemini-2.5-flash';
 }
 
 /**

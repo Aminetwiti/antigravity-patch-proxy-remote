@@ -40,11 +40,13 @@ function sortCustomModels(models: CustomModel[]): CustomModel[] {
 export function deduplicateModels(models: CustomModel[]): CustomModel[] {
   const seenKeys = new Set<string>();
   return models.filter((m) => {
+    // Per-account Google entries are dispatch/quota only — the unified
+    // "auto-pool" entry represents them in the model dropdown.
+    if (m._poolOnly) return false;
     const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
     const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
     const effort = m._effortSuffix || '';
-    const accountTag = (m.accountName || m.accountEmail || '');
-    const key = `${m.provider}:${cleanDisp || rawName}:${rawName}${accountTag ? `:${accountTag}` : ''}${effort}`;
+    const key = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
     if (seenKeys.has(key)) return false;
     seenKeys.add(key);
     return true;
@@ -56,11 +58,6 @@ function formatDisplayName(m: CustomModel): string {
   const isFav = isRecentModel(m.name);
   let dispName = m.displayName || m.name;
   dispName = dispName.replace(/^\[[^\]]+\]\s*/, '');
-  
-  const accountTag = m.accountName || m.accountEmail || '';
-  if (accountTag) {
-    dispName = `${dispName} (${accountTag})`;
-  }
   
   if (!health) {
     const favTag = isFav ? '⭐ ' : '';

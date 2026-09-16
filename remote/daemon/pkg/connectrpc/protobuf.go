@@ -33,7 +33,6 @@ func putWriter(w *writer) {
 	}
 }
 
-
 func (w *writer) varint(v uint64) {
 	for v >= 0x80 {
 		w.b = append(w.b, byte(v)|0x80)
@@ -237,7 +236,7 @@ func ResolveStandardModelEnum(nameOrID string) uint64 {
 	switch {
 	case strings.Contains(lower, "3.7-flash") || strings.Contains(lower, "3.6-flash") || strings.Contains(lower, "3.5-flash") || strings.Contains(lower, "gemini-flash"):
 		return 312
-	case strings.Contains(lower, "3.1-pro") || strings.Contains(lower, "2.5-pro") || strings.Contains(lower, "gemini-pro"):
+	case strings.Contains(lower, "3.1-pro") || strings.Contains(lower, "1.5-pro") || strings.Contains(lower, "gemini-pro"):
 		return 246
 	case strings.Contains(lower, "sonnet") || strings.Contains(lower, "claude-3-7") || strings.Contains(lower, "claude-3.7") || strings.Contains(lower, "claude-3-5"):
 		return 384
@@ -288,7 +287,6 @@ func ResolveStandardModelEnum(nameOrID string) uint64 {
 //	  28: model_name (string)
 //	}
 
-//
 // planner_mode 3 = NO_TOOL (pas de boucle d'outils — le mobile ne voit
 // que le texte). requested_model (15) et plan_model (1) contrôlent le modèle du tour.
 func BuildCascadeConfig(modelUID string, modelEnum uint64, noTools ...bool) []byte {
@@ -376,27 +374,27 @@ func BuildHandleStreamingCommand(commandText string, source uint64) []byte {
 
 // Champs oneof de CascadeUserInteraction (vérifiés dans cortex.proto et language_server binary).
 const (
-	InteractionDeploy            = 4   // CascadeDeployInteraction
-	InteractionRunCommand        = 5   // CascadeRunCommandInteraction
-	InteractionOpenBrowserURL    = 6   // CascadeOpenBrowserUrlInteraction
-	InteractionRunExtensionCode  = 7   // CascadeRunExtensionCodeInteraction
-	InteractionExecuteBrowserJS  = 8   // CascadeExecuteBrowserJavaScriptInteraction
-	InteractionCaptureScreenshot = 9   // CascadeCaptureBrowserScreenshotInteraction
-	InteractionClickPixel        = 10  // CascadeClickBrowserPixelInteraction
-	InteractionBrowserAction     = 13  // CascadeBrowserActionInteraction
-	InteractionOpenBrowserSetup  = 14  // CascadeOpenBrowserSetupInteraction
-	InteractionConfirmBrowserSetup = 15 // CascadeConfirmBrowserSetupInteraction
-	InteractionSendCommandInput  = 16  // CascadeSendCommandInputInteraction
-	InteractionReadUrlContent    = 17  // CascadeReadUrlContentInteraction
-	InteractionMcp               = 18  // CascadeMcpInteraction
-	InteractionFilePermission    = 19  // FilePermissionInteraction
-	InteractionElicitation       = 20  // ElicitationInteraction
-	InteractionPermission        = 21  // PermissionInteraction
-	InteractionAskQuestion       = 22  // AskQuestionInteraction
-	InteractionApproval          = 23  // ApprovalInteraction
-	InteractionDeleteDirectory   = 105 // CascadeDeleteDirectoryInteraction (legacy)
-	InteractionInvokeSubagent    = 143 // CascadeInvokeSubagentInteraction (legacy)
-	InteractionCloudSQL          = 153 // CascadeCloudSqlInteraction (legacy)
+	InteractionDeploy              = 4   // CascadeDeployInteraction
+	InteractionRunCommand          = 5   // CascadeRunCommandInteraction
+	InteractionOpenBrowserURL      = 6   // CascadeOpenBrowserUrlInteraction
+	InteractionRunExtensionCode    = 7   // CascadeRunExtensionCodeInteraction
+	InteractionExecuteBrowserJS    = 8   // CascadeExecuteBrowserJavaScriptInteraction
+	InteractionCaptureScreenshot   = 9   // CascadeCaptureBrowserScreenshotInteraction
+	InteractionClickPixel          = 10  // CascadeClickBrowserPixelInteraction
+	InteractionBrowserAction       = 13  // CascadeBrowserActionInteraction
+	InteractionOpenBrowserSetup    = 14  // CascadeOpenBrowserSetupInteraction
+	InteractionConfirmBrowserSetup = 15  // CascadeConfirmBrowserSetupInteraction
+	InteractionSendCommandInput    = 16  // CascadeSendCommandInputInteraction
+	InteractionReadUrlContent      = 17  // CascadeReadUrlContentInteraction
+	InteractionMcp                 = 18  // CascadeMcpInteraction
+	InteractionFilePermission      = 19  // FilePermissionInteraction
+	InteractionElicitation         = 20  // ElicitationInteraction
+	InteractionPermission          = 21  // PermissionInteraction
+	InteractionAskQuestion         = 22  // AskQuestionInteraction
+	InteractionApproval            = 23  // ApprovalInteraction
+	InteractionDeleteDirectory     = 105 // CascadeDeleteDirectoryInteraction (legacy)
+	InteractionInvokeSubagent      = 143 // CascadeInvokeSubagentInteraction (legacy)
+	InteractionCloudSQL            = 153 // CascadeCloudSqlInteraction (legacy)
 )
 
 // Valeurs enum PermissionScope (cortex_pb)
@@ -1077,5 +1075,3 @@ func BuildCancelCascadeSteps(cascadeID string, stepIndices []uint32) []byte {
 	copy(res, w.b)
 	return res
 }
-
-

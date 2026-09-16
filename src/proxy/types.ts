@@ -44,6 +44,7 @@ export interface CustomModel {
   externalModelName: string;
   allowUnauthorized?: boolean;
   encrypted?: boolean;
+  enabled?: boolean;
   useRawBaseUrl?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
@@ -86,6 +87,8 @@ export interface CustomModel {
     claudeWeeklyPct?: number;
     [key: string]: unknown;
   };
+  /** Internal: marks a real per-account Google entry kept only for dispatch/quota; hidden from dropdown. */
+  _poolOnly?: boolean;
 }
 
 

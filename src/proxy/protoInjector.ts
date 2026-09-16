@@ -56,11 +56,6 @@ export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResul
   let name = m.displayName || m.name;
   name = name.replace(/^\[[^\]]+\]\s*/, '');
   
-  const accountTag = m.accountName || m.accountEmail || '';
-  if (accountTag) {
-    name = `${name} (${accountTag})`;
-  }
-
   if (!health) {
     return `${star}🟢 • ${name}`;
   }
@@ -143,9 +138,10 @@ export function injectCustomModelsIntoResponse(
   responseBuf: Buffer,
   customModels: CustomModel[],
   healthMap?: Map<string, ModelHealthResult>,
+  forceCompatibility = false,
 ): InjectionResult {
-  // No injection if no custom models or buffer too small to contain header + body
-  if (customModels.length === 0 || responseBuf.length <= 6) {
+  // No injection if no custom models (unless forced) or buffer too small to contain header + body
+  if ((customModels.length === 0 && !forceCompatibility) || responseBuf.length <= 6) {
     return { buffer: responseBuf, injectedCount: 0, modified: false };
   }
 
@@ -182,8 +178,7 @@ export function injectCustomModelsIntoResponse(
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const accountTag = (m.accountName || m.accountEmail || '');
-      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${accountTag ? `:${accountTag}` : ''}${effort}`;
+      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
@@ -225,6 +220,27 @@ export function injectCustomModelsIntoResponse(
 
     if (injectedCount === 0) {
       return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M565, MODEL_PLACEHOLDER_M0..M600)
+    // resolve cleanly in Language Server without "unknown model key: model not found" during RevertToCascadeStep
+    for (let i = 0; i <= 600; i++) {
+      const legacyPid = `MODEL_PLACEHOLDER_M${i}`;
+      const legacyKey = legacyPid.toLowerCase();
+      if (existing.modelIds.has(legacyKey) || existing.modelIds.has(`models/${legacyKey}`)) {
+        continue;
+      }
+      existing.modelIds.add(legacyKey);
+      existing.modelIds.add(`models/${legacyKey}`);
+      const entry = encodeModelEntryForGetModels(
+        `models/${legacyPid}`,
+        legacyPid,
+        fieldMapping,
+        true,
+      );
+      const tagBuf = encodeVarint(modelTag);
+      const lenBuf = encodeVarint(entry.length);
+      newParts.push(tagBuf, lenBuf, entry);
     }
 
     const newMsgBody = Buffer.concat(newParts);
@@ -326,8 +342,7 @@ function injectCustomModelsIntoUserStatusJson(
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const accountTag = (m.accountName || m.accountEmail || '');
-      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${accountTag ? `:${accountTag}` : ''}${effort}`;
+      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
@@ -498,8 +513,7 @@ export function injectCustomModelsIntoUserStatus(
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const accountTag = (m.accountName || m.accountEmail || '');
-      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${accountTag ? `:${accountTag}` : ''}${effort}`;
+      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 

@@ -35,6 +35,8 @@
     "patch:2.3": "node scripts/patch_2_3.js",
     "patch:2.5": "node scripts/patch_2_5.js",
     "patch:2.8": "node scripts/patch_2_5.js",
+    "patch:2.12": "node scripts/patch_2_5.js",
+    "patch:2.14": "node scripts/patch_2_5.js",
     "repack:win": "powershell -ExecutionPolicy Bypass -File scripts/repack/repack.ps1",
     "repack:mac": "bash scripts/deploy/deploy.sh",
     "repack:linux": "bash scripts/deploy/deploy_linux.sh",

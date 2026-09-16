@@ -531,7 +531,7 @@ func TestREST_AccountsEndpoints(t *testing.T) {
 	}
 
 	// 7. POST /v2/accounts/select-best
-	bestReq := httptest.NewRequest("POST", "/v2/accounts/select-best?token=token-acc", bytes.NewReader([]byte(`{"model":"gemini-2.5-pro"}`)))
+	bestReq := httptest.NewRequest("POST", "/v2/accounts/select-best?token=token-acc", bytes.NewReader([]byte(`{"model":"gemini-1.5-pro"}`)))
 	bestW := httptest.NewRecorder()
 	mux.ServeHTTP(bestW, bestReq)
 	if bestW.Code != http.StatusOK {
@@ -717,5 +717,3 @@ func TestREST_APIConfig_SecurityRolesAndSSRF(t *testing.T) {
 		t.Fatalf("expected 200 OK for localhost baseURL, got %d: %s", w5.Code, w5.Body.String())
 	}
 }
-
-

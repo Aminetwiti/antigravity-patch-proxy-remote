@@ -78,21 +78,21 @@ describe('Sticky Sessions (Multi-Account Session Affinity)', () => {
   describe('getSessionBoundModel & bindSessionToModel', () => {
     const account1Model: CustomModel = {
       name: 'google-perso-gemini',
-      displayName: '[Perso] Gemini 2.5 Pro',
+      displayName: '[Perso] Gemini 1.5 Pro',
       provider: 'google',
       apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
       apiKey: 'key-account-1',
-      externalModelName: 'gemini-2.5-pro',
+      externalModelName: 'gemini-1.5-pro',
       enabled: true,
     };
 
     const account2Model: CustomModel = {
       name: 'google-work-gemini',
-      displayName: '[Work] Gemini 2.5 Pro',
+      displayName: '[Work] Gemini 1.5 Pro',
       provider: 'google',
       apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
       apiKey: 'key-account-2',
-      externalModelName: 'gemini-2.5-pro',
+      externalModelName: 'gemini-1.5-pro',
       enabled: true,
     };
 
@@ -130,14 +130,14 @@ describe('Sticky Sessions (Multi-Account Session Affinity)', () => {
         provider: 'google',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'key-aaa',
-        externalModelName: 'gemini-2.5-pro',
+        externalModelName: 'gemini-1.5-pro',
       };
       const m2: CustomModel = {
         name: 'm2',
         provider: 'google',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'key-bbb',
-        externalModelName: 'gemini-2.5-pro',
+        externalModelName: 'gemini-1.5-pro',
       };
 
       expect(getAccountQuotaKey(m1)).toBe('generativelanguage.googleapis.com:key-aaa');

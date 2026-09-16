@@ -37,8 +37,8 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
           claudeWeeklyPct: 85,
         },
         models: [
-          { id: 'gemini-2.5-pro', displayName: '[Amine Perso] Gemini 2.5 Pro', enabled: true },
-          { id: 'gemini-2.5-flash', displayName: '[Amine Perso] Gemini 2.5 Flash', enabled: true },
+          { id: 'gemini-2.0-flash', displayName: '[Amine Perso] Gemini 2.0 Flash', enabled: true },
+          { id: 'gemini-1.5-pro', displayName: '[Amine Perso] Gemini 1.5 Pro', enabled: true },
         ],
       },
       {
@@ -61,7 +61,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
           claudeWeeklyPct: 50,
         },
         models: [
-          { id: 'gemini-2.5-pro', displayName: '[Amine Pro] Gemini 2.5 Pro', enabled: true },
+          { id: 'gemini-1.5-pro', displayName: '[Amine Pro] Gemini 1.5 Pro', enabled: true },
           { id: 'claude-3-7-sonnet', displayName: '[Amine Pro] Claude 3.7 Sonnet', enabled: true },
         ],
       },
@@ -76,7 +76,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         isCurrent: false,
         tier: 'FREE',
         models: [
-          { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+          { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
         ],
       },
     ];
@@ -109,8 +109,8 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         picture: mockDiscoveryResult.picture,
         quotas: mockDiscoveryResult.quotas,
         models: [
-          { id: 'gemini-2.5-pro', displayName: `[${accountName}] Gemini 2.5 Pro`, enabled: true },
-          { id: 'gemini-2.5-flash', displayName: `[${accountName}] Gemini 2.5 Flash`, enabled: true },
+          { id: 'gemini-2.0-flash', displayName: `[${accountName}] Gemini 2.0 Flash`, enabled: true },
+          { id: 'gemini-1.5-pro', displayName: `[${accountName}] Gemini 1.5 Pro`, enabled: true },
           { id: 'claude-3-7-sonnet', displayName: `[${accountName}] Claude 3.7 Sonnet`, enabled: true },
         ],
       };
@@ -149,8 +149,8 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
 
       if (models.length === 0) {
         models.push(
-          { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
-          { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true }
+          { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
+          { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true }
         );
       }
 

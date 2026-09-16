@@ -103,7 +103,7 @@ func TestParseModelsRealisticPayload(t *testing.T) {
 	// FetchAvailableModelsResponse {1: ModelsEntry...}
 	fetch := &writer{}
 	fetch.bytesField(1, buildModelsEntry("claude-3-7-sonnet", buildModelDetails("Claude 3.7 Sonnet", true, true, true, false)))
-	fetch.bytesField(1, buildModelsEntry("gemini-2.5-pro", buildModelDetails("Gemini 2.5 Pro", true, true, false, false)))
+	fetch.bytesField(1, buildModelsEntry("gemini-1.5-pro", buildModelDetails("Gemini 1.5 Pro", true, true, false, false)))
 	fetch.bytesField(1, buildModelsEntry("disabled-model", buildModelDetails("Old Model", false, false, false, true)))
 
 	// GetAvailableModelsResponse {1: FetchAvailableModelsResponse}

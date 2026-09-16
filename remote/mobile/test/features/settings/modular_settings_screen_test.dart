@@ -241,7 +241,7 @@ void main() {
                       'isActive': true,
                       'status': 'active',
                       'quotas': [
-                        {'name': 'gemini-2.5-pro', 'displayName': 'Gemini 2.5 Pro', 'percentage': 100},
+                        {'name': 'gemini-1.5-pro', 'displayName': 'Gemini 1.5 Pro', 'percentage': 100},
                         {'name': 'claude-sonnet-4-6', 'displayName': 'Claude Sonnet 4.6', 'percentage': 95},
                       ],
                     },

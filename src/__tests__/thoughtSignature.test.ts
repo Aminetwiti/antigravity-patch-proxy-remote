@@ -116,7 +116,7 @@ describe('thoughtSignature handling', () => {
       const part = contents[0].parts[0] as any;
       expect(part.thought_signature).toBe('sig_cached_abc');
       expect(part.thoughtSignature).toBe('sig_cached_abc');
-      expect(part.functionCall.thought_signature).toBe('sig_cached_abc');
+      expect(part.functionCall.thought_signature).toBeUndefined();
     });
 
     it('falls back to global function name when convId does not match', () => {
@@ -185,7 +185,7 @@ describe('thoughtSignature handling', () => {
       expect(restored).toBe(true);
       const part = contents[0].parts[0] as any;
       expect(part.thought_signature).toBe('skip_thought_signature_validator');
-      expect(part.functionCall.thought_signature).toBe('skip_thought_signature_validator');
+      expect(part.functionCall.thought_signature).toBeUndefined();
     });
 
     it('does nothing when parts have no functionCall', () => {

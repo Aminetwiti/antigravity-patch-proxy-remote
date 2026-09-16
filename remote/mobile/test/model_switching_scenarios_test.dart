@@ -95,7 +95,7 @@ void main() {
     });
 
     testWidgets('Scenario #3: Changement de modèle au repos sans stop préalable', (tester) async {
-      String currentModel = 'gemini-2.5-pro';
+      String currentModel = 'gemini-1.5-pro';
       String? sentModel;
 
       await tester.pumpWidget(
@@ -125,11 +125,11 @@ void main() {
       final history = <String>['function foo() {', '  console.log("part 1");'];
       String model = 'claude-3-7-sonnet';
 
-      model = 'gemini-2.5-flash';
+      model = 'gemini-2.0-flash';
       history.add('continue là où tu t\'es arrêté');
 
       expect(history.length, 3);
-      expect(model, 'gemini-2.5-flash');
+      expect(model, 'gemini-2.0-flash');
     });
 
     testWidgets('Scenario #5: Stop rapide (<500ms) et switch immédiat', (tester) async {
@@ -178,7 +178,7 @@ void main() {
 
     testWidgets('Scenario #9: Bascule Modèle Local vers Google AI Studio Gemini 2.5', (tester) async {
       String model = 'ollama/llama3';
-      model = 'google/gemini-2.5-pro';
+      model = 'google/gemini-1.5-pro';
       expect(model.startsWith('google/'), isTrue);
     });
 
@@ -244,13 +244,13 @@ void main() {
     testWidgets('Scenario #18: Switch de modèle par changement de session dans le Drawer', (tester) async {
       final sessionA = const CascadeSession(id: 'sess-a', title: 'Session A', workspacePath: '/ws', status: 'READY', time: '1m');
       final sessionB = const CascadeSession(id: 'sess-b', title: 'Session B', workspacePath: '/ws', status: 'READY', time: '2m');
-      final sessionModels = {'sess-a': 'deepseek-r1', 'sess-b': 'gemini-2.5-pro'};
+      final sessionModels = {'sess-a': 'deepseek-r1', 'sess-b': 'gemini-1.5-pro'};
 
       String activeModel = sessionModels[sessionA.id]!;
       expect(activeModel, 'deepseek-r1');
 
       activeModel = sessionModels[sessionB.id]!;
-      expect(activeModel, 'gemini-2.5-pro');
+      expect(activeModel, 'gemini-1.5-pro');
     });
 
     testWidgets('Scenario #19: Fork / duplication de session avec changement de modèle', (tester) async {
@@ -286,16 +286,16 @@ void main() {
 
     testWidgets('Scenario #22: Sous-agent avec modèle spécialisé (flash) sous parent lourd', (tester) async {
       const parentModel = 'claude-3-7-sonnet-thinking';
-      const subagentModel = 'gemini-2.5-flash';
+      const subagentModel = 'gemini-2.0-flash';
 
       expect(parentModel != subagentModel, isTrue);
     });
 
     testWidgets('Scenario #23: Reprise après échec de sous-agent avec nouveau modèle à large contexte', (tester) async {
       bool subagentFailed = true;
-      String nextModel = 'gemini-2.5-pro'; // 1M context
+      String nextModel = 'gemini-1.5-pro'; // 1M context
       expect(subagentFailed, isTrue);
-      expect(nextModel, 'gemini-2.5-pro');
+      expect(nextModel, 'gemini-1.5-pro');
     });
 
     testWidgets('Scenario #24: Multi-sous-agents parallèles sur différents fournisseurs', (tester) async {
@@ -314,11 +314,11 @@ void main() {
       String currentModel = 'claude-3-7-sonnet';
 
       if (statusCode == 429) {
-        currentModel = 'gemini-2.5-pro';
+        currentModel = 'gemini-1.5-pro';
         statusCode = 200; // Success on new model
       }
 
-      expect(currentModel, 'gemini-2.5-pro');
+      expect(currentModel, 'gemini-1.5-pro');
       expect(statusCode, 200);
     });
 
@@ -371,7 +371,7 @@ void main() {
         'claude-3-7-sonnet',
         'gpt-4o',
         'deepseek-r1',
-        'gemini-2.5-flash',
+        'gemini-2.0-flash',
         'ollama/llama3',
       ];
 

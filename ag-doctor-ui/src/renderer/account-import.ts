@@ -83,8 +83,8 @@ export function normalizeAccountEntry(raw: any, index: number = 0): NormalizedIm
         enabled: m.enabled !== false,
       }))
     : [
-        { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
-        { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+        { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
+        { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
         { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
       ];
 

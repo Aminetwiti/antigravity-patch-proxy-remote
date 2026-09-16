@@ -282,7 +282,7 @@ import { recordRecentModel, restoreRecentModels } from './proxy/recentModelsStor
 // MCP relay bridge (mobile companion): lists MCP servers configured on the
 // desktop session and forwards tool calls to the local MCP runtime.
 import { mcpListServers, mcpCallTool } from './proxy/mcpRelay';
-import { getValidGoogleAccessToken, normalizeCloudCodeModelId, isGoogleCloudCodeModel } from './services/googleAuth';
+import { getValidGoogleAccessToken, normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel } from './services/googleAuth';
 
 // ─── Proxy Error Emitter ──────────────────────────────────────────────────
 // Lets the main process fan-out notable diagnostics to the renderer without
@@ -354,7 +354,7 @@ export function buildProxyErrorPayload(
 
 // ─── Safe Response Helpers ─────────────────────────────────────────────────
 import { safeWriteHead, safeEnd } from './proxy/httpUtils';
-import { mergeModels, getMappedCustomModels, getCustomModelsList, injectCustomSlugsIntoAgentModelSorts } from './proxy/modelInjector';
+import { mergeModels, getMappedCustomModels, getCustomModelsList, injectCustomSlugsIntoAgentModelSorts, buildSyntheticModelsResponse } from './proxy/modelInjector';
 import { detectModelCapabilities } from './proxy/modelUtils';
 
 // ─── Model Helpers ────────────────────────────────────────────────────────
@@ -1459,6 +1459,13 @@ function handleCustomModelRequest(
   const geminiBody = trimContextPayload(rawGeminiBody);
   const bodyContents = geminiBody.contents || ((geminiBody as Record<string, unknown>).request as Record<string, unknown> | undefined)?.contents;
   if (Array.isArray(bodyContents)) {
+    while (
+      bodyContents.length > 0 &&
+      (bodyContents[bodyContents.length - 1] as { role?: string })?.role === 'model'
+    ) {
+      log.warn(`[Proxy] Pruned trailing model turn in handleCustomModelRequest to prevent 'request would have ended on a model turn' error`);
+      bodyContents.pop();
+    }
     const sessId = extractSessionId(geminiBody as Record<string, unknown>, {});
     restoreThoughtSignatures(bodyContents, sessId || '', model.name || '');
   }
@@ -1783,7 +1790,7 @@ function handleGetAvailableModelsProxy(
       const customModels = loadCustomModels();
       // Run concurrent health checks (cached with 30s TTL, max 800ms wait)
       checkAllModelsHealth(customModels).then((healthMap) => {
-        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, healthMap);
+        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, healthMap, true);
         if (
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
@@ -1796,7 +1803,7 @@ function handleGetAvailableModelsProxy(
           safeEnd(res, modifiedBuf);
         }
       }).catch(() => {
-        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels);
+        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, undefined, true);
         if (
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
@@ -1964,6 +1971,13 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
   const slugLower = slug.toLowerCase();
   const mSlugLower = (m._slug || '').toLowerCase();
 
+  const isCandidateGemini = cleanLower.startsWith('gemini-');
+  const isModelGemini = m.provider === 'google' || (!m.provider && (extLower.startsWith('gemini-') || idLower.startsWith('gemini-')));
+
+  const normCand = isCandidateGemini ? normalizeGoogleModelId(cleanLower) : '';
+  const normExt = (isModelGemini && extLower) ? normalizeGoogleModelId(extLower) : '';
+  const normId = (isModelGemini && idLower) ? normalizeGoogleModelId(idLower) : '';
+
   return (
     m.name === candidate ||
     m.name === clean ||
@@ -1979,8 +1993,10 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
     (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
     (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower)) ||
     (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower)) ||
-    (candLower.includes('gemini-3.8-flash') && (extLower.includes('gemini-3.8-flash') || idLower.includes('gemini-3.8-flash') || dispLower.includes('gemini 3.8 flash'))) ||
-    (candLower.includes('gemini-3.7-flash') && (extLower.includes('gemini-3.7-flash') || idLower.includes('gemini-3.7-flash') || dispLower.includes('gemini 3.7 flash')))
+    (isCandidateGemini && isModelGemini && Boolean(normExt) && normCand === normExt) ||
+    (isCandidateGemini && isModelGemini && Boolean(normId) && normCand === normId) ||
+    (isModelGemini && candLower.includes('gemini-3.8-flash') && (extLower.includes('gemini-3.8-flash') || idLower.includes('gemini-3.8-flash') || dispLower.includes('gemini 3.8 flash'))) ||
+    (isModelGemini && candLower.includes('gemini-3.7-flash') && (extLower.includes('gemini-3.7-flash') || idLower.includes('gemini-3.7-flash') || dispLower.includes('gemini 3.7 flash')))
   );
 }
 
@@ -2303,6 +2319,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           );
           if (found && found.externalModelName) {
             payload.model = found.externalModelName;
+          } else {
+            const active = allModels.filter(m => m.enabled !== false && m.externalModelName);
+            const defaultModel = active[0] || allModels[0];
+            if (defaultModel && defaultModel.externalModelName) {
+              payload.model = defaultModel.externalModelName;
+            }
           }
         }
         if (Array.isArray(payload.messages)) {
@@ -2435,25 +2457,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         log.warn(`[Proxy] DNS resolution failed for ${targetHost}, serving offline custom models:`, e);
         if (!res.headersSent && !res.writableEnded) {
           const customModels = loadCustomModels();
-          const mappedCustom: Record<string, unknown> = {};
-          customModels.forEach((m) => {
-            const slug = toSlug(m);
-            const pid = generateModelPlaceholderId(m);
-            const entry = {
-              displayName: m.displayName,
-              maxTokens: 1048576,
-              maxOutputTokens: 4096,
-              model: pid,
-              planModel: pid,
-              requestedModel: pid,
-              apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-              modelProvider: 'MODEL_PROVIDER_GOOGLE',
-            };
-            mappedCustom[slug] = entry;
-            mappedCustom[pid] = entry;
-          });
           safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
-          safeEnd(res, JSON.stringify({ models: mappedCustom }));
+          safeEnd(res, JSON.stringify(buildSyntheticModelsResponse(customModels)));
         }
         return;
       }
@@ -2484,25 +2489,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           googleReq.destroy();
           if (!res.headersSent && !res.writableEnded) {
             const customModels = loadCustomModels();
-            const mappedCustom: Record<string, unknown> = {};
-            customModels.forEach((m) => {
-              const slug = toSlug(m);
-              const pid = generateModelPlaceholderId(m);
-              const entry = {
-                displayName: m.displayName,
-                maxTokens: 1048576,
-                maxOutputTokens: 4096,
-                model: pid,
-                planModel: pid,
-                requestedModel: pid,
-                apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-                modelProvider: 'MODEL_PROVIDER_GOOGLE',
-              };
-              mappedCustom[slug] = entry;
-              mappedCustom[pid] = entry;
-            });
             safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
-            safeEnd(res, JSON.stringify({ models: mappedCustom }));
+            safeEnd(res, JSON.stringify(buildSyntheticModelsResponse(customModels)));
           }
         });
 
@@ -2536,7 +2524,6 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
             log.info(`[Proxy] Loaded custom models count: ${customModels.length}`);
 
-            const expandedCustomModels = expandModelsWithEffort(customModels);
 
             let merged = false;
             if (googleJson.models) {
@@ -2553,36 +2540,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             }
 
             if (!merged) {
-              const modelsMap: Record<string, unknown> = {};
-              expandedCustomModels.forEach((m) => {
-                const slug = m._slug || toSlug(m);
-                const pid = generateModelPlaceholderId(m);
-                const cap = detectModelCapabilities(m, true);
-                const entry = {
-                  displayName: m.displayName,
-                  recommended: true,
-                  maxTokens: 1048576,
-                  maxOutputTokens: 4096,
-                  tokenizerType: 'LLAMA_WITH_SPECIAL',
-                  model: pid,
-                  planModel: pid,
-                  requestedModel: pid,
-                  supportsImages: cap.supportsImages,
-                  supportsVision: cap.supportsImages,
-                  supportsThinking: cap.isThinking,
-                  apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-                  modelProvider: 'MODEL_PROVIDER_GOOGLE',
-                };
-                modelsMap[slug] = entry;
-                modelsMap[pid] = entry;
-                if (m.name && m.name !== pid && m.name !== slug) {
-                  modelsMap[m.name] = entry;
-                }
-                if (m.externalModelName && m.externalModelName !== pid && m.externalModelName !== slug) {
-                  modelsMap[m.externalModelName] = entry;
-                }
-              });
-              googleJson.models = modelsMap;
+              const synth = buildSyntheticModelsResponse(customModels);
+              googleJson.models = synth.models;
+              if (!googleJson.agentModelSorts) googleJson.agentModelSorts = synth.agentModelSorts;
             }
 
             // 2. Injecter les modèles personnalisés dans agentModelSorts (menu déroulant Antigravity IDE)
@@ -2650,25 +2610,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         log.error('[Proxy] Forwarding fetchAvailableModels failed:', err);
         if (!res.headersSent && !res.writableEnded) {
           const customModels = loadCustomModels();
-          const mappedCustom: Record<string, unknown> = {};
-          customModels.forEach((m) => {
-            const slug = toSlug(m);
-            const pid = generateModelPlaceholderId(m);
-            const entry = {
-              displayName: m.displayName,
-              maxTokens: 1048576,
-              maxOutputTokens: 4096,
-              model: pid,
-              planModel: pid,
-              requestedModel: pid,
-              apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-              modelProvider: 'MODEL_PROVIDER_GOOGLE',
-            };
-            mappedCustom[slug] = entry;
-            mappedCustom[pid] = entry;
-          });
           safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
-          safeEnd(res, JSON.stringify({ models: mappedCustom }));
+          safeEnd(res, JSON.stringify(buildSyntheticModelsResponse(customModels)));
         }
       });
 
@@ -3021,13 +2964,22 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
         if (candidateNames.length > 0) {
           const customModels = expandModelsWithEffort(loadCustomModels());
-          const matchingCandidates = customModels.filter((m) =>
+          let matchingCandidates = customModels.filter((m) =>
             candidateNames.some((cn) => matchesCustomModel(m, cn)),
           );
+          if (matchingCandidates.length === 0) {
+            matchingCandidates = customModels.filter((m) =>
+              candidateNames.some((cn) => {
+                const norm = normalizeGoogleModelId(cn);
+                return norm && (matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`));
+              }),
+            );
+          }
           let matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
-          // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298/M50)
+          // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298/M50/M565)
           if (!matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
-            matchedCustomModel = selectBestModelByQuota(customModels, customModels) || customModels[0];
+            const activePool = customModels.filter(m => !(m as any)._poolOnly && m.enabled !== false);
+            matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
           }
           
           if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
@@ -3059,10 +3011,22 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                   const targetModel = normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
 
                   reqJson.model = targetModel;
+                  if (typeof reqJson.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqJson.requestedModel)) {
+                    reqJson.requestedModel = targetModel;
+                  }
+                  if (typeof reqJson.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqJson.planModel)) {
+                    reqJson.planModel = targetModel;
+                  }
                   if (reqJson.request && typeof reqJson.request === 'object') {
-                    (reqJson.request as Record<string, unknown>).model = targetModel;
-                    // Google Cloud Code returns HTTP 400 if gpt-oss receives negative or zero thinkingBudget
                     const reqObj = reqJson.request as Record<string, unknown>;
+                    reqObj.model = targetModel;
+                    if (typeof reqObj.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.requestedModel)) {
+                      reqObj.requestedModel = targetModel;
+                    }
+                    if (typeof reqObj.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.planModel)) {
+                      reqObj.planModel = targetModel;
+                    }
+                    // Google Cloud Code returns HTTP 400 if gpt-oss receives negative or zero thinkingBudget
                     if (targetModel.includes('gpt-oss') && reqObj.generationConfig && typeof reqObj.generationConfig === 'object') {
                       const genCfg = reqObj.generationConfig as { thinkingConfig?: { thinkingBudget?: number } };
                       if (genCfg.thinkingConfig && (typeof genCfg.thinkingConfig.thinkingBudget !== 'number' || genCfg.thinkingConfig.thinkingBudget <= 0)) {
@@ -3105,12 +3069,21 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (req.method === 'POST' && (isGenerate || isStandardStream)) {
       const matchedModelName = isGenerate ? generateMatch![1] : streamMatch![1];
       const customModels = expandModelsWithEffort(loadCustomModels());
-      const matchingCandidates = customModels.filter((m) =>
+      let matchingCandidates = customModels.filter((m) =>
         matchesCustomModel(m, matchedModelName),
       );
+      if (matchingCandidates.length === 0) {
+        const norm = normalizeGoogleModelId(matchedModelName);
+        if (norm) {
+          matchingCandidates = customModels.filter((m) =>
+            matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`),
+          );
+        }
+      }
       let matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
       if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
-        matchedCustomModel = selectBestModelByQuota(customModels, customModels) || customModels[0];
+        const activePool = customModels.filter(m => !(m as any)._poolOnly && m.enabled !== false);
+        matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
       }
       
       if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
@@ -3122,6 +3095,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       if (matchedCustomModel) {
         try {
           const geminiBody = JSON.parse(bodyStr) as GeminiRequestBody;
+          if (Array.isArray(geminiBody.contents)) {
+            while (
+              geminiBody.contents.length > 0 &&
+              (geminiBody.contents[geminiBody.contents.length - 1] as { role?: string })?.role === 'model'
+            ) {
+              log.warn(`[Proxy] Pruned trailing model turn in standard generateContent to prevent 'request would have ended on a model turn' error`);
+              geminiBody.contents.pop();
+            }
+          }
 
           // Apply Sticky Session affinity (preserves prompt cache across multi-account pool)
           const sessId = extractSessionId(geminiBody as Record<string, unknown>, req.headers as Record<string, unknown>);

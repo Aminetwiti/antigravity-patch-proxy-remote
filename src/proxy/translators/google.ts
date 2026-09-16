@@ -52,6 +52,10 @@ interface GeminiRequestBody {
   };
 }
 
+// ─── Model Normalization ──────────────────────────────────────────────────
+import { normalizeGoogleModelId } from '../../services/googleAuth';
+export { normalizeGoogleModelId };
+
 // ─── Request Translation (Passthrough) ────────────────────────────────────
 
 /**
@@ -59,11 +63,10 @@ interface GeminiRequestBody {
  * The caller handles URL routing (streamGenerateContent vs generateContent).
  */
 export function mapGeminiToGoogle(geminiBody: GeminiRequestBody, modelName: string): GeminiRequestBody {
-  // Ensure the external model name is set
+  // Ensure the external model name is set and normalized
   const body: GeminiRequestBody = { ...geminiBody };
-  if (modelName && !body.model) {
-    body.model = modelName;
-  }
+  const targetModel = normalizeGoogleModelId(modelName || body.model || '');
+  body.model = targetModel;
   return body;
 }
 
@@ -143,16 +146,31 @@ export function getGoogleApiUrl(baseUrl: string, modelName: string, isStream: bo
     const modelMatch = modelPathPattern.exec(urlObj.pathname);
 
     if (modelMatch) {
-      // URL like .../v1beta/models/gemini-1.5-pro → append :method
+      // URL like .../v1beta/models/gemini-1.5-pro → normalize model & append :method
+      const normalized = normalizeGoogleModelId(modelMatch[1]);
+      if (normalized !== modelMatch[1]) {
+        urlObj.pathname = urlObj.pathname.replace(modelPathPattern, `/models/${normalized}`);
+      }
       urlObj.pathname += method;
     } else if (modelName) {
-      // Append full path with model name
-      // Strip "models/" and any provider prefix like "google/" or "vertex/"
-      const cleanName = modelName.replace(/^(?:models\/|[^/]+\/)/, '');
+      // Append full path with normalized model name
+      const cleanName = normalizeGoogleModelId(modelName);
       urlObj.pathname += `/models/${cleanName}${method}`;
     } else {
       // Fallback: assume the URL is already complete
       log.warn('[GoogleTranslator] Could not determine model name for URL construction');
+    }
+  } else {
+    // URL already has method suffix — normalize existing model name in path
+    const existingModelMatch = /\/models\/([^/:]+)(:(?:streamG|g)enerateContent)/.exec(urlObj.pathname);
+    if (existingModelMatch) {
+      const norm = normalizeGoogleModelId(existingModelMatch[1]);
+      if (norm !== existingModelMatch[1]) {
+        urlObj.pathname = urlObj.pathname.replace(
+          existingModelMatch[0],
+          `/models/${norm}${existingModelMatch[2]}`,
+        );
+      }
     }
   }
 

@@ -198,19 +198,19 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
       };
 
       const accountPerso = {
-        name: 'google-perso-gemini-2.5-pro',
+        name: 'google-perso-gemini-1.5-pro',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'AIzaSyKeyPerso12345',
       };
 
       const accountWork = {
-        name: 'google-work-gemini-2.5-pro',
+        name: 'google-work-gemini-1.5-pro',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'AIzaSyKeyWork67890',
       };
 
       const sameAccountModel = {
-        name: 'google-perso-gemini-2.5-flash',
+        name: 'google-perso-gemini-2.0-flash',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'AIzaSyKeyPerso12345',
       };

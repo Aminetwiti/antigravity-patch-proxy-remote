@@ -114,6 +114,7 @@ npm run doctor:check            # Quick check only
 npm run patch:2.2               # Apply Antigravity 2.2.1 patch
 npm run patch:2.3               # Apply Antigravity 2.3.x / 2.4.x patch
 npm run patch:2.5               # Apply Antigravity 2.5.x patch
+npm run patch:2.14              # Apply Antigravity 2.14.x patch
 npm run repatch                 # Windows one-click repatch
 npm run mitm:start              # Start MITM HTTPS proxy
 ```

@@ -52,8 +52,8 @@ describe('Account Import & Normalization', () => {
     expect(normalized?.provider).toBe('google');
     expect(normalized?.apiUrl).toBe('https://generativelanguage.googleapis.com/v1beta');
     expect(normalized?.models).toHaveLength(3);
-    expect(normalized?.models[0].id).toBe('gemini-2.5-pro');
-    expect(normalized?.models[0].displayName).toBe('Gemini 2.5 Pro');
+    expect(normalized?.models[0].id).toBe('gemini-2.0-flash');
+    expect(normalized?.models[0].displayName).toBe('Gemini 2.0 Flash');
   });
 
   it('detects token aliases (raw.token starting with 1// vs ya29.)', () => {
@@ -75,7 +75,7 @@ describe('Account Import & Normalization', () => {
         email: 'sneakersparis97@gmail.com',
         apiKey: 'ya29.oldAccess',
         refreshToken: '1//oldRefresh',
-        models: [{ id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true }],
+        models: [{ id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true }],
       },
     ];
 

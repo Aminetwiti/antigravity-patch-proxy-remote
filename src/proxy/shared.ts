@@ -114,7 +114,7 @@ export function extractAndCacheThoughtSignatures(
     if (!Array.isArray(c?.content?.parts)) continue;
     for (const part of c.content!.parts!) {
       const p = part as Record<string, unknown>;
-      const fc = p.functionCall as Record<string, unknown> | undefined;
+      const fc = (p.functionCall || p.function_call) as Record<string, unknown> | undefined;
       const fnName = (fc?.name as string) || (p.name as string);
       const sig = (typeof p.thought_signature === 'string' && p.thought_signature) ||
                   (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
@@ -171,33 +171,54 @@ export function restoreThoughtSignatures(
       const fc = p.functionCall as Record<string, unknown> | undefined;
       if (!fc || typeof fc.name !== 'string' || !fc.name) continue;
 
+      // ponytail: Google API rejects unknown fields inside function_call.
+      // thought_signature is part-level only. Strip from fc unconditionally,
+      // promoting to part-level if the sig was only inside fc.
+      const fcs = [p.functionCall as Record<string, unknown> | undefined, p.function_call as Record<string, unknown> | undefined];
+      let fcSig: string | undefined = undefined;
+
+      for (const fc of fcs) {
+        if (!fc) continue;
+        const sig = (typeof fc.thought_signature === 'string' && fc.thought_signature) ||
+                    (typeof fc.thoughtSignature === 'string' && fc.thoughtSignature);
+      delete fc.thought_signature;
+      delete fc.thoughtSignature;
+        if (sig && !fcSig) fcSig = sig;
+        delete fc.thought_signature;
+        delete fc.thoughtSignature;
+      }
+
+      const fcForName = fcs[0] || fcs[1];
+      if (!fcForName || typeof fcForName.name !== 'string' || !fcForName.name) continue;
+
+      if (fcSig && !p.thought_signature && !p.thoughtSignature) {
+        p.thought_signature = fcSig;
+        p.thoughtSignature = fcSig;
+      }
+
       const existingSig = (typeof p.thought_signature === 'string' && p.thought_signature) ||
-                          (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
-                          (typeof fc.thought_signature === 'string' && fc.thought_signature) ||
-                          (typeof fc.thoughtSignature === 'string' && fc.thoughtSignature);
+                          (typeof p.thoughtSignature === 'string' && p.thoughtSignature);
 
       // Cross-model sanitize: if targeting Gemini and existing signature is from Claude, strip it
       if (existingSig) {
         const sigMeta = thoughtSignatureMeta.get(existingSig) ||
-                        (convId ? thoughtSignatureMeta.get(`${convId}:${fc.name}`) : undefined) ||
-                        thoughtSignatureMeta.get(fc.name);
+                        (convId ? thoughtSignatureMeta.get(`${convId}:${fcForName.name}`) : undefined) ||
+                        thoughtSignatureMeta.get(fcForName.name as string);
         if (targetFamily === 'gemini' && sigMeta?.family === 'claude') {
           delete p.thought_signature;
           delete p.thoughtSignature;
-          delete fc.thought_signature;
-          delete fc.thoughtSignature;
         } else {
           continue;
         }
       }
 
-      const scopedKey = convId ? `${convId}:${fc.name}` : '';
+      const scopedKey = convId ? `${convId}:${fcForName.name}` : '';
       const cached = (scopedKey && thoughtSignatureCache.get(scopedKey)) ||
-                     thoughtSignatureCache.get(fc.name as string);
+                     thoughtSignatureCache.get(fcForName.name as string);
 
       // If cached signature is from an incompatible model family, skip it
       const cachedMeta = (scopedKey && thoughtSignatureMeta.get(scopedKey)) ||
-                         thoughtSignatureMeta.get(fc.name as string);
+                         thoughtSignatureMeta.get(fcForName.name as string);
       if (targetFamily === 'gemini' && cachedMeta?.family === 'claude') {
         continue;
       }
@@ -206,8 +227,6 @@ export function restoreThoughtSignatures(
 
       p.thought_signature = sigToUse;
       p.thoughtSignature = sigToUse;
-      fc.thought_signature = sigToUse;
-      fc.thoughtSignature = sigToUse;
       restoredCount++;
     }
   }

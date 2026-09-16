@@ -620,6 +620,22 @@ async function main() {
   }
   console.log(`            sub-total: ${nrCount} files, ${nrBytes} B`);
 
+  // Step 4b: update package.json version in app.asar to 2.14.0 (or AG_FORCE_VERSION)
+  const pkgPathInBuild = path.join(buildDir, 'package.json');
+  if (fs.existsSync(pkgPathInBuild)) {
+    try {
+      const pkgJson = JSON.parse(fs.readFileSync(pkgPathInBuild, 'utf8'));
+      const targetVer = process.env.AG_FORCE_VERSION || '2.14.0';
+      if (pkgJson.version !== targetVer) {
+        console.log(`            + updated app.asar version: ${pkgJson.version} -> ${targetVer}`);
+        pkgJson.version = targetVer;
+        fs.writeFileSync(pkgPathInBuild, JSON.stringify(pkgJson, null, 2), 'utf8');
+      }
+    } catch (e) {
+      console.warn(`[patch_2_5] notice: package.json version update skipped: ${e.message}`);
+    }
+  }
+
   // Step 5: stage MITM files into app.asar.unpacked/ so proxy-runner.js
   // can spawn the MITM HTTPS forwarder on Antigravity startup.
   console.log(`[patch_2_3] step 5/6 — stage ${UNPACKED_LAYOUT.length} MITM files into app.asar.unpacked/`);

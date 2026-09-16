@@ -201,8 +201,9 @@ describe('agentModelSorts custom slug injection', () => {
 
     expect(googleJson.agentModelSorts).toBeDefined();
     const sortGroup = (googleJson.agentModelSorts as { groups: { modelIds: string[] }[] }[])[0].groups[0].modelIds;
-    expect(sortGroup.length).toBe(1);
-    expect(sortGroup[0]).toMatch(/^custom-openai-/);
+    // Canonical stock models (7) are seeded first, custom slug appended after
+    expect(sortGroup.length).toBeGreaterThan(1);
+    expect(sortGroup[sortGroup.length - 1]).toMatch(/^custom-openai-/);
   });
 });
 
