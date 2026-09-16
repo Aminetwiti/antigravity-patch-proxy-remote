@@ -282,7 +282,7 @@ import { recordRecentModel, restoreRecentModels } from './proxy/recentModelsStor
 // MCP relay bridge (mobile companion): lists MCP servers configured on the
 // desktop session and forwards tool calls to the local MCP runtime.
 import { mcpListServers, mcpCallTool } from './proxy/mcpRelay';
-import { getValidGoogleAccessToken, normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel } from './services/googleAuth';
+import { getValidGoogleAccessToken, normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel, sanitizeCloudCodeGenerationConfig } from './services/googleAuth';
 
 // ─── Proxy Error Emitter ──────────────────────────────────────────────────
 // Lets the main process fan-out notable diagnostics to the renderer without
@@ -1421,7 +1421,7 @@ export function getSessionBoundModel(
     return targetModel;
   }
 
-  // Find candidate models that share the same base external model (e.g. Gemini 2.5 Pro across accounts)
+  // Find candidate models that share the same base external model (e.g. Gemini 3.1 Pro High across accounts)
   const targetBase = getBaseModelId(targetModel.externalModelName);
   const bound = allModels.find((m) => {
     const mBase = getBaseModelId(m.externalModelName);
@@ -3026,13 +3026,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                     if (typeof reqObj.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.planModel)) {
                       reqObj.planModel = targetModel;
                     }
-                    // Google Cloud Code returns HTTP 400 if gpt-oss receives negative or zero thinkingBudget
-                    if (targetModel.includes('gpt-oss') && reqObj.generationConfig && typeof reqObj.generationConfig === 'object') {
-                      const genCfg = reqObj.generationConfig as { thinkingConfig?: { thinkingBudget?: number } };
-                      if (genCfg.thinkingConfig && (typeof genCfg.thinkingConfig.thinkingBudget !== 'number' || genCfg.thinkingConfig.thinkingBudget <= 0)) {
-                        delete genCfg.thinkingConfig;
-                      }
-                    }
+                    sanitizeCloudCodeGenerationConfig(reqObj, targetModel);
                   }
                   if (!reqJson.project) {
                     reqJson.project = (matchedCustomModel as { projectId?: string }).projectId || process.env.AG_CLOUD_CODE_PROJECT_ID || 'bamboo-precept-lgxtn';
@@ -3117,12 +3111,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               try {
                 const accessToken = await getValidGoogleAccessToken(matchedCustomModel);
                 const targetModel = normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
-                if (targetModel.includes('gpt-oss') && geminiBody.generationConfig && typeof geminiBody.generationConfig === 'object') {
-                  const genCfg = geminiBody.generationConfig as { thinkingConfig?: { thinkingBudget?: number } };
-                  if (genCfg.thinkingConfig && (typeof genCfg.thinkingConfig.thinkingBudget !== 'number' || genCfg.thinkingConfig.thinkingBudget <= 0)) {
-                    delete genCfg.thinkingConfig;
-                  }
-                }
+                sanitizeCloudCodeGenerationConfig(geminiBody as Record<string, unknown>, targetModel);
                 const cloudCodePayload = {
                   project: (matchedCustomModel as { projectId?: string }).projectId || process.env.AG_CLOUD_CODE_PROJECT_ID || 'bamboo-precept-lgxtn',
                   model: targetModel,

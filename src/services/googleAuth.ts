@@ -132,8 +132,26 @@ export async function getValidGoogleAccessToken(account: {
  * Maps legacy/alias names (e.g. gemini-3.8-flash-high) to upstream names (e.g. gemini-3.8-flash-tiered).
  */
 export function normalizeCloudCodeModelId(modelId: string): string {
-  if (!modelId) return 'gemini-2.5-flash';
+  if (!modelId) return 'gemini-3.8-flash-tiered';
   const clean = modelId.replace(/^models\//, '').trim();
+
+  const validCloudCodeModels = new Set([
+    'gemini-3.8-flash-tiered',
+    'gemini-3.7-flash-tiered',
+    'gemini-3.6-flash-tiered',
+    'gemini-3.1-pro-high',
+    'gemini-2.0-flash',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash',
+    'claude-sonnet-4-6',
+    'claude-opus-4-6-thinking',
+    'gpt-oss-120b-medium',
+  ]);
+
+  if (validCloudCodeModels.has(clean)) {
+    return clean;
+  }
+
   const map: Record<string, string> = {
     'gemini-3.8-flash-low': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash-medium': 'gemini-3.8-flash-tiered',
@@ -149,27 +167,40 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.6-flash': 'gemini-3.6-flash-tiered',
     'gemini-3.1-pro-low': 'gemini-3.1-pro-high',
     'gemini-3.1-pro': 'gemini-3.1-pro-high',
+    'gemini-2.5-flash': 'gemini-3.8-flash-tiered',
+    'gemini-2.5-pro': 'gemini-3.1-pro-high',
+    'gemini-flash': 'gemini-3.8-flash-tiered',
+    'gemini-pro': 'gemini-3.1-pro-high',
+    'claude-3-7-sonnet': 'claude-sonnet-4-6',
+    'claude-3.7-sonnet': 'claude-sonnet-4-6',
+    'claude-sonnet': 'claude-sonnet-4-6',
+    'claude-opus': 'claude-opus-4-6-thinking',
   };
-  return map[clean] || clean;
+
+  if (map[clean]) return map[clean];
+
+  if (clean.includes('opus')) return 'claude-opus-4-6-thinking';
+  if (clean.includes('claude') || clean.includes('sonnet')) return 'claude-sonnet-4-6';
+  if (clean.includes('pro')) return 'gemini-3.1-pro-high';
+  if (clean.includes('flash')) return 'gemini-3.8-flash-tiered';
+  if (clean.includes('gpt-oss')) return 'gpt-oss-120b-medium';
+
+  return 'gemini-3.8-flash-tiered';
 }
 
 /**
- * Normalizes Google AI Studio / Gemini model identifiers, mapping unknown, tiered, or legacy
- * model names to canonical Google models (e.g. gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash) without throwing 404.
+ * Normalizes Google AI Studio / Gemini model identifiers, mapping unknown, legacy, or alias
+ * model names to canonical Google Cloud Code models (e.g. gemini-3.8-flash-tiered, gemini-3.1-pro-high, claude-sonnet-4-6) without throwing 404.
  */
 export function normalizeGoogleModelId(modelName: string): string {
-  if (!modelName) return 'gemini-2.5-flash';
+  if (!modelName) return 'gemini-3.8-flash-tiered';
   let clean = modelName.replace(/^(?:models\/|[^/]+\/)/, '').trim().toLowerCase();
-  clean = clean.replace(/-(tiered|low|medium|high)$/i, '');
 
   const validModels = new Set([
-    'gemini-2.5-flash',
-    'gemini-2.5-pro',
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
-    'gemini-1.5-flash-8b',
+    'gemini-3.8-flash-tiered',
+    'gemini-3.7-flash-tiered',
+    'gemini-3.1-pro-high',
+    'claude-sonnet-4-6',
   ]);
 
   if (validModels.has(clean)) {
@@ -177,35 +208,34 @@ export function normalizeGoogleModelId(modelName: string): string {
   }
 
   const aliasMap: Record<string, string> = {
-    'gemini-3.8-flash': 'gemini-2.5-flash',
-    'gemini-3.7-flash': 'gemini-2.5-flash',
-    'gemini-3.6-flash': 'gemini-2.5-flash',
-    'gemini-3.5-flash': 'gemini-2.5-flash',
-    'gemini-flash': 'gemini-2.5-flash',
-    'gemini-flash-2.5': 'gemini-2.5-flash',
-    'gemini-flash-2.0': 'gemini-2.0-flash',
-    'gemini-flash-1.5': 'gemini-1.5-flash',
-    'gemini-3.1-pro': 'gemini-2.5-pro',
-    'gemini-3.0-pro': 'gemini-2.5-pro',
-    'gemini-pro': 'gemini-2.5-pro',
-    'gemini-pro-2.5': 'gemini-2.5-pro',
-    'gemini-pro-1.5': 'gemini-1.5-pro',
+    'gemini-1.5-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.7-flash': 'gemini-3.7-flash-tiered',
+    'gemini-flash': 'gemini-3.8-flash-tiered',
+    'gemini-flash-2.5': 'gemini-3.8-flash-tiered',
+    'gemini-flash-2.0': 'gemini-3.8-flash-tiered',
+    'gemini-flash-1.5': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-pro': 'gemini-3.1-pro-high',
+    'gemini-3.0-pro': 'gemini-3.1-pro-high',
+    'gemini-pro': 'gemini-3.1-pro-high',
+    'gemini-pro-2.5': 'gemini-3.1-pro-high',
+    'gemini-pro-1.5': 'gemini-3.1-pro-high',
+    'claude-sonnet': 'claude-sonnet-4-6',
   };
 
   if (aliasMap[clean]) {
     return aliasMap[clean];
   }
 
-  if (clean.includes('claude') || clean.includes('gpt') || clean.includes('deepseek') || clean.includes('qwen')) {
-    return clean.includes('pro') || clean.includes('opus') || clean.includes('sonnet')
-      ? 'gemini-2.5-pro'
-      : 'gemini-2.5-flash';
+  if (clean.includes('claude') || clean.includes('sonnet')) {
+    return 'claude-sonnet-4-6';
   }
 
-  if (clean.includes('pro')) {
-    return 'gemini-2.5-pro';
+  if (clean.includes('pro') || clean.includes('opus')) {
+    return 'gemini-3.1-pro-high';
   }
-  return 'gemini-2.5-flash';
+
+  return 'gemini-3.8-flash-tiered';
 }
 
 /**
@@ -229,3 +259,49 @@ export function isGoogleCloudCodeModel(m: {
     m.apiUrl?.includes('cloudcode')
   );
 }
+
+/**
+ * Sanitizes generationConfig for Google Cloud Code and Vertex AI models to prevent HTTP 400 Bad Request errors.
+ * - Deletes thinkingConfig if budget is NaN, 0, or negative (prevents Cloud Code 400 on gpt-oss/gemini).
+ * - Clamps thinkingBudget to >= 1024 for Claude models (prevents Vertex AI 400: budget_tokens >= 1024).
+ * - Ensures maxOutputTokens > thinkingBudget for Claude models with thinking.
+ * - Strips temperature/topP/topK for Claude models when thinking is active (Anthropic API requirement).
+ * - Prunes trailing model turns from contents to avoid "request would have ended on a model turn".
+ */
+export function sanitizeCloudCodeGenerationConfig(
+  reqObj: Record<string, unknown>,
+  targetModel: string,
+): void {
+  if (!reqObj || typeof reqObj !== 'object') return;
+  const genCfg = reqObj.generationConfig as Record<string, any> | undefined;
+  if (genCfg && typeof genCfg === 'object') {
+    const tc = genCfg.thinkingConfig;
+    if (tc && typeof tc === 'object') {
+      const budget = typeof tc.thinkingBudget === 'number' ? tc.thinkingBudget : parseInt(tc.thinkingBudget, 10);
+      if (isNaN(budget) || budget <= 0) {
+        delete genCfg.thinkingConfig;
+      } else if (targetModel.includes('claude')) {
+        if (budget < 1024) {
+          tc.thinkingBudget = 1024;
+        }
+        if (typeof genCfg.maxOutputTokens === 'number' && genCfg.maxOutputTokens <= tc.thinkingBudget) {
+          genCfg.maxOutputTokens = tc.thinkingBudget + 2048;
+        }
+        delete genCfg.temperature;
+        delete genCfg.topP;
+        delete genCfg.topK;
+      }
+    }
+  }
+
+  if (Array.isArray(reqObj.contents)) {
+    while (
+      reqObj.contents.length > 0 &&
+      (reqObj.contents[reqObj.contents.length - 1] as { role?: string })?.role === 'model'
+    ) {
+      log.warn(`[Proxy] Pruned trailing model turn in Cloud Code request for ${targetModel}`);
+      reqObj.contents.pop();
+    }
+  }
+}
+
