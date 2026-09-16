@@ -1,3 +1,8 @@
+---
+description: "Antigravity Patch Proxy Developer Rules"
+trigger: always_on
+---
+
 # AGENTS.md — Antigravity Patch Proxy
 
 > `antigravity-patch-proxy` v3.5.0 — Desktop Electron proxy that injects custom LLM models (Claude, GPT, DeepSeek, Ollama, etc.) into Google Antigravity IDE.

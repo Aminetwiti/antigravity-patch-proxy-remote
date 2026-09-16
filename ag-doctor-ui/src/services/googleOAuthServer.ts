@@ -40,11 +40,9 @@ const STANDARD_GOOGLE_MODELS = [
   { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
   { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
   { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
-  { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
-  { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
   { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
-  { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
-  { id: 'gpt-oss-120b-medium', displayName: 'GPT OSS 120B', enabled: true },
+  { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: false },
+  { id: 'gpt-oss-120b-medium', displayName: 'GPT OSS 120B', enabled: false },
 ];
 
 function getCustomModelsPath(): string {

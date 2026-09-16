@@ -4383,9 +4383,10 @@ if (pmImportLocalBtn) {
         enabled: true,
         allowUnauthorized: false,
         models: [
-          { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
-          { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
-          { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
+          { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+          { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+          { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
         ],
       };
 
@@ -5803,6 +5804,64 @@ function initGoogleAccountsToolbarOnce(): void {
   }
 }
 
+function getUnifiedGoogleModelsList(): Array<{ id: string; displayName: string; enabled: boolean }> {
+  const STANDARD_GOOGLE_MODELS = [
+    { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+    { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+    { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+    { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
+    { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: false },
+    { id: 'gpt-oss-120b-medium', displayName: 'GPT OSS 120B', enabled: false },
+  ];
+
+  const masterModelMap = new Map<string, { id: string; displayName: string; enabled: boolean }>();
+
+  for (const m of STANDARD_GOOGLE_MODELS) {
+    masterModelMap.set(m.id, { ...m });
+  }
+
+  for (const acc of googleAccountsCache || []) {
+    if (Array.isArray(acc.models)) {
+      for (const m of acc.models) {
+        if (!m || !m.id) continue;
+        const cleanName = (m.displayName || (m as any).name || m.id).replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
+        const existing = masterModelMap.get(m.id);
+        if (existing) {
+          if (cleanName && cleanName !== m.id) {
+            existing.displayName = cleanName;
+          }
+        } else {
+          masterModelMap.set(m.id, {
+            id: m.id,
+            displayName: cleanName || m.id,
+            enabled: m.enabled !== false,
+          });
+        }
+      }
+    }
+  }
+
+  return Array.from(masterModelMap.values());
+}
+
+async function synchronizeGoogleAccountsModels(accounts?: any[]): Promise<void> {
+  const targetAccounts = accounts || googleAccountsCache;
+  if (!targetAccounts || targetAccounts.length === 0) return;
+
+  const masterModelsList = getUnifiedGoogleModelsList();
+
+  for (const acc of targetAccounts) {
+    const prevJson = JSON.stringify(acc.models || []);
+    const newJson = JSON.stringify(masterModelsList);
+    acc.models = JSON.parse(newJson);
+    if (prevJson !== newJson && acc.id) {
+      try {
+        await window.ag.providers.save(acc);
+      } catch {}
+    }
+  }
+}
+
 async function loadGoogleAccounts(): Promise<void> {
   if (!gaAccountsContainer) return;
   showSkeleton(gaAccountsContainer, 'cards', 2);
@@ -5811,6 +5870,9 @@ async function loadGoogleAccounts(): Promise<void> {
     googleAccountsCache = (allProviders || []).filter(
       (p) => p.provider === 'google' || p.provider === 'gemini' || (p.apiUrl && p.apiUrl.includes('googleapis.com'))
     );
+
+    // Synchronize models across all Google accounts so all accounts share the exact same model configuration
+    await synchronizeGoogleAccountsModels(googleAccountsCache);
 
     // Refresh live quotas in parallel for accounts with Google OAuth access tokens or refresh tokens
     await Promise.allSettled(
@@ -6291,23 +6353,7 @@ function openGoogleAccountModal(existingId?: string): void {
         gaFormKey.placeholder = isIde ? 'Géré automatiquement (OAuth ya29…) — ou entrez une clé AIzaSy…' : 'AIzaSy…';
       }
 
-      currentGaFetchedModels = (account.models || []).map((m) => {
-        let cleanName = m.displayName || m.id;
-        cleanName = cleanName.replace(/^\[[^\]]+\]\s*/, '');
-        return {
-          id: m.id,
-          displayName: cleanName,
-          enabled: m.enabled !== false,
-        };
-      });
-
-      if (currentGaFetchedModels.length === 0) {
-        currentGaFetchedModels = [
-          { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
-          { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
-          { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
-        ];
-      }
+      currentGaFetchedModels = getUnifiedGoogleModelsList();
     }
   } else {
     if (gaModalTitle) gaModalTitle.textContent = 'Add Google Account';
@@ -6320,10 +6366,7 @@ function openGoogleAccountModal(existingId?: string): void {
     gaFormName.value = '';
     gaFormUrl.value = 'https://generativelanguage.googleapis.com/v1beta';
     gaFormKey.value = '';
-    currentGaFetchedModels = [
-      { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
-      { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
-    ];
+    currentGaFetchedModels = getUnifiedGoogleModelsList();
   }
 
   renderGaFormModelsList();
@@ -6415,9 +6458,10 @@ async function triggerIdeAccountDiscovery(): Promise<void> {
               enabled: m.enabled !== false,
             }))
           : [
-              { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
-              { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true },
-              { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: true },
+              { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+              { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+              { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+              { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
             ],
       };
 
@@ -6661,8 +6705,10 @@ gaFormSaveBtn?.addEventListener('click', async () => {
 
   if (currentGaFetchedModels.length === 0) {
     currentGaFetchedModels.push(
-      { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
-      { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true }
+      { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+      { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+      { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+      { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true }
     );
   }
 
@@ -6700,7 +6746,16 @@ gaFormSaveBtn?.addEventListener('click', async () => {
   try {
     const res = (await window.ag.providers.save(accountEntry)) as { success: boolean; error?: string };
     if (res.success) {
-      toast(`Account "${name}" saved! Models are now in Antigravity dropdown.`, 'ok');
+      // Propagate updated model choices to ALL Google accounts so they share the common provider model config
+      for (const otherAcc of googleAccountsCache) {
+        if (otherAcc.id !== accountEntry.id) {
+          otherAcc.models = JSON.parse(JSON.stringify(accountEntry.models));
+          try {
+            await window.ag.providers.save(otherAcc);
+          } catch {}
+        }
+      }
+      toast(`Account "${name}" saved! Models are now synchronized across all Google accounts.`, 'ok');
       closeGoogleAccountModal();
       await loadGoogleAccounts();
       void loadModels();
@@ -6804,6 +6859,7 @@ gaSyncAllBtn?.addEventListener('click', async () => {
         }
       } catch { /* continue with next */ }
     }
+    await synchronizeGoogleAccountsModels(googleAccountsCache);
     toast(`Synced ${totalSyncedModels} models across ${googleAccountsCache.length} accounts!`, 'ok');
     await loadGoogleAccounts();
     void loadModels();
