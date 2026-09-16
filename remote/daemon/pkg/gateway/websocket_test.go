@@ -1241,12 +1241,12 @@ func TestWebSocketSendCommandMissingArg(t *testing.T) {
 func TestWebSocketListModels(t *testing.T) {
 	// Réponse réaliste construite avec le writer de test.
 	details := &protoWriter{}
-	details.string(1, "Claude 3.7 Sonnet")
+	details.string(1, "Claude Sonnet 4.6")
 	details.varint(2, 1) // supports_images
 	details.varint(3, 1) // supports_thinking
 	details.varint(6, 1) // recommended
 	entry := &protoWriter{}
-	entry.string(1, "claude-3-7-sonnet")
+	entry.string(1, "claude-sonnet-4-6")
 	entry.bytes(2, details.buf)
 	fetch := &protoWriter{}
 	fetch.bytes(1, entry.buf)
@@ -1273,7 +1273,7 @@ func TestWebSocketListModels(t *testing.T) {
 		t.Fatalf("attendu au moins 1 modèle, reçu %v", data)
 	}
 	first, ok := models[0].(map[string]interface{})
-	if !ok || first["modelId"] != "claude-3-7-sonnet" || first["displayName"] != "Claude 3.7 Sonnet" {
+	if !ok || first["modelId"] != "claude-sonnet-4-6" || first["displayName"] != "Claude Sonnet 4.6" {
 		t.Fatalf("modèle mal décodé: %v", models[0])
 	}
 	if first["supportsThinking"] != true || first["recommended"] != true {

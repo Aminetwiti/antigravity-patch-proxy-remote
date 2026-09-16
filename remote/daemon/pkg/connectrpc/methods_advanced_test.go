@@ -5,7 +5,7 @@ import (
 )
 
 func TestBuildStartBattleMode(t *testing.T) {
-	blob := BuildStartBattleMode("file:///workspace/repo", "Compare implementations", "claude-3-7-sonnet", 384, "gemini-1-5-pro", 246)
+	blob := BuildStartBattleMode("file:///workspace/repo", "Compare implementations", "claude-sonnet-4-6", 384, "gemini-3-1-pro-high", 246)
 	if len(blob) == 0 {
 		t.Fatalf("BuildStartBattleMode produced empty bytes")
 	}

@@ -68,14 +68,14 @@ describe('Bulk Operations on Selected Models', () => {
       apiKey: 'sk-ant',
       enabled: false,
       models: [
-        { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet', enabled: false },
+        { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: false },
         { id: 'claude-3-5-haiku', displayName: 'Claude 3.5 Haiku', enabled: false },
       ],
     },
   ];
 
   it('enables only selected models in bulk', () => {
-    const selected = new Set(['claude-3-7-sonnet', 'deepseek-reasoner']);
+    const selected = new Set(['claude-sonnet-4-6', 'deepseek-reasoner']);
     const updated = bulkEnableModels(sampleProviders, selected);
     
     expect(updated[0].models![0].enabled).toBe(true); // unaffected
@@ -85,7 +85,7 @@ describe('Bulk Operations on Selected Models', () => {
   });
 
   it('disables only selected models in bulk', () => {
-    const selected = new Set(['deepseek-chat', 'claude-3-7-sonnet']);
+    const selected = new Set(['deepseek-chat', 'claude-sonnet-4-6']);
     const updated = bulkDisableModels(sampleProviders, selected);
     
     expect(updated[0].models![0].enabled).toBe(false); // disabled
@@ -102,7 +102,7 @@ describe('Bulk Operations on Selected Models', () => {
     expect(updated[0].models![0].id).toBe('deepseek-reasoner');
     
     expect(updated[1].models).toHaveLength(1);
-    expect(updated[1].models![0].id).toBe('claude-3-7-sonnet');
+    expect(updated[1].models![0].id).toBe('claude-sonnet-4-6');
   });
 
   it('handles prefixed model names correctly when resolving model IDs in bulk', () => {

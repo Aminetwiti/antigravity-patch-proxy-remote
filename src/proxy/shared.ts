@@ -162,6 +162,9 @@ export function restoreThoughtSignatures(
 ): boolean {
   let restoredCount = 0;
   const targetFamily = detectSignatureFamily(targetModel);
+  if (targetFamily === 'claude') {
+    return false;
+  }
 
   for (const content of contents) {
     const c = content as { parts?: unknown[] };
@@ -181,8 +184,6 @@ export function restoreThoughtSignatures(
         if (!fc) continue;
         const sig = (typeof fc.thought_signature === 'string' && fc.thought_signature) ||
                     (typeof fc.thoughtSignature === 'string' && fc.thoughtSignature);
-      delete fc.thought_signature;
-      delete fc.thoughtSignature;
         if (sig && !fcSig) fcSig = sig;
         delete fc.thought_signature;
         delete fc.thoughtSignature;
@@ -223,10 +224,12 @@ export function restoreThoughtSignatures(
         continue;
       }
 
-      const sigToUse = cached || 'skip_thought_signature_validator';
+      // No cached signature — don't set anything. Sending a placeholder string
+      // causes Google's API to return INVALID_ARGUMENT (400).
+      if (!cached) continue;
 
-      p.thought_signature = sigToUse;
-      p.thoughtSignature = sigToUse;
+      p.thought_signature = cached;
+      p.thoughtSignature = cached;
       restoredCount++;
     }
   }

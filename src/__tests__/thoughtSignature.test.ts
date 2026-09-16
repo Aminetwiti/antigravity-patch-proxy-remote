@@ -165,7 +165,7 @@ describe('thoughtSignature handling', () => {
       expect(part.thought_signature).toBe('sig_existing_original');
     });
 
-    it('uses skip_thought_signature_validator fallback when cache has no entry', () => {
+    it('does not set thought_signature when cache has no entry (avoids INVALID_ARGUMENT)', () => {
       const contents = [
         {
           role: 'model',
@@ -182,9 +182,9 @@ describe('thoughtSignature handling', () => {
 
       const restored = restoreThoughtSignatures(contents, 'conv-fresh');
 
-      expect(restored).toBe(true);
+      expect(restored).toBe(false);
       const part = contents[0].parts[0] as any;
-      expect(part.thought_signature).toBe('skip_thought_signature_validator');
+      expect(part.thought_signature).toBeUndefined();
       expect(part.functionCall.thought_signature).toBeUndefined();
     });
 

@@ -146,10 +146,10 @@ describe('detectModelCapabilitiesByName', () => {
     expect(result.isThinkingModel).toBe(false);
   });
 
-  it('handles claude-3-7 models', () => {
-    const result = detectModelCapabilitiesByName('claude-3-7-sonnet');
+  it('handles claude-sonnet-4-6 models', () => {
+    const result = detectModelCapabilitiesByName('claude-sonnet-4-6');
     expect(result.isClaudeThinkingModel).toBe(true);
-    expect(result.isThinkingModel).toBe(false);
+    expect(result.isThinkingModel).toBe(true);
   });
 
   it('handles empty/null input gracefully', () => {

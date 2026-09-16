@@ -9,9 +9,10 @@ import { app } from 'electron';
 import log from 'electron-log';
 import * as cryptoStore from '../cryptoStore';
 import { validateCustomModel } from '../schemaValidator';
-import { ALL_PROVIDERS, type ProviderName, LOCAL_SERVICES } from '../constants';
+import { ALL_PROVIDERS, type ProviderName, LOCAL_SERVICES, STANDARD_GOOGLE_MODELS } from '../constants';
 import { generateModelPlaceholderId } from './idGenerator';
 import type { CustomModel } from './types';
+import { normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel } from '../services/googleAuth';
 
 /** Shape of a raw entry in the `providers` array of custom_models.json. */
 interface RawProviderEntry {
@@ -169,15 +170,22 @@ function validateModels(decrypted: CustomModel[]): CustomModel[] {
 function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
   const flatModels: CustomModel[] = [];
   for (const p of providers) {
-    if (p.enabled === false) continue;
+    const hasEnabledAccounts = Array.isArray((p as any).accounts) && (p as any).accounts.some((a: any) => a && a.enabled !== false);
+    if (p.enabled === false && !hasEnabledAccounts) continue;
 
     const accounts = Array.isArray((p as any).accounts) && (p as any).accounts.length > 0
       ? (p as any).accounts
       : [{ id: p.id, name: p.name, email: p.email, apiKey: p.apiKey, refreshToken: p.refreshToken, quotas: p.quotas, projectId: p.projectId, enabled: p.enabled }];
 
+    const isGoogle = p.provider === 'google' || p.provider === 'gemini' || p.id === 'provider-google';
+    let models = Array.isArray(p.models) && p.models.length > 0 ? p.models : [];
+    if (models.length === 0 && isGoogle) {
+      const accWithModels = accounts.find((a: any) => Array.isArray(a.models) && a.models.length > 0);
+      models = accWithModels ? accWithModels.models : STANDARD_GOOGLE_MODELS;
+    }
+
     for (const acc of accounts) {
       if (acc.enabled === false) continue;
-      const models = Array.isArray(p.models) ? p.models : [];
       for (const m of models) {
       if (m.enabled === false) continue;
       const mergedHeaders = { ...p.extraHeaders, ...(m as { extraHeaders?: Record<string, string> }).extraHeaders };
@@ -265,6 +273,25 @@ export function loadCustomModels(): CustomModel[] {
     } else {
       const models = parsed.models || [];
       loadedModels = parseModelsSchema(models, filePath);
+    }
+
+    // Auto-remap unhosted Google model IDs so stale saved configs on disk are cleaned up in memory and updated
+    for (const m of loadedModels) {
+      if (m.provider === 'google' || isGoogleCloudCodeModel(m)) {
+        const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim();
+        if (rawName) {
+          const norm = isGoogleCloudCodeModel(m)
+            ? normalizeCloudCodeModelId(rawName)
+            : normalizeGoogleModelId(rawName);
+          if (norm && norm !== rawName) {
+            log.info(`[ModelLoader] Auto-remapped unhosted/alias Google model ID '${rawName}' to '${norm}'`);
+            m.externalModelName = norm;
+            if (m.name && (m.name === rawName || m.name === `models/${rawName}`)) {
+              m.name = `models/${norm}`;
+            }
+          }
+        }
+      }
     }
 
     // For Google accounts: collapse to ONE pooled entry per unique model ID.

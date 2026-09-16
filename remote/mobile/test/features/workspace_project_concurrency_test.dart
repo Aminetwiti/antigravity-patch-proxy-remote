@@ -82,7 +82,7 @@ void main() {
         const CascadeSession(
           id: 's-user-1',
           workspacePath: 'c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main',
-          title: 'Implémenter le nouveau modèle Claude 3.7',
+          title: 'Implémenter le nouveau modèle Claude Sonnet 4.6',
           status: 'CASCADE_STATUS_READY',
           time: 'Maintenant',
         ),

@@ -885,7 +885,7 @@ async function runDoctor(): Promise<void> {
     const results = JSON.parse(result.stdout) as CheckResult[];
     updateStats(results);
     updateObjectives(results);
-    
+
     setStatus('Ready', 'ready');
   } catch (e) {
     toast(`Doctor failed: ${(e as Error).message}. Check the Logs tab for full output.`, 'err', 5000);
@@ -1015,13 +1015,13 @@ async function runStartStub(): Promise<void> {
 function setObjective(key: ObjectiveKey, state: 'pending' | 'ok' | 'warn' | 'error', detail?: string): void {
   const el = document.getElementById(`obj-${key}`);
   if (!el) return;
-  
+
   const iconDiv = el.querySelector('.objective-icon');
   if (iconDiv) {
     iconDiv.className = `objective-icon ${state}`;
     iconDiv.innerHTML = iconForObjective(state);
   }
-  
+
   const statusDiv = el.querySelector('.objective-status');
   if (statusDiv) {
     statusDiv.textContent = detail || (state === 'pending' ? 'Pending' : state === 'ok' ? 'OK' : state === 'warn' ? 'Warning' : 'Error');
@@ -1679,10 +1679,10 @@ document.querySelectorAll('.models-cat-tab').forEach(btn => {
     const target = e.currentTarget as HTMLButtonElement;
     const cat = target.dataset.cat as 'all' | 'active' | 'disabled';
     if (!cat) return;
-    
+
     document.querySelectorAll('.models-cat-tab').forEach(b => b.classList.remove('active'));
     target.classList.add('active');
-    
+
     modelsCategoryFilter = cat;
     modelsCurrentPage = 1;
     renderModelsView();
@@ -1758,7 +1758,7 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
   } else if (action === 'toggle') {
     const isCurrentlyEnabled = !btn.classList.contains('is-disabled');
     const newEnabled = !isCurrentlyEnabled;
-    
+
     // Toggle active UI state immediately for responsiveness
     btn.classList.toggle('is-disabled', !newEnabled);
     btn.classList.toggle('is-active', newEnabled);
@@ -1771,7 +1771,7 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
 
     // Always find parent provider and save state
     const parentProvider = await getProviderForModelBulk(name);
-    
+
     if (parentProvider) {
       const targetId = resolveModelId(parentProvider, name);
       if (!parentProvider.models) parentProvider.models = [];
@@ -2053,6 +2053,9 @@ async function getProviderForModelBulk(modelName: string) {
       if (p.provider && targetModel.provider && p.provider.toLowerCase() !== 'openai' && targetModel.provider.toLowerCase() !== 'openai' && p.provider.toLowerCase() === targetModel.provider.toLowerCase()) return true;
       if (!p.apiUrl && !targetModel.apiUrl && p.provider && targetModel.provider && p.provider.toLowerCase() === targetModel.provider.toLowerCase()) return true;
     }
+    if ((p.provider === 'google' || p.provider === 'gemini') && (cleanModelName.startsWith('gemini-') || cleanModelName.startsWith('claude-'))) {
+      return true;
+    }
     return p.name.toLowerCase() === modelName.toLowerCase();
   });
 }
@@ -2062,7 +2065,7 @@ $('#modelsBulkTestBtn')?.addEventListener('click', async () => {
   setStatus(`Testing ${selectedModelNames.size} selected models…`, 'busy');
   let successCount = 0;
   let failCount = 0;
-  
+
   for (const name of Array.from(selectedModelNames)) {
     const dot = document.getElementById(`status-dot-${name}`);
     if (dot) dot.className = 'status-dot'; // reset
@@ -2076,17 +2079,17 @@ $('#modelsBulkTestBtn')?.addEventListener('click', async () => {
         const r = await window.ag.run(['models', 'test', name]);
         success = r.stdout.includes('✓') || r.code === 0;
       }
-      
+
       if (success) successCount++;
       else failCount++;
-      
+
       if (dot) dot.className = `status-dot ${success ? 'ok' : 'err'}`;
     } catch (e) {
       failCount++;
       if (dot) dot.className = 'status-dot err';
     }
   }
-  
+
   if (failCount === 0) {
     toast(`✓ Successfully tested ${successCount} models`, 'ok');
   } else {
@@ -2243,7 +2246,7 @@ $('#importProvidersBtn')?.addEventListener('click', () => {
       const text = await file.text();
       const providers = JSON.parse(text);
       if (!Array.isArray(providers)) throw new Error('Invalid JSON format: expected an array');
-      
+
       setStatus('Importing providers...', 'busy');
       for (const p of providers) {
         const res = await window.ag.providers.save(p);
@@ -3449,13 +3452,13 @@ async function loadAntigravityStatus(): Promise<void> {
         agRunningValue.textContent = 'Stopped';
       }
     }
-    
+
     // Fill Installation Panel
     if (agInstallPath) agInstallPath.textContent = installDir || '—';
     if (agAppAsar) agAppAsar.textContent = (status?.appAsarPath as string | undefined) ?? '—';
     if (agVersionRow) agVersionRow.textContent = version ?? '—';
     if (agChannelRow) agChannelRow.textContent = (status?.channel as string | undefined) ?? '—';
-    
+
     // Fill Running processes Panel
     let agPidCount = 0;
     if (agAgPids) {
@@ -3479,7 +3482,7 @@ async function loadAntigravityStatus(): Promise<void> {
        const lsPids = status?.lsPids as number[] | undefined;
        agLsValue.textContent = (lsPids && lsPids.length > 0) ? 'Running' : 'Stopped';
     }
-    
+
     try {
         const proxyResp = await window.ag.proxyStatus();
         if (agProxyValue) {
@@ -3488,7 +3491,7 @@ async function loadAntigravityStatus(): Promise<void> {
     } catch {
         if (agProxyValue) agProxyValue.textContent = 'Unknown';
     }
-    
+
     setStatus('Ready');
   } catch (e) {
     setAgHero('err', 'Error', (e as Error).message);
@@ -4084,7 +4087,13 @@ function showPmView(view: 'list' | 'form'): void {
 }
 
 function renderHealthStatusIndicator(p: ProviderEntry): string {
-  const status = p.status || 'untested';
+  let status = p.status || 'untested';
+  if (Array.isArray((p as any).accounts) && (p as any).accounts.length > 0) {
+    const accs = (p as any).accounts as any[];
+    if (accs.some((a) => a.status === 'healthy')) status = 'healthy';
+    else if (accs.some((a) => a.status === 'degraded')) status = 'degraded';
+    else if (accs.every((a) => a.status === 'offline')) status = 'offline';
+  }
   const titleText = status === 'healthy'
     ? `Healthy · ${p.latencyMs ?? 0}ms response time`
     : status === 'degraded'
@@ -4104,7 +4113,13 @@ function renderProviderStatus(p: ProviderEntry): string {
   if (!p.enabled) {
     return `<span class="agy-pill agy-pill-muted">Disabled</span>`;
   }
-  const status = p.status || 'untested';
+  let status = p.status || 'untested';
+  if (Array.isArray((p as any).accounts) && (p as any).accounts.length > 0) {
+    const accs = (p as any).accounts as any[];
+    if (accs.some((a) => a.status === 'healthy')) status = 'healthy';
+    else if (accs.some((a) => a.status === 'degraded')) status = 'degraded';
+    else if (accs.every((a) => a.status === 'offline')) status = 'offline';
+  }
   if (status === 'offline') {
     return `<span class="agy-pill agy-pill-offline">Offline</span>`;
   }
@@ -4141,6 +4156,10 @@ async function renderProviderList(): Promise<void> {
 
     let html = `<div class="agy-provider-list">`;
     for (const p of displayRows) {
+      const accountsCount = Array.isArray((p as any).accounts) ? (p as any).accounts.length : 0;
+      const accountsMeta = accountsCount > 0
+        ? `<span class="agy-dot">·</span><span style="color:var(--text-accent, #38bdf8); font-weight:600; font-size:11px;">${accountsCount} account${accountsCount > 1 ? 's' : ''}</span>`
+        : '';
       html += `
         <div class="agy-provider-row" data-id="${escapeHtml(p.id)}">
           <div class="agy-provider-row-main">
@@ -4154,6 +4173,7 @@ async function renderProviderList(): Promise<void> {
               <span>${escapeHtml((p.apiUrl || '').replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span>
               <span class="agy-dot">·</span>
               <span>${(p.models || []).length} models</span>
+              ${accountsMeta}
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;">
               ${(p.models || []).slice(0, 6).map((m: any) => {
@@ -4383,9 +4403,8 @@ if (pmImportLocalBtn) {
         enabled: true,
         allowUnauthorized: false,
         models: [
-          { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-          { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
-          { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+          { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro High', enabled: true },
           { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
         ],
       };
@@ -5090,7 +5109,7 @@ if (startRemoteBtn) {
       startRemoteBtn.setAttribute('disabled', 'true');
       if (remoteStatusText) remoteStatusText.textContent = 'Starting server...';
       if (remoteConsole) remoteConsole.value = ''; // clear console
-      
+
       const port = parseInt(remotePort?.value || '8090');
       const tunnel = remoteTunnel?.value || 'cloudflare';
       const allowFirstAdmin = remoteAllowFirstAdmin?.checked ?? true;
@@ -5809,9 +5828,10 @@ function getUnifiedGoogleModelsList(): Array<{ id: string; displayName: string; 
     { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
     { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
     { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+    { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
+    { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro High', enabled: true },
+    { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
     { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
-    { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: false },
-    { id: 'gpt-oss-120b-medium', displayName: 'GPT OSS 120B', enabled: false },
   ];
 
   const masterModelMap = new Map<string, { id: string; displayName: string; enabled: boolean }>();
@@ -5845,6 +5865,12 @@ function getUnifiedGoogleModelsList(): Array<{ id: string; displayName: string; 
 }
 
 async function synchronizeGoogleAccountsModels(accounts?: any[]): Promise<void> {
+  const allProviders = (await window.ag.providers.get()) as any[];
+  const googleProv = (allProviders || []).find((p) => p && (p.provider === 'google' || p.provider === 'gemini'));
+  if (googleProv && Array.isArray(googleProv.accounts)) {
+    // In consolidated architecture, models are stored once on the Google provider
+    return;
+  }
   const targetAccounts = accounts || googleAccountsCache;
   if (!targetAccounts || targetAccounts.length === 0) return;
 
@@ -5867,9 +5893,25 @@ async function loadGoogleAccounts(): Promise<void> {
   showSkeleton(gaAccountsContainer, 'cards', 2);
   try {
     const allProviders = (await window.ag.providers.get()) as any[];
-    googleAccountsCache = (allProviders || []).filter(
-      (p) => p.provider === 'google' || p.provider === 'gemini' || (p.apiUrl && p.apiUrl.includes('googleapis.com'))
+    const googleProv = (allProviders || []).find(
+      (p) => p && (p.provider === 'google' || p.provider === 'gemini')
     );
+    if (googleProv && Array.isArray(googleProv.accounts)) {
+      if (!googleProv.models || googleProv.models.length === 0) {
+        googleProv.models = getUnifiedGoogleModelsList();
+        await window.ag.providers.save(googleProv);
+      }
+      googleAccountsCache = googleProv.accounts.map((acc: any) => ({
+        ...acc,
+        provider: 'google',
+        apiUrl: googleProv.apiUrl || 'https://generativelanguage.googleapis.com/v1beta',
+        models: googleProv.models || [],
+      }));
+    } else {
+      googleAccountsCache = (allProviders || []).filter(
+        (p) => p.provider === 'google' || p.provider === 'gemini' || (p.apiUrl && p.apiUrl.includes('googleapis.com'))
+      );
+    }
 
     // Synchronize models across all Google accounts so all accounts share the exact same model configuration
     await synchronizeGoogleAccountsModels(googleAccountsCache);
@@ -6060,8 +6102,8 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span>` : ''}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
                 </div>
-                ${a.email && a.name && a.email !== a.name 
-                  ? `<div style="font-size: 11px; color: var(--text-2);">${escapeHtml(a.name)}</div>` 
+                ${a.email && a.name && a.email !== a.name
+                  ? `<div style="font-size: 11px; color: var(--text-2);">${escapeHtml(a.name)}</div>`
                   : (!a.email ? `<div style="font-size: 11px; color: var(--text-2); font-style: italic;">Provider Configuration</div>` : '')}
                 <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">
                   ${(a.models || []).slice(0, 5).map((m: any) => {
@@ -6458,9 +6500,8 @@ async function triggerIdeAccountDiscovery(): Promise<void> {
               enabled: m.enabled !== false,
             }))
           : [
-              { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-              { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
-              { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+              { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
+              { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro High', enabled: true },
               { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
             ],
       };
@@ -6705,10 +6746,8 @@ gaFormSaveBtn?.addEventListener('click', async () => {
 
   if (currentGaFetchedModels.length === 0) {
     currentGaFetchedModels.push(
-      { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-      { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
-      { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
-      { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true }
+      { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
+      { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro High', enabled: true }
     );
   }
 
@@ -6846,7 +6885,7 @@ gaSyncAllBtn?.addEventListener('click', async () => {
           apiKey: tokenToUse,
         })) as { success: boolean; models?: Array<{ id: string; displayName?: string }> };
         if (res.success && res.models && res.models.length > 0) {
-          a.models = res.models.map((m) => {
+          const newModels = res.models.map((m) => {
             const cleanName = (m.displayName || m.id).replace(/^\[[^\]]+\]\s*/, '');
             return {
               id: m.id,
@@ -6854,7 +6893,15 @@ gaSyncAllBtn?.addEventListener('click', async () => {
               enabled: true,
             };
           });
-          await window.ag.providers.save(a);
+          a.models = newModels;
+          const allProviders = (await window.ag.providers.get()) as any[];
+          const googleProv = (allProviders || []).find((p) => p && (p.provider === 'google' || p.provider === 'gemini'));
+          if (googleProv && Array.isArray(googleProv.accounts)) {
+            googleProv.models = newModels;
+            await window.ag.providers.save(googleProv);
+          } else {
+            await window.ag.providers.save(a);
+          }
           totalSyncedModels += res.models.length;
         }
       } catch { /* continue with next */ }

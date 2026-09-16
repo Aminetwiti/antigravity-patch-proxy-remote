@@ -236,9 +236,9 @@ func ResolveStandardModelEnum(nameOrID string) uint64 {
 	switch {
 	case strings.Contains(lower, "3.7-flash") || strings.Contains(lower, "3.6-flash") || strings.Contains(lower, "3.5-flash") || strings.Contains(lower, "gemini-flash"):
 		return 312
-	case strings.Contains(lower, "3.1-pro") || strings.Contains(lower, "1.5-pro") || strings.Contains(lower, "gemini-pro"):
+	case strings.Contains(lower, "3.1-pro") || strings.Contains(lower, "gemini-pro"):
 		return 246
-	case strings.Contains(lower, "sonnet") || strings.Contains(lower, "claude-3-7") || strings.Contains(lower, "claude-3.7") || strings.Contains(lower, "claude-3-5"):
+	case strings.Contains(lower, "sonnet") || strings.Contains(lower, "claude-3-5") || strings.Contains(lower, "claude-4"):
 		return 384
 	case strings.Contains(lower, "haiku"):
 		return 394
@@ -273,7 +273,7 @@ func ResolveStandardModelEnum(nameOrID string) uint64 {
 //
 //	CascadeConfig {
 //	  1: planner_config (CascadePlannerConfig) {
-//	    1: plan_model (enum, ex: 246 = GOOGLE_GEMINI_2_5_PRO)
+//	    1: plan_model (enum, ex: 246 = GOOGLE_GEMINI_3_1_PRO)
 //	    2: conversational_config {1: planner_mode}
 //	    8: last_selected_model_name (string)
 //	    15: requested_model (ModelOrAlias {1: model, 3: model_name})

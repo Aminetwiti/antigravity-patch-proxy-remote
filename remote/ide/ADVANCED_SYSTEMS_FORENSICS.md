@@ -179,7 +179,7 @@ The `antigravity-patch-proxy` bridges thinking tokens across diverse provider sc
 
 | Provider / Model | Reasoning Wire Format In | Transformed Wire Format Out |
 |---|---|---|
-| **Anthropic Claude 3.7 Sonnet** | `thinking: { type: "enabled", budget_tokens: N }` | Content block `type: "thinking"`, `thinking: "..."` |
+| **Anthropic Claude Sonnet 4.6** | `thinking: { type: "enabled", budget_tokens: N }` | Content block `type: "thinking"`, `thinking: "..."` |
 | **DeepSeek R1** | Standard completion payload with reasoning | `delta.reasoning_content: "..."` |
 | **OpenAI o1 / o3-mini** | `reasoning_effort: "low" \| "medium" \| "high"` | Encapsulated in `<thought>` tags or `thought` message parts |
 | **Google Gemini (Flash Thinking)** | `generationConfig.thinkingConfig` | Parts with `thought: true` |

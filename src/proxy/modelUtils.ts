@@ -61,7 +61,7 @@ export type ModelMode = 'thinking' | 'reasoning' | 'non-thinking' | 'auto';
 
 export interface ModelModeConfig {
   /**
-   * The model ID (e.g. 'o1-preview', 'claude-3-7-sonnet').
+   * The model ID (e.g. 'o1-preview', 'claude-sonnet-4-6').
    */
   id: string;
   /**
@@ -106,10 +106,10 @@ export interface ModelModeConfig {
 
 // ─── Detection ────────────────────────────────────────────────────────────
 
-const THINKING_PATTERN = /thinking|reasoning|reasoner|o1|o3|r1|opus-4|sonnet-4|claude-4|3-7|4-7|3\.7|4\.7/i;
+const THINKING_PATTERN = /thinking|reasoning|reasoner|o1|o3|r1|opus-4|sonnet-4|claude-4|4-7|4\.7/i;
 const DEEPSEEK_PATTERN = /deepseek/i;
 const CLAUDE_PATTERN = /claude|opus|sonnet/i;
-const CLAUDE_THINKING_PATTERN = /opus-4|sonnet-4|claude-4|claude-3-5|claude-3-7/i;
+const CLAUDE_THINKING_PATTERN = /opus-4|sonnet-4|claude-4|claude-3-5/i;
 const THINKING_MODEL_PATTERN = /opus-4|sonnet-4|claude-4/i;
 const IMAGE_SUPPORT_PATTERN =
   /gpt-4o|gpt-4-turbo|gpt-4\.5|gpt-5|gpt-6|astra|luna|claude|gemini|glm|zhipu|vision|vl|llava|bakllava|qwenvl|qwen.*vl|qvq|pixtral|yi-vision|cogvlm|cogview|kimi|moonshot|minimax|abab|internvl|internlm|doubao|step|stepfun|baichuan|janus|paligemma|florence|multimodal|vlm|visual|mllama|llama-3\.2|llama-4|phi-3.*vision|phi-3\.5.*vision|phi-4/i;

@@ -21,8 +21,8 @@ class BattleArenaScreen extends StatefulWidget {
 class _BattleArenaScreenState extends State<BattleArenaScreen> {
   final _promptController = TextEditingController();
   bool _isRunning = false;
-  String _modelA = 'claude-3-7-sonnet';
-  String _modelB = 'gemini-2-5-pro';
+  String _modelA = 'claude-sonnet-4-6';
+  String _modelB = 'gemini-3-1-pro-high';
   Map<String, dynamic>? _battleDiff;
   String? _winningArm;
   String? _statusMessage;

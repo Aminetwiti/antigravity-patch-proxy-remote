@@ -78,7 +78,7 @@ export const WELL_KNOWN_PRESETS: PresetProvider[] = [
     category: 'General',
     provider: 'google',
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta/models/',
-    description: 'Google Gemini 2.0 Flash, Gemini 1.5 Pro via AI Studio API key',
+    description: 'Google Gemini 3.8 Flash Tiered, Gemini 3.1 Pro High via AI Studio API key',
     docsUrl: 'https://aistudio.google.com',
     models: [],
   },

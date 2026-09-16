@@ -174,7 +174,7 @@ Cohorte Bêta : 500 Développeurs répartis sur 4 continents (Startups, ESN, Gra
 | **S1** | **Révocation d'Urgence de Clé API Fuite** | Rotation atomique des secrets via HashiCorp Vault ➔ Redémarrage transparent du proxy `:51074`. | **2 min 15 s** |
 | **S2** | **Attaque DDoS 100 Gbps sur Ingress** | Activation du bouclier Cloudflare Magic Transit ➔ Déviation du trafic malveillant. | **1 min 40 s** |
 | **S3** | **Corruption Physique de Disque SSD** | Bascule automatique sur snapshot S3 compressé ➔ Réhydratation WAL sans perte de session. | **4 min 20 s** |
-| **S4** | **Panne Totale API Cloud Code Google** | Bascule automatique du Proxy vers le modèle de secours Anthropic Claude-3.7-Sonnet. | **35 secondes** |
+| **S4** | **Panne Totale API Cloud Code Google** | Bascule automatique du Proxy vers le modèle de secours Anthropic Claude-Sonnet-4-6. | **35 secondes** |
 | **S5** | **Compromission Compte Développeur** | Révocation immédiate des sessions OIDC ➔ Invalidation des jetons mTLS actifs. | **50 secondes** |
 | **S6** | **Suppression Accidentelle de Workspace** | Restauration instantanée depuis le dernier checkpoint distribué RAFT. | **3 min 10 s** |
 | **S7** | **Tentative d'Attaque par Ransomware** | Isolation réseau du nœud compromis ➔ Reconstitution de l'environnement depuis image OCI signée. | **6 min 45 s** |

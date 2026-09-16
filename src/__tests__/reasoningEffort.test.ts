@@ -98,7 +98,7 @@ describe('budgetReasoningEffort', () => {
   });
 
   it('enables for reasoning-like models', () => {
-    for (const m of ['o1-mini', 'o3', 'deepseek-r1', 'reasoning-model', 'claude-3-7-sonnet']) {
+    for (const m of ['o1-mini', 'o3', 'deepseek-r1', 'reasoning-model', 'claude-sonnet-4-6']) {
       expect(budgetReasoningEffort('auto', m)).toBe('enabled');
     }
   });
@@ -118,7 +118,7 @@ describe('isReasoningLikeModel', () => {
   it('returns true for reasoning-like names', () => {
     expect(isReasoningLikeModel('o1-mini')).toBe(true);
     expect(isReasoningLikeModel('deepseek-r1')).toBe(true);
-    expect(isReasoningLikeModel('claude-3-7-sonnet')).toBe(true);
+    expect(isReasoningLikeModel('claude-sonnet-4-6')).toBe(true);
     expect(isReasoningLikeModel('reasoning-model')).toBe(true);
     expect(isReasoningLikeModel('gemini-3.8-flash')).toBe(true);
     expect(isReasoningLikeModel('gemini-3.7-pro')).toBe(true);

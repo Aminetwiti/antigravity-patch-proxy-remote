@@ -141,12 +141,12 @@ export function getGoogleApiUrl(baseUrl: string, modelName: string, isStream: bo
   if (!urlObj.pathname.includes(':generateContent') && !urlObj.pathname.includes(':streamGenerateContent')) {
     urlObj.pathname = urlObj.pathname.replace(/\/$/, '');
 
-    // Check if the URL ends with the model path (e.g. /models/gemini-1.5-pro)
+    // Check if the URL ends with the model path (e.g. /models/gemini-3.1-pro-high)
     const modelPathPattern = /\/models\/([^\/]+)$/;
     const modelMatch = modelPathPattern.exec(urlObj.pathname);
 
     if (modelMatch) {
-      // URL like .../v1beta/models/gemini-1.5-pro → normalize model & append :method
+      // URL like .../v1beta/models/gemini-3.1-pro-high → normalize model & append :method
       const normalized = normalizeGoogleModelId(modelMatch[1]);
       if (normalized !== modelMatch[1]) {
         urlObj.pathname = urlObj.pathname.replace(modelPathPattern, `/models/${normalized}`);

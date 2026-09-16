@@ -75,41 +75,59 @@ export function loadCustomModels(filePath?: string, options?: { includeDisabled?
       for (const p of parsed.providers) {
         if (!p) continue;
         if (p.enabled === false && !options?.includeDisabled) continue;
-        const pModels = Array.isArray(p.models) ? p.models : [];
-        for (const m of pModels) {
-          if (!m) continue;
-          if (m.enabled === false && !options?.includeDisabled) continue;
-          const name = m.id?.startsWith('models/') ? m.id : `models/${m.id ?? ''}`;
-          const isGoogle = p.provider === 'google';
-          const cleanDisplayName = (m.displayName || m.id || name).replace(/^\[[^\]]+\]\s*/, '');
-          const accountLabel = p.name || (p.email ? p.email.split('@')[0] : '');
-          const displayName = isGoogle
-            ? cleanDisplayName
-            : (accountLabel && parsed.providers.filter((x: any) => x && x.provider === p.provider).length > 1
-              ? `[${accountLabel}] ${cleanDisplayName}`
-              : cleanDisplayName);
+        const accounts = Array.isArray(p.accounts) && p.accounts.length > 0
+          ? p.accounts
+          : [{ id: p.id, name: p.name, email: p.email, apiKey: p.apiKey, refreshToken: p.refreshToken, enabled: p.enabled }];
 
-          const model: CustomModel = {
-            name,
-            displayName,
-            provider: p.provider || 'openai',
-            apiKey: p.apiKey || '',
-            apiUrl: p.apiUrl || '',
-            externalModelName: m.id || '',
-            allowUnauthorized: p.allowUnauthorized,
-            enabled: m.enabled !== false && p.enabled !== false,
-            accountName: p.name,
-            accountEmail: p.email,
-            providerId: p.id,
-          };
+        const isGoogle = p.provider === 'google' || p.provider === 'gemini';
+        let pModels = Array.isArray(p.models) && p.models.length > 0 ? p.models : [];
+        if (pModels.length === 0 && isGoogle) {
+          const accWithModels = accounts.find((a: any) => Array.isArray(a.models) && a.models.length > 0);
+          pModels = accWithModels ? accWithModels.models : [
+            { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+            { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+            { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+            { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+          ];
+        }
 
-          const key = isGoogle
-            ? `google::${(model.externalModelName || model.name).replace(/^models\//, '')}`
-            : `${model.provider}::${p.name ? p.name + '::' : ''}${model.name}`;
+        for (const acc of accounts) {
+          if (acc.enabled === false && !options?.includeDisabled) continue;
+          for (const m of pModels) {
+            if (!m) continue;
+            if (m.enabled === false && !options?.includeDisabled) continue;
+            const name = m.id?.startsWith('models/') ? m.id : `models/${m.id ?? ''}`;
+            const isGoogle = p.provider === 'google';
+            const cleanDisplayName = (m.displayName || m.id || name).replace(/^\[[^\]]+\]\s*/, '');
+            const accountLabel = acc.name || p.name || (acc.email || p.email ? (acc.email || p.email).split('@')[0] : '');
+            const displayName = isGoogle
+              ? cleanDisplayName
+              : (accountLabel && parsed.providers.filter((x: any) => x && x.provider === p.provider).length > 1
+                ? `[${accountLabel}] ${cleanDisplayName}`
+                : cleanDisplayName);
 
-          if (!seen.has(key)) {
-            models.push(model);
-            seen.add(key);
+            const model: CustomModel = {
+              name,
+              displayName,
+              provider: p.provider || 'openai',
+              apiKey: acc.apiKey || p.apiKey || '',
+              apiUrl: p.apiUrl || '',
+              externalModelName: m.id || '',
+              allowUnauthorized: p.allowUnauthorized,
+              enabled: m.enabled !== false && p.enabled !== false && acc.enabled !== false,
+              accountName: acc.name || p.name,
+              accountEmail: acc.email || p.email,
+              providerId: p.id,
+            };
+
+            const key = isGoogle
+              ? `google::${(model.externalModelName || model.name).replace(/^models\//, '')}`
+              : `${model.provider}::${p.name ? p.name + '::' : ''}${model.name}`;
+
+            if (!seen.has(key)) {
+              models.push(model);
+              seen.add(key);
+            }
           }
         }
       }

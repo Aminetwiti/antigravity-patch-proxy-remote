@@ -50,13 +50,13 @@ export const RENDERER_PROVIDER_PRESETS: Record<string, RendererProviderPreset> =
     id: 'google',
     name: 'Google Gemini',
     defaultApiUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.0-flash',
+    defaultModel: 'gemini-3.8-flash-tiered',
   },
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
     defaultApiUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.0-flash',
+    defaultModel: 'gemini-3.8-flash-tiered',
   },
 };
 

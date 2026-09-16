@@ -263,7 +263,7 @@ describe('getBaseModelId', () => {
   it('strips anchor variants starting with #', () => {
     expect(getBaseModelId('claude-3-5-sonnet#thinking')).toBe('claude-3-5-sonnet');
     expect(getBaseModelId('gpt-4o#flex')).toBe('gpt-4o');
-    expect(getBaseModelId('gemini-2.0-flash#search')).toBe('gemini-2.0-flash');
+    expect(getBaseModelId('gemini-3.8-flash-tiered#search')).toBe('gemini-3.8-flash-tiered');
   });
 
   it('returns clean model IDs unchanged', () => {

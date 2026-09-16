@@ -456,3 +456,10 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
     ],
   },
 ];
+
+export const STANDARD_GOOGLE_MODELS = [
+  { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+  { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+  { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+  { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+];

@@ -39,7 +39,7 @@ message StartCascadeRequest {
   uint32 trajectory_type = 5;          // 1 = CORTEX_TRAJECTORY_TYPE_DEFAULT
   string workspace_uri = 8;            // Ex: "file:///c:/projects/mon-projet"
   uint64 requested_model_enum = 14;    // Enum du modèle (ex: 312)
-  string requested_model_uid = 15;     // UID du modèle custom (ex: "gemini-2.5-flash")
+  string requested_model_uid = 15;     // UID du modèle custom (ex: "gemini-3.8-flash-tiered")
   ProjectEnvironmentConfig project_env = 17; // Exclusif avec workspace_uri
 }
 ```

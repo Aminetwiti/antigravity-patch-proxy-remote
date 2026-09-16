@@ -864,9 +864,9 @@ Copie l'image bitmap directement dans le presse-papiers de la machine hôte via 
   "requestId": "req_159",
   "workspaceUri": "file:///C:/projects/myapp",
   "prompt": "Implémente un algorithme de tri rapide",
-  "modelUIDA": "claude-3-7-sonnet",
+  "modelUIDA": "claude-sonnet-4-6",
   "modelEnumA": 312,
-  "modelUIDB": "gemini-2-5-pro",
+  "modelUIDB": "gemini-3-1-pro-high",
   "modelEnumB": 246
 }
 ```

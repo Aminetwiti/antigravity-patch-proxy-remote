@@ -37,8 +37,8 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
           claudeWeeklyPct: 85,
         },
         models: [
-          { id: 'gemini-2.0-flash', displayName: '[Amine Perso] Gemini 2.0 Flash', enabled: true },
-          { id: 'gemini-1.5-pro', displayName: '[Amine Perso] Gemini 1.5 Pro', enabled: true },
+          { id: 'gemini-3.8-flash-tiered', displayName: '[Amine Perso] Gemini 3.8 Flash', enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: '[Amine Perso] Gemini 3.1 Pro', enabled: true },
         ],
       },
       {
@@ -61,8 +61,8 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
           claudeWeeklyPct: 50,
         },
         models: [
-          { id: 'gemini-1.5-pro', displayName: '[Amine Pro] Gemini 1.5 Pro', enabled: true },
-          { id: 'claude-3-7-sonnet', displayName: '[Amine Pro] Claude 3.7 Sonnet', enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: '[Amine Pro] Gemini 3.1 Pro', enabled: true },
+          { id: 'claude-sonnet-4-6', displayName: '[Amine Pro] Claude Sonnet 4.6', enabled: true },
         ],
       },
       {
@@ -76,7 +76,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         isCurrent: false,
         tier: 'FREE',
         models: [
-          { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
+          { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
         ],
       },
     ];
@@ -109,16 +109,17 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         picture: mockDiscoveryResult.picture,
         quotas: mockDiscoveryResult.quotas,
         models: [
-          { id: 'gemini-2.0-flash', displayName: `[${accountName}] Gemini 2.0 Flash`, enabled: true },
-          { id: 'gemini-1.5-pro', displayName: `[${accountName}] Gemini 1.5 Pro`, enabled: true },
-          { id: 'claude-3-7-sonnet', displayName: `[${accountName}] Claude 3.7 Sonnet`, enabled: true },
+          { id: 'gemini-3.8-flash-tiered', displayName: `[${accountName}] Gemini 3.8 Flash`, enabled: true },
+          { id: 'gemini-3.7-flash-tiered', displayName: `[${accountName}] Gemini 3.7 Flash`, enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: `[${accountName}] Gemini 3.1 Pro`, enabled: true },
+          { id: 'claude-sonnet-4-6', displayName: `[${accountName}] Claude Sonnet 4.6`, enabled: true },
         ],
       };
 
       expect(newProvider.name).toBe('Discovered User (IDE)');
       expect(newProvider.apiKey.startsWith('ya29.')).toBe(true);
       expect(newProvider.refreshToken).toBe('1//discovered-refresh');
-      expect(newProvider.models).toHaveLength(3);
+      expect(newProvider.models).toHaveLength(4);
     });
   });
 
@@ -149,8 +150,10 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
 
       if (models.length === 0) {
         models.push(
-          { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', enabled: true },
-          { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', enabled: true }
+          { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+          { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+          { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true }
         );
       }
 
@@ -164,7 +167,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         models,
       };
 
-      expect(account.models).toHaveLength(2);
+      expect(account.models).toHaveLength(4);
       expect(account.provider).toBe('google');
     });
   });
@@ -178,8 +181,8 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         return { ...m, displayName: cleanName };
       });
 
-      expect(cleanedModels[0].displayName).toBe('Gemini 2.5 Pro');
-      expect(cleanedModels[1].displayName).toBe('Gemini 2.5 Flash');
+      expect(cleanedModels[0].displayName).toBe('Gemini 3.8 Flash');
+      expect(cleanedModels[1].displayName).toBe('Gemini 3.1 Pro');
     });
 
     it('preserves refreshToken and quotas when saving edits', () => {
@@ -361,7 +364,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
       expect(normalized?.name).toBe('lignelady');
       expect(normalized?.email).toBe('lignelady@gmail.com');
       expect(normalized?.refreshToken?.startsWith('1//')).toBe(true);
-      expect(normalized?.models).toHaveLength(3);
+      expect(normalized?.models).toHaveLength(4);
     });
 
     it('deduplicates incoming account against existing accounts cache', () => {

@@ -68,7 +68,7 @@ L'écosystème Antigravity gère deux shells de développement distincts sur la 
     "requestId": "r_101",
     "cascadeId": "60527a47-26c6-4872-9414-d16c00994dc1",
     "prompt": "Mon instruction...",
-    "modelUID": "gemini-2.5-flash",
+    "modelUID": "gemini-3.8-flash-tiered",
     "data": {}
   }
   ```
@@ -107,7 +107,7 @@ message StartCascadeRequest {
   string workspace_uri = 8;
   // Champ 14: Enum du modèle standard (si applicable)
   uint64 requested_model_enum = 14;
-  // Champ 15: Identifiant UID du modèle custom (ex: "claude-3-7-sonnet")
+  // Champ 15: Identifiant UID du modèle custom (ex: "claude-sonnet-4-6")
   string requested_model_uid = 15;
   // Champ 17: Configuration de l'environnement de projet (exclusif avec champ 8)
   ProjectEnvironmentConfig project_env = 17;

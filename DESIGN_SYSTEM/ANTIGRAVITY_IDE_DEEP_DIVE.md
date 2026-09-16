@@ -82,7 +82,7 @@ tools/Antigravity IDE/
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 4. ÉTAGE PATCH PROXY LOCAL (:51074)                                         │
-│    - Injecte 28+ modèles custom (Claude 3.7 Sonnet, GPT-4o, DeepSeek, etc.) │
+│    - Injecte 28+ modèles custom (Claude Sonnet 4.6, GPT-4o, DeepSeek, etc.) │
 │    - Traduit les schémas Google Cloud Code vers les APIs fournisseurs       │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -171,7 +171,7 @@ func main() {
 	client := connectrpc.NewClient(55432, "aca2a2fd-f0e6-4053-931e-a28accf6f5f2")
 	
 	// 2. Créer une nouvelle session
-	resp, _ := client.CreateCascade("file:///c:/mon-projet", "", "gemini-2.5-flash", 0)
+	resp, _ := client.CreateCascade("file:///c:/mon-projet", "", "gemini-3.8-flash-tiered", 0)
 	cascadeID := "60527a47-26c6-4872-9414-d16c00994dc1"
 
 	// 3. Envoyer un prompt et streamer la réponse

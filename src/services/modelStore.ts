@@ -6,11 +6,13 @@ import log from 'electron-log/main';
 
 import * as cryptoStore from '../cryptoStore';
 import { generateModelPlaceholderId } from '../proxy/idGenerator';
+import { normalizeCloudCodeModelId, normalizeGoogleModelId } from './googleAuth';
 import {
   CUSTOM_MODEL_MAX_TOKENS,
   CUSTOM_MODEL_MAX_OUTPUT_TOKENS,
   PROVIDERS,
   type ProviderName,
+  STANDARD_GOOGLE_MODELS,
 } from '../constants';
 
 let _writeLock: Promise<void> = Promise.resolve();
@@ -91,6 +93,7 @@ export interface ProviderFileEntry {
   refreshToken?: string;
   projectId?: string;
   models: ProviderModelEntry[];
+  accounts?: Array<Record<string, unknown>>;
   usage?: {
     promptTokens: number;
     completionTokens: number;
@@ -119,30 +122,58 @@ export async function loadCustomModels(): Promise<CustomModelFileEntry[]> {
   if (providers && providers.length > 0) {
     const flatModels: CustomModelFileEntry[] = [];
     for (const p of providers) {
-      if (!p || p.enabled === false) continue;
-      const models = Array.isArray(p.models) ? p.models : [];
-      for (const m of models) {
-        if (!m || m.enabled === false) continue;
-        const mergedHeaders = { ...p.extraHeaders, ...m.extraHeaders };
-        const mergedBody = { ...p.extraBody, ...m.extraBody };
+      if (!p) continue;
+      const hasEnabledAccounts = Array.isArray((p as any).accounts) && (p as any).accounts.some((a: any) => a && a.enabled !== false);
+      if (p.enabled === false && !hasEnabledAccounts) continue;
+      const accounts = Array.isArray((p as any).accounts) && (p as any).accounts.length > 0
+        ? (p as any).accounts
+        : [{ id: p.id, apiKey: p.apiKey, refreshToken: p.refreshToken, projectId: p.projectId, enabled: p.enabled }];
 
-        flatModels.push({
-          name: `${p.id || 'provider-unknown'}-${m.id}`,
-          displayName: m.displayName || m.id,
-          provider: p.provider || 'openai',
-          apiKey: p.apiKey || 'none',
-          apiUrl: p.apiUrl || '',
-          externalModelName: m.id,
-          allowUnauthorized: p.allowUnauthorized,
-          encrypted: p.encrypted,
-          useRawBaseUrl: p.useRawBaseUrl,
-          supportsImages: m.supportsImages ?? p.supportsImages ?? true,
-          supportsVision: m.supportsVision ?? p.supportsVision ?? true,
-          extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
-          extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
-          refreshToken: p.refreshToken,
-          projectId: p.projectId,
-        });
+      const isGoogle = p.provider === 'google' || p.provider === 'gemini' || p.id === 'provider-google';
+      let models = Array.isArray(p.models) && p.models.length > 0 ? p.models : [];
+      if (models.length === 0 && isGoogle) {
+        const accWithModels = accounts.find((a: any) => Array.isArray(a.models) && a.models.length > 0);
+        models = accWithModels ? accWithModels.models : STANDARD_GOOGLE_MODELS;
+      }
+
+      for (const acc of accounts) {
+        if (acc.enabled === false) continue;
+        for (const m of models) {
+          if (!m || m.enabled === false) continue;
+          const mergedHeaders = { ...p.extraHeaders, ...m.extraHeaders };
+          const mergedBody = { ...p.extraBody, ...m.extraBody };
+
+          let extName = m.id || '';
+          if (isGoogle && extName) {
+            const isCC = Boolean(
+              acc.refreshToken ||
+              p.refreshToken ||
+              (acc.apiKey && acc.apiKey.startsWith('ya29.')) ||
+              (p.apiKey && p.apiKey.startsWith('ya29.')) ||
+              p.apiUrl?.includes('cloudcode')
+            );
+            const norm = isCC ? normalizeCloudCodeModelId(extName) : normalizeGoogleModelId(extName);
+            if (norm) extName = norm;
+          }
+
+          flatModels.push({
+            name: `${p.id || 'provider-unknown'}-${extName}`,
+            displayName: m.displayName || m.id,
+            provider: p.provider || 'openai',
+            apiKey: acc.apiKey || p.apiKey || 'none',
+            apiUrl: p.apiUrl || '',
+            externalModelName: extName,
+            allowUnauthorized: p.allowUnauthorized,
+            encrypted: p.encrypted,
+            useRawBaseUrl: p.useRawBaseUrl,
+            supportsImages: m.supportsImages ?? p.supportsImages ?? true,
+            supportsVision: m.supportsVision ?? p.supportsVision ?? true,
+            extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
+            extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
+            refreshToken: acc.refreshToken || p.refreshToken,
+            projectId: acc.projectId || p.projectId,
+          });
+        }
       }
     }
     return flatModels;

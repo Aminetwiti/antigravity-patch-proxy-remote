@@ -35,7 +35,7 @@ func AutoDetectProviderConfig() ProviderConfig {
 	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
 		model := os.Getenv("GEMINI_MODEL")
 		if model == "" {
-			model = "gemini-2.0-flash"
+			model = "gemini-3.8-flash-tiered"
 		}
 		return ProviderConfig{
 			Type:    ProviderOpenAI,
@@ -48,7 +48,7 @@ func AutoDetectProviderConfig() ProviderConfig {
 	if key := os.Getenv("GOOGLE_API_KEY"); key != "" {
 		model := os.Getenv("GEMINI_MODEL")
 		if model == "" {
-			model = "gemini-2.0-flash"
+			model = "gemini-3.8-flash-tiered"
 		}
 		return ProviderConfig{
 			Type:    ProviderOpenAI,
@@ -351,7 +351,7 @@ type anthropicResponse struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
-	Error      *struct {
+	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
 }

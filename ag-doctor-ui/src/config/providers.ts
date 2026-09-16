@@ -51,13 +51,13 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     id: 'gemini',
     name: 'Google AI Studio',
     defaultApiUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.0-flash',
+    defaultModel: 'gemini-3.8-flash-tiered',
   },
   google: {
     id: 'google',
     name: 'Google Gemini',
     defaultApiUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.0-flash',
+    defaultModel: 'gemini-3.8-flash-tiered',
   },
 };
 

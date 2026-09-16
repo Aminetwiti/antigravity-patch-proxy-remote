@@ -58,24 +58,13 @@ function formatDisplayName(m: CustomModel): string {
   const isFav = isRecentModel(m.name);
   let dispName = m.displayName || m.name;
   dispName = dispName.replace(/^\[[^\]]+\]\s*/, '');
+  const favTag = isFav ? '⭐ ' : '';
   
-  if (!health) {
-    const favTag = isFav ? '⭐ ' : '';
-    return `${favTag}⚪ --ms   ${dispName}`;
-  }
-  
-  if (health.status === 'healthy') {
-    const favTag = isFav ? '⭐ ' : '';
-    return `${favTag}🟢 ${health.latencyMs}ms • ${dispName}`;
-  }
-  
-  if (health.status === 'slow') {
-    const favTag = isFav ? '⭐ ' : '';
-    return `${favTag}🟡 ${health.latencyMs}ms • ${dispName}`;
+  if (!health || health.status === 'healthy' || health.status === 'slow') {
+    return `${favTag}🟢 • ${dispName}`;
   }
   
   // For unhealthy models, display error tag cleanly
-  const favTag = isFav ? '⭐ ' : '';
   const err = health.error || 'Offline';
   return `${favTag}🔴 [${err}] • ${dispName}`;
 }
@@ -219,25 +208,8 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         `[Proxy] Custom model "${m.displayName}" => slug: ${slug} => model: ${generateModelPlaceholderId(m)} => thinking: ${cap.isThinking} => images: ${cap.supportsImages}`,
       );
     });
-
-    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M50)
-    // resolve cleanly in Language Server without "unknown model key: model not found"
-    const fallbackPid = sortedCustomModels.length > 0 ? generateModelPlaceholderId(sortedCustomModels[0]) : '';
-    const fallbackEntry = (fallbackPid && (result as Record<string, unknown>)[fallbackPid]) ||
-      (result as Record<string, unknown>)['gemini-3.6-flash'] ||
-      (result as Record<string, unknown>)['gemini-3.8-flash'] ||
-      DEFAULT_CANONICAL_GOOGLE_MODELS['gemini-3.6-flash'];
-
-    if (fallbackEntry) {
-      for (let i = 0; i <= 600; i++) {
-        const legacyKey = `MODEL_PLACEHOLDER_M${i}`;
-        if (!(result as Record<string, unknown>)[legacyKey]) {
-          (result as Record<string, unknown>)[legacyKey] = fallbackEntry;
-        }
-      }
-    }
-
     return result;
+
   }
   return target;
 }

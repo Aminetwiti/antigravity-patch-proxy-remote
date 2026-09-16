@@ -227,7 +227,7 @@ func TestAccountPool_SelectBestAccountForModel(t *testing.T) {
 				Status: "standby",
 				Quotas: []ModelQuotaInfo{
 					{Name: "claude-sonnet-4-6", Percentage: 10},
-					{Name: "gemini-1.5-pro", Percentage: 100},
+					{Name: "gemini-3.1-pro-high", Percentage: 100},
 				},
 			},
 			{
@@ -235,7 +235,7 @@ func TestAccountPool_SelectBestAccountForModel(t *testing.T) {
 				Status: "standby",
 				Quotas: []ModelQuotaInfo{
 					{Name: "claude-sonnet-4-6", Percentage: 95},
-					{Name: "gemini-1.5-pro", Percentage: 30},
+					{Name: "gemini-3.1-pro-high", Percentage: 30},
 				},
 			},
 		},
@@ -253,7 +253,7 @@ func TestAccountPool_SelectBestAccountForModel(t *testing.T) {
 	}
 
 	// acc2 is active, has 30% on Gemini (> 20%) -> should retain acc2
-	best2, err := pool.SelectBestAccountForModel("gemini-1.5-pro")
+	best2, err := pool.SelectBestAccountForModel("gemini-3.1-pro-high")
 	if err != nil {
 		t.Fatalf("unexpected select error: %v", err)
 	}
@@ -273,14 +273,14 @@ func TestAccountPool_WatchdogAutoReset(t *testing.T) {
 				Email:  "exhausted_ready@test.com",
 				Status: "exhausted",
 				Quotas: []ModelQuotaInfo{
-					{Name: "gemini-1.5-pro", Percentage: 0, ResetTime: pastTime},
+					{Name: "gemini-3.1-pro-high", Percentage: 0, ResetTime: pastTime},
 				},
 			},
 			{
 				Email:  "exhausted_waiting@test.com",
 				Status: "exhausted",
 				Quotas: []ModelQuotaInfo{
-					{Name: "gemini-1.5-pro", Percentage: 0, ResetTime: futureTime},
+					{Name: "gemini-3.1-pro-high", Percentage: 0, ResetTime: futureTime},
 				},
 			},
 		},

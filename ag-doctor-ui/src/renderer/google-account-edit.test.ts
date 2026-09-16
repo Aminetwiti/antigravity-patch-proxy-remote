@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 describe('Google Account Edit & Discovery Logic', () => {
   it('cleanly strips existing [Account Name] prefix without duplicating', () => {
-    const rawDisplayName = '[sneakers (IDE)] Gemini 2.5 Pro';
+    const rawDisplayName = '[sneakers (IDE)] Gemini 3.1 Pro High';
     const accountName = 'sneakers (IDE)';
     const cleanName = rawDisplayName.replace(/^\[[^\]]+\]\s*/, '');
-    expect(cleanName).toBe('Gemini 2.5 Pro');
+    expect(cleanName).toBe('Gemini 3.1 Pro High');
 
     // Unify display name across accounts: no [Account Name] prefix in the dropdown
-    expect(cleanName).toBe('Gemini 2.5 Pro');
+    expect(cleanName).toBe('Gemini 3.1 Pro High');
   });
 
   it('detects Antigravity IDE OAuth access tokens vs AI Studio API keys', () => {
@@ -37,7 +37,7 @@ describe('Google Account Edit & Discovery Logic', () => {
       status: 'healthy',
       latencyMs: 142,
       models: [
-        { id: 'gemini-1.5-pro', displayName: '[sneakers (IDE)] Gemini 1.5 Pro', enabled: true },
+        { id: 'gemini-3.1-pro-high', displayName: '[sneakers (IDE)] Gemini 3.1 Pro', enabled: true },
       ],
     };
 
@@ -49,8 +49,8 @@ describe('Google Account Edit & Discovery Logic', () => {
       apiKey: 'ya29.newToken',
       enabled: true,
       models: [
-        { id: 'gemini-1.5-pro', displayName: '[sneakers (IDE) Renamed] Gemini 1.5 Pro', enabled: true },
-        { id: 'gemini-2.0-flash', displayName: '[sneakers (IDE) Renamed] Gemini 2.0 Flash', enabled: false },
+        { id: 'gemini-3.1-pro-high', displayName: '[sneakers (IDE) Renamed] Gemini 3.1 Pro', enabled: true },
+        { id: 'gemini-3.8-flash-tiered', displayName: '[sneakers (IDE) Renamed] Gemini 3.8 Flash', enabled: false },
       ],
     };
 

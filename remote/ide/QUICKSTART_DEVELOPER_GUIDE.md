@@ -29,7 +29,7 @@ Le binaire CLI universel est disponible sous [`remote/daemon/bin/ag-ide.exe`](..
 .\remote\daemon\bin\ag-ide.exe focus <cascade-id>
 
 # Créer une nouvelle session pour un workspace spécifique
-.\remote\daemon\bin\ag-ide.exe create "c:\chemin\vers\mon-projet" "gemini-2.5-flash"
+.\remote\daemon\bin\ag-ide.exe create "c:\chemin\vers\mon-projet" "gemini-3.8-flash-tiered"
 
 # Envoyer un prompt et streamer la pensée et la réponse en direct dans le terminal
 .\remote\daemon\bin\ag-ide.exe chat <cascade-id> "Explique-moi l'architecture du projet"

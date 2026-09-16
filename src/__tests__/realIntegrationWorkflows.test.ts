@@ -45,7 +45,7 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
     it('translates Anthropic request payload and validates standardized response format', () => {
       // 1. Entrée standardisée depuis l'IDE Antigravity
       const ideRequest = {
-        model: 'MODEL_PLACEHOLDER_claude_3_7',
+        model: 'MODEL_PLACEHOLDER_claude_sonnet_4_6',
         request: {
           contents: [
             {
@@ -61,8 +61,8 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
       };
 
       // 2. Transformation réelle vers le format Anthropic Messages API
-      const anthropicPayload = mapGeminiToAnthropic(ideRequest.request as any, 'claude-3-7-sonnet-20250219');
-      expect(anthropicPayload.model).toBe('claude-3-7-sonnet-20250219');
+      const anthropicPayload = mapGeminiToAnthropic(ideRequest.request as any, 'claude-sonnet-4-6');
+      expect(anthropicPayload.model).toBe('claude-sonnet-4-6');
       expect(anthropicPayload.messages[0].content).toContain('binary search');
 
       // 3. Réponse simulée du fournisseur Anthropic
@@ -106,12 +106,12 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
       };
 
       const anthropicModel: CustomModel = {
-        name: 'claude-3-7-sonnet',
-        displayName: 'Claude 3.7 Sonnet',
+        name: 'claude-sonnet-4-6',
+        displayName: 'Claude Sonnet 4.6',
         provider: 'anthropic',
         apiKey: 'sk-ant-test',
         apiUrl: 'https://api.anthropic.com/v1',
-        externalModelName: 'claude-3-7-sonnet-20250219',
+        externalModelName: 'claude-sonnet-4-6',
       };
 
       // 1. Le circuit démarre fermé (état sain)
@@ -198,19 +198,19 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
       };
 
       const accountPerso = {
-        name: 'google-perso-gemini-1.5-pro',
+        name: 'google-perso-gemini-3.1-pro-high',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'AIzaSyKeyPerso12345',
       };
 
       const accountWork = {
-        name: 'google-work-gemini-1.5-pro',
+        name: 'google-work-gemini-3.1-pro-high',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'AIzaSyKeyWork67890',
       };
 
       const sameAccountModel = {
-        name: 'google-perso-gemini-2.0-flash',
+        name: 'google-perso-gemini-3.8-flash-tiered',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'AIzaSyKeyPerso12345',
       };

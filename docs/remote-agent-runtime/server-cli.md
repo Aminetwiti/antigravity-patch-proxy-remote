@@ -26,7 +26,7 @@ ag-agentd --mode=server [flags]
 | `--db-path` | `ag_agentd.db` | Path to the SQLite WAL database for persistent sessions and events. |
 | `--workspaces-dir` | `./workspaces` | Root directory containing sandboxed workspaces for agent sessions. |
 | `--provider` | `anthropic` | LLM provider: `anthropic`, `openai`, `ollama`, or `proxy`. |
-| `--model` | *(auto)* | Model name (e.g., `claude-3-7-sonnet-20250219`, `gpt-4o`, `deepseek-r1`). |
+| `--model` | *(auto)* | Model name (e.g., `claude-sonnet-4-6`, `gpt-4o`, `deepseek-r1`). |
 | `--auth-token` | *(random)* | Shared secret token for REST and WebSocket authentication. Auto-generated if omitted. |
 | `--approval-timeout` | `5m` | Maximum duration to wait for human tool approval before aborting/rejecting. |
 | `--no-approval` | `false` | Disable human approval gating (autonomous agent tool execution). |
@@ -138,7 +138,7 @@ ExecStart=/usr/local/bin/ag-agentd \
   --workspaces-dir=/home/agent/projects \
   --auth-token=supersecret_token_123 \
   --provider=anthropic \
-  --model=claude-3-7-sonnet-20250219
+  --model=claude-sonnet-4-6
 Restart=always
 RestartSec=5s
 LimitNOFILE=65536

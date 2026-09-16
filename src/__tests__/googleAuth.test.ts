@@ -22,10 +22,10 @@ describe('googleAuth service', () => {
       expect(normalizeCloudCodeModelId('gemini-3.1-pro-high')).toBe('gemini-3.1-pro-high');
     });
 
-    it('maps gemini-2.5 and other alias models to canonical Cloud Code models', () => {
-      expect(normalizeCloudCodeModelId('gemini-2.5-flash')).toBe('gemini-3.8-flash-tiered');
-      expect(normalizeCloudCodeModelId('gemini-2.5-pro')).toBe('gemini-3.1-pro-high');
-      expect(normalizeCloudCodeModelId('claude-3-7-sonnet')).toBe('claude-sonnet-4-6');
+    it('maps alias models to canonical Cloud Code models', () => {
+      expect(normalizeCloudCodeModelId('claude-sonnet')).toBe('claude-sonnet-4-6');
+      expect(normalizeCloudCodeModelId('gemini-flash')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-pro')).toBe('gemini-3.1-pro-high');
     });
   });
 
@@ -89,6 +89,60 @@ describe('googleAuth service', () => {
       sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
       expect((payload.contents as any[]).length).toBe(1);
       expect((payload.contents as any[])[0].role).toBe('user');
+    });
+
+    it('strips historical thinking blocks and thought signatures for Claude models', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: 'write code' }],
+          },
+          {
+            role: 'model',
+            parts: [
+              { thought: true, text: 'Thinking about the code...', thoughtSignature: 'sig_bad' },
+              { type: 'thinking', thinking: 'Internal reasoning...', signature: 'sig_bad2' },
+              { text: 'Here is the code:', thought_signature: 'sig_gemini' },
+              { functionCall: { name: 'run_command', args: { cmd: 'ls' } }, thoughtSignature: 'sig_bad3' },
+            ],
+          },
+          {
+            role: 'user',
+            parts: [{ text: 'continue' }],
+          },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
+      const modelTurn = (payload.contents as any[])[1];
+      expect(modelTurn.parts.length).toBe(2);
+      expect(modelTurn.parts[0].text).toBe('Here is the code:');
+      expect(modelTurn.parts[0].thought_signature).toBeUndefined();
+      expect(modelTurn.parts[1].functionCall.name).toBe('run_command');
+      expect(modelTurn.parts[1].thoughtSignature).toBeUndefined();
+    });
+
+    it('preserves thought parts for Gemini models', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          {
+            role: 'model',
+            parts: [
+              { thought: true, text: 'Gemini thinking...', thought_signature: 'sig_gemini' },
+              { text: 'Gemini answer' },
+            ],
+          },
+          {
+            role: 'user',
+            parts: [{ text: 'next' }],
+          },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'gemini-3.8-flash-tiered');
+      const modelTurn = (payload.contents as any[])[0];
+      expect(modelTurn.parts.length).toBe(2);
+      expect(modelTurn.parts[0].thought).toBe(true);
+      expect(modelTurn.parts[0].thought_signature).toBe('sig_gemini');
     });
   });
 

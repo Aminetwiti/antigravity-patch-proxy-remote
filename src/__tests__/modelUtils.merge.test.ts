@@ -106,7 +106,7 @@ describe('resolveDefaultMode', () => {
 describe('modelHasReasoningCapability', () => {
   it('detects reasoning-like names', () => {
     expect(modelHasReasoningCapability('o1-mini')).toBe(true);
-    expect(modelHasReasoningCapability('claude-3-7-sonnet')).toBe(true);
+    expect(modelHasReasoningCapability('claude-sonnet-4-6')).toBe(true);
   });
 
   it('returns false for plain chat models', () => {

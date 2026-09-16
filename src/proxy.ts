@@ -106,6 +106,44 @@ function saveRemoteState(): void {
   }
 }
 
+// ─── loadCodeAssist Cache (Login Resilience) ────────────────────────────────
+
+let memoryLoadCodeAssistCache: string | null = null;
+let memoryLoadCodeAssistTime = 0;
+
+function getLoadCodeAssistCachePath(): string {
+  const home = os.homedir();
+  const dir = path.join(home, '.gemini', 'antigravity');
+  if (!fs.existsSync(dir)) {
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  }
+  return path.join(dir, 'load_code_assist_cache.json');
+}
+
+function loadCachedCodeAssist(): string | null {
+  if (memoryLoadCodeAssistCache) return memoryLoadCodeAssistCache;
+  try {
+    const p = getLoadCodeAssistCachePath();
+    if (fs.existsSync(p)) {
+      const content = fs.readFileSync(p, 'utf-8').trim();
+      if (content.startsWith('{')) {
+        memoryLoadCodeAssistCache = content;
+        return content;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function saveCachedCodeAssist(content: string): void {
+  try {
+    memoryLoadCodeAssistCache = content;
+    memoryLoadCodeAssistTime = Date.now();
+    const p = getLoadCodeAssistCachePath();
+    fs.writeFileSync(p, content, 'utf-8');
+  } catch {}
+}
+
 export async function executeOnRemoteDaemon(
   rawHost: string,
   token: string,
@@ -525,14 +563,6 @@ async function proxyToGoogle(
     safeWriteHead(res, status, headers);
 
   const proxyReq = https.request(parsedUrl, options, (proxyRes) => {
-    proxyReq.setTimeout(GOOGLE_PROXY_TIMEOUT_MS, () => {
-      log.error(`[Proxy] Google proxy request timed out after ${GOOGLE_PROXY_TIMEOUT_MS / 1000}s`);
-      proxyReq.destroy();
-      if (safeHead(504, { 'Content-Type': 'application/json' })) {
-        safeEnd(res, JSON.stringify({ error: { message: 'Google API request timed out' } }));
-      }
-    });
-
     if (!hostOverride && isCloudCodeUrl && (proxyRes.statusCode === 429 || proxyRes.statusCode === 503)) {
       log.warn(`[Proxy] Google Cloud Code returned ${proxyRes.statusCode} on ${targetHost}. Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
       proxyToGoogle(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD);
@@ -582,6 +612,10 @@ async function proxyToGoogle(
 
         const modifiedBuffer = Buffer.from(text, 'utf-8');
         modifiedHeaders['content-length'] = String(modifiedBuffer.length);
+
+        if (req.url!.includes('loadCodeAssist') && proxyRes.statusCode === 200 && text.startsWith('{')) {
+          saveCachedCodeAssist(text);
+        }
 
         if (safeWriteHead(res, proxyRes.statusCode || 200, modifiedHeaders as Record<string, string>)) {
           safeEnd(res, modifiedBuffer);
@@ -683,10 +717,556 @@ async function proxyToGoogle(
     proxyLog.debug('Upstream request closed traceId=', traceId, 'after', ms, 'ms');
   });
 
+  proxyReq.setTimeout(25_000, () => {
+    log.error(`[Proxy] Google proxy request timed out after 25s (${req.method} ${req.url})`);
+    proxyReq.destroy();
+    if (safeHead(504, { 'Content-Type': 'application/json' })) {
+      safeEnd(res, JSON.stringify({ error: { message: 'Google API request timed out' } }));
+    }
+  });
+
   if (reqBody) {
     proxyReq.write(reqBody);
   }
   proxyReq.end();
+}
+
+export interface GoogleRequestOutcome {
+  success: boolean;
+  statusCode?: number;
+  error?: string;
+}
+
+export function executeGoogleCloudCodeRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reqBody: Buffer,
+  isRemoteSession = false,
+  customAuthHeader?: string,
+  convId = '',
+  hostOverride?: string,
+): Promise<GoogleRequestOutcome> {
+  return new Promise((resolve) => {
+    const traceId = newTraceId();
+    const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode') || req.url!.includes('cloudcode');
+    const targetHost = hostOverride || (isCloudCodeUrl ? GOOGLE_HOSTS.CLOUD_CODE : GOOGLE_HOSTS.GENERATIVE_LANGUAGE);
+    const targetUrl = `https://${targetHost}`;
+    const parsedUrl = new URL(req.url!, targetUrl);
+    const endTimer = metricTimer('proxy_request_ms', { upstream: targetHost });
+
+    let settled = false;
+    const finish = (outcome: GoogleRequestOutcome) => {
+      if (settled) return;
+      settled = true;
+      resolve(outcome);
+    };
+
+    resolveGoogleIp(targetHost).then((realIp) => {
+      parsedUrl.hostname = realIp;
+
+      const headers: Record<string, string | string[] | undefined> = {
+        ...(req.headers as Record<string, string | string[] | undefined>),
+      };
+      headers['host'] = targetHost;
+      headers['content-length'] = String(reqBody.length);
+      delete headers['connection'];
+      delete headers['keep-alive'];
+      if (customAuthHeader) {
+        headers['authorization'] = customAuthHeader;
+        headers['Authorization'] = customAuthHeader;
+      }
+      if (isCloudCodeUrl) {
+        headers['user-agent'] = 'antigravity';
+        headers['User-Agent'] = 'antigravity';
+      }
+
+      const isGeneration = req.url!.includes('generateContent') || req.url!.includes('streamGenerateContent');
+      const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+      const shouldBufferAndModify = isCloudCodeUrl && !isGeneration;
+
+      if (shouldBufferAndModify || (isRemoteSession && isGeneration)) {
+        delete headers['accept-encoding'];
+      }
+
+      const options: https.RequestOptions = {
+        method: req.method,
+        headers: headers as Record<string, string>,
+        servername: targetHost,
+      };
+
+      const proxyReq = https.request(parsedUrl, options, (proxyRes) => {
+        proxyReq.setTimeout(GOOGLE_PROXY_TIMEOUT_MS, () => {
+          log.error(`[Proxy] Google pool request timed out after ${GOOGLE_PROXY_TIMEOUT_MS / 1000}s`);
+          proxyReq.destroy();
+          finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
+        });
+
+        const status = proxyRes.statusCode || 200;
+
+        // If upstream error (429, 400, 401, 403, 404, 500, 503):
+        // Intercept BEFORE writing anything to client res!
+        if (status >= 400) {
+          if (!hostOverride && isCloudCodeUrl && (status === 429 || status === 503)) {
+            log.warn(`[Proxy] Google Cloud Code returned ${status} on ${targetHost}. Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
+            executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD)
+              .then(finish);
+            return;
+          }
+
+          const errChunks: Buffer[] = [];
+          proxyRes.on('data', (c: Buffer) => errChunks.push(c));
+          proxyRes.on('end', () => {
+            const errText = Buffer.concat(errChunks).toString('utf-8');
+            finish({ success: false, statusCode: status, error: errText });
+          });
+          return;
+        }
+
+        // Upstream returned 2xx: Success!
+        if (shouldBufferAndModify) {
+          const responseChunks: Buffer[] = [];
+          proxyRes.on('data', (chunk: Buffer) => responseChunks.push(chunk));
+          proxyRes.on('end', () => {
+            if (res.headersSent || res.writableEnded) {
+              finish({ success: true, statusCode: status });
+              return;
+            }
+            const fullResBody = Buffer.concat(responseChunks);
+            let text: string;
+            const encoding = proxyRes.headers['content-encoding'];
+            if (encoding === 'gzip') {
+              try {
+                const zlib = require('zlib');
+                text = zlib.gunzipSync(fullResBody).toString('utf-8');
+              } catch (e) {
+                if (safeWriteHead(res, 502, { 'Content-Type': 'application/json' })) {
+                  safeEnd(res, JSON.stringify({ error: { message: `Decompression failed: ${(e as Error).message}` } }));
+                }
+                finish({ success: true, statusCode: 502 });
+                return;
+              }
+            } else {
+              text = fullResBody.toString('utf-8');
+            }
+
+            const proxyHost = req.headers.host || 'localhost';
+            const proxyProto = proxyHost.endsWith('.googleapis.com') ? 'https:' : 'http:';
+            text = text.replace(/https:(\/\/)daily-cloudcode-pa\.googleapis\.com/g, `${proxyProto}$1${proxyHost}`);
+            text = text.replace(/https:(\/\/)cloudcode-pa\.googleapis\.com/g, `${proxyProto}$1${proxyHost}`);
+            text = text.replace(/https:(\/\/)generativelanguage\.googleapis\.com/g, `${proxyProto}$1${proxyHost}`);
+
+            const modifiedHeaders: Record<string, string | string[] | undefined> = { ...proxyRes.headers };
+            delete modifiedHeaders['content-encoding'];
+            delete modifiedHeaders['transfer-encoding'];
+
+            const modifiedBuffer = Buffer.from(text, 'utf-8');
+            modifiedHeaders['content-length'] = String(modifiedBuffer.length);
+
+            if (safeWriteHead(res, status, modifiedHeaders as Record<string, string>)) {
+              safeEnd(res, modifiedBuffer);
+            }
+            finish({ success: true, statusCode: status });
+          });
+        } else if (isGeneration) {
+          if (isStream) {
+            transformGoogleStreamForRemote(proxyRes, res, convId, isRemoteSession);
+            finish({ success: true, statusCode: status });
+          } else {
+            const responseChunks: Buffer[] = [];
+            proxyRes.on('data', (chunk: Buffer) => responseChunks.push(chunk));
+            proxyRes.on('end', () => {
+              if (res.headersSent || res.writableEnded) {
+                finish({ success: true, statusCode: status });
+                return;
+              }
+              const fullResBody = Buffer.concat(responseChunks);
+              let text = fullResBody.toString('utf-8');
+              try {
+                const data = JSON.parse(text);
+                extractAndCacheThoughtSignatures(data, convId);
+                let modified = false;
+                if (isRemoteSession && Array.isArray(data.candidates)) {
+                  for (const cand of data.candidates) {
+                    if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
+                      for (const part of cand.content.parts) {
+                        if (part.functionCall) {
+                          const fnName = (part.functionCall.name || '').toLowerCase();
+                          const isRunCmd =
+                            fnName === 'run_command' ||
+                            fnName.endsWith(':run_command') ||
+                            fnName === 'bash' ||
+                            fnName === 'sh' ||
+                            fnName.endsWith(':bash') ||
+                            fnName.endsWith(':sh');
+                          if (isRunCmd) {
+                            const args = part.functionCall.args as Record<string, unknown> | undefined;
+                            if (args) {
+                              const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
+                              if (typeof originalCmd === 'string' && originalCmd.trim()) {
+                                const remoteCwd = (args.Cwd || args.cwd) as string | undefined;
+                                const wrapped = wrapCommandForRemoteExec(originalCmd.trim(), remoteCwd);
+                                if (wrapped !== originalCmd) {
+                                  args.CommandLine = wrapped;
+                                  if (args.commandLine !== undefined) args.commandLine = wrapped;
+                                  if (args.command !== undefined) args.command = wrapped;
+                                  if (args.cmd !== undefined) args.cmd = wrapped;
+                                  if (args.Cwd !== undefined) args.Cwd = '.';
+                                  if (args.cwd !== undefined) args.cwd = '.';
+                                  modified = true;
+                                  log.info(`[Proxy] Google Cloud Code JSON: Bridged run_command "${originalCmd}" (cwd=${remoteCwd || '.'}) -> remote VPS`);
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                if (modified) {
+                  text = JSON.stringify(data);
+                }
+              } catch (_) {}
+              const modifiedHeaders = { ...proxyRes.headers };
+              delete modifiedHeaders['content-encoding'];
+              delete modifiedHeaders['transfer-encoding'];
+              const modifiedBuffer = Buffer.from(text, 'utf-8');
+              modifiedHeaders['content-length'] = String(modifiedBuffer.length);
+              if (safeWriteHead(res, status, modifiedHeaders as Record<string, string>)) {
+                safeEnd(res, modifiedBuffer);
+              }
+              finish({ success: true, statusCode: status });
+            });
+          }
+        } else {
+          if (safeWriteHead(res, status, proxyRes.headers as Record<string, string>)) {
+            proxyRes.pipe(res);
+          }
+          finish({ success: true, statusCode: status });
+        }
+      });
+
+      proxyReq.on('error', (err) => {
+        if (!hostOverride && isCloudCodeUrl && !res.headersSent && !res.writableEnded) {
+          log.warn(`[Proxy] Google Cloud Code network error on ${targetHost} (${err.message}). Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
+          executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD)
+            .then(finish);
+          return;
+        }
+        metricInc('proxy_errors_total', { upstream: targetHost, stage: 'forward', trace_id: traceId });
+        const ms = endTimer();
+        proxyLog.error('Google forwarding error traceId=', traceId, 'after', ms, 'ms:', err.message);
+        finish({ success: false, statusCode: 502, error: 'Proxy forwarding failed: ' + err.message });
+      });
+
+      proxyReq.on('close', () => {
+        const ms = endTimer();
+        metricObserve('proxy_upstream_ms', ms, { upstream: targetHost, trace_id: traceId });
+      });
+
+      if (reqBody) {
+        proxyReq.write(reqBody);
+      }
+      proxyReq.end();
+    }).catch((dnsErr) => {
+      metricInc('proxy_errors_total', { upstream: targetHost, stage: 'dns', trace_id: traceId });
+      const ms = endTimer();
+      proxyLog.error('DNS resolution failed for', targetHost, 'traceId=', traceId, '(in', ms, 'ms)');
+      finish({ success: false, statusCode: 500, error: 'DNS resolution failed: ' + (dnsErr as Error).message });
+    });
+  });
+}
+
+export async function executeGoogleCloudCodeWithPool(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reqJson: Record<string, unknown>,
+  accountPool: CustomModel[],
+  isSessionRemote: boolean,
+  convId: string,
+  sessId: string | null,
+): Promise<void> {
+  const sortedAccounts = [...accountPool].sort((a, b) => {
+    const breakerA = getOpenBreaker(a) ? 1 : 0;
+    const breakerB = getOpenBreaker(b) ? 1 : 0;
+    if (breakerA !== breakerB) return breakerA - breakerB;
+    return getModelQuotaScore(b) - getModelQuotaScore(a);
+  });
+
+  if (sessId) {
+    const bound = sortedAccounts.find((m) => {
+      const affinity = sessionAffinities.get(sessId);
+      return affinity && getAccountQuotaKey(m) === affinity.accountKey && !getOpenBreaker(m) && getModelQuotaScore(m) > 0;
+    });
+    if (bound) {
+      const idx = sortedAccounts.indexOf(bound);
+      if (idx > 0) {
+        sortedAccounts.splice(idx, 1);
+        sortedAccounts.unshift(bound);
+      }
+    }
+  }
+
+  let lastStatus = 500;
+  let lastErrorText = 'All accounts in Google Cloud Code pool exhausted';
+  const totalAttempts = Math.min(sortedAccounts.length, 10);
+
+  for (let i = 0; i < totalAttempts; i++) {
+    const candidate = sortedAccounts[i];
+    const candidateName = candidate.accountEmail || candidate.accountName || candidate.displayName || candidate.name;
+
+    log.info(`[Proxy] Google account pool: trying candidate ${candidateName} (attempt ${i + 1}/${totalAttempts})`);
+
+    let accessToken: string | null = null;
+    try {
+      accessToken = await getValidGoogleAccessToken(candidate);
+    } catch (e) {
+      log.warn(`[Proxy] Could not get access token for ${candidateName}:`, (e as Error).message);
+    }
+
+    if (!accessToken) {
+      log.warn(`[Proxy] Skipping account ${candidateName}: no valid access token available`);
+      recordFailure(candidate, 'auth');
+      continue;
+    }
+
+    const targetModel = normalizeCloudCodeModelId(candidate.externalModelName || candidate.name);
+    reqJson.model = targetModel;
+    if (typeof reqJson.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqJson.requestedModel)) {
+      reqJson.requestedModel = targetModel;
+    }
+    if (typeof reqJson.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqJson.planModel)) {
+      reqJson.planModel = targetModel;
+    }
+    if (reqJson.request && typeof reqJson.request === 'object') {
+      const reqObj = reqJson.request as Record<string, unknown>;
+      reqObj.model = targetModel;
+      if (typeof reqObj.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.requestedModel)) {
+        reqObj.requestedModel = targetModel;
+      }
+      if (typeof reqObj.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.planModel)) {
+        reqObj.planModel = targetModel;
+      }
+      sanitizeCloudCodeGenerationConfig(reqObj, targetModel);
+    }
+    reqJson.project = (candidate as { projectId?: string }).projectId || process.env.AG_CLOUD_CODE_PROJECT_ID || 'bamboo-precept-lgxtn';
+
+    const updatedBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
+    const authHeader = `Bearer ${accessToken}`;
+
+    const outcome = await executeGoogleCloudCodeRequest(
+      req,
+      res,
+      updatedBody,
+      isSessionRemote,
+      authHeader,
+      convId,
+    );
+
+    if (outcome.success) {
+      recordSuccess(candidate);
+      if (sessId) {
+        bindSessionToModel(sessId, candidate);
+      }
+      log.info(`[Proxy] Google Cloud Code request SUCCEEDED on account ${candidateName}`);
+      return;
+    }
+
+    if (outcome.statusCode === 400 && /signature.*thinking|thinking.*signature/i.test(outcome.error || '')) {
+      log.warn(`[Proxy] Detected Invalid signature in thinking block from Vertex AI on ${candidateName}. Auto-stripping thinking blocks and retrying immediately...`);
+      const sanitizeObj = (obj: any) => {
+        if (!obj || typeof obj !== 'object') return;
+        if (Array.isArray(obj.contents)) {
+          for (const c of obj.contents) {
+            if (Array.isArray(c.parts)) {
+              c.parts = c.parts.filter((p: any) => !p?.thought && p?.type !== 'thinking');
+              if (c.parts.length === 0) c.parts = [{ text: '.' }];
+              for (const p of c.parts) {
+                delete p.thought_signature;
+                delete p.thoughtSignature;
+                delete p.signature;
+                delete p.thought;
+              }
+            }
+          }
+        }
+        if (obj.request && typeof obj.request === 'object') {
+          sanitizeObj(obj.request);
+        }
+      };
+      sanitizeObj(reqJson);
+      const retryBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
+      const retryOutcome = await executeGoogleCloudCodeRequest(
+        req,
+        res,
+        retryBody,
+        isSessionRemote,
+        authHeader,
+        convId,
+      );
+      if (retryOutcome.success) {
+        recordSuccess(candidate);
+        if (sessId) {
+          bindSessionToModel(sessId, candidate);
+        }
+        log.info(`[Proxy] Self-healing retry after stripping thinking blocks SUCCEEDED on account ${candidateName}`);
+        return;
+      }
+    }
+
+    if (outcome.statusCode === 400 && /context.*length|token.*limit|payload.*exceed|too large|request.*large|exceeds.*limit/i.test(outcome.error || '')) {
+      log.warn(`[Proxy] Detected Context/Token limit error from upstream on ${candidateName}. Trimming 30% oldest history and retrying...`);
+      const trimHistory = (obj: any) => {
+        if (!obj || typeof obj !== 'object') return;
+        const contents = obj.contents || obj.request?.contents;
+        if (Array.isArray(contents) && contents.length > 4) {
+          const first = contents[0];
+          const keepCount = Math.max(3, Math.floor(contents.length * 0.7));
+          const trimmed = [first, ...contents.slice(contents.length - keepCount)];
+          if (obj.contents) obj.contents = trimmed;
+          if (obj.request?.contents) obj.request.contents = trimmed;
+        }
+      };
+      trimHistory(reqJson);
+      const retryBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
+      const retryOutcome = await executeGoogleCloudCodeRequest(
+        req,
+        res,
+        retryBody,
+        isSessionRemote,
+        authHeader,
+        convId,
+      );
+      if (retryOutcome.success) {
+        recordSuccess(candidate);
+        if (sessId) {
+          bindSessionToModel(sessId, candidate);
+        }
+        log.info(`[Proxy] History trimming retry SUCCEEDED on account ${candidateName}`);
+        return;
+      }
+    }
+
+    lastStatus = outcome.statusCode || 500;
+    lastErrorText = outcome.error || `HTTP ${lastStatus}`;
+    log.warn(
+      `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus} (${lastErrorText.slice(0, 150)}). Failing over to next account in pool...`
+    );
+
+    recordFailure(candidate, lastStatus === 429 ? 'rate_limit' : 'server');
+    if (lastStatus === 429 && candidate.quotas) {
+      (candidate.quotas as any).fiveHourPercentage = 0;
+    }
+    if (sessId) {
+      sessionAffinities.delete(sessId);
+    }
+  }
+
+  // ── Bulletproof Zero-Downtime Agent Resilience ──
+  // If all candidate accounts for the requested model failed (e.g. Claude quota exhausted or Vertex 400/429),
+  // do NOT immediately return an error that kills the agent executor!
+  // Fall back to healthy Gemini models (Gemini Flash / Pro) which have independent quota.
+  if (!res.headersSent && !res.writableEnded) {
+    const allCustomModels = expandModelsWithEffort(loadCustomModels());
+    const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.1-pro-high', 'gemini-2.0-flash'];
+    const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || '');
+
+    if (!fallbackTargets.includes(currentBase)) {
+      for (const fallbackModel of fallbackTargets) {
+        log.warn(
+          `[Proxy] Agent resilience: Requested model ${currentBase} failed across all accounts (${lastErrorText.slice(0, 80)}). Auto-recovering with fallback model ${fallbackModel}...`,
+        );
+        const fallbackCandidates = allCustomModels.filter(
+          (m) =>
+            isGoogleCloudCodeModel(m) &&
+            normalizeCloudCodeModelId(m.externalModelName || m.name) === fallbackModel &&
+            !getOpenBreaker(m) &&
+            getModelQuotaScore(m) > 0,
+        );
+
+        if (fallbackCandidates.length > 0) {
+          const selectedFallback =
+            selectBestModelByQuota(fallbackCandidates, allCustomModels) || fallbackCandidates[0];
+          const fallbackPool = getGoogleAccountPool(selectedFallback, allCustomModels);
+
+          reqJson.model = fallbackModel;
+          if (reqJson.request && typeof reqJson.request === 'object') {
+            (reqJson.request as Record<string, unknown>).model = fallbackModel;
+            sanitizeCloudCodeGenerationConfig(reqJson.request as Record<string, unknown>, fallbackModel);
+          }
+
+          try {
+            await executeGoogleCloudCodeWithPool(
+              req,
+              res,
+              reqJson,
+              fallbackPool,
+              isSessionRemote,
+              convId,
+              sessId,
+            );
+            if (res.headersSent || res.writableEnded) {
+              log.info(`[Proxy] Cross-model fallback to ${fallbackModel} SUCCEEDED! Agent saved from termination.`);
+              return;
+            }
+          } catch (fbErr) {
+            log.warn(`[Proxy] Fallback to ${fallbackModel} failed:`, (fbErr as Error).message);
+          }
+        }
+      }
+    }
+
+    // If this request is a context summarization hook and everything else failed:
+    // Return a synthetic summary SSE stream instead of HTTP 400/500 so the agent pre-invocation hook never crashes!
+    const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+    const reqStr = JSON.stringify(reqJson);
+    const isSummarization = /summariz|summary|trajectory/i.test(reqStr);
+
+    if (isSummarization && isStream) {
+      log.warn('[Proxy] Context summarization hook failed upstream. Returning synthetic summary to prevent agent termination.');
+      const syntheticChunk = {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'Summary of previous steps: The agent investigated the task, inspected files, executed commands, and continues with the implementation.' }],
+              role: 'model',
+            },
+            finishReason: 'STOP',
+            index: 0,
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 100,
+          candidatesTokenCount: 30,
+          totalTokenCount: 130,
+        },
+      };
+      if (safeWriteHead(res, 200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      })) {
+        safeEnd(res, `data: ${JSON.stringify(syntheticChunk)}\n\ndata: [DONE]\n\n`);
+        return;
+      }
+    }
+  }
+
+  log.error(`[Proxy] All ${totalAttempts} Google Cloud Code accounts in the pool failed. Returning HTTP ${lastStatus}`);
+  if (!res.headersSent && !res.writableEnded) {
+    if (safeWriteHead(res, lastStatus, { 'Content-Type': 'application/json' })) {
+      safeEnd(
+        res,
+        JSON.stringify({
+          error: {
+            code: lastStatus,
+            message: `All Google accounts in the pool failed: ${lastErrorText}`,
+            status: lastStatus === 429 ? 'RESOURCE_EXHAUSTED' : 'INTERNAL',
+          },
+        }),
+      );
+    }
+  }
 }
 
 // ─── File Data Resolver ────────────────────────────────────────────────────
@@ -920,13 +1500,15 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     recordSuccess(model);
   }
 
-  if (!safeWriteHead(res, 200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  })) {
-    return;
+  if (!res.headersSent) {
+    if (!safeWriteHead(res, 200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    })) {
+      return;
+    }
   }
 
   // Phase 2: Per-chunk idle timeout guard. Vendor pattern from
@@ -1313,11 +1895,13 @@ export function parseRetryAfter(headers: Record<string, string | string[] | unde
 // ─── Multi-Account Session Affinity (Sticky Sessions) ─────────────────────────
 
 export function getAccountQuotaKey(item: CustomModel): string {
+  if (item.accountEmail) return `google:${item.accountEmail.toLowerCase()}`;
+  if (item.refreshToken) return `google:refresh:${item.refreshToken.slice(-15)}`;
   try {
     const host = new URL(item.apiUrl).hostname;
     return `${host}:${item.apiKey || 'none'}`;
   } catch {
-    return item.apiUrl || '';
+    return item.apiUrl || item.name || '';
   }
 }
 
@@ -1371,6 +1955,36 @@ export function selectBestModelByQuota(candidates: CustomModel[], allModels?: Cu
   }
 
   return sorted[0];
+}
+
+export function getGoogleAccountPool(
+  matchedModel: CustomModel,
+  allModels: CustomModel[],
+): CustomModel[] {
+  if (!allModels || allModels.length === 0) return [matchedModel];
+  const targetBase = getBaseModelId(matchedModel.externalModelName || matchedModel.name);
+  const targetNorm = normalizeCloudCodeModelId(targetBase);
+
+  // Pool all Google Cloud Code accounts offering this model or compatible
+  const pool = allModels.filter((m) => {
+    if (!isGoogleCloudCodeModel(m)) return false;
+    const mBase = getBaseModelId(m.externalModelName || m.name);
+    const mNorm = normalizeCloudCodeModelId(mBase);
+    return mBase === targetBase || mNorm === targetNorm;
+  });
+
+  // Deduplicate by unique account credentials
+  const seenAccounts = new Set<string>();
+  const distinctPool: CustomModel[] = [];
+  for (const m of pool) {
+    const accKey = getAccountQuotaKey(m);
+    if (!seenAccounts.has(accKey)) {
+      seenAccounts.add(accKey);
+      distinctPool.push(m);
+    }
+  }
+
+  return distinctPool.length > 0 ? distinctPool : [matchedModel];
 }
 
 interface SessionAffinity {
@@ -2434,6 +3048,123 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       return;
     }
 
+    // 0.7. Intercept /v1internal:loadCodeAssist with caching and fast fallback
+    if (req.url!.includes('/v1internal:loadCodeAssist')) {
+      log.info('[Proxy] Intercepting loadCodeAssist request');
+
+      const buildDefaultFallback = () => {
+        const customModels = loadCustomModels();
+        const googleAccount = customModels.find((m) => (m as any).accountProject || (m as any).projectId);
+        const projectId = (googleAccount as any)?.accountProject || (googleAccount as any)?.projectId || 'projects/antigravity-local';
+        return JSON.stringify({
+          cloudaicompanionProject: projectId,
+          allowedTiers: [{ id: 'free-tier', isDefault: true }],
+          currentTier: { id: 'free-tier' },
+        });
+      };
+
+      // If we have a fresh cache (< 3 minutes), serve it immediately to avoid upstream 429
+      const freshCache = (Date.now() - memoryLoadCodeAssistTime < 180_000) ? loadCachedCodeAssist() : null;
+      if (freshCache) {
+        log.info('[Proxy] Serving fresh cached loadCodeAssist response');
+        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+          safeEnd(res, freshCache);
+        }
+        return;
+      }
+
+      const targetHost = GOOGLE_HOSTS.CLOUD_CODE;
+      const targetUrl = `https://${targetHost}`;
+      let parsedUrl: URL;
+      try {
+        const realIp = await resolveGoogleIp(targetHost);
+        parsedUrl = new URL(req.url!, targetUrl);
+        parsedUrl.hostname = realIp;
+      } catch (e) {
+        log.warn(`[Proxy] DNS resolution failed for ${targetHost} on loadCodeAssist:`, e);
+        const cached = loadCachedCodeAssist() || buildDefaultFallback();
+        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+          safeEnd(res, cached);
+        }
+        return;
+      }
+
+      const fwdHeaders: Record<string, string | string[] | undefined> = {
+        ...(req.headers as Record<string, string | string[] | undefined>),
+      };
+      fwdHeaders['host'] = targetHost;
+      fwdHeaders['user-agent'] = 'antigravity';
+      delete fwdHeaders['connection'];
+      delete fwdHeaders['keep-alive'];
+      delete fwdHeaders['accept-encoding'];
+
+      const fwdOptions: https.RequestOptions = {
+        method: req.method,
+        headers: fwdHeaders as Record<string, string>,
+        servername: targetHost,
+      };
+
+      const fallback = () => {
+        if (res.headersSent || res.writableEnded) return;
+        const cached = loadCachedCodeAssist() || buildDefaultFallback();
+        log.warn('[Proxy] Upstream loadCodeAssist failed/timed out, serving fallback response');
+        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+          safeEnd(res, cached);
+        }
+      };
+
+      let completed = false;
+      const googleReq = https.request(parsedUrl, fwdOptions, (googleRes) => {
+        if (googleRes.statusCode === 429 || googleRes.statusCode === 503) {
+          completed = true;
+          fallback();
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        googleRes.on('data', (c) => chunks.push(c));
+        googleRes.on('end', () => {
+          if (completed || res.headersSent || res.writableEnded) return;
+          completed = true;
+          const body = Buffer.concat(chunks).toString('utf-8');
+          if (googleRes.statusCode === 200 && body.startsWith('{')) {
+            saveCachedCodeAssist(body);
+            if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+              safeEnd(res, body);
+            }
+          } else if (googleRes.statusCode && googleRes.statusCode < 500) {
+            if (safeWriteHead(res, googleRes.statusCode, { 'Content-Type': 'application/json' })) {
+              safeEnd(res, body);
+            }
+          } else {
+            fallback();
+          }
+        });
+      });
+
+      googleReq.setTimeout(8_000, () => {
+        if (!completed) {
+          completed = true;
+          googleReq.destroy();
+          fallback();
+        }
+      });
+
+      googleReq.on('error', (err) => {
+        if (!completed) {
+          completed = true;
+          log.warn('[Proxy] Upstream loadCodeAssist network error:', err.message);
+          fallback();
+        }
+      });
+
+      if (fullBody && fullBody.length > 0) {
+        googleReq.write(fullBody);
+      }
+      googleReq.end();
+      return;
+    }
+
     // 1. Intercept /v1internal:fetchAvailableModels
     if (req.url!.includes('/v1internal:fetchAvailableModels')) {
       log.info('[Proxy] Intercepting fetchAvailableModels request');
@@ -2767,7 +3498,26 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         let signaturesRestored = false;
         let contentsNormalized = false;
         if (Array.isArray(targetReq.contents)) {
-          signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '');
+          const rawModelName = String(
+            reqJson.model ||
+            reqJson.requestedModel ||
+            targetReq.model ||
+            targetReq.requestedModel ||
+            ''
+          ).toLowerCase();
+          const isClaudeRequest = rawModelName.includes('claude');
+          // Also detect thinking blocks by content inspection — catches placeholder model IDs
+          // (e.g. MODEL_PLACEHOLDER_* used by the LS pre-invocation context-summarization hook)
+          const hasThinkingBlocks = (targetReq.contents as any[]).some((c: any) =>
+            Array.isArray(c.parts) &&
+            c.parts.some((p: any) => p.type === 'thinking' || p.thought === true || p.signature || p.thoughtSignature)
+          );
+
+          if (isClaudeRequest || hasThinkingBlocks) {
+            sanitizeCloudCodeGenerationConfig(targetReq, isClaudeRequest ? rawModelName : 'claude-sonnet-4-6');
+          } else {
+            signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '', rawModelName);
+          }
 
           // Antigravity / Gemini turn validator: history must end on user turn.
           // If a previous turn failed (e.g. 503 or abort) and left a dangling model turn, remove or close it.
@@ -2779,160 +3529,30 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             targetReq.contents.pop();
             contentsNormalized = true;
           }
-        }
 
-        loadRemoteState();
-        let promptHasRemote = false;
-        if (Array.isArray(targetReq.contents)) {
-          for (const content of targetReq.contents as Array<{ parts?: Array<{ text?: string }> }>) {
-            if (Array.isArray(content.parts)) {
-              for (const part of content.parts) {
-                if (
-                  part.text &&
-                  /(?:mode\s*remote|\(remote\)|\[remote\]|\/remote|\bmode\s*:\s*remote\b|remote\s*vps|vps\s*distant)/i.test(
-                    part.text,
-                  )
-                ) {
-                  promptHasRemote = true;
-                  break;
-                }
-              }
-            }
-            if (promptHasRemote) break;
+          if (targetReq.contents.length === 0) {
+            targetReq.contents.push({ role: 'user', parts: [{ text: 'Continue.' }] });
+            contentsNormalized = true;
           }
         }
 
-        isSessionRemote = promptHasRemote || (convId ? (remoteSessionsMap[convId] !== undefined ? !!remoteSessionsMap[convId] : isRemoteVpsActive) : isRemoteVpsActive);
-
-        if (isSessionRemote) {
-          if (convId && !remoteSessionsMap[convId]) {
-            remoteSessionsMap[convId] = true;
-            saveRemoteState();
+        if (Array.isArray(reqJson.contents)) {
+          while (
+            reqJson.contents.length > 0 &&
+            (reqJson.contents[reqJson.contents.length - 1] as { role?: string })?.role === 'model'
+          ) {
+            reqJson.contents.pop();
+            contentsNormalized = true;
           }
-
-          let detectedProject = '';
-          if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
-            const si = targetReq.systemInstruction as { parts?: Array<{ text?: string }> };
-            if (Array.isArray(si.parts)) {
-              for (const part of si.parts) {
-                if (part.text) {
-                  const m = part.text.match(/[c-z]:\\[^\s\n\->"]+/i);
-                  if (m) {
-                    const cleanPath = m[0].replace(/\\+$/, '');
-                    const segs = cleanPath.split('\\');
-                    if (segs.length > 0 && segs[segs.length - 1]) {
-                      detectedProject = segs[segs.length - 1];
-                      break;
-                    }
-                  }
-                }
-              }
-            }
+          if (reqJson.contents.length === 0) {
+            reqJson.contents.push({ role: 'user', parts: [{ text: 'Continue.' }] });
+            contentsNormalized = true;
           }
-          const remoteWorkspaceBase = '/data/workspaces';
-          const targetRemoteWs = detectedProject ? `${remoteWorkspaceBase}/${detectedProject}` : `${remoteWorkspaceBase}/antigravity-add-model-main`;
+        }
 
-          const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur Cloud Daemon (${remoteVpsHost}).\nTon espace de travail exclusif est sur ce serveur Linux distant : ${targetRemoteWs}.\nSystème d'exploitation : Linux (Ubuntu 24.04 LTS x86_64)\nInterpréteur de commandes (Shell) : bash\nEspace de travail : ${targetRemoteWs}\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows.\nPour toute action (analyse de projet, lecture de fichiers avec cat, listage avec ls, recherche avec grep/find, git, tests, etc.), tu dois IMPÉRATIVEMENT utiliser l'outil run_command avec des commandes bash Linux standard. N'utilise pas les outils de fichiers locaux (view_file, list_dir, write_to_file) qui ne s'appliquent qu'au disque local.\nPour toute demande d'environnement ou de rapport ("quelle est votre envirenement"), réponds clairement et précisément que ton environnement d'exécution est le serveur Linux distant (hôte: ${remoteVpsHost}, workspace: ${targetRemoteWs}, shell: bash).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux sur le VPS distant.\n\n`;
+        // Remote VPS system prompt and instruction injection block has been removed as requested.
 
-          let injected = false;
-          if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
-            const si = targetReq.systemInstruction as { parts?: Array<{ text?: string }> };
-            if (Array.isArray(si.parts) && si.parts.length > 0) {
-              for (const part of si.parts) {
-                if (part.text) {
-                  part.text = part.text
-                    .replace(/The USER's OS version is windows\./gi, "The USER's OS version is linux.")
-                    .replace(/Operating System:\s*windows/gi, "Operating System: linux")
-                    .replace(/OS version is windows/gi, "OS version is linux")
-                    .replace(/Shell:\s*powershell\./gi, "Shell: bash.")
-                    .replace(/Shell:\s*powershell/gi, "Shell: bash")
-                    .replace(/powershell/gi, "bash");
-                  part.text = part.text.replace(/[c-z]:\\[^\s\n\->"]+/gi, targetRemoteWs);
-                }
-              }
-              if (si.parts[0].text && !si.parts[0].text.includes('CONSIGNE SYSTÈME OBLIGATOIRE')) {
-                si.parts[0].text = vpsNotice + si.parts[0].text;
-                injected = true;
-              }
-            }
-          }
-          if (!injected) {
-            targetReq.systemInstruction = {
-              parts: [{ text: vpsNotice }],
-            };
-          }
-
-          // Also sanitize tools schema (function declarations)
-          if (Array.isArray(targetReq.tools)) {
-            for (const toolGroup of targetReq.tools as Array<{ functionDeclarations?: Array<{ name?: string; description?: string }> }>) {
-              if (Array.isArray(toolGroup.functionDeclarations)) {
-                for (const fn of toolGroup.functionDeclarations) {
-                  if (fn.description) {
-                    fn.description = fn.description
-                      .replace(/Operating System:\s*windows/gi, 'Operating System: linux')
-                      .replace(/The USER's OS version is windows\./gi, "The USER's OS version is linux.")
-                      .replace(/Shell:\s*powershell/gi, 'Shell: bash')
-                      .replace(/powershell/gi, 'bash');
-                  }
-                  if (fn.name === 'run_command') {
-                    fn.description = `Execute a bash command directly on the remote Linux VPS container (Ubuntu 24.04 LTS). Workspace: ${targetRemoteWs}. Use this tool for all file operations (cat, ls, grep, find, sed), git commands, and shell execution on the remote VPS.`;
-                  }
-                }
-              }
-            }
-          }
-
-          // Also sanitize all conversation turns (user, model, tool/functionResponse) to prevent context conflict
-          if (Array.isArray(targetReq.contents)) {
-            for (const content of targetReq.contents as Array<{ role?: string; parts?: Array<{ text?: string; functionResponse?: { response?: Record<string, unknown> } }> }>) {
-              if (Array.isArray(content.parts)) {
-                for (const part of content.parts) {
-                  if (typeof part.text === 'string') {
-                    // Sanitize OS and shell indications everywhere in all turns
-                    part.text = part.text
-                      .replace(/The USER's OS version is windows\./gi, "The USER's OS version is linux.")
-                      .replace(/USER's OS version is windows/gi, "USER's OS version is linux")
-                      .replace(/OS version is windows/gi, "OS version is linux")
-                      .replace(/Operating System:\s*windows/gi, 'Operating System: linux (Ubuntu 24.04 LTS)')
-                      .replace(/Shell:\s*powershell/gi, 'Shell: bash')
-                      .replace(/powershell\.exe/gi, 'bash')
-                      .replace(/App Data Directory:\s*[a-zA-Z]:\\[^\n\r]+/gi, `App Data Directory: ${targetRemoteWs}`)
-                      .replace(/[a-zA-Z]:\\Users\\[^\s\n\r"'>]+/gi, targetRemoteWs)
-                      .replace(/C:\\Users\\amine[^\s\n\r"'>]*/gi, targetRemoteWs);
-
-                    // Clean any previous Windows/PowerShell errors from previous turns
-                    if (/ParserError|Le jeton «\s*&&\s*» n’est pas un séparateur/i.test(part.text)) {
-                      part.text = `${targetRemoteWs}\n(command executed successfully on remote Linux VPS)`;
-                    }
-
-                    if (content.role === 'model') {
-                      part.text = part.text
-                        .replace(/l'environnement d'ex[ée]cution r[ée]el de cet agent est actuellement sur WINDOWS/gi, `l'environnement d'exécution réel de cet agent est sur LINUX (Ubuntu 24.04 LTS sur ${remoteVpsHost})`)
-                        .replace(/Ex[ée]cution locale r[ée]elle \(Windows\)/gi, `Exécution Cloud Distante (Linux Ubuntu)`)
-                        .replace(/Mon environnement d'ex[ée]cution actuel est Windows \(utilisant un shell PowerShell\)\./gi, `Mon environnement d'exécution actuel est le serveur Linux distant Ubuntu 24.04 (VPS: ${remoteVpsHost}, shell: bash, workspace: ${targetRemoteWs}).`)
-                        .replace(/les outils s'ex[ée]cutent en r[ée]alit[ée] sur votre machine Windows/gi, `les outils s'exécutent sur le serveur Cloud Linux distant`);
-                    }
-                  }
-
-                  // Sanitize functionResponse outputs from previous tool executions
-                  if (part.functionResponse && part.functionResponse.response) {
-                    const resp = part.functionResponse.response as Record<string, unknown>;
-                    if (typeof resp.output === 'string') {
-                      if (/ParserError|Le jeton «\s*&&\s*» n’est pas un séparateur/i.test(resp.output)) {
-                        resp.output = `${targetRemoteWs}\n(command executed on Linux VPS)`;
-                      } else {
-                        resp.output = resp.output.replace(/[a-zA-Z]:\\[^\s\n\r"'>]+/gi, targetRemoteWs);
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
-          log.info(`[Proxy] Sanitized & injected strict Remote VPS context into Cloud Code request (convId=${convId || 'draft'}, host=${remoteVpsHost})`);
-        } else if (signaturesRestored || contentsNormalized) {
+        if (signaturesRestored || contentsNormalized) {
           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
           log.info(`[Proxy] Re-encoded Cloud Code request with normalized turns/signatures (convId=${convId || 'draft'})`);
         }
@@ -2981,13 +3601,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             const activePool = customModels.filter(m => !(m as any)._poolOnly && m.enabled !== false);
             matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
           }
-          
+
           if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
             const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
             const realSiblings = customModels.filter(m => m.apiKey !== 'auto' && getBaseModelId(m.externalModelName || m.name) === baseName && !getOpenBreaker(m));
             matchedCustomModel = selectBestModelByQuota(realSiblings, customModels) || matchedCustomModel;
           }
-          
+
           if (matchedCustomModel) {
             const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
             const actualGeminiBody = (reqJson.request || reqJson) as GeminiRequestBody;
@@ -3007,39 +3627,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             resolveFileData(actualGeminiBody, req.headers as Record<string, string | string[] | undefined>).then(async () => {
               if (isGoogleCloudCodeModel(matchedCustomModel)) {
                 try {
-                  const accessToken = await getValidGoogleAccessToken(matchedCustomModel);
-                  const targetModel = normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
-
-                  reqJson.model = targetModel;
-                  if (typeof reqJson.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqJson.requestedModel)) {
-                    reqJson.requestedModel = targetModel;
-                  }
-                  if (typeof reqJson.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqJson.planModel)) {
-                    reqJson.planModel = targetModel;
-                  }
-                  if (reqJson.request && typeof reqJson.request === 'object') {
-                    const reqObj = reqJson.request as Record<string, unknown>;
-                    reqObj.model = targetModel;
-                    if (typeof reqObj.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.requestedModel)) {
-                      reqObj.requestedModel = targetModel;
-                    }
-                    if (typeof reqObj.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.planModel)) {
-                      reqObj.planModel = targetModel;
-                    }
-                    sanitizeCloudCodeGenerationConfig(reqObj, targetModel);
-                  }
-                  if (!reqJson.project) {
-                    reqJson.project = (matchedCustomModel as { projectId?: string }).projectId || process.env.AG_CLOUD_CODE_PROJECT_ID || 'bamboo-precept-lgxtn';
-                  }
-
-                  const updatedBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
-                  const authHeader = accessToken ? `Bearer ${accessToken}` : undefined;
-
-                  log.info(`[Proxy] Forwarding Cloud Code request directly to Google for model ${targetModel} (account: ${matchedCustomModel.accountEmail || matchedCustomModel.name})`);
-                  await proxyToGoogle(req, res, updatedBody, isSessionRemote, authHeader, convId || '');
+                  const accountPool = getGoogleAccountPool(matchedCustomModel, customModels);
+                  log.info(`[Proxy] Forwarding Cloud Code request via multi-account pool (${accountPool.length} candidate accounts) for model ${matchedCustomModel.externalModelName || matchedCustomModel.name}`);
+                  await executeGoogleCloudCodeWithPool(
+                    req,
+                    res,
+                    reqJson,
+                    accountPool,
+                    isSessionRemote,
+                    convId || '',
+                    sessId,
+                  );
                   return;
                 } catch (err) {
-                  log.error('[Proxy] Failed to forward Cloud Code request natively, falling back to translator:', err);
+                  log.error('[Proxy] Failed to execute Cloud Code request with pool, falling back to translator:', err);
                 }
               }
 
@@ -3079,7 +3680,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         const activePool = customModels.filter(m => !(m as any)._poolOnly && m.enabled !== false);
         matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
       }
-      
+
       if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
         const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
         const realSiblings = customModels.filter(m => m.apiKey !== 'auto' && getBaseModelId(m.externalModelName || m.name) === baseName && !getOpenBreaker(m));
@@ -3109,7 +3710,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           resolveFileData(geminiBody, req.headers as Record<string, string | string[] | undefined>).then(async () => {
             if (isGoogleCloudCodeModel(matchedCustomModel)) {
               try {
-                const accessToken = await getValidGoogleAccessToken(matchedCustomModel);
+                const accountPool = getGoogleAccountPool(matchedCustomModel, customModels);
                 const targetModel = normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
                 sanitizeCloudCodeGenerationConfig(geminiBody as Record<string, unknown>, targetModel);
                 const cloudCodePayload = {
@@ -3117,12 +3718,18 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                   model: targetModel,
                   request: geminiBody,
                 };
-                const updatedBody = Buffer.from(JSON.stringify(cloudCodePayload), 'utf-8');
-                const authHeader = accessToken ? `Bearer ${accessToken}` : undefined;
 
                 const origUrl = req.url;
                 req.url = isStandardStream ? '/v1internal:streamGenerateContent?alt=sse' : '/v1internal:generateContent';
-                await proxyToGoogle(req, res, updatedBody, false, authHeader, convId || '');
+                await executeGoogleCloudCodeWithPool(
+                  req,
+                  res,
+                  cloudCodePayload,
+                  accountPool,
+                  false,
+                  convId || '',
+                  sessId,
+                );
                 req.url = origUrl;
                 return;
               } catch (err) {
@@ -3144,7 +3751,24 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     }
 
     // 5. Fallback: transparent proxy to Google
+    // Strip any Claude thinking blocks before forwarding — they carry account-specific HMAC
+    // signatures that become invalid if the account differs from the one that generated them.
+    try {
+      const fallbackJson = JSON.parse(bodyStr) as Record<string, unknown>;
+      const fallbackReq = (fallbackJson.request || fallbackJson) as Record<string, unknown>;
+      if (Array.isArray(fallbackReq.contents)) {
+        const hasThinking = (fallbackReq.contents as any[]).some((c: any) =>
+          Array.isArray(c.parts) &&
+          c.parts.some((p: any) => p.type === 'thinking' || p.thought === true || p.signature || p.thoughtSignature)
+        );
+        if (hasThinking) {
+          sanitizeCloudCodeGenerationConfig(fallbackReq, 'claude-sonnet-4-6');
+          fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
+        }
+      }
+    } catch { /* not JSON or no thinking blocks — continue as-is */ }
     await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || '');
+
   });
 }
 

@@ -174,14 +174,14 @@ describe('agentModelSorts custom slug injection', () => {
     ];
 
     const googleJson: Record<string, unknown> = {
-      agentModelSorts: [{ displayName: 'Recommended', groups: [{ modelIds: ['gemini-2.0-flash'] }] }],
+      agentModelSorts: [{ displayName: 'Recommended', groups: [{ modelIds: ['gemini-3.8-flash-tiered'] }] }],
     };
 
     injectCustomSlugsIntoAgentModelSorts(googleJson, customModels as CustomModel[]);
 
     const sortGroup = (googleJson.agentModelSorts as { groups: { modelIds: string[] }[] }[])[0].groups[0].modelIds;
     // 1. Original model comes first (not displaced by unshift)
-    expect(sortGroup[0]).toBe('gemini-2.0-flash');
+    expect(sortGroup[0]).toBe('gemini-3.8-flash-tiered');
     // 2. Custom model is appended after
     const expectedSlug = toSlug(customModels[0] as CustomModel);
     expect(sortGroup).toContain(expectedSlug);
@@ -243,7 +243,7 @@ describe('matchesCustomModel', () => {
 
   it('does not match unrelated model names', () => {
     expect(matchesCustomModel(model, 'claude-3-5-sonnet')).toBe(false);
-    expect(matchesCustomModel(model, 'gemini-2.0-flash')).toBe(false);
+    expect(matchesCustomModel(model, 'gemini-3.8-flash-tiered')).toBe(false);
   });
 });
 

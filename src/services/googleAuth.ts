@@ -140,9 +140,6 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.7-flash-tiered',
     'gemini-3.6-flash-tiered',
     'gemini-3.1-pro-high',
-    'gemini-2.0-flash',
-    'gemini-1.5-pro',
-    'gemini-1.5-flash',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
     'gpt-oss-120b-medium',
@@ -167,12 +164,8 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.6-flash': 'gemini-3.6-flash-tiered',
     'gemini-3.1-pro-low': 'gemini-3.1-pro-high',
     'gemini-3.1-pro': 'gemini-3.1-pro-high',
-    'gemini-2.5-flash': 'gemini-3.8-flash-tiered',
-    'gemini-2.5-pro': 'gemini-3.1-pro-high',
     'gemini-flash': 'gemini-3.8-flash-tiered',
     'gemini-pro': 'gemini-3.1-pro-high',
-    'claude-3-7-sonnet': 'claude-sonnet-4-6',
-    'claude-3.7-sonnet': 'claude-sonnet-4-6',
     'claude-sonnet': 'claude-sonnet-4-6',
     'claude-opus': 'claude-opus-4-6-thinking',
   };
@@ -208,18 +201,12 @@ export function normalizeGoogleModelId(modelName: string): string {
   }
 
   const aliasMap: Record<string, string> = {
-    'gemini-1.5-flash': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
     'gemini-3.7-flash': 'gemini-3.7-flash-tiered',
     'gemini-flash': 'gemini-3.8-flash-tiered',
-    'gemini-flash-2.5': 'gemini-3.8-flash-tiered',
-    'gemini-flash-2.0': 'gemini-3.8-flash-tiered',
-    'gemini-flash-1.5': 'gemini-3.8-flash-tiered',
     'gemini-3.1-pro': 'gemini-3.1-pro-high',
     'gemini-3.0-pro': 'gemini-3.1-pro-high',
     'gemini-pro': 'gemini-3.1-pro-high',
-    'gemini-pro-2.5': 'gemini-3.1-pro-high',
-    'gemini-pro-1.5': 'gemini-3.1-pro-high',
     'claude-sonnet': 'claude-sonnet-4-6',
   };
 
@@ -301,6 +288,57 @@ export function sanitizeCloudCodeGenerationConfig(
     ) {
       log.warn(`[Proxy] Pruned trailing model turn in Cloud Code request for ${targetModel}`);
       reqObj.contents.pop();
+    }
+
+    if (reqObj.contents.length === 0) {
+      reqObj.contents.push({ role: 'user', parts: [{ text: 'Continue.' }] });
+    }
+
+    // For Claude models on Google Cloud Code / Vertex AI:
+    // Anthropic validates that every thinking block's HMAC signature matches its exact thinking text.
+    // When Antigravity IDE performs context summarization or account pooling, historical thinking blocks
+    // have modified text or mismatched account signatures, causing HTTP 400 "Invalid signature in thinking block".
+    // Stripping historical thinking blocks avoids this while allowing Claude to think on the current turn.
+    const isClaude = targetModel.toLowerCase().includes('claude') ||
+      reqObj.contents.some((c: any) => Array.isArray(c?.parts) && c.parts.some((p: any) => p?.type === 'thinking' || typeof p?.signature === 'string' || typeof p?.thinking === 'string'));
+
+    if (isClaude) {
+      for (const item of reqObj.contents as Array<{ role?: string; parts?: Array<Record<string, unknown>> }>) {
+        if (Array.isArray(item.parts)) {
+          const originalCount = item.parts.length;
+          item.parts = item.parts.filter((p: any) => {
+            if (!p || typeof p !== 'object') return false;
+            // Function calls and responses must NEVER be filtered out
+            if (p.functionCall || p.functionResponse) return true;
+            // Pure thinking blocks
+            if (p.type === 'thinking') return false;
+            if (p.thought === true || p.thought === 'true') return false;
+            if (typeof p.thinking === 'string') return false;
+            // Pure signature block without text
+            if ((typeof p.signature === 'string' || typeof p.thoughtSignature === 'string' || typeof p.thought_signature === 'string') && !p.text) {
+              return false;
+            }
+            return true;
+          });
+
+          // Ensure turn is never left completely empty
+          if (item.parts.length === 0) {
+            item.parts = [{ text: '.' }];
+          }
+
+          // Strip any residual thought signatures from remaining parts
+          for (const p of item.parts) {
+            if (p.thought_signature) delete p.thought_signature;
+            if (p.thoughtSignature) delete p.thoughtSignature;
+            if (p.signature) delete p.signature;
+            if (p.thought) delete p.thought;
+          }
+
+          if (item.parts.length !== originalCount) {
+            log.info(`[Proxy] Sanitized ${originalCount - item.parts.length} historical thinking block(s) for Claude request to avoid invalid signature error`);
+          }
+        }
+      }
     }
   }
 }

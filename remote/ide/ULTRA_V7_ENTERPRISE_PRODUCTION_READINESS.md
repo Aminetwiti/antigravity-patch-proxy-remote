@@ -147,8 +147,8 @@ Pipeline d'inspection des prompts et fichiers avant expédition au modèle LLM :
 Organisation (Tenant Unique)
   ├── Quota Global (ex: 50 000 000 tokens / mois)
   ├── Teams
-  │    ├── Backend Engineering Team (Quota: 20M tokens | Modèles: Claude-3.7-Sonnet, GPT-4o)
-  │    ├── Frontend Mobile Team   (Quota: 15M tokens | Modèles: Gemini-2.5-Flash)
+  │    ├── Backend Engineering Team (Quota: 20M tokens | Modèles: Claude-Sonnet-4-6, GPT-4o)
+  │    ├── Frontend Mobile Team   (Quota: 15M tokens | Modèles: Gemini-3.8-Flash)
   │    └── Security & QA Team     (Quota: 15M tokens | Outils MCP avancés autorisés)
   └── Policies Centralisées
        ├── Whitelist Outils : `run_command(git, npm, go)`, `write_file`
@@ -241,7 +241,7 @@ func main() {
 		panic(err)
 	}
 
-	session, _ := ag.Sessions.Create(context.Background(), "/path/to/project", "gemini-2.5-flash")
+	session, _ := ag.Sessions.Create(context.Background(), "/path/to/project", "gemini-3.8-flash-tiered")
 	fmt.Printf("🚀 Session créée: %s\n", session.CascadeID)
 
 	_ = ag.Sessions.StreamChat(context.Background(), session.CascadeID, "Analyse les performances", func(token string) {

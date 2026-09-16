@@ -48,7 +48,7 @@ func (c *Client) RPC() *connectrpc.Client {
 // CreateSession crée une nouvelle session de chat pour un workspace donné.
 func (c *Client) CreateSession(workspacePath, modelUID string) (string, error) {
 	if modelUID == "" {
-		modelUID = "gemini-2.0-flash"
+		modelUID = "gemini-3.8-flash-tiered"
 	}
 	wsURI := workspacePath
 	if wsURI != "" && !strings.HasPrefix(wsURI, "file://") {

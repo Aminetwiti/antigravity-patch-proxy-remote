@@ -152,7 +152,7 @@ Confidence: 100%
 | `/v1internal:loadCodeAssist` | POST | `{"request":{...},"model":"..."}` | Négociation des capacités et quota. |
 | `/v1internal:streamGenerateContent` | POST | SSE JSON / Protobuf stream | Streaming temps réel des tokens. |
 | `/v1internal:fetchAvailableModels` | POST | JSON Array | Liste des modèles Cloud Code. |
-| `GetAvailableModels` | RPC | Protobuf WireType 2 | Injection des 28+ modèles custom (Claude 3.7, GPT-4o). |
+| `GetAvailableModels` | RPC | Protobuf WireType 2 | Injection des 28+ modèles custom (Claude Sonnet 4.6, GPT-4o). |
 
 ---
 

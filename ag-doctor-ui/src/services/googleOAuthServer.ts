@@ -235,34 +235,48 @@ function saveAccountToCustomModels(accountData: {
       config.providers = [];
     }
 
-    const existingIndex = config.providers.findIndex(
-      (p: any) => p.email === accountData.email || p.id === accountData.id || p.name === accountData.name
-    );
+    let googleProvider = config.providers.find((p: any) => p && (p.provider === 'google' || p.provider === 'gemini'));
+    if (!googleProvider) {
+      googleProvider = {
+        id: 'provider-google',
+        name: 'Google Gemini',
+        provider: 'google',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'auto',
+        enabled: true,
+        models: STANDARD_GOOGLE_MODELS,
+        accounts: [],
+      };
+      config.providers.push(googleProvider);
+    }
+    if (!Array.isArray(googleProvider.accounts)) {
+      googleProvider.accounts = [];
+    }
 
-    const providerEntry = {
+    const accountEntry = {
       id: accountData.id,
       name: accountData.name,
       email: accountData.email,
-      provider: 'google',
-      apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
       apiKey: accountData.accessToken,
       refreshToken: accountData.refreshToken,
       projectId: accountData.projectId || 'aicode-consumers',
       quotas: accountData.quotas,
       enabled: true,
-      models: STANDARD_GOOGLE_MODELS,
+      status: 'healthy',
+      lastTestedAt: new Date().toISOString(),
     };
 
-    if (existingIndex >= 0) {
-      config.providers[existingIndex] = {
-        ...config.providers[existingIndex],
-        ...providerEntry,
-        models: config.providers[existingIndex].models?.length
-          ? config.providers[existingIndex].models
-          : STANDARD_GOOGLE_MODELS,
+    const existingAccIdx = googleProvider.accounts.findIndex(
+      (a: any) => (accountData.email && a.email === accountData.email) || a.id === accountData.id
+    );
+
+    if (existingAccIdx >= 0) {
+      googleProvider.accounts[existingAccIdx] = {
+        ...googleProvider.accounts[existingAccIdx],
+        ...accountEntry,
       };
     } else {
-      config.providers.push(providerEntry);
+      googleProvider.accounts.push(accountEntry);
     }
 
     fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf-8');

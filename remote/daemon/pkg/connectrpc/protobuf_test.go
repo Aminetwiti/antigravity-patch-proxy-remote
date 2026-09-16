@@ -170,7 +170,7 @@ func TestResolveStandardModelEnum(t *testing.T) {
 		{"gemini-3.7-flash", 312},
 		{"gemini-3.1-pro", 246},
 		{"claude-sonnet-4.6-thinking", 384},
-		{"claude-3-7-sonnet", 384},
+		{"claude-sonnet-4-6", 384},
 		{"claude-opus-4.6-thinking", 393},
 		{"deepseek-r1", 401},
 		{"gpt-4o-mini", 281},

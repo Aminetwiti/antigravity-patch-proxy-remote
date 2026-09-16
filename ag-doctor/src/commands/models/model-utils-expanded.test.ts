@@ -36,7 +36,7 @@ function inferCapabilities(modelId: string): ModelInfo {
 
   let contextWindow = 8192;
   if (norm.includes('128k') || norm.startsWith('gpt-4o') || norm.startsWith('o1-')) contextWindow = 128000;
-  if (norm.includes('1m') || norm.startsWith('gemini-1.5-pro') || norm.startsWith('gemini-2.0')) contextWindow = 1000000;
+  if (norm.includes('1m') || norm.startsWith('gemini-3.1-pro-high') || norm.startsWith('gemini-3.8-flash-tiered')) contextWindow = 1000000;
   if (norm.startsWith('claude-3')) contextWindow = 200000;
 
   const supportsVision = norm.includes('vision') || norm.includes('4o') || norm.startsWith('claude-3') || norm.startsWith('gemini-');
@@ -76,7 +76,7 @@ describe('Model Utils & Capability Inference (25 tests)', () => {
   });
 
   it('normalizes Google prefix', () => {
-    expect(normalizeModelId('google/gemini-2.0-flash-exp')).toBe('gemini-2.0-flash-exp');
+    expect(normalizeModelId('google/gemini-3.8-flash-tiered-exp')).toBe('gemini-3.8-flash-tiered-exp');
   });
 
   it('trims whitespace and converts uppercase to lowercase', () => {
@@ -99,8 +99,8 @@ describe('Model Utils & Capability Inference (25 tests)', () => {
     expect(detectProvider('claude-3-5-sonnet')).toBe('anthropic');
   });
 
-  it('detects Gemini provider for gemini-1.5-pro', () => {
-    expect(detectProvider('gemini-1.5-pro')).toBe('gemini');
+  it('detects Gemini provider for gemini-3.1-pro-high', () => {
+    expect(detectProvider('gemini-3.1-pro-high')).toBe('gemini');
   });
 
   it('detects Custom provider for llama-3-70b', () => {
@@ -112,8 +112,8 @@ describe('Model Utils & Capability Inference (25 tests)', () => {
     expect(info.contextWindow).toBe(128000);
   });
 
-  it('infers 1M context window for gemini-1.5-pro', () => {
-    const info = inferCapabilities('gemini-1.5-pro');
+  it('infers 1M context window for gemini-3.1-pro-high', () => {
+    const info = inferCapabilities('gemini-3.1-pro-high');
     expect(info.contextWindow).toBe(1000000);
   });
 
@@ -135,8 +135,8 @@ describe('Model Utils & Capability Inference (25 tests)', () => {
     expect(inferCapabilities('claude-3-haiku').supportsVision).toBe(true);
   });
 
-  it('infers vision support for gemini-2.0-flash', () => {
-    expect(inferCapabilities('gemini-2.0-flash').supportsVision).toBe(true);
+  it('infers vision support for gemini-3.8-flash-tiered', () => {
+    expect(inferCapabilities('gemini-3.8-flash-tiered').supportsVision).toBe(true);
   });
 
   it('disables function calling for o1-mini', () => {

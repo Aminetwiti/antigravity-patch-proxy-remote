@@ -439,7 +439,7 @@ IDE Chat UI ↔ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go
 3. **Interactive Human-in-the-Loop Controls**:
    - **Tool Approvals (`submit_approval`)**: Approve or reject dangerous commands (`run_command`, `write_to_file`) with single-use (`once`) or full-session (`session`) scopes and auto-rejection timeouts.
    - **Structured Question Answering (`AskQuestion`)**: Interactive radio button and multi-select cards for resolving agent forks directly from phone notifications.
-   - **Colosseum Battle Arena**: Multi-model duel supervision (e.g. Claude 3.5 Sonnet vs Gemini 2.0 Flash) with side-by-side branch comparison.
+   - **Colosseum Battle Arena**: Multi-model duel supervision (e.g. Claude 3.5 Sonnet vs Gemini 3.8 Flash Tiered) with side-by-side branch comparison.
 
 4. **Offline-First Resilience & Outbox Queue**:
    - **Optimistic UI & Local Outbox**: Messages composed while disconnected are stored in local FIFO storage and automatically drained upon reconnection.

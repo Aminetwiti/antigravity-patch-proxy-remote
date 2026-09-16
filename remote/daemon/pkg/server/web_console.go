@@ -768,7 +768,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
 
           <div class="form-group">
             <label for="apiModelInput" class="input-label">Nom du Modèle</label>
-            <input type="text" id="apiModelInput" class="input-field" placeholder="ex: claude-3-7-sonnet-20250219, gpt-4o, gemini-2.0-flash" />
+            <input type="text" id="apiModelInput" class="input-field" placeholder="ex: claude-sonnet-4-6, gpt-4o, gemini-3.8-flash-tiered" />
           </div>
 
           <div class="form-group">
@@ -1132,7 +1132,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
       apiFetch('/v2/accounts/select-best', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'gemini-2.0-flash' })
+        body: JSON.stringify({ model: 'gemini-3.8-flash-tiered' })
       })
       .then(function(res) { return res.json(); })
       .then(function(data) {
@@ -1238,7 +1238,7 @@ const WebConsoleHTML = `<!DOCTYPE html>
       const modelInput = document.getElementById('apiModelInput');
       const baseInput = document.getElementById('apiBaseURLInput');
       if (val === 'anthropic' && !modelInput.value) {
-        modelInput.value = 'claude-3-7-sonnet-20250219';
+        modelInput.value = 'claude-sonnet-4-6';
         baseInput.value = 'https://api.anthropic.com';
       } else if (val === 'openai' && !modelInput.value) {
         modelInput.value = 'gpt-4o';
