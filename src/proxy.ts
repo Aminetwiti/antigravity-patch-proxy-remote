@@ -320,7 +320,7 @@ import { recordRecentModel, restoreRecentModels } from './proxy/recentModelsStor
 // MCP relay bridge (mobile companion): lists MCP servers configured on the
 // desktop session and forwards tool calls to the local MCP runtime.
 import { mcpListServers, mcpCallTool } from './proxy/mcpRelay';
-import { getValidGoogleAccessToken, normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel, sanitizeCloudCodeGenerationConfig } from './services/googleAuth';
+import { getValidGoogleAccessToken, normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel, sanitizeCloudCodeGenerationConfig, normalizeConversationTurns } from './services/googleAuth';
 
 // ─── Proxy Error Emitter ──────────────────────────────────────────────────
 // Lets the main process fan-out notable diagnostics to the renderer without
@@ -1991,13 +1991,7 @@ function handleCustomModelRequest(
   const geminiBody = trimContextPayload(rawGeminiBody);
   const bodyContents = geminiBody.contents || ((geminiBody as Record<string, unknown>).request as Record<string, unknown> | undefined)?.contents;
   if (Array.isArray(bodyContents)) {
-    while (
-      bodyContents.length > 0 &&
-      (bodyContents[bodyContents.length - 1] as { role?: string })?.role === 'model'
-    ) {
-      log.warn(`[Proxy] Pruned trailing model turn in handleCustomModelRequest to prevent 'request would have ended on a model turn' error`);
-      bodyContents.pop();
-    }
+    normalizeConversationTurns(bodyContents);
     const sessId = extractSessionId(geminiBody as Record<string, unknown>, {});
     restoreThoughtSignatures(bodyContents, sessId || '', model.name || '');
   }
@@ -3437,33 +3431,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '', rawModelName);
           }
 
-          // Antigravity / Gemini turn validator: history must end on user turn.
-          // If a previous turn failed (e.g. 503 or abort) and left a dangling model turn, remove or close it.
-          while (
-            targetReq.contents.length > 0 &&
-            (targetReq.contents[targetReq.contents.length - 1] as { role?: string })?.role === 'model'
-          ) {
-            log.warn(`[Proxy] Pruned trailing model turn to prevent 'request would have ended on a model turn' error (convId=${convId || 'draft'})`);
-            targetReq.contents.pop();
-            contentsNormalized = true;
-          }
-
-          if (targetReq.contents.length === 0) {
-            targetReq.contents.push({ role: 'user', parts: [{ text: 'Continue.' }] });
+          if (normalizeConversationTurns(targetReq.contents)) {
             contentsNormalized = true;
           }
         }
 
         if (Array.isArray(reqJson.contents)) {
-          while (
-            reqJson.contents.length > 0 &&
-            (reqJson.contents[reqJson.contents.length - 1] as { role?: string })?.role === 'model'
-          ) {
-            reqJson.contents.pop();
-            contentsNormalized = true;
-          }
-          if (reqJson.contents.length === 0) {
-            reqJson.contents.push({ role: 'user', parts: [{ text: 'Continue.' }] });
+          if (normalizeConversationTurns(reqJson.contents)) {
             contentsNormalized = true;
           }
         }
@@ -3609,13 +3583,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         try {
           const geminiBody = JSON.parse(bodyStr) as GeminiRequestBody;
           if (Array.isArray(geminiBody.contents)) {
-            while (
-              geminiBody.contents.length > 0 &&
-              (geminiBody.contents[geminiBody.contents.length - 1] as { role?: string })?.role === 'model'
-            ) {
-              log.warn(`[Proxy] Pruned trailing model turn in standard generateContent to prevent 'request would have ended on a model turn' error`);
-              geminiBody.contents.pop();
-            }
+            normalizeConversationTurns(geminiBody.contents);
           }
 
           // Apply Sticky Session affinity (preserves prompt cache across multi-account pool)

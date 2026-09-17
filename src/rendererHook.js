@@ -11,7 +11,7 @@
   console.log('[Antigravity 2.0] Initializing Remote Environment Hook...');
 
   const DEFAULT_HOST = 'https://dqlwdgordp4apddvek8gvgn0.ty-dev.site';
-  const DEFAULT_TOKEN = 'antigravity-secret-cloud-2026';
+  const DEFAULT_TOKEN = ''; // Set AG_REMOTE_TOKEN or configure via settings UI
 
   function getRemoteConfig() {
     try {

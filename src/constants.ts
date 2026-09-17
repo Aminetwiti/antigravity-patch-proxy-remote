@@ -24,8 +24,8 @@ export const DEFAULT_BIND_HOST = getEnvString('AG_BIND_HOST', '127.0.0.1');
 /** Default host for remote runtime connection. Configurable via AG_REMOTE_HOST. */
 export const DEFAULT_REMOTE_HOST = getEnvString('AG_REMOTE_HOST', 'https://dqlwdgordp4apddvek8gvgn0.ty-dev.site');
 
-/** Default auth token for remote runtime connection. Configurable via AG_REMOTE_TOKEN. */
-export const DEFAULT_REMOTE_TOKEN = getEnvString('AG_REMOTE_TOKEN', 'antigravity-secret-cloud-2026');
+/** Auth token for remote runtime connection. Must be set via AG_REMOTE_TOKEN env var. */
+export const DEFAULT_REMOTE_TOKEN = getEnvString('AG_REMOTE_TOKEN', '');
 
 // ─── Multi-Account Pool Environment Variables ─────────────────────────────
 export const ENV_ACCOUNTS_JSON = 'AG_ACCOUNTS_JSON';
@@ -297,6 +297,7 @@ export const OPENAI_COMPAT = new Set<string>([
   PROVIDERS.NVIDIA,
   PROVIDERS.OPENCODE,
   PROVIDERS.CODESTRAL,
+  PROVIDERS.MINIMAX,
 ]);
 
 /** Providers that use Anthropic-compatible transport. */
@@ -328,6 +329,7 @@ export const PROVIDERS_REQUIRING_API_KEY: readonly ProviderName[] = [
   PROVIDERS.CODESTRAL,
   PROVIDERS.WAFER,
   PROVIDERS.ZAI,
+  PROVIDERS.MINIMAX,
 ];
 
 /** Default API URLs per provider. Override per-model via apiUrl in custom_models.json or environment variables. */

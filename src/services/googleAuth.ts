@@ -282,18 +282,6 @@ export function sanitizeCloudCodeGenerationConfig(
   }
 
   if (Array.isArray(reqObj.contents)) {
-    while (
-      reqObj.contents.length > 0 &&
-      (reqObj.contents[reqObj.contents.length - 1] as { role?: string })?.role === 'model'
-    ) {
-      log.warn(`[Proxy] Pruned trailing model turn in Cloud Code request for ${targetModel}`);
-      reqObj.contents.pop();
-    }
-
-    if (reqObj.contents.length === 0) {
-      reqObj.contents.push({ role: 'user', parts: [{ text: 'Continue.' }] });
-    }
-
     // For Claude models on Google Cloud Code / Vertex AI:
     // Anthropic validates that every thinking block's HMAC signature matches its exact thinking text.
     // When Antigravity IDE performs context summarization or account pooling, historical thinking blocks
@@ -342,6 +330,84 @@ export function sanitizeCloudCodeGenerationConfig(
         }
       }
     }
+
+    normalizeConversationTurns(reqObj.contents);
   }
+}
+
+/**
+ * Normalizes multi-turn conversation history for Google Cloud Code / Gemini:
+ * 1. Ensures turns containing functionResponse have role: 'user' (Gemini requirement).
+ * 2. Prunes only truly empty dummy turns from the end of the history.
+ * 3. Merges consecutive turns with the same role to enforce strict turn alternation.
+ * 4. If history ends on a model turn, closes it with a continuation user turn instead of popping it,
+ *    preserving the model's tool calls and previous work to prevent infinite loops.
+ * 5. Ensures history has at least one turn.
+ */
+export function normalizeConversationTurns(contents: any[]): boolean {
+  if (!Array.isArray(contents) || contents.length === 0) return false;
+  let modified = false;
+
+  // 1. Ensure turns containing functionResponse have role: 'user' (Gemini requirement)
+  for (const item of contents) {
+    if (item && Array.isArray(item.parts)) {
+      const hasFnResponse = item.parts.some((p: any) => p && p.functionResponse);
+      if (hasFnResponse && item.role !== 'user') {
+        item.role = 'user';
+        modified = true;
+      }
+    }
+  }
+
+  // 2. Pop truly empty dummy turns from the end
+  while (contents.length > 0) {
+    const last = contents[contents.length - 1];
+    const isEmpty =
+      !last?.parts ||
+      !Array.isArray(last.parts) ||
+      last.parts.length === 0 ||
+      last.parts.every(
+        (p: any) =>
+          (!p?.text || !p.text.trim() || p.text === '.') &&
+          !p?.functionCall &&
+          !p?.functionResponse &&
+          !p?.thinking
+      );
+    if (isEmpty) {
+      contents.pop();
+      modified = true;
+    } else {
+      break;
+    }
+  }
+
+  // 3. Merge consecutive turns with the same role to ensure strict alternation (user <-> model)
+  for (let i = 1; i < contents.length; i++) {
+    const prev = contents[i - 1];
+    const curr = contents[i];
+    if (prev?.role && curr?.role && prev.role === curr.role) {
+      if (Array.isArray(prev.parts) && Array.isArray(curr.parts)) {
+        prev.parts.push(...curr.parts);
+      }
+      contents.splice(i, 1);
+      i--;
+      modified = true;
+    }
+  }
+
+  // 4. If history still ends on a model turn, close it with a continuation user turn instead of popping,
+  // preventing history erasure and infinite agent loops.
+  if (contents.length > 0 && contents[contents.length - 1]?.role === 'model') {
+    contents.push({ role: 'user', parts: [{ text: 'Continue.' }] });
+    modified = true;
+  }
+
+  // 5. If contents is completely empty, ensure at least one user turn exists
+  if (contents.length === 0) {
+    contents.push({ role: 'user', parts: [{ text: 'Continue.' }] });
+    modified = true;
+  }
+
+  return modified;
 }
 

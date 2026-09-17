@@ -199,11 +199,12 @@ export function injectCustomModelsIntoResponse(
 
       seenModelKeys.add(modelDedupKey);
       existing.modelIds.add(pidKey);
+      existing.modelIds.add(`models/${pidKey}`);
       existing.labels.add(formattedName);
 
       const cap = detectModelCapabilities(m);
       const entry = encodeModelEntryForGetModels(
-        placeholderId,
+        `models/${placeholderId}`,
         formattedName,
         fieldMapping,
         cap.supportsImages,
@@ -216,6 +217,27 @@ export function injectCustomModelsIntoResponse(
 
     if (injectedCount === 0) {
       return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M577, MODEL_PLACEHOLDER_M0..M600)
+    // resolve cleanly in Language Server without "unknown model key: model not found"
+    for (let i = 0; i <= 600; i++) {
+      const legacyPid = `MODEL_PLACEHOLDER_M${i}`;
+      const legacyKey = legacyPid.toLowerCase();
+      if (existing.modelIds.has(legacyKey) || existing.modelIds.has(`models/${legacyKey}`)) {
+        continue;
+      }
+      existing.modelIds.add(legacyKey);
+      existing.modelIds.add(`models/${legacyKey}`);
+      const entry = encodeModelEntryForGetModels(
+        `models/${legacyPid}`,
+        legacyPid,
+        fieldMapping,
+        true,
+      );
+      const tagBuf = encodeVarint(modelTag);
+      const lenBuf = encodeVarint(entry.length);
+      newParts.push(tagBuf, lenBuf, entry);
     }
 
     const newMsgBody = Buffer.concat(newParts);

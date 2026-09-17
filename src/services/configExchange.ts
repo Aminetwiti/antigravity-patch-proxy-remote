@@ -5,6 +5,7 @@
  */
 
 import type { ProviderFileEntry } from '../customModelStore';
+import * as crypto from 'crypto';
 import {
   PBKDF2_ITERATIONS,
   PBKDF2_LEGACY_ITERATIONS,
@@ -122,8 +123,6 @@ export function mergeProviderConfigs(
  * Encrypts provider configurations with a user password using AES-256-GCM & PBKDF2.
  */
 export function exportEncryptedConfig(providers: ProviderFileEntry[], password: string): string {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const crypto = require('crypto');
   const salt = crypto.randomBytes(16);
   const key = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LEN, PBKDF2_DIGEST);
   const iv = crypto.randomBytes(12);
@@ -150,9 +149,6 @@ export function exportEncryptedConfig(providers: ProviderFileEntry[], password: 
  * Decrypts a password-protected Base64 configuration string back into ProviderFileEntry objects.
  */
 export function importEncryptedConfig(encryptedBase64: string, password: string): ProviderFileEntry[] {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const crypto = require('crypto');
-
   let rawJson: string;
   try {
     rawJson = Buffer.from(encryptedBase64.trim(), 'base64').toString('utf8');

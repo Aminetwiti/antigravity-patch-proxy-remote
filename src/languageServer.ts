@@ -195,96 +195,98 @@ async function killZombieLanguageServers(): Promise<void> {
  * After resolving, callers should monitor `handle.exitPromise` to detect
  * crashes that occur after startup.
  */
-export function startLanguageServer(port: number, csrf: string, headless?: boolean): Promise<LanguageServerHandle> {
-  return new Promise(async (resolve, reject) => {
-    log.info('[LS] Cleaning up any zombie processes before startup...');
-    await killZombieLanguageServers();
-    const logPath = getLsLogPath();
-    try {
-      fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    } catch { /* ignore if exists */ }
-    const logStream = fs.createWriteStream(logPath, { flags: 'w' });
-    logStream.on('error', (err) => log.error('[LS] Log stream error:', err));
+export async function startLanguageServer(port: number, csrf: string, headless?: boolean): Promise<LanguageServerHandle> {
+  log.info('[LS] Cleaning up any zombie processes before startup...');
+  await killZombieLanguageServers();
 
-    let proxyPort: number | undefined;
-    try {
-      log.info('[LS] before startProxy');
-      proxyPort = await startProxy();
-      log.info('[LS] after startProxy, port: ' + proxyPort);
-    } catch (err) {
-      log.error('[LS] startProxy failed:', err);
-      console.error('[LanguageServer] Failed to start local proxy:', err);
-    }
+  const logPath = getLsLogPath();
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  } catch { /* ignore if exists */ }
+  const logStream = fs.createWriteStream(logPath, { flags: 'w' });
+  logStream.on('error', (err) => log.error('[LS] Log stream error:', err));
 
-    const apiServerUrl = proxyPort ? `http://${LOOPBACK_HOSTS[0]}:${proxyPort}` : `https://${GOOGLE_HOSTS.GENERATIVE_LANGUAGE}`;
+  let proxyPort: number | undefined;
+  try {
+    log.info('[LS] before startProxy');
+    proxyPort = await startProxy();
+    log.info('[LS] after startProxy, port: ' + proxyPort);
+  } catch (err) {
+    log.error('[LS] startProxy failed:', err);
+    console.error('[LanguageServer] Failed to start local proxy:', err);
+  }
 
-    // We need to pass the override flags because the LS is running in standalone mode
-    const args: string[] = [
-      '--standalone',
-      '--override_ide_name',
-      'antigravity',
-      '--subclient_type',
-      'hub',
-      '--override_ide_version',
-      app.getVersion(),
-      '--override_user_agent_name',
-      'antigravity',
-      '--https_server_port',
-      String(port),
-      '--csrf_token',
-      csrf,
-      '--app_data_dir',
-      getAppDataDirName(),
-      '--api_server_url',
-      apiServerUrl,
-      '--cloud_code_endpoint',
-      apiServerUrl,
-      '--inference_api_server_url',
-      apiServerUrl,
-      '--enable_sidecars',
-    ];
-    if (headless) {
-      args.push('--headless');
+  const apiServerUrl = proxyPort ? `http://${LOOPBACK_HOSTS[0]}:${proxyPort}` : `https://${GOOGLE_HOSTS.GENERATIVE_LANGUAGE}`;
+
+  // We need to pass the override flags because the LS is running in standalone mode
+  const args: string[] = [
+    '--standalone',
+    '--override_ide_name',
+    'antigravity',
+    '--subclient_type',
+    'hub',
+    '--override_ide_version',
+    app.getVersion(),
+    '--override_user_agent_name',
+    'antigravity',
+    '--https_server_port',
+    String(port),
+    '--csrf_token',
+    csrf,
+    '--app_data_dir',
+    getAppDataDirName(),
+    '--api_server_url',
+    apiServerUrl,
+    '--cloud_code_endpoint',
+    apiServerUrl,
+    '--inference_api_server_url',
+    apiServerUrl,
+    '--enable_sidecars',
+  ];
+  if (headless) {
+    args.push('--headless');
+  }
+  // P0-3: Mask CSRF token in terminal output
+  const safeArgs = args.map((a) => (a === csrf ? '***' : a));
+  console.log(`\nSpawning: ${LS_BINARY} ${safeArgs.join(' ')}\n`);
+  // Electron apps don't inherit shell environment variables when they are not launched through the terminal.
+  // We need to load the shell env explicitly so the language server can discover tools in the user's environment.
+  const env: Record<string, string | undefined> = { ...process.env, ...shellEnvSync() };
+  // We don't read the file to avoid adding start up latency.
+  // LS will read when browser recording encoder is invoked.
+  env['AGY_BROWSER_ACTIVE_PORT_FILE'] = getActivePortFilePath();
+  setupNodeWrapper(env);
+  setupNodeModules(env, [
+    {
+      name: 'chrome-devtools-mcp',
+      envVar: 'CHROME_DEVTOOLS_MCP_JS',
+      relativePath: ['build', 'src', 'bin', 'chrome-devtools-mcp.js'],
+    },
+  ]);
+  _lsProcess = spawn(LS_BINARY, args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: env as Record<string, string>,
+  });
+  if (!headless) {
+    // Close stdin immediately — the LS may block waiting for metadata on stdin.
+    _lsProcess.stdin?.end();
+  }
+  const combined = new PassThrough();
+  _lsProcess.stdout?.pipe(combined, { end: false });
+  _lsProcess.stderr?.pipe(combined, { end: false });
+  // Buffer stderr for crash log extraction (ring buffer)
+  const stderrChunks: string[] = [];
+  let stderrLength = 0;
+  _lsProcess.stderr?.on('data', (data) => {
+    const str = data.toString();
+    stderrChunks.push(str);
+    stderrLength += str.length;
+    while (stderrChunks.length > 0 && stderrLength > MAX_STDERR_BUFFER) {
+      stderrLength -= stderrChunks.shift()!.length;
     }
-    // P0-3: Mask CSRF token in terminal output
-    const safeArgs = args.map((a) => (a === csrf ? '***' : a));
-    console.log(`\nSpawning: ${LS_BINARY} ${safeArgs.join(' ')}\n`);
-    // Electron apps don't inherit shell environment variables when they are not launched through the terminal.
-    // We need to load the shell env explicitly so the language server can discover tools in the user's environment.
-    const env: Record<string, string | undefined> = { ...process.env, ...shellEnvSync() };
-    // We don't read the file to avoid adding start up latency.
-    // LS will read when browser recording encoder is invoked.
-    env['AGY_BROWSER_ACTIVE_PORT_FILE'] = getActivePortFilePath();
-    setupNodeWrapper(env);
-    setupNodeModules(env, [
-      {
-        name: 'chrome-devtools-mcp',
-        envVar: 'CHROME_DEVTOOLS_MCP_JS',
-        relativePath: ['build', 'src', 'bin', 'chrome-devtools-mcp.js'],
-      },
-    ]);
-    _lsProcess = spawn(LS_BINARY, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: env as Record<string, string>,
-    });
-    if (!headless) {
-      // Close stdin immediately — the LS may block waiting for metadata on stdin.
-      _lsProcess.stdin?.end();
-    }
-    const combined = new PassThrough();
-    _lsProcess.stdout?.pipe(combined, { end: false });
-    _lsProcess.stderr?.pipe(combined, { end: false });
-    // Buffer stderr for crash log extraction (ring buffer)
-    const stderrChunks: string[] = [];
-    let stderrLength = 0;
-    _lsProcess.stderr?.on('data', (data) => {
-      const str = data.toString();
-      stderrChunks.push(str);
-      stderrLength += str.length;
-      while (stderrChunks.length > 0 && stderrLength > MAX_STDERR_BUFFER) {
-        stderrLength -= stderrChunks.shift()!.length;
-      }
-    });
+  });
+
+  return new Promise<LanguageServerHandle>((resolve, reject) => {
     let resolved = false;
     let logStreamEnded = false;
     const timer = setTimeout(() => {

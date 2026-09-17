@@ -198,6 +198,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       }
       (result as Record<string, unknown>)[slug] = entry;
       (result as Record<string, unknown>)[pid] = entry;
+      (result as Record<string, unknown>)[`models/${pid}`] = entry;
       if (m.name && m.name !== pid && m.name !== slug && !(m.name in (target as object))) {
         (result as Record<string, unknown>)[m.name] = entry;
       }
@@ -208,6 +209,71 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         `[Proxy] Custom model "${m.displayName}" => slug: ${slug} => model: ${generateModelPlaceholderId(m)} => thinking: ${cap.isThinking} => images: ${cap.supportsImages}`,
       );
     });
+
+    // Also register all custom models (including per-account entries marked _poolOnly)
+    // so Language Server can resolve specific account placeholder keys (e.g. MODEL_PLACEHOLDER_M577)
+    if (customModels && customModels.length > 0) {
+      const allVariants = [...customModels, ...expandModelsWithEffort(customModels)];
+      allVariants.forEach((m) => {
+        const pid = generateModelPlaceholderId(m);
+        if (!(result as Record<string, unknown>)[pid]) {
+          const cap = detectModelCapabilities(m, true);
+          const slug = toSlug(m);
+          const entry: Record<string, unknown> = {
+            displayName: formatDisplayName(m),
+            supportsImages: cap.supportsImages,
+            supportsVision: cap.supportsImages,
+            supportsThinking: cap.isThinking,
+            reasoningEffort: m.reasoningEffort || undefined,
+            thinkingBudget: m.thinkingBudget || undefined,
+            mode: m.mode || undefined,
+            recommended: true,
+            maxTokens: cap.maxTokens,
+            maxOutputTokens: cap.maxOutputTokens,
+            tokenizerType: 'LLAMA_WITH_SPECIAL',
+            model: pid,
+            planModel: pid,
+            requestedModel: pid,
+            apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+            modelProvider: 'MODEL_PROVIDER_GOOGLE',
+          };
+          (result as Record<string, unknown>)[pid] = entry;
+          (result as Record<string, unknown>)[`models/${pid}`] = entry;
+          if (slug && !(result as Record<string, unknown>)[slug]) {
+            (result as Record<string, unknown>)[slug] = entry;
+          }
+          if (m.name && !(result as Record<string, unknown>)[m.name]) {
+            (result as Record<string, unknown>)[m.name] = entry;
+          }
+          if (m.externalModelName && !(result as Record<string, unknown>)[m.externalModelName]) {
+            (result as Record<string, unknown>)[m.externalModelName] = entry;
+          }
+        }
+      });
+    }
+
+    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M0..M600)
+    // resolve cleanly in Language Server without "unknown model key: model not found"
+    const fallbackPid = sortedCustomModels.length > 0 ? generateModelPlaceholderId(sortedCustomModels[0]) : '';
+    const fallbackEntry = (fallbackPid && (result as Record<string, unknown>)[fallbackPid]) ||
+      (result as Record<string, unknown>)['gemini-3.8-flash'] ||
+      (result as Record<string, unknown>)['gemini-3.7-flash'] ||
+      (result as Record<string, unknown>)['gemini-3.6-flash'] ||
+      DEFAULT_CANONICAL_GOOGLE_MODELS['gemini-3.8-flash'] ||
+      DEFAULT_CANONICAL_GOOGLE_MODELS['gemini-3.6-flash'];
+
+    if (fallbackEntry) {
+      for (let i = 0; i <= 600; i++) {
+        const legacyKey = `MODEL_PLACEHOLDER_M${i}`;
+        if (!(result as Record<string, unknown>)[legacyKey]) {
+          (result as Record<string, unknown>)[legacyKey] = fallbackEntry;
+        }
+        if (!(result as Record<string, unknown>)[`models/${legacyKey}`]) {
+          (result as Record<string, unknown>)[`models/${legacyKey}`] = fallbackEntry;
+        }
+      }
+    }
+
     return result;
 
   }

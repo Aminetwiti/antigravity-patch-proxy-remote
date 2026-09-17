@@ -4,6 +4,7 @@ import {
   isGoogleCloudCodeModel,
   normalizeGoogleModelId,
   sanitizeCloudCodeGenerationConfig,
+  normalizeConversationTurns,
 } from '../services/googleAuth';
 
 describe('googleAuth service', () => {
@@ -79,7 +80,7 @@ describe('googleAuth service', () => {
       expect(cfg.temperature).toBeUndefined();
     });
 
-    it('prunes trailing model turns from contents', () => {
+    it('normalizes trailing model turns so request ends on a user turn without losing history', () => {
       const payload: Record<string, unknown> = {
         contents: [
           { role: 'user', parts: [{ text: 'hello' }] },
@@ -87,8 +88,41 @@ describe('googleAuth service', () => {
         ],
       };
       sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
-      expect((payload.contents as any[]).length).toBe(1);
-      expect((payload.contents as any[])[0].role).toBe('user');
+      const contents = payload.contents as any[];
+      expect(contents.length).toBe(3);
+      expect(contents[0]).toEqual({ role: 'user', parts: [{ text: 'hello' }] });
+      expect(contents[1]).toEqual({ role: 'model', parts: [{ text: 'hi' }] });
+      expect(contents[2]).toEqual({ role: 'user', parts: [{ text: 'Continue.' }] });
+      expect(contents[contents.length - 1].role).toBe('user');
+    });
+
+    it('normalizes functionResponse with model role to user role to prevent turn alternation failure', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          { role: 'user', parts: [{ text: 'run tool' }] },
+          { role: 'model', parts: [{ functionCall: { name: 'run_command', args: {} } }] },
+          { role: 'model', parts: [{ functionResponse: { name: 'run_command', response: { output: 'ok' } } }] },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
+      const contents = payload.contents as any[];
+      expect(contents.length).toBe(3);
+      expect(contents[0].role).toBe('user');
+      expect(contents[1].role).toBe('model');
+      expect(contents[2].role).toBe('user');
+    });
+
+    it('prunes truly empty dummy turns at the end', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          { role: 'user', parts: [{ text: 'hello' }] },
+          { role: 'model', parts: [] },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
+      const contents = payload.contents as any[];
+      expect(contents.length).toBe(1);
+      expect(contents[0].role).toBe('user');
     });
 
     it('strips historical thinking blocks and thought signatures for Claude models', () => {
@@ -175,6 +209,71 @@ describe('googleAuth service', () => {
 
     it('returns canonical default on empty string or nullish input', () => {
       expect(normalizeGoogleModelId('')).toBe('gemini-3.8-flash-tiered');
+    });
+  });
+
+  describe('normalizeConversationTurns', () => {
+    it('converts functionResponse turns with model role to user role', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Check files' }] },
+        { role: 'model', parts: [{ functionCall: { name: 'list_dir', args: {} } }] },
+        { role: 'model', parts: [{ functionResponse: { name: 'list_dir', response: { files: [] } } }] },
+      ];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(true);
+      expect(contents.length).toBe(3);
+      expect(contents[0].role).toBe('user');
+      expect(contents[1].role).toBe('model');
+      expect(contents[2].role).toBe('user');
+    });
+
+    it('merges consecutive model turns to enforce alternation', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Hello' }] },
+        { role: 'model', parts: [{ text: 'Part 1' }] },
+        { role: 'model', parts: [{ text: 'Part 2' }] },
+      ];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(true);
+      // Merged into 1 model turn, then closed with 'Continue.'
+      expect(contents.length).toBe(3);
+      expect(contents[0].role).toBe('user');
+      expect(contents[1].role).toBe('model');
+      expect(contents[1].parts.length).toBe(2);
+      expect(contents[2].role).toBe('user');
+      expect(contents[2].parts[0].text).toBe('Continue.');
+    });
+
+    it('preserves model tool calls and closes with Continue user turn instead of popping', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Run tests' }] },
+        { role: 'model', parts: [{ functionCall: { name: 'run_command', args: { cmd: 'npm test' } } }] },
+      ];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(true);
+      expect(contents.length).toBe(3);
+      expect(contents[0].role).toBe('user');
+      expect(contents[1].role).toBe('model');
+      expect(contents[1].parts[0].functionCall.name).toBe('run_command');
+      expect(contents[2].role).toBe('user');
+      expect(contents[2].parts[0].text).toBe('Continue.');
+    });
+
+    it('prunes empty dummy turns from the end', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Hello' }] },
+        { role: 'model', parts: [] },
+      ];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(true);
+      expect(contents.length).toBe(1);
+      expect(contents[0].role).toBe('user');
+    });
+
+    it('handles empty contents by creating an initial user turn', () => {
+      const contents: any[] = [];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(false);
     });
   });
 });

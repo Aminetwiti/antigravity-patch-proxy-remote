@@ -90,6 +90,7 @@ interface AnthropicContentBlock {
   name?: string;
   input?: Record<string, unknown>;
   tool_use_id?: string;
+  signature?: string;
   content?: string | AnthropicContentBlock[];
   source?: {
     type: 'base64' | 'url';
@@ -204,7 +205,13 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
         if (hasFunctionCall && item.role === 'model') {
           const contentBlocks: AnthropicContentBlock[] = [];
           for (const p of item.parts) {
-            if (p.text) {
+            if (p.thought === true || (p as any).type === 'thinking') {
+              contentBlocks.push({
+                type: 'thinking',
+                thinking: p.text || (p as any).thinking || '',
+                signature: (p as any).thought_signature || (p as any).thoughtSignature || (p as any).signature || '',
+              });
+            } else if (p.text) {
               const textVal = p.text.trim().length === 0 ? '.' : p.text;
               contentBlocks.push({ type: 'text', text: textVal });
             }
@@ -267,7 +274,13 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
           if (item.parts) {
             const partsContent: AnthropicContentBlock[] = [];
             for (const p of item.parts) {
-              if (p.text !== undefined && p.text !== null) {
+              if (p.thought === true || (p as any).type === 'thinking') {
+                partsContent.push({
+                  type: 'thinking',
+                  thinking: p.text || (p as any).thinking || '',
+                  signature: (p as any).thought_signature || (p as any).thoughtSignature || (p as any).signature || '',
+                });
+              } else if (p.text !== undefined && p.text !== null) {
                 const textVal = p.text.trim().length === 0 ? '.' : p.text;
                 partsContent.push({ type: 'text', text: textVal });
               }
@@ -322,12 +335,18 @@ export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: stri
   const contentBlocks = anthRes.content || [];
   const parts: GeminiPart[] = [];
   const functionCalls: GeminiPart[] = [];
+  let signature: string | undefined;
 
   for (const block of contentBlocks) {
     if (block.type === 'text' && block.text) {
       parts.push({ text: block.text });
     } else if (block.type === 'thinking' && block.thinking) {
-      parts.push({ text: block.thinking, thought: true });
+      if ((block as any).signature) {
+        signature = (block as any).signature;
+      }
+      const part: GeminiPart = { text: block.thinking, thought: true };
+      if (signature) (part as any).thoughtSignature = signature;
+      parts.push(part);
     } else if (block.type === 'tool_use') {
       const modelKey = getSessionModelKey(modelName, (anthRes as any)?._sessionId || (anthRes as any)?.sessionId);
       const modelTCIds = modelToolCallIds.get(modelKey) || {};
@@ -353,9 +372,11 @@ export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: stri
         touchStateTimestamp(stateTimestamps.translatedCalls, block.id || '');
       }
 
-      functionCalls.push({
+      const tcPart: GeminiPart = {
         functionCall: { name: translated.name, args: translated.args as Record<string, unknown>, id: block.id },
-      });
+      };
+      if (signature) (tcPart as any).thoughtSignature = signature;
+      functionCalls.push(tcPart);
     }
   }
 
@@ -402,6 +423,8 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
     const idx = chunk.index ?? 0;
     if (block?.type === 'tool_use') {
       context.toolCalls[idx] = { id: block.id || '', name: block.name || '', arguments: '' };
+    } else if (block?.type === 'thinking' && (block as any).signature) {
+      context.signature = (block as any).signature;
     }
   }
 
@@ -415,8 +438,10 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
     } else if (delta?.type === 'thinking_delta') {
       const thinkingText = delta.thinking || '';
       context.accumulatedReasoning += thinkingText;
+      const part: GeminiPart = { text: thinkingText, thought: true };
+      if (context.signature) (part as any).thoughtSignature = context.signature;
       return {
-        content: { parts: [{ text: thinkingText, thought: true }], role: 'model' },
+        content: { parts: [part], role: 'model' },
         finishReason: 'OTHER',
         index: 0,
       };
@@ -459,7 +484,9 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
           });
           touchStateTimestamp(stateTimestamps.translatedCalls, tc.id);
         }
-        return { functionCall: { name: translated.name, args: translated.args as Record<string, unknown>, id: tc.id } };
+        const tcPart: GeminiPart = { functionCall: { name: translated.name, args: translated.args as Record<string, unknown>, id: tc.id } };
+        if (context.signature) (tcPart as any).thoughtSignature = context.signature;
+        return tcPart;
       });
       activeStreamContexts.delete(streamId);
       return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
