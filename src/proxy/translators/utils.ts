@@ -447,14 +447,6 @@ function applyUniversalPathFallback(args: Record<string, unknown>): Record<strin
     }
   }
 
-  for (const [, value] of Object.entries(args)) {
-    if (typeof value === 'string' && (value.includes('/') || value.includes('\\') || value.includes('.'))) {
-      result['AbsolutePath'] = value;
-      sanitizePathProperties(result);
-      return result;
-    }
-  }
-
   sanitizePathProperties(result);
   return result;
 }
@@ -511,16 +503,8 @@ export function getRemoteExecScriptPath(): string {
  * Wraps a shell command to execute remotely via the remote-exec daemon bridge.
  */
 export function wrapCommandForRemoteExec(cmd: string, remoteCwd?: string): string {
-  if (!cmd || cmd.startsWith('node ') || cmd.includes('remote-exec.js')) {
-    return cmd;
-  }
-  let finalCmd = cmd;
-  if (remoteCwd && typeof remoteCwd === 'string' && (remoteCwd.startsWith('/') || remoteCwd.startsWith('~'))) {
-    finalCmd = `cd "${remoteCwd}" 2>/dev/null || true; ${cmd}`;
-  }
-  const b64 = Buffer.from(finalCmd, 'utf-8').toString('base64');
-  const scriptPath = getRemoteExecScriptPath();
-  return `node --no-warnings "${scriptPath}" --b64 "${b64}"`;
+  // Remote VPS mode disabled by user - always execute locally
+  return cmd;
 }
 
 /**
@@ -538,39 +522,7 @@ export function translateToolCallToNative(
   const cmd = args.CommandLine.trim();
   const cwd = args.Cwd || process.cwd();
 
-  // Check if remote VPS mode is active (skip in unit test environments unless explicitly forced)
-  const isUnitTest = !!process.env.VITEST || process.env.NODE_ENV === 'test';
-  if (!isUnitTest || isRemoteOverride !== undefined) {
-    let isRemote = isRemoteOverride === true;
-    if (!isRemote && !isUnitTest) {
-      try {
-        const remoteStateFile = path.join(os.homedir(), '.gemini', 'antigravity', 'remote_vps_state.json');
-        if (fs.existsSync(remoteStateFile)) {
-          const state = JSON.parse(fs.readFileSync(remoteStateFile, 'utf-8'));
-          if (state.active || (state.remoteSessions && Object.values(state.remoteSessions).some(Boolean))) {
-            isRemote = true;
-          }
-        }
-      } catch (_) {}
-    }
-
-    if (isRemote) {
-      const remoteCwd = (args.Cwd || (args as any).cwd) as string | undefined;
-      const wrapped = wrapCommandForRemoteExec(cmd, remoteCwd);
-      if (wrapped !== cmd) {
-        log.info(`[Proxy] Bridging run_command "${cmd}" (cwd=${remoteCwd || '.'}) to Remote VPS daemon`);
-        return {
-          name: 'run_command',
-          args: {
-            ...args,
-            CommandLine: wrapped,
-            Cwd: '.',
-          },
-        };
-      }
-      return { name: 'run_command', args: { ...args, Cwd: '.' } };
-    }
-  }
+  // Remote execution checking block removed.
 
   // 1. list_dir translation
   const isListDir = /^(ls|dir)(\s+[\w\-\/\\\.\*]+)*$/i.test(cmd);
@@ -615,14 +567,6 @@ export function translateToolCallToNative(
     } else {
       const tokens = cmd.split(/\s+/);
       query = tokens[tokens.length - 1];
-    }
-    const tokens = cmd.split(/\s+/);
-    const pathToken = tokens.find(
-      (t, idx) =>
-        idx > 0 && !t.startsWith('-') && !t.startsWith('/') && !t.includes('"') && !t.includes("'") && t !== query,
-    );
-    if (pathToken) {
-      searchPath = path.isAbsolute(pathToken) ? pathToken : path.resolve(cwd, pathToken);
     }
     if (query) {
       try {

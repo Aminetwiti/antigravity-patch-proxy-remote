@@ -299,8 +299,10 @@ export function sanitizeCloudCodeGenerationConfig(
     // When Antigravity IDE performs context summarization or account pooling, historical thinking blocks
     // have modified text or mismatched account signatures, causing HTTP 400 "Invalid signature in thinking block".
     // Stripping historical thinking blocks avoids this while allowing Claude to think on the current turn.
-    const isClaude = targetModel.toLowerCase().includes('claude') ||
-      reqObj.contents.some((c: any) => Array.isArray(c?.parts) && c.parts.some((p: any) => p?.type === 'thinking' || typeof p?.signature === 'string' || typeof p?.thinking === 'string'));
+    let isClaude = targetModel.toLowerCase().includes('claude');
+    if (!isClaude && !targetModel.toLowerCase().includes('gemini') && !targetModel.toLowerCase().includes('gpt')) {
+      isClaude = reqObj.contents.some((c: any) => Array.isArray(c?.parts) && c.parts.some((p: any) => p?.type === 'thinking' || typeof p?.signature === 'string' || typeof p?.thoughtSignature === 'string' || typeof p?.thought_signature === 'string' || typeof p?.thinking === 'string'));
+    }
 
     if (isClaude) {
       for (const item of reqObj.contents as Array<{ role?: string; parts?: Array<Record<string, unknown>> }>) {

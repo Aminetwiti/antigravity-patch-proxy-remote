@@ -221,17 +221,14 @@ describe('translateToolCallToNative', () => {
     expect(result.name).toBe('run_command');
   });
 
-  it('should wrap run_command for remote execution when isRemoteOverride is true', () => {
+  it('should pass through run_command unchanged when remote execution is disabled', () => {
     const result = translateToolCallToNative(
       'run_command',
       { CommandLine: 'pwd && ls -la /data/workspaces' },
       true,
     );
     expect(result.name).toBe('run_command');
-    expect(result.args.CommandLine).toContain('node --no-warnings');
-    expect(result.args.CommandLine).toContain('--b64');
-    const b64 = Buffer.from('pwd && ls -la /data/workspaces').toString('base64');
-    expect(result.args.CommandLine).toContain(b64);
+    expect(result.args.CommandLine).toBe('pwd && ls -la /data/workspaces');
   });
 
   it('should not wrap command if already wrapped', () => {

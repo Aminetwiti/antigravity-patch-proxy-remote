@@ -423,49 +423,7 @@ function transformGoogleStreamForRemote(
           const data = JSON.parse(jsonStr);
           // Cache any thought_signature values from this response chunk
           extractAndCacheThoughtSignatures(data, convId);
-          let modified = false;
-          if (isRemote && Array.isArray(data.candidates)) {
-            for (const cand of data.candidates) {
-              if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
-                for (const part of cand.content.parts) {
-                  if (part.functionCall) {
-                    const fnName = (part.functionCall.name || '').toLowerCase();
-                    const isRunCmd =
-                      fnName === 'run_command' ||
-                      fnName.endsWith(':run_command') ||
-                      fnName === 'bash' ||
-                      fnName === 'sh' ||
-                      fnName.endsWith(':bash') ||
-                      fnName.endsWith(':sh');
-                    if (isRunCmd) {
-                      const args = part.functionCall.args as Record<string, unknown> | undefined;
-                      if (args) {
-                        const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
-                        if (typeof originalCmd === 'string' && originalCmd.trim()) {
-                          const remoteCwd = (args.Cwd || args.cwd) as string | undefined;
-                          const wrapped = wrapCommandForRemoteExec(originalCmd.trim(), remoteCwd);
-                          if (wrapped !== originalCmd) {
-                            args.CommandLine = wrapped;
-                            if (args.commandLine !== undefined) args.commandLine = wrapped;
-                            if (args.command !== undefined) args.command = wrapped;
-                            if (args.cmd !== undefined) args.cmd = wrapped;
-                            if (args.Cwd !== undefined) args.Cwd = '.';
-                            if (args.cwd !== undefined) args.cwd = '.';
-                            modified = true;
-                            log.info(`[Proxy] Google Cloud Code SSE: Bridged run_command "${originalCmd}" (cwd=${remoteCwd || '.'}) -> remote VPS`);
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-          if (modified) {
-            clientRes.write(`data: ${JSON.stringify(data)}\n`);
-            return;
-          }
+          // Remote VPS execution wrapping block has been removed as requested.
         } catch (_) {}
       }
     }
@@ -636,48 +594,7 @@ async function proxyToGoogle(
             const data = JSON.parse(text);
             // Cache any thought_signature values from this response
             extractAndCacheThoughtSignatures(data, convId);
-            let modified = false;
-            if (isRemoteSession && Array.isArray(data.candidates)) {
-              for (const cand of data.candidates) {
-                if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
-                  for (const part of cand.content.parts) {
-                    if (part.functionCall) {
-                      const fnName = (part.functionCall.name || '').toLowerCase();
-                      const isRunCmd =
-                        fnName === 'run_command' ||
-                        fnName.endsWith(':run_command') ||
-                        fnName === 'bash' ||
-                        fnName === 'sh' ||
-                        fnName.endsWith(':bash') ||
-                        fnName.endsWith(':sh');
-                      if (isRunCmd) {
-                        const args = part.functionCall.args as Record<string, unknown> | undefined;
-                        if (args) {
-                          const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
-                          if (typeof originalCmd === 'string' && originalCmd.trim()) {
-                            const remoteCwd = (args.Cwd || args.cwd) as string | undefined;
-                            const wrapped = wrapCommandForRemoteExec(originalCmd.trim(), remoteCwd);
-                            if (wrapped !== originalCmd) {
-                              args.CommandLine = wrapped;
-                              if (args.commandLine !== undefined) args.commandLine = wrapped;
-                              if (args.command !== undefined) args.command = wrapped;
-                              if (args.cmd !== undefined) args.cmd = wrapped;
-                              if (args.Cwd !== undefined) args.Cwd = '.';
-                              if (args.cwd !== undefined) args.cwd = '.';
-                              modified = true;
-                              log.info(`[Proxy] Google Cloud Code JSON: Bridged run_command "${originalCmd}" (cwd=${remoteCwd || '.'}) -> remote VPS`);
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            if (modified) {
-              text = JSON.stringify(data);
-            }
+            // JSON wrapping block for remote mode removed
           } catch (_) {}
           const modifiedHeaders = { ...proxyRes.headers };
           delete modifiedHeaders['content-encoding'];
@@ -904,17 +821,18 @@ export function executeGoogleCloudCodeRequest(
                               const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
                               if (typeof originalCmd === 'string' && originalCmd.trim()) {
                                 const remoteCwd = (args.Cwd || args.cwd) as string | undefined;
-                                const wrapped = wrapCommandForRemoteExec(originalCmd.trim(), remoteCwd);
-                                if (wrapped !== originalCmd) {
-                                  args.CommandLine = wrapped;
-                                  if (args.commandLine !== undefined) args.commandLine = wrapped;
-                                  if (args.command !== undefined) args.command = wrapped;
-                                  if (args.cmd !== undefined) args.cmd = wrapped;
-                                  if (args.Cwd !== undefined) args.Cwd = '.';
-                                  if (args.cwd !== undefined) args.cwd = '.';
-                                  modified = true;
-                                  log.info(`[Proxy] Google Cloud Code JSON: Bridged run_command "${originalCmd}" (cwd=${remoteCwd || '.'}) -> remote VPS`);
-                                }
+                                // REMOTE EXECUTION DISABLED BY USER REQUEST
+                                // const wrapped = wrapCommandForRemoteExec(originalCmd.trim(), remoteCwd);
+                                // if (wrapped !== originalCmd) {
+                                //   args.CommandLine = wrapped;
+                                //   if (args.commandLine !== undefined) args.commandLine = wrapped;
+                                //   if (args.command !== undefined) args.command = wrapped;
+                                //   if (args.cmd !== undefined) args.cmd = wrapped;
+                                //   if (args.Cwd !== undefined) args.Cwd = '.';
+                                //   if (args.cwd !== undefined) args.cwd = '.';
+                                //   modified = true;
+                                //   log.info(`[Proxy] Google Cloud Code JSON: Bridged run_command "${originalCmd}" (cwd=${remoteCwd || '.'}) -> remote VPS`);
+                                // }
                               }
                             }
                           }
@@ -3510,7 +3428,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           // (e.g. MODEL_PLACEHOLDER_* used by the LS pre-invocation context-summarization hook)
           const hasThinkingBlocks = (targetReq.contents as any[]).some((c: any) =>
             Array.isArray(c.parts) &&
-            c.parts.some((p: any) => p.type === 'thinking' || p.thought === true || p.signature || p.thoughtSignature)
+            c.parts.some((p: any) => p.type === 'thinking' || p.thought === true || p.signature || p.thoughtSignature || p.thought_signature)
           );
 
           if (isClaudeRequest || hasThinkingBlocks) {
@@ -3759,7 +3677,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       if (Array.isArray(fallbackReq.contents)) {
         const hasThinking = (fallbackReq.contents as any[]).some((c: any) =>
           Array.isArray(c.parts) &&
-          c.parts.some((p: any) => p.type === 'thinking' || p.thought === true || p.signature || p.thoughtSignature)
+          c.parts.some((p: any) => p.type === 'thinking' || p.thought === true || p.signature || p.thoughtSignature || p.thought_signature)
         );
         if (hasThinking) {
           sanitizeCloudCodeGenerationConfig(fallbackReq, 'claude-sonnet-4-6');
