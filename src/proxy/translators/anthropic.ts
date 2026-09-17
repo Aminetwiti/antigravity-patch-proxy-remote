@@ -495,7 +495,7 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
 
   if (type === 'message_stop') {
     activeStreamContexts.delete(streamId);
-    return { content: { parts: [], role: 'model' }, finishReason: 'STOP', index: 0 };
+    return { content: { parts: [{ text: '' }], role: 'model' }, finishReason: 'STOP', index: 0 };
   }
 
   return null;

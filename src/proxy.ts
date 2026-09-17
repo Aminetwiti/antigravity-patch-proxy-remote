@@ -5,6 +5,8 @@ import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as zlib from 'zlib';
+import { StringDecoder } from 'string_decoder';
 
 import log from 'electron-log';
 import { createLogger } from './logger';
@@ -281,16 +283,32 @@ import {
 import { metricsEnabled, getMetricsSnapshot, formatPrometheus, negotiateContentType } from './proxy/metricsRoute';
 import { CIRCUIT_BREAKER_RESET_MS } from './proxy/circuitBreaker';
 
-function generateGracefulMarkdown(diagnostic: ErrorDiagnostic): string {
-  let md = `🚨 **${diagnostic.title}**\n\n${diagnostic.message}\n\n`;
+function generateGracefulMarkdown(diagnostic: ErrorDiagnostic, model?: CustomModel): string {
+  const alertType = diagnostic.severity === 'warning' ? 'WARNING' : 'CAUTION';
+  const rawTitle = diagnostic.title.replace(/^Model unavailable:\s*/i, '');
+  const title = `Model unavailable: ${rawTitle}`;
+
+  let md = `> [!${alertType}]\n`;
+  md += `> **${title}**\n>\n`;
+  if (model) {
+    const modelName = model.displayName || model.name;
+    const providerStr = model.provider ? ` · **Provider:** \`${model.provider}\`` : '';
+    md += `> **Model:** \`${modelName}\`${providerStr}\n>\n`;
+  }
+  md += `> ${diagnostic.message}\n`;
+
   if (diagnostic.suggestions && diagnostic.suggestions.length > 0) {
-    md += `**Suggested Actions:**\n`;
-    diagnostic.suggestions.forEach(s => md += `- ${s}\n`);
+    md += `>\n> **Suggested Actions:**\n`;
+    diagnostic.suggestions.forEach(s => {
+      md += `> - ${s}\n`;
+    });
   }
+
   if (diagnostic.actionUrl) {
-    md += `\n🔗 [Manage Billing & Credits](${diagnostic.actionUrl})`;
+    md += `>\n> 🔗 [Manage Billing & Credits](${diagnostic.actionUrl})\n`;
   }
-  md += `\n\n<span class="ag-system-error-marker" data-type="${diagnostic.errorType}" style="display:none;"></span>`;
+
+  md += `\n<span class="ag-system-error-marker" data-type="${diagnostic.errorType}" style="display:none;"></span>`;
   return md;
 }
 
@@ -395,13 +413,111 @@ import { safeWriteHead, safeEnd } from './proxy/httpUtils';
 import { mergeModels, getMappedCustomModels, getCustomModelsList, injectCustomSlugsIntoAgentModelSorts, buildSyntheticModelsResponse } from './proxy/modelInjector';
 import { detectModelCapabilities } from './proxy/modelUtils';
 
+function sendGracefulStreamError(res: http.ServerResponse, diagnostic: ErrorDiagnostic, model?: CustomModel): void {
+  if (res.writableEnded) return;
+  const errResponse = {
+    response: {
+      candidates: [
+        {
+          content: { parts: [{ text: generateGracefulMarkdown(diagnostic, model) }], role: 'model' },
+          finishReason: 'STOP',
+          index: 0,
+        },
+      ],
+    },
+    traceId: '',
+    metadata: {},
+    _agDiagnostic: diagnostic,
+  };
+  if (!res.headersSent) {
+    safeWriteHead(res, 200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-AG-Error-Type': diagnostic.errorType,
+    });
+  }
+  res.write('data: ' + JSON.stringify(errResponse) + '\n\n');
+  safeEnd(res);
+}
+
+function sendGracefulNonStreamError(res: http.ServerResponse, diagnostic: ErrorDiagnostic, model?: CustomModel): void {
+  if (res.writableEnded) return;
+  const errResponse = {
+    response: {
+      candidates: [
+        {
+          content: { parts: [{ text: generateGracefulMarkdown(diagnostic, model) }], role: 'model' },
+          finishReason: 'STOP',
+          index: 0,
+        },
+      ],
+    },
+    traceId: '',
+    metadata: {},
+    _agDiagnostic: diagnostic,
+  };
+  if (!res.headersSent) {
+    safeWriteHead(res, 200, {
+      'Content-Type': 'application/json',
+      'X-AG-Error-Type': diagnostic.errorType,
+    });
+  }
+  safeEnd(res, JSON.stringify(errResponse));
+}
+
+function sendGracefulError(res: http.ServerResponse, isStream: boolean, diagnostic: ErrorDiagnostic, model?: CustomModel): void {
+  if (isStream) {
+    sendGracefulStreamError(res, diagnostic, model);
+  } else {
+    sendGracefulNonStreamError(res, diagnostic, model);
+  }
+}
+
 // ─── Model Helpers ────────────────────────────────────────────────────────
 
 // generateModelPlaceholderId and toSlug are now in ./proxy/idGenerator.ts (re-exported above)
 
 // ─── Google Proxy ─────────────────────────────────────────────────────────
 
-function transformGoogleStreamForRemote(
+export function sanitizeCandidatesInResponse(data: any): boolean {
+  if (!data || typeof data !== 'object') return false;
+  let modified = false;
+
+  const sanitizeList = (candidatesList: any[], container: any, key: string) => {
+    if (!Array.isArray(candidatesList)) return;
+    const filtered = candidatesList.filter((c) => c && typeof c === 'object');
+    if (filtered.length !== candidatesList.length) {
+      container[key] = filtered;
+      candidatesList = filtered;
+      modified = true;
+    }
+    for (const cand of candidatesList) {
+      if (!cand.content || typeof cand.content !== 'object') {
+        cand.content = { parts: [{ text: '' }], role: 'model' };
+        modified = true;
+      } else {
+        if (!Array.isArray(cand.content.parts) || cand.content.parts.length === 0) {
+          cand.content.parts = [{ text: '' }];
+          modified = true;
+        }
+        if (!cand.content.role) {
+          cand.content.role = 'model';
+          modified = true;
+        }
+      }
+    }
+  };
+
+  sanitizeList(data.candidates, data, 'candidates');
+  if (data.response && typeof data.response === 'object') {
+    sanitizeList(data.response.candidates, data.response, 'candidates');
+  }
+
+  return modified;
+}
+
+export function transformGoogleStreamForRemote(
   proxyRes: http.IncomingMessage,
   clientRes: http.ServerResponse,
   convId = '',
@@ -412,6 +528,19 @@ function transformGoogleStreamForRemote(
   delete headers['content-encoding'];
   safeWriteHead(clientRes, proxyRes.statusCode || 200, headers as Record<string, string>);
 
+  const encoding = (proxyRes.headers['content-encoding'] || '').toLowerCase();
+  let stream: NodeJS.ReadableStream = proxyRes;
+  if (encoding === 'gzip') {
+    const gunzip = zlib.createGunzip();
+    proxyRes.pipe(gunzip);
+    stream = gunzip;
+  } else if (encoding === 'deflate') {
+    const inflate = zlib.createInflate();
+    proxyRes.pipe(inflate);
+    stream = inflate;
+  }
+
+  const decoder = new StringDecoder('utf-8');
   let buffer = '';
 
   const processLine = (line: string): void => {
@@ -423,15 +552,24 @@ function transformGoogleStreamForRemote(
           const data = JSON.parse(jsonStr);
           // Cache any thought_signature values from this response chunk
           extractAndCacheThoughtSignatures(data, convId);
-          // Remote VPS execution wrapping block has been removed as requested.
+
+          // Antigravity Language Server crash protection:
+          // In codeassistclient.(*CodeAssistClient).getStreamingTextCompletion-range1,
+          // the language server iterates over chunk.Candidates and accesses
+          // candidate.Content.Parts at offset 0x50 without nil checking.
+          // If Content or Parts is missing/nil/empty, Go panics with signal 0xc0000005.
+          sanitizeCandidatesInResponse(data);
+          const eol = line.endsWith('\r') ? '\r\n' : '\n';
+          clientRes.write('data: ' + JSON.stringify(data) + eol);
+          return;
         } catch (_) {}
       }
     }
     clientRes.write(line + '\n');
   };
 
-  proxyRes.on('data', (chunk: Buffer) => {
-    buffer += chunk.toString('utf-8');
+  stream.on('data', (chunk: Buffer) => {
+    buffer += decoder.write(chunk);
     let lineEndIdx: number;
     while ((lineEndIdx = buffer.indexOf('\n')) !== -1) {
       const line = buffer.slice(0, lineEndIdx);
@@ -440,7 +578,8 @@ function transformGoogleStreamForRemote(
     }
   });
 
-  proxyRes.on('end', () => {
+  stream.on('end', () => {
+    buffer += decoder.end();
     if (buffer.length > 0) {
       processLine(buffer);
       buffer = '';
@@ -448,8 +587,8 @@ function transformGoogleStreamForRemote(
     safeEnd(clientRes);
   });
 
-  proxyRes.on('error', (err) => {
-    log.error('[Proxy] Upstream Google stream error in remote mode:', err);
+  stream.on('error', (err) => {
+    log.error('[Proxy] Upstream Google stream error:', err);
     clientRes.destroy(err);
   });
 }
@@ -506,8 +645,9 @@ async function proxyToGoogle(
   const isGeneration = req.url!.includes('generateContent') || req.url!.includes('streamGenerateContent');
   const shouldBufferAndModify = isCloudCodeUrl && !isGeneration;
 
-  if (shouldBufferAndModify || (isRemoteSession && isGeneration)) {
+  if (shouldBufferAndModify || isGeneration) {
     delete headers['accept-encoding'];
+    delete headers['Accept-Encoding'];
   }
 
   const options: https.RequestOptions = {
@@ -521,6 +661,7 @@ async function proxyToGoogle(
     safeWriteHead(res, status, headers);
 
   const proxyReq = https.request(parsedUrl, options, (proxyRes) => {
+    proxyReq.setTimeout(0);
     if (!hostOverride && isCloudCodeUrl && (proxyRes.statusCode === 429 || proxyRes.statusCode === 503)) {
       log.warn(`[Proxy] Google Cloud Code returned ${proxyRes.statusCode} on ${targetHost}. Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
       proxyToGoogle(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD);
@@ -594,7 +735,9 @@ async function proxyToGoogle(
             const data = JSON.parse(text);
             // Cache any thought_signature values from this response
             extractAndCacheThoughtSignatures(data, convId);
-            // JSON wrapping block for remote mode removed
+            if (sanitizeCandidatesInResponse(data)) {
+              text = JSON.stringify(data);
+            }
           } catch (_) {}
           const modifiedHeaders = { ...proxyRes.headers };
           delete modifiedHeaders['content-encoding'];
@@ -672,9 +815,13 @@ export function executeGoogleCloudCodeRequest(
     const endTimer = metricTimer('proxy_request_ms', { upstream: targetHost });
 
     let settled = false;
+    let proxyReq: http.ClientRequest | undefined;
     const finish = (outcome: GoogleRequestOutcome) => {
       if (settled) return;
       settled = true;
+      if (proxyReq) {
+        try { proxyReq.setTimeout(0); } catch (_) {}
+      }
       resolve(outcome);
     };
 
@@ -701,8 +848,9 @@ export function executeGoogleCloudCodeRequest(
       const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
       const shouldBufferAndModify = isCloudCodeUrl && !isGeneration;
 
-      if (shouldBufferAndModify || (isRemoteSession && isGeneration)) {
+      if (shouldBufferAndModify || isGeneration) {
         delete headers['accept-encoding'];
+        delete headers['Accept-Encoding'];
       }
 
       const options: https.RequestOptions = {
@@ -711,12 +859,9 @@ export function executeGoogleCloudCodeRequest(
         servername: targetHost,
       };
 
-      const proxyReq = https.request(parsedUrl, options, (proxyRes) => {
-        proxyReq.setTimeout(GOOGLE_PROXY_TIMEOUT_MS, () => {
-          log.error(`[Proxy] Google pool request timed out after ${GOOGLE_PROXY_TIMEOUT_MS / 1000}s`);
-          proxyReq.destroy();
-          finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
-        });
+      proxyReq = https.request(parsedUrl, options, (proxyRes) => {
+        // Disable request socket timeout once response headers start streaming in
+        proxyReq?.setTimeout(0);
 
         const status = proxyRes.statusCode || 200;
 
@@ -801,7 +946,7 @@ export function executeGoogleCloudCodeRequest(
               try {
                 const data = JSON.parse(text);
                 extractAndCacheThoughtSignatures(data, convId);
-                let modified = false;
+                let modified = sanitizeCandidatesInResponse(data);
                 if (isRemoteSession && Array.isArray(data.candidates)) {
                   for (const cand of data.candidates) {
                     if (cand?.content?.parts && Array.isArray(cand.content.parts)) {
@@ -882,6 +1027,12 @@ export function executeGoogleCloudCodeRequest(
         metricObserve('proxy_upstream_ms', ms, { upstream: targetHost, trace_id: traceId });
       });
 
+      proxyReq.setTimeout(GOOGLE_PROXY_TIMEOUT_MS, () => {
+        log.error(`[Proxy] Google pool request timed out waiting for response headers after ${GOOGLE_PROXY_TIMEOUT_MS / 1000}s`);
+        proxyReq?.destroy();
+        finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
+      });
+
       if (reqBody) {
         proxyReq.write(reqBody);
       }
@@ -903,7 +1054,7 @@ export async function executeGoogleCloudCodeWithPool(
   isSessionRemote: boolean,
   convId: string,
   sessId: string | null,
-): Promise<void> {
+): Promise<boolean> {
   const sortedAccounts = [...accountPool].sort((a, b) => {
     const breakerA = getOpenBreaker(a) ? 1 : 0;
     const breakerB = getOpenBreaker(b) ? 1 : 0;
@@ -928,6 +1079,7 @@ export async function executeGoogleCloudCodeWithPool(
   let lastStatus = 500;
   let lastErrorText = 'All accounts in Google Cloud Code pool exhausted';
   const totalAttempts = Math.min(sortedAccounts.length, 10);
+  let consecutive429Count = 0;
 
   for (let i = 0; i < totalAttempts; i++) {
     const candidate = sortedAccounts[i];
@@ -987,7 +1139,13 @@ export async function executeGoogleCloudCodeWithPool(
         bindSessionToModel(sessId, candidate);
       }
       log.info(`[Proxy] Google Cloud Code request SUCCEEDED on account ${candidateName}`);
-      return;
+      return true;
+    }
+
+    if (outcome.statusCode === 429) {
+      consecutive429Count++;
+    } else {
+      consecutive429Count = 0;
     }
 
     if (outcome.statusCode === 400 && /signature.*thinking|thinking.*signature/i.test(outcome.error || '')) {
@@ -1028,7 +1186,7 @@ export async function executeGoogleCloudCodeWithPool(
           bindSessionToModel(sessId, candidate);
         }
         log.info(`[Proxy] Self-healing retry after stripping thinking blocks SUCCEEDED on account ${candidateName}`);
-        return;
+        return true;
       }
     }
 
@@ -1061,7 +1219,7 @@ export async function executeGoogleCloudCodeWithPool(
           bindSessionToModel(sessId, candidate);
         }
         log.info(`[Proxy] History trimming retry SUCCEEDED on account ${candidateName}`);
-        return;
+        return true;
       }
     }
 
@@ -1072,11 +1230,48 @@ export async function executeGoogleCloudCodeWithPool(
     );
 
     recordFailure(candidate, lastStatus === 429 ? 'rate_limit' : 'server');
+    const isClaude = targetModel.toLowerCase().includes('claude');
     if (lastStatus === 429 && candidate.quotas) {
-      (candidate.quotas as any).fiveHourPercentage = 0;
+      if (isClaude) {
+        (candidate.quotas as any).claudeFiveHourPct = 0;
+      } else {
+        (candidate.quotas as any).geminiFiveHourPct = 0;
+      }
     }
     if (sessId) {
       sessionAffinities.delete(sessId);
+    }
+
+    // Fast-fail: if Claude quota is exhausted on 2 accounts in a row, don't grind through the rest
+    if (isClaude && consecutive429Count >= 2 && i + 1 < totalAttempts) {
+      log.warn(`[Proxy] Detected ${consecutive429Count} consecutive 429s for Claude model ${targetModel}. Fast-failing remaining pool to recover immediately via Gemini.`);
+      break;
+    }
+
+    const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+    if (i + 1 < totalAttempts && isStream && !res.writableEnded && !res.destroyed) {
+      if (!res.headersSent) {
+        safeWriteHead(res, 200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        });
+      }
+      const nextAttempt = i + 2;
+      const retryNotice = `> ⏳ **Compte indisponible**, basculement vers le compte suivant (${nextAttempt}/${totalAttempts})...\n\n`;
+      const chunk = {
+        response: {
+          candidates: [
+            {
+              content: { parts: [{ text: retryNotice }], role: 'model' },
+              index: 0,
+            },
+          ],
+        },
+      };
+      res.write('data: ' + JSON.stringify(chunk) + '\n\n');
+      // Sub-second failover between accounts
+      await new Promise((r) => setTimeout(r, 50));
     }
   }
 
@@ -1084,7 +1279,8 @@ export async function executeGoogleCloudCodeWithPool(
   // If all candidate accounts for the requested model failed (e.g. Claude quota exhausted or Vertex 400/429),
   // do NOT immediately return an error that kills the agent executor!
   // Fall back to healthy Gemini models (Gemini Flash / Pro) which have independent quota.
-  if (!res.headersSent && !res.writableEnded) {
+  if (!res.writableEnded && !res.destroyed) {
+    const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
     const allCustomModels = expandModelsWithEffort(loadCustomModels());
     const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.1-pro-high', 'gemini-2.0-flash'];
     const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || '');
@@ -1092,7 +1288,7 @@ export async function executeGoogleCloudCodeWithPool(
     if (!fallbackTargets.includes(currentBase)) {
       for (const fallbackModel of fallbackTargets) {
         log.warn(
-          `[Proxy] Agent resilience: Requested model ${currentBase} failed across all accounts (${lastErrorText.slice(0, 80)}). Auto-recovering with fallback model ${fallbackModel}...`,
+          `[Proxy] Agent resilience: Requested model ${currentBase} failed across accounts (${lastErrorText.slice(0, 80)}). Auto-recovering with fallback model ${fallbackModel}...`,
         );
         const fallbackCandidates = allCustomModels.filter(
           (m) =>
@@ -1113,8 +1309,33 @@ export async function executeGoogleCloudCodeWithPool(
             sanitizeCloudCodeGenerationConfig(reqJson.request as Record<string, unknown>, fallbackModel);
           }
 
+          if (isStream && !res.writableEnded && !res.destroyed) {
+            if (!res.headersSent) {
+              safeWriteHead(res, 200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                Connection: 'keep-alive',
+              });
+            }
+            const isClaude = currentBase.toLowerCase().includes('claude');
+            const fbNotice = isClaude
+              ? `\n\n> 🔄 *Quota Claude temporairement atteint sur les comptes. Poursuite automatique avec **Gemini 3.8 Flash**...*\n\n`
+              : `\n\n> 🔄 *Modèle temporairement indisponible. Poursuite automatique avec **${fallbackModel}**...*\n\n`;
+            const chunk = {
+              response: {
+                candidates: [
+                  {
+                    content: { parts: [{ text: fbNotice }], role: 'model' },
+                    index: 0,
+                  },
+                ],
+              },
+            };
+            res.write('data: ' + JSON.stringify(chunk) + '\n\n');
+          }
+
           try {
-            await executeGoogleCloudCodeWithPool(
+            const fallbackOk = await executeGoogleCloudCodeWithPool(
               req,
               res,
               reqJson,
@@ -1123,9 +1344,9 @@ export async function executeGoogleCloudCodeWithPool(
               convId,
               sessId,
             );
-            if (res.headersSent || res.writableEnded) {
+            if (fallbackOk || res.writableEnded) {
               log.info(`[Proxy] Cross-model fallback to ${fallbackModel} SUCCEEDED! Agent saved from termination.`);
-              return;
+              return true;
             }
           } catch (fbErr) {
             log.warn(`[Proxy] Fallback to ${fallbackModel} failed:`, (fbErr as Error).message);
@@ -1136,7 +1357,6 @@ export async function executeGoogleCloudCodeWithPool(
 
     // If this request is a context summarization hook and everything else failed:
     // Return a synthetic summary SSE stream instead of HTTP 400/500 so the agent pre-invocation hook never crashes!
-    const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
     const reqStr = JSON.stringify(reqJson);
     const isSummarization = /summariz|summary|trajectory/i.test(reqStr);
 
@@ -1159,32 +1379,33 @@ export async function executeGoogleCloudCodeWithPool(
           totalTokenCount: 130,
         },
       };
-      if (safeWriteHead(res, 200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      })) {
-        safeEnd(res, `data: ${JSON.stringify(syntheticChunk)}\n\ndata: [DONE]\n\n`);
-        return;
+      if (!res.headersSent) {
+        safeWriteHead(res, 200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        });
       }
+      safeEnd(res, `data: ${JSON.stringify(syntheticChunk)}\n\ndata: [DONE]\n\n`);
+      return true;
     }
   }
 
   log.error(`[Proxy] All ${totalAttempts} Google Cloud Code accounts in the pool failed. Returning HTTP ${lastStatus}`);
-  if (!res.headersSent && !res.writableEnded) {
-    if (safeWriteHead(res, lastStatus, { 'Content-Type': 'application/json' })) {
-      safeEnd(
-        res,
-        JSON.stringify({
-          error: {
-            code: lastStatus,
-            message: `All Google accounts in the pool failed: ${lastErrorText}`,
-            status: lastStatus === 429 ? 'RESOURCE_EXHAUSTED' : 'INTERNAL',
-          },
-        }),
-      );
+  if (!res.writableEnded && !res.destroyed) {
+    const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+    const diagnostic = classifyError(lastStatus, lastErrorText, undefined, 'google');
+    if (!res.headersSent) {
+      sendGracefulError(res, isStream, diagnostic);
+    } else {
+      if (isStream) {
+        sendGracefulStreamError(res, diagnostic);
+      } else {
+        safeEnd(res);
+      }
     }
   }
+  return false;
 }
 
 // ─── File Data Resolver ────────────────────────────────────────────────────
@@ -1276,7 +1497,34 @@ function scheduleRetry(
   delayMs: number,
   logReason: string,
 ): void {
-  log.warn(`[Proxy] ${logReason} for ${ctx.model.name}, retrying (${retryCount + 1}/${ctx.maxRetries})...`);
+  const attempt = retryCount + 1;
+  const maxAttempts = ctx.maxRetries;
+  const delaySec = Math.max(1, Math.round(delayMs / 1000));
+  log.warn(`[Proxy] ${logReason} for ${ctx.model.name}, retrying (${attempt}/${maxAttempts})...`);
+
+  if (ctx.isStream && !ctx.res.writableEnded && !ctx.res.destroyed) {
+    if (!ctx.res.headersSent) {
+      safeWriteHead(ctx.res, 200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+    }
+    const modelName = ctx.model.displayName || ctx.model.name;
+    const retryNotice = `> ⏳ **Model unavailable**, retrying in **${delaySec}s** (attempt ${attempt}/${maxAttempts}) — \`${modelName}\`\n\n`;
+    const chunk = {
+      response: {
+        candidates: [
+          {
+            content: { parts: [{ text: retryNotice }], role: 'model' },
+            index: 0,
+          },
+        ],
+      },
+    };
+    ctx.res.write('data: ' + JSON.stringify(chunk) + '\n\n');
+  }
+
   setTimeout(
     () => handleCustomModelRequest(ctx.res, ctx.model, ctx.geminiBody, ctx.isStream, ctx.retryCount + 1),
     delayMs,
@@ -1306,16 +1554,23 @@ function handleApiResError(err: Error, apiRes: http.IncomingMessage, ctx: Stream
   const { model, res } = ctx;
   log.error(`[Proxy] Upstream stream error for ${model.name}:`, err.message);
   const diagnostic = classifyError(500, err, undefined, model.provider);
-  emitProxyError(buildProxyErrorPayload(ctx.traceId, 500, err, model.provider));
-  if (safeWriteHead(res, 500, {
-    'Content-Type': 'application/json',
-    'X-AG-Error-Type': diagnostic.errorType,
-  })) {
-    safeEnd(res, JSON.stringify({
-      error: { message: 'Upstream connection error: ' + err.message },
-      _agDiagnostic: diagnostic,
-    }));
+  if (!res.headersSent) {
+    sendGracefulStreamError(res, diagnostic, model);
   } else if (!res.writableEnded) {
+    const errChunk = {
+      response: {
+        candidates: [
+          {
+            content: { parts: [{ text: '\n\n' + generateGracefulMarkdown(diagnostic, model) }], role: 'model' },
+            finishReason: 'STOP',
+            index: 0,
+          },
+        ],
+      },
+      traceId: '',
+      metadata: {},
+    };
+    res.write('data: ' + JSON.stringify(errChunk) + '\n\n');
     safeEnd(res);
   }
 
@@ -1366,48 +1621,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
 
       if (ctx.attemptFallback(diagnostic)) return;
 
-      if (diagnostic.errorType === 'billing' || diagnostic.errorType === 'auth' || diagnostic.errorType === 'forbidden') {
-        const errResponse = {
-          response: {
-            candidates: [
-              {
-                content: { parts: [{ text: generateGracefulMarkdown(diagnostic) }], role: 'model' },
-                finishReason: 'STOP',
-                index: 0,
-              },
-            ],
-          },
-          traceId: '',
-          metadata: {},
-          _agDiagnostic: diagnostic,
-        };
-        if (safeWriteHead(res, 200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-          'X-AG-Error-Type': diagnostic.errorType,
-        })) {
-          res.write('data: ' + JSON.stringify(errResponse) + '\n\n');
-          safeEnd(res);
-        }
-        return;
-      }
-
-      let responseJson = { error: { message: `Upstream error: ${errorBody}` } };
-      try {
-        responseJson = JSON.parse(errorBody);
-      } catch {
-        // not JSON
-      }
-      if (typeof responseJson === 'object' && responseJson !== null) {
-        (responseJson as any)._agDiagnostic = diagnostic;
-      }
-      if (safeWriteHead(res, apiRes.statusCode!, {
-        'Content-Type': 'application/json',
-        'X-AG-Error-Type': diagnostic.errorType,
-      })) {
-        safeEnd(res, JSON.stringify(responseJson));
-      }
+      sendGracefulStreamError(res, diagnostic, model);
     });
     return;
   }
@@ -1477,6 +1691,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
               traceId: '',
               metadata: {},
             };
+            sanitizeCandidatesInResponse(cloudCodeResponse);
             res.write(`data: ${JSON.stringify(cloudCodeResponse)}\n\n`);
           }
         } catch (err) {
@@ -1513,6 +1728,16 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
       // Final attempt exhausted: count it as a failure so the budget
       // can downgrade the model's trust on the next request.
       recordModelFailure(model, 'empty_stream');
+      const emptyDiag = classifyError(undefined, undefined, 'empty_stream', model.provider);
+      emptyDiag.title = 'Empty Model Response';
+      emptyDiag.message = `Model "${model.displayName || model.name}" responded with HTTP 200 OK but returned 0 tokens of content (${verdict.reason}).`;
+      emptyDiag.suggestions = [
+        'Check if this model requires a different prompt or format.',
+        'Verify that the upstream provider API is responding correctly.',
+        'Try switching to a different model.'
+      ];
+      sendGracefulStreamError(res, emptyDiag, model);
+      return;
     }
     if (buffer.trim().startsWith('data: ')) {
       const dataStr = buffer.trim().substring(6).trim();
@@ -1527,6 +1752,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
               traceId: '',
               metadata: {},
             };
+            sanitizeCandidatesInResponse(cloudCodeResponse);
             res.write(`data: ${JSON.stringify(cloudCodeResponse)}\n\n`);
           }
         } catch (e) {
@@ -1539,7 +1765,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
       response: {
         candidates: [
           {
-            content: { parts: [], role: 'model' },
+            content: { parts: [{ text: '' }], role: 'model' },
             finishReason: 'STOP',
             index: 0,
           },
@@ -1589,46 +1815,7 @@ function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamReques
 
       if (ctx.attemptFallback(diagnostic)) return;
 
-      if (diagnostic.errorType === 'billing' || diagnostic.errorType === 'auth' || diagnostic.errorType === 'forbidden') {
-        const errResponse = {
-          response: {
-            candidates: [
-              {
-                content: { parts: [{ text: generateGracefulMarkdown(diagnostic) }], role: 'model' },
-                finishReason: 'STOP',
-                index: 0,
-              },
-            ],
-          },
-          traceId: '',
-          metadata: {},
-          _agDiagnostic: diagnostic,
-        };
-        if (safeWriteHead(res, 200, {
-          'Content-Type': 'application/json',
-          'X-AG-Error-Type': diagnostic.errorType,
-        })) {
-          safeEnd(res, JSON.stringify(errResponse));
-        }
-        return;
-      }
-
-      let responseJson = { error: { message: `Upstream error: ${body}` } };
-      try {
-        responseJson = JSON.parse(body);
-      } catch {
-        // not JSON
-      }
-      if (typeof responseJson === 'object' && responseJson !== null) {
-        (responseJson as any)._agDiagnostic = diagnostic;
-      }
-
-      if (safeWriteHead(res, apiRes.statusCode!, {
-        'Content-Type': 'application/json',
-        'X-AG-Error-Type': diagnostic.errorType,
-      })) {
-        safeEnd(res, JSON.stringify(responseJson));
-      }
+      sendGracefulNonStreamError(res, diagnostic, model);
       return;
     }
 
@@ -1678,17 +1865,7 @@ function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamReques
 
       const diagnostic = classifyError(500, e, body, model.provider);
 
-      if (ctx.attemptFallback(diagnostic)) return;
-
-      if (safeWriteHead(res, 500, {
-        'Content-Type': 'application/json',
-        'X-AG-Error-Type': diagnostic.errorType,
-      })) {
-        safeEnd(res, JSON.stringify({
-          error: { message: 'Failed to translate model response' },
-          _agDiagnostic: diagnostic,
-        }));
-      }
+      sendGracefulNonStreamError(res, diagnostic, model);
     }
   });
 }
@@ -1711,15 +1888,7 @@ function handleRequestTimeout(request: http.ClientRequest, ctx: StreamRequestCtx
 
   if (ctx.attemptFallback(diagnostic)) return;
 
-  if (safeWriteHead(res, 504, {
-    'Content-Type': 'application/json',
-    'X-AG-Error-Type': diagnostic.errorType,
-  })) {
-    safeEnd(res, JSON.stringify({
-      error: { message: `Request timeout after ${resolveRequestTimeout(model) / 1000}s` },
-      _agDiagnostic: diagnostic,
-    }));
-  }
+  sendGracefulError(res, ctx.isStream, diagnostic, model);
 }
 
 /** Request-level network error — breaker + budget + retry or 502 envelope. */
@@ -1745,40 +1914,7 @@ function handleRequestError(err: Error, ctx: StreamRequestCtx): void {
 
   if (ctx.attemptFallback(diagnostic)) return;
 
-  if (ctx.isStream) {
-    if (!res.headersSent && !res.writableEnded) {
-      const errResponse = {
-        response: {
-          candidates: [
-            {
-              content: { parts: [{ text: 'Network error: ' + err.message }], role: 'model' },
-              finishReason: 'STOP',
-              index: 0,
-            },
-          ],
-        },
-        traceId: '',
-        metadata: {},
-        _agDiagnostic: diagnostic,
-      };
-      safeWriteHead(res, 502, {
-        'Content-Type': 'text/event-stream',
-        'X-AG-Error-Type': diagnostic.errorType,
-      });
-      res.write('data: ' + JSON.stringify(errResponse) + '\n\n');
-    }
-    safeEnd(res);
-  } else {
-    if (safeWriteHead(res, 502, {
-      'Content-Type': 'application/json',
-      'X-AG-Error-Type': diagnostic.errorType,
-    })) {
-      safeEnd(res, JSON.stringify({
-        error: { message: 'Custom model request failed: ' + err.message },
-        _agDiagnostic: diagnostic,
-      }));
-    }
-  }
+  sendGracefulError(res, ctx.isStream, diagnostic, model);
 }
 
 // ─── Custom Model Request Handler ─────────────────────────────────────────
@@ -2028,19 +2164,7 @@ function handleCustomModelRequest(
       return;
     }
 
-    const statusCode = openBreaker.errorType === 'rate_limit' ? 429 : 503;
-    if (safeWriteHead(res, statusCode, {
-      'Content-Type': 'application/json',
-      'X-AG-Error-Type': cached.errorType,
-      'X-AG-Circuit': 'open',
-    })) {
-      safeEnd(res, JSON.stringify({
-        error: {
-          message: `Model ${model.name} is temporarily unavailable (${cached.title}). Retried shortly.`,
-        },
-        _agDiagnostic: cached,
-      }));
-    }
+    sendGracefulError(res, isStream, cached, model);
     return;
   }
 
@@ -2138,6 +2262,25 @@ function handleCustomModelRequest(
             }
           }
 
+          if (isGoogleCloudCodeModel(m)) {
+            const allCustomModels = expandModelsWithEffort(loadCustomModels());
+            const accountPool = getGoogleAccountPool(m, allCustomModels);
+            const targetModel = normalizeCloudCodeModelId(m.externalModelName || m.name);
+            sanitizeCloudCodeGenerationConfig(geminiBody as Record<string, unknown>, targetModel);
+            const cloudCodePayload = {
+              project: (m as { projectId?: string }).projectId || process.env.AG_CLOUD_CODE_PROJECT_ID || 'bamboo-precept-lgxtn',
+              model: targetModel,
+              request: geminiBody,
+            };
+            const fakeReq = {
+              url: isStream ? '/v1internal:streamGenerateContent?alt=sse' : '/v1internal:generateContent',
+              method: 'POST',
+              headers: {},
+            } as unknown as http.IncomingMessage;
+            executeGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', sessId);
+            return true;
+          }
+
           handleCustomModelRequest(res, m, geminiBody, isStream, 0, fallbackDepth + 1);
           return true;
         }
@@ -2165,7 +2308,7 @@ function handleCustomModelRequest(
   const payload = registry.translateRequest(provider, geminiBody, cleanModelName, model.extraBody);
   const headers = registry.getProviderHeaders(provider, model.apiKey, model.extraHeaders);
 
-  if (isStream && registry.supportsStreaming(provider)) {
+  if (isStream && registry.supportsStreaming(provider) && provider !== 'google') {
     (payload as Record<string, unknown>).stream = true;
   }
 
@@ -3418,27 +3561,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             ''
           ).toLowerCase();
           const isClaudeRequest = rawModelName.includes('claude');
-          // Also detect thinking blocks by content inspection — catches placeholder model IDs
-          // (e.g. MODEL_PLACEHOLDER_* used by the LS pre-invocation context-summarization hook)
-          const hasThinkingBlocks = (targetReq.contents as any[]).some((c: any) =>
-            Array.isArray(c.parts) &&
-            c.parts.some((p: any) => p.type === 'thinking' || p.thought === true || p.signature || p.thoughtSignature || p.thought_signature)
-          );
-
-          if (isClaudeRequest || hasThinkingBlocks) {
-            sanitizeCloudCodeGenerationConfig(targetReq, isClaudeRequest ? rawModelName : 'claude-sonnet-4-6');
+          if (isClaudeRequest) {
+            sanitizeCloudCodeGenerationConfig(targetReq, rawModelName);
+            contentsNormalized = true;
           } else {
             signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '', rawModelName);
-          }
-
-          if (normalizeConversationTurns(targetReq.contents)) {
-            contentsNormalized = true;
-          }
-        }
-
-        if (Array.isArray(reqJson.contents)) {
-          if (normalizeConversationTurns(reqJson.contents)) {
-            contentsNormalized = true;
           }
         }
 
@@ -3642,17 +3769,18 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     try {
       const fallbackJson = JSON.parse(bodyStr) as Record<string, unknown>;
       const fallbackReq = (fallbackJson.request || fallbackJson) as Record<string, unknown>;
-      if (Array.isArray(fallbackReq.contents)) {
-        const hasThinking = (fallbackReq.contents as any[]).some((c: any) =>
-          Array.isArray(c.parts) &&
-          c.parts.some((p: any) => p.type === 'thinking' || p.thought === true || p.signature || p.thoughtSignature || p.thought_signature)
-        );
-        if (hasThinking) {
-          sanitizeCloudCodeGenerationConfig(fallbackReq, 'claude-sonnet-4-6');
-          fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
-        }
+      const rawModelName = String(
+        fallbackJson.model ||
+        fallbackJson.requestedModel ||
+        fallbackReq.model ||
+        fallbackReq.requestedModel ||
+        ''
+      ).toLowerCase();
+      if (rawModelName.includes('claude') && Array.isArray(fallbackReq.contents)) {
+        sanitizeCloudCodeGenerationConfig(fallbackReq, rawModelName);
+        fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
       }
-    } catch { /* not JSON or no thinking blocks — continue as-is */ }
+    } catch { /* not JSON — continue as-is */ }
     await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || '');
 
   });

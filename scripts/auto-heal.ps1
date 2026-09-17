@@ -54,8 +54,9 @@ try {
     $escapedAsar = $asarPath -replace '\\', '\\'
     $escapedCache = $cached -replace '\\', '\\'
 
-    $asarVer = & node -e "try { const { readAsarFile } = require('./ag-doctor/dist/core/asar-reader'); const b = readAsarFile('$escapedAsar', 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}"
-    $cachedVer = & node -e "try { const { readAsarFile } = require('./ag-doctor/dist/core/asar-reader'); const b = readAsarFile('$escapedCache', 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}"
+    $readerPath = (Join-Path $repoDir "ag-doctor\dist\core\asar-reader.js") -replace '\\', '/'
+    $asarVer = & node -e "try { const { readAsarFile } = require('$readerPath'); const b = readAsarFile('$escapedAsar', 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}"
+    $cachedVer = & node -e "try { const { readAsarFile } = require('$readerPath'); const b = readAsarFile('$escapedCache', 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}"
 
     if ($asarVer -and $cachedVer -and $asarVer -ne $cachedVer -and (Test-Path $patchScript)) {
         # Nouvelle version officielle détectée : re-patcher la nouvelle version au lieu d'imposer l'ancien cache

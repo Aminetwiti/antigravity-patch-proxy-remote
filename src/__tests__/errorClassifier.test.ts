@@ -160,6 +160,20 @@ describe('Error Classifier', () => {
     });
   });
 
+  describe('400 and 404 errors', () => {
+    it('classifies HTTP 404 as Model Not Found with upstream detail', () => {
+      const result = classifyError(404, null, JSON.stringify({ error: { message: 'Model free/mimo-v2.5 not found' } }));
+      expect(result.title).toBe('Model Not Found (404)');
+      expect(result.message).toContain('Model free/mimo-v2.5 not found');
+    });
+
+    it('classifies HTTP 400 as Invalid Request with upstream detail', () => {
+      const result = classifyError(400, null, JSON.stringify({ error: { message: 'Context window exceeded' } }));
+      expect(result.title).toBe('Invalid Request (400)');
+      expect(result.message).toContain('Context window exceeded');
+    });
+  });
+
   describe('generateDiagnosticCardMarkdown', () => {
     it('formats a Markdown alert card with title, message, suggestions and actionUrl', () => {
       const diag = classifyError(402, null, null, 'openai');

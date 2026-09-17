@@ -572,7 +572,7 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
       }
     }
     activeStreamContexts.delete(streamId);
-    return { content: { parts: text ? [{ text }] : [], role: 'model' }, finishReason: 'STOP', index: 0 };
+    return { content: { parts: [{ text: text || '' }], role: 'model' }, finishReason: 'STOP', index: 0 };
   }
 
   // Only emit tool calls when finishReason signals completion (args are fully accumulated)

@@ -269,6 +269,26 @@ export function removeCustomModel(name: string, filePath?: string): CustomModels
         const pmName = String(pm.name ?? '').replace(/^models\//, '');
         return pmId !== cleanName && pmName !== cleanName && pmId !== name && pmName !== name;
       });
+      if (Array.isArray(p.models)) {
+        p.models = p.models.filter((pm: any) => {
+          if (!pm) return false;
+          const pmId = String(pm.id ?? pm.displayName ?? '').replace(/^models\//, '');
+          const pmName = String(pm.name ?? '').replace(/^models\//, '');
+          return pmId !== cleanName && pmName !== cleanName && pmId !== name && pmName !== name;
+        });
+      }
+      if (Array.isArray(p.accounts)) {
+        for (const acc of p.accounts) {
+          if (Array.isArray(acc.models)) {
+            acc.models = acc.models.filter((pm: any) => {
+              if (!pm) return false;
+              const pmId = String(pm.id ?? pm.displayName ?? '').replace(/^models\//, '');
+              const pmName = String(pm.name ?? '').replace(/^models\//, '');
+              return pmId !== cleanName && pmName !== cleanName && pmId !== name && pmName !== name;
+            });
+          }
+        }
+      }
     }
   }
   const dir = path.dirname(fp);

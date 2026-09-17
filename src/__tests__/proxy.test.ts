@@ -13,7 +13,9 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-import { parseRetryAfter, matchesCustomModel } from '../proxy';
+import { parseRetryAfter, matchesCustomModel, sanitizeCandidatesInResponse, transformGoogleStreamForRemote } from '../proxy';
+import * as zlib from 'zlib';
+import { EventEmitter } from 'events';
 import { DEFAULT_MAX_BODY_SIZE } from '../constants';
 import { generateModelPlaceholderId, toSlug } from '../proxy/idGenerator';
 import { expandModelsWithEffort } from '../proxy/effortExpander';
@@ -253,4 +255,144 @@ describe('DEFAULT_MAX_BODY_SIZE', () => {
   });
 });
 
+describe('sanitizeCandidatesInResponse', () => {
+  it('supplies default content and role when candidate.content is missing to avoid Go LS nil pointer dereference', () => {
+    const chunk = {
+      candidates: [
+        { finishReason: 'STOP', index: 0 },
+      ],
+    };
+    const modified = sanitizeCandidatesInResponse(chunk);
+    expect(modified).toBe(true);
+    expect((chunk.candidates[0] as any).content).toBeDefined();
+    expect((chunk.candidates[0] as any).content.role).toBe('model');
+    expect((chunk.candidates[0] as any).content.parts).toEqual([{ text: '' }]);
+  });
+
+  it('supplies default parts array when content.parts is missing or not an array', () => {
+    const chunk = {
+      candidates: [
+        { content: { role: 'model' }, finishReason: 'STOP' },
+      ],
+    };
+    const modified = sanitizeCandidatesInResponse(chunk);
+    expect(modified).toBe(true);
+    expect((chunk.candidates[0] as any).content.parts).toEqual([{ text: '' }]);
+  });
+
+  it('handles nested response.candidates envelope', () => {
+    const chunk = {
+      response: {
+        candidates: [
+          { finishReason: 'SAFETY' },
+        ],
+      },
+    };
+    const modified = sanitizeCandidatesInResponse(chunk);
+    expect(modified).toBe(true);
+    expect((chunk.response.candidates[0] as any).content).toBeDefined();
+    expect((chunk.response.candidates[0] as any).content.role).toBe('model');
+  });
+
+  it('does not modify already valid candidates', () => {
+    const chunk = {
+      candidates: [
+        {
+          content: { parts: [{ text: 'Hello' }], role: 'model' },
+          finishReason: 'STOP',
+          index: 0,
+        },
+      ],
+    };
+    const modified = sanitizeCandidatesInResponse(chunk);
+    expect(modified).toBe(false);
+  });
+
+  it('filters null candidate elements — root cause of Go nil-pointer crash at generation.go:673', () => {
+    const chunk: any = {
+      candidates: [null, { finishReason: 'STOP', index: 0 }],
+    };
+    const modified = sanitizeCandidatesInResponse(chunk);
+    expect(modified).toBe(true);
+    expect(chunk.candidates).toHaveLength(1);
+    expect(chunk.candidates[0]).not.toBeNull();
+    expect(chunk.candidates[0].content.role).toBe('model');
+  });
+
+  it('filters null entries from nested response.candidates', () => {
+    const chunk: any = { response: { candidates: [null] } };
+    const modified = sanitizeCandidatesInResponse(chunk);
+    expect(modified).toBe(true);
+    expect(chunk.response.candidates).toHaveLength(0);
+  });
+});
+
+describe('transformGoogleStreamForRemote', () => {
+  it('correctly decodes and transforms uncompressed SSE streams', async () => {
+    const mockProxyRes: any = new EventEmitter();
+    mockProxyRes.headers = { 'content-type': 'text/event-stream' };
+    mockProxyRes.statusCode = 200;
+
+    let output = '';
+    const mockClientRes: any = {
+      headersSent: false,
+      writableEnded: false,
+      writeHead: vi.fn(),
+      write: vi.fn((data: string) => {
+        output += data;
+        return true;
+      }),
+      end: vi.fn(),
+    };
+
+    transformGoogleStreamForRemote(mockProxyRes, mockClientRes, 'test-conv');
+
+    const sseData = 'data: {"response":{"candidates":[{"content":{"parts":[{"text":"Hello from Gemini"}]}}]}}\n\n';
+    mockProxyRes.emit('data', Buffer.from(sseData, 'utf-8'));
+    mockProxyRes.emit('end');
+
+    expect(output).toContain('Hello from Gemini');
+    expect(mockClientRes.end).toHaveBeenCalled();
+  });
+
+  it('correctly decompresses gzip-encoded SSE streams from Google Cloud Code', async () => {
+    const mockProxyRes: any = new EventEmitter();
+    mockProxyRes.headers = {
+      'content-type': 'text/event-stream',
+      'content-encoding': 'gzip',
+    };
+    mockProxyRes.statusCode = 200;
+    mockProxyRes.pipe = (dest: any) => {
+      mockProxyRes.on('data', (c: Buffer) => dest.write(c));
+      mockProxyRes.on('end', () => dest.end());
+      return dest;
+    };
+
+    let output = '';
+    const mockClientRes: any = {
+      headersSent: false,
+      writableEnded: false,
+      writeHead: vi.fn(),
+      write: vi.fn((data: string) => {
+        output += data;
+        return true;
+      }),
+      end: vi.fn(),
+    };
+
+    transformGoogleStreamForRemote(mockProxyRes, mockClientRes, 'test-conv');
+
+    const rawSse = 'data: {"response":{"candidates":[{"content":{"parts":[{"text":"Gzip decoded text"}]}}]}}\n\n';
+    const compressed = zlib.gzipSync(Buffer.from(rawSse, 'utf-8'));
+
+    mockProxyRes.emit('data', compressed);
+    mockProxyRes.emit('end');
+
+    // Allow gunzip async stream ticks to process
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(output).toContain('Gzip decoded text');
+    expect(mockClientRes.end).toHaveBeenCalled();
+  });
+});
 

@@ -86,7 +86,7 @@ if exist "%AG_CLASSIC_EXE%" (
     echo   Backup already exists at !AG_ASAR!.bak
   )
   set "STAGING_DIR=%TEMP%\antigravity-asar-staging-%RANDOM%"
-  node "%SCRIPT_DIR%scripts\patch-version.js" "!AG_ASAR!.bak" "!STAGING_DIR!" "!AG_ASAR!"
+  node "%SCRIPT_DIR%scripts\patch-version.js" "!AG_ASAR!" "!STAGING_DIR!" "!AG_ASAR!"
   if errorlevel 1 (
     echo   [ERROR] Asar overlay failed. Restoring backup...
     copy /Y "!AG_ASAR!.bak" "!AG_ASAR!" >nul
