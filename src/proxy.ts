@@ -652,6 +652,20 @@ export function transformGoogleStreamForRemote(
   const decoder = new StringDecoder('utf-8');
   let buffer = '';
 
+  let sawFinishReason = false;
+  const inspectFinishReason = (obj: any): void => {
+    if (!obj || typeof obj !== 'object') return;
+    const cands = obj.candidates || (obj.response && obj.response.candidates);
+    if (Array.isArray(cands)) {
+      for (const c of cands) {
+        if (c && c.finishReason) {
+          sawFinishReason = true;
+          return;
+        }
+      }
+    }
+  };
+
   const processLine = (line: string): void => {
     const trimmed = line.trimEnd();
     if (trimmed.startsWith('data:')) {
@@ -672,6 +686,7 @@ export function transformGoogleStreamForRemote(
           const eol = line.endsWith('\r') ? '\r\n' : '\n';
           for (const item of data) {
             if (item && typeof item === 'object') {
+              inspectFinishReason(item);
               extractAndCacheThoughtSignatures(item, convId);
               sanitizeCandidatesInResponse(item);
               clientRes.write('data: ' + JSON.stringify(item) + eol);
@@ -681,6 +696,7 @@ export function transformGoogleStreamForRemote(
         }
 
         // Cache any thought_signature values from this response chunk
+        inspectFinishReason(data);
         extractAndCacheThoughtSignatures(data, convId);
 
         // Antigravity Language Server crash protection:
@@ -725,12 +741,48 @@ export function transformGoogleStreamForRemote(
       }
       buffer = '';
     }
+    if (!sawFinishReason && !clientRes.writableEnded) {
+      const finalChunk = {
+        response: {
+          candidates: [
+            {
+              content: { parts: [{ text: '' }], role: 'model' },
+              finishReason: 'STOP',
+              index: 0,
+            },
+          ],
+        },
+        traceId: '',
+        metadata: {},
+      };
+      sanitizeCandidatesInResponse(finalChunk);
+      writeSafeSseChunk(clientRes, finalChunk);
+    }
     safeEnd(clientRes);
   });
 
   stream.on('error', (err) => {
     log.error('[Proxy] Upstream Google stream error:', err);
-    clientRes.destroy(err);
+    if (!sawFinishReason && !clientRes.writableEnded && !clientRes.destroyed) {
+      const finalChunk = {
+        response: {
+          candidates: [
+            {
+              content: { parts: [{ text: '' }], role: 'model' },
+              finishReason: 'STOP',
+              index: 0,
+            },
+          ],
+        },
+        traceId: '',
+        metadata: {},
+      };
+      sanitizeCandidatesInResponse(finalChunk);
+      writeSafeSseChunk(clientRes, finalChunk);
+      safeEnd(clientRes);
+    } else {
+      clientRes.destroy(err);
+    }
   });
 }
 

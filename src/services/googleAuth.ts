@@ -295,17 +295,19 @@ export function sanitizeCloudCodeGenerationConfig(
     if (isClaude) {
       for (const item of reqObj.contents as Array<{ role?: string; parts?: Array<Record<string, unknown>> }>) {
         if (Array.isArray(item.parts)) {
-          const originalCount = item.parts.length;
+          let removedThinkingBlocks = 0;
           item.parts = item.parts.filter((p: any) => {
             if (!p || typeof p !== 'object') return false;
             // Function calls and responses must NEVER be filtered out
             if (p.functionCall || p.functionResponse) return true;
             // Pure thinking blocks
-            if (p.type === 'thinking') return false;
-            if (p.thought === true || p.thought === 'true') return false;
-            if (typeof p.thinking === 'string') return false;
+            if (p.type === 'thinking' || p.thought === true || p.thought === 'true' || typeof p.thinking === 'string') {
+              removedThinkingBlocks++;
+              return false;
+            }
             // Pure signature block without text
             if ((typeof p.signature === 'string' || typeof p.thoughtSignature === 'string' || typeof p.thought_signature === 'string') && !p.text) {
+              removedThinkingBlocks++;
               return false;
             }
             return true;
@@ -324,8 +326,8 @@ export function sanitizeCloudCodeGenerationConfig(
             if (p.thought) delete p.thought;
           }
 
-          if (item.parts.length !== originalCount) {
-            log.info(`[Proxy] Sanitized ${originalCount - item.parts.length} historical thinking block(s) for Claude request to avoid invalid signature error`);
+          if (removedThinkingBlocks > 0) {
+            log.info(`[Proxy] Sanitized ${removedThinkingBlocks} historical thinking block(s) for Claude request to avoid invalid signature error`);
           }
         }
       }

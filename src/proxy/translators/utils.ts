@@ -522,16 +522,15 @@ export function translateToolCallToNative(
   const cmd = args.CommandLine.trim();
   const cwd = args.Cwd || process.cwd();
 
-  // Remote execution checking block removed.
-
   // 1. list_dir translation
-  const isListDir = /^(ls|dir)(\s+[\w\-\/\\\.\*]+)*$/i.test(cmd);
+  const isListDir = /^(ls|dir)(\s+[\w\-\/\\\.\*"]+)*$/i.test(cmd);
   if (isListDir) {
     let dirPath = cwd;
     const tokens = cmd.split(/\s+/).slice(1);
     const pathToken = tokens.find((t) => !t.startsWith('-') && !t.startsWith('/'));
     if (pathToken) {
-      dirPath = path.isAbsolute(pathToken) ? pathToken : path.resolve(cwd, pathToken);
+      const cleanToken = pathToken.replace(/^["']|["']$/g, '');
+      dirPath = path.isAbsolute(cleanToken) ? cleanToken : path.resolve(cwd, cleanToken);
     }
     log.info(`[Proxy] Translating run_command "${cmd}" to list_dir on "${dirPath}"`);
     return { name: 'list_dir', args: { DirectoryPath: dirPath } };
@@ -598,30 +597,36 @@ export function translateToolCallToNative(
 /**
  * Formats native file tool outputs (JSON/Array) back into standard textual command-line outputs.
  */
-export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo, responseData: unknown): string {
-  const { translatedName, cmd } = translatedInfo;
+export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo | string, responseData: unknown): string {
+  const translatedName = typeof translatedInfo === 'string' ? translatedInfo : translatedInfo?.translatedName;
+  const cmd = typeof translatedInfo === 'object' ? translatedInfo?.cmd : '';
   // S-3: Redact secrets before logging — SSH passwords, Bearer tokens, API keys.
   const safeCmd = (cmd ?? '')
     .replace(/(-pw\s+|--password[= ])\S+/gi, '$1[REDACTED]')
     .replace(/(Authorization:\s*(?:Bearer|Basic)\s+)\S+/gi, '$1[REDACTED]')
     .replace(/(apikey|api_key|api-key)[=: ]+\S+/gi, '$1=[REDACTED]');
-  log.info(`[Proxy] Formatting native response back to CLI for translated tool "${translatedName}" (Cmd: "${safeCmd}")`);
+  if (translatedName) {
+    log.info(`[Proxy] Formatting native response back to CLI for translated tool "${translatedName}"${safeCmd ? ` (Cmd: "${safeCmd}")` : ''}`);
+  }
 
   if (translatedName === 'list_dir') {
     if (Array.isArray(responseData)) {
-      return (responseData as DirectoryItem[])
+      return (responseData as any[])
         .map((item) => {
-          const typeIndicator = item.isDir ? '<DIR>' : '     ';
-          const sizeStr = item.isDir ? '' : ` (${item.sizeBytes || 0} bytes)`;
-          return `${typeIndicator}  ${item.name}${sizeStr}`;
+          const isDir = item.isDir ?? item.IsDir;
+          const name = item.name ?? item.Name ?? '';
+          const sizeBytes = item.sizeBytes ?? item.SizeBytes ?? item.size ?? 0;
+          const typeIndicator = isDir ? '<DIR>' : '     ';
+          const sizeStr = isDir ? '' : ` (${sizeBytes} bytes)`;
+          return `${typeIndicator}  ${name}${sizeStr}`;
         })
         .join('\n');
     }
     if (responseData && typeof responseData === 'object') {
-      const data = responseData as FileListResponse;
-      const items = data.files || data.children || [];
+      const data = responseData as any;
+      const items = data.files || data.Files || data.children || data.Children || data.entries || data.items || [];
       if (Array.isArray(items)) {
-        return items.map((item) => `${item.isDir ? '<DIR>' : '     '}  ${item.name}`).join('\n');
+        return items.map((item: any) => `${(item.isDir ?? item.IsDir) ? '<DIR>' : '     '}  ${item.name ?? item.Name ?? ''}`).join('\n');
       }
     }
     return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
@@ -629,16 +634,30 @@ export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo, res
 
   if (translatedName === 'view_file') {
     if (responseData && typeof responseData === 'object') {
-      const data = responseData as FileListResponse;
-      return data.content || data.CodeContent || JSON.stringify(responseData);
+      const data = responseData as any;
+      const fileText = data.content ?? data.Content ?? data.CodeContent ?? data.codeContent ?? data.file_content ?? data.text;
+      if (fileText !== undefined) {
+        return typeof fileText === 'string' ? fileText : JSON.stringify(fileText);
+      }
+      return JSON.stringify(responseData);
     }
     return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
   }
 
   if (translatedName === 'grep_search') {
-    if (Array.isArray(responseData)) {
-      return (responseData as MatchResult[])
-        .map((match) => `${match.Filename}:${match.LineNumber}:${match.LineContent}`)
+    const list = Array.isArray(responseData)
+      ? responseData
+      : (responseData && typeof responseData === 'object')
+        ? ((responseData as any).matches || (responseData as any).results || (responseData as any).Matches || (responseData as any).Results)
+        : null;
+    if (Array.isArray(list)) {
+      return list
+        .map((match: any) => {
+          const file = match.Filename ?? match.filename ?? match.file ?? match.path ?? '';
+          const line = match.LineNumber ?? match.lineNumber ?? match.line ?? '';
+          const content = match.LineContent ?? match.lineContent ?? match.content ?? match.text ?? '';
+          return `${file}${line !== '' ? `:${line}` : ''}:${content}`;
+        })
         .join('\n');
     }
     return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
@@ -646,12 +665,16 @@ export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo, res
 
   if (translatedName === 'write_file') {
     if (responseData && typeof responseData === 'object') {
-      const data = responseData as Record<string, unknown>;
-      if (data.success) return `File written successfully: ${data.path || 'unknown'}`;
-      return `Failed to write file: ${data.error || 'Unknown error'}`;
+      const data = responseData as any;
+      const success = data.success ?? data.Success;
+      const targetPath = data.path ?? data.Path;
+      const error = data.error ?? data.Error;
+      if (success) return `File written successfully: ${targetPath || 'unknown'}`;
+      return `Failed to write file: ${error || 'Unknown error'}`;
     }
     return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
   }
 
   return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
 }
+

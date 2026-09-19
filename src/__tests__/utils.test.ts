@@ -293,6 +293,19 @@ describe('formatTranslatedResponse', () => {
     const result = formatTranslatedResponse(info, 'plain text');
     expect(result).toBe('plain text');
   });
+
+  it('should handle tool name passed as string and PascalCase fields in view_file and grep_search', () => {
+    const viewResult = formatTranslatedResponse('view_file', { Content: 'PascalCase content' });
+    expect(viewResult).toBe('PascalCase content');
+
+    const grepResult = formatTranslatedResponse('grep_search', {
+      matches: [{ Filename: 'main.go', LineNumber: 42, LineContent: 'package main' }],
+    });
+    expect(grepResult).toContain('main.go:42:package main');
+
+    const writeResult = formatTranslatedResponse('write_file', { Success: true, Path: 'foo.txt' });
+    expect(writeResult).toContain('File written successfully: foo.txt');
+  });
 });
 
 // ─── cleanFilePath ─────────────────────────────────────────────────────────
