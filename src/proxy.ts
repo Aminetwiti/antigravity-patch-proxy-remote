@@ -1313,9 +1313,10 @@ export async function executeGoogleCloudCodeWithPool(
         }
       }
 
-      // 2. If restore was not applicable or signature was corrupted, strip thinkingConfig and residual signatures
-      // so Gemini can execute standard tool calling without thinking signature verification
+      // 2. If restore was not applicable or signature was corrupted, convert unverified tool calls in history
+      // to plain text and strip thinkingConfig so Vertex AI accepts the request without signature errors
       if (!repaired) {
+        log.warn(`[Proxy] Converting unverified tool calls in history to text to bypass Vertex AI thought signature validation for ${candidateName}`);
         const sanitizeObj = (obj: any) => {
           if (!obj || typeof obj !== 'object') return;
           if (obj.generationConfig) {
@@ -1331,22 +1332,10 @@ export async function executeGoogleCloudCodeWithPool(
               if (Array.isArray(c.parts)) {
                 c.parts = c.parts.filter((p: any) => !p?.thought && p?.type !== 'thinking');
                 if (c.parts.length === 0) c.parts = [{ text: '.' }];
-                for (const p of c.parts) {
-                  delete p.thought_signature;
-                  delete p.thoughtSignature;
-                  delete p.signature;
-                  delete p.thought;
-                  if (p.functionCall) {
-                    delete (p.functionCall as any).thought_signature;
-                    delete (p.functionCall as any).thoughtSignature;
-                  }
-                  if ((p as any).function_call) {
-                    delete (p as any).function_call.thought_signature;
-                    delete (p as any).function_call.thoughtSignature;
-                  }
-                }
               }
             }
+            flattenAllToolCallsToText(obj.contents);
+            normalizeConversationTurns(obj.contents);
           }
           if (obj.request && typeof obj.request === 'object') {
             sanitizeObj(obj.request);
@@ -1439,7 +1428,7 @@ export async function executeGoogleCloudCodeWithPool(
   if (!res.writableEnded && !res.destroyed) {
     const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
     const allCustomModels = expandModelsWithEffort(loadCustomModels());
-    const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.1-pro-high', 'gemini-2.0-flash'];
+    const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.7-flash-tiered', 'gemini-2.0-flash'];
     const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || '');
     const eligibleFallbacks = fallbackTargets.filter((m) => m !== currentBase);
 
@@ -1469,6 +1458,8 @@ export async function executeGoogleCloudCodeWithPool(
           const fbContents = (reqJson.request as any)?.contents || reqJson.contents;
           if (Array.isArray(fbContents)) {
             restoreThoughtSignatures(fbContents, convId || '', fallbackModel);
+            sanitizeUnsignedToolCalls(fbContents);
+            normalizeConversationTurns(fbContents);
           }
 
           const sessionKey = convId || sessId;
@@ -3909,6 +3900,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             contentsNormalized = true;
           } else {
             signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '', effectiveModelName);
+            if (sanitizeUnsignedToolCalls(targetReq.contents)) {
+              contentsNormalized = true;
+              normalizeConversationTurns(targetReq.contents);
+            }
           }
         }
 

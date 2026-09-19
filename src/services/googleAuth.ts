@@ -316,15 +316,12 @@ export function sanitizeCloudCodeGenerationConfig(
             item.parts = [{ text: '.' }];
           }
 
-          // Strip residual thought signatures from non-functionCall remaining parts
+          // Strip any residual thought signatures from remaining parts
           for (const p of item.parts) {
-            const hasFc = p.functionCall || (p as any).function_call;
-            if (!hasFc) {
-              if (p.thought_signature) delete p.thought_signature;
-              if (p.thoughtSignature) delete p.thoughtSignature;
-              if (p.signature) delete p.signature;
-              if (p.thought) delete p.thought;
-            }
+            if (p.thought_signature) delete p.thought_signature;
+            if (p.thoughtSignature) delete p.thoughtSignature;
+            if (p.signature) delete p.signature;
+            if (p.thought) delete p.thought;
           }
 
           if (item.parts.length !== originalCount) {

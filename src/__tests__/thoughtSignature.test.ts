@@ -4,6 +4,8 @@ import {
   stateTimestamps,
   extractAndCacheThoughtSignatures,
   restoreThoughtSignatures,
+  sanitizeUnsignedToolCalls,
+  flattenAllToolCallsToText,
 } from '../proxy/shared';
 
 describe('thoughtSignature handling', () => {
@@ -200,6 +202,109 @@ describe('thoughtSignature handling', () => {
 
       expect(restored).toBe(false);
       expect((contents[0].parts[0] as any).thought_signature).toBeUndefined();
+    });
+  });
+
+  describe('sanitizeUnsignedToolCalls', () => {
+    it('converts functionCall without thought_signature to text and pairs with functionResponse', () => {
+      const contents = [
+        {
+          role: 'user',
+          parts: [{ text: 'List files' }],
+        },
+        {
+          role: 'model',
+          parts: [
+            {
+              functionCall: {
+                name: 'run_command',
+                args: { CommandLine: 'ls' },
+              },
+            },
+          ],
+        },
+        {
+          role: 'user',
+          parts: [
+            {
+              functionResponse: {
+                name: 'run_command',
+                response: { output: 'file1.txt\nfile2.txt' },
+              },
+            },
+          ],
+        },
+      ];
+
+      const modified = sanitizeUnsignedToolCalls(contents);
+      expect(modified).toBe(true);
+
+      // Model turn's functionCall is converted to text
+      const modelPart = contents[1].parts[0] as any;
+      expect(modelPart.functionCall).toBeUndefined();
+      expect(modelPart.text).toContain('[Executed tool: run_command');
+      expect(modelPart.text).toContain('ls');
+
+      // User turn's functionResponse is converted to text
+      const userPart = contents[2].parts[0] as any;
+      expect(userPart.functionResponse).toBeUndefined();
+      expect(userPart.text).toContain('[Tool run_command output:');
+      expect(userPart.text).toContain('file1.txt');
+    });
+
+    it('preserves functionCall that has a valid thought_signature', () => {
+      const contents = [
+        {
+          role: 'model',
+          parts: [
+            {
+              functionCall: {
+                name: 'valid_tool',
+                args: {},
+              },
+              thought_signature: 'valid_crypto_sig_123',
+            },
+          ],
+        },
+      ];
+
+      const modified = sanitizeUnsignedToolCalls(contents);
+      expect(modified).toBe(false);
+      const modelPart = contents[0].parts[0] as any;
+      expect(modelPart.functionCall).toBeDefined();
+      expect(modelPart.thought_signature).toBe('valid_crypto_sig_123');
+    });
+  });
+
+  describe('flattenAllToolCallsToText', () => {
+    it('unconditionally flattens all functionCalls and functionResponses regardless of signatures', () => {
+      const contents = [
+        {
+          role: 'model',
+          parts: [
+            {
+              functionCall: { name: 'corrupted_tool', args: { x: 1 } },
+              thought_signature: 'corrupted_bad_sig',
+            },
+          ],
+        },
+        {
+          role: 'user',
+          parts: [
+            {
+              functionResponse: { name: 'corrupted_tool', response: 'ok' },
+            },
+          ],
+        },
+      ];
+
+      const modified = flattenAllToolCallsToText(contents);
+      expect(modified).toBe(true);
+      expect((contents[0].parts[0] as any).functionCall).toBeUndefined();
+      expect((contents[0].parts[0] as any).thought_signature).toBeUndefined();
+      expect((contents[0].parts[0] as any).text).toContain('[Executed tool: corrupted_tool');
+      expect((contents[1].parts[0] as any).functionResponse).toBeUndefined();
+      expect((contents[1].parts[0] as any).text).toContain('[Tool corrupted_tool output: ok]');
     });
   });
 });
