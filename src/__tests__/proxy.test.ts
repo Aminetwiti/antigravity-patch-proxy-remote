@@ -472,5 +472,94 @@ describe('transformGoogleStreamForRemote', () => {
     expect(output).toContain('Gzip decoded text');
     expect(mockClientRes.end).toHaveBeenCalled();
   });
+
+  it('drops [DONE] to protect Language Server protojson unmarshaler from unexpected token [', () => {
+    const mockProxyRes: any = new EventEmitter();
+    mockProxyRes.headers = { 'content-type': 'text/event-stream' };
+    mockProxyRes.statusCode = 200;
+
+    let output = '';
+    const mockClientRes: any = {
+      headersSent: false,
+      writableEnded: false,
+      writeHead: vi.fn(),
+      write: vi.fn((data: string) => {
+        output += data;
+        return true;
+      }),
+      end: vi.fn(),
+    };
+
+    transformGoogleStreamForRemote(mockProxyRes, mockClientRes, 'test-conv');
+
+    const sseData = 'data: {"response":{"candidates":[{"content":{"parts":[{"text":"Chunk 1"}]}}]}}\n\ndata: [DONE]\n\n';
+    mockProxyRes.emit('data', Buffer.from(sseData, 'utf-8'));
+    mockProxyRes.emit('end');
+
+    expect(output).toContain('Chunk 1');
+    expect(output).not.toContain('[DONE]');
+    expect(output).not.toContain('data: [');
+  });
+
+  it('unwraps array data chunks so Language Server never receives JSON array as proto message', () => {
+    const mockProxyRes: any = new EventEmitter();
+    mockProxyRes.headers = { 'content-type': 'text/event-stream' };
+    mockProxyRes.statusCode = 200;
+
+    const writtenChunks: string[] = [];
+    const mockClientRes: any = {
+      headersSent: false,
+      writableEnded: false,
+      writeHead: vi.fn(),
+      write: vi.fn((data: string) => {
+        writtenChunks.push(data);
+        return true;
+      }),
+      end: vi.fn(),
+    };
+
+    transformGoogleStreamForRemote(mockProxyRes, mockClientRes, 'test-conv');
+
+    const sseData = 'data: [{"candidates":[{"content":{"parts":[{"text":"Array Item 1"}]}}]},{"candidates":[{"content":{"parts":[{"text":"Array Item 2"}]}}]}]\n\n';
+    mockProxyRes.emit('data', Buffer.from(sseData, 'utf-8'));
+    mockProxyRes.emit('end');
+
+    // Each chunk must be a JSON object, not a JSON array
+    for (const chunk of writtenChunks) {
+      if (chunk.startsWith('data:')) {
+        const payload = chunk.replace(/^data:\s*/, '').trim();
+        expect(payload.startsWith('{')).toBe(true);
+        expect(payload.startsWith('[')).toBe(false);
+      }
+    }
+  });
+
+  it('suppresses raw non-SSE lines like raw JSON brackets from stream', () => {
+    const mockProxyRes: any = new EventEmitter();
+    mockProxyRes.headers = { 'content-type': 'text/event-stream' };
+    mockProxyRes.statusCode = 200;
+
+    let output = '';
+    const mockClientRes: any = {
+      headersSent: false,
+      writableEnded: false,
+      writeHead: vi.fn(),
+      write: vi.fn((data: string) => {
+        output += data;
+        return true;
+      }),
+      end: vi.fn(),
+    };
+
+    transformGoogleStreamForRemote(mockProxyRes, mockClientRes, 'test-conv');
+
+    const sseData = '[\n{"response":{"candidates":[{"content":{"parts":[{"text":"Valid"}]}}]}}\n]\n';
+    mockProxyRes.emit('data', Buffer.from(sseData, 'utf-8'));
+    mockProxyRes.emit('end');
+
+    expect(output).not.toContain('[\n');
+    expect(output).not.toContain(']\n');
+  });
 });
+
 

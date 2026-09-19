@@ -485,7 +485,7 @@ function sendGracefulError(res: http.ServerResponse, isStream: boolean, diagnost
 // ─── Google Proxy ─────────────────────────────────────────────────────────
 
 export function sanitizeCandidatesInResponse(data: any): boolean {
-  if (!data || typeof data !== 'object') return false;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
   let modified = false;
 
   // 1. Antigravity Language Server crash protection:
@@ -608,6 +608,15 @@ export function sanitizeCandidatesInResponse(data: any): boolean {
 
 export function writeSafeSseChunk(res: http.ServerResponse, chunk: any): boolean {
   if (res.writableEnded || res.destroyed) return false;
+  if (Array.isArray(chunk)) {
+    let ok = true;
+    for (const item of chunk) {
+      if (item && typeof item === 'object') {
+        ok = writeSafeSseChunk(res, item) && ok;
+      }
+    }
+    return ok;
+  }
   sanitizeCandidatesInResponse(chunk);
   try {
     return res.write('data: ' + JSON.stringify(chunk) + '\n\n');
@@ -648,7 +657,8 @@ export function transformGoogleStreamForRemote(
     if (trimmed.startsWith('data:')) {
       const jsonStr = trimmed.slice(5).trim();
       if (jsonStr === '[DONE]') {
-        clientRes.write(line + '\n');
+        // Drop OpenAI-style [DONE] marker — Google Language Server parses all SSE data as protojson
+        // messages (GenerateContentResponse) and crashes with "proto: syntax error (line 1:1): unexpected token [" if it receives [DONE].
         return;
       }
       if (!jsonStr) {
@@ -657,6 +667,19 @@ export function transformGoogleStreamForRemote(
       }
       try {
         const data = JSON.parse(jsonStr);
+        // If data is an array of responses, unwrap each item individually to avoid emitting a JSON array as a proto message
+        if (Array.isArray(data)) {
+          const eol = line.endsWith('\r') ? '\r\n' : '\n';
+          for (const item of data) {
+            if (item && typeof item === 'object') {
+              extractAndCacheThoughtSignatures(item, convId);
+              sanitizeCandidatesInResponse(item);
+              clientRes.write('data: ' + JSON.stringify(item) + eol);
+            }
+          }
+          return;
+        }
+
         // Cache any thought_signature values from this response chunk
         extractAndCacheThoughtSignatures(data, convId);
 
@@ -674,7 +697,13 @@ export function transformGoogleStreamForRemote(
         return;
       }
     }
-    clientRes.write(line + '\n');
+    // Only forward valid SSE control lines or empty lines.
+    // Never forward arbitrary raw text (like raw JSON brackets '[' or '{') into the SSE stream!
+    if (trimmed.startsWith(':') || trimmed.startsWith('event:') || trimmed.startsWith('id:') || trimmed.startsWith('retry:') || !trimmed) {
+      clientRes.write(line + '\n');
+    } else {
+      log.debug('[Proxy] Suppressed non-SSE upstream line from stream:', trimmed.slice(0, 60));
+    }
   };
 
   stream.on('data', (chunk: Buffer) => {
@@ -691,7 +720,7 @@ export function transformGoogleStreamForRemote(
     buffer += decoder.end();
     if (buffer.length > 0) {
       processLine(buffer);
-      if (buffer.trim().startsWith('data:')) {
+      if (buffer.trim().startsWith('data:') && buffer.trim().slice(5).trim() !== '[DONE]') {
         clientRes.write('\n\n');
       }
       buffer = '';

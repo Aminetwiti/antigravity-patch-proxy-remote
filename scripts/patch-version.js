@@ -87,7 +87,11 @@ if (actualAsarIn !== asarIn) {
   const currentVersion = readAsarVersion(asarIn);
   const bakVersion = readAsarVersion(actualAsarIn);
   if (currentVersion && bakVersion && currentVersion !== bakVersion) {
-    if (asarHasOverlay(asarIn)) {
+    let proxyPkgVersion = null;
+    try {
+      proxyPkgVersion = require('../package.json').version;
+    } catch (_) {}
+    if (asarHasOverlay(asarIn) && (!proxyPkgVersion || currentVersion !== proxyPkgVersion)) {
       console.error(`[patch-version] app.asar.bak is from Antigravity ${bakVersion} but the current ` +
         `${path.basename(asarIn)} is ${currentVersion} AND already contains the proxy overlay.`);
       console.error(`[patch-version] Refusing to overwrite the backup. Restore a pristine ` +
