@@ -1376,20 +1376,22 @@ func (s *Server) CancelGeneration(cascadeID string) {
 			_, _ = s.RPCClient.CancelCascadeInvocation(cid, true)
 			_, _ = s.RPCClient.ForceStopCascadeTree(cid)
 		}
-		// Coupure multi-instances (si la cascade tourne sur une instance IDE enfant)
-		if instances, err := discovery.DiscoverAll(); err == nil {
-			for _, inst := range instances {
-				tok := inst.ExtensionCSRF
-				if tok == "" {
-					tok = inst.CSRFToken
-				}
-				if inst.ConnectRPCPort > 0 && tok != "" {
-					c := connectrpc.NewClient(inst.ConnectRPCPort, tok)
-					if inst.UseTLS {
-						c.SetUseTLS(true)
+		// Coupure multi-instances (si la cascade tourne sur une instance IDE enfant et qu'on n'est pas dans un mock de test)
+		if _, isLive := s.RPCClient.(*connectrpc.Client); isLive {
+			if instances, err := discovery.DiscoverAll(); err == nil {
+				for _, inst := range instances {
+					tok := inst.ExtensionCSRF
+					if tok == "" {
+						tok = inst.CSRFToken
 					}
-					_, _ = c.CancelCascadeInvocation(cid, true)
-					_, _ = c.ForceStopCascadeTree(cid)
+					if inst.ConnectRPCPort > 0 && tok != "" {
+						c := connectrpc.NewClient(inst.ConnectRPCPort, tok)
+						if inst.UseTLS {
+							c.SetUseTLS(true)
+						}
+						_, _ = c.CancelCascadeInvocation(cid, true)
+						_, _ = c.ForceStopCascadeTree(cid)
+					}
 				}
 			}
 		}

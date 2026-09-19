@@ -361,6 +361,14 @@ export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: stri
 
       const normalizedInput = normalizeToolArgs(block.name || '', block.input || {});
       const translated = translateToolCallToNative(block.name || '', normalizedInput);
+      if (translated.name && translated.name !== block.name) {
+        modelTCIds[translated.name] = block.id || '';
+        if (modelKey !== modelName) {
+          const fallbackTCIds = modelToolCallIds.get(modelName) || {};
+          fallbackTCIds[translated.name] = block.id || '';
+          modelToolCallIds.set(modelName, fallbackTCIds);
+        }
+      }
       if (translated.name !== block.name) {
         translated.args = normalizeToolArgs(translated.name, translated.args) as Record<string, unknown>;
         translatedToolCalls.set(block.id || '', {
@@ -475,6 +483,14 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
         }
         touchStateTimestamp(stateTimestamps.toolCallIds, modelKey);
         const translated = translateToolCallToNative(tc.name, args);
+        if (translated.name && translated.name !== tc.name) {
+          modelTCIds[translated.name] = tc.id;
+          if (modelKey !== modelName) {
+            const fallbackTCIds = modelToolCallIds.get(modelName) || {};
+            fallbackTCIds[translated.name] = tc.id;
+            modelToolCallIds.set(modelName, fallbackTCIds);
+          }
+        }
         if (translated.name !== tc.name) {
           translatedToolCalls.set(tc.id, {
             originalName: tc.name,

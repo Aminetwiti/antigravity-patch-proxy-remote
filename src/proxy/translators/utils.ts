@@ -558,19 +558,37 @@ export function translateToolCallToNative(
   // 3. grep_search translation
   if (cmd.toLowerCase().startsWith('grep') || cmd.toLowerCase().startsWith('findstr')) {
     let query = '';
-    let searchPath = cwd;
+    let searchPath = '.';
     const regexQuotes = /"([^"]+)"|'([^']+)'/g;
     const quotesFound = [...cmd.matchAll(regexQuotes)];
     if (quotesFound.length > 0) {
       query = quotesFound[0][1] || quotesFound[0][2];
+      const unquotedTokens = cmd.replace(regexQuotes, ' ').split(/\s+/).slice(1).filter((t) => t && !t.startsWith('-') && !t.startsWith('/'));
+      if (unquotedTokens.length > 0) {
+        searchPath = unquotedTokens[unquotedTokens.length - 1];
+      }
     } else {
-      const tokens = cmd.split(/\s+/);
-      query = tokens[tokens.length - 1];
+      const nonFlagTokens = cmd.split(/\s+/).slice(1).filter((t) => t && !t.startsWith('-') && !t.startsWith('/'));
+      if (nonFlagTokens.length > 0) {
+        query = nonFlagTokens[0];
+        if (nonFlagTokens.length > 1) {
+          searchPath = nonFlagTokens[nonFlagTokens.length - 1];
+        }
+      }
     }
     if (query) {
+      // Antigravity Language Server (grep_handler.go:518) splits ripgrep output with strings.Split(line, ":").
+      // On Windows with drive letters (e.g. C:\...), parts[0]="C", parts[1]=path, causing strconv.Atoi(parts[1]) to fail.
+      // Keep as native run_command shell execution to avoid IDE parse crash.
+      if (/^[a-zA-Z]:/i.test(searchPath)) {
+        log.info(`[Proxy] run_command grep target "${searchPath}" has Windows drive letter. Leaving as native shell command to avoid IDE parse bugs.`);
+        return { name, args: args as Record<string, unknown> };
+      }
+
       try {
-        if (fs.existsSync(searchPath) && fs.statSync(searchPath).isFile()) {
-          log.info(`[Proxy] run_command grep target "${searchPath}" is a file. Leaving as native shell command to avoid IDE parse bugs.`);
+        const resolvedPath = path.isAbsolute(searchPath) ? searchPath : path.resolve(cwd, searchPath);
+        if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
+          log.info(`[Proxy] run_command grep target "${resolvedPath}" is a file. Leaving as native shell command to avoid IDE parse bugs.`);
           return { name, args: args as Record<string, unknown> };
         }
       } catch (err) {

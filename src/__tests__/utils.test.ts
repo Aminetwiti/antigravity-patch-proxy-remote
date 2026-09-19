@@ -261,25 +261,25 @@ describe('formatTranslatedResponse', () => {
   });
 
   it('should format view_file response', () => {
-    const viewInfo = { ...info, translatedName: 'view_file' };
+    const viewInfo = { originalName: 'run_command', translatedName: 'view_file', cmd: 'cat /tmp/test.txt' };
     const result = formatTranslatedResponse(viewInfo, { content: 'hello world' });
     expect(result).toBe('hello world');
   });
 
   it('should format grep_search response', () => {
-    const grepInfo = { ...info, translatedName: 'grep_search' };
+    const grepInfo = { originalName: 'run_command', translatedName: 'grep_search', cmd: 'grep "TODO" /src' };
     const result = formatTranslatedResponse(grepInfo, [{ Filename: 'a.ts', LineNumber: 10, LineContent: 'TODO: fix' }]);
     expect(result).toContain('a.ts:10:TODO: fix');
   });
 
   it('should format write_file success response', () => {
-    const writeInfo = { ...info, translatedName: 'write_file' };
+    const writeInfo = { originalName: 'run_command', translatedName: 'write_file', cmd: 'echo hello > /out.ts' };
     const result = formatTranslatedResponse(writeInfo, { success: true, path: '/out.ts' });
     expect(result).toContain('File written successfully');
   });
 
   it('should format write_file failure response', () => {
-    const writeInfo = { ...info, translatedName: 'write_file' };
+    const writeInfo = { originalName: 'run_command', translatedName: 'write_file', cmd: 'echo hello > /out.ts' };
     const result = formatTranslatedResponse(writeInfo, { success: false, error: 'Permission denied' });
     expect(result).toContain('Failed to write file');
   });

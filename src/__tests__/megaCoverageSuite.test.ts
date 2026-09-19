@@ -251,8 +251,9 @@ describe('Suite 5: CLI Command Translation Matrix', () => {
   });
 
   it.each(['list_dir', 'view_file', 'grep_search'])('formats translated response for %s', (translatedName) => {
+    const cmd = translatedName === 'list_dir' ? 'ls' : translatedName === 'view_file' ? 'cat /tmp/test.txt' : 'grep "TODO" /src';
     const formatted = formatTranslatedResponse(
-      { translatedName, cmd: 'ls' },
+      { translatedName, cmd },
       { files: ['file.ts'], lines: ['hello'], count: 1 },
     );
     expect(typeof formatted).toBe('string');

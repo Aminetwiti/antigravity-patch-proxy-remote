@@ -70,8 +70,8 @@ export function buildModelsUrl(apiUrl: string): string {
     return baseUrl;
   }
 
-  // Append /models, handling the /v1 prefix correctly
-  if (baseUrl.endsWith('/v1')) {
+  // Append /models, handling the /v1 and /v1beta prefixes correctly
+  if (baseUrl.endsWith('/v1') || /\/v\d+beta$/i.test(baseUrl)) {
     return `${baseUrl}/models`;
   }
   return `${baseUrl}/v1/models`;

@@ -59,6 +59,8 @@ describe('buildModelsUrl', () => {
   it('keeps Google-style /v1beta/models paths intact', () => {
     expect(buildModelsUrl('https://generativelanguage.googleapis.com/v1beta/models'))
       .toBe('https://generativelanguage.googleapis.com/v1beta/models');
+    expect(buildModelsUrl('https://generativelanguage.googleapis.com/v1beta'))
+      .toBe('https://generativelanguage.googleapis.com/v1beta/models');
   });
 
   it('strips query strings — security: do NOT leak API keys in the URL to /v1/models', () => {
