@@ -27,6 +27,7 @@ interface RawProviderEntry {
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
   fallbackModel?: string;
+  fallbackChain?: string[] | string;
   supportsImages?: boolean;
   supportsVision?: boolean;
   name?: string;
@@ -55,6 +56,7 @@ interface RawModelEntry {
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
   fallbackModel?: string;
+  fallbackChain?: string[] | string;
 }
 
 
@@ -205,6 +207,7 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
         encrypted: p.encrypted,
         useRawBaseUrl: p.useRawBaseUrl,
         fallbackModel: m.fallbackModel ?? p.fallbackModel,
+        fallbackChain: m.fallbackChain ?? p.fallbackChain,
         supportsImages: m.supportsImages ?? p.supportsImages ?? true,
         supportsVision: m.supportsVision ?? p.supportsVision ?? true,
         extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,

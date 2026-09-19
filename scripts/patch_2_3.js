@@ -377,6 +377,10 @@ async function main() {
         srcJs = path.join(repoDist, 'services', 'modelStore.js');
       } else if (fs.existsSync(path.join(repoDist, 'services', `${mod}.js`))) {
         srcJs = path.join(repoDist, 'services', `${mod}.js`);
+      } else if (mod.startsWith('gateway/') && fs.existsSync(path.join(repoDist, mod.replace(/^gateway\//, 'proxyGateway/')) + '.js')) {
+        srcJs = path.join(repoDist, mod.replace(/^gateway\//, 'proxyGateway/')) + '.js';
+      } else if (mod.startsWith('ipc/handlers/') || mod === 'ipc/index') {
+        continue;
       } else {
         die(`required source missing: ${srcJs}\n` +
             `  (you may need to run \`npm run build\` in the repo first)`);

@@ -37,6 +37,8 @@ export const DOCTOR_IPC_CHANNELS = {
   GOOGLE_REFRESH_TOKEN: 'ag:google:refresh-token',
   GOOGLE_OAUTH_LOGIN: 'ag:google:oauth-login',
   GOOGLE_SWITCH_IDE_ACCOUNT: 'ag:google:switch-ide-account',
+  GOOGLE_OAUTH_INTERCEPTED: 'ag:google:oauth-intercepted',
+  MODEL_PING_PONG: 'ag:model:ping-pong',
 
   // Proxy & MITM
   PROXY_START: 'ag:proxy:start',

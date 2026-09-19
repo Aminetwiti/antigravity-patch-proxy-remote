@@ -205,7 +205,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       if (m.externalModelName && m.externalModelName !== pid && m.externalModelName !== slug && !(m.externalModelName in (target as object))) {
         (result as Record<string, unknown>)[m.externalModelName] = entry;
       }
-      log.info(
+      log.debug(
         `[Proxy] Custom model "${m.displayName}" => slug: ${slug} => model: ${generateModelPlaceholderId(m)} => thinking: ${cap.isThinking} => images: ${cap.supportsImages}`,
       );
     });

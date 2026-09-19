@@ -38,6 +38,9 @@ const state = new Map<string, BreakerState>();
 /** Cooldown duration after which a tripped model is allowed one probe request. */
 export const CIRCUIT_BREAKER_RESET_MS = 60_000;
 
+/** Extended cooldown duration (15 minutes) for financial/billing exhaustion (HTTP 402). */
+export const CIRCUIT_BREAKER_BILLING_RESET_MS = 15 * 60_000;
+
 /**
  * Failures needed within the cooldown window before we trip the breaker.
  * Kept at 1 so that the first hard failure (timeout, 5xx, network) trips
@@ -47,7 +50,8 @@ export const CIRCUIT_BREAKER_RESET_MS = 60_000;
 export const CIRCUIT_BREAKER_THRESHOLD = 1;
 
 function keyOf(model: CustomModel): string {
-  return `${model.provider}::${model.apiUrl}::${model.name}`;
+  const accountId = model.accountEmail ? `::${model.accountEmail.toLowerCase()}` : '';
+  return `${model.provider}::${model.apiUrl}::${model.name}${accountId}`;
 }
 
 export function getBreakerState(model: CustomModel): BreakerState {
@@ -68,7 +72,10 @@ export function getOpenBreaker(model: CustomModel): CachedDiagnostic | null {
   const entry = getBreakerState(model);
   if (!entry.diagnostic) return null;
   const elapsed = Date.now() - entry.diagnostic.trippedAt;
-  if (elapsed >= CIRCUIT_BREAKER_RESET_MS) {
+  const resetMs = entry.diagnostic.errorType === 'billing'
+    ? CIRCUIT_BREAKER_BILLING_RESET_MS
+    : CIRCUIT_BREAKER_RESET_MS;
+  if (elapsed >= resetMs) {
     // Half-open: allow the probe through by reporting closed.
     return null;
   }
@@ -101,13 +108,16 @@ export function snapshotBreakers(): {
   for (const [key, entry] of state) {
     if (!entry.diagnostic) continue;
     const elapsed = now - entry.diagnostic.trippedAt;
-    if (elapsed >= CIRCUIT_BREAKER_RESET_MS) continue;
+    const resetMs = entry.diagnostic.errorType === 'billing'
+      ? CIRCUIT_BREAKER_BILLING_RESET_MS
+      : CIRCUIT_BREAKER_RESET_MS;
+    if (elapsed >= resetMs) continue;
     open.push({
       key,
       errorType: entry.diagnostic.errorType,
       trippedAt: entry.diagnostic.trippedAt,
       failures: entry.diagnostic.failures,
-      msRemaining: CIRCUIT_BREAKER_RESET_MS - elapsed,
+      msRemaining: resetMs - elapsed,
     });
   }
   return { open };

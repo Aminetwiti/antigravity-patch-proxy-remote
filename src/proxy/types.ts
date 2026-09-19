@@ -22,12 +22,14 @@ export interface CustomModelFileEntry {
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
   fallbackModel?: string;
+  fallbackChain?: string[] | string;
   models?: Array<{
     id: string;
     displayName?: string;
     description?: string;
     enabled?: boolean;
     fallbackModel?: string;
+    fallbackChain?: string[] | string;
   }>;
 }
 
@@ -49,6 +51,7 @@ export interface CustomModel {
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
   fallbackModel?: string;
+  fallbackChain?: string[] | string;
   _slug?: string;
   /** Internal: effort suffix appended by effortExpander for unique placeholder IDs. */
   _effortSuffix?: string;

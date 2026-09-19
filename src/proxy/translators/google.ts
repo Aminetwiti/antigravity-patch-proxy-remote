@@ -108,7 +108,7 @@ export function mapGoogleChunkToGemini(chunk: unknown, _modelName: string): Gemi
     // Might be a final chunk with just finishReason
     if (candidate.finishReason) {
       return {
-        content: { parts: [], role: 'model' },
+        content: { parts: [{ text: '' }], role: 'model' },
         finishReason: candidate.finishReason,
         index: candidate.index ?? 0,
       };

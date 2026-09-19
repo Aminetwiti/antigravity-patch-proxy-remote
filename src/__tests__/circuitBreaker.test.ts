@@ -78,5 +78,41 @@ describe('circuitBreaker', () => {
     };
     expect(fallbackModel.fallbackModel).toBe('deepseek-chat');
   });
+
+  it('supports fallbackChain configuration property on model definition', () => {
+    const modelWithChain: CustomModel = {
+      ...baseModel,
+      fallbackChain: ['deepseek-chat', 'gpt-4o', 'gemini-2.5-pro'],
+    };
+    expect(modelWithChain.fallbackChain).toEqual(['deepseek-chat', 'gpt-4o', 'gemini-2.5-pro']);
+  });
+
+  it('applies a 15-minute cooldown for billing errors', () => {
+    const originalNow = Date.now;
+    let currentTime = 1000000;
+    Date.now = () => currentTime;
+    try {
+      recordFailure(baseModel, 'billing');
+      expect(getOpenBreaker(baseModel)).not.toBeNull();
+
+      // At 2 minutes, standard rate_limit would be closed (60s), but billing is still OPEN
+      currentTime += 120_000;
+      expect(getOpenBreaker(baseModel)).not.toBeNull();
+
+      // At 16 minutes, the 15-minute billing cooldown has elapsed -> closed
+      currentTime += 800_000;
+      expect(getOpenBreaker(baseModel)).toBeNull();
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  it('isolates breaker state between different accounts of the same model', () => {
+    const account1: CustomModel = { ...baseModel, accountEmail: 'user1@gmail.com' };
+    const account2: CustomModel = { ...baseModel, accountEmail: 'user2@gmail.com' };
+    recordFailure(account1, 'rate_limit');
+    expect(getOpenBreaker(account1)).not.toBeNull();
+    expect(getOpenBreaker(account2)).toBeNull();
+  });
 });
 

@@ -56,7 +56,31 @@ const api = {
       picture?: string;
     }): Promise<{ success: boolean; error?: string; dbPath?: string }> =>
       ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_SWITCH_IDE_ACCOUNT, params),
+    onOAuthIntercepted: (handler: (data: { url: string; port?: number; redirectUri?: string; ts?: number }) => void): (() => void) => {
+      const listener = (_: unknown, data: any) => handler(data);
+      ipcRenderer.on(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
+      return () => ipcRenderer.removeListener(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
+    },
+    pingPongModel: (params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
+      ok: boolean;
+      status: number;
+      latencyMs: number;
+      pongText: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.MODEL_PING_PONG, params),
   },
+  onOAuthIntercepted: (handler: (data: { url: string; port?: number; redirectUri?: string; ts?: number }) => void): (() => void) => {
+    const listener = (_: unknown, data: any) => handler(data);
+    ipcRenderer.on(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
+    return () => ipcRenderer.removeListener(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
+  },
+  modelPingPong: (params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
+    ok: boolean;
+    status: number;
+    latencyMs: number;
+    pongText: string;
+    error?: string;
+  }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.MODEL_PING_PONG, params),
   info: (): Promise<{
     platform: string;
     arch: string;

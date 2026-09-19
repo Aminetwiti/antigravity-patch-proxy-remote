@@ -1073,7 +1073,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
     // If an Antigravity IDE OAuth access token is provided, query Cloud Code fetchAvailableModels live
     if (isIdeToken || (params.provider === 'google' && isIdeToken)) {
       try {
-        const cloudCodeRes = await fetch('https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels', {
+        const cloudCodeRes = await fetch('https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${rawKey}`,
@@ -1205,6 +1205,28 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
   }
 });
 
+function formatApiError(raw: any, statusCode?: number): string {
+  if (!raw) return statusCode ? `HTTP ${statusCode}` : 'Erreur inconnue';
+  const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const msg = parsed?.error?.message || parsed?.message || (typeof parsed?.error === 'string' ? parsed.error : '');
+    if (msg) {
+      if (parsed?.error?.type === 'billing_error' || /insufficient balance/i.test(msg)) {
+        return `Solde épuisé : ${msg}`;
+      }
+      if (parsed?.error?.status === 'RESOURCE_EXHAUSTED' || /quota|exhausted/i.test(msg)) {
+        return `Quota épuisé : ${msg}`;
+      }
+      if (parsed?.error?.details?.[0]?.reason === 'API_KEY_INVALID' || /API key not valid/i.test(msg)) {
+        return `Clé API invalide ou expirée`;
+      }
+      return msg;
+    }
+  } catch {}
+  return text.length > 200 ? text.slice(0, 200) + '…' : text;
+}
+
 ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMainInvokeEvent, params: { apiUrl: string; apiKey: string; id?: string; modelId?: string; provider?: string }) => {
   try {
     const { net } = require('electron') as typeof import('electron');
@@ -1274,7 +1296,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
 
     const startTime = Date.now();
     const isIdeToken = !!(rawKey && rawKey.startsWith('ya29.'));
-    if (isIdeToken) {
+    if (isIdeToken && !params.modelId) {
       try {
         let quotaRes = await fetchGoogleAccountQuotas(rawKey);
         let freshToken: string | undefined;
@@ -1377,7 +1399,10 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
         const req = net.request({ url: targetUrl, method });
         const keyToUse = rawKey || params.apiKey;
         if (keyToUse && !keyToUse.startsWith('enc:') && keyToUse !== 'auto' && keyToUse !== 'none') {
-          if (isGoogle) {
+          if (keyToUse.startsWith('ya29.')) {
+            req.setHeader('Authorization', 'Bearer ' + keyToUse);
+            req.setHeader('User-Agent', 'antigravity');
+          } else if (isGoogle) {
             req.setHeader('x-goog-api-key', keyToUse);
           } else {
             req.setHeader('Authorization', 'Bearer ' + keyToUse);
@@ -1407,14 +1432,35 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
       try {
         if (isGoogle) {
           const cleanModel = params.modelId.replace(/^models\//, '');
-          const postBody = JSON.stringify({
-            contents: [{ parts: [{ text: 'ping' }] }],
-            generationConfig: { maxOutputTokens: 5 },
-          });
-          const postRes = await doRequest(`${baseUrl}/models/${cleanModel}:generateContent`, 'POST', postBody);
-          statusCode = postRes.statusCode;
-          responseData = postRes.data;
-          latencyMs = postRes.latencyMs;
+          const keyToUse = rawKey || params.apiKey;
+          const isCloudCode = isIdeToken || keyToUse?.startsWith('ya29.') || cleanModel.includes('tiered') || cleanModel.includes('-pro-high');
+          if (isCloudCode) {
+            const postBody = JSON.stringify({
+              project: 'aicode-consumers',
+              model: cleanModel,
+              request: {
+                contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+                generationConfig: { maxOutputTokens: 5 },
+              },
+            });
+            let postRes = await doRequest('https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent', 'POST', postBody);
+            if (postRes.statusCode === 429) {
+              const fbRes = await doRequest('https://cloudcode-pa.googleapis.com/v1internal:generateContent', 'POST', postBody);
+              if (fbRes.statusCode >= 200 && fbRes.statusCode < 300) postRes = fbRes;
+            }
+            statusCode = postRes.statusCode;
+            responseData = postRes.data;
+            latencyMs = postRes.latencyMs;
+          } else {
+            const postBody = JSON.stringify({
+              contents: [{ parts: [{ text: 'ping' }] }],
+              generationConfig: { maxOutputTokens: 5 },
+            });
+            const postRes = await doRequest(`${baseUrl}/models/${cleanModel}:generateContent`, 'POST', postBody);
+            statusCode = postRes.statusCode;
+            responseData = postRes.data;
+            latencyMs = postRes.latencyMs;
+          }
         } else {
           const postBody = JSON.stringify({
             model: params.modelId,
@@ -1479,12 +1525,29 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
       ? (latencyMs >= 1500 ? 'degraded' : 'healthy')
       : (statusCode === 429 ? 'degraded' : 'offline');
 
+    let pongText = '';
+    if (params.modelId && isSuccess) {
+      try {
+        const parsed = JSON.parse(responseData);
+        if (isGoogle) {
+          pongText = parsed.response?.candidates?.[0]?.content?.parts?.[0]?.text
+            || parsed.candidates?.[0]?.content?.parts?.[0]?.text
+            || '';
+        } else {
+          pongText = parsed.choices?.[0]?.message?.content || parsed.choices?.[0]?.text || '';
+        }
+      } catch {
+        pongText = responseData;
+      }
+    }
+
     const result = {
       success: isSuccess,
       status: statusCode,
       latencyMs,
       healthStatus,
-      error: isSuccess ? undefined : (responseData || `HTTP ${statusCode}`)
+      pongText: pongText ? pongText.trim() : undefined,
+      error: isSuccess ? undefined : formatApiError(responseData, statusCode)
     };
 
     if (params.id) {
@@ -1830,6 +1893,31 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_RESTART, async () => {
   }
 });
 
+function checkAndNotifyOAuthIntercept(chunk: string): void {
+  const match = chunk.match(/(?:ANTIGRAVITY_OPEN_URL|Intercepted auth URL):\s*(https:\/\/accounts\.google\.com\/[^\s\r\n"']+)/i);
+  if (match && match[1]) {
+    const url = match[1].trim();
+    let redirectUri: string | undefined;
+    let port: number | undefined;
+    try {
+      const parsed = new URL(url);
+      redirectUri = parsed.searchParams.get('redirect_uri') || undefined;
+      if (redirectUri) {
+        const u = new URL(redirectUri);
+        port = u.port ? parseInt(u.port, 10) : undefined;
+      }
+    } catch {}
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, {
+        url,
+        port,
+        redirectUri,
+        ts: Date.now(),
+      });
+    }
+  }
+}
+
 ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_LAUNCH_LOGS, async (evt) => {
   const streamId = `launch-logs-${Date.now()}`;
   const cli = getCliPath();
@@ -1859,13 +1947,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_LAUNCH_LOGS, async (evt) => {
   };
 
   proc.stdout?.on('data', (d: Buffer) => {
+    const str = d.toString();
+    checkAndNotifyOAuthIntercept(str);
     if (!pending) pending = { stdout: '', stderr: '' };
-    pending.stdout += d.toString();
+    pending.stdout += str;
     schedule();
   });
   proc.stderr?.on('data', (d: Buffer) => {
+    const str = d.toString();
+    checkAndNotifyOAuthIntercept(str);
     if (!pending) pending = { stdout: '', stderr: '' };
-    pending.stderr += d.toString();
+    pending.stderr += str;
     schedule();
   });
   proc.on('close', (code) => {
@@ -1943,6 +2035,182 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.TEST_MODEL, async (_evt, name: string) => {
     }
   } catch (e) {
     return { ok: false, error: (e as Error).message };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.MODEL_PING_PONG, async (_evt, params: { modelId: string; providerId?: string; prompt?: string }) => {
+  try {
+    const cleanModel = (params.modelId || '').replace(/^models\//, '');
+    const prompt = params.prompt || 'ping';
+    let apiKey = '';
+    let apiUrl = '';
+    let providerName = '';
+    let provId = params.providerId;
+    let isOAuthGoogle = false;
+    let projectId = 'aicode-consumers';
+
+    let fp = '';
+    let parsed: any = null;
+    let prov: any = null;
+    let candidateAccounts: any[] = [];
+
+    try {
+      fp = getCustomModelsPath();
+      if (fs.existsSync(fp)) {
+        const c = await fs.promises.readFile(fp, 'utf8');
+        parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+        if (parsed.providers && Array.isArray(parsed.providers)) {
+          prov = provId
+            ? parsed.providers.find((p: any) => p.id === provId)
+            : parsed.providers.find((p: any) =>
+                (p.models || []).some((m: any) => (m.id || m.name) === cleanModel || (m.id || m.name) === params.modelId || (m.id || m.name) === `models/${cleanModel}`)
+              );
+          if (!prov && (cleanModel.startsWith('gemini-') || cleanModel.startsWith('claude-'))) {
+            prov = parsed.providers.find((p: any) => p.provider === 'google' || p.provider === 'gemini');
+          }
+          if (prov) {
+            apiKey = prov.apiKey || '';
+            apiUrl = prov.apiUrl || '';
+            providerName = prov.provider || '';
+            provId = prov.id;
+            if (Array.isArray(prov.accounts) && prov.accounts.length > 0) {
+              candidateAccounts = prov.accounts.filter((a: any) => a.enabled !== false && (a.apiKey || a.refreshToken));
+              if (candidateAccounts.length === 0) candidateAccounts = [prov.accounts[0]];
+              const firstAcc = candidateAccounts[0];
+              if (firstAcc) {
+                if (firstAcc.projectId) projectId = firstAcc.projectId;
+                if (firstAcc.apiKey) apiKey = firstAcc.apiKey;
+                if (firstAcc.refreshToken || (firstAcc.apiKey && firstAcc.apiKey.startsWith('ya29.'))) {
+                  isOAuthGoogle = true;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+
+    const isGoogle = providerName === 'google' || providerName === 'gemini' || (apiUrl && apiUrl.includes('googleapis.com')) || (!apiUrl && cleanModel.toLowerCase().includes('gemini'));
+    const isCloudCodeGoogle = isGoogle && (isOAuthGoogle || (apiKey && apiKey.startsWith('ya29.')) || cleanModel.includes('tiered') || cleanModel.includes('-pro-high'));
+
+    if (!apiUrl) {
+      apiUrl = isGoogle ? 'https://generativelanguage.googleapis.com/v1beta' : 'http://127.0.0.1:51074/v1';
+    }
+
+    const { net } = require('electron') as typeof import('electron');
+    const startTime = Date.now();
+
+    const doRequest = (targetUrl: string, body: string, headers: Record<string, string>): Promise<{ statusCode: number; data: string; latencyMs: number }> => {
+      return new Promise((resolve, reject) => {
+        const req = net.request({ url: targetUrl, method: 'POST' });
+        for (const [k, v] of Object.entries(headers)) {
+          if (v) req.setHeader(k, v);
+        }
+        req.on('response', (res: Electron.IncomingMessage) => {
+          let data = '';
+          res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+          res.on('end', () => {
+            resolve({ statusCode: res.statusCode ?? 500, data, latencyMs: Date.now() - startTime });
+          });
+        });
+        req.on('error', (err: Error) => reject(err));
+        req.write(body);
+        req.end();
+      });
+    };
+
+    let targetUrl = '';
+    let body = '';
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    let res: { statusCode: number; data: string; latencyMs: number } = { statusCode: 500, data: '', latencyMs: 0 };
+
+    if (isCloudCodeGoogle) {
+      const cloudCodeHosts = ['https://daily-cloudcode-pa.googleapis.com', 'https://cloudcode-pa.googleapis.com'];
+      headers['User-Agent'] = 'antigravity';
+
+      const accountsList = candidateAccounts.length > 0 ? candidateAccounts : [{ apiKey, refreshToken: undefined, projectId }];
+      for (let i = 0; i < accountsList.length; i++) {
+        const curAcc = accountsList[i];
+        let curKey = curAcc.apiKey || apiKey;
+        if (curAcc.refreshToken) {
+          const refreshed = await refreshGoogleToken(curAcc.refreshToken);
+          if (refreshed && refreshed.accessToken) {
+            curKey = refreshed.accessToken;
+            curAcc.apiKey = refreshed.accessToken;
+            if (fp && parsed) {
+              try { await atomicWriteCustomModels(fp, parsed); } catch {}
+            }
+          }
+        }
+        if (curKey && curKey !== 'auto' && curKey !== 'none' && !curKey.startsWith('enc:')) {
+          headers['Authorization'] = `Bearer ${curKey}`;
+        }
+        body = JSON.stringify({
+          project: curAcc.projectId || projectId,
+          model: cleanModel,
+          request: {
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 64, thinkingConfig: { thinkingBudget: 0 } }
+          }
+        });
+
+        for (const host of cloudCodeHosts) {
+          res = await doRequest(`${host}/v1internal:generateContent`, body, headers);
+          if (res.statusCode >= 200 && res.statusCode < 300) break;
+        }
+        if (res.statusCode >= 200 && res.statusCode < 300) break;
+      }
+    } else if (isGoogle) {
+      targetUrl = `${apiUrl.replace(/\/+$/, '')}/models/${cleanModel}:generateContent`;
+      if (apiKey && apiKey !== 'auto' && apiKey !== 'none' && !apiKey.startsWith('enc:')) {
+        headers['x-goog-api-key'] = apiKey;
+      }
+      body = JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 64, thinkingConfig: { thinkingBudget: 0 } }
+      });
+      res = await doRequest(targetUrl, body, headers);
+    } else {
+      targetUrl = `${apiUrl.replace(/\/+$/, '')}/chat/completions`;
+      if (apiKey && apiKey !== 'auto' && apiKey !== 'none' && !apiKey.startsWith('enc:')) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+      body = JSON.stringify({
+        model: cleanModel,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 16
+      });
+      res = await doRequest(targetUrl, body, headers);
+    }
+    let pongText = '';
+    try {
+      const parsed = JSON.parse(res.data);
+      if (isGoogle) {
+        const parts = parsed.response?.candidates?.[0]?.content?.parts || parsed.candidates?.[0]?.content?.parts;
+        pongText = parts?.find((p: any) => p.text)?.text || parts?.[0]?.text || '';
+      } else {
+        pongText = parsed.choices?.[0]?.message?.content || parsed.choices?.[0]?.text || '';
+      }
+    } catch {
+      pongText = res.data;
+    }
+
+    const ok = res.statusCode >= 200 && res.statusCode < 300;
+    return {
+      ok,
+      status: res.statusCode,
+      latencyMs: res.latencyMs,
+      pongText: pongText.trim(),
+      error: ok ? undefined : formatApiError(res.data, res.statusCode)
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      latencyMs: 0,
+      pongText: '',
+      error: (err as Error).message
+    };
   }
 });
 
@@ -2118,13 +2386,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.STREAM_START, (evt, args: string[], streamId:
   };
 
   proc.stdout?.on('data', (d: Buffer) => {
+    const str = d.toString();
+    checkAndNotifyOAuthIntercept(str);
     if (!pending) pending = { stdout: '', stderr: '' };
-    pending.stdout += d.toString();
+    pending.stdout += str;
     schedule();
   });
   proc.stderr?.on('data', (d: Buffer) => {
+    const str = d.toString();
+    checkAndNotifyOAuthIntercept(str);
     if (!pending) pending = { stdout: '', stderr: '' };
-    pending.stderr += d.toString();
+    pending.stderr += str;
     schedule();
   });
   proc.on('close', (code) => {

@@ -135,6 +135,16 @@ interface AgAPI {
   // Proxy stub lifecycle — emergency fallback when Antigravity's bundled proxy fails
   proxyStartStub(): Promise<{ ok: boolean; pid?: number; port?: number; note?: string; error?: string }>;
   proxyStubStatus(): Promise<{ ok: boolean; data?: { ok: boolean; stub: boolean; latencyMs: number; error?: string }; error?: string }>;
+
+  // OAuth Interception & Model Ping-Pong
+  onOAuthIntercepted(handler: (data: { url: string; port?: string; redirectUri?: string; ts?: number }) => void): () => void;
+  modelPingPong(params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
+    ok: boolean;
+    status: number;
+    latencyMs: number;
+    pongText?: string;
+    error?: string;
+  }>;
 }
 
 interface Window {

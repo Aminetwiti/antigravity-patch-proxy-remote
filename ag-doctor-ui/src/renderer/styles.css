@@ -1085,6 +1085,262 @@ body {
 .terminal .t-bold { font-weight: 600; color: var(--text-0); }
 
 /* ─────────────────────────────────────────────────────────────────────────
+   Structured log lines (dedup, level coloring, filtering, search highlight)
+   ───────────────────────────────────────────────────────────────────────── */
+
+.logs-panel-body {
+  position: relative;
+}
+
+.log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 10px 2px 8px;
+  border-left: 3px solid transparent;
+  font-size: 11.5px;
+  line-height: 1.55;
+  font-family: var(--font-mono);
+  transition: background 0.1s;
+}
+.log-line:hover { background: rgba(255,255,255,0.035); }
+.log-line.log-info  { border-left-color: var(--info); }
+.log-line.log-warn  { border-left-color: var(--warn); background: rgba(234, 179, 8, 0.03); }
+.log-line.log-error { border-left-color: var(--err); background: rgba(239, 68, 68, 0.04); }
+.log-line.log-panic {
+  border-left-color: var(--err);
+  font-weight: 600;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.log-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-align: center;
+  min-width: 44px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.log-tag-info  { background: var(--info-bg); color: var(--info); border: 1px solid var(--info-border); }
+.log-tag-warn  { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
+.log-tag-error { background: var(--err-bg);  color: var(--err);  border: 1px solid var(--err-border); }
+.log-tag-panic { background: var(--err); color: #fff; font-weight: 800; animation: pulseErr 1.5s infinite; }
+
+@keyframes pulseErr {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+.log-time {
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 0.9;
+  user-select: none;
+}
+
+.log-loc {
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+
+.log-msg {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-1);
+}
+.log-line.log-warn .log-msg { color: #fde047; }
+.log-line.log-error .log-msg { color: #fca5a5; }
+.log-line.log-panic .log-msg { color: #fecaca; }
+
+.log-line-copy {
+  opacity: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-3);
+  padding: 1px 4px;
+  font-size: 10px;
+  border-radius: 3px;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+.log-line:hover .log-line-copy { opacity: 0.7; }
+.log-line-copy:hover { opacity: 1 !important; color: var(--text-0); background: var(--bg-3); }
+
+.log-dedup {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 17px;
+  vertical-align: middle;
+  background: rgba(255,255,255,0.09);
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.log-line.log-error .log-dedup { background: rgba(239,68,68,0.2); color: #fca5a5; }
+.log-line.log-warn  .log-dedup { background: rgba(234,179,8,0.2); color: #fef08a; }
+
+/* Highlight in logs */
+.log-hl {
+  background: #facc15;
+  color: #000;
+  border-radius: 2px;
+  padding: 0 2px;
+  font-weight: 700;
+}
+
+/* Filter: hide levels & noise via container classes */
+.logs-hide-info  .log-info  { display: none !important; }
+.logs-hide-warn  .log-warn  { display: none !important; }
+.logs-hide-error .log-error { display: none !important; }
+.logs-hide-panic .log-panic { display: none !important; }
+.logs-hide-noise .log-noise { display: none !important; }
+.log-line.search-hidden { display: none !important; }
+
+/* Toolbar */
+.logs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  flex-wrap: wrap;
+}
+.logs-filters { display: flex; gap: 4px; align-items: center; }
+.logs-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.logs-filter-btn:hover { background: var(--bg-2); color: var(--text-1); border-color: var(--border-strong); }
+.logs-filter-btn.active { background: var(--bg-2); color: var(--text-0); border-color: var(--accent); }
+.logs-filter-btn[data-level="info"].active  { color: var(--info); border-color: var(--info); }
+.logs-filter-btn[data-level="warn"].active  { color: var(--warn); border-color: var(--warn); }
+.logs-filter-btn[data-level="error"].active { color: var(--err);  border-color: var(--err); }
+.logs-filter-btn.panic-btn.active { color: #f87171; border-color: var(--err); background: rgba(239,68,68,0.15); }
+
+.filter-count {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  color: var(--text-2);
+}
+.logs-filter-btn[data-level="error"] .filter-count { background: rgba(239,68,68,0.18); color: var(--err); }
+.logs-filter-btn[data-level="warn"] .filter-count { background: rgba(234,179,8,0.18); color: var(--warn); }
+
+#logsCleanViewBtn.active {
+  color: #38bdf8;
+  border-color: rgba(56,189,248,0.4);
+  background: rgba(56,189,248,0.1);
+}
+
+.logs-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.logs-search-icon {
+  position: absolute;
+  left: 8px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.logs-search {
+  width: 190px;
+  padding: 4px 8px 4px 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-size: 11.5px;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.15s;
+}
+.logs-search:focus { width: 240px; border-color: var(--accent); }
+.logs-search::placeholder { color: var(--text-3); }
+
+.logs-search-count {
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-left: 6px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.logs-stats { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+.logs-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+}
+.logs-badge.dim { color: var(--text-3); }
+
+/* Floating jump to bottom button */
+.logs-scroll-bottom-btn {
+  position: absolute;
+  bottom: 16px;
+  right: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-1);
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.15s;
+}
+.logs-scroll-bottom-btn:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+  transform: translateY(-1px);
+}
+
+/* Light theme overrides */
+:root[data-theme="light"] .log-line:hover { background: rgba(0,0,0,0.02); }
+:root[data-theme="light"] .log-dedup { background: rgba(0,0,0,0.06); }
+:root[data-theme="light"] .logs-toolbar { background: var(--bg-0); }
+
+/* ─────────────────────────────────────────────────────────────────────────
    Models list (Impeccable UI Redesign)
    ───────────────────────────────────────────────────────────────────────── */
 
@@ -3004,3 +3260,166 @@ body {
 .execution-auto-proceed-card:hover {
   border-color: var(--border-strong);
 }
+
+/* ── OAuth Intercept Challenge Banner ────────────────────────────────── */
+.oauth-intercept-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: linear-gradient(135deg, rgba(26, 115, 232, 0.16) 0%, rgba(139, 92, 246, 0.12) 100%);
+  border: 1px solid rgba(66, 133, 244, 0.4);
+  border-radius: var(--r-lg, 10px);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  animation: slideInDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.oauth-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.oauth-banner-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(26, 115, 232, 0.2);
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.oauth-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.oauth-banner-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-0);
+}
+
+.oauth-banner-desc {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.oauth-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Ping-Pong Model Latency Badges ────────────────────────────────── */
+.ping-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill, 100px);
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ping-badge-fast {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.ping-badge-normal {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.ping-badge-slow {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.ping-badge-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* ── Smart Account Pool & Quota Progress ────────────────────────────── */
+.pool-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pool-role-primary {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.pool-role-standby {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+.pool-role-cooldown {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.quota-meter-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 140px;
+}
+
+.quota-meter-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.quota-meter-bar {
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.quota-meter-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.quota-meter-fill.high { background: #10b981; }
+.quota-meter-fill.medium { background: #f59e0b; }
+.quota-meter-fill.low { background: #ef4444; }
+

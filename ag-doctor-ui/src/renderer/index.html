@@ -134,6 +134,41 @@
 
     <!-- Content -->
     <section class="content">
+      <!-- Intercepted OAuth Challenge Banner -->
+      <div id="oauthInterceptBanner" class="oauth-intercept-banner" style="display: none;">
+        <div class="oauth-banner-content">
+          <div class="oauth-banner-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+          </div>
+          <div class="oauth-banner-text">
+            <div class="oauth-banner-title">
+              <strong>Demande d'Authentification Google Détectée</strong>
+              <span class="badge badge-accent" id="oauthPortBadge">Port 58475</span>
+            </div>
+            <div class="oauth-banner-desc">
+              Le Language Server Antigravity attend votre approbation OAuth pour activer les modèles Gemini et l'IDE.
+            </div>
+          </div>
+        </div>
+        <div class="oauth-banner-actions">
+          <button class="btn btn-sm btn-primary" id="oauthOpenBrowserBtn" type="button">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Ouvrir dans le navigateur
+          </button>
+          <button class="btn btn-sm btn-secondary" id="oauthCopyUrlBtn" type="button">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copier l'URL
+          </button>
+          <button class="btn btn-sm btn-ghost" id="oauthQrBtn" type="button" title="Afficher QR Code Mobile">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            QR Mobile
+          </button>
+          <button class="btn btn-sm btn-icon btn-ghost" id="oauthDismissBtn" type="button" title="Masquer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+
       <!-- Remote -->
       <div class="view" id="view-remote">
         <div class="view-header">
@@ -552,6 +587,7 @@
             <p class="subtitle">Detailed output from <code>ag-doctor doctor</code></p>
           </div>
           <div class="header-actions">
+            <button class="btn btn-ghost" id="doctorPruneBtn" type="button" title="Purge orphan conversation trajectories & vacuum SQLite database" aria-label="Prune database">Prune Database</button>
             <button class="btn btn-ghost" id="doctorJsonBtn" type="button" title="Show the raw JSON returned by the doctor command" aria-label="Show raw JSON output">Show JSON</button>
             <button class="btn btn-primary" id="doctorRunBtn" type="button" aria-label="Run doctor diagnostic again">Run doctor again</button>
           </div>
@@ -732,6 +768,10 @@
             <p class="subtitle">Configured providers and their status</p>
           </div>
           <div class="header-actions">
+            <button class="btn btn-secondary" id="modelsPingPongBtn" type="button" aria-label="Test Ping-Pong & Benchmark" title="Test de latence Ping-Pong en direct sur les modèles">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+              🏓 Ping-Pong Test
+            </button>
             <button class="btn btn-ghost" id="modelsTestBtn" type="button" aria-label="Test all custom models">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
               Test all models
@@ -939,8 +979,9 @@
             <p class="subtitle">Live output from <code>language_server</code> and related processes</p>
           </div>
           <div class="header-actions">
-            <button class="btn btn-ghost" id="logsClearBtn" type="button" aria-label="Clear logs">Clear logs</button>
-            <button class="btn btn-ghost" id="logsCopyBtn" type="button" aria-label="Copy logs to clipboard">Copy logs</button>
+            <button class="btn btn-ghost" id="logsCopyErrorsBtn" type="button" title="Copy only errors and warnings">Copy errors</button>
+            <button class="btn btn-ghost" id="logsClearBtn" type="button" aria-label="Clear logs">Clear</button>
+            <button class="btn btn-ghost" id="logsCopyBtn" type="button" aria-label="Copy logs to clipboard">Copy all</button>
             <button class="btn btn-primary" id="logsFollowBtn" type="button" aria-label="Follow live logs">
               <span class="dot-live"></span>
               Follow live
@@ -954,19 +995,50 @@
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
             language_server
           </button>
-          <button class="tab" role="tab" aria-selected="false" data-source="ag-doctor" type="button">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            ag-doctor
-          </button>
           <button class="tab" role="tab" aria-selected="false" data-source="proxy" type="button">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             Proxy
           </button>
+          <button class="tab" role="tab" aria-selected="false" data-source="main" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            Main (App)
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-source="daemon" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Daemon
+          </button>
+        </div>
+
+        <div class="logs-toolbar" id="logsToolbar">
+          <div class="logs-filters">
+            <button class="logs-filter-btn" data-level="all" id="filterAllBtn" type="button" title="Show all levels">ALL <span class="filter-count" id="countAll">0</span></button>
+            <button class="logs-filter-btn active" data-level="info" id="filterInfoBtn" type="button" title="Toggle INFO logs">INFO <span class="filter-count" id="countInfo">0</span></button>
+            <button class="logs-filter-btn active" data-level="warn" id="filterWarnBtn" type="button" title="Toggle WARN logs">WARN <span class="filter-count" id="countWarn">0</span></button>
+            <button class="logs-filter-btn active" data-level="error" id="filterErrorBtn" type="button" title="Toggle ERROR logs">ERROR <span class="filter-count" id="countError">0</span></button>
+            <button class="logs-filter-btn panic-btn" data-level="panic" id="filterPanicBtn" type="button" title="Toggle PANIC / CRASH logs" style="display:none">CRASH <span class="filter-count" id="countPanic">0</span></button>
+          </div>
+          <button class="logs-filter-btn active" id="logsCleanViewBtn" type="button" title="Clean View: Hide routine noise (CORTEX canceled steps, SSE traces, skipped configs)">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Clean View
+          </button>
+          <div class="logs-search-box">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="logs-search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="search" id="logsSearch" class="logs-search" placeholder="Filter logs by keyword…" />
+            <span id="logsSearchCount" class="logs-search-count"></span>
+          </div>
+          <div class="logs-stats">
+            <span id="logsLineCount" class="logs-badge">0 lines</span>
+            <span id="logsDedupCount" class="logs-badge dim">0 deduped</span>
+          </div>
         </div>
 
         <div class="panel">
-          <div class="panel-body panel-body-flush">
-            <pre class="terminal terminal-flush" id="logsOutput" tabindex="0" role="region" aria-label="Log stream output">$ ag-doctor logs -n 100</pre>
+          <div class="panel-body panel-body-flush logs-panel-body">
+            <pre class="terminal terminal-flush" id="logsOutput" tabindex="0" role="region" aria-label="Log stream output"></pre>
+            <button id="logsScrollBottomBtn" class="logs-scroll-bottom-btn" title="Scroll to bottom" type="button" style="display:none">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+              Bottom
+            </button>
             <div id="logsSkeleton" style="display:none; padding:16px">
               <div class="skeleton skeleton-line long"></div>
               <div class="skeleton skeleton-line medium"></div>
@@ -1444,6 +1516,82 @@
     </div>
   </div>
 
+  <!-- Modal: OAuth QR Code Display -->
+  <div class="modal-backdrop" id="oauthQrModalBackdrop" hidden>
+    <div class="modal modal-sm" role="dialog" aria-modal="true" style="text-align: center; max-width: 420px;">
+      <div class="modal-header">
+        <div class="modal-header-title-wrap">
+          <h2>Scanner avec votre Téléphone</h2>
+        </div>
+        <button class="modal-close" id="oauthQrModalClose" type="button" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 14px;">
+        <div id="oauthQrImageContainer" style="background: #ffffff; padding: 12px; border-radius: 12px; display: flex; align-items: center; justify-content: center; min-width: 200px; min-height: 200px;">
+          <!-- QR SVG / Image rendered here -->
+        </div>
+        <p style="font-size: 12.5px; color: var(--text-2); margin: 0; line-height: 1.4;">
+          Scannez ce QR Code avec l'appareil photo de votre smartphone pour vous connecter à votre compte Google et autoriser Antigravity.
+        </p>
+      </div>
+      <div class="modal-footer" style="justify-content: center;">
+        <button class="btn btn-ghost" id="oauthQrCloseBtn" type="button">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Ping-Pong Benchmark & Latency Tester -->
+  <div class="modal-backdrop" id="pingPongModalBackdrop" hidden>
+    <div class="modal modal-lg" role="dialog" aria-modal="true" style="max-width: 820px;">
+      <div class="modal-header">
+        <div class="modal-header-title-wrap">
+          <div class="modal-header-icon" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; font-size: 16px;">
+            🏓
+          </div>
+          <div>
+            <h2 class="pm-modal-title">Live Model Ping-Pong Tester &amp; Benchmark</h2>
+            <div style="font-size: 12px; color: var(--text-2);">Test direct de connectivité, latence réelle et extraction du Pong textuel</div>
+          </div>
+        </div>
+        <button class="modal-close" id="pingPongModalClose" type="button" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="pingPongCustomPrompt" class="input input-sm" value="ping" placeholder="Prompt de test (défaut: ping)" style="max-width: 260px;" />
+          <button class="btn btn-primary btn-sm" id="pingPongRunBatchBtn" type="button">
+            🚀 Tester tous les modèles
+          </button>
+          <div id="pingPongBatchProgress" style="font-size: 12px; color: var(--text-2); display: none;"></div>
+        </div>
+        <div id="pingPongResultsTable" style="max-height: 380px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-1);">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border); background: var(--bg-2); color: var(--text-2); text-align: left;">
+                <th style="padding: 10px 12px;">Modèle</th>
+                <th style="padding: 10px 12px;">Fournisseur</th>
+                <th style="padding: 10px 12px;">Statut &amp; Latence</th>
+                <th style="padding: 10px 12px;">Réponse Pong</th>
+                <th style="padding: 10px 12px; text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="pingPongTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="font-size: 12px; color: var(--text-3);">
+          ⚡ &lt;400ms Rapide &bull; ⏱️ 400-1200ms Normal &bull; 🐢 &gt;1200ms Lent
+        </div>
+        <button class="btn btn-ghost" id="pingPongFooterClose" type="button">Fermer</button>
+      </div>
+    </div>
+  </div>
+
   <script src="state.js"></script>
   <script src="providers-config.js"></script>
   <script src="i18n.js"></script>
@@ -1458,6 +1606,8 @@
   <script src="custom-error-scenarios.js"></script>
   <script src="native-quota-card.js"></script>
   <script src="execution-feed.js"></script>
+  <script src="log-viewer.js"></script>
+  <script src="ping-pong-tester.js"></script>
   <script src="app.js"></script>
   <script src="features.js"></script>
 </body>

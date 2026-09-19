@@ -30,6 +30,9 @@ import {
   bindSessionToModel,
   extractSessionId,
   clearSessionAffinities,
+  isAccountInCooldown,
+  setAccountCooldown,
+  clearAccountCooldown,
 } from '../proxy';
 import { recordFailure, recordSuccess, getOpenBreaker } from '../proxy/circuitBreaker';
 import type { CustomModel } from '../proxy/types';
@@ -185,5 +188,32 @@ describe('Google Multi-Account Pool & Failover', () => {
     }
 
     expect(sorted[0].accountEmail).toBe('user2@gmail.com');
+  });
+
+  it('manages 429 cooldowns and deprioritizes accounts in cooldown', () => {
+    const acc1 = mockGoogleModels[0]; // user1
+    const acc2 = mockGoogleModels[1]; // user2
+
+    expect(isAccountInCooldown(acc1)).toBe(false);
+    setAccountCooldown(acc1, 10 * 60_000);
+    expect(isAccountInCooldown(acc1)).toBe(true);
+    expect(isAccountInCooldown(acc2)).toBe(false);
+
+    clearAccountCooldown(acc1);
+    expect(isAccountInCooldown(acc1)).toBe(false);
+  });
+
+  it('isolates 429 cooldowns per model family', () => {
+    const acc1 = mockGoogleModels[0];
+
+    expect(isAccountInCooldown(acc1, 'claude')).toBe(false);
+    expect(isAccountInCooldown(acc1, 'gemini')).toBe(false);
+
+    setAccountCooldown(acc1, 10 * 60_000, 'claude');
+    expect(isAccountInCooldown(acc1, 'claude')).toBe(true);
+    expect(isAccountInCooldown(acc1, 'gemini')).toBe(false);
+
+    clearAccountCooldown(acc1, 'claude');
+    expect(isAccountInCooldown(acc1, 'claude')).toBe(false);
   });
 });

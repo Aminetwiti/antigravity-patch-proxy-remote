@@ -74,6 +74,8 @@ export interface ProviderModelEntry {
   supportsVision?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
+  fallbackModel?: string;
+  fallbackChain?: string[] | string;
 }
 
 export interface ProviderFileEntry {
@@ -90,6 +92,8 @@ export interface ProviderFileEntry {
   useRawBaseUrl?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
+  fallbackModel?: string;
+  fallbackChain?: string[] | string;
   refreshToken?: string;
   projectId?: string;
   models: ProviderModelEntry[];

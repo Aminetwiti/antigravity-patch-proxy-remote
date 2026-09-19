@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -307,18 +308,38 @@ func listeningPortsForPID(pid int) []int {
 	return ports
 }
 
+// isPortTLS effectue une négociation TLS rapide pour déterminer si le port écoute en HTTPS.
+// Cela empêche l'envoi de requêtes HTTP en clair sur un port TLS, éliminant ainsi le message d'erreur
+// "client sent an HTTP request to an HTTPS server" dans les logs du Language Server.
+func isPortTLS(port int) bool {
+	dialer := &net.Dialer{Timeout: 600 * time.Millisecond}
+	conn, err := tls.DialWithDialer(dialer, "tcp", fmt.Sprintf("%s:%d", bindHost(), port), &tls.Config{
+		InsecureSkipVerify: true, // #nosec G402 — certificat auto-signé du LS
+	})
+	if err == nil {
+		_ = conn.Close()
+		return true
+	}
+	errStr := strings.ToLower(err.Error())
+	if strings.Contains(errStr, "tls:") && !strings.Contains(errStr, "first record does not look like a tls handshake") {
+		return true
+	}
+	return false
+}
+
 // probeService vérifie que le port expose bien le LanguageServerService avec authentification valide.
-// 1. Sonde HTTPS : frame gRPC-Web Heartbeat (prioritaire — le LS Antigravity écoute en HTTPS TLS).
-// 2. Sonde HTTPS : GetUserStatus en JSON.
-// 3. Sonde HTTP : repli pour les environnements en clair sans TLS.
-// 4. Sonde HTTP : GetUserStatus en JSON.
+// Il teste d'abord si le port est TLS afin de ne sonder QUE le protocole approprié (HTTPS ou HTTP).
 func probeService(port int, csrfToken string) (bool, bool) {
-	if probeHTTPSHeartbeat(port, csrfToken) {
-		return true, true
+	if isPortTLS(port) {
+		if probeHTTPSHeartbeat(port, csrfToken) {
+			return true, true
+		}
+		if probeHTTPSGetUserStatus(port, csrfToken) {
+			return true, true
+		}
+		return false, false
 	}
-	if probeHTTPSGetUserStatus(port, csrfToken) {
-		return true, true
-	}
+
 	if probeHTTPHeartbeat(port, csrfToken) {
 		return true, false
 	}
@@ -448,7 +469,6 @@ func probeHTTPSGetUserStatus(port int, csrfToken string) bool {
 	raw, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode == http.StatusOK && bytes.Contains(raw, []byte("user_status"))
 }
-
 
 func getProcesses() ([]procEntry, error) {
 	if runtime.GOOS == "windows" {

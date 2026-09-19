@@ -59,11 +59,11 @@ func TestDiscoverLive(t *testing.T) {
 	for i, p := range procs {
 		t.Logf("Proc[%d]: PID=%d, Name=%s, Cmd=%s", i, p.pid, p.name, p.commandLine)
 		info := &LocalHarnessInfo{
-			PID:           p.pid,
-			ProcessName:   p.name,
-			CSRFToken:     extractArg(p.commandLine, "csrf_token"),
-			ExtensionCSRF: extractArg(p.commandLine, "extension_server_csrf_token"),
-			ExtensionPort: atoi(extractArg(p.commandLine, "extension_server_port")),
+			PID:             p.pid,
+			ProcessName:     p.name,
+			CSRFToken:       extractArg(p.commandLine, "csrf_token"),
+			ExtensionCSRF:   extractArg(p.commandLine, "extension_server_csrf_token"),
+			ExtensionPort:   atoi(extractArg(p.commandLine, "extension_server_port")),
 			HTTPSServerPort: atoi(extractArg(p.commandLine, "https_server_port")),
 		}
 		if info.ExtensionCSRF == "" {
@@ -72,10 +72,15 @@ func TestDiscoverLive(t *testing.T) {
 		candidates := candidatePorts(info, &p)
 		t.Logf("  Candidates for PID %d: %v (ExtensionPort=%d, HTTPSServerPort=%d)", p.pid, candidates, info.ExtensionPort, info.HTTPSServerPort)
 		for _, port := range candidates {
-			httpHb := probeHTTPHeartbeat(port, info.ExtensionCSRF)
-			httpsHb := probeHTTPSHeartbeat(port, info.ExtensionCSRF)
-			httpsUs := probeHTTPSGetUserStatus(port, info.ExtensionCSRF)
-			t.Logf("    Port %d: HTTP_HB=%v, HTTPS_HB=%v, HTTPS_US=%v", port, httpHb, httpsHb, httpsUs)
+			isTLS := isPortTLS(port)
+			var httpHb, httpsHb, httpsUs bool
+			if isTLS {
+				httpsHb = probeHTTPSHeartbeat(port, info.ExtensionCSRF)
+				httpsUs = probeHTTPSGetUserStatus(port, info.ExtensionCSRF)
+			} else {
+				httpHb = probeHTTPHeartbeat(port, info.ExtensionCSRF)
+			}
+			t.Logf("    Port %d (TLS=%v): HTTP_HB=%v, HTTPS_HB=%v, HTTPS_US=%v", port, isTLS, httpHb, httpsHb, httpsUs)
 		}
 	}
 

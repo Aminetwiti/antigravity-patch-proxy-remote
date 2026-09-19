@@ -367,11 +367,23 @@ async function main() {
   let totalBytes = 0;
   let filesAdded = 0;
   for (const mod of MISSING_JS_MODULES) {
-    const srcJs = path.join(repoDist, `${mod}.js`);
+    let srcJs = path.join(repoDist, `${mod}.js`);
     const dstJs = path.join(buildDist, `${mod}.js`);
     if (!fs.existsSync(srcJs)) {
-      die(`required source missing: ${srcJs}\n` +
-          `  (you may need to run \`npm run build\` in the repo first)`);
+      if (mod === 'cryptoStore' && fs.existsSync(path.join(repoDist, 'services', 'cryptoStore.js'))) {
+        srcJs = path.join(repoDist, 'services', 'cryptoStore.js');
+      } else if (mod === 'customModelStore' && fs.existsSync(path.join(repoDist, 'services', 'modelStore.js'))) {
+        srcJs = path.join(repoDist, 'services', 'modelStore.js');
+      } else if (fs.existsSync(path.join(repoDist, 'services', `${mod}.js`))) {
+        srcJs = path.join(repoDist, 'services', `${mod}.js`);
+      } else if (mod.startsWith('gateway/') && fs.existsSync(path.join(repoDist, mod.replace(/^gateway\//, 'proxyGateway/')) + '.js')) {
+        srcJs = path.join(repoDist, mod.replace(/^gateway\//, 'proxyGateway/')) + '.js';
+      } else if (mod.startsWith('ipc/handlers/') || mod === 'ipc/index') {
+        continue;
+      } else {
+        die(`required source missing: ${srcJs}\n` +
+            `  (you may need to run \`npm run build\` in the repo first)`);
+      }
     }
     // Ensure the destination subdirectory exists (e.g. dist/proxy/)
     ensureDir(path.dirname(dstJs));

@@ -7,6 +7,7 @@ import {
   resolveWithServer,
   resolveWithSystemDns,
   resolveGoogleIp,
+  clearDnsCache,
   DNS_QUERY_TIMEOUT_MS,
 } from '../proxy/dnsResolver';
 
@@ -183,11 +184,38 @@ describe('resolveWithSystemDns', () => {
 describe('resolveGoogleIp', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    clearDnsCache();
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('uses fast-path in-memory DNS cache on subsequent queries without querying network', async () => {
+    const resolverProto = dns.Resolver.prototype as unknown as {
+      resolve4: ReturnType<typeof vi.fn>;
+    };
+    resolverProto.resolve4.mockImplementation(
+      (_hostname: string, cb: (err: null, addresses: string[]) => void) => {
+        cb(null, ['142.250.80.46']);
+      },
+    );
+
+    // First call populates cache
+    const first = resolveGoogleIp('daily-cloudcode-pa.googleapis.com');
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(first).resolves.toBe('142.250.80.46');
+    expect(resolverProto.resolve4).toHaveBeenCalled();
+
+    // Reset mock call count
+    resolverProto.resolve4.mockClear();
+
+    // Second call must resolve immediately from cache with 0 network calls
+    const second = resolveGoogleIp('daily-cloudcode-pa.googleapis.com');
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(second).resolves.toBe('142.250.80.46');
+    expect(resolverProto.resolve4).not.toHaveBeenCalled();
   });
 
   it('uses dns.lookup for non-googleapis hostnames', async () => {

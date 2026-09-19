@@ -19,6 +19,9 @@ import {
   bindSessionToModel,
   clearSessionAffinities,
   getAccountQuotaKey,
+  getSessionModelFallback,
+  setSessionModelFallback,
+  sanitizeCandidatesInResponse,
 } from '../proxy';
 import type { CustomModel } from '../types';
 
@@ -142,7 +145,64 @@ describe('Sticky Sessions (Multi-Account Session Affinity)', () => {
 
       expect(getAccountQuotaKey(m1)).toBe('generativelanguage.googleapis.com:key-aaa');
       expect(getAccountQuotaKey(m2)).toBe('generativelanguage.googleapis.com:key-bbb');
-      expect(getAccountQuotaKey(m1)).not.toBe(getAccountQuotaKey(m2));
+    });
+  });
+
+  describe('Session Model Fallback & Notification Deduplication', () => {
+    it('sets and retrieves session fallback correctly', () => {
+      setSessionModelFallback('sess-100', 'claude-3-7-sonnet', 'gemini-3.8-flash-tiered', true);
+      const fb = getSessionModelFallback('sess-100');
+      expect(fb).toBeDefined();
+      expect(fb?.originalModel).toBe('claude-3-7-sonnet');
+      expect(fb?.fallbackModel).toBe('gemini-3.8-flash-tiered');
+      expect(fb?.notified).toBe(true);
+    });
+
+    it('clears session fallbacks on clearSessionAffinities', () => {
+      setSessionModelFallback('sess-100', 'claude-3-7-sonnet', 'gemini-3.8-flash-tiered', true);
+      clearSessionAffinities();
+      expect(getSessionModelFallback('sess-100')).toBeUndefined();
+    });
+  });
+
+  describe('sanitizeCandidatesInResponse Nil-Pointer & Envelope Protection', () => {
+    it('mutually mirrors response.candidates and candidates with valid non-empty parts', () => {
+      const data: any = {
+        candidates: [{ index: 0 }],
+      };
+      const modified = sanitizeCandidatesInResponse(data);
+      expect(modified).toBe(true);
+      expect(data.response).toBeDefined();
+      expect(Array.isArray(data.response.candidates)).toBe(true);
+      expect(data.response.candidates[0].content.parts).toEqual([{ text: '' }]);
+      expect(data.candidates[0].content.parts).toEqual([{ text: '' }]);
+    });
+
+    it('handles empty candidates gracefully and ensures non-empty parts', () => {
+      const data: any = { response: { candidates: [] } };
+      sanitizeCandidatesInResponse(data);
+      expect(data.response.candidates.length).toBeGreaterThan(0);
+      expect(data.response.candidates[0].content.parts.length).toBeGreaterThan(0);
+      expect(data.candidates).toBeDefined();
+    });
+
+    it('fixes part objects with undefined text or null values', () => {
+      const data: any = {
+        response: {
+          candidates: [
+            {
+              content: {
+                parts: [null, { somethingElse: 123 }],
+                role: 'model',
+              },
+            },
+          ],
+        },
+      };
+      sanitizeCandidatesInResponse(data);
+      expect(data.response.candidates[0].content.parts[0]).toEqual({ text: '' });
+      expect(data.response.candidates[0].content.parts[1].text).toBe('');
     });
   });
 });
+

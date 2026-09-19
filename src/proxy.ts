@@ -244,6 +244,8 @@ import {
   thoughtSignatureCache,
   extractAndCacheThoughtSignatures,
   restoreThoughtSignatures,
+  sanitizeUnsignedToolCalls,
+  flattenAllToolCallsToText,
   touchStateTimestamp,
   getSessionModelKey,
   startCleanupInterval,
@@ -429,6 +431,7 @@ function sendGracefulStreamError(res: http.ServerResponse, diagnostic: ErrorDiag
     metadata: {},
     _agDiagnostic: diagnostic,
   };
+  sanitizeCandidatesInResponse(errResponse);
   if (!res.headersSent) {
     safeWriteHead(res, 200, {
       'Content-Type': 'text/event-stream',
@@ -437,7 +440,7 @@ function sendGracefulStreamError(res: http.ServerResponse, diagnostic: ErrorDiag
       'X-AG-Error-Type': diagnostic.errorType,
     });
   }
-  res.write('data: ' + JSON.stringify(errResponse) + '\n\n');
+  writeSafeSseChunk(res, errResponse);
   safeEnd(res);
 }
 
@@ -457,6 +460,7 @@ function sendGracefulNonStreamError(res: http.ServerResponse, diagnostic: ErrorD
     metadata: {},
     _agDiagnostic: diagnostic,
   };
+  sanitizeCandidatesInResponse(errResponse);
   if (!res.headersSent) {
     safeWriteHead(res, 200, {
       'Content-Type': 'application/json',
@@ -484,15 +488,78 @@ export function sanitizeCandidatesInResponse(data: any): boolean {
   if (!data || typeof data !== 'object') return false;
   let modified = false;
 
-  const sanitizeList = (candidatesList: any[], container: any, key: string) => {
-    if (!Array.isArray(candidatesList)) return;
-    const filtered = candidatesList.filter((c) => c && typeof c === 'object');
+  // 1. Antigravity Language Server crash protection:
+  // In codeassistclient.(*CodeAssistClient).getStreamingTextCompletion-range1 at generation.go:673,
+  // the Go language server unmarshals v1internal_prediction_service_go_proto.GenerateContentResponse
+  // and accesses resp.Response.UsageMetadata at offset 0x50 without checking if resp.Response is nil.
+  // If data.response is absent or null, resp.Response is nil, triggering panic 0xc0000005 (addr 0x50),
+  // which crashes the language server and causes Antigravity IDE to reload.
+  // Ensure data.response is ALWAYS a non-null object.
+  if (!data.response || typeof data.response !== 'object') {
+    data.response = {};
+    modified = true;
+  }
+
+  // 2. Mirror candidates between root and data.response
+  if (Array.isArray(data.candidates) && (!Array.isArray(data.response.candidates) || data.response.candidates.length === 0)) {
+    data.response.candidates = data.candidates;
+    modified = true;
+  } else if (Array.isArray(data.response.candidates) && (!Array.isArray(data.candidates) || data.candidates.length === 0)) {
+    data.candidates = data.response.candidates;
+    modified = true;
+  }
+  if (!Array.isArray(data.response.candidates)) {
+    data.response.candidates = [];
+    modified = true;
+  }
+  if (!Array.isArray(data.candidates)) {
+    data.candidates = data.response.candidates;
+    modified = true;
+  }
+
+  // 3. Guarantee usageMetadata is non-null on both root and data.response to prevent nil dereference at generation.go:673
+  if (!data.response.usageMetadata || typeof data.response.usageMetadata !== 'object') {
+    data.response.usageMetadata = data.usageMetadata && typeof data.usageMetadata === 'object'
+      ? data.usageMetadata
+      : { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
+    modified = true;
+  }
+  if (!data.usageMetadata || typeof data.usageMetadata !== 'object') {
+    data.usageMetadata = data.response.usageMetadata;
+    modified = true;
+  }
+
+  // 4. Mirror promptFeedback between root and data.response
+  if (data.promptFeedback && !data.response.promptFeedback) {
+    data.response.promptFeedback = data.promptFeedback;
+    modified = true;
+  } else if (data.response.promptFeedback && !data.promptFeedback) {
+    data.promptFeedback = data.response.promptFeedback;
+    modified = true;
+  }
+
+  // 5. Mirror modelVersion
+  if (data.modelVersion && !data.response.modelVersion) {
+    data.response.modelVersion = data.modelVersion;
+    modified = true;
+  } else if (data.response.modelVersion && !data.modelVersion) {
+    data.modelVersion = data.response.modelVersion;
+    modified = true;
+  }
+
+  const sanitizeList = (candidatesList: any[], container: any, key: string): any[] => {
+    if (!Array.isArray(candidatesList)) return [];
+    let filtered = candidatesList.filter((c) => c && typeof c === 'object');
     if (filtered.length !== candidatesList.length) {
       container[key] = filtered;
-      candidatesList = filtered;
       modified = true;
     }
-    for (const cand of candidatesList) {
+    if (candidatesList.length === 0) {
+      filtered = [{ content: { parts: [{ text: '' }], role: 'model' }, index: 0 }];
+      container[key] = filtered;
+      modified = true;
+    }
+    for (const cand of filtered) {
       if (!cand.content || typeof cand.content !== 'object') {
         cand.content = { parts: [{ text: '' }], role: 'model' };
         modified = true;
@@ -500,6 +567,25 @@ export function sanitizeCandidatesInResponse(data: any): boolean {
         if (!Array.isArray(cand.content.parts) || cand.content.parts.length === 0) {
           cand.content.parts = [{ text: '' }];
           modified = true;
+        } else {
+          for (let pIdx = 0; pIdx < cand.content.parts.length; pIdx++) {
+            const p = cand.content.parts[pIdx];
+            if (!p || typeof p !== 'object') {
+              cand.content.parts[pIdx] = { text: '' };
+              modified = true;
+            } else if (
+              p.text === undefined &&
+              !p.functionCall &&
+              !p.functionResponse &&
+              !p.fileData &&
+              !p.inlineData &&
+              !p.executableCode &&
+              !p.codeExecutionResult
+            ) {
+              p.text = '';
+              modified = true;
+            }
+          }
         }
         if (!cand.content.role) {
           cand.content.role = 'model';
@@ -507,14 +593,28 @@ export function sanitizeCandidatesInResponse(data: any): boolean {
         }
       }
     }
+    return filtered;
   };
 
-  sanitizeList(data.candidates, data, 'candidates');
-  if (data.response && typeof data.response === 'object') {
-    sanitizeList(data.response.candidates, data.response, 'candidates');
+  if (data.candidates) {
+    data.candidates = sanitizeList(data.candidates, data, 'candidates');
+  }
+  if (data.response && typeof data.response === 'object' && data.response.candidates) {
+    data.response.candidates = sanitizeList(data.response.candidates, data.response, 'candidates');
   }
 
   return modified;
+}
+
+export function writeSafeSseChunk(res: http.ServerResponse, chunk: any): boolean {
+  if (res.writableEnded || res.destroyed) return false;
+  sanitizeCandidatesInResponse(chunk);
+  try {
+    return res.write('data: ' + JSON.stringify(chunk) + '\n\n');
+  } catch (err) {
+    log.warn('[Proxy] writeSafeSseChunk failed:', (err as Error).message);
+    return false;
+  }
 }
 
 export function transformGoogleStreamForRemote(
@@ -547,22 +647,31 @@ export function transformGoogleStreamForRemote(
     const trimmed = line.trimEnd();
     if (trimmed.startsWith('data:')) {
       const jsonStr = trimmed.slice(5).trim();
-      if (jsonStr && jsonStr !== '[DONE]') {
-        try {
-          const data = JSON.parse(jsonStr);
-          // Cache any thought_signature values from this response chunk
-          extractAndCacheThoughtSignatures(data, convId);
+      if (jsonStr === '[DONE]') {
+        clientRes.write(line + '\n');
+        return;
+      }
+      if (!jsonStr) {
+        clientRes.write(': ping\n');
+        return;
+      }
+      try {
+        const data = JSON.parse(jsonStr);
+        // Cache any thought_signature values from this response chunk
+        extractAndCacheThoughtSignatures(data, convId);
 
-          // Antigravity Language Server crash protection:
-          // In codeassistclient.(*CodeAssistClient).getStreamingTextCompletion-range1,
-          // the language server iterates over chunk.Candidates and accesses
-          // candidate.Content.Parts at offset 0x50 without nil checking.
-          // If Content or Parts is missing/nil/empty, Go panics with signal 0xc0000005.
-          sanitizeCandidatesInResponse(data);
-          const eol = line.endsWith('\r') ? '\r\n' : '\n';
-          clientRes.write('data: ' + JSON.stringify(data) + eol);
-          return;
-        } catch (_) {}
+        // Antigravity Language Server crash protection:
+        // In codeassistclient.(*CodeAssistClient).getStreamingTextCompletion-range1,
+        // the language server iterates over chunk.Candidates and accesses
+        // candidate.Content.Parts at offset 0x50 without nil checking.
+        // If Content or Parts is missing/nil/empty, Go panics with signal 0xc0000005.
+        sanitizeCandidatesInResponse(data);
+        const eol = line.endsWith('\r') ? '\r\n' : '\n';
+        clientRes.write('data: ' + JSON.stringify(data) + eol);
+        return;
+      } catch (e) {
+        log.warn('[Proxy] Malformed SSE data chunk from upstream Google:', jsonStr.slice(0, 100));
+        return;
       }
     }
     clientRes.write(line + '\n');
@@ -582,6 +691,9 @@ export function transformGoogleStreamForRemote(
     buffer += decoder.end();
     if (buffer.length > 0) {
       processLine(buffer);
+      if (buffer.trim().startsWith('data:')) {
+        clientRes.write('\n\n');
+      }
       buffer = '';
     }
     safeEnd(clientRes);
@@ -662,7 +774,7 @@ async function proxyToGoogle(
 
   const proxyReq = https.request(parsedUrl, options, (proxyRes) => {
     proxyReq.setTimeout(0);
-    if (!hostOverride && isCloudCodeUrl && (proxyRes.statusCode === 429 || proxyRes.statusCode === 503)) {
+    if (!hostOverride && isCloudCodeUrl && (proxyRes.statusCode === 503 || proxyRes.statusCode === 502)) {
       log.warn(`[Proxy] Google Cloud Code returned ${proxyRes.statusCode} on ${targetHost}. Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
       proxyToGoogle(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD);
       return;
@@ -868,7 +980,7 @@ export function executeGoogleCloudCodeRequest(
         // If upstream error (429, 400, 401, 403, 404, 500, 503):
         // Intercept BEFORE writing anything to client res!
         if (status >= 400) {
-          if (!hostOverride && isCloudCodeUrl && (status === 429 || status === 503)) {
+          if (!hostOverride && isCloudCodeUrl && (status === 503 || status === 502)) {
             log.warn(`[Proxy] Google Cloud Code returned ${status} on ${targetHost}. Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
             executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD)
               .then(finish);
@@ -1055,7 +1167,14 @@ export async function executeGoogleCloudCodeWithPool(
   convId: string,
   sessId: string | null,
 ): Promise<boolean> {
+  const targetRaw = String(reqJson.model || (reqJson.request as any)?.model || '');
+  const isClaude = targetRaw.toLowerCase().includes('claude');
+  const modelFamily = isClaude ? 'claude' : 'gemini';
+
   const sortedAccounts = [...accountPool].sort((a, b) => {
+    const cdA = isAccountInCooldown(a, modelFamily) ? 1 : 0;
+    const cdB = isAccountInCooldown(b, modelFamily) ? 1 : 0;
+    if (cdA !== cdB) return cdA - cdB;
     const breakerA = getOpenBreaker(a) ? 1 : 0;
     const breakerB = getOpenBreaker(b) ? 1 : 0;
     if (breakerA !== breakerB) return breakerA - breakerB;
@@ -1084,6 +1203,15 @@ export async function executeGoogleCloudCodeWithPool(
   for (let i = 0; i < totalAttempts; i++) {
     const candidate = sortedAccounts[i];
     const candidateName = candidate.accountEmail || candidate.accountName || candidate.displayName || candidate.name;
+
+    // Fast-skip: if this candidate is already in active cooldown for this model family,
+    // and we already experienced 429s or tested candidates failed, don't grind through remaining exhausted accounts.
+    if (isAccountInCooldown(candidate, modelFamily)) {
+      if (consecutive429Count > 0 || i > 0) {
+        log.warn(`[Proxy] Account ${candidateName} is in active 429 cooldown for ${modelFamily}. Skipping remaining exhausted accounts in pool.`);
+        break;
+      }
+    }
 
     log.info(`[Proxy] Google account pool: trying candidate ${candidateName} (attempt ${i + 1}/${totalAttempts})`);
 
@@ -1135,6 +1263,7 @@ export async function executeGoogleCloudCodeWithPool(
 
     if (outcome.success) {
       recordSuccess(candidate);
+      clearAccountCooldown(candidate, modelFamily);
       if (sessId) {
         bindSessionToModel(sessId, candidate);
       }
@@ -1144,33 +1273,88 @@ export async function executeGoogleCloudCodeWithPool(
 
     if (outcome.statusCode === 429) {
       consecutive429Count++;
+      setAccountCooldown(candidate, 10 * 60_000, modelFamily);
+      recordFailure(candidate, 'rate_limit');
+      if (candidate.quotas) {
+        if (isClaude) {
+          (candidate.quotas as any).claudeFiveHourPct = 0;
+        } else {
+          (candidate.quotas as any).geminiFiveHourPct = 0;
+        }
+      }
+      if (sessId) {
+        sessionAffinities.delete(sessId);
+      }
+      // Fast-fail: if quota is exhausted on 2 accounts in a row, don't grind through the rest of the pool
+      if (consecutive429Count >= 2 && i + 1 < totalAttempts) {
+        log.warn(`[Proxy] Detected ${consecutive429Count} consecutive 429s for ${modelFamily} model ${targetModel}. Fast-failing remaining pool to recover immediately.`);
+        break;
+      }
     } else {
       consecutive429Count = 0;
     }
 
-    if (outcome.statusCode === 400 && /signature.*thinking|thinking.*signature/i.test(outcome.error || '')) {
-      log.warn(`[Proxy] Detected Invalid signature in thinking block from Vertex AI on ${candidateName}. Auto-stripping thinking blocks and retrying immediately...`);
-      const sanitizeObj = (obj: any) => {
-        if (!obj || typeof obj !== 'object') return;
-        if (Array.isArray(obj.contents)) {
-          for (const c of obj.contents) {
-            if (Array.isArray(c.parts)) {
-              c.parts = c.parts.filter((p: any) => !p?.thought && p?.type !== 'thinking');
-              if (c.parts.length === 0) c.parts = [{ text: '.' }];
-              for (const p of c.parts) {
-                delete p.thought_signature;
-                delete p.thoughtSignature;
-                delete p.signature;
-                delete p.thought;
+    if (
+      outcome.statusCode === 400 &&
+      /thought.*signature|signature.*thought|signature.*thinking|thinking.*signature|corrupted.*signature|invalid.*signature/i.test(
+        outcome.error || '',
+      )
+    ) {
+      log.warn(`[Proxy] Detected thought signature issue from Vertex AI on ${candidateName} (${(outcome.error || '').slice(0, 100)}). Auto-repairing...`);
+      const isMissingSig = /missing.*thought_signature|thought_signature.*missing/i.test(outcome.error || '');
+      const targetContents = (reqJson.request as any)?.contents || reqJson.contents;
+      let repaired = false;
+
+      // 1. If signature was missing on functionCall parts, try restoring from cache / sibling parts first
+      if (isMissingSig && Array.isArray(targetContents)) {
+        repaired = restoreThoughtSignatures(targetContents, convId || '', 'gemini');
+        if (repaired) {
+          log.info(`[Proxy] Successfully restored missing thought signature(s) from cache/siblings for ${candidateName}`);
+        }
+      }
+
+      // 2. If restore was not applicable or signature was corrupted, strip thinkingConfig and residual signatures
+      // so Gemini can execute standard tool calling without thinking signature verification
+      if (!repaired) {
+        const sanitizeObj = (obj: any) => {
+          if (!obj || typeof obj !== 'object') return;
+          if (obj.generationConfig) {
+            delete obj.generationConfig.thinkingConfig;
+            delete obj.generationConfig.thinking_config;
+          }
+          if (obj.generation_config) {
+            delete obj.generation_config.thinkingConfig;
+            delete obj.generation_config.thinking_config;
+          }
+          if (Array.isArray(obj.contents)) {
+            for (const c of obj.contents) {
+              if (Array.isArray(c.parts)) {
+                c.parts = c.parts.filter((p: any) => !p?.thought && p?.type !== 'thinking');
+                if (c.parts.length === 0) c.parts = [{ text: '.' }];
+                for (const p of c.parts) {
+                  delete p.thought_signature;
+                  delete p.thoughtSignature;
+                  delete p.signature;
+                  delete p.thought;
+                  if (p.functionCall) {
+                    delete (p.functionCall as any).thought_signature;
+                    delete (p.functionCall as any).thoughtSignature;
+                  }
+                  if ((p as any).function_call) {
+                    delete (p as any).function_call.thought_signature;
+                    delete (p as any).function_call.thoughtSignature;
+                  }
+                }
               }
             }
           }
-        }
-        if (obj.request && typeof obj.request === 'object') {
-          sanitizeObj(obj.request);
-        }
-      };
-      sanitizeObj(reqJson);
+          if (obj.request && typeof obj.request === 'object') {
+            sanitizeObj(obj.request);
+          }
+        };
+        sanitizeObj(reqJson);
+      }
+
       const retryBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
       const retryOutcome = await executeGoogleCloudCodeRequest(
         req,
@@ -1182,10 +1366,11 @@ export async function executeGoogleCloudCodeWithPool(
       );
       if (retryOutcome.success) {
         recordSuccess(candidate);
+        clearAccountCooldown(candidate, modelFamily);
         if (sessId) {
           bindSessionToModel(sessId, candidate);
         }
-        log.info(`[Proxy] Self-healing retry after stripping thinking blocks SUCCEEDED on account ${candidateName}`);
+        log.info(`[Proxy] Self-healing retry after thought signature repair SUCCEEDED on account ${candidateName}`);
         return true;
       }
     }
@@ -1215,6 +1400,7 @@ export async function executeGoogleCloudCodeWithPool(
       );
       if (retryOutcome.success) {
         recordSuccess(candidate);
+        clearAccountCooldown(candidate, modelFamily);
         if (sessId) {
           bindSessionToModel(sessId, candidate);
         }
@@ -1229,48 +1415,19 @@ export async function executeGoogleCloudCodeWithPool(
       `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus} (${lastErrorText.slice(0, 150)}). Failing over to next account in pool...`
     );
 
-    recordFailure(candidate, lastStatus === 429 ? 'rate_limit' : 'server');
-    const isClaude = targetModel.toLowerCase().includes('claude');
-    if (lastStatus === 429 && candidate.quotas) {
-      if (isClaude) {
-        (candidate.quotas as any).claudeFiveHourPct = 0;
-      } else {
-        (candidate.quotas as any).geminiFiveHourPct = 0;
-      }
-    }
-    if (sessId) {
-      sessionAffinities.delete(sessId);
+    if (lastStatus !== 429) {
+      recordFailure(candidate, 'server');
     }
 
-    // Fast-fail: if Claude quota is exhausted on 2 accounts in a row, don't grind through the rest
-    if (isClaude && consecutive429Count >= 2 && i + 1 < totalAttempts) {
-      log.warn(`[Proxy] Detected ${consecutive429Count} consecutive 429s for Claude model ${targetModel}. Fast-failing remaining pool to recover immediately via Gemini.`);
+    // On HTTP 400 (Bad Request / payload format error), trying other accounts in the pool will produce
+    // the exact same 400 error. Abort rotation to fast-trigger fallback model recovery.
+    if (lastStatus === 400) {
+      log.warn(`[Proxy] HTTP 400 indicates a payload format error on ${candidateName}. Aborting account pool rotation to trigger immediate fallback recovery.`);
       break;
     }
 
-    const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
-    if (i + 1 < totalAttempts && isStream && !res.writableEnded && !res.destroyed) {
-      if (!res.headersSent) {
-        safeWriteHead(res, 200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-        });
-      }
-      const nextAttempt = i + 2;
-      const retryNotice = `> ⏳ **Compte indisponible**, basculement vers le compte suivant (${nextAttempt}/${totalAttempts})...\n\n`;
-      const chunk = {
-        response: {
-          candidates: [
-            {
-              content: { parts: [{ text: retryNotice }], role: 'model' },
-              index: 0,
-            },
-          ],
-        },
-      };
-      res.write('data: ' + JSON.stringify(chunk) + '\n\n');
-      // Sub-second failover between accounts
+    if (i + 1 < totalAttempts) {
+      // Sub-second silent failover between accounts in the pool
       await new Promise((r) => setTimeout(r, 50));
     }
   }
@@ -1284,9 +1441,10 @@ export async function executeGoogleCloudCodeWithPool(
     const allCustomModels = expandModelsWithEffort(loadCustomModels());
     const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.1-pro-high', 'gemini-2.0-flash'];
     const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || '');
+    const eligibleFallbacks = fallbackTargets.filter((m) => m !== currentBase);
 
-    if (!fallbackTargets.includes(currentBase)) {
-      for (const fallbackModel of fallbackTargets) {
+    if (eligibleFallbacks.length > 0) {
+      for (const fallbackModel of eligibleFallbacks) {
         log.warn(
           `[Proxy] Agent resilience: Requested model ${currentBase} failed across accounts (${lastErrorText.slice(0, 80)}). Auto-recovering with fallback model ${fallbackModel}...`,
         );
@@ -1308,8 +1466,20 @@ export async function executeGoogleCloudCodeWithPool(
             (reqJson.request as Record<string, unknown>).model = fallbackModel;
             sanitizeCloudCodeGenerationConfig(reqJson.request as Record<string, unknown>, fallbackModel);
           }
+          const fbContents = (reqJson.request as any)?.contents || reqJson.contents;
+          if (Array.isArray(fbContents)) {
+            restoreThoughtSignatures(fbContents, convId || '', fallbackModel);
+          }
 
-          if (isStream && !res.writableEnded && !res.destroyed) {
+          const sessionKey = convId || sessId;
+          const existingFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
+          const alreadyNotified = existingFallback?.notified === true;
+
+          if (sessionKey) {
+            setSessionModelFallback(sessionKey, currentBase, fallbackModel, true);
+          }
+
+          if (isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
             if (!res.headersSent) {
               safeWriteHead(res, 200, {
                 'Content-Type': 'text/event-stream',
@@ -1319,8 +1489,8 @@ export async function executeGoogleCloudCodeWithPool(
             }
             const isClaude = currentBase.toLowerCase().includes('claude');
             const fbNotice = isClaude
-              ? `\n\n> 🔄 *Quota Claude temporairement atteint sur les comptes. Poursuite automatique avec **Gemini 3.8 Flash**...*\n\n`
-              : `\n\n> 🔄 *Modèle temporairement indisponible. Poursuite automatique avec **${fallbackModel}**...*\n\n`;
+              ? `> 🔄 **Quota Claude atteint** — Poursuite automatique de la conversation avec **Gemini 3.8 Flash**.\n\n`
+              : `> 🔄 **Modèle temporairement indisponible** — Poursuite automatique avec **${fallbackModel}**.\n\n`;
             const chunk = {
               response: {
                 candidates: [
@@ -1331,7 +1501,7 @@ export async function executeGoogleCloudCodeWithPool(
                 ],
               },
             };
-            res.write('data: ' + JSON.stringify(chunk) + '\n\n');
+            writeSafeSseChunk(res, chunk);
           }
 
           try {
@@ -1360,33 +1530,49 @@ export async function executeGoogleCloudCodeWithPool(
     const reqStr = JSON.stringify(reqJson);
     const isSummarization = /summariz|summary|trajectory/i.test(reqStr);
 
-    if (isSummarization && isStream) {
+    if (isSummarization) {
       log.warn('[Proxy] Context summarization hook failed upstream. Returning synthetic summary to prevent agent termination.');
+      const summaryCand = {
+        content: {
+          parts: [{ text: 'Summary of previous steps: The agent investigated the task, inspected files, executed commands, and continues with the implementation.' }],
+          role: 'model',
+        },
+        finishReason: 'STOP',
+        index: 0,
+      };
       const syntheticChunk = {
-        candidates: [
-          {
-            content: {
-              parts: [{ text: 'Summary of previous steps: The agent investigated the task, inspected files, executed commands, and continues with the implementation.' }],
-              role: 'model',
-            },
-            finishReason: 'STOP',
-            index: 0,
+        response: {
+          candidates: [summaryCand],
+          usageMetadata: {
+            promptTokenCount: 100,
+            candidatesTokenCount: 30,
+            totalTokenCount: 130,
           },
-        ],
+        },
+        candidates: [summaryCand],
         usageMetadata: {
           promptTokenCount: 100,
           candidatesTokenCount: 30,
           totalTokenCount: 130,
         },
       };
-      if (!res.headersSent) {
-        safeWriteHead(res, 200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-        });
+      sanitizeCandidatesInResponse(syntheticChunk);
+      if (isStream) {
+        if (!res.headersSent) {
+          safeWriteHead(res, 200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          });
+        }
+        writeSafeSseChunk(res, syntheticChunk);
+        safeEnd(res);
+      } else {
+        if (!res.headersSent) {
+          safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
+        }
+        safeEnd(res, JSON.stringify(syntheticChunk));
       }
-      safeEnd(res, `data: ${JSON.stringify(syntheticChunk)}\n\ndata: [DONE]\n\n`);
       return true;
     }
   }
@@ -1394,12 +1580,21 @@ export async function executeGoogleCloudCodeWithPool(
   log.error(`[Proxy] All ${totalAttempts} Google Cloud Code accounts in the pool failed. Returning HTTP ${lastStatus}`);
   if (!res.writableEnded && !res.destroyed) {
     const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+    const failedModel = sortedAccounts[0] || ({
+      name: (reqJson.model as string) || 'google-model',
+      displayName: (reqJson.model as string) || 'Google Model',
+      provider: 'google',
+    } as CustomModel);
     const diagnostic = classifyError(lastStatus, lastErrorText, undefined, 'google');
+    if (totalAttempts > 1) {
+      diagnostic.title = `${diagnostic.title} (${totalAttempts}/${totalAttempts} comptes vérifiés)`;
+      diagnostic.message = `L'ensemble des ${totalAttempts} comptes configurés ont été testés automatiquement en arrière-plan, mais aucun n'est actuellement disponible (${diagnostic.errorType}).`;
+    }
     if (!res.headersSent) {
-      sendGracefulError(res, isStream, diagnostic);
+      sendGracefulError(res, isStream, diagnostic, failedModel);
     } else {
       if (isStream) {
-        sendGracefulStreamError(res, diagnostic);
+        sendGracefulStreamError(res, diagnostic, failedModel);
       } else {
         safeEnd(res);
       }
@@ -1499,31 +1694,7 @@ function scheduleRetry(
 ): void {
   const attempt = retryCount + 1;
   const maxAttempts = ctx.maxRetries;
-  const delaySec = Math.max(1, Math.round(delayMs / 1000));
-  log.warn(`[Proxy] ${logReason} for ${ctx.model.name}, retrying (${attempt}/${maxAttempts})...`);
-
-  if (ctx.isStream && !ctx.res.writableEnded && !ctx.res.destroyed) {
-    if (!ctx.res.headersSent) {
-      safeWriteHead(ctx.res, 200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      });
-    }
-    const modelName = ctx.model.displayName || ctx.model.name;
-    const retryNotice = `> ⏳ **Model unavailable**, retrying in **${delaySec}s** (attempt ${attempt}/${maxAttempts}) — \`${modelName}\`\n\n`;
-    const chunk = {
-      response: {
-        candidates: [
-          {
-            content: { parts: [{ text: retryNotice }], role: 'model' },
-            index: 0,
-          },
-        ],
-      },
-    };
-    ctx.res.write('data: ' + JSON.stringify(chunk) + '\n\n');
-  }
+  log.warn(`[Proxy] ${logReason} for ${ctx.model.name}, retrying silently in ${delayMs}ms (${attempt}/${maxAttempts})...`);
 
   setTimeout(
     () => handleCustomModelRequest(ctx.res, ctx.model, ctx.geminiBody, ctx.isStream, ctx.retryCount + 1),
@@ -1570,7 +1741,8 @@ function handleApiResError(err: Error, apiRes: http.IncomingMessage, ctx: Stream
       traceId: '',
       metadata: {},
     };
-    res.write('data: ' + JSON.stringify(errChunk) + '\n\n');
+    sanitizeCandidatesInResponse(errChunk);
+    writeSafeSseChunk(res, errChunk);
     safeEnd(res);
   }
 
@@ -1692,7 +1864,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
               metadata: {},
             };
             sanitizeCandidatesInResponse(cloudCodeResponse);
-            res.write(`data: ${JSON.stringify(cloudCodeResponse)}\n\n`);
+            writeSafeSseChunk(res, cloudCodeResponse);
           }
         } catch (err) {
           // Partial/invalid JSON chunks are normal during streaming; debug-level only
@@ -1753,7 +1925,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
               metadata: {},
             };
             sanitizeCandidatesInResponse(cloudCodeResponse);
-            res.write(`data: ${JSON.stringify(cloudCodeResponse)}\n\n`);
+            writeSafeSseChunk(res, cloudCodeResponse);
           }
         } catch (e) {
           log.debug(`[Proxy] Stream buffer drain parse warning for ${model.name}:`, (e as Error).message);
@@ -1774,8 +1946,10 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
       traceId: '',
       metadata: {},
     };
-    res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
+    sanitizeCandidatesInResponse(finalChunk);
+    writeSafeSseChunk(res, finalChunk);
     res.end();
+    safeEnd(res);
     const pId = model.name.includes('-') ? model.name.split('-')[0] : model.provider;
     void recordProviderUsage(pId);
   });
@@ -1845,6 +2019,7 @@ function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamReques
         traceId: '',
         metadata: {},
       };
+      sanitizeCandidatesInResponse(cloudCodeResponse);
 
       // Successful 2xx response — clear breaker for this model.
       recordSuccess(model);
@@ -1957,6 +2132,39 @@ export function getAccountQuotaKey(item: CustomModel): string {
   } catch {
     return item.apiUrl || item.name || '';
   }
+}
+
+// ─── Google Account 429 Cooldown Registry ──────────────────────────────────────
+const googleAccountCooldowns = new Map<string, number>();
+
+export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string): boolean {
+  const baseKey = getAccountQuotaKey(candidate);
+  const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
+  const until = googleAccountCooldowns.get(key) || (modelFamily ? googleAccountCooldowns.get(baseKey) : undefined);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    googleAccountCooldowns.delete(key);
+    return false;
+  }
+  return true;
+}
+
+export function setAccountCooldown(candidate: CustomModel, durationMs = 10 * 60_000, modelFamily?: string): void {
+  const baseKey = getAccountQuotaKey(candidate);
+  const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
+  googleAccountCooldowns.set(key, Date.now() + durationMs);
+}
+
+export function clearAccountCooldown(candidate: CustomModel, modelFamily?: string): void {
+  const baseKey = getAccountQuotaKey(candidate);
+  if (modelFamily) {
+    googleAccountCooldowns.delete(`${baseKey}:${modelFamily}`);
+  }
+  googleAccountCooldowns.delete(baseKey);
+}
+
+export function _resetAllAccountCooldowns(): void {
+  googleAccountCooldowns.clear();
 }
 
 export function getModelQuotaScore(m: CustomModel): number {
@@ -2114,7 +2322,48 @@ export function bindSessionToModel(sessionId: string, model: CustomModel): void 
 
 export function clearSessionAffinities(): void {
   sessionAffinities.clear();
+  sessionModelFallbacks.clear();
 }
+
+export interface SessionModelFallback {
+  originalModel: string;
+  fallbackModel: string;
+  notified: boolean;
+  lastUsed: number;
+}
+
+const sessionModelFallbacks = new Map<string, SessionModelFallback>();
+
+export function getSessionModelFallback(sessionKey: string): SessionModelFallback | undefined {
+  if (!sessionKey) return undefined;
+  const fb = sessionModelFallbacks.get(sessionKey);
+  if (!fb) return undefined;
+  if (Date.now() - fb.lastUsed > SESSION_AFFINITY_TTL_MS) {
+    sessionModelFallbacks.delete(sessionKey);
+    return undefined;
+  }
+  return fb;
+}
+
+export function setSessionModelFallback(
+  sessionKey: string,
+  originalModel: string,
+  fallbackModel: string,
+  notified = false,
+): void {
+  if (!sessionKey) return;
+  sessionModelFallbacks.set(sessionKey, {
+    originalModel,
+    fallbackModel,
+    notified,
+    lastUsed: Date.now(),
+  });
+}
+
+export function clearSessionModelFallbacks(): void {
+  sessionModelFallbacks.clear();
+}
+
 
 function handleCustomModelRequest(
   res: http.ServerResponse,
@@ -2197,18 +2446,34 @@ function handleCustomModelRequest(
         .sort((a, b) => getModelQuotaScore(b) - getModelQuotaScore(a));
 
       let orderedModels = allModels;
-      if (poolSiblings.length > 0) {
-        const rest = allModels.filter((m) => !poolSiblings.includes(m));
-        orderedModels = [...poolSiblings, ...rest];
+      const chainItems: string[] = [];
+      if (model.fallbackChain) {
+        if (Array.isArray(model.fallbackChain)) {
+          chainItems.push(...model.fallbackChain);
+        } else if (typeof model.fallbackChain === 'string') {
+          chainItems.push(...(model.fallbackChain as string).split(',').map((s) => s.trim()).filter(Boolean));
+        }
       } else if (model.fallbackModel) {
-        const preferred = allModels.filter(m =>
-          m.name === model.fallbackModel ||
-          m.displayName === model.fallbackModel ||
-          m.externalModelName === model.fallbackModel ||
-          m.name.endsWith(`/${model.fallbackModel}`)
-        );
-        const rest = allModels.filter(m => !preferred.includes(m));
-        orderedModels = [...preferred, ...rest];
+        chainItems.push(model.fallbackModel);
+      }
+
+      if (poolSiblings.length > 0 || chainItems.length > 0) {
+        const chainModels: CustomModel[] = [];
+        for (const item of chainItems) {
+          const matches = allModels.filter(
+            (m) =>
+              !chainModels.includes(m) &&
+              !poolSiblings.includes(m) &&
+              (m.name === item ||
+                m.displayName === item ||
+                m.externalModelName === item ||
+                m.name.endsWith(`/${item}`) ||
+                getBaseModelId(m.externalModelName || m.name) === getBaseModelId(item))
+          );
+          chainModels.push(...matches);
+        }
+        const rest = allModels.filter((m) => !poolSiblings.includes(m) && !chainModels.includes(m));
+        orderedModels = [...poolSiblings, ...chainModels, ...rest];
       }
 
       // ponytail: skip same account on rate_limit — shared quota, fallback is a no-op.
@@ -2232,10 +2497,15 @@ function handleCustomModelRequest(
             bindSessionToModel(sessId, m);
           }
 
+          const alreadyNotified = sessId ? getSessionModelFallback(sessId)?.notified === true : false;
+          if (sessId) {
+            setSessionModelFallback(sessId, model.name, m.name, true);
+          }
+
           // L-1: Notify the user in the stream so the fallback is transparent.
           // We send a brief markdown notice as the first SSE event before
-          // delegating to the fallback model handler.
-          if (isStream && !res.headersSent) {
+          // delegating to the fallback model handler (only once per session).
+          if (isStream && !res.headersSent && !alreadyNotified) {
             if (safeWriteHead(res, 200, {
               'Content-Type': 'text/event-stream',
               'Cache-Control': 'no-cache',
@@ -2251,14 +2521,14 @@ function handleCustomModelRequest(
                       parts: [{ text: noticeText }],
                       role: 'model',
                     },
-                    finishReason: 'STOP',
                     index: 0,
                   }],
                 },
                 traceId: '',
                 metadata: {},
               };
-              res.write('data: ' + JSON.stringify(notice) + '\n\n');
+              sanitizeCandidatesInResponse(notice);
+              writeSafeSseChunk(res, notice);
             }
           }
 
@@ -3549,33 +3819,6 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           if (match) convId = match[1];
         }
 
-        // Restore any missing thought_signatures in conversation history for Gemini 3+ function calls
-        let signaturesRestored = false;
-        let contentsNormalized = false;
-        if (Array.isArray(targetReq.contents)) {
-          const rawModelName = String(
-            reqJson.model ||
-            reqJson.requestedModel ||
-            targetReq.model ||
-            targetReq.requestedModel ||
-            ''
-          ).toLowerCase();
-          const isClaudeRequest = rawModelName.includes('claude');
-          if (isClaudeRequest) {
-            sanitizeCloudCodeGenerationConfig(targetReq, rawModelName);
-            contentsNormalized = true;
-          } else {
-            signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '', rawModelName);
-          }
-        }
-
-        // Remote VPS system prompt and instruction injection block has been removed as requested.
-
-        if (signaturesRestored || contentsNormalized) {
-          fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
-          log.info(`[Proxy] Re-encoded Cloud Code request with normalized turns/signatures (convId=${convId || 'draft'})`);
-        }
-
         const candidateNames = [
           reqJson.model,
           reqJson.requestedModel,
@@ -3601,25 +3844,78 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           `[Proxy] Cloud Code generation request candidates: ${candidateNames.join(', ')}, url: ${req.url}, bodyKeys: ${Object.keys(reqJson).join(',')}`,
         );
 
+        const customModels = expandModelsWithEffort(loadCustomModels());
+        let actualGeminiBody: GeminiRequestBody | undefined;
+        let sessId = '';
+        let sessionKey = '';
+
         if (candidateNames.length > 0) {
-          const customModels = expandModelsWithEffort(loadCustomModels());
-          let matchingCandidates = customModels.filter((m) =>
-            candidateNames.some((cn) => matchesCustomModel(m, cn)),
+          actualGeminiBody = (reqJson.request || reqJson) as GeminiRequestBody;
+          sessId = extractSessionId(actualGeminiBody as Record<string, unknown>, req.headers as Record<string, unknown>);
+          sessionKey = convId || sessId;
+
+          if (sessionKey) {
+            const activeFallback = getSessionModelFallback(sessionKey);
+            if (activeFallback) {
+              const isOrigClaude = activeFallback.originalModel.toLowerCase().includes('claude');
+              const matchesOrig = candidateNames.some((cn) => {
+                const norm = normalizeCloudCodeModelId(cn);
+                return norm === activeFallback.originalModel || (isOrigClaude && cn.toLowerCase().includes('claude'));
+              });
+              if (matchesOrig) {
+                log.info(`[Proxy] Active session fallback for ${sessionKey}: transparently routing ${activeFallback.originalModel} -> ${activeFallback.fallbackModel}`);
+                candidateNames.unshift(activeFallback.fallbackModel);
+                reqJson.model = activeFallback.fallbackModel;
+                if (reqJson.request && typeof reqJson.request === 'object') {
+                  (reqJson.request as Record<string, unknown>).model = activeFallback.fallbackModel;
+                }
+              }
+            }
+          }
+        }
+
+        let matchingCandidates = customModels.filter((m) =>
+          candidateNames.some((cn) => matchesCustomModel(m, cn)),
+        );
+        if (matchingCandidates.length === 0) {
+          matchingCandidates = customModels.filter((m) =>
+            candidateNames.some((cn) => {
+              const norm = normalizeGoogleModelId(cn);
+              return norm && (matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`));
+            }),
           );
-          if (matchingCandidates.length === 0) {
-            matchingCandidates = customModels.filter((m) =>
-              candidateNames.some((cn) => {
-                const norm = normalizeGoogleModelId(cn);
-                return norm && (matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`));
-              }),
-            );
+        }
+        let matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
+        // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298/M50/M565)
+        if (!matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
+          const activePool = customModels.filter(m => !(m as any)._poolOnly && m.enabled !== false);
+          matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
+        }
+
+        const effectiveModelName = (
+          matchedCustomModel?.externalModelName ||
+          matchedCustomModel?.name ||
+          candidateNames[0] ||
+          ''
+        ).toLowerCase();
+        const isClaudeRequest = effectiveModelName.includes('claude');
+
+        // Restore any missing thought_signatures in conversation history for Gemini 3+ function calls
+        let signaturesRestored = false;
+        let contentsNormalized = false;
+        if (Array.isArray(targetReq.contents)) {
+          if (isClaudeRequest) {
+            sanitizeCloudCodeGenerationConfig(targetReq, effectiveModelName);
+            contentsNormalized = true;
+          } else {
+            signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '', effectiveModelName);
           }
-          let matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
-          // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298/M50/M565)
-          if (!matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
-            const activePool = customModels.filter(m => !(m as any)._poolOnly && m.enabled !== false);
-            matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
-          }
+        }
+
+        if (signaturesRestored || contentsNormalized) {
+          fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
+          log.info(`[Proxy] Re-encoded Cloud Code request with normalized turns/signatures (convId=${convId || 'draft'}, model=${effectiveModelName})`);
+        }
 
           if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
             const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
@@ -3629,10 +3925,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
           if (matchedCustomModel) {
             const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
-            const actualGeminiBody = (reqJson.request || reqJson) as GeminiRequestBody;
 
             // Apply Sticky Session affinity (preserves Cloud Code prompt cache)
-            const sessId = extractSessionId(actualGeminiBody as Record<string, unknown>, req.headers as Record<string, unknown>);
             if (sessId) {
               matchedCustomModel = getSessionBoundModel(sessId, matchedCustomModel, customModels);
               bindSessionToModel(sessId, matchedCustomModel);
@@ -3667,7 +3961,6 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             });
             return;
           }
-        }
       } catch (err) {
         log.error('[Proxy] Failed to parse Cloud Code stream body:', err);
       }

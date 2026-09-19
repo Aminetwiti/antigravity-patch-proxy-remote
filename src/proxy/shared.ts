@@ -113,15 +113,32 @@ export function extractAndCacheThoughtSignatures(
   for (const cand of d.candidates) {
     const c = cand as { content?: { parts?: unknown[] } };
     if (!Array.isArray(c?.content?.parts)) continue;
+
+    // Scan for any thought signature emitted anywhere across parts in this candidate
+    let turnSig: string | undefined;
     for (const part of c.content!.parts!) {
       const p = part as Record<string, unknown>;
-      const fc = (p.functionCall || p.function_call) as Record<string, unknown> | undefined;
-      const fnName = (fc?.name as string) || (p.name as string);
-      const sig = (typeof p.thought_signature === 'string' && p.thought_signature) ||
-                  (typeof p.thoughtSignature === 'string' && p.thoughtSignature) ||
+      const fc = (p?.functionCall || p?.function_call) as Record<string, unknown> | undefined;
+      const s = (typeof p?.thought_signature === 'string' && p.thought_signature) ||
+                (typeof p?.thoughtSignature === 'string' && p.thoughtSignature) ||
+                (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
+                (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature);
+      if (s) {
+        turnSig = s;
+        break;
+      }
+    }
+
+    for (const part of c.content!.parts!) {
+      const p = part as Record<string, unknown>;
+      const fc = (p?.functionCall || p?.function_call) as Record<string, unknown> | undefined;
+      const fnName = (fc?.name as string) || (p?.name as string);
+      const sig = (typeof p?.thought_signature === 'string' && p.thought_signature) ||
+                  (typeof p?.thoughtSignature === 'string' && p.thoughtSignature) ||
                   (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
-                  (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature);
-      if (fnName && sig) {
+                  (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature) ||
+                  turnSig;
+      if (sig) {
         const meta: ThoughtSignatureMetadata = {
           signature: sig,
           family,
@@ -129,22 +146,30 @@ export function extractAndCacheThoughtSignatures(
         };
 
         if (convId) {
-          const scopedKey = `${convId}:${fnName}`;
-          // Rewind detection: if stored messageCount is greater than current, clear forward history
-          const existing = thoughtSignatureMeta.get(scopedKey);
-          if (existing?.messageCount && currentMessageCount && existing.messageCount > currentMessageCount) {
-            thoughtSignatureCache.delete(scopedKey);
-            thoughtSignatureMeta.delete(scopedKey);
+          if (fnName) {
+            const scopedKey = `${convId}:${fnName}`;
+            // Rewind detection: if stored messageCount is greater than current, clear forward history
+            const existing = thoughtSignatureMeta.get(scopedKey);
+            if (existing?.messageCount && currentMessageCount && existing.messageCount > currentMessageCount) {
+              thoughtSignatureCache.delete(scopedKey);
+              thoughtSignatureMeta.delete(scopedKey);
+            }
+            thoughtSignatureCache.set(scopedKey, sig);
+            thoughtSignatureMeta.set(scopedKey, meta);
+            touchStateTimestamp(stateTimestamps.thoughtSigs, scopedKey);
           }
 
-          thoughtSignatureCache.set(scopedKey, sig);
-          thoughtSignatureMeta.set(scopedKey, meta);
-          touchStateTimestamp(stateTimestamps.thoughtSigs, scopedKey);
+          const convLastKey = `${convId}:__last__`;
+          thoughtSignatureCache.set(convLastKey, sig);
+          thoughtSignatureMeta.set(convLastKey, meta);
+          touchStateTimestamp(stateTimestamps.thoughtSigs, convLastKey);
         }
 
-        thoughtSignatureCache.set(fnName, sig);
-        thoughtSignatureMeta.set(fnName, meta);
-        touchStateTimestamp(stateTimestamps.thoughtSigs, fnName);
+        if (fnName) {
+          thoughtSignatureCache.set(fnName, sig);
+          thoughtSignatureMeta.set(fnName, meta);
+          touchStateTimestamp(stateTimestamps.thoughtSigs, fnName);
+        }
       }
     }
   }
@@ -153,8 +178,8 @@ export function extractAndCacheThoughtSignatures(
 /**
  * Scans outgoing request contents[] for functionCall parts missing
  * thought_signature and restores cached values where available.
- * Strips cross-model incompatible signatures (e.g. Claude thought signatures on Gemini models).
- * Returns true if any signature was restored.
+ * Strips thought_signature completely if targeting Gemini and the signature originated from Claude.
+ * Returns true if at least one signature was restored.
  */
 export function restoreThoughtSignatures(
   contents: unknown[],
@@ -170,6 +195,19 @@ export function restoreThoughtSignatures(
   for (const content of contents) {
     const c = content as { parts?: unknown[] };
     if (!Array.isArray(c?.parts)) continue;
+
+    // Scan if any sibling part in the SAME turn has a thought_signature
+    let siblingSig: string | undefined;
+    for (const part of c.parts) {
+      const p = part as Record<string, unknown>;
+      const s = (typeof p?.thought_signature === 'string' && p.thought_signature) ||
+                (typeof p?.thoughtSignature === 'string' && p.thoughtSignature);
+      if (s) {
+        siblingSig = s;
+        break;
+      }
+    }
+
     for (const part of c.parts) {
       const p = part as Record<string, unknown>;
       const fc = p.functionCall as Record<string, unknown> | undefined;
@@ -181,13 +219,13 @@ export function restoreThoughtSignatures(
       const fcs = [p.functionCall as Record<string, unknown> | undefined, p.function_call as Record<string, unknown> | undefined];
       let fcSig: string | undefined = undefined;
 
-      for (const fc of fcs) {
-        if (!fc) continue;
-        const sig = (typeof fc.thought_signature === 'string' && fc.thought_signature) ||
-                    (typeof fc.thoughtSignature === 'string' && fc.thoughtSignature);
+      for (const fcItem of fcs) {
+        if (!fcItem) continue;
+        const sig = (typeof fcItem.thought_signature === 'string' && fcItem.thought_signature) ||
+                    (typeof fcItem.thoughtSignature === 'string' && fcItem.thoughtSignature);
         if (sig && !fcSig) fcSig = sig;
-        delete fc.thought_signature;
-        delete fc.thoughtSignature;
+        delete fcItem.thought_signature;
+        delete fcItem.thoughtSignature;
       }
 
       const fcForName = fcs[0] || fcs[1];
@@ -215,14 +253,20 @@ export function restoreThoughtSignatures(
       }
 
       const scopedKey = convId ? `${convId}:${fcForName.name}` : '';
-      const cached = (scopedKey && thoughtSignatureCache.get(scopedKey)) ||
-                     thoughtSignatureCache.get(fcForName.name as string);
+      let cached = (scopedKey && thoughtSignatureCache.get(scopedKey)) ||
+                   siblingSig ||
+                   (convId ? thoughtSignatureCache.get(`${convId}:__last__`) : undefined) ||
+                   thoughtSignatureCache.get(fcForName.name as string);
 
       // If cached signature is from an incompatible model family, skip it
-      const cachedMeta = (scopedKey && thoughtSignatureMeta.get(scopedKey)) ||
-                         thoughtSignatureMeta.get(fcForName.name as string);
-      if (targetFamily === 'gemini' && cachedMeta?.family === 'claude') {
-        continue;
+      if (cached) {
+        const cachedMeta = (scopedKey && thoughtSignatureMeta.get(scopedKey)) ||
+                           (convId ? thoughtSignatureMeta.get(`${convId}:__last__`) : undefined) ||
+                           thoughtSignatureMeta.get(fcForName.name as string) ||
+                           thoughtSignatureMeta.get(cached);
+        if (targetFamily === 'gemini' && cachedMeta?.family === 'claude') {
+          cached = undefined;
+        }
       }
 
       // No cached signature — don't set anything. Sending a placeholder string
@@ -235,6 +279,106 @@ export function restoreThoughtSignatures(
     }
   }
   return restoredCount > 0;
+}
+
+/**
+ * For Gemini 2.5 / 3+ models on Vertex AI / Cloud Code:
+ * If a functionCall part has NO thought_signature and none could be restored from cache,
+ * Vertex AI rejects the request with HTTP 400 "Function call is missing a thought_signature in functionCall parts".
+ * This function converts any unsigned functionCall part and its corresponding functionResponse into text parts.
+ * Since text parts require no thought_signature, Vertex AI accepts the request while preserving full context.
+ */
+export function sanitizeUnsignedToolCalls(contents: unknown[]): boolean {
+  if (!Array.isArray(contents)) return false;
+  let modified = false;
+  const convertedToolNames = new Set<string>();
+
+  for (const item of contents) {
+    const turn = item as { role?: string; parts?: unknown[] };
+    if (!Array.isArray(turn?.parts)) continue;
+
+    turn.parts = turn.parts.map((part) => {
+      if (!part || typeof part !== 'object') return part;
+      const p = part as Record<string, unknown>;
+
+      const fc = (p.functionCall || p.function_call) as Record<string, unknown> | undefined;
+      if (fc && typeof fc === 'object') {
+        const sig =
+          (typeof p.thought_signature === 'string' && p.thought_signature) ||
+          (typeof p.thoughtSignature === 'string' && p.thoughtSignature);
+        if (!sig) {
+          modified = true;
+          const fnName = String(fc.name || 'tool');
+          convertedToolNames.add(fnName);
+          const args = fc.args ? (typeof fc.args === 'string' ? fc.args : JSON.stringify(fc.args)) : '{}';
+          return { text: `[Executed tool: ${fnName} with arguments: ${args}]` };
+        }
+      }
+
+      const fr = (p.functionResponse || p.function_response) as Record<string, unknown> | undefined;
+      if (fr && typeof fr === 'object') {
+        const fnName = String(fr.name || 'tool');
+        if (convertedToolNames.has(fnName)) {
+          modified = true;
+          const rObj = fr.response as Record<string, unknown> | undefined;
+          const resp = fr.response
+            ? (typeof fr.response === 'string' ? fr.response : (rObj?.output || rObj?.result || JSON.stringify(fr.response)))
+            : '';
+          return { text: `[Tool ${fnName} output: ${resp}]` };
+        }
+      }
+
+      return part;
+    });
+  }
+
+  return modified;
+}
+
+/**
+ * Unconditionally converts all functionCall and functionResponse parts to text parts,
+ * used when Vertex AI returns HTTP 400 for corrupted or invalid signatures.
+ */
+export function flattenAllToolCallsToText(contents: unknown[]): boolean {
+  if (!Array.isArray(contents)) return false;
+  let modified = false;
+
+  for (const item of contents) {
+    const turn = item as { role?: string; parts?: unknown[] };
+    if (!Array.isArray(turn?.parts)) continue;
+
+    turn.parts = turn.parts.map((part) => {
+      if (!part || typeof part !== 'object') return part;
+      const p = part as Record<string, unknown>;
+
+      const fc = (p.functionCall || p.function_call) as Record<string, unknown> | undefined;
+      if (fc && typeof fc === 'object') {
+        modified = true;
+        const fnName = String(fc.name || 'tool');
+        const args = fc.args ? (typeof fc.args === 'string' ? fc.args : JSON.stringify(fc.args)) : '{}';
+        return { text: `[Executed tool: ${fnName} with arguments: ${args}]` };
+      }
+
+      const fr = (p.functionResponse || p.function_response) as Record<string, unknown> | undefined;
+      if (fr && typeof fr === 'object') {
+        modified = true;
+        const fnName = String(fr.name || 'tool');
+        const rObj = fr.response as Record<string, unknown> | undefined;
+        const resp = fr.response
+          ? (typeof fr.response === 'string' ? fr.response : (rObj?.output || rObj?.result || JSON.stringify(fr.response)))
+          : '';
+        return { text: `[Tool ${fnName} output: ${resp}]` };
+      }
+
+      delete p.thought_signature;
+      delete p.thoughtSignature;
+      delete p.signature;
+      delete p.thought;
+      return part;
+    });
+  }
+
+  return modified;
 }
 
 // ─── Periodic Cleanup (managed lifecycle) ─────────────────────────────────

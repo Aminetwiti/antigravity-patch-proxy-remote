@@ -6,7 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { CommandContext } from '../types';
-import { getLsLogPath, getAntigravityDataDir } from '../core/paths';
+import { getLsLogPath, getMainLogPath, getProxyLogPath, getAntigravityDataDir } from '../core/paths';
 import { error, info, ok, warn, c, header } from '../cli/output';
 
 /** All known log sources and their paths. */
@@ -14,8 +14,12 @@ function getLogSources(): Record<string, string> {
   const dir = getAntigravityDataDir();
   return {
     language_server: getLsLogPath(),
+    main: getMainLogPath(),
+    electron: getMainLogPath(),
+    'ag-doctor': getMainLogPath(),
+    proxy: getProxyLogPath(),
+    serve: path.join(dir, 'serve.log'),
     daemon: path.join(dir, 'daemon.log'),
-    proxy: path.join(dir, 'serve.log'),
     'proxy-err': path.join(dir, 'serve.err.log'),
     recovery: path.join(dir, 'recovery.log'),
   };

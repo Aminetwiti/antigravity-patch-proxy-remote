@@ -21,6 +21,18 @@ import {
   findMatchingAccount,
   mergeAccountWithExisting,
 } from './account-import';
+import {
+  parseLogLine,
+  highlightText,
+  LogLevel,
+} from './log-viewer';
+import {
+  testSingleModel,
+  testBatchModels,
+  renderPingBadge,
+  formatApiError,
+  PingPongResult,
+} from './ping-pong-tester';
 
 // (See globals.d.ts for the window.ag interface)
 
@@ -185,6 +197,14 @@ interface AgAPI {
   antigravityRestart(): Promise<{ ok: boolean; data?: { ok: boolean; message: string; pid?: number }; error?: string }>;
   antigravityLaunchLogs(): Promise<string>;
   repairRun(): Promise<{ ok: boolean; proxy?: boolean; ca?: boolean; error?: string }>;
+  onOAuthIntercepted?(handler: (data: { url: string; port?: string; redirectUri?: string; ts?: number }) => void): () => void;
+  modelPingPong?(params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
+    ok: boolean;
+    status: number;
+    latencyMs: number;
+    pongText?: string;
+    error?: string;
+  }>;
 }
 
 interface Window {
@@ -1072,6 +1092,171 @@ function ansiToHtml(s: string): string {
     .replace(/\x1b\[0m/g, '</span>');
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Structured log helpers (dedup, level classification, noise filter)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
+let currentSearchQuery = '';
+
+const logsCounters: Record<string, number> = {
+  total: 0,
+  deduped: 0,
+  info: 0,
+  warn: 0,
+  error: 0,
+  panic: 0,
+  noise: 0,
+};
+
+const logsDedupState = {
+  lastLine: '',
+  lastEl: null as HTMLElement | null,
+  count: 1,
+};
+
+function resetLogsDedupState(): void {
+  logsDedupState.lastLine = '';
+  logsDedupState.lastEl = null;
+  logsDedupState.count = 1;
+  logsCounters.total = 0;
+  logsCounters.deduped = 0;
+  logsCounters.info = 0;
+  logsCounters.warn = 0;
+  logsCounters.error = 0;
+  logsCounters.panic = 0;
+  logsCounters.noise = 0;
+}
+
+const LOGS_MAX_LINES_DOM = 2000;
+
+function appendLogLines(container: HTMLElement, raw: string): void {
+  const lines = raw.split('\n');
+  for (const rawLine of lines) {
+    const cleanLine = rawLine.replace(ANSI_RE, '').trimEnd();
+    if (!cleanLine) continue;
+    logsCounters.total++;
+
+    // Dedup: collapse consecutive identical lines into ×N badge
+    if (cleanLine === logsDedupState.lastLine && logsDedupState.lastEl) {
+      logsDedupState.count++;
+      logsCounters.deduped++;
+      let badge = logsDedupState.lastEl.querySelector('.log-dedup') as HTMLSpanElement;
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'log-dedup';
+        logsDedupState.lastEl.appendChild(badge);
+      }
+      badge.textContent = `×${logsDedupState.count}`;
+      badge.title = `Repeated ${logsDedupState.count} times`;
+      continue;
+    }
+
+    const parsed = parseLogLine(cleanLine);
+    if (logsCounters[parsed.level] !== undefined) {
+      logsCounters[parsed.level]++;
+    }
+    if (parsed.isNoise) logsCounters.noise++;
+
+    const div = document.createElement('div');
+    div.className = `log-line log-${parsed.level}${parsed.isNoise ? ' log-noise' : ''}`;
+    div.dataset.level = parsed.level;
+    div.dataset.raw = parsed.raw;
+    div.dataset.msg = parsed.message;
+
+    // Tag badge
+    const tag = document.createElement('span');
+    tag.className = `log-tag log-tag-${parsed.level}`;
+    tag.textContent = parsed.level === 'error' ? 'ERR' : parsed.level.toUpperCase();
+    div.appendChild(tag);
+
+    // Time
+    if (parsed.time) {
+      const time = document.createElement('span');
+      time.className = 'log-time';
+      time.textContent = parsed.time;
+      div.appendChild(time);
+    }
+
+    // Location
+    if (parsed.location) {
+      const loc = document.createElement('span');
+      loc.className = 'log-loc';
+      loc.title = parsed.location;
+      loc.textContent = parsed.location;
+      div.appendChild(loc);
+    }
+
+    // Message
+    const msg = document.createElement('span');
+    msg.className = 'log-msg';
+    if (currentSearchQuery) {
+      msg.innerHTML = highlightText(parsed.message, currentSearchQuery);
+    } else {
+      msg.textContent = parsed.message;
+    }
+    div.appendChild(msg);
+
+    // Copy line button on hover
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'log-line-copy';
+    copyBtn.type = 'button';
+    copyBtn.title = 'Copy line';
+    copyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    copyBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      void navigator.clipboard.writeText(parsed.raw);
+      toast('Line copied', 'info', 1000);
+    });
+    div.appendChild(copyBtn);
+
+    if (currentSearchQuery && !cleanLine.toLowerCase().includes(currentSearchQuery)) {
+      div.classList.add('search-hidden');
+    }
+
+    container.appendChild(div);
+
+    logsDedupState.lastLine = cleanLine;
+    logsDedupState.lastEl = div;
+    logsDedupState.count = 1;
+  }
+
+  // Trim old lines from top
+  while (container.childElementCount > LOGS_MAX_LINES_DOM) {
+    container.firstElementChild?.remove();
+  }
+}
+
+function updateLogsStats(): void {
+  const lineCountEl = document.getElementById('logsLineCount');
+  const dedupCountEl = document.getElementById('logsDedupCount');
+  if (lineCountEl) lineCountEl.textContent = `${logsCounters.total} lines`;
+  if (dedupCountEl) dedupCountEl.textContent = `${logsCounters.deduped} deduped`;
+
+  const cAll = document.getElementById('countAll');
+  const cInfo = document.getElementById('countInfo');
+  const cWarn = document.getElementById('countWarn');
+  const cError = document.getElementById('countError');
+  const cPanic = document.getElementById('countPanic');
+  const panicBtn = document.getElementById('filterPanicBtn');
+
+  if (cAll) cAll.textContent = String(logsCounters.total);
+  if (cInfo) cInfo.textContent = String(logsCounters.info);
+  if (cWarn) cWarn.textContent = String(logsCounters.warn);
+  if (cError) cError.textContent = String(logsCounters.error);
+  if (cPanic) cPanic.textContent = String(logsCounters.panic);
+
+  if (panicBtn) {
+    panicBtn.style.display = logsCounters.panic > 0 ? 'inline-flex' : 'none';
+  }
+
+  const cleanBtn = document.getElementById('logsCleanViewBtn');
+  if (cleanBtn && cleanBtn.classList.contains('active')) {
+    cleanBtn.title = `Clean View: ${logsCounters.noise} noise lines hidden`;
+  }
+}
+
 // Reusable template for doctor output — avoids creating a new <template> each run
 const doctorTpl = document.createElement('template');
 
@@ -1146,6 +1331,33 @@ async function runDoctorView(): Promise<void> {
 }
 
 $('#doctorRunBtn').addEventListener('click', () => void runDoctorView());
+$('#doctorPruneBtn')?.addEventListener('click', async () => {
+  setStatus('Pruning database…', 'busy');
+  try {
+    const result = await window.ag.run(['db:prune', '--json']);
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(result.stdout);
+    } catch {
+      parsed = null;
+    }
+
+    if (parsed) {
+      if (parsed.orphanCount === 0) {
+        toast('Database is clean: 0 orphan trajectories found.', 'info');
+      } else {
+        toast(`Pruned ${parsed.prunedCount} orphan trajectories! Reclaimed ${(parsed.bytesReclaimed / 1024).toFixed(1)} KB`, 'ok');
+      }
+    } else {
+      toast(result.stdout.trim() || 'Database pruned successfully', 'ok');
+    }
+    doctorOutput.textContent = result.stdout || result.stderr;
+    setStatus('Ready');
+  } catch (e) {
+    toast(`Prune failed: ${(e as Error).message}`, 'err');
+    setStatus('Error', 'err');
+  }
+});
 $('#doctorJsonBtn').addEventListener('click', async () => {
   setStatus('Loading JSON…', 'busy');
   try {
@@ -1499,6 +1711,9 @@ function renderModelsView(): void {
               </div>
             </div>
             <div class="model-actions">
+              <button class="btn btn-ghost btn-sm model-action-ping" data-action="ping" data-name="${escapeHtml(m.name)}" data-provider="${escapeHtml(m.provider)}" data-url="${escapeHtml(m.apiUrl)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="Test Ping-Pong (latence & réponse)">
+                🏓 Ping
+              </button>
               <button class="btn btn-ghost btn-sm model-action-test" data-action="test" data-name="${escapeHtml(m.name)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="Test connection to ${escapeHtml(m.name)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                 Test
@@ -1738,7 +1953,7 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
         const cleanName = name.replace(/^models\//, '');
         const res = (await window.ag.providers.test({ apiUrl: match.apiUrl, apiKey: match.apiKey, id: match.id, modelId: cleanName })) as { success: boolean; latencyMs?: number; error?: string };
         success = res.success;
-        msg = success ? `✓ ${name} reachable (${res.latencyMs ?? 0}ms)` : `${name} failed: ${res.error || 'Unreachable'}`;
+        msg = success ? `✓ ${name} reachable (${res.latencyMs ?? 0}ms)` : `${name} failed: ${formatApiError(res.error || 'Unreachable')}`;
       } else {
         const r = await window.ag.run(['models', 'test', name]);
         success = r.stdout.includes('✓') || r.code === 0;
@@ -1748,12 +1963,40 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
       toast(msg, 'ok');
       if (dot) dot.className = 'status-dot ok';
     } catch (e) {
-      toast(`Tested ${name}: Failed - ${(e as Error).message}`, 'err');
+      toast(`Tested ${name}: Failed - ${formatApiError((e as Error).message)}`, 'err');
       if (dot) dot.className = 'status-dot off';
     } finally {
       btn.removeAttribute('disabled');
       btn.innerHTML = origHtml;
       setStatus('Ready');
+    }
+  } else if (action === 'ping') {
+    setStatus(`Ping ${name}…`, 'busy');
+    btn.setAttribute('disabled', 'true');
+    const origHtml = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner"></span> Ping…`;
+    try {
+      const res = await testSingleModel({ name, provider, apiUrl: url, providerId: btn.dataset.providerId }, 'ping');
+      const badgeHtml = renderPingBadge(res);
+      const card = btn.closest('.model-card');
+      const nameEl = card?.querySelector('.model-name');
+      const existingBadge = card?.querySelector('.ping-badge');
+      if (existingBadge) existingBadge.remove();
+      if (nameEl) {
+        nameEl.insertAdjacentHTML('beforeend', ' ' + badgeHtml);
+      }
+      if (res.ok) {
+        toast(`Pong reçu de ${name} (${res.latencyMs}ms)${res.pongText ? ' : "' + res.pongText.slice(0, 40) + '…"' : ''}`, 'ok', 4000);
+      } else {
+        toast(`Ping échoué pour ${name} : ${formatApiError(res.error || 'Timeout')}`, 'err', 5000);
+      }
+      setStatus('Ready');
+    } catch (e) {
+      toast(`Erreur Ping : ${formatApiError((e as Error).message)}`, 'err');
+      setStatus('Error', 'err');
+    } finally {
+      btn.removeAttribute('disabled');
+      btn.innerHTML = origHtml;
     }
   } else if (action === 'toggle') {
     const isCurrentlyEnabled = !btn.classList.contains('is-disabled');
@@ -3142,17 +3385,13 @@ let logsFlushScheduled = false;
 const flushLogs = () => {
   logsFlushScheduled = false;
   if (logsPendingChunk) {
-    logsTpl.innerHTML = ansiToHtml(logsPendingChunk);
-    logsOutput.appendChild(logsTpl.content.cloneNode(true));
+    const isNearBottom = logsOutput.scrollHeight - logsOutput.scrollTop - logsOutput.clientHeight < 100;
+    appendLogLines(logsOutput, logsPendingChunk);
+    updateLogsStats();
     logsPendingChunk = null;
-  }
-  const isNearBottom = logsOutput.scrollHeight - logsOutput.scrollTop - logsOutput.clientHeight < 100;
-  if (logsOutput.textContent && logsOutput.textContent.length > LOGS_MAX_BYTES) {
-    const trimmed = logsOutput.textContent.slice(-LOGS_KEEP_BYTES);
-    logsOutput.textContent = trimmed;
-    logsOutput.scrollTop = logsOutput.scrollHeight;
-  } else if (isNearBottom) {
-    logsOutput.scrollTop = logsOutput.scrollHeight;
+    if (isNearBottom) {
+      logsOutput.scrollTop = logsOutput.scrollHeight;
+    }
   }
 };
 const scheduleLogsFlush = () => {
@@ -3172,8 +3411,10 @@ async function loadLogs(): Promise<void> {
   logsOutput.style.display = 'none';
   try {
     const r = await window.ag.run(['logs', '-n', '100', '--source', currentLogSource]);
-    logsTpl.innerHTML = ansiToHtml(r.stdout || r.stderr || '(empty)');
-    logsOutput.replaceChildren(logsTpl.content);
+    logsOutput.textContent = '';
+    resetLogsDedupState();
+    appendLogLines(logsOutput, r.stdout || r.stderr || '(empty)');
+    updateLogsStats();
     logsOutput.scrollTop = logsOutput.scrollHeight;
     setStatus('Ready');
   } catch (e) {
@@ -3227,6 +3468,8 @@ logsFollowBtn.addEventListener('click', () => {
 });
 logsClearBtn.addEventListener('click', async () => {
   logsOutput.textContent = '';
+  resetLogsDedupState();
+  updateLogsStats();
   try {
     await window.ag.run(['logs', '--clear', '--source', currentLogSource]);
   } catch (err) {
@@ -3235,12 +3478,131 @@ logsClearBtn.addEventListener('click', async () => {
   toast('Logs cleared', 'info', 1500);
 });
 logsCopyBtn.addEventListener('click', async () => {
-  await navigator.clipboard.writeText(logsOutput.textContent ?? '');
+  const lines = Array.from(logsOutput.querySelectorAll<HTMLElement>('.log-line:not(.search-hidden)'))
+    .map((el) => el.dataset.raw || el.textContent || '')
+    .filter(Boolean);
+  const text = lines.length > 0 ? lines.join('\n') : (logsOutput.textContent ?? '');
+  await navigator.clipboard.writeText(text);
   const origText = logsCopyBtn.innerHTML;
   logsCopyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
   setTimeout(() => { logsCopyBtn.innerHTML = origText; }, 2000);
   toast('Logs copied to clipboard', 'ok', 2000);
 });
+
+// Copy only errors and warnings
+const logsCopyErrorsBtn = $('#logsCopyErrorsBtn') as HTMLButtonElement | null;
+if (logsCopyErrorsBtn) {
+  logsCopyErrorsBtn.addEventListener('click', async () => {
+    const errorLines = Array.from(logsOutput.querySelectorAll<HTMLElement>('.log-line.log-error, .log-line.log-panic, .log-line.log-warn'))
+      .map((el) => el.dataset.raw || el.textContent || '')
+      .filter(Boolean);
+    if (errorLines.length === 0) {
+      toast('No errors or warnings in current logs', 'info', 1500);
+      return;
+    }
+    await navigator.clipboard.writeText(errorLines.join('\n'));
+    const origText = logsCopyErrorsBtn.innerHTML;
+    logsCopyErrorsBtn.textContent = 'Copied!';
+    setTimeout(() => { logsCopyErrorsBtn.innerHTML = origText; }, 2000);
+    toast(`${errorLines.length} error/warn lines copied`, 'ok', 2000);
+  });
+}
+
+// Clean View filter (default ON)
+logsOutput.classList.add('logs-hide-noise');
+const logsCleanViewBtn = $('#logsCleanViewBtn') as HTMLButtonElement | null;
+if (logsCleanViewBtn) {
+  logsCleanViewBtn.addEventListener('click', () => {
+    logsCleanViewBtn.classList.toggle('active');
+    const isActive = logsCleanViewBtn.classList.contains('active');
+    logsOutput.classList.toggle('logs-hide-noise', isActive);
+    toast(isActive ? 'Clean View enabled (routine noise hidden)' : 'Showing all raw logs including noise', 'info', 1500);
+  });
+}
+
+// Filter ALL button
+const filterAllBtn = $('#filterAllBtn') as HTMLButtonElement | null;
+if (filterAllBtn) {
+  filterAllBtn.addEventListener('click', () => {
+    ['info', 'warn', 'error', 'panic'].forEach((lvl) => {
+      logsOutput.classList.remove(`logs-hide-${lvl}`);
+      const btn = document.querySelector(`.logs-filter-btn[data-level="${lvl}"]`);
+      btn?.classList.add('active');
+    });
+  });
+}
+
+// Logs level filter buttons (INFO, WARN, ERROR, PANIC)
+const logsFilterButtons = $$<HTMLButtonElement>('.logs-filter-btn[data-level]:not([data-level="all"])');
+logsFilterButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const level = btn.getAttribute('data-level');
+    btn.classList.toggle('active');
+    const isActive = btn.classList.contains('active');
+    if (level === 'info') logsOutput.classList.toggle('logs-hide-info', !isActive);
+    if (level === 'warn') logsOutput.classList.toggle('logs-hide-warn', !isActive);
+    if (level === 'error') logsOutput.classList.toggle('logs-hide-error', !isActive);
+    if (level === 'panic') logsOutput.classList.toggle('logs-hide-panic', !isActive);
+  });
+});
+
+// Logs search input with real-time match counter and text highlighting
+const logsSearchInput = $('#logsSearch') as HTMLInputElement | null;
+const logsSearchCount = $('#logsSearchCount') as HTMLElement | null;
+
+function applySearchFilter(query: string): void {
+  currentSearchQuery = query;
+  const lines = logsOutput.querySelectorAll<HTMLElement>('.log-line');
+  let matchCount = 0;
+  lines.forEach((el) => {
+    const raw = el.dataset.raw || el.textContent || '';
+    const msgEl = el.querySelector('.log-msg') as HTMLElement | null;
+    const origMsg = el.dataset.msg || '';
+
+    if (!query) {
+      el.classList.remove('search-hidden');
+      if (msgEl && origMsg) {
+        msgEl.textContent = origMsg;
+      }
+      matchCount++;
+    } else if (raw.toLowerCase().includes(query)) {
+      el.classList.remove('search-hidden');
+      matchCount++;
+      if (msgEl && origMsg) {
+        msgEl.innerHTML = highlightText(origMsg, query);
+      }
+    } else {
+      el.classList.add('search-hidden');
+    }
+  });
+
+  if (logsSearchCount) {
+    if (!query) {
+      logsSearchCount.textContent = '';
+    } else {
+      logsSearchCount.textContent = `${matchCount} match${matchCount === 1 ? '' : 'es'}`;
+    }
+  }
+}
+
+if (logsSearchInput) {
+  logsSearchInput.addEventListener('input', () => {
+    applySearchFilter(logsSearchInput.value.trim().toLowerCase());
+  });
+}
+
+// Floating scroll to bottom button
+const logsScrollBottomBtn = $('#logsScrollBottomBtn') as HTMLButtonElement | null;
+if (logsScrollBottomBtn) {
+  logsOutput.addEventListener('scroll', () => {
+    const distanceToBottom = logsOutput.scrollHeight - logsOutput.scrollTop - logsOutput.clientHeight;
+    logsScrollBottomBtn.style.display = distanceToBottom > 160 ? 'inline-flex' : 'none';
+  });
+  logsScrollBottomBtn.addEventListener('click', () => {
+    logsOutput.scrollTo({ top: logsOutput.scrollHeight, behavior: 'smooth' });
+    logsScrollBottomBtn.style.display = 'none';
+  });
+}
 
 // Logs tabs: switch between log sources
 let currentLogSource = 'language_server';
@@ -6099,7 +6461,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
               <div style="min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                   <span style="font-weight: 600; font-size: 12.5px; color: var(--text-0);">${escapeHtml(a.email || (a.name === 'google' ? 'Google API Key (Default)' : (a.name || a.id)))}</span>
-                  ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span>` : ''}
+                  ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span><span class="pool-role-badge pool-role-primary" title="Compte actif pour les requêtes Antigravity">● Pool Actif</span>` : `<span class="pool-role-badge pool-role-standby" title="Compte en réserve automatique (failover)">○ Pool Réserve</span>`}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
                 </div>
                 ${a.email && a.name && a.email !== a.name
@@ -6217,7 +6579,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
               <div style="min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 6px;">
                   <strong style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(a.name)}</strong>
-                  ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span>` : ''}
+                  ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span><span class="pool-role-badge pool-role-primary" title="Compte actif pour Antigravity">● Pool Actif</span>` : `<span class="pool-role-badge pool-role-standby" title="Compte en réserve automatique (failover)">○ Pool Réserve</span>`}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
                 </div>
                 <div style="font-size: 11px; color: var(--text-2);">${activeModels.length} models · ${escapeHtml(maskKeyPreview(a.apiKey))}</div>
@@ -6915,5 +7277,200 @@ gaSyncAllBtn?.addEventListener('click', async () => {
     gaSyncAllBtn.innerHTML = orig;
   }
 });
+
+// ── OAuth Intercept Banner & QR Dialog ───────────────────────────────────────
+let lastInterceptedOAuthUrl = '';
+
+function setupOAuthInterception(): void {
+  const banner = document.getElementById('oauthInterceptBanner');
+  const portBadge = document.getElementById('oauthPortBadge');
+  const openBrowserBtn = document.getElementById('oauthOpenBrowserBtn');
+  const copyUrlBtn = document.getElementById('oauthCopyUrlBtn');
+  const qrBtn = document.getElementById('oauthQrBtn');
+  const dismissBtn = document.getElementById('oauthDismissBtn');
+  const qrModal = document.getElementById('oauthQrModalBackdrop');
+  const qrContainer = document.getElementById('oauthQrImageContainer');
+  const qrClose = document.getElementById('oauthQrModalClose');
+  const qrCloseBtn = document.getElementById('oauthQrCloseBtn');
+
+  if (window.ag?.onOAuthIntercepted) {
+    window.ag.onOAuthIntercepted((data: { url: string; port?: string; redirectUri?: string; ts?: number }) => {
+      lastInterceptedOAuthUrl = data.url;
+      if (portBadge) {
+        portBadge.textContent = data.port ? `Port ${data.port}` : 'OAuth';
+      }
+      if (banner) {
+        banner.style.display = 'flex';
+      }
+      toast("Demande d'authentification Google détectée !", 'info', 6000);
+    });
+  }
+
+  openBrowserBtn?.addEventListener('click', () => {
+    if (lastInterceptedOAuthUrl && window.ag?.openExternal) {
+      void window.ag.openExternal(lastInterceptedOAuthUrl);
+    }
+  });
+
+  copyUrlBtn?.addEventListener('click', async () => {
+    if (lastInterceptedOAuthUrl) {
+      await navigator.clipboard.writeText(lastInterceptedOAuthUrl);
+      toast('URL OAuth copiée dans le presse-papiers', 'ok');
+    }
+  });
+
+  qrBtn?.addEventListener('click', async () => {
+    if (!lastInterceptedOAuthUrl) return;
+    if (qrContainer) {
+      qrContainer.innerHTML = '<span class="spinner"></span>';
+      try {
+        if (window.ag?.generateQr) {
+          const qrSvg = await window.ag.generateQr(lastInterceptedOAuthUrl);
+          qrContainer.innerHTML = qrSvg;
+        } else {
+          qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(lastInterceptedOAuthUrl)}" alt="QR Code" width="180" height="180" />`;
+        }
+      } catch {
+        qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(lastInterceptedOAuthUrl)}" alt="QR Code" width="180" height="180" />`;
+      }
+    }
+    if (qrModal) qrModal.hidden = false;
+  });
+
+  dismissBtn?.addEventListener('click', () => {
+    if (banner) banner.style.display = 'none';
+  });
+
+  const closeQr = () => {
+    if (qrModal) qrModal.hidden = true;
+  };
+  qrClose?.addEventListener('click', closeQr);
+  qrCloseBtn?.addEventListener('click', closeQr);
+}
+
+// ── Ping-Pong Modal & Batch Benchmark ───────────────────────────────────────
+function setupPingPongModal(): void {
+  const modal = document.getElementById('pingPongModalBackdrop');
+  const openBtn = document.getElementById('modelsPingPongBtn');
+  const closeBtn = document.getElementById('pingPongModalClose');
+  const footerCloseBtn = document.getElementById('pingPongFooterClose');
+  const runBatchBtn = document.getElementById('pingPongRunBatchBtn');
+  const promptInput = document.getElementById('pingPongCustomPrompt') as HTMLInputElement | null;
+  const progressEl = document.getElementById('pingPongBatchProgress');
+  const tableBody = document.getElementById('pingPongTableBody');
+
+  const closeModal = () => {
+    if (modal) modal.hidden = true;
+  };
+
+  closeBtn?.addEventListener('click', closeModal);
+  footerCloseBtn?.addEventListener('click', closeModal);
+
+  openBtn?.addEventListener('click', () => {
+    if (!modal || !tableBody) return;
+    modal.hidden = false;
+
+    const activeModels = allLoadedModels.filter((m) => m.enabled !== false);
+    if (activeModels.length === 0) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="5" style="padding: 24px; text-align: center; color: var(--text-2);">
+            Aucun modèle actif trouvé. Activez ou ajoutez des modèles dans la liste.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tableBody.innerHTML = activeModels.map((m) => `
+      <tr data-ping-model="${escapeHtml(m.name)}" style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 10px 12px; font-weight: 500;">
+          ${escapeHtml(m.displayName || m.name)}
+          <div style="font-size: 11px; color: var(--text-3); font-family: var(--font-mono);">${escapeHtml(m.name)}</div>
+        </td>
+        <td style="padding: 10px 12px;">
+          <span class="badge badge-muted">${escapeHtml(m.provider || 'custom')}</span>
+        </td>
+        <td style="padding: 10px 12px;" class="ping-status-cell">
+          <span class="badge badge-ghost" style="opacity: 0.6;">En attente</span>
+        </td>
+        <td style="padding: 10px 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--text-2);" class="ping-pong-cell">
+          —
+        </td>
+        <td style="padding: 10px 12px; text-align: right;">
+          <button class="btn btn-ghost btn-sm ping-single-btn" data-model="${escapeHtml(m.name)}" type="button">
+            🏓 Ping
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  });
+
+  tableBody?.addEventListener('click', async (e) => {
+    const target = e.target as HTMLElement;
+    const btn = target.closest<HTMLButtonElement>('.ping-single-btn');
+    if (!btn) return;
+    const modelName = btn.dataset.model;
+    if (!modelName) return;
+
+    const row = btn.closest('tr');
+    const statusCell = row?.querySelector('.ping-status-cell');
+    const pongCell = row?.querySelector('.ping-pong-cell');
+    const prompt = promptInput?.value?.trim() || 'ping';
+
+    const targetModel = allLoadedModels.find((m) => m.name === modelName) || { name: modelName };
+    btn.disabled = true;
+    if (statusCell) statusCell.innerHTML = '<span class="spinner"></span> <span style="font-size: 11px;">Ping…</span>';
+
+    try {
+      const res = await testSingleModel(targetModel, prompt);
+      if (statusCell) statusCell.innerHTML = renderPingBadge(res);
+      if (pongCell) pongCell.textContent = res.pongText || (res.ok ? '(Réponse vide)' : res.error || 'Erreur');
+    } catch (err) {
+      if (statusCell) statusCell.innerHTML = '<span class="ping-badge ping-badge-error">❌ Erreur</span>';
+      if (pongCell) pongCell.textContent = (err as Error).message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  runBatchBtn?.addEventListener('click', async () => {
+    const activeModels = allLoadedModels.filter((m) => m.enabled !== false);
+    if (activeModels.length === 0) {
+      toast('Aucun modèle actif à tester', 'warn');
+      return;
+    }
+
+    const prompt = promptInput?.value?.trim() || 'ping';
+    if (runBatchBtn) (runBatchBtn as HTMLButtonElement).disabled = true;
+    if (progressEl) {
+      progressEl.style.display = 'inline-block';
+      progressEl.textContent = `0 / ${activeModels.length} testés…`;
+    }
+
+    try {
+      await testBatchModels(activeModels, (done: number, total: number, res: PingPongResult) => {
+        if (progressEl) progressEl.textContent = `${done} / ${total} testés…`;
+        const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(res.modelName) : res.modelName.replace(/"/g, '\\"');
+        const row = tableBody?.querySelector(`tr[data-ping-model="${escaped}"]`);
+        if (row) {
+          const statusCell = row.querySelector('.ping-status-cell');
+          const pongCell = row.querySelector('.ping-pong-cell');
+          if (statusCell) statusCell.innerHTML = renderPingBadge(res);
+          if (pongCell) pongCell.textContent = res.pongText || (res.ok ? '(Réponse vide)' : res.error || 'Erreur');
+        }
+      }, prompt);
+      toast(`Test Ping-Pong terminé pour ${activeModels.length} modèles`, 'ok');
+    } finally {
+      if (runBatchBtn) (runBatchBtn as HTMLButtonElement).disabled = false;
+      if (progressEl) progressEl.style.display = 'none';
+    }
+  });
+}
+
+// Initialize OAuth Interception and Ping-Pong modal handlers
+setupOAuthInterception();
+setupPingPongModal();
+
 
 
