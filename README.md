@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="package.json"><img src="https://img.shields.io/badge/version-3.4.2-blue.svg?style=for-the-badge" alt="Version 3.4.2" /></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/version-3.5.0-blue.svg?style=for-the-badge" alt="Version 3.5.0" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=for-the-badge" alt="License Apache 2.0" /></a>
   <a href="remote/mobile"><img src="https://img.shields.io/badge/Flutter-Mobile%20(Android%20%2F%20iOS)-02569B.svg?style=for-the-badge&logo=flutter" alt="Flutter Mobile" /></a>
   <a href="remote/daemon"><img src="https://img.shields.io/badge/Go%20Daemon-gRPC--Web%20%2F%20WS-00ADD8.svg?style=for-the-badge&logo=go" alt="Go Daemon" /></a>
@@ -232,7 +232,7 @@ All custom model configurations are stored in `%APPDATA%/antigravity/custom_mode
 
 ### Request Hardening & DoS Protection
 
-- **Request Body Size Cap**: Strict 10 MB payload limit to prevent buffer exhaustion DoS attacks (`HTTP 413 Payload Too Large`).
+- **Request Body Size Cap**: Default 100 MB payload limit (configurable via `AG_MAX_BODY_SIZE_MB` / `AG_MAX_BODY_SIZE`) to support large multi-turn conversations while preventing buffer exhaustion DoS attacks (`HTTP 413 Payload Too Large`).
 - **Timeouts**: 30s-120s configurable timeouts on all outbound requests to prevent hung connections.
 - **Header Masking**: CSRF tokens and authorization headers are scrubbed from diagnostic logging outputs.
 
@@ -297,7 +297,7 @@ npm run doctor:models
 # Stream real-time diagnostic logs
 npm run doctor:logs
 
-# One-click repatch (IDE or classic, auto-detected): patch + proxy + launch
+# Windows one-click repatch & launcher (or double-click repatch.bat in Explorer)
 repatch.bat
 ```
 
@@ -502,22 +502,12 @@ Configurations are saved under `%APPDATA%/antigravity/custom_models.json`:
 ```json
 [
   {
-    "id": "custom-claude-3-5-sonnet",
-    "name": "Claude 3.5 Sonnet",
+    "name": "claude-3-5-sonnet",
+    "displayName": "Claude 3.5 Sonnet",
     "provider": "anthropic",
-    "model": "claude-3-5-sonnet-20241022",
-    "apiKey": "enc:gcm:...",
-    "baseUrl": "https://api.anthropic.com/v1",
-    "parameters": {
-      "temperature": 0.7,
-      "topP": 0.9,
-      "maxTokens": 4096,
-      "customSystemPrompt": "Focus on high-performance clean code."
-    },
-    "retry": {
-      "maxRetries": 3,
-      "timeoutMs": 60000
-    }
+    "apiUrl": "https://api.anthropic.com/v1",
+    "externalModelName": "claude-3-5-sonnet-20241022",
+    "apiKey": "enc:gcm:..."
   }
 ]
 ```
@@ -544,7 +534,7 @@ Configurations are saved under `%APPDATA%/antigravity/custom_models.json`:
 │   │   ├── jsonRepair.ts  # Safe non-eval SSE JSON repair
 │   │   ├── retryStrategy.ts # Exponential backoff retry logic
 │   │   └── translators/   # OpenAI, Anthropic, Google, Ollama translators
-│   └── __tests__/         # 1455 unit tests (Vitest)
+│   └── __tests__/         # 1000+ unit tests (Vitest)
 ```
 
 ### Building & Watch Mode
@@ -562,7 +552,7 @@ npm run watch
 The test suite runs via **Vitest**:
 
 ```bash
-# Run all 1455 unit tests
+# Run all unit tests across 58 test files
 npm test
 
 # Run tests in watch mode
@@ -595,6 +585,8 @@ To add support for a new LLM provider format:
 | `AG_DAEMON_TOKEN` | — | Auth token for daemon remote access |
 
 Setting `AG_BIND_HOST` to `0.0.0.0` exposes the proxy on all interfaces (required for WSL2 or LAN access).
+
+> For advanced options (retry budgets, timeout tuning, certificate pinning, daemon parameters), refer to the comprehensive [.env.example](.env.example) configuration template.
 
 ---
 

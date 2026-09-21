@@ -124,7 +124,7 @@ if ($Loop) {
     Write-Log "watchdog demarre (boucle 30s, token=$Token, port=$Port)"
     while ($true) {
         # IDE fermé (language_server absent) : pas de daemon à maintenir.
-        if (-not (Get-Process -Name language_server -ErrorAction SilentlyContinue)) {
+        if (-not (Get-Process -Name "*language_server*" -ErrorAction SilentlyContinue)) {
             Start-Sleep -Seconds 30
             continue
         }
@@ -150,7 +150,7 @@ if ($Loop) {
         Start-Sleep -Seconds 30
     }
 } elseif ($Once) {
-    if (-not (Get-Process -Name language_server)) {
+    if (-not (Get-Process -Name "*language_server*" -ErrorAction SilentlyContinue)) {
         Write-Host "IDE (language_server) non demarre - daemon inutile pour l'instant"
         exit 0
     }

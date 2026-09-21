@@ -20,7 +20,7 @@ function traceLog(...args: unknown[]): void {
 }
 import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from './metrics';
 import { randomBytes } from 'crypto';
-import { GOOGLE_HOSTS, DEFAULT_PROXY_PORT, WINDOW_ORIGIN, LOOPBACK_HOSTS } from './constants';
+import { GOOGLE_HOSTS, DEFAULT_PROXY_PORT, WINDOW_ORIGIN, LOOPBACK_HOSTS, DEFAULT_REMOTE_HOST } from './constants';
 
 const proxyLog = createLogger('Proxy');
 
@@ -31,12 +31,54 @@ function newTraceId(): string {
 
 let server: http.Server | null = null;
 let proxyPort = 0;
+let isRemoteVpsActive = false;
+let remoteVpsHost = DEFAULT_REMOTE_HOST;
+let remoteSessionsMap: Record<string, boolean> = {};
+
+function getRemoteStatePath(): string {
+  const home = os.homedir();
+  const dir = path.join(home, '.gemini', 'antigravity');
+  if (!fs.existsSync(dir)) {
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  }
+  return path.join(dir, 'remote_vps_state.json');
+}
+
+function loadRemoteState(): void {
+  try {
+    const p = getRemoteStatePath();
+    if (fs.existsSync(p)) {
+      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      isRemoteVpsActive = !!data.active;
+      if (data.host) remoteVpsHost = String(data.host);
+      if (data.remoteSessions && typeof data.remoteSessions === 'object') {
+        remoteSessionsMap = data.remoteSessions;
+      }
+      log.info(`[Proxy] Loaded Remote VPS state: active=${isRemoteVpsActive}, host=${remoteVpsHost}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
+    }
+  } catch (e) {
+    log.warn('[Proxy] Failed to load remote VPS state from disk:', e);
+  }
+}
+
+function saveRemoteState(): void {
+  try {
+    const p = getRemoteStatePath();
+    fs.writeFileSync(p, JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost, remoteSessions: remoteSessionsMap }, null, 2), 'utf-8');
+  } catch (e) {
+    log.warn('[Proxy] Failed to save remote VPS state to disk:', e);
+  }
+}
+
+// Initialize on boot
+loadRemoteState();
 
 import {
   GOOGLE_PROXY_TIMEOUT_MS,
   FILE_DOWNLOAD_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
   ACTIVE_PORT_FILE,
+  DEFAULT_MAX_BODY_SIZE,
 } from './constants';
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -64,7 +106,7 @@ import {
 import * as registry from './proxy/registry';
 
 // Protobuf injection (extracted from proxy.ts)
-import { injectCustomModelsIntoResponse } from './proxy/protoInjector';
+import { injectCustomModelsIntoResponse, injectCustomModelsIntoUserStatus } from './proxy/protoInjector';
 
 // Custom model loading (extracted from proxy.ts)
 import { loadCustomModels, getCustomModelsPath } from './proxy/modelLoader';
@@ -202,7 +244,8 @@ export function buildProxyErrorPayload(
 
 // ─── Safe Response Helpers ─────────────────────────────────────────────────
 import { safeWriteHead, safeEnd } from './proxy/httpUtils';
-import { mergeModels, getMappedCustomModels, getCustomModelsList } from './proxy/modelInjector';
+import { mergeModels, getMappedCustomModels, getCustomModelsList, injectCustomSlugsIntoAgentModelSorts } from './proxy/modelInjector';
+import { detectModelCapabilities } from './proxy/modelUtils';
 
 // ─── Model Helpers ────────────────────────────────────────────────────────
 
@@ -237,6 +280,7 @@ async function proxyToGoogle(req: http.IncomingMessage, res: http.ServerResponse
     ...(req.headers as Record<string, string | string[] | undefined>),
   };
   headers['host'] = targetHost;
+  headers['content-length'] = String(reqBody.length);
   delete headers['connection'];
   delete headers['keep-alive'];
 
@@ -1214,6 +1258,7 @@ function handleGetAvailableModelsProxy(
 ): void {
   const lsParsed = new URL(lsUrl);
   const client = lsParsed.protocol === 'https:' ? https : http;
+  const bodyToSend = reqBody && reqBody.length > 0 ? reqBody : Buffer.from([0, 0, 0, 0, 0]);
 
   const options: https.RequestOptions = {
     method: 'POST',
@@ -1223,7 +1268,7 @@ function handleGetAvailableModelsProxy(
     headers: {
       'Content-Type': 'application/grpc-web+proto',
       'Accept': 'application/grpc-web+proto',
-      'Content-Length': String(reqBody.length),
+      'Content-Length': String(bodyToSend.length),
       ...(reqHeaders['x-codeium-csrf-token'] ? { 'x-codeium-csrf-token': String(reqHeaders['x-codeium-csrf-token']) } : {}),
       ...(reqHeaders['Connect-Protocol-Version'] ? { 'Connect-Protocol-Version': String(reqHeaders['Connect-Protocol-Version']) } : {}),
       ...(reqHeaders['X-Grpc-Web'] ? { 'X-Grpc-Web': String(reqHeaders['X-Grpc-Web']) } : {}),
@@ -1237,7 +1282,10 @@ function handleGetAvailableModelsProxy(
       lsResErrored = true;
       log.error('[Proxy] LS error for GetAvailableModels:', err.message);
       if (!res.headersSent && !res.writableEnded) {
-        safeWriteHead(res, 502);
+        safeWriteHead(res, 502, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': '*',
+        });
         safeEnd(res);
       }
     });
@@ -1259,6 +1307,9 @@ function handleGetAvailableModelsProxy(
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
             'Content-Length': String(modifiedBuf.length),
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Expose-Headers': '*',
           })
         ) {
           safeEnd(res, modifiedBuf);
@@ -1269,6 +1320,9 @@ function handleGetAvailableModelsProxy(
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
             'Content-Length': String(modifiedBuf.length),
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Expose-Headers': '*',
           })
         ) {
           safeEnd(res, modifiedBuf);
@@ -1281,7 +1335,10 @@ function handleGetAvailableModelsProxy(
     log.error('[Proxy] GetAvailableModels forward timed out');
     lsReq.destroy();
     if (!res.headersSent && !res.writableEnded) {
-      safeWriteHead(res, 504);
+      safeWriteHead(res, 504, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+      });
       safeEnd(res);
     }
   });
@@ -1289,16 +1346,160 @@ function handleGetAvailableModelsProxy(
   lsReq.on('error', (err) => {
     log.error('[Proxy] GetAvailableModels forward error:', err.message);
     if (!res.headersSent && !res.writableEnded) {
-      safeWriteHead(res, 502);
+      safeWriteHead(res, 502, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+      });
       safeEnd(res);
     }
   });
 
-  lsReq.write(reqBody);
+  lsReq.write(bodyToSend);
+  lsReq.end();
+}
+
+// ─── GetUserStatus Proxy Handler ─────────────────────────────────────────────
+
+function handleGetUserStatusProxy(
+  res: http.ServerResponse,
+  reqBody: Buffer,
+  lsUrl: string,
+  reqHeaders: Record<string, string | string[] | undefined>,
+): void {
+  const lsParsed = new URL(lsUrl);
+  const client = lsParsed.protocol === 'https:' ? https : http;
+  const bodyToSend = reqBody && reqBody.length > 0 ? reqBody : Buffer.from([0, 0, 0, 0, 0]);
+
+  const options: https.RequestOptions = {
+    method: 'POST',
+    hostname: lsParsed.hostname,
+    port: lsParsed.port || (lsParsed.protocol === 'https:' ? '443' : '80'),
+    path: lsParsed.pathname + lsParsed.search,
+    headers: {
+      'Content-Type': 'application/grpc-web+proto',
+      'Accept': 'application/grpc-web+proto',
+      'Content-Length': String(bodyToSend.length),
+      ...(reqHeaders['x-codeium-csrf-token'] ? { 'x-codeium-csrf-token': String(reqHeaders['x-codeium-csrf-token']) } : {}),
+      ...(reqHeaders['Connect-Protocol-Version'] ? { 'Connect-Protocol-Version': String(reqHeaders['Connect-Protocol-Version']) } : {}),
+      ...(reqHeaders['X-Grpc-Web'] ? { 'X-Grpc-Web': String(reqHeaders['X-Grpc-Web']) } : {}),
+    },
+    rejectUnauthorized: !LOOPBACK_HOSTS.includes(lsParsed.hostname as typeof LOOPBACK_HOSTS[number]),
+  };
+
+  const lsReq = client.request(options, (lsRes) => {
+    let lsResErrored = false;
+    lsRes.on('error', (err) => {
+      lsResErrored = true;
+      log.error('[Proxy] LS error for GetUserStatus:', err.message);
+      if (!res.headersSent && !res.writableEnded) {
+        safeWriteHead(res, 502, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': '*',
+        });
+        safeEnd(res);
+      }
+    });
+
+    const chunks: Buffer[] = [];
+    lsRes.on('data', (chunk: Buffer) => chunks.push(chunk));
+    lsRes.on('end', () => {
+      if (lsResErrored || res.headersSent || res.writableEnded) {
+        log.debug('[Proxy] GetUserStatus: skipping end handler (response terminated)');
+        return;
+      }
+      const responseBuf = Buffer.concat(chunks);
+      const customModels = loadCustomModels();
+      checkAllModelsHealth(customModels).then((healthMap) => {
+        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels, healthMap);
+        log.info(`[Proxy] GetUserStatus injected ${injectedCount} custom models`);
+        if (
+          safeWriteHead(res, lsRes.statusCode || 200, {
+            'Content-Type': 'application/grpc-web+proto',
+            'Content-Length': String(modifiedBuf.length),
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Expose-Headers': '*',
+          })
+        ) {
+          safeEnd(res, modifiedBuf);
+        }
+      }).catch(() => {
+        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels);
+        log.info(`[Proxy] GetUserStatus injected ${injectedCount} custom models (fallback)`);
+        if (
+          safeWriteHead(res, lsRes.statusCode || 200, {
+            'Content-Type': 'application/grpc-web+proto',
+            'Content-Length': String(modifiedBuf.length),
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Expose-Headers': '*',
+          })
+        ) {
+          safeEnd(res, modifiedBuf);
+        }
+      });
+    });
+  });
+
+  lsReq.setTimeout(30_000, () => {
+    log.error('[Proxy] GetUserStatus forward timed out');
+    lsReq.destroy();
+    if (!res.headersSent && !res.writableEnded) {
+      safeWriteHead(res, 504, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+      });
+      safeEnd(res);
+    }
+  });
+
+  lsReq.on('error', (err) => {
+    log.error('[Proxy] GetUserStatus forward error:', err.message);
+    if (!res.headersSent && !res.writableEnded) {
+      safeWriteHead(res, 502, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+      });
+      safeEnd(res);
+    }
+  });
+
+  lsReq.write(bodyToSend);
   lsReq.end();
 }
 
 // ─── Main Request Handler ─────────────────────────────────────────────────
+
+export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
+  if (!candidate || typeof candidate !== 'string') return false;
+  const enumName = generateModelPlaceholderId(m);
+  const slug = toSlug(m);
+  const clean = candidate.replace(/^models\//, '');
+  const cleanLower = clean.toLowerCase();
+  const candLower = candidate.toLowerCase();
+  const extLower = (m.externalModelName || '').toLowerCase();
+  const idLower = ((m as { id?: string }).id || '').toLowerCase();
+  const dispLower = (m.displayName || '').toLowerCase();
+  const slugLower = slug.toLowerCase();
+  const mSlugLower = (m._slug || '').toLowerCase();
+
+  return (
+    m.name === candidate ||
+    m.name === clean ||
+    slug === candidate ||
+    slug === clean ||
+    slugLower === candLower ||
+    slugLower === cleanLower ||
+    enumName === candidate ||
+    enumName === clean ||
+    `models/${enumName}` === candidate ||
+    candidate.endsWith(enumName) ||
+    (Boolean(extLower) && (candLower === extLower || cleanLower === extLower || candLower === `models/${extLower}`)) ||
+    (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
+    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower)) ||
+    (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower))
+  );
+}
 
 function isAllowedOrigin(req: http.IncomingMessage): boolean {
   const host = (req.headers.host || '').toLowerCase();
@@ -1360,6 +1561,41 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       }),
     );
     return;
+  }
+
+  // Remote VPS Agent State Sync (from IDE Webview or preload)
+  if (req.url === '/api/remote/status' || req.url?.startsWith('/api/remote/status?')) {
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost, remoteSessions: remoteSessionsMap }));
+      return;
+    }
+    if (req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        try {
+          const b = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
+            active?: boolean;
+            host?: string;
+            remoteSessions?: Record<string, boolean>;
+          };
+          if (b.active !== undefined) isRemoteVpsActive = !!b.active;
+          if (b.host) remoteVpsHost = String(b.host);
+          if (b.remoteSessions && typeof b.remoteSessions === 'object') {
+            remoteSessionsMap = { ...remoteSessionsMap, ...b.remoteSessions };
+          }
+          saveRemoteState();
+          log.info(`[Proxy] Remote VPS session status updated: active=${isRemoteVpsActive}, host=${remoteVpsHost}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ ok: true, active: isRemoteVpsActive, host: remoteVpsHost, remoteSessions: remoteSessionsMap }));
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
   }
 
   if (req.method === 'GET' && (req.url === '/__diag__' || req.url?.startsWith('/__diag__?'))) {
@@ -1449,12 +1685,24 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
 
+  // CORS Preflight handler for browser-initiated requests
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': '*',
+      'Access-Control-Max-Age': '86400',
+    });
+    res.end();
+    return;
+  }
+
   req.url = req.url!.replace(/^.*\/dummy_path_padding/, '');
   // Strip binary patch padding (from LS hostname replacement)
   req.url = req.url!.replace(/\/v1internal\/x{7}/, '');
 
   // P0-4: Enforce maximum request body size to prevent memory exhaustion DoS
-  const MAX_BODY_SIZE = 10 * 1024 * 1024;
+  const MAX_BODY_SIZE = DEFAULT_MAX_BODY_SIZE;
   let bodyLength = 0;
   let bodyRejected = false;
 
@@ -1464,14 +1712,21 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (bodyLength > MAX_BODY_SIZE) {
       if (!bodyRejected) {
         bodyRejected = true;
-        log.warn(`[Proxy] Request body exceeds ${MAX_BODY_SIZE / 1024 / 1024}MB limit (${req.method} ${req.url})`);
-        req.destroy();
+        const maxMb = Math.round(MAX_BODY_SIZE / (1024 * 1024));
+        log.warn(`[Proxy] Request body exceeds ${maxMb}MB limit (${req.method} ${req.url})`);
         if (!res.headersSent) {
-          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.writeHead(413, {
+            'Content-Type': 'application/json',
+            'Connection': 'close',
+          });
           res.end(
-            JSON.stringify({ error: { message: `Request body too large. Maximum: ${MAX_BODY_SIZE / 1024 / 1024}MB` } }),
+            JSON.stringify({ error: { message: `Request body too large. Maximum: ${maxMb}MB` } }),
           );
         }
+        req.resume();
+        res.on('finish', () => {
+          req.destroy();
+        });
       }
       return;
     }
@@ -1480,7 +1735,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   req.on('end', async () => {
     if (bodyRejected) return;
 
-    const fullBody = Buffer.concat(bodyChunks);
+    let fullBody = Buffer.concat(bodyChunks);
     const bodyStr = fullBody.toString('utf-8');
 
     log.info(`[Proxy] Request: ${req.method} ${req.url}`);
@@ -1516,6 +1771,79 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       return;
     }
 
+    // OpenAI /chat/completions relay: sanitizes reasoning_content and forwards to upstream provider
+    if (req.method === 'POST' && req.url!.includes('/chat/completions')) {
+      try {
+        const payload = JSON.parse(bodyStr || '{}');
+        if (payload.model && /MODEL_PLACEHOLDER_/i.test(payload.model)) {
+          const allModels = loadCustomModels();
+          const found = allModels.find(
+            (m) => generateModelPlaceholderId(m) === payload.model || m.name === payload.model || m.name.endsWith('/' + payload.model),
+          );
+          if (found && found.externalModelName) {
+            payload.model = found.externalModelName;
+          }
+        }
+        if (Array.isArray(payload.messages)) {
+          for (const msg of payload.messages) {
+            delete msg.reasoning_content;
+          }
+        }
+        // Modern reasoning models (gpt-6, astra, luna, o-series) reject non-default temperature
+        if (payload.temperature !== undefined && payload.temperature !== 1) {
+          delete payload.temperature;
+        }
+        if (payload.max_tokens && !payload.max_completion_tokens) {
+          payload.max_completion_tokens = payload.max_tokens;
+          delete payload.max_tokens;
+        }
+        log.info(`[Relay on 51074] Forwarding request for model: ${payload.model}`);
+        const cleanedBody = JSON.stringify(payload);
+        const upstreamTarget = (req.headers['x-upstream-url'] as string) || 'https://api.experientiallabs.ai/v1/chat/completions';
+        const upstreamUrl = new URL(upstreamTarget);
+        const forwardHeaders: Record<string, string> = {
+          host: upstreamUrl.host,
+          'content-type': 'application/json',
+          'content-length': String(Buffer.byteLength(cleanedBody)),
+        };
+        for (const [k, v] of Object.entries(req.headers)) {
+          const lk = k.toLowerCase();
+          if (
+            lk !== 'host' &&
+            lk !== 'content-length' &&
+            lk !== 'transfer-encoding' &&
+            lk !== 'connection' &&
+            lk !== 'accept-encoding' &&
+            lk !== 'x-upstream-url' &&
+            typeof v === 'string'
+          ) {
+            forwardHeaders[lk] = v;
+          }
+        }
+
+        const isHttps = upstreamUrl.protocol === 'https:';
+        const client = isHttps ? https : http;
+        const upstreamReq = client.request(upstreamUrl, {
+          method: 'POST',
+          headers: forwardHeaders,
+        }, (upstreamRes) => {
+          safeWriteHead(res, upstreamRes.statusCode || 200, upstreamRes.headers as any);
+          upstreamRes.pipe(res);
+        });
+        upstreamReq.on('error', (err) => {
+          log.error('[Proxy] /chat/completions relay network error:', err);
+          if (safeWriteHead(res, 502, { 'Content-Type': 'application/json' })) {
+            safeEnd(res, JSON.stringify({ error: { message: err.message } }));
+          }
+        });
+        upstreamReq.write(cleanedBody);
+        upstreamReq.end();
+        return;
+      } catch (err) {
+        log.error('[Proxy] /chat/completions relay error:', err);
+      }
+    }
+
     // 0. Intercept GetAvailableModels (redirected from Electron webRequest)
     if (req.url!.startsWith('/GetAvailableModels')) {
       const gavParsed = new URL(req.url!, `http://${LOOPBACK_HOSTS[0]}`);
@@ -1524,7 +1852,21 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         handleGetAvailableModelsProxy(res, fullBody, lsUrl, req.headers as Record<string, string | string[] | undefined>);
         return;
       }
-      if (safeWriteHead(res, 400, { 'Content-Type': 'application/json' })) {
+      if (safeWriteHead(res, 400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })) {
+        safeEnd(res, JSON.stringify({ error: 'Missing ls parameter' }));
+      }
+      return;
+    }
+
+    // 0.1. Intercept GetUserStatus (redirected from Electron webRequest for Antigravity 2.5+/2.12+)
+    if (req.url!.startsWith('/GetUserStatus')) {
+      const gusParsed = new URL(req.url!, `http://${LOOPBACK_HOSTS[0]}`);
+      const lsUrl = gusParsed.searchParams.get('ls');
+      if (lsUrl) {
+        handleGetUserStatusProxy(res, fullBody, lsUrl, req.headers as Record<string, string | string[] | undefined>);
+        return;
+      }
+      if (safeWriteHead(res, 400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })) {
         safeEnd(res, JSON.stringify({ error: 'Missing ls parameter' }));
       }
       return;
@@ -1534,6 +1876,17 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (req.url!.includes('/v1internal:listExperiments')) {
       if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
         safeEnd(res, JSON.stringify({ experiments: [] }));
+      }
+      return;
+    }
+
+    // 0.6. Intercept telemetry metrics to avoid noisy upstream 503 UNAVAILABLE errors
+    if (
+      req.url!.includes('/v1internal:recordCodeAssistMetrics') ||
+      req.url!.includes('/v1internal:recordTrajectoryAnalytics')
+    ) {
+      if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+        safeEnd(res, JSON.stringify({}));
       }
       return;
     }
@@ -1565,7 +1918,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           customModels.forEach((m) => {
             const slug = toSlug(m);
             const pid = generateModelPlaceholderId(m);
-            mappedCustom[slug] = {
+            const entry = {
               displayName: m.displayName,
               maxTokens: 1048576,
               maxOutputTokens: 4096,
@@ -1575,6 +1928,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
               modelProvider: 'MODEL_PROVIDER_GOOGLE',
             };
+            mappedCustom[slug] = entry;
+            mappedCustom[pid] = entry;
           });
           safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
           safeEnd(res, JSON.stringify({ models: mappedCustom }));
@@ -1612,7 +1967,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             customModels.forEach((m) => {
               const slug = toSlug(m);
               const pid = generateModelPlaceholderId(m);
-              mappedCustom[slug] = {
+              const entry = {
                 displayName: m.displayName,
                 maxTokens: 1048576,
                 maxOutputTokens: 4096,
@@ -1622,6 +1977,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
                 modelProvider: 'MODEL_PROVIDER_GOOGLE',
               };
+              mappedCustom[slug] = entry;
+              mappedCustom[pid] = entry;
             });
             safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
             safeEnd(res, JSON.stringify({ models: mappedCustom }));
@@ -1636,12 +1993,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             log.debug('[Proxy] fetchAvailableModels: skipping end handler (response terminated)');
             return;
           }
+          let googleJson: Record<string, unknown> | null = null;
           try {
             log.info(
               `[Proxy] fetchAvailableModels response status: ${googleRes.statusCode}, body length: ${googleBody.length}`,
             );
 
-            let googleJson: Record<string, unknown>;
             try {
               googleJson = JSON.parse(googleBody) as Record<string, unknown>;
             } catch {
@@ -1657,6 +2014,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             const customModels = loadCustomModels();
 
             log.info(`[Proxy] Loaded custom models count: ${customModels.length}`);
+
+            const expandedCustomModels = expandModelsWithEffort(customModels);
 
             let merged = false;
             if (googleJson.models) {
@@ -1674,41 +2033,45 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
             if (!merged) {
               const modelsMap: Record<string, unknown> = {};
-              customModels.forEach((m) => {
-                const slug = toSlug(m);
-                modelsMap[slug] = {
+              expandedCustomModels.forEach((m) => {
+                const slug = m._slug || toSlug(m);
+                const pid = generateModelPlaceholderId(m);
+                const cap = detectModelCapabilities(m, true);
+                const entry = {
                   displayName: m.displayName,
                   recommended: true,
                   maxTokens: 1048576,
                   maxOutputTokens: 4096,
                   tokenizerType: 'LLAMA_WITH_SPECIAL',
-                  model: generateModelPlaceholderId(m),
+                  model: pid,
+                  planModel: pid,
+                  requestedModel: pid,
+                  supportsImages: cap.supportsImages,
+                  supportsVision: cap.supportsImages,
+                  supportsThinking: cap.isThinking,
                   apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
                   modelProvider: 'MODEL_PROVIDER_GOOGLE',
                 };
-                m._slug = slug;
+                modelsMap[slug] = entry;
+                modelsMap[pid] = entry;
+                if (m.name && m.name !== pid && m.name !== slug) {
+                  modelsMap[m.name] = entry;
+                }
+                if (m.externalModelName && m.externalModelName !== pid && m.externalModelName !== slug) {
+                  modelsMap[m.externalModelName] = entry;
+                }
               });
               googleJson.models = modelsMap;
             }
 
-            // Inject custom model slugs into agentModelSorts
-            const customSlugs = customModels.map((m) => m._slug).filter(Boolean) as string[];
-            if (customSlugs.length > 0) {
-              if (googleJson.agentModelSorts && Array.isArray(googleJson.agentModelSorts)) {
-                (googleJson.agentModelSorts as { groups?: { modelIds?: string[] }[] }[]).forEach((sort) => {
-                  if (sort.groups && Array.isArray(sort.groups)) {
-                    sort.groups.forEach((group) => {
-                      if (group.modelIds && Array.isArray(group.modelIds)) {
-                        customSlugs.forEach((slug) => {
-                          if (!group.modelIds!.includes(slug)) {
-                            group.modelIds!.push(slug);
-                          }
-                        });
-                      }
-                    });
-                  }
-                });
+            // 2. Injecter les modèles personnalisés dans agentModelSorts (menu déroulant Antigravity IDE)
+            // Modèles originaux en tête de liste, modèles personnalisés ajoutés sans duplication
+            try {
+              if (typeof injectCustomSlugsIntoAgentModelSorts === 'function') {
+                injectCustomSlugsIntoAgentModelSorts(googleJson, customModels);
               }
+            } catch (sortErr) {
+              log.warn('[Proxy] Failed to inject custom slugs into agentModelSorts:', sortErr);
             }
 
             // P1: Strip Google's upstream error from the response. When Google
@@ -1734,7 +2097,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             customModels.forEach((m) => {
               const slug = toSlug(m);
               const pid = generateModelPlaceholderId(m);
-              mappedCustom[slug] = {
+              const entry = {
                 displayName: m.displayName,
                 maxTokens: 1048576,
                 maxOutputTokens: 4096,
@@ -1744,9 +2107,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
                 modelProvider: 'MODEL_PROVIDER_GOOGLE',
               };
+              mappedCustom[slug] = entry;
+              mappedCustom[pid] = entry;
             });
+            // If googleJson has models, preserve them!
+            let responsePayload: Record<string, unknown> = { models: mappedCustom };
+            if (googleJson && typeof googleJson === 'object') {
+              if (googleJson.models && typeof googleJson.models === 'object') {
+                responsePayload = { ...googleJson, models: { ...(googleJson.models as Record<string, unknown>), ...mappedCustom } };
+              } else {
+                responsePayload = { ...googleJson, models: mappedCustom };
+              }
+            }
             safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
-            safeEnd(res, JSON.stringify({ models: mappedCustom }));
+            safeEnd(res, JSON.stringify(responsePayload));
           }
         });
       });
@@ -1759,7 +2133,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           customModels.forEach((m) => {
             const slug = toSlug(m);
             const pid = generateModelPlaceholderId(m);
-            mappedCustom[slug] = {
+            const entry = {
               displayName: m.displayName,
               maxTokens: 1048576,
               maxOutputTokens: 4096,
@@ -1769,6 +2143,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
               modelProvider: 'MODEL_PROVIDER_GOOGLE',
             };
+            mappedCustom[slug] = entry;
+            mappedCustom[pid] = entry;
           });
           safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
           safeEnd(res, JSON.stringify({ models: mappedCustom }));
@@ -1913,6 +2289,112 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         const reqJson = JSON.parse(bodyStr) as Record<string, unknown>;
         const targetReq = (reqJson.request || reqJson) as Record<string, unknown>;
 
+        let convId: string | null = null;
+        if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
+          const si = targetReq.systemInstruction as { parts?: Array<{ text?: string }> };
+          const fullSysText = (si.parts || []).map((p) => p.text || '').join('\n');
+          const match = fullSysText.match(/Conversation ID:\s*([a-f0-9\-]+)/i);
+          if (match) convId = match[1];
+        }
+
+        loadRemoteState();
+        const isSessionRemote = convId ? (remoteSessionsMap[convId] !== undefined ? !!remoteSessionsMap[convId] : isRemoteVpsActive) : isRemoteVpsActive;
+
+        if (isSessionRemote) {
+          if (convId && !remoteSessionsMap[convId]) {
+            remoteSessionsMap[convId] = true;
+            saveRemoteState();
+          }
+
+          let detectedProject = '';
+          if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
+            const si = targetReq.systemInstruction as { parts?: Array<{ text?: string }> };
+            if (Array.isArray(si.parts)) {
+              for (const part of si.parts) {
+                if (part.text) {
+                  const m = part.text.match(/[c-z]:\\[^\s\n\->"]+/i);
+                  if (m) {
+                    const cleanPath = m[0].replace(/\\+$/, '');
+                    const segs = cleanPath.split('\\');
+                    if (segs.length > 0 && segs[segs.length - 1]) {
+                      detectedProject = segs[segs.length - 1];
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+          const remoteWorkspaceBase = '/root/.antigravity/workspaces';
+          const targetRemoteWs = detectedProject ? `${remoteWorkspaceBase}/${detectedProject}` : `${remoteWorkspaceBase}/antigravity-add-model-main`;
+
+          const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur Cloud Daemon (${remoteVpsHost}).\nTon espace de travail exclusif est sur ce serveur Linux distant : ${targetRemoteWs}.\nSystème d'exploitation : Linux (Alpine 3.20 x86_64)\nInterpréteur de commandes (Shell) : bash\nEspace de travail : ${targetRemoteWs}\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows.\nPour toute demande d'environnement ou de rapport ("quelle est votre envirenement"), réponds clairement et précisément que ton environnement d'exécution est le serveur Linux distant (hôte: ${remoteVpsHost}, workspace: ${targetRemoteWs}, shell: bash).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux sur le VPS distant.\n\n`;
+
+          let injected = false;
+          if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
+            const si = targetReq.systemInstruction as { parts?: Array<{ text?: string }> };
+            if (Array.isArray(si.parts) && si.parts.length > 0) {
+              for (const part of si.parts) {
+                if (part.text) {
+                  part.text = part.text
+                    .replace(/The USER's OS version is windows\./gi, "The USER's OS version is linux.")
+                    .replace(/Operating System:\s*windows/gi, "Operating System: linux")
+                    .replace(/OS version is windows/gi, "OS version is linux")
+                    .replace(/Shell:\s*powershell\./gi, "Shell: bash.")
+                    .replace(/Shell:\s*powershell/gi, "Shell: bash")
+                    .replace(/powershell/gi, "bash");
+                  part.text = part.text.replace(/[c-z]:\\[^\s\n\->"]+/gi, targetRemoteWs);
+                }
+              }
+              if (si.parts[0].text && !si.parts[0].text.includes('CONSIGNE SYSTÈME OBLIGATOIRE')) {
+                si.parts[0].text = vpsNotice + si.parts[0].text;
+                injected = true;
+              }
+            }
+          }
+          if (!injected) {
+            targetReq.systemInstruction = {
+              parts: [{ text: vpsNotice }],
+            };
+          }
+
+          // Also sanitize tools schema (function declarations)
+          if (Array.isArray(targetReq.tools)) {
+            for (const toolGroup of targetReq.tools as Array<{ functionDeclarations?: Array<{ description?: string }> }>) {
+              if (Array.isArray(toolGroup.functionDeclarations)) {
+                for (const fn of toolGroup.functionDeclarations) {
+                  if (fn.description) {
+                    fn.description = fn.description
+                      .replace(/Operating System:\s*windows/gi, 'Operating System: linux')
+                      .replace(/The USER's OS version is windows\./gi, "The USER's OS version is linux.")
+                      .replace(/Shell:\s*powershell/gi, 'Shell: bash')
+                      .replace(/powershell/gi, 'bash');
+                  }
+                }
+              }
+            }
+          }
+
+          // Also sanitize previous conversation turns to prevent context conflict
+          if (Array.isArray(targetReq.contents)) {
+            for (const content of targetReq.contents as Array<{ role?: string; parts?: Array<{ text?: string }> }>) {
+              if (Array.isArray(content.parts)) {
+                for (const part of content.parts) {
+                  if (part.text && content.role === 'model') {
+                    part.text = part.text
+                      .replace(/Mon environnement d'ex[ée]cution actuel est Windows \(utilisant un shell PowerShell\)\./gi, `Mon environnement d'exécution actuel est le serveur Linux distant Ubuntu 24.04 (VPS: ${remoteVpsHost}, shell: bash, workspace: ${targetRemoteWs}).`)
+                      .replace(/Operating System: windows/gi, 'Operating System: linux (Ubuntu 24.04 LTS)')
+                      .replace(/Shell: powershell/gi, 'Shell: bash');
+                  }
+                }
+              }
+            }
+          }
+
+          fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
+          log.info(`[Proxy] Sanitized & injected strict Remote VPS context into Cloud Code request (convId=${convId || 'draft'}, host=${remoteVpsHost})`);
+        }
+
         const candidateNames = [
           reqJson.model,
           reqJson.requestedModel,
@@ -1921,6 +2403,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           reqJson.plan_model,
           reqJson.modelId,
           reqJson.model_id,
+          reqJson.agentModel,
+          reqJson.selectedModel,
           targetReq.model,
           targetReq.requestedModel,
           targetReq.planModel,
@@ -1928,6 +2412,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           targetReq.plan_model,
           targetReq.modelId,
           targetReq.model_id,
+          targetReq.agentModel,
+          targetReq.selectedModel,
         ].filter((x): x is string => typeof x === 'string' && Boolean(x));
 
         log.info(
@@ -1936,17 +2422,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
         if (candidateNames.length > 0) {
           const customModels = expandModelsWithEffort(loadCustomModels());
-          let matchedCustomModel = customModels.find((m) => {
-            const enumName = generateModelPlaceholderId(m);
-            return candidateNames.some(
-              (cn) =>
-                m.name === cn ||
-                toSlug(m) === cn ||
-                enumName === cn ||
-                `models/${enumName}` === cn ||
-                cn.endsWith(enumName),
-            );
-          });
+          let matchedCustomModel = customModels.find((m) =>
+            candidateNames.some((cn) => matchesCustomModel(m, cn)),
+          );
           // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298)
           if (!matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
             matchedCustomModel = customModels[0];
@@ -1979,15 +2457,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (req.method === 'POST' && (isGenerate || isStandardStream)) {
       const matchedModelName = isGenerate ? generateMatch![1] : streamMatch![1];
       const customModels = expandModelsWithEffort(loadCustomModels());
-      let matchedCustomModel = customModels.find((m) => {
-        const enumName = generateModelPlaceholderId(m);
-        return (
-          m.name === matchedModelName ||
-          toSlug(m) === matchedModelName ||
-          enumName === matchedModelName ||
-          'models/' + enumName === matchedModelName
-        );
-      });
+      let matchedCustomModel = customModels.find((m) =>
+        matchesCustomModel(m, matchedModelName),
+      );
       if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
         matchedCustomModel = customModels[0];
       }

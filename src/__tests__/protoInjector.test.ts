@@ -1,10 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import {
   injectCustomModelsIntoResponse,
+  injectCustomModelsIntoUserStatus,
   buildGrpcWebFrame,
   parseGrpcWebHeader,
 } from '../proxy/protoInjector';
-import { encodeProtoBuf, encodeVarint } from '../proxy/protobuf';
+import {
+  encodeProtoBuf,
+  encodeVarint,
+  parseProtoRaw,
+  encodeMessageField,
+  encodeStringField,
+  encodeClientModelConfig,
+} from '../proxy/protobuf';
 import type { CustomModel } from '../proxy/types';
 
 describe('buildGrpcWebFrame', () => {
@@ -167,5 +175,177 @@ describe('injectCustomModelsIntoResponse', () => {
     const result = injectCustomModelsIntoResponse(response, [baseModel]);
     expect(result.modified).toBe(false);
     expect(result.injectedCount).toBe(0);
+  });
+});
+
+describe('injectCustomModelsIntoUserStatus', () => {
+  const baseModel: CustomModel = {
+    name: 'custom-model-test',
+    displayName: 'My Custom Model',
+    provider: 'openai',
+    apiUrl: 'https://api.example.com/v1',
+    apiKey: 'test-key',
+    externalModelName: 'gpt-4o',
+    supportsImages: true,
+    thinking: true,
+  };
+
+  function buildSampleUserStatusResponse(): Buffer {
+    // 1. client_model_config for a stock model
+    const stockConfig = encodeClientModelConfig(
+      'Stock Model 1',
+      1001,
+      'stock-model-1',
+      false,
+      false,
+    );
+
+    // 2. client_model_sorts
+    const groupParts = [
+      encodeStringField(1, ''),
+      encodeStringField(2, 'Stock Model 1'),
+    ];
+    const sortParts = [
+      encodeStringField(1, 'Recommended'),
+      encodeMessageField(2, Buffer.concat(groupParts)),
+    ];
+    const stockSort = Buffer.concat(sortParts);
+
+    // 3. cascade_model_config_data (field 33)
+    const cascadeBody = Buffer.concat([
+      encodeMessageField(1, stockConfig),
+      encodeMessageField(2, stockSort),
+    ]);
+
+    // 4. user_status (field 1)
+    const userStatusBody = Buffer.concat([
+      encodeStringField(3, 'Test User'),
+      encodeMessageField(33, cascadeBody),
+    ]);
+
+    // 5. top-level response
+    const msgBody = encodeMessageField(1, userStatusBody);
+    return buildGrpcWebFrame(0, msgBody);
+  }
+
+  it('returns original buffer when customModels is empty', () => {
+    const response = buildSampleUserStatusResponse();
+    const result = injectCustomModelsIntoUserStatus(response, []);
+    expect(result.modified).toBe(false);
+    expect(result.injectedCount).toBe(0);
+  });
+
+  it('returns original buffer for invalid or too short response', () => {
+    const result = injectCustomModelsIntoUserStatus(Buffer.from([0, 1]), [baseModel]);
+    expect(result.modified).toBe(false);
+  });
+
+  it('injects custom model into client_model_configs and sorts', () => {
+    const response = buildSampleUserStatusResponse();
+    const result = injectCustomModelsIntoUserStatus(response, [baseModel]);
+
+    expect(result.modified).toBe(true);
+    expect(result.injectedCount).toBe(1);
+
+    // Parse the injected buffer to verify correctness
+    const msgLen = result.buffer.readUInt32BE(1);
+    const msgBody = result.buffer.subarray(5, 5 + msgLen);
+
+    const topFields = parseProtoRaw(msgBody);
+    const usField = topFields.find((f) => f.fieldNum === 1);
+    expect(usField).toBeDefined();
+
+    const usFields = parseProtoRaw(usField!.raw!);
+    // Verify user name preserved
+    const nameField = usFields.find((f) => f.fieldNum === 3);
+    expect(nameField?.raw?.toString('utf8')).toBe('Test User');
+
+    // Verify cascade data
+    const cascadeField = usFields.find((f) => f.fieldNum === 33);
+    expect(cascadeField).toBeDefined();
+
+    const cascadeFields = parseProtoRaw(cascadeField!.raw!);
+    const configs = cascadeFields.filter((f) => f.fieldNum === 1);
+    expect(configs.length).toBe(2); // 1 stock + 1 custom
+
+    // Check custom model config
+    const customCfg = parseProtoRaw(configs[1].raw!);
+    const labelField = customCfg.find((f) => f.fieldNum === 1);
+    expect(labelField?.raw?.toString('utf8')).toContain('My Custom Model');
+
+    const modelIdField = customCfg.find((f) => f.fieldNum === 21);
+    expect(modelIdField?.raw?.toString('utf8')).toMatch(/^MODEL_PLACEHOLDER_M\d+$/);
+
+    const imagesField = customCfg.find((f) => f.fieldNum === 5);
+    expect(imagesField?.value).toBe(1);
+
+    const thoughtField = customCfg.find((f) => f.fieldNum === 19);
+    expect(thoughtField?.value).toBe(1);
+
+    // Check sort labels
+    const sorts = cascadeFields.filter((f) => f.fieldNum === 2);
+    expect(sorts.length).toBe(1);
+    const sortFields = parseProtoRaw(sorts[0].raw!);
+    const groupField = sortFields.find((f) => f.fieldNum === 2);
+    const groupSub = parseProtoRaw(groupField!.raw!);
+    const labels = groupSub.filter((f) => f.fieldNum === 2).map((f) => f.raw?.toString('utf8'));
+    expect(labels).toContain('Stock Model 1');
+    expect(labels.some((l) => l?.includes('My Custom Model'))).toBe(true);
+  });
+
+  it('injects custom models into Connect-JSON userStatus response (Antigravity 2.12+)', () => {
+    const jsonPayload = {
+      userStatus: {
+        name: 'Test User',
+        cascadeModelConfigData: {
+          clientModelConfigs: [
+            {
+              label: 'Stock Model 1',
+              modelOrAlias: { model: 'MODEL_PLACEHOLDER_M100' },
+              supportsImages: true,
+            },
+          ],
+          clientModelSorts: [
+            {
+              name: 'Recommended',
+              groups: [{ modelLabels: ['Stock Model 1'] }],
+            },
+          ],
+        },
+      },
+    };
+
+    const jsonBuf = Buffer.from(JSON.stringify(jsonPayload), 'utf8');
+    const header = Buffer.alloc(5);
+    header[0] = 0;
+    header.writeUInt32BE(jsonBuf.length, 1);
+    const framedBuf = Buffer.concat([header, jsonBuf]);
+
+    const customModels: CustomModel[] = [
+      {
+        name: 'test-custom-model',
+        displayName: 'My Custom Model',
+        provider: 'openai',
+        apiUrl: 'https://api.openai.com/v1',
+        apiKey: 'sk-test',
+        externalModelName: 'gpt-4o',
+      },
+    ];
+
+    const result = injectCustomModelsIntoUserStatus(framedBuf, customModels);
+    expect(result.modified).toBe(true);
+    expect(result.injectedCount).toBe(1);
+
+    const bodyLen = result.buffer.readUInt32BE(1);
+    const parsed = JSON.parse(result.buffer.subarray(5, 5 + bodyLen).toString('utf8'));
+    const configs = parsed.userStatus.cascadeModelConfigData.clientModelConfigs;
+    expect(configs.length).toBe(2);
+    expect(configs[1].label).toContain('My Custom Model');
+    expect(configs[1].modelOrAlias.model).toMatch(/^MODEL_PLACEHOLDER_M\d+$/);
+
+    const sortLabels = parsed.userStatus.cascadeModelConfigData.clientModelSorts[0].groups[0].modelLabels;
+    expect(sortLabels.length).toBe(2);
+    expect(sortLabels[0]).toBe('Stock Model 1');
+    expect(sortLabels[1]).toContain('My Custom Model');
   });
 });

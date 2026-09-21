@@ -78,13 +78,24 @@ class BannerNotificationData {
 class BannerClassifier {
   static BannerNotificationData? classifyError(
     String errorText, {
-    VoidCallback? onDismiss,
+    dynamic onDismiss,
     VoidCallback? onSwitchModel,
     VoidCallback? onSeePlans,
     VoidCallback? onOpenSettings,
     VoidCallback? onNewConversation,
   }) {
     final lower = errorText.toLowerCase();
+
+    VoidCallback? makeDismiss(String bannerId) {
+      if (onDismiss == null) return null;
+      if (onDismiss is void Function(String)) {
+        return () => onDismiss(bannerId);
+      }
+      if (onDismiss is VoidCallback) {
+        return onDismiss;
+      }
+      return null;
+    }
 
     // 1. Quota Exceeded (Individual quota reached, baseline model quota reached, RESOURCE_EXHAUSTED, 429, 402, insufficient_quota)
     if (lower.contains('individual quota reached') ||
@@ -112,9 +123,10 @@ class BannerClassifier {
       ).firstMatch(errorText);
       final errorId = errorIdMatch?.group(1)?.trim();
 
+      final dismissCb = makeDismiss('quota-exceeded');
       final actions = <BannerAction>[
-        if (onDismiss != null)
-          BannerAction(label: 'Dismiss', onPressed: onDismiss),
+        if (dismissCb != null)
+          BannerAction(label: 'Dismiss', onPressed: dismissCb),
         if (onSeePlans != null)
           BannerAction(label: 'See Plans', onPressed: onSeePlans),
         if (onSwitchModel != null)
@@ -140,9 +152,10 @@ class BannerClassifier {
         lower.contains('no capacity available') ||
         lower.contains('503') ||
         lower.contains('temporarily overloaded')) {
+      final dismissCb = makeDismiss('model-capacity');
       final actions = <BannerAction>[
-        if (onDismiss != null)
-          BannerAction(label: 'Ignorer', onPressed: onDismiss),
+        if (dismissCb != null)
+          BannerAction(label: 'Ignorer', onPressed: dismissCb),
         if (onSwitchModel != null)
           BannerAction(label: 'Changer de modèle', onPressed: onSwitchModel, isPrimary: true),
       ];
@@ -162,9 +175,10 @@ class BannerClassifier {
         lower.contains('incorrect api key') ||
         lower.contains('401') ||
         lower.contains('unauthorized')) {
+      final dismissCb = makeDismiss('api-key-invalid');
       final actions = <BannerAction>[
-        if (onDismiss != null)
-          BannerAction(label: 'Ignorer', onPressed: onDismiss),
+        if (dismissCb != null)
+          BannerAction(label: 'Ignorer', onPressed: dismissCb),
         if (onOpenSettings != null)
           BannerAction(label: 'Configurer Clé API', onPressed: onOpenSettings, isPrimary: true),
       ];
@@ -183,9 +197,10 @@ class BannerClassifier {
     if (lower.contains('stream was interrupted') ||
         lower.contains('the stream was interrupted') ||
         lower.contains('stream interrupted')) {
+      final dismissCb = makeDismiss('stream-interrupted');
       final actions = <BannerAction>[
-        if (onDismiss != null)
-          BannerAction(label: 'Ignorer', onPressed: onDismiss),
+        if (dismissCb != null)
+          BannerAction(label: 'Ignorer', onPressed: dismissCb),
         if (onNewConversation != null)
           BannerAction(label: 'Continuer', onPressed: onNewConversation, isPrimary: true),
       ];

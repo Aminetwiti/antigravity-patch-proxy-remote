@@ -93,6 +93,14 @@ export function checkEnvironment(): CheckResult {
     } catch {
       // no grep in PATH
     }
+    if (!hasGrep) {
+      const commonGrepPaths = [
+        'C:\\Program Files\\Git\\usr\\bin\\grep.exe',
+        'C:\\Program Files (x86)\\Git\\usr\\bin\\grep.exe',
+        process.env['LOCALAPPDATA'] ? `${process.env['LOCALAPPDATA']}\\Programs\\Git\\usr\\bin\\grep.exe` : '',
+      ].filter(Boolean);
+      hasGrep = commonGrepPaths.some((p) => fs.existsSync(p));
+    }
     try {
       execSync('where rg', { stdio: ['ignore', 'ignore', 'ignore'] });
       hasRg = true;

@@ -83,7 +83,7 @@ function parseAsarHeader(asarPath: string): ParsedAsarHeader {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const asar = require('@electron/asar');
     const entries: string[] = asar.listPackage(asarPath);
-    const hasRoot = entries.some((e) => e === '/package.json' || e === 'package.json');
+    const hasRoot = entries.some((e) => e.replace(/\\/g, '/') === '/package.json' || e === 'package.json');
     if (!hasRoot) {
       return { hasPackageJson: false, packageJson: null };
     }

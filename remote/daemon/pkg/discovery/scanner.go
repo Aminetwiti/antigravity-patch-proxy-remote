@@ -55,20 +55,21 @@ func Discover() (*LocalHarnessInfo, error) {
 		return nil, fmt.Errorf("language_server introuvable — IDE Antigravity ouvert ?")
 	}
 
-	// Cibler l'instance hub standalone EN PRIORITÉ : c'est elle qui expose les
-	// RPC de session (GetAllCascadeTrajectories, SendUserCascadeMessage…).
-	// Les instances IDE (--subclient_type ide) répondent « 200 corps vide »
-	// sur ces méthodes → list_sessions renvoyait « aucune frame gRPC-Web
-	// dans la réponse (0 octets) » et send_prompt ne streamait rien.
-	// Voir PROTOCOL.md §3.2 : « Cibler l'instance hub ».
+	// Priorité absolue à Antigravity 2.0 (hubs) pour synchronisation directe 2.0 ↔ Remote,
+	// avec repli sur Antigravity IDE (ideMain) si 2.0 n'est pas démarré.
 	var hubs []procEntry
+	var ideMain []procEntry
 	var ideActive []procEntry
 	var ideOther []procEntry
 	var fallback []procEntry
 
 	for _, p := range procs {
-		if strings.Contains(p.commandLine, "--subclient_type hub") || (strings.Contains(p.commandLine, "--standalone") && !strings.Contains(p.commandLine, "--subclient_type ide")) {
+		isIde := strings.Contains(p.commandLine, "antigravity-ide") || strings.Contains(p.name, "language_server_windows_x64")
+		is20 := (!isIde) && (strings.Contains(p.commandLine, "--subclient_type hub") || (strings.Contains(p.commandLine, "--standalone") && !strings.Contains(p.commandLine, "--subclient_type ide")) || strings.Contains(p.commandLine, "--app_data_dir antigravity"))
+		if is20 {
 			hubs = append(hubs, p)
+		} else if isIde && strings.Contains(p.commandLine, "--subclient_type ide") && !strings.Contains(p.commandLine, "--enable_lsp") {
+			ideMain = append(ideMain, p)
 		} else if strings.Contains(p.commandLine, "--workspace_id") || strings.Contains(p.commandLine, "--enable_lsp") {
 			ideActive = append(ideActive, p)
 		} else if strings.Contains(p.commandLine, "--subclient_type ide") {
@@ -79,7 +80,8 @@ func Discover() (*LocalHarnessInfo, error) {
 	}
 
 	var sortedProcs []procEntry
-	sortedProcs = append(sortedProcs, hubs...)
+	sortedProcs = append(sortedProcs, hubs...) // Antigravity 2.0 en priorité absolue !
+	sortedProcs = append(sortedProcs, ideMain...)
 	sortedProcs = append(sortedProcs, ideActive...)
 	sortedProcs = append(sortedProcs, ideOther...)
 	sortedProcs = append(sortedProcs, fallback...)
@@ -104,11 +106,20 @@ func Discover() (*LocalHarnessInfo, error) {
 		}
 
 		candidates := candidatePorts(info, &pick)
-		token := info.ExtensionCSRF
-		if port, useTLS := probePorts(candidates, token); port > 0 {
-			info.ConnectRPCPort = port
-			info.UseTLS = useTLS
-			return info, nil
+		tokens := []string{info.ExtensionCSRF}
+		if info.CSRFToken != "" && info.CSRFToken != info.ExtensionCSRF {
+			tokens = append(tokens, info.CSRFToken)
+		}
+		for _, tok := range tokens {
+			if tok == "" {
+				continue
+			}
+			if port, useTLS := probePorts(candidates, tok); port > 0 {
+				info.ConnectRPCPort = port
+				info.UseTLS = useTLS
+				info.ExtensionCSRF = tok
+				return info, nil
+			}
 		}
 	}
 	return nil, fmt.Errorf("aucun port ne répond au service RPC parmi les %d processus testés", len(sortedProcs))
@@ -136,11 +147,21 @@ func DiscoverAll() ([]*LocalHarnessInfo, error) {
 			info.ExtensionCSRF = info.CSRFToken
 		}
 		candidates := candidatePorts(info, &pick)
-		token := info.ExtensionCSRF
-		if port, useTLS := probePorts(candidates, token); port > 0 {
-			info.ConnectRPCPort = port
-			info.UseTLS = useTLS
-			results = append(results, info)
+		tokens := []string{info.ExtensionCSRF}
+		if info.CSRFToken != "" && info.CSRFToken != info.ExtensionCSRF {
+			tokens = append(tokens, info.CSRFToken)
+		}
+		for _, tok := range tokens {
+			if tok == "" {
+				continue
+			}
+			if port, useTLS := probePorts(candidates, tok); port > 0 {
+				info.ConnectRPCPort = port
+				info.UseTLS = useTLS
+				info.ExtensionCSRF = tok
+				results = append(results, info)
+				break
+			}
 		}
 	}
 	return results, nil
@@ -205,21 +226,21 @@ func candidatePorts(info *LocalHarnessInfo, p *procEntry) []int {
 		ports = append(ports, info.HTTPSServerPort)
 	}
 
-	// 1. Vérifier le fichier active_port standard ~/.gemini/antigravity/active_port
-	if activePort := readActivePortFile(); activePort > 0 {
-		ports = append(ports, activePort)
-	}
-
-	// 2. Ports réels en écoute pour ce PID (netstat)
+	// 1. Ports réels en écoute pour ce PID (netstat) — prioritaire sur active_port
 	if p != nil && p.pid > 0 {
 		ports = append(ports, listeningPortsForPID(p.pid)...)
 	}
 
-	// 3. Plage extension_server_port si présent
+	// 2. Plage extension_server_port si présent
 	if info.ExtensionPort > 0 {
 		for offset := 1; offset <= 20; offset++ {
 			ports = append(ports, info.ExtensionPort+offset)
 		}
+	}
+
+	// 3. Vérifier le fichier active_port standard ~/.gemini/antigravity/active_port en repli
+	if activePort := readActivePortFile(); activePort > 0 {
+		ports = append(ports, activePort, activePort+1, activePort+2)
 	}
 	return dedupeInts(ports)
 }
@@ -286,10 +307,11 @@ func listeningPortsForPID(pid int) []int {
 	return ports
 }
 
-// probeService vérifie que le port expose bien le LanguageServerService.
+// probeService vérifie que le port expose bien le LanguageServerService avec authentification valide.
 // 1. Sonde HTTPS : frame gRPC-Web Heartbeat (prioritaire — le LS Antigravity écoute en HTTPS TLS).
 // 2. Sonde HTTPS : GetUserStatus en JSON.
 // 3. Sonde HTTP : repli pour les environnements en clair sans TLS.
+// 4. Sonde HTTP : GetUserStatus en JSON.
 func probeService(port int, csrfToken string) (bool, bool) {
 	if probeHTTPSHeartbeat(port, csrfToken) {
 		return true, true
@@ -298,6 +320,9 @@ func probeService(port int, csrfToken string) (bool, bool) {
 		return true, true
 	}
 	if probeHTTPHeartbeat(port, csrfToken) {
+		return true, false
+	}
+	if probeHTTPGetUserStatus(port, csrfToken) {
 		return true, false
 	}
 	return false, false
@@ -322,8 +347,20 @@ func probeHTTPHeartbeat(port int, csrfToken string) bool {
 		return false
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode == http.StatusOK
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	if st := resp.Header.Get("grpc-status"); st != "" && st != "0" {
+		return false
+	}
+	if st := resp.Trailer.Get("grpc-status"); st != "" && st != "0" {
+		return false
+	}
+	if bytes.Contains(raw, []byte("invalid CSRF token")) {
+		return false
+	}
+	return true
 }
 
 func probeHTTPSHeartbeat(port int, csrfToken string) bool {
@@ -350,8 +387,40 @@ func probeHTTPSHeartbeat(port int, csrfToken string) bool {
 		return false
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode == http.StatusOK
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	if st := resp.Header.Get("grpc-status"); st != "" && st != "0" {
+		return false
+	}
+	if st := resp.Trailer.Get("grpc-status"); st != "" && st != "0" {
+		return false
+	}
+	if bytes.Contains(raw, []byte("invalid CSRF token")) {
+		return false
+	}
+	return true
+}
+
+func probeHTTPGetUserStatus(port int, csrfToken string) bool {
+	body := []byte(`{"metadata":{"ideName":"antigravity"}}`)
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s:%d/%s/%s", bindHost(), port, connectrpc.ServiceName, connectrpc.MethodGetUserStatus), bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Connect-Protocol-Version", "1")
+	req.Header.Set("x-codeium-csrf-token", csrfToken)
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode == http.StatusOK && bytes.Contains(raw, []byte("user_status"))
 }
 
 func probeHTTPSGetUserStatus(port int, csrfToken string) bool {

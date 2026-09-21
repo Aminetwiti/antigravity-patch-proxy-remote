@@ -151,10 +151,18 @@ const MISSING_JS_MODULES = [
   'ipc/handlers/settingsHandler',
   'ipc/handlers/systemHandler',
   'main/windowManager',
+  'services/certificateService',
+  'services/configExchange',
   'services/cryptoStore',
+  'services/healthProbe',
+  'services/localModelDetector',
   'services/modelStore',
+  'services/runtimeStateService',
+  'services/settingsService',
+  'services/telemetryStore',
   'shared/logger',
   'wellKnown/modelIdUtils',
+  'rendererHook',
   // Main proxy entry point
   'proxy',
   // Proxy submodules
@@ -209,6 +217,7 @@ const OVERWRITE_FILES = [
   'dist/constants.js',
   'dist/utils.js',
   'dist/loadingOverlay.js',
+  'dist/main/windowManager.js',
   'dist/keybindings.js',
   'dist/menu.js',
   'dist/tray.js',
@@ -236,15 +245,21 @@ const DUPLICATE_IPC_HANDLERS = [
 // ─── The 1 root-level file that v2.5.x removed ─────────────────────────────
 const NEW_ROOT_FILES = [
   'proxy-runner.js',
+  'constants.js',
 ];
 
 function buildPatchManifest(repoDir) {
   const proxyRoot = path.join(repoDir, 'dist', 'proxy');
   const proxyFiles = discoverJavaScriptFiles(proxyRoot)
     .map((relativePath) => `dist/proxy/${relativePath}`);
+  const servicesRoot = path.join(repoDir, 'dist', 'services');
+  const serviceFiles = fs.existsSync(servicesRoot)
+    ? discoverJavaScriptFiles(servicesRoot).map((relativePath) => `dist/services/${relativePath}`)
+    : [];
   return [...new Set([
     'dist/proxy.js',
     ...proxyFiles,
+    ...serviceFiles,
     'dist/cryptoStore.js',
     'dist/customModelStore.js',
     'dist/schemaValidator.js',
@@ -258,6 +273,7 @@ function buildPatchManifest(repoDir) {
     'dist/preload/logger.js',
     'dist/preload/types.js',
     'dist/wellKnown/modelIdUtils.js',
+    'dist/rendererHook.js',
     ...OVERWRITE_FILES,
     ...NEW_ROOT_FILES,
   ])].sort();

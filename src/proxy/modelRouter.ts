@@ -12,32 +12,35 @@ const rateLimitedHosts = new Map<string, number>();
 /** Cooldown duration for a rate-limited provider (60 seconds) */
 const RATE_LIMIT_COOLDOWN_MS = 60_000;
 
+function extractHostname(apiUrl: string): string | null {
+  try {
+    return new URL(apiUrl).hostname;
+  } catch (err) {
+    log.debug(`[SmartRouter] Invalid URL ignored for rate limiting: ${apiUrl}`, err);
+    return null;
+  }
+}
+
 /** Mark a provider host as rate-limited */
 export function markProviderRateLimited(apiUrl: string): void {
-  try {
-    const host = new URL(apiUrl).hostname;
-    const expiresAt = Date.now() + RATE_LIMIT_COOLDOWN_MS;
-    rateLimitedHosts.set(host, expiresAt);
-    log.warn(`[SmartRouter] Provider host ${host} marked rate-limited until ${new Date(expiresAt).toISOString()}`);
-  } catch (_) {
-    // Ignore invalid URL parse
-  }
+  const host = extractHostname(apiUrl);
+  if (!host) return;
+  const expiresAt = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+  rateLimitedHosts.set(host, expiresAt);
+  log.warn(`[SmartRouter] Provider host ${host} marked rate-limited until ${new Date(expiresAt).toISOString()}`);
 }
 
 /** Check if a provider host is currently rate-limited */
 export function isProviderRateLimited(apiUrl: string): boolean {
-  try {
-    const host = new URL(apiUrl).hostname;
-    const expiresAt = rateLimitedHosts.get(host);
-    if (!expiresAt) return false;
-    if (Date.now() > expiresAt) {
-      rateLimitedHosts.delete(host);
-      return false;
-    }
-    return true;
-  } catch (_) {
+  const host = extractHostname(apiUrl);
+  if (!host) return false;
+  const expiresAt = rateLimitedHosts.get(host);
+  if (!expiresAt) return false;
+  if (Date.now() > expiresAt) {
+    rateLimitedHosts.delete(host);
     return false;
   }
+  return true;
 }
 
 export type TaskCategory = 'code' | 'thinking' | 'fast' | 'general';

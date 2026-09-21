@@ -104,9 +104,78 @@ class DaemonWebSocketClient {
   /// Token d'auth en vigueur (peut être vide).
   String? get authToken => _authToken;
 
+  /// Formate une URL WebSocket propre et robuste à partir d'un hôte et port.
+  /// Gère les schémas http(s)://, ws(s)://, les ports 80/443 par défaut, les tunnels Cloudflare/Pinggy
+  /// et évite les doubles slashes ou les suffixes :443 redondants.
+  static String formatWsUrl(String host, [int? port]) {
+    var raw = host.trim();
+    if (raw.isEmpty) return 'ws://127.0.0.1:8090/ws';
+
+    // Extraction de query parameters existants si présents
+    String query = '';
+    if (raw.contains('?')) {
+      final qIdx = raw.indexOf('?');
+      query = raw.substring(qIdx);
+      raw = raw.substring(0, qIdx);
+    }
+
+    // 1. Détection et nettoyage du schéma
+    String scheme = 'ws';
+    if (raw.startsWith('wss://')) {
+      scheme = 'wss';
+      raw = raw.substring('wss://'.length);
+    } else if (raw.startsWith('https://')) {
+      scheme = 'wss';
+      raw = raw.substring('https://'.length);
+    } else if (raw.startsWith('ws://')) {
+      scheme = 'ws';
+      raw = raw.substring('ws://'.length);
+    } else if (raw.startsWith('http://')) {
+      scheme = 'ws';
+      raw = raw.substring('http://'.length);
+    } else {
+      // Pas de schéma explicite :
+      // Domaine distant (non IP locale), tunnel ou port 443 -> wss
+      final isLocal = RegExp(r'^(127\.0\.0\.1|localhost|0\.0\.0\.0|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)').hasMatch(raw);
+      if (!isLocal || port == 443 || raw.contains('trycloudflare.com') || raw.contains('pinggy')) {
+        scheme = 'wss';
+      }
+    }
+
+    // 2. Nettoyage du chemin
+    raw = raw.replaceAll(RegExp(r'/ws/?$'), '').replaceAll(RegExp(r'/+$'), '');
+
+    // 3. Extraction d'un port explicite dans l'hôte (ex: host:8090)
+    String domain = raw;
+    int? inlinePort;
+    if (raw.contains(':')) {
+      final parts = raw.split(':');
+      domain = parts[0];
+      inlinePort = int.tryParse(parts[1].replaceAll(RegExp(r'/.*$'), ''));
+    }
+    domain = domain.replaceAll(RegExp(r'/.*$'), '');
+
+    // 4. Détermination du port effectif
+    int effectivePort = inlinePort ?? (port ?? (scheme == 'wss' ? 443 : 8090));
+
+    // Si WSS et port laissé à 8090 par défaut (sans port explicite dans l'hôte) -> 443
+    if (scheme == 'wss' && inlinePort == null && (port == 8090 || port == null)) {
+      effectivePort = 443;
+    }
+
+    // 5. Omission des ports par défaut standard (443 pour wss, 80 pour ws)
+    final portPart = (effectivePort == 443 && scheme == 'wss') || (effectivePort == 80 && scheme == 'ws')
+        ? ''
+        : ':$effectivePort';
+
+    return '$scheme://$domain$portPart/ws$query';
+  }
+
   Future<void> connect({String? customUrl, String? authToken}) async {
     if (customUrl != null && customUrl.isNotEmpty) {
-      _targetUrl = customUrl;
+      _targetUrl = customUrl.startsWith('http://') || customUrl.startsWith('https://')
+          ? formatWsUrl(customUrl)
+          : customUrl;
       _reconnectAttempts = 0;
     }
     if (authToken != null) {
@@ -135,7 +204,18 @@ class DaemonWebSocketClient {
     _messageController ??= StreamController<dynamic>.broadcast();
 
     try {
-      final uri = Uri.parse(_targetUrl);
+      var uri = Uri.parse(_targetUrl);
+      // P3 : Transmettre le token dans les query parameters (?token=...)
+      // EN PLUS du header 'Authorization: Bearer'.
+      // Les reverse proxies Cloud (Coolify/Traefik, Cloudflare, Nginx) suppriment
+      // fréquemment les headers d'authentification personnalisés lors du handshake
+      // HTTP 101 WebSocket Upgrade, causant un rejet 401 Unauthorized par le daemon.
+      if (_authToken != null && _authToken!.isNotEmpty && !uri.queryParameters.containsKey('token')) {
+        final queryParams = Map<String, String>.from(uri.queryParameters);
+        queryParams['token'] = _authToken!;
+        uri = uri.replace(queryParameters: queryParams);
+      }
+
       final headers = <String, dynamic>{};
       if (_authToken != null && _authToken!.isNotEmpty) {
         headers['Authorization'] = 'Bearer $_authToken';

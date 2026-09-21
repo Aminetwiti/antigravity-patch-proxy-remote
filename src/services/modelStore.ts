@@ -66,6 +66,8 @@ export interface ProviderModelEntry {
   id: string;
   displayName?: string;
   enabled: boolean;
+  supportsImages?: boolean;
+  supportsVision?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
 }
@@ -79,6 +81,8 @@ export interface ProviderFileEntry {
   allowUnauthorized?: boolean;
   encrypted?: boolean;
   enabled: boolean;
+  supportsImages?: boolean;
+  supportsVision?: boolean;
   useRawBaseUrl?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
@@ -128,6 +132,8 @@ export async function loadCustomModels(): Promise<CustomModelFileEntry[]> {
           allowUnauthorized: p.allowUnauthorized,
           encrypted: p.encrypted,
           useRawBaseUrl: p.useRawBaseUrl,
+          supportsImages: m.supportsImages ?? p.supportsImages ?? true,
+          supportsVision: m.supportsVision ?? p.supportsVision ?? true,
           extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
           extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
         });
@@ -232,7 +238,25 @@ function atomicWriteJson(filePath: string, payload: unknown): Promise<void> {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2), 'utf-8');
-    await fs.rename(tmp, filePath);
+    // ponytail: Windows NTFS retry on EPERM/EBUSY caused by active fs.watch or antivirus locks
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        await fs.rename(tmp, filePath);
+        return;
+      } catch (err: any) {
+        if ((err?.code === 'EPERM' || err?.code === 'EBUSY') && attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+          continue;
+        }
+        try {
+          await fs.copyFile(tmp, filePath);
+          await fs.unlink(tmp).catch(() => {});
+          return;
+        } catch {
+          throw err;
+        }
+      }
+    }
   })();
 }
 
@@ -250,6 +274,7 @@ async function saveProvidersInternal(providers: ProviderFileEntry[]): Promise<vo
   const filePath = getCustomModelsPath();
   const existing = readExistingJson(filePath);
   existing.providers = providers;
+  delete existing.models;
   await atomicWriteJson(filePath, existing);
 }
 

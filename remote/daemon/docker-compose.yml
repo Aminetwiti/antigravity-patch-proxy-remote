@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  antigravity-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: antigravity-remote-daemon
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+      - "41234:41234/udp"
+    environment:
+      - PORT=8090
+      - HOST=0.0.0.0
+      - TUNNEL=cloudflare
+      - AUTH_TOKEN=${AUTH_TOKEN:-}
+      - APPROVAL_TIMEOUT=300
+    volumes:
+      - ./data:/data
+      - ~/.ssh:/root/.ssh:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+

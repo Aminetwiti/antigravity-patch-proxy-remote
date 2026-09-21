@@ -176,19 +176,27 @@ export interface BinarySignatureStatus {
   state: 'original' | 'patched' | 'none';
 }
 
-export function inspectBinaryPatchSignature(binaryPath: string): BinarySignatureStatus {
+export function hasPatchedUrl(haystack: string, patch: PatchDefinition): boolean {
+  if (haystack.includes(patch.patchedUrl)) return true;
+  if (patch.patchedUrl.includes('127.0.0.1') && haystack.includes(patch.patchedUrl.replace('127.0.0.1', 'localhost'))) return true;
+  if (patch.patchedUrl.includes('localhost') && haystack.includes(patch.patchedUrl.replace('localhost', '127.0.0.1'))) return true;
+  return false;
+}
+
+export function inspectBinaryPatchSignature(binaryPath: string, targetPatch?: PatchDefinition | null): BinarySignatureStatus {
   if (!fs.existsSync(binaryPath)) {
     return { detected: false, state: 'none' };
   }
 
   const buf = fs.readFileSync(binaryPath);
   const haystack = buf.toString('binary');
-  const sample = PATCH_REGISTRY[0];
-  const hasPatched = haystack.includes(sample.patchedUrl);
-  const hasOriginal = haystack.includes(sample.originalUrl);
+  const patchesToCheck = targetPatch ? [targetPatch, ...PATCH_REGISTRY.filter((p) => p !== targetPatch)] : PATCH_REGISTRY;
 
-  if (hasPatched) return { detected: true, state: 'patched' };
-  if (hasOriginal) return { detected: true, state: 'original' };
+  for (const patch of patchesToCheck) {
+    if (hasPatchedUrl(haystack, patch)) return { detected: true, state: 'patched' };
+    if (haystack.includes(patch.originalUrl)) return { detected: true, state: 'original' };
+  }
+
   return { detected: false, state: 'none' };
 }
 
@@ -340,7 +348,7 @@ export function detectAvailablePatches(binaryPath: string): PatchDefinition[] {
   }
   const buf = fs.readFileSync(binaryPath);
   const haystack = buf.toString('binary');
-  return PATCH_REGISTRY.filter((patch) => haystack.includes(patch.originalUrl) || haystack.includes(patch.patchedUrl));
+  return PATCH_REGISTRY.filter((patch) => haystack.includes(patch.originalUrl) || hasPatchedUrl(haystack, patch));
 }
 
 /**
@@ -450,10 +458,10 @@ export function getVersionAwarePatchStatus(installDir?: string): VersionAwarePat
   const versionSource = versionInfo?.source ?? 'unknown';
   const reliableVersionSource = isReliableVersionSource(versionSource);
   const detectedPatches = detectAvailablePatches(binaryPath);
-  const binarySignature = inspectBinaryPatchSignature(binaryPath);
-  const overlayFingerprint = inspectOverlayPatchFingerprint(installDir);
   const autoRecommended = version !== 'unknown' ? findPatchForVersion(version) : null;
+  const overlayFingerprint = inspectOverlayPatchFingerprint(installDir);
   const overlayRecommended = findPatchByRange(overlayFingerprint.range);
+  const binarySignature = inspectBinaryPatchSignature(binaryPath, autoRecommended ?? overlayRecommended);
 
   let recommendedPatch: PatchDefinition | null = autoRecommended;
   let overrideActive = false;
@@ -606,7 +614,7 @@ export function applyVersionSpecificPatch(installDir?: string): { ok: boolean; m
 
   const haystack = buf.toString('binary');
 
-  if (haystack.includes(patch.patchedUrl)) {
+  if (hasPatchedUrl(haystack, patch)) {
     return {
       ok: true,
       message: `Already patched (${patch.versionRange}, source: ${source})`,

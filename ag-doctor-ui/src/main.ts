@@ -546,26 +546,33 @@ class CliWorkerPool {
     });
   }
 
-  async run(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  async run(args: string[], retries = 1): Promise<{ code: number; stdout: string; stderr: string }> {
     if (!fs.existsSync(this.cliPath)) {
       return { code: -1, stdout: '', stderr: `CLI not found: ${this.cliPath}` };
     }
-    const idle = this.workers.find((w) => !w.busy);
-    if (idle) return this.runOn(idle, args);
+    try {
+      const idle = this.workers.find((w) => !w.busy);
+      if (idle) return await this.runOn(idle, args);
 
-    if (this.workers.length < this.maxWorkers) {
-      const w = this.spawnWorker();
-      if (w) return this.runOn(w, args);
+      if (this.workers.length < this.maxWorkers) {
+        const w = this.spawnWorker();
+        if (w) return await this.runOn(w, args);
+      }
+
+      return await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          const idx = this.waitQueue.findIndex((q) => q.timer === timer);
+          if (idx >= 0) this.waitQueue.splice(idx, 1);
+          reject(new Error(`CLI command timed out in queue after ${WORKER_CMD_TIMEOUT_MS / 1000}s: ${args.join(' ')}`));
+        }, WORKER_CMD_TIMEOUT_MS);
+        this.waitQueue.push({ args, resolve, reject, timer });
+      });
+    } catch (err) {
+      if (retries > 0) {
+        return this.run(args, retries - 1);
+      }
+      throw err;
     }
-
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = this.waitQueue.findIndex((q) => q.timer === timer);
-        if (idx >= 0) this.waitQueue.splice(idx, 1);
-        reject(new Error(`CLI command timed out in queue after ${WORKER_CMD_TIMEOUT_MS / 1000}s: ${args.join(' ')}`));
-      }, WORKER_CMD_TIMEOUT_MS);
-      this.waitQueue.push({ args, resolve, reject, timer });
-    });
   }
 
   shutdown(): void {
@@ -808,13 +815,24 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           enabled: m.enabled !== false
         });
       }
-      return Array.from(pm.values());
+      const migrated = Array.from(pm.values());
+      parsed.providers = migrated;
+      delete parsed.models;
+      await fs.promises.writeFile(p, JSON.stringify(parsed, null, 2), 'utf8');
+      return migrated;
     }
     return [];
   } catch {
     return [];
   }
 });
+
+async function atomicWriteCustomModels(filePath: string, data: unknown): Promise<void> {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+  await fs.promises.rename(tmp, filePath);
+}
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
   try {
@@ -835,10 +853,12 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
         const pmId = pm.id || pm.displayName;
         if (!pmId) continue;
         const cleanId = pmId.startsWith('models/') ? pmId.slice(7) : pmId;
+        const pNormUrl = (p.apiUrl || '').replace(/\/+$/, '').toLowerCase();
         const mIdx = parsed.models.findIndex(m => {
           const mClean = (m.name || '').startsWith('models/') ? (m.name || '').slice(7) : (m.name || '');
-          const urlMatch = !p.apiUrl || !m.apiUrl || p.apiUrl.toLowerCase() === m.apiUrl.toLowerCase();
-          return (m.name === pmId || m.name === `models/${pmId}` || mClean === cleanId) && urlMatch;
+          const mNormUrl = (m.apiUrl || '').replace(/\/+$/, '').toLowerCase();
+          const urlMatch = !pNormUrl || !mNormUrl || pNormUrl === mNormUrl;
+          return (m.name === pmId || m.name === `models/${pmId}` || mClean === cleanId || m.displayName === pm.displayName) && urlMatch;
         });
         if (mIdx !== -1) {
           parsed.models[mIdx].enabled = pm.enabled !== false && p.enabled !== false;
@@ -846,7 +866,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
       }
     }
 
-    await fs.promises.writeFile(fp, JSON.stringify(parsed, null, 2), 'utf8');
+    await atomicWriteCustomModels(fp, parsed);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
     return { success: true };
   } catch(e) {
@@ -861,7 +881,8 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_DELETE, async (_, id) => {
     const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
     if (parsed.providers) {
       parsed.providers = parsed.providers.filter((x: any) => x.id !== id);
-      await fs.promises.writeFile(fp, JSON.stringify(parsed, null, 2), 'utf8');
+      delete parsed.models;
+      await atomicWriteCustomModels(fp, parsed);
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
     }
     return { success: true };
@@ -968,7 +989,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
          const postBody = JSON.stringify({
            model: params.modelId,
            messages: [{ role: 'user', content: 'ping' }],
-           max_tokens: 1
+           max_tokens: 16
          });
          const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
          statusCode = postRes.statusCode;
@@ -1006,7 +1027,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
            const postBody = JSON.stringify({
              model: testModel,
              messages: [{ role: 'user', content: 'ping' }],
-             max_tokens: 1
+             max_tokens: 16
            });
            const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
            if (postRes.statusCode >= 200 && postRes.statusCode < 300) {
@@ -1047,7 +1068,9 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
              parsed.providers[idx].latencyMs = result.latencyMs;
              parsed.providers[idx].lastTestedAt = new Date().toISOString();
              parsed.providers[idx].lastError = result.error;
-             await fs.promises.writeFile(fp, JSON.stringify(parsed, null, 2), 'utf8');
+             const tmpFp = `${fp}.${process.pid}.${Date.now()}.tmp`;
+             await fs.promises.writeFile(tmpFp, JSON.stringify(parsed, null, 2), 'utf8');
+             await fs.promises.rename(tmpFp, fp);
            }
          }
        } catch { /* ignore */ }
@@ -1229,14 +1252,18 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROXY_RESTART, async () => {
 
 // Antigravity Lifecycle
 ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_STATUS, async () => {
-  const r = await getCliPool().run(['antigravity', 'status', '--json']);
-  if (r.code !== 0 && r.code !== 1) {
-    return { ok: false, error: r.stderr || r.stdout || `exit ${r.code}` };
-  }
   try {
-    return { ok: true, data: JSON.parse(r.stdout) };
-  } catch (e) {
-    return { ok: false, error: `parse failed: ${(e as Error).message}` };
+    const r = await getCliPool().run(['antigravity', 'status', '--json']);
+    if (r.code !== 0 && r.code !== 1) {
+      return { ok: false, error: r.stderr || r.stdout || `exit ${r.code}` };
+    }
+    try {
+      return { ok: true, data: JSON.parse(r.stdout) };
+    } catch (e) {
+      return { ok: false, error: `parse failed: ${(e as Error).message}` };
+    }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
   }
 });
 

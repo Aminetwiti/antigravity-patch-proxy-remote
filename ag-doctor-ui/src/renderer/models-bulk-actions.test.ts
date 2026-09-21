@@ -104,4 +104,26 @@ describe('Bulk Operations on Selected Models', () => {
     expect(updated[1].models).toHaveLength(1);
     expect(updated[1].models![0].id).toBe('claude-3-7-sonnet');
   });
+
+  it('handles prefixed model names correctly when resolving model IDs in bulk', () => {
+    const resolveModelId = (providerId: string, name: string): string => {
+      const prefix = `${providerId}-`;
+      if (name.startsWith(prefix)) return name.slice(prefix.length);
+      return name.replace(/^models\//, '');
+    };
+
+    const selectedWithPrefixes = new Set(['models/claude-3-5-haiku', 'provider-1-deepseek-chat']);
+    // Normalize selected names per provider
+    const normalizedSelected = new Set(
+      Array.from(selectedWithPrefixes).map((name) => {
+        if (name.startsWith('provider-1-')) return resolveModelId('provider-1', name);
+        if (name.startsWith('provider-2-')) return resolveModelId('provider-2', name);
+        return resolveModelId('', name);
+      })
+    );
+
+    const updated = bulkEnableModels(sampleProviders, normalizedSelected);
+    expect(updated[0].models![0].enabled).toBe(true); // deepseek-chat enabled
+    expect(updated[1].models![1].enabled).toBe(true); // claude-3-5-haiku enabled
+  });
 });

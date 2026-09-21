@@ -39,6 +39,7 @@ export interface ProviderHeaders {
   'x-goog-api-key'?: string;
   'HTTP-Referer'?: string;
   'X-Title'?: string;
+  'User-Agent'?: string;
   [key: string]: string | undefined;
 }
 
@@ -161,7 +162,10 @@ export function getProviderHeaders(
   apiKey: string,
   extraHeaders?: Record<string, string>,
 ): ProviderHeaders {
-  const headers: ProviderHeaders = { 'Content-Type': 'application/json' };
+  const headers: ProviderHeaders = {
+    'Content-Type': 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+  };
   if (!apiKey || apiKey === 'none') {
     return extraHeaders ? { ...headers, ...extraHeaders } : headers;
   }

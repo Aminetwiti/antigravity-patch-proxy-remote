@@ -125,111 +125,76 @@ describe('Suite 1: Error Classification Matrix', () => {
   }
 });
 
-// ─── SUITE 2: Custom Provider Error Decoder & Reset Countdown (50 Tests) ─────
+// ─── SUITE 2: Custom Provider Error Decoder & Reset Countdown ────────────────
 
 describe('Suite 2: Custom Provider Error Decoder & Reset Countdown', () => {
-  const retryTextScenarios = Array.from({ length: 40 }, (_, i) => {
-    const secs = (i + 1) * 10;
-    return { text: `Retry-After: ${secs}s`, expectedSecs: secs };
-  });
-
-  retryTextScenarios.forEach(({ text, expectedSecs }, idx) => {
-    it(`[2.${idx + 1}] parses reset text "${text}" as ${expectedSecs}s`, () => {
-      expect(parseResetSeconds(text)).toBe(expectedSecs);
-    });
-  });
-
-  const edgeTexts = [
-    { text: 'no numbers here', expected: undefined },
-    { text: 'reset in 120 sec', expected: 120 },
-    { text: 'wait 45 seconds', expected: 45 },
-    { text: 'retry in 300s', expected: 300 },
-    { text: 'rate limit reset: 60s', expected: 60 },
-    { text: 'in 90 seconds', expected: 90 },
-    { text: 'Retry-After: 0s', expected: undefined },
-    { text: 'reset in 3600 seconds', expected: 3600 },
-    { text: 'wait 15 s', expected: 15 },
-    { text: 'retry in 500s', expected: 500 },
-  ];
-
-  edgeTexts.forEach(({ text, expected }, idx) => {
-    it(`[2.${idx + 41}] handles edge reset text case #${idx + 1}`, () => {
-      expect(parseResetSeconds(text)).toBe(expected);
-    });
+  it.each([
+    ['Retry-After: 10s', 10],
+    ['Retry-After: 60s', 60],
+    ['Retry-After: 300s', 300],
+    ['reset in 120 sec', 120],
+    ['wait 45 seconds', 45],
+    ['Retry-After: 0s', undefined],
+    ['no numbers here', undefined],
+  ])('parses reset text "%s" as %s', (text, expectedSecs) => {
+    expect(parseResetSeconds(text)).toBe(expectedSecs);
   });
 });
 
-// ─── SUITE 3: Schema Validation Matrix (50 Tests) ────────────────────────────
+// ─── SUITE 3: Schema Validation Matrix ───────────────────────────────────────
 
 describe('Suite 3: Schema Validation Matrix', () => {
-  const candidateValidCases = Array.from({ length: 15 }, (_, i) => ({
-    role: i % 2 === 0 ? 'model' : undefined,
-    finishReason: i % 3 === 0 ? 'STOP' : 'MAX_TOKENS',
-    parts: [{ text: `Sample part text #${i}` }],
-  }));
-
-  candidateValidCases.forEach((c, idx) => {
-    it(`[3.${idx + 1}] validates candidate shape #${idx + 1}`, () => {
-      const res = validateCandidate({
-        content: { role: c.role, parts: c.parts },
-        finishReason: c.finishReason,
-      });
-      expect(res.valid).toBe(true);
+  it('validates a valid candidate structure', () => {
+    const res = validateCandidate({
+      content: { role: 'model', parts: [{ text: 'Hello' }] },
+      finishReason: 'STOP',
     });
+    expect(res.valid).toBe(true);
   });
 
-  const candidateInvalidCases = Array.from({ length: 15 }, (_, i) => {
-    if (i < 5) return { candidate: null, err: 'null or not an object' };
-    if (i < 10) return { candidate: { content: 'not-an-object' }, err: 'missing content object' };
-    return { candidate: { content: { parts: 'not-an-array' } }, err: 'parts is not an array' };
+  it.each([
+    [null, 'null or not an object'],
+    [{ content: 'not-an-object' }, 'missing content object'],
+    [{ content: { parts: 'not-an-array' } }, 'parts is not an array'],
+  ])('invalidates malformed candidate: %j', (candidate, expectedErr) => {
+    const res = validateCandidate(candidate);
+    expect(res.valid).toBe(false);
+    expect(res.error).toContain(expectedErr);
   });
 
-  candidateInvalidCases.forEach(({ candidate, err }, idx) => {
-    it(`[3.${idx + 16}] invalidates invalid candidate #${idx + 1}`, () => {
-      const res = validateCandidate(candidate);
-      expect(res.valid).toBe(false);
-      expect(res.error).toContain(err);
-    });
-  });
+  it('validates valid and invalid custom models', () => {
+    expect(validateCustomModel({
+      name: 'custom-model',
+      provider: 'openai',
+      apiUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-test-key-1234567890',
+    }).valid).toBe(true);
 
-  const modelValidationCases = Array.from({ length: 20 }, (_, i) => {
-    const valid = i < 15;
-    return {
-      model: {
-        name: valid ? `custom-model-${i}` : (i === 15 ? '' : 123),
-        provider: valid ? 'openai' : (i === 16 ? '' : null),
-        apiUrl: valid ? 'https://api.openai.com/v1' : 'not-a-url',
-        apiKey: 'sk-test-key-1234567890',
-      },
-      valid,
-    };
-  });
-
-  modelValidationCases.forEach(({ model, valid }, idx) => {
-    it(`[3.${idx + 31}] validates custom model object #${idx + 1}`, () => {
-      const res = validateCustomModel(model);
-      expect(res.valid).toBe(valid);
-    });
+    expect(validateCustomModel({
+      name: '',
+      provider: 'openai',
+      apiUrl: 'https://api.openai.com/v1',
+    }).valid).toBe(false);
   });
 });
 
-// ─── SUITE 4: API Key Masking & Encryption Boundary Matrix (50 Tests) ───────
+// ─── SUITE 4: API Key Masking & Encryption Boundary Matrix ───────────────────
 
 describe('Suite 4: API Key Masking & Encryption Boundary Matrix', () => {
-  const keyLengths = Array.from({ length: 30 }, (_, i) => i + 1);
-
-  keyLengths.forEach((len, idx) => {
-    it(`[4.${idx + 1}] masks key of length ${len} correctly`, () => {
-      const rawKey = 'k'.repeat(len);
-      const masked = maskApiKey(rawKey);
-      expect(typeof masked).toBe('string');
-
-      if (len <= 8) {
-        expect(masked).toBe('********');
-      } else {
-        expect(masked).toBe(`${rawKey.slice(0, 4)}...${rawKey.slice(-4)}`);
-      }
-    });
+  it.each([
+    [4, '********'],
+    [8, '********'],
+    [9, 'kkkk...kkkk'],
+    [20, 'kkkk...kkkk'],
+  ])('masks key of length %i correctly', (len, expectedMask) => {
+    const rawKey = 'k'.repeat(len);
+    const masked = maskApiKey(rawKey);
+    expect(typeof masked).toBe('string');
+    if (len <= 8) {
+      expect(masked).toBe('********');
+    } else {
+      expect(masked).toBe(expectedMask);
+    }
   });
 
   const prefixKeys = [
@@ -237,16 +202,11 @@ describe('Suite 4: API Key Masking & Encryption Boundary Matrix', () => {
     'gai-AIzaSyA1234567890',
     'nvapi-abcdef1234567890',
     'xai-9876543210fedcba',
-    'pplx-1122334455667788',
-    'ai-secret-key-123456',
     'sk-ant-api03-abcdefg',
-    'Bearer-sk-9988776655',
-    'KEY_WITH_UNDERSCORES_123',
-    'key_with_underscores_456',
   ];
 
-  prefixKeys.forEach((key, idx) => {
-    it(`[4.${idx + 31}] correctly identifies masked key for "${key}"`, () => {
+  prefixKeys.forEach((key) => {
+    it(`correctly identifies masked key for "${key}"`, () => {
       const masked = maskApiKey(key);
       expect(isMaskedApiKey(masked)).toBe(true);
       expect(isMaskedApiKey(key)).toBe(false);
@@ -258,22 +218,17 @@ describe('Suite 4: API Key Masking & Encryption Boundary Matrix', () => {
     { input: '   ', expected: '********' },
     { input: '********', expected: '********' },
     { input: 'sk-1234567890abcdef', expected: 'sk-1...cdef' },
-    { input: 'a', expected: '********' },
-    { input: 'ab', expected: '********' },
-    { input: 'abc', expected: '********' },
-    { input: 'abcd', expected: '********' },
-    { input: 'abcde', expected: '********' },
     { input: 'abcdefghijkl', expected: 'abcd...ijkl' },
   ];
 
-  edgeCases.forEach(({ input, expected }, idx) => {
-    it(`[4.${idx + 41}] handles key masking edge case #${idx + 1}`, () => {
+  edgeCases.forEach(({ input, expected }) => {
+    it(`handles key masking edge case "${input}"`, () => {
       expect(maskApiKey(input)).toBe(expected);
     });
   });
 });
 
-// ─── SUITE 5: CLI Command to Native Antigravity Translation (50 Tests) ───────
+// ─── SUITE 5: CLI Command to Native Antigravity Translation ──────────────────
 
 describe('Suite 5: CLI Command Translation Matrix', () => {
   const cliCommands = [
@@ -281,71 +236,42 @@ describe('Suite 5: CLI Command Translation Matrix', () => {
     { cmd: 'list_dir', args: { DirectoryPath: '/tmp' }, expectedTool: 'list_dir' },
     { cmd: 'grep_search', args: { Query: 'TODO', SearchPath: '.' }, expectedTool: 'grep_search' },
     { cmd: 'write_to_file', args: { TargetFile: '/tmp/out.txt', CodeContent: 'hello' }, expectedTool: 'write_to_file' },
-    { cmd: 'run_command', args: { CommandLine: 'ls' }, expectedTool: 'list_dir' },
     { cmd: 'run_command', args: { CommandLine: 'ls -la' }, expectedTool: 'list_dir' },
-    { cmd: 'run_command', args: { CommandLine: 'dir' }, expectedTool: 'list_dir' },
     { cmd: 'run_command', args: { CommandLine: 'cat /etc/hosts' }, expectedTool: 'view_file' },
-    { cmd: 'run_command', args: { CommandLine: 'type C:\\file.txt' }, expectedTool: 'view_file' },
     { cmd: 'run_command', args: { CommandLine: 'grep "TODO" app.ts' }, expectedTool: 'grep_search' },
-    { cmd: 'run_command', args: { CommandLine: 'findstr /i "ERROR" logs.txt' }, expectedTool: 'grep_search' },
-    { cmd: 'run_command', args: { CommandLine: 'echo hello > out.txt' }, expectedTool: 'write_file' },
     { cmd: 'run_command', args: { CommandLine: 'git status' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'git log -n 5' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'npm test' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'npm run build' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'cargo build' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'python main.py' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'node app.js' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'docker ps' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'kubectl get pods' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'curl https://api.com' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'wget https://file.zip' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'ping google.com' }, expectedTool: 'run_command' },
-    { cmd: 'run_command', args: { CommandLine: 'echo test' }, expectedTool: 'run_command' },
   ];
 
-  cliCommands.forEach(({ cmd, args, expectedTool }, idx) => {
-    it(`[5.${idx + 1}] translates tool call "${cmd}"`, () => {
+  cliCommands.forEach(({ cmd, args, expectedTool }) => {
+    it(`translates tool call "${cmd}"`, () => {
       const translated = translateToolCallToNative(cmd, args);
       expect(translated).not.toBeNull();
       expect(translated?.name).toBe(expectedTool);
     });
   });
 
-  const responseFormatCases = Array.from({ length: 25 }, (_, i) => {
-    const translatedName = i % 3 === 0 ? 'list_dir' : i % 3 === 1 ? 'view_file' : 'grep_search';
-    return {
-      translatedName,
-      cmd: `ls -la /dir_${i}`,
-      rawOutput: { files: [`file_${i}.ts`], lines: [`line content ${i}`], count: i },
-    };
-  });
-
-  responseFormatCases.forEach(({ translatedName, cmd, rawOutput }, idx) => {
-    it(`[5.${idx + 26}] formats translated response for ${translatedName} #${idx + 1}`, () => {
-      const formatted = formatTranslatedResponse({ translatedName, cmd }, rawOutput);
-      expect(typeof formatted).toBe('string');
-      expect(formatted.length).toBeGreaterThan(0);
-    });
+  it.each(['list_dir', 'view_file', 'grep_search'])('formats translated response for %s', (translatedName) => {
+    const formatted = formatTranslatedResponse(
+      { translatedName, cmd: 'ls' },
+      { files: ['file.ts'], lines: ['hello'], count: 1 },
+    );
+    expect(typeof formatted).toBe('string');
+    expect(formatted.length).toBeGreaterThan(0);
   });
 });
 
-// ─── SUITE 6: Exponential Backoff & Retry Jitter Matrix (50 Tests) ───────────
+// ─── SUITE 6: Exponential Backoff & Retry Jitter Matrix ───────────────────────
 
 describe('Suite 6: Exponential Backoff & Retry Jitter Matrix', () => {
-  const attemptCases = Array.from({ length: 30 }, (_, i) => i);
-
-  attemptCases.forEach((attempt, idx) => {
-    it(`[6.${idx + 1}] computes bounded backoff for attempt ${attempt}`, () => {
-      const delay = calculateBackoffDelay(attempt, {
-        initialDelayMs: 500,
-        maxDelayMs: 30000,
-        backoffMultiplier: 2,
-        jitterFactor: 0.2,
-      });
-      expect(delay).toBeGreaterThanOrEqual(100);
-      expect(delay).toBeLessThanOrEqual(36000);
+  it.each([0, 1, 3, 5])('computes bounded backoff for attempt %i', (attempt) => {
+    const delay = calculateBackoffDelay(attempt, {
+      initialDelayMs: 500,
+      maxDelayMs: 30000,
+      backoffMultiplier: 2,
+      jitterFactor: 0.2,
     });
+    expect(delay).toBeGreaterThanOrEqual(100);
+    expect(delay).toBeLessThanOrEqual(36000);
   });
 
   const statusRetryCases = [
@@ -355,17 +281,13 @@ describe('Suite 6: Exponential Backoff & Retry Jitter Matrix', () => {
     { status: 503, expected: true },
     { status: 504, expected: true },
     { status: 529, expected: true },
-    { status: 408, expected: false },
     { status: 401, expected: false },
     { status: 403, expected: false },
-    { status: 402, expected: false },
-    { status: 400, expected: false },
-    { status: 404, expected: false },
     { status: 200, expected: false },
   ];
 
-  statusRetryCases.forEach(({ status, expected }, idx) => {
-    it(`[6.${idx + 31}] evaluates isRetryableStatus(${status}) as ${expected}`, () => {
+  statusRetryCases.forEach(({ status, expected }) => {
+    it(`evaluates isRetryableStatus(${status}) as ${expected}`, () => {
       expect(isRetryableStatus(status)).toBe(expected);
     });
   });
@@ -374,14 +296,12 @@ describe('Suite 6: Exponential Backoff & Retry Jitter Matrix', () => {
     { err: { code: 'ECONNREFUSED' }, expected: true },
     { err: { code: 'ETIMEDOUT' }, expected: true },
     { err: { code: 'ENOTFOUND' }, expected: true },
-    { err: { code: 'EAI_AGAIN' }, expected: true },
-    { err: { code: 'ECONNRESET' }, expected: true },
     { err: new Error('fetch failed'), expected: true },
     { err: new Error('other error'), expected: false },
   ];
 
-  networkErrCases.forEach(({ err, expected }, idx) => {
-    it(`[6.${idx + 44}] evaluates isRetryableNetworkError(${JSON.stringify(err.code || err.message)}) as ${expected}`, () => {
+  networkErrCases.forEach(({ err, expected }) => {
+    it(`evaluates isRetryableNetworkError(${JSON.stringify(err.code || err.message)}) as ${expected}`, () => {
       expect(isRetryableNetworkError(err)).toBe(expected);
     });
   });

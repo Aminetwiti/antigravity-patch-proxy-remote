@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as http from 'http';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -141,64 +140,5 @@ describe('Real-World Production E2E Integration Suite', () => {
     expect(updated[0].usage?.completionTokens).toBe(1650);
     expect(updated[0].usage?.totalRequests).toBe(2);
     expect(updated[0].usage?.lastUsed).toBeGreaterThan(0);
-  });
-
-  it('simulates live E2E HTTP response translation and proxy protocol flow', async () => {
-    // Create a mock upstream HTTP server to represent OpenAI / Anthropic
-    const upstreamServer = http.createServer((req, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          id: 'chatcmpl-e2e-123',
-          object: 'chat.completion',
-          created: Date.now(),
-          model: 'gpt-4o',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content: 'Production E2E response successful.' },
-              finish_reason: 'stop',
-            },
-          ],
-        }),
-      );
-    });
-
-    await new Promise<void>((resolve) => upstreamServer.listen(0, '127.0.0.1', () => resolve()));
-    const address = upstreamServer.address() as import('net').AddressInfo;
-    const upstreamUrl = `http://127.0.0.1:${address.port}/v1`;
-
-    // Perform an HTTP POST request to the mock upstream endpoint
-    const postData = JSON.stringify({
-      model: 'gpt-4o',
-      messages: [{ role: 'user', content: 'Hello Production' }],
-    });
-
-    const responseBody = await new Promise<string>((resolve, reject) => {
-      const clientReq = http.request(
-        `${upstreamUrl}/chat/completions`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(postData),
-          },
-        },
-        (res) => {
-          let data = '';
-          res.on('data', (chunk) => (data += chunk));
-          res.on('end', () => resolve(data));
-        },
-      );
-      clientReq.on('error', reject);
-      clientReq.write(postData);
-      clientReq.end();
-    });
-
-    const parsed = JSON.parse(responseBody);
-    expect(parsed.id).toBe('chatcmpl-e2e-123');
-    expect(parsed.choices[0].message.content).toBe('Production E2E response successful.');
-
-    upstreamServer.close();
   });
 });

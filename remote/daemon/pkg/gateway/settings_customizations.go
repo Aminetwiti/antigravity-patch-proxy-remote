@@ -19,6 +19,8 @@ type AccountInfo struct {
 	Telemetry       bool                   `json:"telemetryEnabled"`
 	MarketingEmails bool                   `json:"marketingEmails"`
 	Quotas          map[string]interface{} `json:"quotas,omitempty"`
+	Accounts        []AccountSummary       `json:"accounts,omitempty"`
+	AutoRotate      bool                   `json:"autoRotateEnabled"`
 }
 
 // DiscoveredSkill représente un skill Antigravity (builtin ou custom).
@@ -97,12 +99,24 @@ func (s *Server) GetAccountInfo() AccountInfo {
 	mkt := accountMarketingEmails
 	accountMu.RUnlock()
 
+	pool := GetGlobalAccountPool()
+	activeAcc := pool.GetActiveAccount()
+	accountsList := pool.ListAccounts()
+	autoRotate := pool.IsAutoRotate()
+
+	email := activeAcc.Email
+	if email == "" {
+		email = "account@antigravity.local"
+	}
+
 	info := AccountInfo{
-		Email:           "lesjardindelavie@gmail.com",
+		Email:           email,
 		Plan:            "Google AI Pro",
 		PlanDisplayName: "Google AI Pro Plan",
 		Telemetry:       tel,
 		MarketingEmails: mkt,
+		Accounts:        accountsList,
+		AutoRotate:      autoRotate,
 	}
 
 	if s.RPCClient != nil {

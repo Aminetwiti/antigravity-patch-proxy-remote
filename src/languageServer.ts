@@ -464,13 +464,22 @@ export async function killLanguageServer(): Promise<void> {
  */
 export function setupLocalCertTrust(): void {
   session.defaultSession.setCertificateVerifyProc((request, callback) => {
-    if (
-      (LOOPBACK_HOSTS.includes(request.hostname as typeof LOOPBACK_HOSTS[number])) &&
-      request.certificate.fingerprint === LS_CERT_FINGERPRINT
-    ) {
-      callback(0); // Accept
-    } else {
-      callback(-3); // Default validation
+    const isLoopback =
+      LOOPBACK_HOSTS.includes(request.hostname as typeof LOOPBACK_HOSTS[number]) ||
+      request.hostname === '127.0.0.1' ||
+      request.hostname === 'localhost' ||
+      request.hostname === '::1';
+
+    if (isLoopback) {
+      callback(0); // Accept unconditionally for local language server
+      return;
     }
+
+    if (request.certificate && request.certificate.fingerprint === LS_CERT_FINGERPRINT) {
+      callback(0);
+      return;
+    }
+
+    callback(-3); // Default validation
   });
 }

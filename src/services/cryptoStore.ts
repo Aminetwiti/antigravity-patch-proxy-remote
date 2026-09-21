@@ -54,7 +54,8 @@ export function getEncryptionStatus(): EncryptionStatus {
 export function isEncryptionAvailable(): boolean {
   try {
     return !!(safeStorage && safeStorage.isEncryptionAvailable());
-  } catch (_e) {
+  } catch (err) {
+    log.debug('[CryptoStore] safeStorage.isEncryptionAvailable check failed:', err);
     return false;
   }
 }

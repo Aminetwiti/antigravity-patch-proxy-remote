@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/antigravity/remote-daemon/pkg/workspace"
 	"github.com/gorilla/websocket"
 )
 
@@ -219,7 +220,7 @@ func (m *terminalPtyManager) kill(owner *websocket.Conn, id string) error {
 	sess.closed = true
 	sess.closing = true
 	sess.mu.Unlock()
-	_ = sess.cmd.Process.Kill()
+	_ = workspace.KillProcessTree(sess.cmd)
 	_ = sess.stdin.Close()
 	return nil
 }

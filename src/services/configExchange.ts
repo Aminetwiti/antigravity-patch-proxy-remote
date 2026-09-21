@@ -176,8 +176,25 @@ export function importEncryptedConfig(encryptedBase64: string, password: string)
   const tag = Buffer.from(payload.tag, 'hex');
   const encryptedData = Buffer.from(payload.data, 'base64');
 
+  // Validate iterations against DoS CPU exhaustion attacks (10,000 to 1,000,000 max)
+  const MAX_PBKDF2_ITERATIONS = 1_000_000;
+  const MIN_PBKDF2_ITERATIONS = 10_000;
+  const requestedIterations = payload.iterations;
+  if (requestedIterations !== undefined) {
+    if (
+      typeof requestedIterations !== 'number' ||
+      !Number.isInteger(requestedIterations) ||
+      requestedIterations < MIN_PBKDF2_ITERATIONS ||
+      requestedIterations > MAX_PBKDF2_ITERATIONS
+    ) {
+      throw new Error(
+        `Invalid PBKDF2 iterations (${requestedIterations}): must be an integer between ${MIN_PBKDF2_ITERATIONS} and ${MAX_PBKDF2_ITERATIONS}`,
+      );
+    }
+  }
+
   // Try decoding with explicit iterations or current default, then fallback to legacy 100k if needed
-  const primaryIterations = payload.iterations || PBKDF2_ITERATIONS;
+  const primaryIterations = requestedIterations || PBKDF2_ITERATIONS;
   let decrypted: Buffer | null = null;
 
   const tryDecrypt = (iterCount: number): Buffer | null => {

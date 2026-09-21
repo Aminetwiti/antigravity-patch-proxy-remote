@@ -354,11 +354,13 @@ class DaemonApi {
       return await rpc('get_account_info');
     } catch (_) {
       return const {
-        'email': 'lesjardindelavie@gmail.com',
+        'email': 'account@antigravity.local',
         'plan': 'Google AI Pro',
         'planDisplayName': 'Google AI Pro Plan',
         'telemetryEnabled': true,
         'marketingEmails': false,
+        'accounts': <Map<String, dynamic>>[],
+        'autoRotateEnabled': true,
       };
     }
   }
@@ -371,6 +373,26 @@ class DaemonApi {
       if (telemetryEnabled != null) 'telemetryEnabled': telemetryEnabled,
       if (marketingEmails != null) 'marketingEmails': marketingEmails,
     });
+  }
+
+  Future<Map<String, dynamic>> switchAccount(String email) async {
+    return await rpc('switch_account', {'email': email});
+  }
+
+  Future<Map<String, dynamic>> setAutoRotate(bool enabled) async {
+    return await rpc('set_auto_rotate', {'enabled': enabled});
+  }
+
+  Future<Map<String, dynamic>> rotateAccount({String reason = 'manual'}) async {
+    return await rpc('rotate_account', {'reason': reason});
+  }
+
+  Future<Map<String, dynamic>> selectBestAccount({String model = ''}) async {
+    return await rpc('select_best_account', {'model': model});
+  }
+
+  Future<Map<String, dynamic>> getAccountQuotas() async {
+    return await rpc('get_account_quotas');
   }
 
   Future<List<Map<String, dynamic>>> listSkills() async {
@@ -1132,6 +1154,102 @@ class DaemonApi {
     return controller.stream;
   }
 
+  /// S'attache à une session persistante sur le Cloud Server Runtime avec rejeu à partir de lastSequence.
+  void attachSession(String sessionId, {int lastSequence = 0}) {
+    final message = {
+      'version': 2,
+      'type': 'session.attach',
+      'sessionId': sessionId,
+      'lastSequence': lastSequence,
+    };
+    _send(message);
+  }
+
+  /// Envoie un prompt sur une session distante via le protocole v2 (Cloud Server Runtime).
+  Future<Map<String, dynamic>> sendPromptV2(
+    String sessionId,
+    String prompt,
+  ) async {
+    final id = _newRequestId();
+    final completer = Completer<Map<String, dynamic>>();
+    _pending[id] = completer;
+    final message = {
+      'version': 2,
+      'type': 'session.prompt',
+      'requestId': id,
+      'sessionId': sessionId,
+      'payload': {'text': prompt},
+    };
+    _send(message);
+    return completer.future.timeout(_timeout);
+  }
+
+  /// Suspend l'exécution de l'agent sur la session distante.
+  Future<Map<String, dynamic>> pauseSession(String sessionId) async {
+    final id = _newRequestId();
+    final completer = Completer<Map<String, dynamic>>();
+    _pending[id] = completer;
+    _send({
+      'version': 2,
+      'type': 'session.pause',
+      'requestId': id,
+      'sessionId': sessionId,
+    });
+    return completer.future.timeout(_timeout);
+  }
+
+  /// Reprend l'exécution de l'agent sur la session distante.
+  Future<Map<String, dynamic>> resumeSession(String sessionId) async {
+    final id = _newRequestId();
+    final completer = Completer<Map<String, dynamic>>();
+    _pending[id] = completer;
+    _send({
+      'version': 2,
+      'type': 'session.resume',
+      'requestId': id,
+      'sessionId': sessionId,
+    });
+    return completer.future.timeout(_timeout);
+  }
+
+  /// Annule le tour en cours de l'agent sur le serveur distant.
+  Future<Map<String, dynamic>> cancelSession(String sessionId) async {
+    final id = _newRequestId();
+    final completer = Completer<Map<String, dynamic>>();
+    _pending[id] = completer;
+    _send({
+      'version': 2,
+      'type': 'session.cancel',
+      'requestId': id,
+      'sessionId': sessionId,
+    });
+    return completer.future.timeout(_timeout);
+  }
+
+  /// Résout une demande d'approbation d'outil (Protocol v2).
+  Future<Map<String, dynamic>> respondApprovalV2({
+    required String sessionId,
+    required String approvalId,
+    required bool approved,
+    String? reason,
+  }) async {
+    final id = _newRequestId();
+    final completer = Completer<Map<String, dynamic>>();
+    _pending[id] = completer;
+    _send({
+      'version': 2,
+      'type': 'approval.respond',
+      'requestId': id,
+      'sessionId': sessionId,
+      'payload': {
+        'approvalId': approvalId,
+        'approved': approved,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      },
+    });
+    return completer.future.timeout(_timeout);
+  }
+
   static const Duration mcpTimeout = Duration(seconds: 15);
 
   /// Exécute un outil MCP avec un délai d'attente explicite de 15s
@@ -1426,6 +1544,31 @@ class DaemonApi {
   /// Récupère le résumé des quotas utilisateur réels du compte Antigravity.
   Future<Map<String, dynamic>> getUserQuotaSummary() async {
     return await rpc('get_quota_summary', {});
+  }
+
+  /// Récupère la télémétrie temps réel de la session (jetons, budget %, sous-agents actifs).
+  Future<Map<String, dynamic>> getSessionTelemetry(String sessionId) async {
+    return await rpc('get_session_telemetry', {'sessionId': sessionId, 'cascadeId': sessionId});
+  }
+
+  /// Promeut les modifications d'un shadow worktree dans le dépôt principal.
+  Future<Map<String, dynamic>> promoteShadowWorktree(String workspacePath, String sessionId, {String? message, String? author}) async {
+    return await rpc('promote_shadow_worktree', {
+      'workspacePath': workspacePath,
+      'sessionId': sessionId,
+      'cascadeId': sessionId,
+      if (message != null) 'message': message,
+      if (author != null) 'author': author,
+    });
+  }
+
+  /// Annule et détruit un shadow worktree sans merger ses modifications.
+  Future<Map<String, dynamic>> discardShadowWorktree(String workspacePath, String sessionId) async {
+    return await rpc('discard_shadow_worktree', {
+      'workspacePath': workspacePath,
+      'sessionId': sessionId,
+      'cascadeId': sessionId,
+    });
   }
 
   /// Récupère le profil et statut utilisateur (plan, crédits disponibles).
@@ -1776,6 +1919,149 @@ class DaemonApi {
         _emitBatched({...msg, 'broadcast': true});
       }
       _flushBatch();
+      return;
+    }
+
+    // --- Protocole v2 : Cloud Server Runtime handling ---
+    if (type == 'session.event') {
+      final evtMap = msg['event'] as Map<String, dynamic>? ?? {};
+      final sessId = msg['sessionId'] as String? ?? evtMap['sessionId'] as String? ?? '';
+      final evtType = evtMap['type'] as String? ?? '';
+      final seq = (evtMap['sequence'] as num?)?.toInt() ?? -1;
+      if (seq >= 0 && sessId.isNotEmpty) {
+        _lastStepIndices[sessId] = seq;
+        _boundStepIndices();
+      }
+
+      dynamic payload = evtMap['payload'];
+      if (payload is String) {
+        try {
+          payload = jsonDecode(payload);
+        } catch (_) {}
+      }
+
+      if (evtType == 'agent.thought_chunk') {
+        final chunk = payload is Map ? payload['chunk']?.toString() ?? '' : payload?.toString() ?? '';
+        final syntheticMsg = {
+          'type': 'stream_delta',
+          'cascadeId': sessId,
+          'data': {
+            'events': [
+              {'type': 'thought', 'text': chunk}
+            ],
+            'stepIndex': seq,
+          },
+          'broadcast': true,
+        };
+        _emitBatched(syntheticMsg);
+        return;
+      } else if (evtType == 'tool.call') {
+        final syntheticMsg = {
+          'type': 'stream_delta',
+          'cascadeId': sessId,
+          'data': {
+            'events': [
+              {
+                'type': 'tool_call',
+                'name': payload is Map ? payload['tool'] ?? payload['name'] : '',
+                'callId': payload is Map ? payload['call_id'] ?? payload['id'] : '',
+                'args': payload is Map ? payload['args'] ?? payload['arguments'] : {},
+              }
+            ],
+            'stepIndex': seq,
+          },
+          'broadcast': true,
+        };
+        _emitBatched(syntheticMsg);
+        return;
+      } else if (evtType == 'tool.output') {
+        final syntheticMsg = {
+          'type': 'stream_delta',
+          'cascadeId': sessId,
+          'data': {
+            'events': [
+              {
+                'type': 'tool_output',
+                'callId': payload is Map ? payload['call_id'] : '',
+                'chunk': payload is Map ? payload['chunk'] : '',
+              }
+            ],
+            'stepIndex': seq,
+          },
+          'broadcast': true,
+        };
+        _emitBatched(syntheticMsg);
+        return;
+      } else if (evtType == 'tool.result') {
+        final syntheticMsg = {
+          'type': 'stream_delta',
+          'cascadeId': sessId,
+          'data': {
+            'events': [
+              {
+                'type': 'tool_result',
+                'callId': payload is Map ? payload['call_id'] : '',
+                'output': payload is Map ? payload['output'] : '',
+              }
+            ],
+            'stepIndex': seq,
+          },
+          'broadcast': true,
+        };
+        _emitBatched(syntheticMsg);
+        return;
+      } else if (evtType == 'agent.completed') {
+        final syntheticMsg = {
+          'type': 'stream_end',
+          'cascadeId': sessId,
+          'broadcast': true,
+        };
+        _emitBatched(syntheticMsg);
+        return;
+      }
+
+      _emitBatched({...msg, 'broadcast': true});
+      return;
+    }
+
+    if (type == 'session.catchup') {
+      final sessId = msg['sessionId'] as String? ?? '';
+      final toSeq = (msg['toSequence'] as num?)?.toInt() ?? 0;
+      if (sessId.isNotEmpty && toSeq > 0) {
+        _lastStepIndices[sessId] = toSeq;
+        _boundStepIndices();
+      }
+      final events = msg['events'] as List? ?? [];
+      for (final rawEvt in events) {
+        if (rawEvt is Map<String, dynamic>) {
+          _onMessage(jsonEncode({
+            'version': 2,
+            'type': 'session.event',
+            'sessionId': sessId,
+            'event': rawEvt,
+          }));
+        }
+      }
+      _emitBatched({...msg, 'broadcast': true});
+      return;
+    }
+
+    if (type == 'session.ack') {
+      final reqId = msg['requestId'] as String? ?? '';
+      if (reqId.isNotEmpty && _pending.containsKey(reqId)) {
+        _pending.remove(reqId)?.complete(msg);
+      }
+      _emitBatched({...msg, 'broadcast': true});
+      return;
+    }
+
+    if (type == 'session.error') {
+      final reqId = msg['requestId'] as String? ?? '';
+      final errText = msg['error']?.toString() ?? 'Session error';
+      if (reqId.isNotEmpty && _pending.containsKey(reqId)) {
+        _pending.remove(reqId)?.completeError(CallError(errText));
+      }
+      _emitBatched({...msg, 'broadcast': true});
       return;
     }
 

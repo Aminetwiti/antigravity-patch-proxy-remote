@@ -91,15 +91,20 @@ export function getIdePatchStatus(): IdePatchStatus {
     }
   }
 
-  return {
-    installDir,
-    settingsPath,
-    exists,
-    applied: currentValue === IDE_PATCHED_ENDPOINT,
-    hasCustomValue: currentValue !== null && currentValue !== IDE_PATCHED_ENDPOINT,
-    backupExists: settingsPath ? fs.existsSync(settingsPath + '.bak') : false,
-    currentValue,
-  };
+    const isPatchedEndpoint =
+      currentValue === IDE_PATCHED_ENDPOINT ||
+      currentValue === `http://localhost:${DEFAULT_MITM_PORT}` ||
+      currentValue === `http://127.0.0.1:${DEFAULT_MITM_PORT}`;
+
+    return {
+      installDir,
+      settingsPath,
+      exists,
+      applied: isPatchedEndpoint,
+      hasCustomValue: currentValue !== null && !isPatchedEndpoint,
+      backupExists: settingsPath ? fs.existsSync(settingsPath + '.bak') : false,
+      currentValue,
+    };
 }
 
 /** Replace the setting value, or insert the key right after the opening `{`. */

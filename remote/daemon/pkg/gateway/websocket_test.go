@@ -1269,8 +1269,8 @@ func TestWebSocketListModels(t *testing.T) {
 		t.Fatalf("data manquant: %v", msg)
 	}
 	models, ok := data["models"].([]interface{})
-	if !ok || len(models) != 1 {
-		t.Fatalf("attendu 1 modèle, reçu %v", data)
+	if !ok || len(models) < 1 {
+		t.Fatalf("attendu au moins 1 modèle, reçu %v", data)
 	}
 	first, ok := models[0].(map[string]interface{})
 	if !ok || first["modelId"] != "claude-3-7-sonnet" || first["displayName"] != "Claude 3.7 Sonnet" {

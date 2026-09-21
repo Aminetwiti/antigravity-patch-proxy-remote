@@ -11,6 +11,7 @@ import type {
 } from './types';
 
 const updaterAPI: UpdaterAPI = {
+  getState: () => ipcRenderer.invoke('updater:get-state').catch(() => ({ type: 'idle' })),
   onStateChanged: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, state: UpdaterState) => {
       callback(state);
@@ -66,6 +67,15 @@ export const storageAPI: StorageAPI = {
   exportProviders: () => ipcRenderer.invoke('storage:export-providers-base64'),
   importProviders: (base64) => ipcRenderer.invoke('storage:import-providers-base64', base64),
   getDoctorDiagnostics: () => ipcRenderer.invoke('storage:get-doctor-diagnostics'),
+  testRemoteHealth: (payload) => ipcRenderer.invoke('remote:test-health', payload),
+  executeRemoteCommand: (payload) => ipcRenderer.invoke('remote:execute-command', payload),
+  listRemoteSessions: (payload) => ipcRenderer.invoke('remote:list-sessions', payload),
+  createRemoteSession: (payload) => ipcRenderer.invoke('remote:create-session', payload),
+  getRemoteWorkspaces: (payload) => ipcRenderer.invoke('remote:get-workspaces', payload),
+  injectUserStatus: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-user-status', rawBuffer),
+  injectAvailableModels: (rawBuffer: Uint8Array) => ipcRenderer.invoke('proto:inject-available-models', rawBuffer),
+  setRemoteState: (payload) => ipcRenderer.invoke('remote:set-state', payload),
+  getRemoteState: () => ipcRenderer.invoke('remote:get-state'),
 };
 
 const logsAPI: LogsAPI = {

@@ -21,6 +21,15 @@ function getEnvInt(key: string, fallback: number): number {
 
 export const DEFAULT_BIND_HOST = getEnvString('AG_BIND_HOST', '127.0.0.1');
 
+/** Default host for remote runtime connection. Configurable via AG_REMOTE_HOST. */
+export const DEFAULT_REMOTE_HOST = getEnvString('AG_REMOTE_HOST', '127.0.0.1');
+
+// ─── Multi-Account Pool Environment Variables ─────────────────────────────
+export const ENV_ACCOUNTS_JSON = 'AG_ACCOUNTS_JSON';
+export const ENV_ACCOUNTS_FILE = 'AG_ACCOUNTS_FILE';
+export const ENV_ACTIVE_ACCOUNT = 'AG_ACTIVE_ACCOUNT';
+export const ENV_AUTO_ROTATE = 'AG_AUTO_ROTATE';
+
 /** Origin used by the main BrowserWindow. */
 export const WINDOW_ORIGIN = `https://${DEFAULT_BIND_HOST}`;
 
@@ -65,6 +74,15 @@ export const STUB_PORT_DEFAULT = getEnvInt('AG_STUB_PORT', 51999);
 
 /** Path (relative to home) where the active proxy port is persisted for IPC. */
 export const ACTIVE_PORT_FILE = '.gemini/antigravity/active_port';
+
+/**
+ * Maximum request body size in bytes (default: 100 MB).
+ * Override via AG_MAX_BODY_SIZE (in bytes) or AG_MAX_BODY_SIZE_MB (in megabytes).
+ */
+export const DEFAULT_MAX_BODY_SIZE = getEnvInt(
+  'AG_MAX_BODY_SIZE',
+  getEnvInt('AG_MAX_BODY_SIZE_MB', 100) * 1024 * 1024,
+);
 
 
 
