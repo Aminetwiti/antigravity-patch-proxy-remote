@@ -6,7 +6,7 @@
 import { DEFAULT_PROXY_PORT, GOOGLE_HOSTS, DEFAULT_BIND_HOST } from '../constants';
 
 export interface AppEnvironmentConfig {
-  /** Local proxy listen port. Defaults to DEFAULT_PROXY_PORT (50999). */
+  /** Local proxy listen port. Defaults to DEFAULT_PROXY_PORT (51074). */
   proxyPort: number;
   /** Remote daemon bridge listen port. Defaults to 8090. */
   daemonPort: number;

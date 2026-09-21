@@ -96,17 +96,61 @@ export interface CustomModel {
 
 
 
+export interface GeminiFunctionCall {
+  name: string;
+  args?: Record<string, unknown>;
+  id?: string;
+}
+
+export interface GeminiFunctionResponse {
+  name: string;
+  response?: unknown;
+  id?: string;
+}
+
+export interface GeminiPart {
+  text?: string;
+  thought?: boolean;
+  inlineData?: {
+    mimeType: string;
+    data: string;
+  };
+  fileData?: {
+    mimeType: string;
+    fileUri: string;
+  };
+  functionCall?: GeminiFunctionCall;
+  functionResponse?: GeminiFunctionResponse;
+}
+
+export interface GeminiContent {
+  role?: string;
+  parts?: GeminiPart[];
+}
+
+export interface GeminiParameters {
+  type: string;
+  properties?: Record<string, unknown>;
+}
+
+export interface GeminiFunctionDeclaration {
+  name: string;
+  description?: string;
+  parameters?: GeminiParameters;
+}
+
+export interface GeminiTool {
+  functionDeclarations?: GeminiFunctionDeclaration[];
+}
+
 export interface GeminiRequestBody {
   model?: string;
   modelId?: string;
   model_id?: string;
   request?: GeminiRequestBody;
-  systemInstruction?: { parts: { text?: string }[] };
-  contents?: {
-    parts?: { text?: string; functionCall?: unknown; functionResponse?: unknown; thought?: boolean }[];
-    role?: string;
-  }[];
-  tools?: unknown[];
+  systemInstruction?: { parts: GeminiPart[] | { text?: string }[] };
+  contents?: GeminiContent[];
+  tools?: GeminiTool[] | unknown[];
   generationConfig?: {
     temperature?: number;
     maxOutputTokens?: number;
@@ -117,9 +161,10 @@ export interface GeminiRequestBody {
  * Shape of a Gemini-format response candidate.
  */
 export interface GeminiCandidate {
-  content?: { parts?: unknown[]; role?: string };
+  content?: GeminiContent | { parts?: unknown[]; role?: string };
   finishReason?: string;
   index?: number;
+  safetyRatings?: unknown[];
 }
 
 /**

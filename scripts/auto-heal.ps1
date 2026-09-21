@@ -50,13 +50,10 @@ try {
     # Inspection de version : évite de rétrograder un app.asar nouvellement mis à jour avec un vieux cache.
     $repoDir = Split-Path -Parent $PSScriptRoot
     $patchScript = Join-Path $repoDir "scripts\patch-version.js"
+    $readerPath = Join-Path $repoDir "ag-doctor\dist\core\asar-reader.js"
 
-    $escapedAsar = $asarPath -replace '\\', '\\'
-    $escapedCache = $cached -replace '\\', '\\'
-
-    $readerPath = (Join-Path $repoDir "ag-doctor\dist\core\asar-reader.js") -replace '\\', '/'
-    $asarVer = & node -e "try { const { readAsarFile } = require('$readerPath'); const b = readAsarFile('$escapedAsar', 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}"
-    $cachedVer = & node -e "try { const { readAsarFile } = require('$readerPath'); const b = readAsarFile('$escapedCache', 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}"
+    $asarVer = & node -e "try { const { readAsarFile } = require(process.argv[1]); const b = readAsarFile(process.argv[2], 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}" "$readerPath" "$asarPath"
+    $cachedVer = & node -e "try { const { readAsarFile } = require(process.argv[1]); const b = readAsarFile(process.argv[2], 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}" "$readerPath" "$cached"
 
     if ($asarVer -and $cachedVer -and $asarVer -ne $cachedVer -and (Test-Path $patchScript)) {
         # Nouvelle version officielle détectée : re-patcher la nouvelle version au lieu d'imposer l'ancien cache

@@ -81,6 +81,9 @@ Google Antigravity does not use public Gemini REST endpoints (`v1beta`). Instead
 - `POST /v1internal:fetchAvailableModels` — Fetches active model definitions, quotas, and capabilities.
 - `POST /v1internal:streamGenerateContent?alt=sse` — Real-time Server-Sent Event (SSE) chat and code completion stream.
 - `POST /v1internal:generateContent` — Non-streaming fallback generation.
+- `POST /v1internal:loadCodeAssist` — Pre-loads context, quotas, and assistant configuration.
+- `POST /v1internal:listExperiments` — Mocked experiment flags for seamless UI feature activation.
+- `GET /metrics` & `GET /health` — Real-time Prometheus metrics and proxy health check probes.
 
 The Cloud Code protocol wraps request payloads inside a top-level `request` object:
 
@@ -225,7 +228,7 @@ The proxy features isolated translator modules under `src/proxy/translators/`:
 
 ### AES-256-GCM Encryption (`safeStorage`)
 
-All custom model configurations are stored in `%APPDATA%/antigravity/custom_models.json` (or OS equivalent).
+All custom model configurations are stored in `~/.gemini/antigravity/custom_models.json` (or `%USERPROFILE%\.gemini\antigravity\custom_models.json` on Windows).
 
 - **Encryption at Rest**: API keys are encrypted using **AES-256-GCM** via Electron `safeStorage` (backed by Windows DPAPI, macOS Keychain, or Linux Secret Service).
 - **Auto-Migration**: Upgrades legacy plaintext keys to encrypted payloads (`enc:gcm:...`) seamlessly on first run (`src/proxy/modelLoader.ts`).
@@ -479,38 +482,56 @@ flutter run -d <device-id>
 
 ## Provider Configuration Matrix
 
-| Provider | Preset Slug | Target Base URL | Key Required | Streaming | Tool Calling |
-|---|---|---|---|---|---|
-| **OpenAI** | `openai` | `https://api.openai.com/v1` | Yes | Yes | Yes |
-| **Anthropic** | `anthropic` | `https://api.anthropic.com/v1` | Yes | Yes | Yes |
-| **OpenRouter** | `openrouter` | `https://openrouter.ai/api/v1` | Yes | Yes | Yes |
-| **Google AI Studio** | `google` | `https://generativelanguage.googleapis.com` | Yes | Yes | Yes |
-| **Ollama** | `ollama` | `http://localhost:11434` | No | Yes | Yes |
-| **DeepSeek** | `openai` | `https://api.deepseek.com/v1` | Yes | Yes | Yes |
-| **Groq** | `openai` | `https://api.groq.com/openai/v1` | Yes | Yes | Yes |
-| **Mistral AI** | `openai` | `https://api.mistral.ai/v1` | Yes | Yes | Yes |
-| **Together API** | `openai` | `https://api.together.xyz/v1` | Yes | Yes | Yes |
-| **LM Studio** | `openai` | `http://localhost:1234/v1` | No | Yes | Yes |
-| **vLLM / LocalAI** | `openai` | Custom Endpoint | Optional | Yes | Yes |
+| Provider | Provider Slug | Transport / Format | Target Base URL | Key Required | Streaming | Tool Calling |
+|---|---|---|---|---|---|---|
+| **OpenAI** | `openai` | OpenAI | `https://api.openai.com/v1` | Yes | Yes | Yes |
+| **Anthropic** | `anthropic` | Anthropic | `https://api.anthropic.com/v1` | Yes | Yes | Yes |
+| **Google AI Studio** | `google` | Gemini / AI Studio | `https://generativelanguage.googleapis.com` | Yes | Yes | Yes |
+| **OpenRouter** | `openrouter` | OpenAI | `https://openrouter.ai/api/v1` | Yes | Yes | Yes |
+| **DeepSeek** | `deepseek` | OpenAI | `https://api.deepseek.com/v1` | Yes | Yes | Yes |
+| **Groq** | `groq` | OpenAI | `https://api.groq.com/openai/v1` | Yes | Yes | Yes |
+| **Mistral AI** | `mistral` | OpenAI | `https://api.mistral.ai/v1` | Yes | Yes | Yes |
+| **Codestral** | `codestral` | OpenAI | `https://codestral.mistral.ai/v1` | Yes | Yes | Yes |
+| **Cerebras** | `cerebras` | OpenAI | `https://api.cerebras.ai/v1` | Yes | Yes | Yes |
+| **NVIDIA NIM** | `nvidia` | OpenAI | `https://integrate.api.nvidia.com/v1` | Yes | Yes | Yes |
+| **OpenCode** | `opencode` | OpenAI | Custom Endpoint | Yes | Yes | Yes |
+| **Kimi (Moonshot)** | `kimi` | Anthropic / OpenAI | `https://api.moonshot.ai/v1` | Yes | Yes | Yes |
+| **Fireworks AI** | `fireworks` | Anthropic / OpenAI | `https://api.fireworks.ai/inference/v1` | Yes | Yes | Yes |
+| **MiniMax** | `minimax` | OpenAI | `https://api.minimaxi.chat/v1` | Yes | Yes | Yes |
+| **Ollama** | `ollama` | OpenAI / Ollama | `http://localhost:11434` | No | Yes | Yes |
+| **LM Studio** | `lmstudio` | OpenAI | `http://localhost:1234/v1` | No | Yes | Yes |
+| **Llama.cpp** | `llamacpp` | OpenAI | `http://localhost:8080/v1` | No | Yes | Yes |
+| **Custom / OpenAI-compat** | `custom` | OpenAI | Custom Endpoint | Optional | Yes | Yes |
 
 ---
 
 ## `custom_models.json` Schema Reference
 
-Configurations are saved under `%APPDATA%/antigravity/custom_models.json`:
+Configurations are saved under `~/.gemini/antigravity/custom_models.json` (or `%USERPROFILE%\.gemini\antigravity\custom_models.json` on Windows):
 
 ```json
-[
-  {
-    "name": "claude-3-5-sonnet",
-    "displayName": "Claude 3.5 Sonnet",
-    "provider": "anthropic",
-    "apiUrl": "https://api.anthropic.com/v1",
-    "externalModelName": "claude-3-5-sonnet-20241022",
-    "apiKey": "enc:gcm:..."
-  }
-]
+{
+  "providers": [
+    {
+      "id": "provider-1720000000000-1",
+      "name": "Anthropic",
+      "provider": "anthropic",
+      "apiUrl": "https://api.anthropic.com/v1/messages",
+      "apiKey": "enc:gcm:...",
+      "enabled": true,
+      "models": [
+        {
+          "id": "claude-3-5-sonnet-20241022",
+          "displayName": "Claude 3.5 Sonnet",
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}
 ```
+
+> **Backward Compatibility**: The proxy automatically detects and migrates legacy flat array schemas (`[{"name": "...", "provider": "..."}]`) to the modern provider hierarchy on startup.
 
 ---
 
@@ -520,21 +541,24 @@ Configurations are saved under `%APPDATA%/antigravity/custom_models.json`:
 
 ```
 ├── ag-doctor/             # Diagnostic CLI suite & worker daemon
-├── scripts/               # Repack, deploy, and MITM launcher scripts
+├── scripts/               # Repack, deploy, auto-heal, and MITM launcher scripts
 ├── src/
+│   ├── main.ts            # Electron main process bootstrap & interceptors
+│   ├── proxy.ts           # Core HTTP proxy server orchestration & interception
 │   ├── constants.ts       # Central source of truth (Providers, default ports, timeouts)
-│   ├── cryptoStore.ts     # AES-256-GCM encryption wrapper
-│   ├── main.ts            # Electron main process interceptors
-│   ├── preload.ts         # Injected Custom Models Settings UI
-│   ├── ipcHandlers.ts     # IPC storage & connection test handlers
+│   ├── preload.ts         # Injected Custom Models Settings UI & contextBridge
+│   ├── ipcHandlers.ts     # Canonical IPC registry & handler dispatcher
+│   ├── schemaValidator.ts # Runtime response & model schema validation
+│   ├── services/          # Core domain services (modelStore, cryptoStore, settingsService)
 │   ├── proxy/
-│   │   ├── proxy.ts       # Core HTTP proxy server orchestration
-│   │   ├── registry.ts    # Translator auto-discovery registry
-│   │   ├── protoInjector.ts # Protobuf payload injection
+│   │   ├── registry.ts    # Translator auto-discovery registry & router
+│   │   ├── protoInjector.ts # Protobuf payload injection for IDE picker
+│   │   ├── protobuf.ts    # Manual varint protobuf encoding
 │   │   ├── jsonRepair.ts  # Safe non-eval SSE JSON repair
+│   │   ├── circuitBreaker.ts # Per-provider failure isolation
 │   │   ├── retryStrategy.ts # Exponential backoff retry logic
-│   │   └── translators/   # OpenAI, Anthropic, Google, Ollama translators
-│   └── __tests__/         # 1000+ unit tests (Vitest)
+│   │   └── translators/   # Format translators (openai, anthropic, google, ollama)
+│   └── __tests__/         # 60 test files, 1400+ unit tests (Vitest)
 ```
 
 ### Building & Watch Mode
@@ -552,7 +576,7 @@ npm run watch
 The test suite runs via **Vitest**:
 
 ```bash
-# Run all unit tests across 58 test files
+# Run all unit tests across 60 test files
 npm test
 
 # Run tests in watch mode
@@ -562,14 +586,12 @@ npm run test:watch
 ### Adding a New Translator Module
 
 To add support for a new LLM provider format:
-1. Create `src/proxy/translators/<provider>.ts`.
-2. Implement and export:
-   ```typescript
-   export function mapGeminiTo<Provider>(body: any, modelName: string): any;
-   export function map<Provider>ToGemini(res: any, modelName: string): any;
-   export function map<Provider>ChunkToGemini(chunk: any, modelName: string): any;
-   ```
-3. Add the provider definition to `PROVIDERS` in [src/constants.ts](src/constants.ts).
+1. Add provider name to `PROVIDERS` and `ALL_PROVIDERS` in [src/constants.ts](src/constants.ts).
+2. If compatible with OpenAI or Anthropic formats, add it to `OPENAI_COMPAT` or `ANTHROPIC_COMPAT` in [src/constants.ts](src/constants.ts) (handled automatically by `src/proxy/registry.ts`).
+3. If the provider uses a unique wire protocol:
+   - Create `src/proxy/translators/<provider>.ts` exporting mapping functions (`mapGeminiTo<Provider>`, `map<Provider>ToGemini`, `map<Provider>ChunkToGemini`).
+   - Register the translator in [src/proxy/registry.ts](src/proxy/registry.ts).
+4. Add presets to [src/presets.ts](src/presets.ts) (optional) and tests in `src/__tests__/`.
 
 ---
 

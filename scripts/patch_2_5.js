@@ -632,13 +632,13 @@ async function main() {
   }
   console.log(`            sub-total: ${nrCount} files, ${nrBytes} B`);
 
-  // Step 4b: update package.json version in app.asar to 2.14.0 (or AG_FORCE_VERSION)
+  // Step 4b: update package.json version in app.asar ONLY if AG_FORCE_VERSION is explicitly specified
   const pkgPathInBuild = path.join(buildDir, 'package.json');
   if (fs.existsSync(pkgPathInBuild)) {
     try {
       const pkgJson = JSON.parse(fs.readFileSync(pkgPathInBuild, 'utf8'));
-      const targetVer = process.env.AG_FORCE_VERSION || '2.14.0';
-      if (pkgJson.version !== targetVer) {
+      const targetVer = process.env.AG_FORCE_VERSION;
+      if (targetVer && pkgJson.version !== targetVer) {
         console.log(`            + updated app.asar version: ${pkgJson.version} -> ${targetVer}`);
         pkgJson.version = targetVer;
         fs.writeFileSync(pkgPathInBuild, JSON.stringify(pkgJson, null, 2), 'utf8');

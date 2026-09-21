@@ -79,6 +79,9 @@ remote/vendor/*
 
 # Account tokens & secrets
 antigravity_accounts_*.json
+*accounts*.json
 accounts.env
+providerState.json
+test_marker.txt
 
 ag-doctor-ui/tools/*

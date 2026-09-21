@@ -30,7 +30,7 @@ antigravity-add-model-main/
 │   ├── proxy/                       # Translators & proxy resilience (circuit breaker, retry budget, etc.)
 │   ├── services/                    # CryptoStore (safeStorage), ModelStore, SettingsService
 │   ├── ipc/                         # Modular IPC handlers
-│   └── __tests__/                   # 55 test files, 1469 tests (Vitest)
+│   └── __tests__/                   # 60 test files, 1400+ unit tests (Vitest)
 │
 ├── remote/                          # Antigravity Remote 2.0 Ecosystem
 │   ├── PROTOCOL.md                  # ConnectRPC & WebSocket wire protocol specification
@@ -120,6 +120,7 @@ npm run patch:2.2               # Apply Antigravity 2.2.1 patch
 npm run patch:2.3               # Apply Antigravity 2.3.x / 2.4.x patch
 npm run patch:2.5               # Apply Antigravity 2.5.x patch
 npm run patch:2.14              # Apply Antigravity 2.14.x patch
+npm run patch:2.15              # Apply Antigravity 2.15.x patch
 npm run repatch                 # Windows one-click repatch
 npm run mitm:start              # Start MITM HTTPS proxy
 ```

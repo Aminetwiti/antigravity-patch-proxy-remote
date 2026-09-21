@@ -1,4 +1,4 @@
-// ─── Constants ─────────────────────────────────────────────────────────────
+// ─── Constants & Imports ───────────────────────────────────────────────────
 
 import * as http from 'http';
 import * as https from 'https';
@@ -7,9 +7,104 @@ import * as path from 'path';
 import * as os from 'os';
 import * as zlib from 'zlib';
 import { StringDecoder } from 'string_decoder';
+import { randomBytes } from 'crypto';
 
 import log from 'electron-log';
 import { createLogger } from './logger';
+import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from './metrics';
+import {
+  GOOGLE_HOSTS,
+  DEFAULT_PROXY_PORT,
+  WINDOW_ORIGIN,
+  LOOPBACK_HOSTS,
+  DEFAULT_REMOTE_HOST,
+  DEFAULT_REMOTE_TOKEN,
+  GOOGLE_PROXY_TIMEOUT_MS,
+  FILE_DOWNLOAD_TIMEOUT_MS,
+  STREAM_IDLE_TIMEOUT_MS,
+  ACTIVE_PORT_FILE,
+  DEFAULT_MAX_BODY_SIZE,
+} from './constants';
+import { wrapCommandForRemoteExec } from './proxy/translators/utils';
+
+// Types
+import type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse } from './proxy/types';
+export type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse };
+
+// Shared cross-turn state & resilience
+import {
+  modelToolCallIds,
+  modelReasoningContent,
+  activeStreamContexts,
+  translatedToolCalls,
+  stateTimestamps,
+  thoughtSignatureCache,
+  extractAndCacheThoughtSignatures,
+  restoreThoughtSignatures,
+  sanitizeUnsignedToolCalls,
+  flattenAllToolCallsToText,
+  touchStateTimestamp,
+  getSessionModelKey,
+  startCleanupInterval,
+  stopCleanupInterval,
+} from './proxy/shared';
+import * as registry from './proxy/registry';
+import { injectCustomModelsIntoResponse, injectCustomModelsIntoUserStatus } from './proxy/protoInjector';
+import { loadCustomModels, getCustomModelsPath } from './proxy/modelLoader';
+import { invalidateModelStoreCache } from './services/modelStore';
+import { invalidateHealthCache } from './proxy/modelHealthChecker';
+import { recordProviderUsage } from './customModelStore';
+import { classifyError, ErrorDiagnostic, type ErrorType } from './proxy/errorClassifier';
+import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from './proxy/retryStrategy';
+import { getOpenBreaker, recordFailure, recordSuccess, CIRCUIT_BREAKER_RESET_MS } from './proxy/circuitBreaker';
+import { IdleTimeoutGuard } from './proxy/idleTimeout';
+import { resolveClientForUrl, disposeAll as disposeAgentPool } from './proxy/agentPool';
+import { EmptyStreamGuard } from './proxy/emptyStream';
+import { getRetryBudget, RETRY_BUDGET_BASE } from './proxy/retryBudget';
+import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from './proxy/diagnostics';
+import {
+  flush as flushPersisted,
+  gather as gatherPersisted,
+  loadOrInit as loadPersisted,
+  fromFile as fromPersistedFile,
+  applyBudgetPatch,
+  applyBreakerPatch,
+  stateFilePath,
+  MIN_FLUSH_INTERVAL_MS,
+} from './proxy/persistedState';
+import { metricsEnabled, getMetricsSnapshot, formatPrometheus, negotiateContentType } from './proxy/metricsRoute';
+import {
+  resolveProvider,
+  resolveCustomModelUrl,
+  resolveMaxRetries,
+  resolveRequestTimeout,
+  getBaseModelId,
+} from './proxy/urlBuilder';
+import { generateModelPlaceholderId, toSlug } from './proxy/idGenerator';
+import { expandModelsWithEffort } from './proxy/effortExpander';
+import { resolveGoogleIp } from './proxy/dnsResolver';
+import { markProviderRateLimited } from './proxy/modelRouter';
+import { trimContextPayload } from './proxy/contextTrimmer';
+import { checkAllModelsHealth, getFastOrCachedHealth } from './proxy/modelHealthChecker';
+import { recordRecentModel, restoreRecentModels } from './proxy/recentModelsStore';
+import { mcpListServers, mcpCallTool } from './proxy/mcpRelay';
+import {
+  getValidGoogleAccessToken,
+  normalizeCloudCodeModelId,
+  normalizeGoogleModelId,
+  isGoogleCloudCodeModel,
+  sanitizeCloudCodeGenerationConfig,
+  normalizeConversationTurns,
+} from './services/googleAuth';
+import { safeWriteHead, safeEnd } from './proxy/httpUtils';
+import {
+  mergeModels,
+  getMappedCustomModels,
+  getCustomModelsList,
+  injectCustomSlugsIntoAgentModelSorts,
+  buildSyntheticModelsResponse,
+} from './proxy/modelInjector';
+import { detectModelCapabilities } from './proxy/modelUtils';
 
 function traceLog(...args: unknown[]): void {
   // ponytail: keeps the 'app' import (and thus the electron require) out of
@@ -20,10 +115,6 @@ function traceLog(...args: unknown[]): void {
     console.log('[proxy-trace]', ...args);
   }
 }
-import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from './metrics';
-import { randomBytes } from 'crypto';
-import { GOOGLE_HOSTS, DEFAULT_PROXY_PORT, WINDOW_ORIGIN, LOOPBACK_HOSTS, DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from './constants';
-import { wrapCommandForRemoteExec } from './proxy/translators/utils';
 
 const proxyLog = createLogger('Proxy');
 
@@ -43,7 +134,9 @@ function getRemoteStatePath(): string {
   const home = os.homedir();
   const dir = path.join(home, '.gemini', 'antigravity');
   if (!fs.existsSync(dir)) {
-    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {
+      log.warn('[Proxy] Failed to create ~/.gemini/antigravity dir:', e);
+    }
   }
   return path.join(dir, 'remote_vps_state.json');
 }
@@ -117,7 +210,9 @@ function getLoadCodeAssistCachePath(): string {
   const home = os.homedir();
   const dir = path.join(home, '.gemini', 'antigravity');
   if (!fs.existsSync(dir)) {
-    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {
+      log.warn('[Proxy] Failed to create cache directory:', e);
+    }
   }
   return path.join(dir, 'load_code_assist_cache.json');
 }
@@ -133,7 +228,9 @@ function loadCachedCodeAssist(): string | null {
         return content;
       }
     }
-  } catch {}
+  } catch (e) {
+    log.debug('[Proxy] Failed to load cached code assist:', e);
+  }
   return null;
 }
 
@@ -143,7 +240,9 @@ function saveCachedCodeAssist(content: string): void {
     memoryLoadCodeAssistTime = Date.now();
     const p = getLoadCodeAssistCachePath();
     fs.writeFileSync(p, content, 'utf-8');
-  } catch {}
+  } catch (e) {
+    log.warn('[Proxy] Failed to save cached code assist:', e);
+  }
 }
 
 export async function executeOnRemoteDaemon(
@@ -219,72 +318,6 @@ export async function executeOnRemoteDaemon(
 // Initialize on boot
 loadRemoteState();
 
-import {
-  GOOGLE_PROXY_TIMEOUT_MS,
-  FILE_DOWNLOAD_TIMEOUT_MS,
-  STREAM_IDLE_TIMEOUT_MS,
-  ACTIVE_PORT_FILE,
-  DEFAULT_MAX_BODY_SIZE,
-} from './constants';
-
-// ─── Types ────────────────────────────────────────────────────────────────
-
-import type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse } from './proxy/types';
-export type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse };
-
-// ─── Module Imports ───────────────────────────────────────────────────────
-
-// Shared cross-turn state
-import {
-  modelToolCallIds,
-  modelReasoningContent,
-  activeStreamContexts,
-  translatedToolCalls,
-  stateTimestamps,
-  thoughtSignatureCache,
-  extractAndCacheThoughtSignatures,
-  restoreThoughtSignatures,
-  sanitizeUnsignedToolCalls,
-  flattenAllToolCallsToText,
-  touchStateTimestamp,
-  getSessionModelKey,
-  startCleanupInterval,
-  stopCleanupInterval,
-} from './proxy/shared';
-
-
-// Provider translator registry (auto-discovers translators from proxy/translators/)
-import * as registry from './proxy/registry';
-
-// Protobuf injection (extracted from proxy.ts)
-import { injectCustomModelsIntoResponse, injectCustomModelsIntoUserStatus } from './proxy/protoInjector';
-
-// Custom model loading (extracted from proxy.ts)
-import { loadCustomModels, getCustomModelsPath } from './proxy/modelLoader';
-import { invalidateModelStoreCache } from './services/modelStore';
-import { invalidateHealthCache } from './proxy/modelHealthChecker';
-import { recordProviderUsage } from './customModelStore';
-import { classifyError, ErrorDiagnostic, type ErrorType } from './proxy/errorClassifier';
-import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from './proxy/retryStrategy';
-import { getOpenBreaker, recordFailure, recordSuccess } from './proxy/circuitBreaker';
-import { IdleTimeoutGuard } from './proxy/idleTimeout';
-import { resolveClientForUrl, disposeAll as disposeAgentPool } from './proxy/agentPool';
-import { EmptyStreamGuard } from './proxy/emptyStream';
-import { getRetryBudget, RETRY_BUDGET_BASE } from './proxy/retryBudget';
-import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from './proxy/diagnostics';
-import {
-  flush as flushPersisted,
-  gather as gatherPersisted,
-  loadOrInit as loadPersisted,
-  fromFile as fromPersistedFile,
-  applyBudgetPatch,
-  applyBreakerPatch,
-  stateFilePath,
-  MIN_FLUSH_INTERVAL_MS,
-} from './proxy/persistedState';
-import { metricsEnabled, getMetricsSnapshot, formatPrometheus, negotiateContentType } from './proxy/metricsRoute';
-import { CIRCUIT_BREAKER_RESET_MS } from './proxy/circuitBreaker';
-
 function generateGracefulMarkdown(diagnostic: ErrorDiagnostic, model?: CustomModel): string {
   const alertType = diagnostic.severity === 'warning' ? 'WARNING' : 'CAUTION';
   const rawTitle = diagnostic.title.replace(/^Model unavailable:\s*/i, '');
@@ -314,33 +347,7 @@ function generateGracefulMarkdown(diagnostic: ErrorDiagnostic, model?: CustomMod
   return md;
 }
 
-// URL construction for custom model requests (extracted from proxy.ts)
-import {
-  resolveProvider,
-  resolveCustomModelUrl,
-  resolveMaxRetries,
-  resolveRequestTimeout,
-  getBaseModelId,
-} from './proxy/urlBuilder';
 
-
-// ID generation is now strictly in idGenerator.ts
-import { generateModelPlaceholderId, toSlug } from './proxy/idGenerator';
-import { expandModelsWithEffort } from './proxy/effortExpander';
-
-// DNS resolution bypasses the poisoned hosts file (extracted from proxy.ts)
-import { resolveGoogleIp } from './proxy/dnsResolver';
-
-// Smart model routing and rate-limit tracking
-import { markProviderRateLimited } from './proxy/modelRouter';
-import { trimContextPayload } from './proxy/contextTrimmer';
-import { checkAllModelsHealth } from './proxy/modelHealthChecker';
-import { recordRecentModel, restoreRecentModels } from './proxy/recentModelsStore';
-
-// MCP relay bridge (mobile companion): lists MCP servers configured on the
-// desktop session and forwards tool calls to the local MCP runtime.
-import { mcpListServers, mcpCallTool } from './proxy/mcpRelay';
-import { getValidGoogleAccessToken, normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel, sanitizeCloudCodeGenerationConfig, normalizeConversationTurns } from './services/googleAuth';
 
 // ─── Proxy Error Emitter ──────────────────────────────────────────────────
 // Lets the main process fan-out notable diagnostics to the renderer without
@@ -410,10 +417,7 @@ export function buildProxyErrorPayload(
   };
 }
 
-// ─── Safe Response Helpers ─────────────────────────────────────────────────
-import { safeWriteHead, safeEnd } from './proxy/httpUtils';
-import { mergeModels, getMappedCustomModels, getCustomModelsList, injectCustomSlugsIntoAgentModelSorts, buildSyntheticModelsResponse } from './proxy/modelInjector';
-import { detectModelCapabilities } from './proxy/modelUtils';
+
 
 function sendGracefulStreamError(res: http.ServerResponse, diagnostic: ErrorDiagnostic, model?: CustomModel): void {
   if (res.writableEnded) return;
@@ -2799,8 +2803,8 @@ function handleGetAvailableModelsProxy(
       }
       const responseBuf = Buffer.concat(chunks);
       const customModels = loadCustomModels();
-      // Run concurrent health checks (cached with 30s TTL, max 800ms wait)
-      checkAllModelsHealth(customModels).then((healthMap) => {
+      // Run concurrent health checks (cached with TTL, max 800ms wait)
+      getFastOrCachedHealth(customModels, 800).then((healthMap) => {
         const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, healthMap, true);
         if (
           safeWriteHead(res, lsRes.statusCode || 200, {
@@ -2908,7 +2912,7 @@ function handleGetUserStatusProxy(
       }
       const responseBuf = Buffer.concat(chunks);
       const customModels = loadCustomModels();
-      checkAllModelsHealth(customModels).then((healthMap) => {
+      getFastOrCachedHealth(customModels, 800).then((healthMap) => {
         const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels, healthMap);
         log.info(`[Proxy] GetUserStatus injected ${injectedCount} custom models`);
         if (

@@ -8,6 +8,7 @@ import http from 'http';
 import https from 'https';
 import log from 'electron-log';
 import type { CustomModel } from './types';
+import { HEALTH_CHECK_INTERVAL_MS, HEALTH_CHECK_CACHE_TTL_MS } from '../constants';
 
 export interface ModelHealthResult {
   status: 'healthy' | 'slow' | 'unhealthy' | 'cooldown';
@@ -16,10 +17,10 @@ export interface ModelHealthResult {
   error?: string;
 }
 
-/** Health check results cache (model name -> result) with 30s TTL */
+/** Health check results cache (model name -> result) */
 const healthCache = new Map<string, { result: ModelHealthResult; expiresAt: number }>();
 const inflightPings = new Map<string, Promise<ModelHealthResult>>();
-const CACHE_TTL_MS = 30_000;
+const CACHE_TTL_MS = HEALTH_CHECK_CACHE_TTL_MS;
 const HEALTH_CHECK_TIMEOUT_MS = 6000;
 
 /** Synchronous getter for cached health status */
@@ -31,6 +32,38 @@ export function getCachedHealth(modelName: string): ModelHealthResult | null {
     return cached.result;
   }
   return null;
+}
+
+/** Synchronously get all available cached health results for models */
+export function getCachedHealthMap(models: CustomModel[]): Map<string, ModelHealthResult> {
+  const map = new Map<string, ModelHealthResult>();
+  for (const m of models) {
+    const cached = getCachedHealth(m.name);
+    if (cached) {
+      map.set(m.name, cached);
+    }
+  }
+  return map;
+}
+
+/** Get health results quickly using cache, or racing with a bounded timeout (default 800ms) */
+export async function getFastOrCachedHealth(models: CustomModel[], timeoutMs = 800): Promise<Map<string, ModelHealthResult>> {
+  const cachedMap = getCachedHealthMap(models);
+  if (models.length === 0 || cachedMap.size === models.length) {
+    return cachedMap;
+  }
+  try {
+    const checkPromise = checkAllModelsHealth(models);
+    let timer: NodeJS.Timeout;
+    const timeoutPromise = new Promise<Map<string, ModelHealthResult>>((resolve) => {
+      timer = setTimeout(() => resolve(cachedMap), timeoutMs);
+    });
+    const result = await Promise.race([checkPromise, timeoutPromise]);
+    clearTimeout(timer!);
+    return result;
+  } catch {
+    return cachedMap;
+  }
 }
 
 /** Clear health check cache (entire cache or specific model) */
@@ -193,12 +226,14 @@ export async function checkAllModelsHealth(models: CustomModel[]): Promise<Map<s
 
 // Background auto-refresh to pre-warm cache and keep it fresh
 import { loadCustomModels } from './modelLoader';
-setInterval(() => {
-  const models = loadCustomModels();
-  if (models.length > 0) {
-    checkAllModelsHealth(models).catch(() => {});
-  }
-}, 30_000);
+if (HEALTH_CHECK_INTERVAL_MS > 0) {
+  setInterval(() => {
+    const models = loadCustomModels();
+    if (models.length > 0) {
+      checkAllModelsHealth(models).catch(() => {});
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+}
 
 // Initial pre-warm on module load
 setTimeout(() => {

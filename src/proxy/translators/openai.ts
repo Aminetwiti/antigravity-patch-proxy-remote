@@ -23,23 +23,18 @@ import {
   getSessionModelKey,
   StreamContext,
 } from '../shared';
+import type {
+  GeminiTool,
+  GeminiFunctionDeclaration,
+  GeminiParameters,
+  GeminiContent,
+  GeminiPart,
+  GeminiFunctionCall,
+  GeminiFunctionResponse,
+  GeminiRequestBody,
+} from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────
-
-interface GeminiTool {
-  functionDeclarations?: GeminiFunctionDeclaration[];
-}
-
-interface GeminiFunctionDeclaration {
-  name: string;
-  description?: string;
-  parameters?: GeminiParameters;
-}
-
-interface GeminiParameters {
-  type: string;
-  properties?: Record<string, unknown>;
-}
 
 interface OpenAITool {
   type: 'function';
@@ -47,42 +42,6 @@ interface OpenAITool {
     name: string;
     description: string;
     parameters: Record<string, unknown>;
-  };
-}
-
-interface GeminiContent {
-  role?: string;
-  parts?: GeminiPart[];
-}
-
-interface GeminiPart {
-  text?: string;
-  thought?: boolean;
-  functionCall?: GeminiFunctionCall;
-  functionResponse?: GeminiFunctionResponse;
-  fileData?: { mimeType: string; fileUri: string };
-  inlineData?: { mimeType: string; data: string };
-}
-
-interface GeminiFunctionCall {
-  name: string;
-  args: Record<string, unknown>;
-  id?: string;
-}
-
-interface GeminiFunctionResponse {
-  name: string;
-  response: unknown;
-  id?: string;
-}
-
-interface GeminiRequestBody {
-  systemInstruction?: { parts: GeminiPart[] };
-  contents?: GeminiContent[];
-  tools?: GeminiTool[];
-  generationConfig?: {
-    temperature?: number;
-    maxOutputTokens?: number;
   };
 }
 

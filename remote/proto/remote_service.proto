@@ -266,7 +266,7 @@ message ExportJsonlRequest {
 
 // In : call_mcp_tool / connect_mcp_server / refresh_mcp_oauth_token /
 //      list_mcp_servers — relayés vers le proxy Antigravity desktop
-//      (127.0.0.1:50999), seul détenteur des jetons OAuth MCP.
+//      (127.0.0.1:51074), seul détenteur des jetons OAuth MCP.
 message McpActionRequest {
   string server_name = 1;
   string tool_name = 2;

@@ -19,11 +19,17 @@ for (let i = 2; i < process.argv.length; i++) {
   }
 }
 
+cmd = cmd.trim();
 if (!cmd) process.exit(0);
 
-// Sanitize fake Linux /data/workspaces prefix or 2>/dev/null redirects
-cmd = cmd.replace(/^cd\s+["']?\/data\/workspaces\/[^\s;"']+["']?\s*(?:2>\/dev\/null)?\s*(?:\|\|\s*true)?\s*[;&]\s*/i, '');
-cmd = cmd.replace(/2>\/dev\/null/g, '');
-
-const res = spawnSync(cmd, { shell: true, stdio: 'inherit', cwd });
-process.exit(res.status ?? 1);
+try {
+  const res = spawnSync(cmd, { shell: true, stdio: 'inherit', cwd });
+  if (res.error) {
+    console.error(`[remote-exec] Execution failed: ${res.error.message}`);
+    process.exit(1);
+  }
+  process.exit(res.status ?? 0);
+} catch (err) {
+  console.error(`[remote-exec] Process spawn error: ${err && err.message ? err.message : err}`);
+  process.exit(1);
+}

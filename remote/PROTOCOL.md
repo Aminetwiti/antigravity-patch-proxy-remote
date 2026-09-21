@@ -8,7 +8,7 @@
 
 Le moteur d'Antigravity est composé de deux types d'instances de `language_server` (binaire Go) :
 - `language_server_windows_x64.exe` — instances liées aux fenêtres IDE (`--subclient_type ide`).
-- `language_server.exe` — instance centrale standalone (`--subclient_type hub`), patchée par le proxy : `--api_server_url http://localhost:50999`.
+- `language_server.exe` — instance centrale standalone (`--subclient_type hub`), patchée par le proxy : `--api_server_url http://localhost:51074`.
 
 ### Arguments Critiques du Hub
 | Argument | Rôle | Exemple réel |

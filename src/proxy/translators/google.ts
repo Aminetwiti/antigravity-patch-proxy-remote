@@ -8,48 +8,19 @@
 
 import log from 'electron-log';
 
+import type {
+  GeminiPart,
+  GeminiContent,
+  GeminiCandidate,
+  GeminiRequestBody,
+} from '../types';
+
 // ─── Types ────────────────────────────────────────────────────────────────
-
-interface GeminiPart {
-  text?: string;
-  functionCall?: { name: string; args: Record<string, unknown> };
-  functionResponse?: { name: string; response: Record<string, unknown> };
-  thought?: boolean;
-  inlineData?: { mimeType: string; data: string };
-  fileData?: { mimeType: string; fileUri: string };
-}
-
-interface GeminiContent {
-  parts?: GeminiPart[];
-  role?: string;
-}
-
-interface GeminiCandidate {
-  content?: GeminiContent;
-  finishReason?: string;
-  index?: number;
-  safetyRatings?: unknown[];
-}
 
 interface GeminiStreamChunk {
   candidates?: GeminiCandidate[];
   usageMetadata?: unknown;
   modelVersion?: string;
-}
-
-interface GeminiRequestBody {
-  model?: string;
-  modelId?: string;
-  contents?: GeminiContent[];
-  systemInstruction?: { parts: { text?: string }[] };
-  tools?: unknown[];
-  generationConfig?: {
-    temperature?: number;
-    maxOutputTokens?: number;
-    topP?: number;
-    topK?: number;
-    stopSequences?: string[];
-  };
 }
 
 // ─── Model Normalization ──────────────────────────────────────────────────

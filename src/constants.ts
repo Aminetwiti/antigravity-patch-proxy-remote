@@ -97,6 +97,12 @@ export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 6
 /** Timeout for downloading file content from external URIs (30 seconds). */
 export const FILE_DOWNLOAD_TIMEOUT_MS = getEnvInt('AG_FILE_DOWNLOAD_TIMEOUT_MS', 30_000);
 
+/** Interval for periodic background model health checks (default: 60 seconds). Set to 0 to disable. */
+export const HEALTH_CHECK_INTERVAL_MS = getEnvInt('AG_HEALTH_CHECK_INTERVAL_MS', 60_000);
+
+/** Cache TTL for model health check results (default: 60 seconds). */
+export const HEALTH_CHECK_CACHE_TTL_MS = getEnvInt('AG_HEALTH_CHECK_CACHE_TTL_MS', 60_000);
+
 /**
  * Per-chunk idle timeout for streaming upstream responses.
  *
