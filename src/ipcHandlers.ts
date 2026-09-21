@@ -21,6 +21,7 @@ import { DEFAULT_PROXY_PORT, DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from '.
 import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from './proxy/protoInjector';
 import { loadCustomModels as loadProxyCustomModels } from './proxy/modelLoader';
 import { discoverLocalAntigravityCredential } from './services/localCredentialDiscovery';
+import { discoverLocalGoogleAccounts } from './services/localAccountDiscovery';
 import { IPC_CHANNELS } from './ipc/channels';
 
 
@@ -253,6 +254,16 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     } catch (err) {
       log.warn('[IPC] Local credential discovery error:', err);
       return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('models:discoverLocalGoogleAccounts', async () => {
+    try {
+      const accounts = await discoverLocalGoogleAccounts();
+      return { success: true, accounts };
+    } catch (err) {
+      log.warn('[IPC] Local Google accounts discovery error:', err);
+      return { success: false, error: (err as Error).message, accounts: [] };
     }
   });
 

@@ -103,6 +103,7 @@ import {
   pollAllGoogleQuotas,
   AccountLiveQuota,
 } from './services/googleAuth';
+import { loadPersistentQuotaCache } from './services/quotaCacheStore';
 import { safeWriteHead, safeEnd } from './proxy/httpUtils';
 import {
   mergeModels,
@@ -1268,6 +1269,20 @@ export async function executeGoogleCloudCodeWithPool(
   const isClaude = targetRaw.toLowerCase().includes('claude');
   const modelFamily = isClaude ? 'claude' : 'gemini';
 
+  // Eco-Routing / Graceful Degradation: If pool is under severe quota stress (<15% average),
+  // downgrade background / auxiliary tasks (summaries, titles) to Flash to preserve Pro quota
+  if (isPoolUnderQuotaStress(accountPool, modelFamily)) {
+    const reqStr = JSON.stringify(reqJson);
+    const isAuxiliary = /summariz|summary|trajectory|title|conversation_title/i.test(reqStr);
+    if (isAuxiliary && !targetRaw.includes('flash')) {
+      log.info('[Proxy] [Eco-Routing] Pool under quota stress (<15% avg): routing auxiliary request to gemini-3.8-flash-tiered.');
+      reqJson.model = 'gemini-3.8-flash-tiered';
+      if (reqJson.request && typeof reqJson.request === 'object') {
+        (reqJson.request as Record<string, unknown>).model = 'gemini-3.8-flash-tiered';
+      }
+    }
+  }
+
   const sortedAccounts = [...accountPool].sort((a, b) => {
     const cdA = isAccountInCooldown(a, modelFamily) ? 1 : 0;
     const cdB = isAccountInCooldown(b, modelFamily) ? 1 : 0;
@@ -1386,13 +1401,14 @@ export async function executeGoogleCloudCodeWithPool(
       }
       sanitizeCloudCodeGenerationConfig(reqObj, targetModel);
     }
-    reqJson.project = (candidate as { projectId?: string }).projectId || process.env.AG_CLOUD_CODE_PROJECT_ID || 'bamboo-precept-lgxtn';
+    reqJson.project = resolveGoogleProjectId(candidate);
 
     const updatedBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
     const authHeader = `Bearer ${accessToken}`;
 
     recordAccountRequest(candidate);
     incrementAccountInFlight(candidate);
+    const startReqTime = Date.now();
     let outcome: GoogleRequestOutcome;
     try {
       outcome = await executeGoogleCloudCodeRequest(
@@ -1403,6 +1419,10 @@ export async function executeGoogleCloudCodeWithPool(
         authHeader,
         convId,
       );
+      const reqDuration = Date.now() - startReqTime;
+      if (outcome.success || outcome.statusCode === 200) {
+        recordAccountLatency(candidate, reqDuration);
+      }
     } finally {
       decrementAccountInFlight(candidate);
     }
@@ -1689,6 +1709,62 @@ export async function executeGoogleCloudCodeWithPool(
             log.warn(`[Proxy] Fallback to ${fallbackModel} failed:`, (fbErr as Error).message);
           }
         }
+      }
+    }
+
+    // If all Google accounts and internal Google Cloud Code fallbacks failed,
+    // check for configured third-party models (OpenAI, Anthropic, DeepSeek, Ollama, OpenRouter, etc.)
+    // to provide universal zero-downtime resilience.
+    const nonGoogleFallbacks = allCustomModels.filter(
+      (m) =>
+        m.provider !== 'google' &&
+        m.provider !== 'google-gemini' &&
+        !m._poolOnly &&
+        !getOpenBreaker(m),
+    );
+
+    if (nonGoogleFallbacks.length > 0) {
+      const thirdPartyFallback = nonGoogleFallbacks[0];
+      const sessionKey = convId || sessId;
+      const existingFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
+      const alreadyNotified = existingFallback?.notified === true;
+
+      if (sessionKey) {
+        setSessionModelFallback(sessionKey, currentBase, thirdPartyFallback.displayName || thirdPartyFallback.name, true);
+      }
+
+      log.warn(
+        `[Proxy] Pool exhaustion: All Google accounts and internal fallbacks failed. Cascading to third-party provider ${thirdPartyFallback.provider} (${thirdPartyFallback.name})...`,
+      );
+
+      if (isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
+        if (!res.headersSent) {
+          safeWriteHead(res, 200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          });
+        }
+        const thirdPartyNotice = `> 🌐 **Pool Google saturé** — Poursuite automatique avec le modèle alternatif **${thirdPartyFallback.displayName || thirdPartyFallback.name}** (${thirdPartyFallback.provider}).\n\n`;
+        const chunk = {
+          response: {
+            candidates: [
+              {
+                content: { parts: [{ text: thirdPartyNotice }], role: 'model' },
+                index: 0,
+              },
+            ],
+          },
+        };
+        writeSafeSseChunk(res, chunk);
+      }
+
+      const actualGeminiBody = (reqJson.request as GeminiRequestBody) || (reqJson as unknown as GeminiRequestBody);
+      try {
+        handleCustomModelRequest(res, thirdPartyFallback, actualGeminiBody, isStream);
+        return true;
+      } catch (tpErr) {
+        log.warn(`[Proxy] Third-party fallback to ${thirdPartyFallback.name} failed:`, (tpErr as Error).message);
       }
     }
 
@@ -2565,6 +2641,68 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   return (fiveHour * 0.7) + (weekly * 0.3);
 }
 
+// ─── Google Account Latency Tracker (EWMA alpha = 0.2) ────────────────────────
+const accountLatencyEwma = new Map<string, number>();
+
+export function recordAccountLatency(candidate: CustomModel, latencyMs: number): void {
+  if (typeof latencyMs !== 'number' || latencyMs <= 0 || !isFinite(latencyMs)) return;
+  const key = getAccountQuotaKey(candidate);
+  const prev = accountLatencyEwma.get(key);
+  if (prev === undefined) {
+    accountLatencyEwma.set(key, latencyMs);
+  } else {
+    // EWMA formula: 0.2 * new + 0.8 * prev
+    const next = Math.round(0.2 * latencyMs + 0.8 * prev);
+    accountLatencyEwma.set(key, next);
+  }
+}
+
+export function getAccountAvgLatency(candidate: CustomModel): number {
+  const key = getAccountQuotaKey(candidate);
+  return accountLatencyEwma.get(key) || 0;
+}
+
+export function _resetAccountLatencies(): void {
+  accountLatencyEwma.clear();
+}
+
+// ─── Quota Stress Detector & Eco-Routing (OmniRoute Parity) ───────────────────
+export function isPoolUnderQuotaStress(accounts: CustomModel[], modelFamily?: string): boolean {
+  if (!accounts || accounts.length === 0) return false;
+  let totalScore = 0;
+  let validCount = 0;
+  for (const acc of accounts) {
+    if (isAccountInCooldown(acc, modelFamily) || getOpenBreaker(acc) || isTokenRevoked(acc.refreshToken)) {
+      continue;
+    }
+    const score = getModelQuotaScore(acc, modelFamily);
+    totalScore += score;
+    validCount++;
+  }
+  if (validCount === 0) return true;
+  const avg = totalScore / validCount;
+  return avg < 15; // Average remaining quota below 15%
+}
+
+// ─── Multi-Project Balancing ──────────────────────────────────────────────────
+let multiProjectIndex = 0;
+
+export function resolveGoogleProjectId(candidate: CustomModel): string {
+  if (candidate.projectIds && candidate.projectIds.length > 0) {
+    const idx = (multiProjectIndex++) % candidate.projectIds.length;
+    return candidate.projectIds[idx];
+  }
+  if (candidate.projectId) {
+    return candidate.projectId;
+  }
+  const envProjects = (process.env.AG_CLOUD_CODE_PROJECT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (envProjects.length > 0) {
+    const idx = (multiProjectIndex++) % envProjects.length;
+    return envProjects[idx];
+  }
+  return 'bamboo-precept-lgxtn';
+}
+
 // ─── Google Account Dynamic Health Scoring ─────────────────────────────────────
 export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): number {
   if (isAccountInCooldown(m, modelFamily) || getOpenBreaker(m) || isTokenRevoked(m.refreshToken)) {
@@ -2574,11 +2712,21 @@ export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): nu
   if (baseScore <= 0) return 0;
   const inFlight = getAccountInFlight(m);
 
+  // Priority/Tier bonus: High-priority, paid or Pro subscription accounts receive +15 priority score
+  const priorityBonus =
+    m.isPro || m.isPaid || m.tier === 'pro' || m.tier === 'paid' || (typeof m.priority === 'number' && m.priority > 0)
+      ? (typeof m.priority === 'number' && m.priority > 0 ? m.priority : 15)
+      : 0;
+
+  // Latency penalty: -1 point per 100ms beyond 500ms baseline (capped at -25 points)
+  const avgLatency = getAccountAvgLatency(m);
+  const latencyPenalty = avgLatency > 500 ? Math.min(25, Math.floor((avgLatency - 500) / 100)) : 0;
+
   // During Half-Open probation: strictly max 1 probe request allowed; score capped at 60%
   if (isAccountInProbation(m, modelFamily)) {
     if (inFlight >= 1) return 0;
-    const probationScore = Math.floor(baseScore * 0.6);
-    return Math.max(1, probationScore - inFlight * 20);
+    const probationScore = Math.floor((baseScore + priorityBonus) * 0.6);
+    return Math.max(1, probationScore - inFlight * 20 - latencyPenalty);
   }
 
   // Account reached max concurrent requests slot limit: mark score 0 to route to free accounts
@@ -2588,8 +2736,9 @@ export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): nu
 
   const rpmCount = getAccountRpmCount(m);
   // Each active request penalizes dynamic score by 20 points;
-  // each request served in the last 60 seconds penalizes by 2 points (RPM governor)
-  return Math.max(1, baseScore - inFlight * 20 - rpmCount * 2);
+  // each request served in the last 60 seconds penalizes by 2 points (RPM governor);
+  // elevated EWMA latency penalizes up to 25 points.
+  return Math.max(1, baseScore + priorityBonus - inFlight * 20 - rpmCount * 2 - latencyPenalty);
 }
 
 // ─── Intelligent 429 Classification (OmniRoute Parity) ─────────────────────────
@@ -4874,6 +5023,7 @@ export function startProxy(): Promise<number> {
           // Execute cleanup initialization after the server is already listening
           // so that failures here don't prevent the port from binding.
           try {
+            loadPersistentQuotaCache().catch(() => {});
             startCleanupInterval();
             startQuotaPollingInterval();
             setupCustomModelsWatcher();

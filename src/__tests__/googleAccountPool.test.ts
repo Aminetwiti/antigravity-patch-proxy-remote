@@ -52,6 +52,11 @@ import {
   notifySlotAvailable,
   _clearSlotWaitersForTests,
   autoHealAccountOnQuotaRecovery,
+  recordAccountLatency,
+  getAccountAvgLatency,
+  _resetAccountLatencies,
+  isPoolUnderQuotaStress,
+  resolveGoogleProjectId,
 } from '../proxy';
 import { recordFailure, recordSuccess, getOpenBreaker } from '../proxy/circuitBreaker';
 import {
@@ -662,6 +667,136 @@ describe('Google Multi-Account Pool & Failover', () => {
         updatedAt: Date.now(),
       });
       expect(isAccountInCooldown(acc, 'claude')).toBe(false);
+    });
+
+    it('awards priority bonus to isPro, isPaid, and custom priority accounts in dynamic score', () => {
+      const freeAccount: CustomModel = {
+        name: 'free-acc',
+        displayName: 'Free Acc',
+        description: 'Free account',
+        provider: 'google',
+        apiKey: 'key1',
+        apiUrl: 'https://cloudcode.googleapis.com',
+        externalModelName: 'gemini-2.5-pro',
+        accountEmail: 'free@gmail.com',
+        refreshToken: 'refresh-token-free',
+        quotas: { geminiFiveHourPct: 60, geminiWeeklyPct: 60 },
+      };
+
+      const proAccount: CustomModel = {
+        name: 'pro-acc',
+        displayName: 'Pro Acc',
+        description: 'Pro account',
+        provider: 'google',
+        apiKey: 'key2',
+        apiUrl: 'https://cloudcode.googleapis.com',
+        externalModelName: 'gemini-2.5-pro',
+        accountEmail: 'pro@gmail.com',
+        refreshToken: 'refresh-token-pro',
+        isPro: true,
+        quotas: { geminiFiveHourPct: 60, geminiWeeklyPct: 60 },
+      };
+
+      const customPriorityAccount: CustomModel = {
+        name: 'vip-acc',
+        displayName: 'VIP Acc',
+        description: 'VIP account',
+        provider: 'google',
+        apiKey: 'key3',
+        apiUrl: 'https://cloudcode.googleapis.com',
+        externalModelName: 'gemini-2.5-pro',
+        accountEmail: 'vip@gmail.com',
+        refreshToken: 'refresh-token-vip',
+        priority: 25,
+        quotas: { geminiFiveHourPct: 60, geminiWeeklyPct: 60 },
+      };
+
+      const freeScore = getAccountDynamicScore(freeAccount, 'gemini');
+      const proScore = getAccountDynamicScore(proAccount, 'gemini');
+      const vipScore = getAccountDynamicScore(customPriorityAccount, 'gemini');
+
+      expect(freeScore).toBe(60);
+      expect(proScore).toBe(75); // 60 + 15 (Pro bonus)
+      expect(vipScore).toBe(85); // 60 + 25 (Custom priority)
+    });
+
+    it('tracks EWMA latency and applies latency penalty when latency exceeds 500ms', () => {
+      _resetAccountLatencies();
+      const testAcc: CustomModel = {
+        name: 'acc-latency',
+        provider: 'google',
+        externalModelName: 'gemini-2.5-pro',
+        accountEmail: 'latency@gmail.com',
+        refreshToken: 'refresh-token-latency',
+        quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 80 },
+      };
+
+      expect(getAccountAvgLatency(testAcc)).toBe(0);
+
+      // Record first latency sample: 1000ms
+      recordAccountLatency(testAcc, 1000);
+      expect(getAccountAvgLatency(testAcc)).toBe(1000);
+
+      // Score with 1000ms latency: baseline 80 - penalty ((1000 - 500) / 100 = 5) = 75
+      const penalizedScore = getAccountDynamicScore(testAcc, 'gemini');
+      expect(penalizedScore).toBe(75);
+
+      // Record second latency sample: 500ms -> EWMA = 0.2*500 + 0.8*1000 = 900ms
+      recordAccountLatency(testAcc, 500);
+      expect(getAccountAvgLatency(testAcc)).toBe(900);
+    });
+
+    it('detects pool quota stress correctly (<15% average)', () => {
+      const stressPool: CustomModel[] = [
+        {
+          name: 'low-1',
+          provider: 'google',
+          externalModelName: 'gemini-2.5-pro',
+          accountEmail: 'low1@gmail.com',
+          refreshToken: 'tok1',
+          quotas: { geminiFiveHourPct: 10, geminiWeeklyPct: 10 },
+        },
+        {
+          name: 'low-2',
+          provider: 'google',
+          externalModelName: 'gemini-2.5-pro',
+          accountEmail: 'low2@gmail.com',
+          refreshToken: 'tok2',
+          quotas: { geminiFiveHourPct: 12, geminiWeeklyPct: 12 },
+        },
+      ];
+      expect(isPoolUnderQuotaStress(stressPool, 'gemini')).toBe(true);
+
+      const healthyPool: CustomModel[] = [
+        {
+          name: 'healthy-1',
+          provider: 'google',
+          externalModelName: 'gemini-2.5-pro',
+          accountEmail: 'h1@gmail.com',
+          refreshToken: 'tok1',
+          quotas: { geminiFiveHourPct: 70, geminiWeeklyPct: 70 },
+        },
+      ];
+      expect(isPoolUnderQuotaStress(healthyPool, 'gemini')).toBe(false);
+    });
+
+    it('resolves and balances across multi-project IDs', () => {
+      const multiProjAcc: CustomModel = {
+        name: 'multi-proj',
+        provider: 'google',
+        externalModelName: 'gemini-2.5-pro',
+        projectIds: ['proj-alpha', 'proj-beta', 'proj-gamma'],
+      };
+
+      const p1 = resolveGoogleProjectId(multiProjAcc);
+      const p2 = resolveGoogleProjectId(multiProjAcc);
+      const p3 = resolveGoogleProjectId(multiProjAcc);
+      const p4 = resolveGoogleProjectId(multiProjAcc);
+
+      expect(p1).toBe('proj-alpha');
+      expect(p2).toBe('proj-beta');
+      expect(p3).toBe('proj-gamma');
+      expect(p4).toBe('proj-alpha'); // Round-robin wraps around
     });
   });
 });

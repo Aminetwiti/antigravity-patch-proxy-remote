@@ -81,6 +81,7 @@ export interface CustomModel {
   accountEmail?: string;
   refreshToken?: string;
   projectId?: string;
+  projectIds?: string[];
   quotas?: {
     fiveHourPercentage?: number;
     weeklyPercentage?: number;
@@ -90,6 +91,11 @@ export interface CustomModel {
     claudeWeeklyPct?: number;
     [key: string]: unknown;
   };
+  /** Whether this is a high-priority / paid / Pro subscription account (receives P2C routing bonus). */
+  isPro?: boolean;
+  isPaid?: boolean;
+  tier?: string;
+  priority?: number;
   /** Internal: marks a real per-account Google entry kept only for dispatch/quota; hidden from dropdown. */
   _poolOnly?: boolean;
 }

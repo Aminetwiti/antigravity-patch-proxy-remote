@@ -38,6 +38,22 @@ export function isTokenRevoked(refreshToken?: string): boolean {
   return revokedRefreshTokens.has(clean);
 }
 
+type QuotaChangeSubscriber = () => void;
+const quotaChangeSubscribers = new Set<QuotaChangeSubscriber>();
+
+export function onQuotaOrTokenChange(cb: QuotaChangeSubscriber): () => void {
+  quotaChangeSubscribers.add(cb);
+  return () => quotaChangeSubscribers.delete(cb);
+}
+
+export function notifyQuotaOrTokenChange(): void {
+  for (const sub of quotaChangeSubscribers) {
+    try {
+      sub();
+    } catch (_) {}
+  }
+}
+
 /**
  * Marks a refresh token as revoked / requiring re-authentication.
  */
@@ -48,6 +64,7 @@ export function markTokenRevoked(refreshToken?: string): void {
   tokenCache.delete(clean);
   inFlightRefreshes.delete(clean);
   log.warn(`[GoogleAuth] Refresh token quarantined as REVOKED / REAUTH_REQUIRED: ${clean.substring(0, 10)}...`);
+  notifyQuotaOrTokenChange();
 }
 
 /**
@@ -55,6 +72,13 @@ export function markTokenRevoked(refreshToken?: string): void {
  */
 export function clearRevokedTokens(): void {
   revokedRefreshTokens.clear();
+}
+
+/**
+ * Returns a list of all currently quarantined revoked refresh tokens.
+ */
+export function getAllRevokedTokens(): string[] {
+  return Array.from(revokedRefreshTokens);
 }
 
 /**
@@ -239,10 +263,18 @@ export function getLiveAccountQuota(accountKey: string): AccountLiveQuota | unde
 
 export function updateLiveAccountQuota(accountKey: string, quota: AccountLiveQuota): void {
   accountLiveQuotas.set(accountKey, quota);
+  notifyQuotaOrTokenChange();
 }
 
 export function _clearLiveQuotasForTests(): void {
   accountLiveQuotas.clear();
+}
+
+/**
+ * Returns a copy of all current live account quotas.
+ */
+export function getAllLiveAccountQuotas(): Map<string, AccountLiveQuota> {
+  return new Map(accountLiveQuotas);
 }
 
 /**
