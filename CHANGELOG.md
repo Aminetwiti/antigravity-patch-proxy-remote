@@ -2,6 +2,18 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.6.0] - 2026-09-21 (Remote Agent Runtime & Quality Consolidation)
+
+### Added
+- **Remote Agent Cloud Runtime Integration**: Consolidated Go remote daemon (`ag-agentd`) with automated process discovery, CSRF watchdog, WebSocket multiplexing, and StepRecovery.
+- **Flutter Mobile Companion Updates**: Turn navigation FAB, live session trajectory streaming, and full unit/widget verification across 755 tests.
+- **Enhanced Patch Proxy & Test Guard**: Consolidated version patch resolution for Antigravity versions up to 2.15.x, robust test suites adhering to test-guard principles, and full local CI verification.
+
+### Changed
+- Bumped project release version to v3.6.0 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
 ## [3.5.0] - 2026-09-10 (Desktop Patch Proxy & IDE Integration)
 
 ### Added
