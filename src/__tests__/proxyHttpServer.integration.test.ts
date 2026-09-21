@@ -213,4 +213,17 @@ describe('Proxy HTTP Server Real Integration Test', () => {
     const upstreamBody = JSON.parse(upstreamReceivedRequest!.body);
     expect(upstreamBody.messages[0].content).toBe('Ping from real proxy integration test');
   });
+
+  it('serves /pool/status with JSON pool telemetry and CORS headers', async () => {
+    const res = await httpRequest(`http://127.0.0.1:${proxyPort}/pool/status`, {
+      method: 'GET',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('*');
+    const parsed = JSON.parse(res.body);
+    expect(parsed).toHaveProperty('poolSize');
+    expect(parsed).toHaveProperty('timestamp');
+    expect(Array.isArray(parsed.accounts)).toBe(true);
+  });
 });

@@ -81,6 +81,12 @@ src/
 5. **Slim Preload Scripts**
    - The root `preload.ts` is lightweight, delegating contextBridge registrations to `src/preload/api.ts`.
 
+6. **Intelligent Account Pooling & Failover (OmniRoute Parity)**
+   - **Power of Two Choices (P2C)**: Selects between top-tier accounts within 15 points of the best health score using `crypto.randomInt`, eliminating single-account hotspotting.
+   - **In-Flight Concurrency Tracking**: Tracks concurrent active requests per account and dynamically penalizes scores by 20 points per in-flight request to smooth burst traffic across idle accounts.
+   - **4-Tier 429 Classification**: Granularly maps upstream HTTP 429 errors into `soft_rate_limit` (2-3s backoff), `rate_limited` (60s RPM cooldown), `quota_exhausted` (5h cooldown + session unbind), and `unknown` (60s fallback).
+   - **Resilient Search**: Fast-skips cooling accounts and avoids premature cutoff, trying all eligible accounts in the pool before falling back to alternative models.
+
 ---
 
 ## Antigravity Remote 2.0 Architecture (`remote/`)

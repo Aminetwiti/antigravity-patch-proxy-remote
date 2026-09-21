@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as zlib from 'zlib';
 import { StringDecoder } from 'string_decoder';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 
 import log from 'electron-log';
 import { createLogger } from './logger';
@@ -95,6 +95,13 @@ import {
   isGoogleCloudCodeModel,
   sanitizeCloudCodeGenerationConfig,
   normalizeConversationTurns,
+  prewarmGoogleAccounts,
+  isTokenCached,
+  isTokenRevoked,
+  getLiveAccountQuota,
+  updateLiveAccountQuota,
+  pollAllGoogleQuotas,
+  AccountLiveQuota,
 } from './services/googleAuth';
 import { safeWriteHead, safeEnd } from './proxy/httpUtils';
 import {
@@ -996,6 +1003,7 @@ export interface GoogleRequestOutcome {
   success: boolean;
   statusCode?: number;
   error?: string;
+  headers?: http.IncomingHttpHeaders;
 }
 
 export function executeGoogleCloudCodeRequest(
@@ -1080,7 +1088,7 @@ export function executeGoogleCloudCodeRequest(
           proxyRes.on('data', (c: Buffer) => errChunks.push(c));
           proxyRes.on('end', () => {
             const errText = Buffer.concat(errChunks).toString('utf-8');
-            finish({ success: false, statusCode: status, error: errText });
+            finish({ success: false, statusCode: status, error: errText, headers: proxyRes.headers });
           });
           return;
         }
@@ -1267,21 +1275,62 @@ export async function executeGoogleCloudCodeWithPool(
     const breakerA = getOpenBreaker(a) ? 1 : 0;
     const breakerB = getOpenBreaker(b) ? 1 : 0;
     if (breakerA !== breakerB) return breakerA - breakerB;
-    return getModelQuotaScore(b) - getModelQuotaScore(a);
+    return getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily);
   });
 
+  let boundAccount: CustomModel | undefined;
   if (sessId) {
-    const bound = sortedAccounts.find((m) => {
+    boundAccount = sortedAccounts.find((m) => {
       const affinity = sessionAffinities.get(sessId);
-      return affinity && getAccountQuotaKey(m) === affinity.accountKey && !getOpenBreaker(m) && getModelQuotaScore(m) > 0;
+      return affinity && getAccountQuotaKey(m) === affinity.accountKey && !getOpenBreaker(m) && !isAccountInCooldown(m, modelFamily) && getModelQuotaScore(m) > 0;
     });
-    if (bound) {
-      const idx = sortedAccounts.indexOf(bound);
+    if (boundAccount) {
+      const idx = sortedAccounts.indexOf(boundAccount);
       if (idx > 0) {
         sortedAccounts.splice(idx, 1);
-        sortedAccounts.unshift(bound);
+        sortedAccounts.unshift(boundAccount);
       }
     }
+  }
+
+  // If no bound account from session affinity, use P2C to pick the lead account among top available
+  if (!boundAccount && sortedAccounts.length > 1) {
+    const lead = selectCandidateP2C(sortedAccounts, modelFamily);
+    if (lead) {
+      const idx = sortedAccounts.indexOf(lead);
+      if (idx > 0) {
+        sortedAccounts.splice(idx, 1);
+        sortedAccounts.unshift(lead);
+      }
+    }
+  }
+
+  // If the pool has eligible accounts but all are temporarily saturated by in-flight concurrency,
+  // wait up to 1500ms in a micro-wait queue for an in-flight slot to release before attempting requests.
+  const hasEligibleAccounts = sortedAccounts.some(
+    (a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && getModelQuotaScore(a, modelFamily) > 0,
+  );
+  const allSaturated = hasEligibleAccounts && sortedAccounts.every((a) => {
+    if (isAccountInCooldown(a, modelFamily) || getOpenBreaker(a) || getModelQuotaScore(a, modelFamily) <= 0) {
+      return true;
+    }
+    const max = isAccountInProbation(a, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+    return getAccountInFlight(a) >= max;
+  });
+
+  if (allSaturated) {
+    log.info(`[Proxy] All eligible accounts in Google pool are saturated (${MAX_CONCURRENT_PER_ACCOUNT} in-flight reqs). Waiting up to 1500ms for an available slot...`);
+    await waitForAccountSlot(sortedAccounts, modelFamily, 1500);
+    // Re-sort after waiting so the newly freed account rises to the top
+    sortedAccounts.sort((a, b) => {
+      const cdA = isAccountInCooldown(a, modelFamily) ? 1 : 0;
+      const cdB = isAccountInCooldown(b, modelFamily) ? 1 : 0;
+      if (cdA !== cdB) return cdA - cdB;
+      const breakerA = getOpenBreaker(a) ? 1 : 0;
+      const breakerB = getOpenBreaker(b) ? 1 : 0;
+      if (breakerA !== breakerB) return breakerA - breakerB;
+      return getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily);
+    });
   }
 
   let lastStatus = 500;
@@ -1293,13 +1342,14 @@ export async function executeGoogleCloudCodeWithPool(
     const candidate = sortedAccounts[i];
     const candidateName = candidate.accountEmail || candidate.accountName || candidate.displayName || candidate.name;
 
-    // Fast-skip: if this candidate is already in active cooldown for this model family,
-    // and we already experienced 429s or tested candidates failed, don't grind through remaining exhausted accounts.
+    // Fast-skip: if this candidate is already in active cooldown for this model family
     if (isAccountInCooldown(candidate, modelFamily)) {
-      if (consecutive429Count > 0 || i > 0) {
-        log.warn(`[Proxy] Account ${candidateName} is in active 429 cooldown for ${modelFamily}. Skipping remaining exhausted accounts in pool.`);
+      const hasEligibleRemaining = sortedAccounts.slice(i).some((c) => !isAccountInCooldown(c, modelFamily));
+      if (!hasEligibleRemaining) {
+        log.warn(`[Proxy] All remaining accounts in pool are in cooldown for ${modelFamily}. Stopping pool search.`);
         break;
       }
+      continue;
     }
 
     log.info(`[Proxy] Google account pool: trying candidate ${candidateName} (attempt ${i + 1}/${totalAttempts})`);
@@ -1341,18 +1391,26 @@ export async function executeGoogleCloudCodeWithPool(
     const updatedBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
     const authHeader = `Bearer ${accessToken}`;
 
-    const outcome = await executeGoogleCloudCodeRequest(
-      req,
-      res,
-      updatedBody,
-      isSessionRemote,
-      authHeader,
-      convId,
-    );
+    recordAccountRequest(candidate);
+    incrementAccountInFlight(candidate);
+    let outcome: GoogleRequestOutcome;
+    try {
+      outcome = await executeGoogleCloudCodeRequest(
+        req,
+        res,
+        updatedBody,
+        isSessionRemote,
+        authHeader,
+        convId,
+      );
+    } finally {
+      decrementAccountInFlight(candidate);
+    }
 
     if (outcome.success) {
       recordSuccess(candidate);
       clearAccountCooldown(candidate, modelFamily);
+      endAccountProbation(candidate, modelFamily);
       if (sessId) {
         bindSessionToModel(sessId, candidate);
       }
@@ -1362,23 +1420,52 @@ export async function executeGoogleCloudCodeWithPool(
 
     if (outcome.statusCode === 429) {
       consecutive429Count++;
-      setAccountCooldown(candidate, 10 * 60_000, modelFamily);
+      const retryAfterHeader = outcome.headers?.['retry-after'];
+      const decision = classifyGoogleCloudCode429(outcome.error, retryAfterHeader);
+
+      log.warn(
+        `[Proxy] 429 on ${candidateName} (${modelFamily}): ${decision.category} — ${decision.reason} (cooldown: ${Math.round(decision.cooldownMs / 1000)}s)`
+      );
+      setAccountCooldown(candidate, decision.cooldownMs, modelFamily);
       recordFailure(candidate, 'rate_limit');
-      if (candidate.quotas) {
-        if (isClaude) {
-          (candidate.quotas as any).claudeFiveHourPct = 0;
-        } else {
-          (candidate.quotas as any).geminiFiveHourPct = 0;
+
+      if (decision.category === 'quota_exhausted') {
+        const liveKey = getAccountQuotaKey(candidate);
+        const existingLive = getLiveAccountQuota(liveKey);
+        if (existingLive) {
+          if (isClaude) {
+            existingLive.claudeFiveHourPct = 0;
+          } else {
+            existingLive.geminiFiveHourPct = 0;
+          }
+          updateLiveAccountQuota(liveKey, existingLive);
+        }
+        if (candidate.quotas) {
+          if (isClaude) {
+            (candidate.quotas as any).claudeFiveHourPct = 0;
+          } else {
+            (candidate.quotas as any).geminiFiveHourPct = 0;
+          }
+        }
+        if (sessId) {
+          sessionAffinities.delete(sessId);
         }
       }
-      if (sessId) {
-        sessionAffinities.delete(sessId);
-      }
-      // Fast-fail: if quota is exhausted on 2 accounts in a row, don't grind through the rest of the pool
-      if (consecutive429Count >= 2 && i + 1 < totalAttempts) {
-        log.warn(`[Proxy] Detected ${consecutive429Count} consecutive 429s for ${modelFamily} model ${targetModel}. Fast-failing remaining pool to recover immediately.`);
+
+      lastStatus = 429;
+      lastErrorText = outcome.error || `HTTP 429 (${decision.reason})`;
+
+      // If all remaining candidates are in cooldown, break early to save latency
+      const hasEligibleRemaining = sortedAccounts.slice(i + 1).some((c) => !isAccountInCooldown(c, modelFamily));
+      if (!hasEligibleRemaining) {
+        log.warn(`[Proxy] No remaining healthy accounts left in pool for ${modelFamily}. Fast-failing pool.`);
         break;
       }
+
+      if (i + 1 < totalAttempts) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      continue;
     } else {
       consecutive429Count = 0;
     }
@@ -2226,8 +2313,33 @@ export function getAccountQuotaKey(item: CustomModel): string {
   }
 }
 
-// ─── Google Account 429 Cooldown Registry ──────────────────────────────────────
+// ─── Google Account 429 Cooldown & Probation Registry ─────────────────────────
 const googleAccountCooldowns = new Map<string, number>();
+const accountProbationUntil = new Map<string, number>();
+
+export function isAccountInProbation(candidate: CustomModel, modelFamily?: string): boolean {
+  const baseKey = getAccountQuotaKey(candidate);
+  const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
+  const until = accountProbationUntil.get(key) || (modelFamily ? accountProbationUntil.get(baseKey) : undefined);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    accountProbationUntil.delete(key);
+    return false;
+  }
+  return true;
+}
+
+export function endAccountProbation(candidate: CustomModel, modelFamily?: string): void {
+  const baseKey = getAccountQuotaKey(candidate);
+  if (modelFamily) {
+    accountProbationUntil.delete(`${baseKey}:${modelFamily}`);
+  }
+  accountProbationUntil.delete(baseKey);
+}
+
+export function _resetAccountProbation(): void {
+  accountProbationUntil.clear();
+}
 
 export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string): boolean {
   const baseKey = getAccountQuotaKey(candidate);
@@ -2236,6 +2348,8 @@ export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string
   if (!until) return false;
   if (Date.now() >= until) {
     googleAccountCooldowns.delete(key);
+    // Transition to 15s half-open probation to prevent thundering herd stampede
+    accountProbationUntil.set(key, Date.now() + 15_000);
     return false;
   }
   return true;
@@ -2244,28 +2358,196 @@ export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string
 export function setAccountCooldown(candidate: CustomModel, durationMs = 10 * 60_000, modelFamily?: string): void {
   const baseKey = getAccountQuotaKey(candidate);
   const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
-  googleAccountCooldowns.set(key, Date.now() + durationMs);
+  accountProbationUntil.delete(key);
+  // Add 1-5s random jitter to desynchronize account recovery stampedes
+  const jitterMs = durationMs > 5_000 ? randomInt(1_000, 5_000) : 0;
+  googleAccountCooldowns.set(key, Date.now() + durationMs + jitterMs);
+}
+
+export function getAccountCooldownRemaining(candidate: CustomModel, modelFamily?: string): number {
+  const baseKey = getAccountQuotaKey(candidate);
+  const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
+  const until = googleAccountCooldowns.get(key) || (modelFamily ? googleAccountCooldowns.get(baseKey) : undefined);
+  if (!until) return 0;
+  const remaining = until - Date.now();
+  return remaining > 0 ? remaining : 0;
 }
 
 export function clearAccountCooldown(candidate: CustomModel, modelFamily?: string): void {
   const baseKey = getAccountQuotaKey(candidate);
   if (modelFamily) {
     googleAccountCooldowns.delete(`${baseKey}:${modelFamily}`);
+    accountProbationUntil.delete(`${baseKey}:${modelFamily}`);
   }
   googleAccountCooldowns.delete(baseKey);
+  accountProbationUntil.delete(baseKey);
 }
 
 export function _resetAllAccountCooldowns(): void {
   googleAccountCooldowns.clear();
+  accountProbationUntil.clear();
 }
 
-export function getModelQuotaScore(m: CustomModel): number {
+/**
+ * Automatically lifts cooldowns and probation when the Quota Poller detects
+ * that an account's quota has replenished (e.g. after 5h or weekly bucket reset).
+ */
+export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: AccountLiveQuota): void {
+  if (!quota || !accountKey) return;
+
+  // If Gemini quota recovered above 20%, heal Gemini-specific cooldown
+  if (quota.geminiFiveHourPct > 20) {
+    const geminiKey = `${accountKey}:gemini`;
+    if (googleAccountCooldowns.has(geminiKey)) {
+      log.info(`[Proxy] Auto-healing Gemini cooldown for ${accountKey}: quota recovered to ${quota.geminiFiveHourPct}%`);
+      googleAccountCooldowns.delete(geminiKey);
+      accountProbationUntil.delete(geminiKey);
+    }
+  }
+
+  // If Claude quota recovered above 20%, heal Claude-specific cooldown
+  if (quota.claudeFiveHourPct > 20) {
+    const claudeKey = `${accountKey}:claude`;
+    if (googleAccountCooldowns.has(claudeKey)) {
+      log.info(`[Proxy] Auto-healing Claude cooldown for ${accountKey}: quota recovered to ${quota.claudeFiveHourPct}%`);
+      googleAccountCooldowns.delete(claudeKey);
+      accountProbationUntil.delete(claudeKey);
+    }
+  }
+
+  // If either major quota recovered, heal general account cooldown
+  if (quota.geminiFiveHourPct > 20 || quota.claudeFiveHourPct > 20) {
+    if (googleAccountCooldowns.has(accountKey)) {
+      log.info(`[Proxy] Auto-healing general cooldown for ${accountKey}`);
+      googleAccountCooldowns.delete(accountKey);
+      accountProbationUntil.delete(accountKey);
+    }
+  }
+}
+
+// ─── Google Account In-Flight Concurrency Tracker ──────────────────────────────
+const accountInFlightRequests = new Map<string, number>();
+
+export function getAccountInFlight(candidate: CustomModel): number {
+  const key = getAccountQuotaKey(candidate);
+  return accountInFlightRequests.get(key) || 0;
+}
+
+export const MAX_CONCURRENT_PER_ACCOUNT = Number(process.env.AG_MAX_CONCURRENT_PER_ACCOUNT) || 2;
+
+interface SlotWaiter {
+  resolve: (hasSlot: boolean) => void;
+  timer: NodeJS.Timeout;
+}
+
+const slotWaiters: SlotWaiter[] = [];
+
+export function notifySlotAvailable(): void {
+  while (slotWaiters.length > 0) {
+    const waiter = slotWaiters.shift();
+    if (waiter) {
+      clearTimeout(waiter.timer);
+      waiter.resolve(true);
+    }
+  }
+}
+
+export function _clearSlotWaitersForTests(): void {
+  for (const w of slotWaiters) {
+    clearTimeout(w.timer);
+  }
+  slotWaiters.length = 0;
+}
+
+export async function waitForAccountSlot(
+  accounts: CustomModel[],
+  modelFamily?: string,
+  maxWaitMs = 1500,
+): Promise<boolean> {
+  const hasAvailableSlot = accounts.some((a) => {
+    if (isAccountInCooldown(a, modelFamily) || getOpenBreaker(a)) return false;
+    if (getModelQuotaScore(a, modelFamily) <= 0) return false;
+    const max = isAccountInProbation(a, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+    return getAccountInFlight(a) < max;
+  });
+
+  if (hasAvailableSlot) return true;
+  if (maxWaitMs <= 0) return false;
+
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      const idx = slotWaiters.findIndex((w) => w.timer === timer);
+      if (idx !== -1) {
+        slotWaiters.splice(idx, 1);
+      }
+      resolve(false);
+    }, maxWaitMs);
+    if (timer.unref) timer.unref();
+
+    slotWaiters.push({ resolve, timer });
+  });
+}
+
+export function incrementAccountInFlight(candidate: CustomModel): void {
+  const key = getAccountQuotaKey(candidate);
+  accountInFlightRequests.set(key, (accountInFlightRequests.get(key) || 0) + 1);
+}
+
+export function decrementAccountInFlight(candidate: CustomModel): void {
+  const key = getAccountQuotaKey(candidate);
+  const current = accountInFlightRequests.get(key) || 0;
+  if (current <= 1) {
+    accountInFlightRequests.delete(key);
+  } else {
+    accountInFlightRequests.set(key, current - 1);
+  }
+  notifySlotAvailable();
+}
+
+export function _resetAccountInFlight(): void {
+  accountInFlightRequests.clear();
+}
+
+// ─── Google Account RPM Governor (Sliding Window 60s) ─────────────────────────
+const accountRequestTimestamps = new Map<string, number[]>();
+
+export function recordAccountRequest(candidate: CustomModel): void {
+  const key = getAccountQuotaKey(candidate);
+  const now = Date.now();
+  const list = accountRequestTimestamps.get(key) || [];
+  const recent = list.filter((t) => now - t < 60_000);
+  recent.push(now);
+  accountRequestTimestamps.set(key, recent);
+}
+
+export function getAccountRpmCount(candidate: CustomModel): number {
+  const key = getAccountQuotaKey(candidate);
+  const list = accountRequestTimestamps.get(key);
+  if (!list || list.length === 0) return 0;
+  const now = Date.now();
+  const valid = list.filter((t) => now - t < 60_000);
+  if (valid.length !== list.length) {
+    accountRequestTimestamps.set(key, valid);
+  }
+  return valid.length;
+}
+
+export function _resetAccountRpm(): void {
+  accountRequestTimestamps.clear();
+}
+
+export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number {
   if (isGoogleCloudCodeModel(m) && !m.refreshToken && (!m.apiKey || !m.apiKey.startsWith('ya29.'))) {
     return 0;
   }
-  if (!m.quotas) return 50;
-  const q = m.quotas as Record<string, any>;
-  const isClaude = (m.externalModelName || m.name || '').toLowerCase().includes('claude');
+  const key = getAccountQuotaKey(m);
+  const live = getLiveAccountQuota(key);
+  const q = (live || m.quotas) as Record<string, any> | undefined;
+  if (!q) return 50;
+
+  const isClaude = modelFamily
+    ? modelFamily.toLowerCase().includes('claude')
+    : (m.externalModelName || m.name || '').toLowerCase().includes('claude');
 
   const fiveHour = typeof (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct) === 'number'
     ? (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct)
@@ -2282,6 +2564,169 @@ export function getModelQuotaScore(m: CustomModel): number {
   if (fiveHour === 0) return 0;
   return (fiveHour * 0.7) + (weekly * 0.3);
 }
+
+// ─── Google Account Dynamic Health Scoring ─────────────────────────────────────
+export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): number {
+  if (isAccountInCooldown(m, modelFamily) || getOpenBreaker(m) || isTokenRevoked(m.refreshToken)) {
+    return 0;
+  }
+  const baseScore = getModelQuotaScore(m, modelFamily);
+  if (baseScore <= 0) return 0;
+  const inFlight = getAccountInFlight(m);
+
+  // During Half-Open probation: strictly max 1 probe request allowed; score capped at 60%
+  if (isAccountInProbation(m, modelFamily)) {
+    if (inFlight >= 1) return 0;
+    const probationScore = Math.floor(baseScore * 0.6);
+    return Math.max(1, probationScore - inFlight * 20);
+  }
+
+  // Account reached max concurrent requests slot limit: mark score 0 to route to free accounts
+  if (inFlight >= MAX_CONCURRENT_PER_ACCOUNT) {
+    return 0;
+  }
+
+  const rpmCount = getAccountRpmCount(m);
+  // Each active request penalizes dynamic score by 20 points;
+  // each request served in the last 60 seconds penalizes by 2 points (RPM governor)
+  return Math.max(1, baseScore - inFlight * 20 - rpmCount * 2);
+}
+
+// ─── Intelligent 429 Classification (OmniRoute Parity) ─────────────────────────
+export type Google429Category = 'soft_rate_limit' | 'rate_limited' | 'quota_exhausted' | 'unknown';
+
+export interface Google429Decision {
+  category: Google429Category;
+  cooldownMs: number;
+  reason: string;
+}
+
+export function classifyGoogleCloudCode429(
+  errorMessage?: string,
+  retryAfterHeader?: string | string[] | number | null,
+): Google429Decision {
+  const msg = (errorMessage || '').toLowerCase();
+
+  let retryAfterMs: number | null = null;
+  if (retryAfterHeader !== null && retryAfterHeader !== undefined) {
+    const rawVal = Array.isArray(retryAfterHeader) ? retryAfterHeader[0] : String(retryAfterHeader);
+    const parsedSec = parseFloat(rawVal);
+    if (!isNaN(parsedSec) && parsedSec >= 0) {
+      retryAfterMs = Math.round(parsedSec * 1000);
+    } else {
+      const parsedDate = Date.parse(rawVal);
+      if (!isNaN(parsedDate) && parsedDate > Date.now()) {
+        retryAfterMs = parsedDate - Date.now();
+      }
+    }
+  }
+
+  // 1. Soft / burst rate limit (micro-throttle, e.g. reset in 0s, try again, or retryAfter <= 3s)
+  if (
+    /\breset\s+(?:after|in)\s+0s\b/.test(msg) ||
+    msg.includes('try again') ||
+    msg.includes('temporarily') ||
+    (retryAfterMs !== null && retryAfterMs <= 3000)
+  ) {
+    return {
+      category: 'soft_rate_limit',
+      cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 3000,
+      reason: 'Soft burst throttle — momentary pause',
+    };
+  }
+
+  // 2. RPM / Short-term rate limit indicators (e.g. "Requests per minute quota exceeded")
+  if (
+    msg.includes('per minute') ||
+    msg.includes('per_minute') ||
+    msg.includes('rpm') ||
+    msg.includes('rate limit') ||
+    msg.includes('rate_limit') ||
+    msg.includes('too many requests')
+  ) {
+    return {
+      category: 'rate_limited',
+      cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 60_000,
+      reason: 'RPM limit — 60s cooldown',
+    };
+  }
+
+  // 3. Daily or 5-hour quota exhaustion
+  const QUOTA_EXHAUSTED_KEYWORDS = [
+    'quota_exhausted',
+    'quota exhausted',
+    'quota reached',
+    'enable overages',
+    'individual quota',
+    'resource_exhausted',
+    'resource has been exhausted',
+    'quota exceeded',
+    'google_one_ai',
+    'insufficient credit',
+    'insufficient credits',
+    'not enough credit',
+    'not enough credits',
+    'credit exhausted',
+    'credits exhausted',
+    'credit balance',
+    'minimumcreditamountforusage',
+    'minimum credit amount for usage',
+    'minimum credit',
+    'insufficient_g1_credits_balance',
+    'g1_credits',
+    'daily limit',
+    'exhausted your capacity',
+    'free tier',
+  ];
+
+  for (const kw of QUOTA_EXHAUSTED_KEYWORDS) {
+    if (msg.includes(kw)) {
+      return {
+        category: 'quota_exhausted',
+        cooldownMs: retryAfterMs && retryAfterMs > 60_000 ? retryAfterMs : 5 * 60 * 60 * 1000,
+        reason: 'Quota exhausted — 5h cooldown and switch account',
+      };
+    }
+  }
+
+  // 4. Default / Unknown 429
+  return {
+    category: 'unknown',
+    cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 60_000,
+    reason: 'Generic 429 rate limit',
+  };
+}
+
+// ─── Power of Two Choices (P2C) Candidate Selection ────────────────────────────
+export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gemini'): CustomModel | undefined {
+  if (!candidates || candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+
+  const available = candidates.filter((m) => !isAccountInCooldown(m, modelFamily) && !getOpenBreaker(m));
+  const pool = available.length > 0 ? available : candidates;
+  if (pool.length === 1) return pool[0];
+
+  const sorted = [...pool].sort((a, b) => getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily));
+  const topScore = getAccountDynamicScore(sorted[0], modelFamily);
+
+  const topTier = sorted.filter((m) => topScore - getAccountDynamicScore(m, modelFamily) <= 15);
+  if (topTier.length <= 1) {
+    return sorted[0];
+  }
+
+  const i = randomInt(topTier.length);
+  let j = randomInt(topTier.length - 1);
+  if (j >= i) j++;
+
+  const candA = topTier[i];
+  const candB = topTier[j];
+
+  const scoreA = getAccountDynamicScore(candA, modelFamily);
+  const scoreB = getAccountDynamicScore(candB, modelFamily);
+
+  return scoreA >= scoreB ? candA : candB;
+}
+
 
 let roundRobinCounter = 0;
 
@@ -3257,6 +3702,104 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
 
+  // Multi-account pool live telemetry & health inspection endpoint
+  if (req.method === 'GET' && (req.url === '/pool-status' || req.url === '/pool/status')) {
+    const customModels = expandModelsWithEffort(loadCustomModels());
+    const googleModels = customModels.filter((m) => isGoogleCloudCodeModel(m));
+    const seenAccounts = new Set<string>();
+    const poolStats: Array<{
+      accountKey: string;
+      email: string;
+      name: string;
+      dynamicScore: number;
+      baseScore: number;
+      geminiQuotaPct: number;
+      claudeQuotaPct: number;
+      quotaSource: 'LIVE' | 'STATIC';
+      inFlight: number;
+      inProbation: boolean;
+      maxConcurrent: number;
+      slotAvailable: boolean;
+      reauthRequired: boolean;
+      rpmLastMinute: number;
+      cooldownRemainingSec: number;
+      tokenCached: boolean;
+      status: 'HEALTHY' | 'PROBATION' | 'COOLDOWN' | 'BREAKER_OPEN' | 'REAUTH_REQUIRED';
+    }> = [];
+
+    for (const m of googleModels) {
+      const key = getAccountQuotaKey(m);
+      if (seenAccounts.has(key)) continue;
+      seenAccounts.add(key);
+
+      const email = m.accountEmail || (m as any).email || '';
+      const name = m.accountName || m.displayName || m.name;
+      const inFlight = getAccountInFlight(m);
+      const inProbation = isAccountInProbation(m);
+      const rpmLastMinute = getAccountRpmCount(m);
+      const dynamicScore = getAccountDynamicScore(m);
+      const baseScore = getModelQuotaScore(m);
+      const cooldownMs = getAccountCooldownRemaining(m);
+      const breaker = getOpenBreaker(m);
+
+      const live = getLiveAccountQuota(key);
+      const q = (live || m.quotas) as Record<string, any> | undefined;
+      const geminiQuotaPct = typeof q?.geminiFiveHourPct === 'number'
+        ? q.geminiFiveHourPct
+        : typeof q?.fiveHourPercentage === 'number'
+          ? q.fiveHourPercentage
+          : 50;
+      const claudeQuotaPct = typeof q?.claudeFiveHourPct === 'number' ? q.claudeFiveHourPct : 50;
+      const quotaSource: 'LIVE' | 'STATIC' = live ? 'LIVE' : 'STATIC';
+
+      const revoked = isTokenRevoked(m.refreshToken);
+      let status: 'HEALTHY' | 'PROBATION' | 'COOLDOWN' | 'BREAKER_OPEN' | 'REAUTH_REQUIRED' = 'HEALTHY';
+      if (revoked) {
+        status = 'REAUTH_REQUIRED';
+      } else if (breaker) {
+        status = 'BREAKER_OPEN';
+      } else if (cooldownMs > 0) {
+        status = 'COOLDOWN';
+      } else if (inProbation) {
+        status = 'PROBATION';
+      }
+
+      poolStats.push({
+        accountKey: key,
+        email,
+        name,
+        dynamicScore,
+        baseScore,
+        geminiQuotaPct,
+        claudeQuotaPct,
+        quotaSource,
+        inFlight,
+        inProbation,
+        maxConcurrent: MAX_CONCURRENT_PER_ACCOUNT,
+        slotAvailable: inFlight < MAX_CONCURRENT_PER_ACCOUNT,
+        reauthRequired: revoked,
+        rpmLastMinute,
+        cooldownRemainingSec: Math.ceil(cooldownMs / 1000),
+        tokenCached: isTokenCached(m.refreshToken),
+        status,
+      });
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    });
+    res.end(
+      JSON.stringify({
+        poolSize: poolStats.length,
+        maxConcurrentPerAccount: MAX_CONCURRENT_PER_ACCOUNT,
+        timestamp: Date.now(),
+        accounts: poolStats,
+      }),
+    );
+    return;
+  }
+
   // CORS Preflight handler for browser-initiated requests
   if (req.method === 'OPTIONS') {
     res.writeHead(200, {
@@ -4208,6 +4751,8 @@ export function setupCustomModelsWatcher(): void {
             const models = loadCustomModels();
             if (models.length > 0) {
               checkAllModelsHealth(models).catch(() => {});
+              prewarmGoogleAccounts(models);
+              pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery).catch(() => {});
             }
           } catch (err) {
             log.warn('[Proxy] Failed to reload/health-check models after file change:', err);
@@ -4230,6 +4775,37 @@ export function stopCustomModelsWatcher(): void {
       customModelsWatcher.close();
     } catch {}
     customModelsWatcher = null;
+  }
+}
+
+// ─── Live Quota Polling Interval (Every 3 minutes) ─────────────────────────
+let quotaPollTimer: NodeJS.Timeout | null = null;
+
+export function startQuotaPollingInterval(intervalMs = 180_000): void {
+  stopQuotaPollingInterval();
+  try {
+    const models = loadCustomModels();
+    pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery).catch((err) => {
+      log.debug('[Proxy] Initial quota polling skipped:', err?.message || err);
+    });
+  } catch (_) {}
+
+  quotaPollTimer = setInterval(() => {
+    try {
+      const models = loadCustomModels();
+      pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery).catch((err) => {
+        log.debug('[Proxy] Quota polling tick skipped:', err?.message || err);
+      });
+    } catch (_) {}
+  }, intervalMs);
+
+  if (quotaPollTimer.unref) quotaPollTimer.unref();
+}
+
+export function stopQuotaPollingInterval(): void {
+  if (quotaPollTimer) {
+    clearInterval(quotaPollTimer);
+    quotaPollTimer = null;
   }
 }
 
@@ -4299,9 +4875,12 @@ export function startProxy(): Promise<number> {
           // so that failures here don't prevent the port from binding.
           try {
             startCleanupInterval();
+            startQuotaPollingInterval();
             setupCustomModelsWatcher();
+            const models = loadCustomModels();
+            prewarmGoogleAccounts(models);
           } catch (err) {
-            log.error('[Proxy] Failed to start cleanup interval:', err);
+            log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
           }
 
           resolve(proxyPort);
@@ -4397,6 +4976,7 @@ export function stopProxy(): Promise<void> {
   return new Promise((resolve) => {
     // P1-9: Stop cleanup interval to prevent orphaned timers
     stopCleanupInterval();
+    stopQuotaPollingInterval();
     stopCustomModelsWatcher();
 
     const finish = (): void => {

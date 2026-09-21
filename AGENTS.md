@@ -90,13 +90,14 @@ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go (:8090 / Cloudf
                                         Mobile Client (Flutter App)
 ```
 
-**Three core mechanisms:**
+**Seven core mechanisms:**
 1. **Binary Patching** — Go binary string tables: `daily-cloudcode-pa.googleapis.com` → `${AG_BIND_HOST:-127.0.0.1}:${AG_PROXY_PORT:-51074}`
 2. **HTTP Interception** — `session.defaultSession.webRequest.onBeforeRequest` + proxy server
 3. **Protobuf Injection** — Parse gRPC-Web `GetAvailableModels` response → append custom models → re-encode
 4. **Remote Daemon Bridge** — Automatic PID discovery, CSRF watchdog, gRPC-Web framing, and WebSocket multiplexing with StepRecovery buffer
 5. **Quota Push** — Daemon scheduler polls the LS `RetrieveUserQuotaSummary` every 60 s (only when clients are connected) and broadcasts `quota_update` over WebSocket; the mobile consumes it instead of polling
 6. **Auto-heal** — `scripts/auto-heal.ps1` + `register-auto-heal.ps1` (Startup VBS) + `supervise-daemon.ps1` restore the binary patch after an official update overwrites `app.asar`
+7. **Smart Account Pooling (OmniRoute Parity)** — Power of Two Choices (P2C) candidate selection, real-time in-flight concurrency tracking (20-point penalty per active request), 4-tier 429 classification (soft/RPM/quota/unknown), and non-premature pool exhaustion failover
 
 ---
 
@@ -233,6 +234,7 @@ Determine for each change:
 | **Circuit breaker** | `src/proxy/circuitBreaker.ts` | Per-provider failure isolation |
 | **Strategy** | `retryStrategy.ts` / `retryBudget.ts` | Pluggable retry/backoff policies |
 | **Manual protobuf** | `src/proxy/protobuf.ts` | All protobuf operations — no library |
+| **Smart Pooling & P2C** | `src/proxy.ts` | Dynamic health scoring, in-flight concurrency tracking, and OmniRoute 429 engine |
 
 ---
 

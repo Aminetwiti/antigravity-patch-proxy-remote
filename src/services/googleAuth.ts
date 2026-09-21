@@ -27,16 +27,52 @@ function schedulePrewarm(cleanRefresh: string, safeExpiry: number) {
   prewarmTimers.set(cleanRefresh, timer);
 }
 
+const revokedRefreshTokens = new Set<string>();
+
+/**
+ * Checks whether a refresh token has been quarantined as revoked / invalid_grant.
+ */
+export function isTokenRevoked(refreshToken?: string): boolean {
+  const clean = (refreshToken || '').trim();
+  if (!clean) return false;
+  return revokedRefreshTokens.has(clean);
+}
+
+/**
+ * Marks a refresh token as revoked / requiring re-authentication.
+ */
+export function markTokenRevoked(refreshToken?: string): void {
+  const clean = (refreshToken || '').trim();
+  if (!clean) return;
+  revokedRefreshTokens.add(clean);
+  tokenCache.delete(clean);
+  inFlightRefreshes.delete(clean);
+  log.warn(`[GoogleAuth] Refresh token quarantined as REVOKED / REAUTH_REQUIRED: ${clean.substring(0, 10)}...`);
+}
+
+/**
+ * Clears revoked tokens set (used on config reload or in tests).
+ */
+export function clearRevokedTokens(): void {
+  revokedRefreshTokens.clear();
+}
+
 /**
  * Refreshes a Google OAuth access token using a refresh token.
  * Caches valid tokens in memory for expires_in - 5 minutes.
+ * When force is true, ignores cache and requests a fresh token from Google.
  */
-export async function refreshGoogleToken(refreshToken: string): Promise<string | null> {
+export async function refreshGoogleToken(refreshToken: string, force = false): Promise<string | null> {
   const cleanRefresh = (refreshToken || '').trim();
   if (!cleanRefresh) return null;
 
+  if (isTokenRevoked(cleanRefresh)) {
+    log.debug('[GoogleAuth] Skipping token refresh for quarantined/revoked token');
+    return null;
+  }
+
   const cached = tokenCache.get(cleanRefresh);
-  if (cached && Date.now() < cached.expiresAt) {
+  if (!force && cached && Date.now() < cached.expiresAt) {
     return cached.accessToken;
   }
 
@@ -79,6 +115,9 @@ export async function refreshGoogleToken(refreshToken: string): Promise<string |
               return;
             }
           }
+          if (res.statusCode === 400 && (rawData.includes('invalid_grant') || rawData.includes('revoked'))) {
+            markTokenRevoked(cleanRefresh);
+          }
           log.warn(`[GoogleAuth] Token refresh failed with status ${res.statusCode}: ${rawData.substring(0, 150)}`);
           resolve(null);
         } catch (e) {
@@ -110,15 +149,301 @@ export async function refreshGoogleToken(refreshToken: string): Promise<string |
 }
 
 /**
+ * Checks whether a valid access token is currently cached in memory for the given refresh token.
+ */
+export function isTokenCached(refreshToken?: string): boolean {
+  const clean = (refreshToken || '').trim();
+  if (!clean) return false;
+  const cached = tokenCache.get(clean);
+  return !!cached && Date.now() < cached.expiresAt;
+}
+
+/**
+ * Returns the remaining lifetime (in milliseconds) of the cached access token, or 0 if not cached / expired.
+ */
+export function getTokenRemainingLifetime(refreshToken?: string): number {
+  const clean = (refreshToken || '').trim();
+  if (!clean) return 0;
+  const cached = tokenCache.get(clean);
+  if (!cached) return 0;
+  return Math.max(0, cached.expiresAt - Date.now());
+}
+
+/**
+ * Determines whether a token should be renewed proactively (not cached or expires within thresholdMs, default 5m).
+ */
+export function shouldRenewToken(refreshToken?: string, thresholdMs = 300_000): boolean {
+  const clean = (refreshToken || '').trim();
+  if (!clean) return true;
+  const cached = tokenCache.get(clean);
+  if (!cached) return true;
+  return (cached.expiresAt - Date.now()) < thresholdMs;
+}
+
+/**
+ * Proactively pre-warms access tokens for all unique Google accounts at proxy boot / model reload.
+ * Refreshes tokens in parallel in the background without blocking the caller.
+ */
+export function prewarmGoogleAccounts(
+  accounts: Array<{ refreshToken?: string; accountEmail?: string; email?: string }>,
+): void {
+  if (!Array.isArray(accounts) || accounts.length === 0) return;
+  const seen = new Set<string>();
+  let queued = 0;
+  for (const acc of accounts) {
+    const token = (acc.refreshToken || '').trim();
+    if (!token || seen.has(token) || isTokenCached(token)) continue;
+    seen.add(token);
+    queued++;
+    const identifier = acc.accountEmail || acc.email || 'account';
+    refreshGoogleToken(token).catch((err) => {
+      log.warn(`[GoogleAuth] Proactive token pre-warm failed for ${identifier}:`, err?.message || err);
+    });
+  }
+  if (queued > 0) {
+    log.info(`[GoogleAuth] Proactive boot pre-warm initiated for ${queued} unique Google account(s)`);
+  }
+}
+
+/**
+ * Clears in-memory token cache and cancels scheduled prewarm timers (used in tests).
+ */
+export function _clearTokenCacheForTests(): void {
+  tokenCache.clear();
+  inFlightRefreshes.clear();
+  revokedRefreshTokens.clear();
+  for (const timer of prewarmTimers.values()) {
+    clearTimeout(timer);
+  }
+  prewarmTimers.clear();
+}
+
+// ─── Live Account Quotas (Live Quota Poller) ──────────────────────────────────
+export interface AccountLiveQuota {
+  fiveHourPercentage: number;
+  weeklyPercentage: number;
+  geminiFiveHourPct: number;
+  geminiWeeklyPct: number;
+  claudeFiveHourPct: number;
+  claudeWeeklyPct: number;
+  updatedAt: number;
+  geminiResetTime?: string;
+  claudeResetTime?: string;
+}
+
+const accountLiveQuotas = new Map<string, AccountLiveQuota>();
+
+export function getLiveAccountQuota(accountKey: string): AccountLiveQuota | undefined {
+  return accountLiveQuotas.get(accountKey);
+}
+
+export function updateLiveAccountQuota(accountKey: string, quota: AccountLiveQuota): void {
+  accountLiveQuotas.set(accountKey, quota);
+}
+
+export function _clearLiveQuotasForTests(): void {
+  accountLiveQuotas.clear();
+}
+
+/**
+ * Queries Google Cloud Code for live user quota summary (5h and weekly buckets).
+ */
+export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuota | null> {
+  const hosts = ['https://daily-cloudcode-pa.googleapis.com', 'https://cloudcode-pa.googleapis.com'];
+
+  return new Promise((resolve) => {
+    const tryHost = (idx: number) => {
+      if (idx >= hosts.length) {
+        resolve(null);
+        return;
+      }
+      try {
+        const hostUrl = new URL(`${hosts[idx]}/v1internal:retrieveUserQuotaSummary`);
+        const body = '{}';
+        const req = https.request(
+          {
+            protocol: hostUrl.protocol,
+            hostname: hostUrl.hostname,
+            port: hostUrl.port ? Number(hostUrl.port) : 443,
+            path: hostUrl.pathname,
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(body),
+              'User-Agent': 'antigravity',
+            },
+            timeout: 7000,
+          },
+          (res) => {
+            let rawData = '';
+            res.on('data', (chunk) => (rawData += chunk));
+            res.on('end', () => {
+              if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                try {
+                  const data = JSON.parse(rawData);
+                  const rawGroups = Array.isArray(data?.groups) ? data.groups : [];
+                  let fiveHourPercentage = 100;
+                  let weeklyPercentage = 100;
+                  let geminiFiveHourPct: number | undefined;
+                  let geminiWeeklyPct: number | undefined;
+                  let geminiResetTime: string | undefined;
+                  let claudeFiveHourPct: number | undefined;
+                  let claudeWeeklyPct: number | undefined;
+                  let claudeResetTime: string | undefined;
+
+                  for (const g of rawGroups) {
+                    const groupName = (g.displayName || '').toLowerCase();
+                    const isGemini = groupName.includes('gemini');
+                    const isClaude =
+                      groupName.includes('claude') ||
+                      groupName.includes('3p') ||
+                      groupName.includes('other') ||
+                      groupName.includes('gpt');
+
+                    for (const b of Array.isArray(g.buckets) ? g.buckets : []) {
+                      const frac = typeof b.remainingFraction === 'number' ? b.remainingFraction : 1.0;
+                      const pct = Math.round(frac * 100);
+                      const bId = (b.bucketId || '').toLowerCase();
+                      const wStr = (b.window || '').toLowerCase();
+                      const is5h = bId.includes('5h') || wStr.includes('5h') || wStr.includes('hour');
+                      const isWeekly = bId.includes('weekly') || wStr.includes('weekly');
+
+                      if (isGemini) {
+                        if (is5h) {
+                          geminiFiveHourPct = pct;
+                          geminiResetTime = b.resetTime;
+                        } else if (isWeekly) {
+                          geminiWeeklyPct = pct;
+                        }
+                      } else if (isClaude) {
+                        if (is5h) {
+                          claudeFiveHourPct = pct;
+                          claudeResetTime = b.resetTime;
+                        } else if (isWeekly) {
+                          claudeWeeklyPct = pct;
+                        }
+                      }
+
+                      if (is5h && (fiveHourPercentage === 100 || isGemini)) {
+                        fiveHourPercentage = pct;
+                      }
+                      if (isWeekly && (weeklyPercentage === 100 || isGemini)) {
+                        weeklyPercentage = pct;
+                      }
+                    }
+                  }
+
+                  const result: AccountLiveQuota = {
+                    fiveHourPercentage,
+                    weeklyPercentage,
+                    geminiFiveHourPct: geminiFiveHourPct ?? fiveHourPercentage,
+                    geminiWeeklyPct: geminiWeeklyPct ?? weeklyPercentage,
+                    claudeFiveHourPct: claudeFiveHourPct ?? 100,
+                    claudeWeeklyPct: claudeWeeklyPct ?? 100,
+                    updatedAt: Date.now(),
+                    geminiResetTime,
+                    claudeResetTime,
+                  };
+                  resolve(result);
+                  return;
+                } catch (_) {
+                  tryHost(idx + 1);
+                }
+              } else if (res.statusCode === 429 || (res.statusCode && res.statusCode >= 500)) {
+                tryHost(idx + 1);
+              } else {
+                resolve(null);
+              }
+            });
+          }
+        );
+
+        req.on('timeout', () => {
+          req.destroy();
+          tryHost(idx + 1);
+        });
+        req.on('error', () => {
+          tryHost(idx + 1);
+        });
+        req.write(body);
+        req.end();
+      } catch (_) {
+        tryHost(idx + 1);
+      }
+    };
+
+    tryHost(0);
+  });
+}
+
+/**
+ * Synchronizes live quotas for all unique Google accounts in the pool.
+ * Also proactively renews tokens that are within 5 minutes of expiring.
+ */
+export async function pollAllGoogleQuotas(
+  accounts: Array<{ refreshToken?: string; apiKey?: string; accountEmail?: string; email?: string }>,
+  onQuotaSync?: (accountKey: string, quota: AccountLiveQuota) => void,
+): Promise<void> {
+  if (!Array.isArray(accounts) || accounts.length === 0) return;
+  const seenTokens = new Set<string>();
+
+  for (const acc of accounts) {
+    const refreshToken = (acc.refreshToken || '').trim();
+    if (refreshToken && isTokenRevoked(refreshToken)) {
+      continue;
+    }
+    const tokenKey = refreshToken || (acc.apiKey || '').trim();
+    if (!tokenKey || seenTokens.has(tokenKey)) continue;
+    seenTokens.add(tokenKey);
+
+    const email = (acc.accountEmail || acc.email || '').trim().toLowerCase();
+    const accountKey = email ? `google:${email}` : (acc.apiKey || tokenKey);
+
+    try {
+      // If refresh token is nearing expiration, force proactive renewal
+      if (refreshToken && shouldRenewToken(refreshToken, 300_000)) {
+        log.info(`[GoogleAuth] Proactively renewing access token for ${email || 'account'} during quota poll`);
+        await refreshGoogleToken(refreshToken, true);
+      }
+
+      const accessToken = await getValidGoogleAccessToken(acc);
+      if (!accessToken) continue;
+      const quota = await fetchLiveUserQuota(accessToken);
+      if (quota) {
+        accountLiveQuotas.set(accountKey, quota);
+        if (onQuotaSync) {
+          try {
+            onQuotaSync(accountKey, quota);
+          } catch (_) {}
+        }
+        log.info(
+          `[GoogleAuth] Live quota synced for ${email || 'account'}: Gemini 5h=${quota.geminiFiveHourPct}%, Claude 5h=${quota.claudeFiveHourPct}%`
+        );
+      }
+    } catch (err: any) {
+      log.debug(`[GoogleAuth] Live quota sync skipped for ${email || 'account'}: ${err?.message || err}`);
+    }
+  }
+}
+
+/**
  * Resolves a valid access token for a Google account candidate.
  * Prefers refreshing the refresh token; falls back to raw apiKey if it starts with ya29.
+ * If token is cached but expires within 5 minutes, serves cached token instantly (0ms latency)
+ * while triggering a non-blocking background refresh for subsequent requests.
  */
 export async function getValidGoogleAccessToken(account: {
   apiKey?: string;
   refreshToken?: string;
 }): Promise<string | null> {
   if (account.refreshToken) {
-    const refreshed = await refreshGoogleToken(account.refreshToken);
+    const clean = account.refreshToken.trim();
+    const remainingLifetime = getTokenRemainingLifetime(clean);
+    if (remainingLifetime > 0 && remainingLifetime < 300_000) {
+      refreshGoogleToken(clean, true).catch(() => {});
+    }
+    const refreshed = await refreshGoogleToken(clean);
     if (refreshed) return refreshed;
   }
   if (account.apiKey && account.apiKey.startsWith('ya29.')) {

@@ -5,6 +5,19 @@ import {
   normalizeGoogleModelId,
   sanitizeCloudCodeGenerationConfig,
   normalizeConversationTurns,
+  getLiveAccountQuota,
+  updateLiveAccountQuota,
+  _clearLiveQuotasForTests,
+  fetchLiveUserQuota,
+  pollAllGoogleQuotas,
+  getTokenRemainingLifetime,
+  shouldRenewToken,
+  _clearTokenCacheForTests,
+  getValidGoogleAccessToken,
+  isTokenRevoked,
+  markTokenRevoked,
+  clearRevokedTokens,
+  refreshGoogleToken,
 } from '../services/googleAuth';
 
 describe('googleAuth service', () => {
@@ -274,6 +287,81 @@ describe('googleAuth service', () => {
       const contents: any[] = [];
       const modified = normalizeConversationTurns(contents);
       expect(modified).toBe(false);
+    });
+  });
+
+  describe('Live Quota State & Polling Helpers', () => {
+    it('manages in-memory live quota state correctly', () => {
+      _clearLiveQuotasForTests();
+      expect(getLiveAccountQuota('google:user@example.com')).toBeUndefined();
+
+      updateLiveAccountQuota('google:user@example.com', {
+        fiveHourPercentage: 85,
+        weeklyPercentage: 90,
+        geminiFiveHourPct: 85,
+        geminiWeeklyPct: 90,
+        claudeFiveHourPct: 40,
+        claudeWeeklyPct: 70,
+        updatedAt: Date.now(),
+      });
+
+      const quota = getLiveAccountQuota('google:user@example.com');
+      expect(quota).toBeDefined();
+      expect(quota?.geminiFiveHourPct).toBe(85);
+      expect(quota?.claudeFiveHourPct).toBe(40);
+
+      _clearLiveQuotasForTests();
+      expect(getLiveAccountQuota('google:user@example.com')).toBeUndefined();
+    });
+
+    it('pollAllGoogleQuotas gracefully handles empty and invalid accounts without errors', async () => {
+      await expect(pollAllGoogleQuotas([])).resolves.not.toThrow();
+      await expect(
+        pollAllGoogleQuotas([
+          { refreshToken: '', accountEmail: 'test@example.com' },
+          { apiKey: 'not-a-google-key', accountEmail: 'test2@example.com' },
+        ])
+      ).resolves.not.toThrow();
+    });
+  });
+
+  describe('Proactive Token Renewal & Expiration Helpers', () => {
+    it('returns 0 remaining lifetime and shouldRenew=true for uncached tokens', () => {
+      _clearTokenCacheForTests();
+      expect(getTokenRemainingLifetime(undefined)).toBe(0);
+      expect(getTokenRemainingLifetime('')).toBe(0);
+      expect(getTokenRemainingLifetime('uncached_token_xyz')).toBe(0);
+      expect(shouldRenewToken(undefined)).toBe(true);
+      expect(shouldRenewToken('')).toBe(true);
+      expect(shouldRenewToken('uncached_token_xyz')).toBe(true);
+    });
+
+    it('getValidGoogleAccessToken returns raw ya29 apiKey if provided', async () => {
+      const result = await getValidGoogleAccessToken({ apiKey: 'ya29.mock_token_direct' });
+      expect(result).toBe('ya29.mock_token_direct');
+    });
+
+    it('getValidGoogleAccessToken returns null for non-ya29 apiKey without refreshToken', async () => {
+      const result = await getValidGoogleAccessToken({ apiKey: 'AIzaSyNotOAuth' });
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('Revoked Tokens Quarantine (invalid_grant)', () => {
+    it('quarantines revoked tokens and rejects renewal without network call', async () => {
+      clearRevokedTokens();
+      const testToken = '1//revoked_test_token_abc';
+      expect(isTokenRevoked(testToken)).toBe(false);
+
+      markTokenRevoked(testToken);
+      expect(isTokenRevoked(testToken)).toBe(true);
+
+      // refreshGoogleToken immediately returns null when token is quarantined
+      const res = await refreshGoogleToken(testToken);
+      expect(res).toBeNull();
+
+      clearRevokedTokens();
+      expect(isTokenRevoked(testToken)).toBe(false);
     });
   });
 });
