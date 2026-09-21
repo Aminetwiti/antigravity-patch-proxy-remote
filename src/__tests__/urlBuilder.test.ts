@@ -62,6 +62,15 @@ describe('resolveCustomModelUrl', () => {
       expect(url).toBe('https://api.openai.com/v1/chat/completions');
     });
 
+    it('appends /chat/completions when URL ends with /v1/', () => {
+      const url = resolveCustomModelUrl(
+        { ...baseModel, provider: 'openai', apiUrl: 'https://api.openai.com/v1/' },
+        false,
+        noopUrlBuilder,
+      );
+      expect(url).toBe('https://api.openai.com/v1/chat/completions');
+    });
+
     it('appends /v1/chat/completions when URL has no path', () => {
       const url = resolveCustomModelUrl(
         { ...baseModel, provider: 'openai', apiUrl: 'https://api.openai.com' },
@@ -131,6 +140,22 @@ describe('resolveCustomModelUrl', () => {
         noopUrlBuilder,
       );
       expect(url).toBe('https://api.openai.com/V1/CHAT/COMPLETIONS');
+    });
+
+    it('deduplicates double /v1/v1 in custom model API URLs', () => {
+      const urlWithDuplicate = resolveCustomModelUrl(
+        { ...baseModel, provider: 'openai', apiUrl: 'https://api.example.com/v1/v1/chat/completions' },
+        false,
+        noopUrlBuilder,
+      );
+      expect(urlWithDuplicate).toBe('https://api.example.com/v1/chat/completions');
+
+      const urlBaseDuplicate = resolveCustomModelUrl(
+        { ...baseModel, provider: 'openai', apiUrl: 'https://api.example.com/v1/v1' },
+        false,
+        noopUrlBuilder,
+      );
+      expect(urlBaseDuplicate).toBe('https://api.example.com/v1/chat/completions');
     });
   });
 
@@ -238,7 +263,7 @@ describe('getBaseModelId', () => {
   it('strips anchor variants starting with #', () => {
     expect(getBaseModelId('claude-3-5-sonnet#thinking')).toBe('claude-3-5-sonnet');
     expect(getBaseModelId('gpt-4o#flex')).toBe('gpt-4o');
-    expect(getBaseModelId('gemini-2.0-flash#search')).toBe('gemini-2.0-flash');
+    expect(getBaseModelId('gemini-3.8-flash-tiered#search')).toBe('gemini-3.8-flash-tiered');
   });
 
   it('returns clean model IDs unchanged', () => {

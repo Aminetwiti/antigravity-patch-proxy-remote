@@ -19,7 +19,9 @@ export function resolveProvider(model: CustomModel): string {
 export function getBaseModelId(modelId: string): string {
   if (!modelId) return '';
   const hashIdx = modelId.indexOf('#');
-  return hashIdx !== -1 ? modelId.substring(0, hashIdx) : modelId;
+  let base = hashIdx !== -1 ? modelId.substring(0, hashIdx) : modelId;
+  base = base.replace(/-(low|medium|high)$/i, '');
+  return base;
 }
 
 /**
@@ -51,7 +53,7 @@ export function resolveCustomModelUrl(
   }
 
   const provider = resolveProvider(model);
-  let finalUrlStr = model.apiUrl;
+  let finalUrlStr = (model.apiUrl || '').replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
   const cleanModelName = getBaseModelId(model.externalModelName);
 
   if (provider === 'google' || provider === 'ollama') {
@@ -60,17 +62,16 @@ export function resolveCustomModelUrl(
   } else if (provider === 'openai' || model.provider === 'custom' || model.provider === 'openrouter') {
     const urlLower = finalUrlStr.toLowerCase();
     if (!urlLower.includes('/chat/completions') && !urlLower.includes('/completions')) {
+      finalUrlStr = finalUrlStr.replace(/\/+$/, '');
       if (finalUrlStr.endsWith('/v1')) {
         finalUrlStr += '/chat/completions';
-      } else if (!finalUrlStr.endsWith('/')) {
-        finalUrlStr += '/v1/chat/completions';
       } else {
-        finalUrlStr += 'v1/chat/completions';
+        finalUrlStr += '/v1/chat/completions';
       }
     }
   }
 
-  return finalUrlStr;
+  return finalUrlStr.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
 }
 
 

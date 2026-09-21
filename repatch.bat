@@ -56,9 +56,9 @@ echo  Antigravity Patch (one-click, version-agnostic)
 echo ============================================================
 echo.
 
-REM -- 1. Stop Antigravity + language servers + proxy-stub
-echo [1/5] Stopping Antigravity processes...
-powershell -ExecutionPolicy Bypass -Command "Stop-Process -Name 'Antigravity IDE', Antigravity, language_server, language_server_windows_x64 -Force -ErrorAction SilentlyContinue"
+REM -- 1. Stop Classic Antigravity + language servers + proxy-stub (keep Antigravity IDE intact)
+echo [1/5] Stopping Classic Antigravity processes...
+powershell -ExecutionPolicy Bypass -Command "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"
 powershell -ExecutionPolicy Bypass -Command "Get-Process -Name node -ErrorAction SilentlyContinue | ForEach-Object { try { $cmd = (Get-CimInstance Win32_Process -Filter 'ProcessId='+$_.Id).CommandLine; if ($cmd -like '*proxy-stub*' -or $cmd -like '*standalone-proxy-runner*') { $_ | Stop-Process -Force } } catch {} }"
 timeout /t 2 /nobreak >nul
 
@@ -86,7 +86,7 @@ if exist "%AG_CLASSIC_EXE%" (
     echo   Backup already exists at !AG_ASAR!.bak
   )
   set "STAGING_DIR=%TEMP%\antigravity-asar-staging-%RANDOM%"
-  node "%SCRIPT_DIR%scripts\patch-version.js" "!AG_ASAR!.bak" "!STAGING_DIR!" "!AG_ASAR!"
+  node "%SCRIPT_DIR%scripts\patch-version.js" "!AG_ASAR!" "!STAGING_DIR!" "!AG_ASAR!"
   if errorlevel 1 (
     echo   [ERROR] Asar overlay failed. Restoring backup...
     copy /Y "!AG_ASAR!.bak" "!AG_ASAR!" >nul
@@ -106,7 +106,12 @@ if exist "%AG_CLASSIC_EXE%" (
   )
 )
 
-if exist "%AG_IDE_EXE%" (
+if not "%AG_TARGET%"=="" (
+  set "TARGET=%AG_TARGET%"
+) else if exist "%AG_CLASSIC_EXE%" (
+  echo   Found Antigravity Classic: %AG_CLASSIC%
+  set "TARGET=CLASSIC"
+) else if exist "%AG_IDE_EXE%" (
   echo   Found Antigravity IDE: %AG_IDE%
   set "TARGET=IDE"
 ) else (

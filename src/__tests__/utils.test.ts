@@ -8,6 +8,7 @@ import {
   cleanFilePath,
   translateToolCallToNative,
   formatTranslatedResponse,
+  wrapCommandForRemoteExec,
 } from '../proxy/translators/utils';
 
 // ─── fixParamTypes ─────────────────────────────────────────────────────────
@@ -219,6 +220,22 @@ describe('translateToolCallToNative', () => {
     });
     expect(result.name).toBe('run_command');
   });
+
+  it('should pass through run_command unchanged when remote execution is disabled', () => {
+    const result = translateToolCallToNative(
+      'run_command',
+      { CommandLine: 'pwd && ls -la /data/workspaces' },
+      true,
+    );
+    expect(result.name).toBe('run_command');
+    expect(result.args.CommandLine).toBe('pwd && ls -la /data/workspaces');
+  });
+
+  it('should not wrap command if already wrapped', () => {
+    const alreadyWrapped = 'node --no-warnings "scripts/remote-exec.js" --b64 "abc"';
+    const wrapped = wrapCommandForRemoteExec(alreadyWrapped);
+    expect(wrapped).toBe(alreadyWrapped);
+  });
 });
 
 // ─── formatTranslatedResponse ───────────────────────────────────────────────
@@ -244,25 +261,25 @@ describe('formatTranslatedResponse', () => {
   });
 
   it('should format view_file response', () => {
-    const viewInfo = { ...info, translatedName: 'view_file' };
+    const viewInfo = { originalName: 'run_command', translatedName: 'view_file', cmd: 'cat /tmp/test.txt' };
     const result = formatTranslatedResponse(viewInfo, { content: 'hello world' });
     expect(result).toBe('hello world');
   });
 
   it('should format grep_search response', () => {
-    const grepInfo = { ...info, translatedName: 'grep_search' };
+    const grepInfo = { originalName: 'run_command', translatedName: 'grep_search', cmd: 'grep "TODO" /src' };
     const result = formatTranslatedResponse(grepInfo, [{ Filename: 'a.ts', LineNumber: 10, LineContent: 'TODO: fix' }]);
     expect(result).toContain('a.ts:10:TODO: fix');
   });
 
   it('should format write_file success response', () => {
-    const writeInfo = { ...info, translatedName: 'write_file' };
+    const writeInfo = { originalName: 'run_command', translatedName: 'write_file', cmd: 'echo hello > /out.ts' };
     const result = formatTranslatedResponse(writeInfo, { success: true, path: '/out.ts' });
     expect(result).toContain('File written successfully');
   });
 
   it('should format write_file failure response', () => {
-    const writeInfo = { ...info, translatedName: 'write_file' };
+    const writeInfo = { originalName: 'run_command', translatedName: 'write_file', cmd: 'echo hello > /out.ts' };
     const result = formatTranslatedResponse(writeInfo, { success: false, error: 'Permission denied' });
     expect(result).toContain('Failed to write file');
   });
@@ -275,6 +292,19 @@ describe('formatTranslatedResponse', () => {
   it('should fallback to string for string inputs', () => {
     const result = formatTranslatedResponse(info, 'plain text');
     expect(result).toBe('plain text');
+  });
+
+  it('should handle tool name passed as string and PascalCase fields in view_file and grep_search', () => {
+    const viewResult = formatTranslatedResponse('view_file', { Content: 'PascalCase content' });
+    expect(viewResult).toBe('PascalCase content');
+
+    const grepResult = formatTranslatedResponse('grep_search', {
+      matches: [{ Filename: 'main.go', LineNumber: 42, LineContent: 'package main' }],
+    });
+    expect(grepResult).toContain('main.go:42:package main');
+
+    const writeResult = formatTranslatedResponse('write_file', { Success: true, Path: 'foo.txt' });
+    expect(writeResult).toContain('File written successfully: foo.txt');
   });
 });
 

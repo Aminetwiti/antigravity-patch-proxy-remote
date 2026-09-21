@@ -102,8 +102,8 @@ func buildModelsEntry(key string, details []byte) []byte {
 func TestParseModelsRealisticPayload(t *testing.T) {
 	// FetchAvailableModelsResponse {1: ModelsEntry...}
 	fetch := &writer{}
-	fetch.bytesField(1, buildModelsEntry("claude-3-7-sonnet", buildModelDetails("Claude 3.7 Sonnet", true, true, true, false)))
-	fetch.bytesField(1, buildModelsEntry("gemini-2.5-pro", buildModelDetails("Gemini 2.5 Pro", true, true, false, false)))
+	fetch.bytesField(1, buildModelsEntry("claude-sonnet-4-6", buildModelDetails("Claude Sonnet 4.6", true, true, true, false)))
+	fetch.bytesField(1, buildModelsEntry("gemini-3.1-pro-high", buildModelDetails("Gemini 3.1 Pro High", true, true, false, false)))
 	fetch.bytesField(1, buildModelsEntry("disabled-model", buildModelDetails("Old Model", false, false, false, true)))
 
 	// GetAvailableModelsResponse {1: FetchAvailableModelsResponse}
@@ -118,7 +118,7 @@ func TestParseModelsRealisticPayload(t *testing.T) {
 		t.Fatalf("attendu 3 modèles, reçu %d: %+v", len(models), models)
 	}
 	m := models[0]
-	if m.ModelID != "claude-3-7-sonnet" || m.DisplayName != "Claude 3.7 Sonnet" {
+	if m.ModelID != "claude-sonnet-4-6" || m.DisplayName != "Claude Sonnet 4.6" {
 		t.Fatalf("modèle[0] = %+v", m)
 	}
 	if !m.SupportsImages || !m.SupportsThinking || !m.Recommended || m.Disabled {

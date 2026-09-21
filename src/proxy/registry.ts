@@ -39,6 +39,7 @@ export interface ProviderHeaders {
   'x-goog-api-key'?: string;
   'HTTP-Referer'?: string;
   'X-Title'?: string;
+  'User-Agent'?: string;
   [key: string]: string | undefined;
 }
 
@@ -161,7 +162,10 @@ export function getProviderHeaders(
   apiKey: string,
   extraHeaders?: Record<string, string>,
 ): ProviderHeaders {
-  const headers: ProviderHeaders = { 'Content-Type': 'application/json' };
+  const headers: ProviderHeaders = {
+    'Content-Type': 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+  };
   if (!apiKey || apiKey === 'none') {
     return extraHeaders ? { ...headers, ...extraHeaders } : headers;
   }
@@ -170,7 +174,11 @@ export function getProviderHeaders(
     headers['x-api-key'] = apiKey;
     headers['anthropic-version'] = '2025-04-01';
   } else if (provider === 'google') {
-    headers['x-goog-api-key'] = apiKey;
+    if (apiKey.startsWith('ya29.')) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    } else {
+      headers['x-goog-api-key'] = apiKey;
+    }
   } else if (provider === 'openrouter') {
     headers['Authorization'] = `Bearer ${apiKey}`;
     headers['HTTP-Referer'] = 'https://antigravity.google';
@@ -197,15 +205,17 @@ export function getProviderUrl(
   baseUrl: string,
   modelName: string,
   isStream: boolean,
-  translator: TranslatorModule | null,
+  translator?: TranslatorModule | null,
 ): string {
+  const t = translator || (baseUrl.includes('googleapis.com') ? getTranslator('google') : null);
   // Google AI Studio: dynamic streaming vs non-streaming URL
-  if (translator && typeof translator['getGoogleApiUrl'] === 'function') {
-    return (translator['getGoogleApiUrl'] as (...args: unknown[]) => string)(baseUrl, modelName, isStream);
+  if (t && typeof t['getGoogleApiUrl'] === 'function') {
+    return (t['getGoogleApiUrl'] as (...args: unknown[]) => string)(baseUrl, modelName, isStream);
   }
+  const o = translator || (baseUrl.includes('11434') ? getTranslator('ollama') : null);
   // Ollama: normalize to standard /v1/chat/completions endpoint
-  if (translator && typeof translator['getOllamaApiUrl'] === 'function') {
-    return (translator['getOllamaApiUrl'] as (...args: unknown[]) => string)(baseUrl);
+  if (o && typeof o['getOllamaApiUrl'] === 'function') {
+    return (o['getOllamaApiUrl'] as (...args: unknown[]) => string)(baseUrl);
   }
   return baseUrl;
 }

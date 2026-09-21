@@ -1,5 +1,5 @@
 // MCP relay bridge: exposes the desktop MCP configuration to the mobile
-// companion through the local proxy (127.0.0.1:50999). The phone holds no
+// companion through the local proxy (127.0.0.1:51074). The phone holds no
 // credentials or allowlist — the PC session is the single legitimate holder,
 // so this module only reads the local MCP config files and forwards tool
 // calls to the MCP runtime. This is a thin delegation layer, not an MCP

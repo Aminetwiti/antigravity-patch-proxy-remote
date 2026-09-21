@@ -15,6 +15,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getRendererDefaultUrl } from './providers-config';
+import {
+  parseAccountsJson,
+  normalizeAccountEntry,
+  findMatchingAccount,
+  mergeAccountWithExisting,
+} from './account-import';
+import {
+  parseLogLine,
+  highlightText,
+  LogLevel,
+} from './log-viewer';
+import {
+  testSingleModel,
+  testBatchModels,
+  renderPingBadge,
+  formatApiError,
+  PingPongResult,
+} from './ping-pong-tester';
 
 // (See globals.d.ts for the window.ag interface)
 
@@ -179,6 +197,14 @@ interface AgAPI {
   antigravityRestart(): Promise<{ ok: boolean; data?: { ok: boolean; message: string; pid?: number }; error?: string }>;
   antigravityLaunchLogs(): Promise<string>;
   repairRun(): Promise<{ ok: boolean; proxy?: boolean; ca?: boolean; error?: string }>;
+  onOAuthIntercepted?(handler: (data: { url: string; port?: string; redirectUri?: string; ts?: number }) => void): () => void;
+  modelPingPong?(params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
+    ok: boolean;
+    status: number;
+    latencyMs: number;
+    pongText?: string;
+    error?: string;
+  }>;
 }
 
 interface Window {
@@ -205,6 +231,9 @@ interface CustomModel {
   externalModelName: string;
   encrypted?: boolean;
   enabled?: boolean;
+  accountName?: string;
+  accountEmail?: string;
+  providerId?: string;
 }
 
 interface ModelsFile {
@@ -492,6 +521,7 @@ function navigate(viewName: string): void {
   navItems.forEach((n) => n.classList.toggle('active', n.dataset.view === viewName));
   views.forEach((v) => v.classList.toggle('active', v.id === `view-${viewName}`));
   // Trigger view-specific loaders
+  if (viewName === 'google-accounts') void loadGoogleAccounts();
   if (viewName === 'models') void loadModels();
 
   if (viewName === 'patch') void loadPatchStatus();
@@ -875,7 +905,7 @@ async function runDoctor(): Promise<void> {
     const results = JSON.parse(result.stdout) as CheckResult[];
     updateStats(results);
     updateObjectives(results);
-    
+
     setStatus('Ready', 'ready');
   } catch (e) {
     toast(`Doctor failed: ${(e as Error).message}. Check the Logs tab for full output.`, 'err', 5000);
@@ -1005,13 +1035,13 @@ async function runStartStub(): Promise<void> {
 function setObjective(key: ObjectiveKey, state: 'pending' | 'ok' | 'warn' | 'error', detail?: string): void {
   const el = document.getElementById(`obj-${key}`);
   if (!el) return;
-  
+
   const iconDiv = el.querySelector('.objective-icon');
   if (iconDiv) {
     iconDiv.className = `objective-icon ${state}`;
     iconDiv.innerHTML = iconForObjective(state);
   }
-  
+
   const statusDiv = el.querySelector('.objective-status');
   if (statusDiv) {
     statusDiv.textContent = detail || (state === 'pending' ? 'Pending' : state === 'ok' ? 'OK' : state === 'warn' ? 'Warning' : 'Error');
@@ -1060,6 +1090,171 @@ function ansiToHtml(s: string): string {
     .replace(/\x1b\[22m/g, '</span>')
     .replace(/\x1b\[39m/g, '</span>')
     .replace(/\x1b\[0m/g, '</span>');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Structured log helpers (dedup, level classification, noise filter)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
+let currentSearchQuery = '';
+
+const logsCounters: Record<string, number> = {
+  total: 0,
+  deduped: 0,
+  info: 0,
+  warn: 0,
+  error: 0,
+  panic: 0,
+  noise: 0,
+};
+
+const logsDedupState = {
+  lastLine: '',
+  lastEl: null as HTMLElement | null,
+  count: 1,
+};
+
+function resetLogsDedupState(): void {
+  logsDedupState.lastLine = '';
+  logsDedupState.lastEl = null;
+  logsDedupState.count = 1;
+  logsCounters.total = 0;
+  logsCounters.deduped = 0;
+  logsCounters.info = 0;
+  logsCounters.warn = 0;
+  logsCounters.error = 0;
+  logsCounters.panic = 0;
+  logsCounters.noise = 0;
+}
+
+const LOGS_MAX_LINES_DOM = 2000;
+
+function appendLogLines(container: HTMLElement, raw: string): void {
+  const lines = raw.split('\n');
+  for (const rawLine of lines) {
+    const cleanLine = rawLine.replace(ANSI_RE, '').trimEnd();
+    if (!cleanLine) continue;
+    logsCounters.total++;
+
+    // Dedup: collapse consecutive identical lines into ×N badge
+    if (cleanLine === logsDedupState.lastLine && logsDedupState.lastEl) {
+      logsDedupState.count++;
+      logsCounters.deduped++;
+      let badge = logsDedupState.lastEl.querySelector('.log-dedup') as HTMLSpanElement;
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'log-dedup';
+        logsDedupState.lastEl.appendChild(badge);
+      }
+      badge.textContent = `×${logsDedupState.count}`;
+      badge.title = `Repeated ${logsDedupState.count} times`;
+      continue;
+    }
+
+    const parsed = parseLogLine(cleanLine);
+    if (logsCounters[parsed.level] !== undefined) {
+      logsCounters[parsed.level]++;
+    }
+    if (parsed.isNoise) logsCounters.noise++;
+
+    const div = document.createElement('div');
+    div.className = `log-line log-${parsed.level}${parsed.isNoise ? ' log-noise' : ''}`;
+    div.dataset.level = parsed.level;
+    div.dataset.raw = parsed.raw;
+    div.dataset.msg = parsed.message;
+
+    // Tag badge
+    const tag = document.createElement('span');
+    tag.className = `log-tag log-tag-${parsed.level}`;
+    tag.textContent = parsed.level === 'error' ? 'ERR' : parsed.level.toUpperCase();
+    div.appendChild(tag);
+
+    // Time
+    if (parsed.time) {
+      const time = document.createElement('span');
+      time.className = 'log-time';
+      time.textContent = parsed.time;
+      div.appendChild(time);
+    }
+
+    // Location
+    if (parsed.location) {
+      const loc = document.createElement('span');
+      loc.className = 'log-loc';
+      loc.title = parsed.location;
+      loc.textContent = parsed.location;
+      div.appendChild(loc);
+    }
+
+    // Message
+    const msg = document.createElement('span');
+    msg.className = 'log-msg';
+    if (currentSearchQuery) {
+      msg.innerHTML = highlightText(parsed.message, currentSearchQuery);
+    } else {
+      msg.textContent = parsed.message;
+    }
+    div.appendChild(msg);
+
+    // Copy line button on hover
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'log-line-copy';
+    copyBtn.type = 'button';
+    copyBtn.title = 'Copy line';
+    copyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    copyBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      void navigator.clipboard.writeText(parsed.raw);
+      toast('Line copied', 'info', 1000);
+    });
+    div.appendChild(copyBtn);
+
+    if (currentSearchQuery && !cleanLine.toLowerCase().includes(currentSearchQuery)) {
+      div.classList.add('search-hidden');
+    }
+
+    container.appendChild(div);
+
+    logsDedupState.lastLine = cleanLine;
+    logsDedupState.lastEl = div;
+    logsDedupState.count = 1;
+  }
+
+  // Trim old lines from top
+  while (container.childElementCount > LOGS_MAX_LINES_DOM) {
+    container.firstElementChild?.remove();
+  }
+}
+
+function updateLogsStats(): void {
+  const lineCountEl = document.getElementById('logsLineCount');
+  const dedupCountEl = document.getElementById('logsDedupCount');
+  if (lineCountEl) lineCountEl.textContent = `${logsCounters.total} lines`;
+  if (dedupCountEl) dedupCountEl.textContent = `${logsCounters.deduped} deduped`;
+
+  const cAll = document.getElementById('countAll');
+  const cInfo = document.getElementById('countInfo');
+  const cWarn = document.getElementById('countWarn');
+  const cError = document.getElementById('countError');
+  const cPanic = document.getElementById('countPanic');
+  const panicBtn = document.getElementById('filterPanicBtn');
+
+  if (cAll) cAll.textContent = String(logsCounters.total);
+  if (cInfo) cInfo.textContent = String(logsCounters.info);
+  if (cWarn) cWarn.textContent = String(logsCounters.warn);
+  if (cError) cError.textContent = String(logsCounters.error);
+  if (cPanic) cPanic.textContent = String(logsCounters.panic);
+
+  if (panicBtn) {
+    panicBtn.style.display = logsCounters.panic > 0 ? 'inline-flex' : 'none';
+  }
+
+  const cleanBtn = document.getElementById('logsCleanViewBtn');
+  if (cleanBtn && cleanBtn.classList.contains('active')) {
+    cleanBtn.title = `Clean View: ${logsCounters.noise} noise lines hidden`;
+  }
 }
 
 // Reusable template for doctor output — avoids creating a new <template> each run
@@ -1136,6 +1331,33 @@ async function runDoctorView(): Promise<void> {
 }
 
 $('#doctorRunBtn').addEventListener('click', () => void runDoctorView());
+$('#doctorPruneBtn')?.addEventListener('click', async () => {
+  setStatus('Pruning database…', 'busy');
+  try {
+    const result = await window.ag.run(['db:prune', '--json']);
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(result.stdout);
+    } catch {
+      parsed = null;
+    }
+
+    if (parsed) {
+      if (parsed.orphanCount === 0) {
+        toast('Database is clean: 0 orphan trajectories found.', 'info');
+      } else {
+        toast(`Pruned ${parsed.prunedCount} orphan trajectories! Reclaimed ${(parsed.bytesReclaimed / 1024).toFixed(1)} KB`, 'ok');
+      }
+    } else {
+      toast(result.stdout.trim() || 'Database pruned successfully', 'ok');
+    }
+    doctorOutput.textContent = result.stdout || result.stderr;
+    setStatus('Ready');
+  } catch (e) {
+    toast(`Prune failed: ${(e as Error).message}`, 'err');
+    setStatus('Error', 'err');
+  }
+});
 $('#doctorJsonBtn').addEventListener('click', async () => {
   setStatus('Loading JSON…', 'busy');
   try {
@@ -1167,17 +1389,56 @@ let modelsCurrentPage = 1;
 let modelsPageSize = 10;
 let modelsSearchQuery = '';
 let modelsCategoryFilter: 'all' | 'active' | 'disabled' = 'all';
+let modelsProviderFilter = 'all';
+let modelsCapFilter: 'all' | 'reasoning' | 'vision' | 'code' = 'all';
+let modelsSortOrder: 'default' | 'name-asc' | 'name-desc' | 'provider' | 'status' = 'default';
 let selectedModelNames = new Set<string>();
+
+const modelsSearchClearBtn = $('#modelsSearchClearBtn') as HTMLButtonElement | null;
+const modelsProviderFilterSelect = $('#modelsProviderFilter') as HTMLSelectElement | null;
+const modelsSortSelect = $('#modelsSortSelect') as HTMLSelectElement | null;
+const modelsCapFilters = $('#modelsCapFilters') as HTMLDivElement | null;
+const modelsSelectedBadge = $('#modelsSelectedBadge') as HTMLSpanElement | null;
+const modelsSelectAllMatchesBtn = $('#modelsSelectAllMatchesBtn') as HTMLButtonElement | null;
+const modelsSelectAllCount = $('#modelsSelectAllCount') as HTMLSpanElement | null;
+const modelsClearSelectionBtn = $('#modelsClearSelectionBtn') as HTMLButtonElement | null;
+
+function detectModelCapabilities(modelId: string): string[] {
+  const caps: string[] = [];
+  const id = modelId.toLowerCase();
+  if (/r1|o1|o3|reasoner|thinking|qwq/.test(id)) caps.push('reasoning');
+  if (/vision|4o|claude-3|gemini-1\.5|flash|pixtral/.test(id)) caps.push('vision');
+  if (/coder|code|starcoder|qwen2\.5-coder/.test(id)) caps.push('code');
+  return caps;
+}
+
 // Reusable template for models list — avoids creating a new <template> each load
 const modelsTpl = document.createElement('template');
-/** Shared filter: search query + category tab. Used by renderModelsView and Select All. */
+/** Shared filter: search query + category tab + provider filter + capability filter + sort order. */
 function getFilteredModels(): typeof allLoadedModels {
   const query = modelsSearchQuery.trim().toLowerCase();
-  return allLoadedModels.filter((m) => {
+  let list = allLoadedModels.filter((m) => {
     // Category filter
     const isActive = m.enabled !== false;
     if (modelsCategoryFilter === 'active' && !isActive) return false;
     if (modelsCategoryFilter === 'disabled' && isActive) return false;
+
+    // Provider / Account filter
+    if (modelsProviderFilter !== 'all') {
+      if (modelsProviderFilter.startsWith('account:')) {
+        const targetAcc = modelsProviderFilter.slice(8).toLowerCase();
+        const acc = String(m.accountName || m.accountEmail || m.providerId || '').toLowerCase();
+        if (acc !== targetAcc) return false;
+      } else if ((m.provider || '').toLowerCase() !== modelsProviderFilter.toLowerCase()) {
+        return false;
+      }
+    }
+
+    // Capability filter
+    if (modelsCapFilter !== 'all') {
+      const caps = detectModelCapabilities((m.name || '') + ' ' + (m.externalModelName || '') + ' ' + (m.displayName || ''));
+      if (!caps.includes(modelsCapFilter)) return false;
+    }
 
     if (!query) return true;
     const name = (m.name ?? '').toLowerCase();
@@ -1185,14 +1446,38 @@ function getFilteredModels(): typeof allLoadedModels {
     const provider = (m.provider ?? '').toLowerCase();
     const externalName = (m.externalModelName ?? '').toLowerCase();
     const apiUrl = (m.apiUrl ?? '').toLowerCase();
+    const account = `${m.accountName ?? ''} ${m.accountEmail ?? ''}`.toLowerCase();
     return (
       name.includes(query) ||
       displayName.includes(query) ||
       provider.includes(query) ||
       externalName.includes(query) ||
-      apiUrl.includes(query)
+      apiUrl.includes(query) ||
+      account.includes(query)
     );
   });
+
+  if (modelsSortOrder === 'name-asc') {
+    list = [...list].sort((a, b) => (a.displayName || a.name).localeCompare(b.displayName || b.name));
+  } else if (modelsSortOrder === 'name-desc') {
+    list = [...list].sort((a, b) => (b.displayName || b.name).localeCompare(a.displayName || a.name));
+  } else if (modelsSortOrder === 'provider') {
+    list = [...list].sort((a, b) => {
+      const pCmp = (a.provider || '').localeCompare(b.provider || '');
+      if (pCmp !== 0) return pCmp;
+      const accA = a.accountName || a.accountEmail || '';
+      const accB = b.accountName || b.accountEmail || '';
+      return accA.localeCompare(accB);
+    });
+  } else if (modelsSortOrder === 'status') {
+    list = [...list].sort((a, b) => {
+      const aActive = a.enabled !== false ? 1 : 0;
+      const bActive = b.enabled !== false ? 1 : 0;
+      return bActive - aActive;
+    });
+  }
+
+  return list;
 }
 
 function updateBulkActionButtonsState(): void {
@@ -1202,7 +1487,7 @@ function updateBulkActionButtonsState(): void {
   const btnDelete = document.getElementById('modelsBulkDeleteBtn') as HTMLButtonElement;
   const cbSelectAll = document.getElementById('modelsSelectAllCb') as HTMLInputElement;
   const filtered = getFilteredModels();
-    // Dynamic Category Tab Badges (BUG-2.1 fix)
+  // Dynamic Category Tab Badges (BUG-2.1 fix)
   const allCount = allLoadedModels.length;
   const activeCount = allLoadedModels.filter(m => m.enabled !== false).length;
   const disabledCount = allLoadedModels.filter(m => m.enabled === false).length;
@@ -1227,6 +1512,24 @@ function updateBulkActionButtonsState(): void {
   if (btnEnable) btnEnable.disabled = !hasSelection;
   if (btnDisable) btnDisable.disabled = !hasSelection;
   if (btnDelete) btnDelete.disabled = !hasSelection;
+
+  if (modelsSelectedBadge) {
+    if (hasSelection) {
+      modelsSelectedBadge.textContent = `${selectedModelNames.size} selected`;
+      modelsSelectedBadge.style.display = 'inline-block';
+    } else {
+      modelsSelectedBadge.style.display = 'none';
+    }
+  }
+
+  if (modelsSelectAllMatchesBtn && modelsSelectAllCount) {
+    modelsSelectAllCount.textContent = String(totalItems);
+    modelsSelectAllMatchesBtn.style.display = totalItems > pageItems.length ? 'inline-block' : 'none';
+  }
+
+  if (modelsClearSelectionBtn) {
+    modelsClearSelectionBtn.style.display = hasSelection ? 'inline-block' : 'none';
+  }
 
   if (cbSelectAll && pageItems) {
     if (pageItems.length === 0) {
@@ -1262,7 +1565,7 @@ function renderModelsView(): void {
   const endIdx = Math.min(startIdx + modelsPageSize, totalItems);
   const pageItems = filtered.slice(startIdx, endIdx);
 
-    // Update Category Tab Count Badges
+  // Update Category Tab Count Badges
   const allCount = allLoadedModels.length;
   const activeCount = allLoadedModels.filter((m) => m.enabled !== false).length;
   const disabledCount = allLoadedModels.filter((m) => m.enabled === false).length;
@@ -1275,6 +1578,47 @@ function renderModelsView(): void {
     else if (cat === 'disabled') el.textContent = `Disabled (${disabledCount})`;
   });
 
+  // Dynamically populate Provider & Account Filter select options
+  if (modelsProviderFilterSelect) {
+    const currentVal = modelsProviderFilter;
+    const providersMap = new Map<string, number>();
+    const accountsMap = new Map<string, { label: string; count: number; filterKey: string }>();
+    for (const m of allLoadedModels) {
+      const p = m.provider || 'custom';
+      providersMap.set(p, (providersMap.get(p) || 0) + 1);
+      const acc = m.accountName || m.accountEmail || m.providerId;
+      if (acc) {
+        const key = String(acc).toLowerCase();
+        const existing = accountsMap.get(key);
+        if (existing) {
+          existing.count++;
+        } else {
+          accountsMap.set(key, { label: `${p} · ${acc}`, count: 1, filterKey: `account:${key}` });
+        }
+      }
+    }
+    let opts = `<option value="all">All providers & accounts (${allLoadedModels.length})</option>`;
+    if (accountsMap.size > 1) {
+      opts += `<optgroup label="Filter by Account">`;
+      for (const item of accountsMap.values()) {
+        opts += `<option value="${escapeHtml(item.filterKey)}">${escapeHtml(item.label)} (${item.count})</option>`;
+      }
+      opts += `</optgroup>`;
+    }
+    opts += `<optgroup label="Filter by Provider Type">`;
+    for (const [p, count] of providersMap.entries()) {
+      opts += `<option value="${escapeHtml(p)}">${escapeHtml(p)} (${count})</option>`;
+    }
+    opts += `</optgroup>`;
+    modelsProviderFilterSelect.innerHTML = opts;
+    if (providersMap.has(currentVal) || currentVal.startsWith('account:') || currentVal === 'all') {
+      modelsProviderFilterSelect.value = currentVal;
+    } else {
+      modelsProviderFilter = 'all';
+      modelsProviderFilterSelect.value = 'all';
+    }
+  }
+
   // Update pagination info text
   if (modelsPaginationInfo) {
     if (allLoadedModels.length === 0) {
@@ -1282,7 +1626,7 @@ function renderModelsView(): void {
     } else if (totalItems === 0) {
       modelsPaginationInfo.textContent = `0 models found (filtered from ${allLoadedModels.length})`;
     } else {
-      const filterSuffix = query ? ` (filtered from ${allLoadedModels.length})` : '';
+      const filterSuffix = query || modelsProviderFilter !== 'all' || modelsCapFilter !== 'all' ? ` (filtered from ${allLoadedModels.length})` : '';
       modelsPaginationInfo.textContent = `Showing ${startIdx + 1}–${endIdx} of ${totalItems} models${filterSuffix}`;
     }
   }
@@ -1306,8 +1650,8 @@ function renderModelsView(): void {
         <div class="empty-icon">
           <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </div>
-        <p style="margin-bottom: 8px;">No models matching "<strong>${escapeHtml(query)}</strong>"</p>
-        <button class="btn btn-ghost btn-sm" id="clearModelsSearchBtn" type="button">Clear search filter</button>
+        <p style="margin-bottom: 8px;">No models matching current filters or search query.</p>
+        <button class="btn btn-ghost btn-sm" id="clearModelsSearchBtn" type="button">Reset filters</button>
       </div>`;
   } else {
     const html = pageItems
@@ -1315,6 +1659,7 @@ function renderModelsView(): void {
         const initials = (m.displayName ?? m.name).slice(0, 2).toUpperCase();
         const isEnabled = m.enabled !== false;
         const statusDotClass = isEnabled ? 'ok' : 'off';
+        const isSelected = selectedModelNames.has(m.name);
         const providerLower = (m.provider || '').toLowerCase();
         const nameLower = (m.name || '').toLowerCase();
         let avatarBg = 'linear-gradient(135deg, #3b82f6, #1d4ed8)';
@@ -1332,38 +1677,56 @@ function renderModelsView(): void {
           avatarBg = 'linear-gradient(135deg, #64748b, #334155)';
         }
 
+        const caps = detectModelCapabilities((m.name || '') + ' ' + (m.externalModelName || '') + ' ' + (m.displayName || ''));
+        const capsHtml = caps.length > 0
+          ? `<span class="model-caps">${caps.map((c) => `<span class="pm-cap-badge ${c}">${c}</span>`).join('')}</span>`
+          : '';
+
+        let providerBadgeClass = 'custom';
+        if (providerLower.includes('openai')) providerBadgeClass = 'openai';
+        else if (providerLower.includes('anthropic')) providerBadgeClass = 'anthropic';
+        else if (providerLower.includes('google')) providerBadgeClass = 'google';
+        else if (providerLower.includes('openrouter')) providerBadgeClass = 'openrouter';
+        else if (providerLower.includes('ollama')) providerBadgeClass = 'ollama';
+
         return `
-          <div class="model-card ${isEnabled ? '' : 'model-disabled'}" style="padding-left: 0;">
+          <div class="model-card ${isEnabled ? '' : 'model-disabled'}${isSelected ? ' is-selected' : ''}" style="padding-left: 0;">
             <div style="padding: 0 12px; display: flex; align-items: center;">
-              <input type="checkbox" class="model-select-cb" data-name="${escapeHtml(m.name)}" ${selectedModelNames.has(m.name) ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; margin: 0;">
+              <input type="checkbox" class="model-select-cb" data-name="${escapeHtml(m.name)}" ${isSelected ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; margin: 0;">
             </div>
             <div class="model-avatar" style="margin-left: 0; background: ${avatarBg};">${escapeHtml(initials)}</div>
             <div class="model-body">
               <div class="model-name">
                 <span class="status-dot ${statusDotClass}" id="status-dot-${escapeHtml(m.name)}" title="${isEnabled ? 'Active' : 'Disabled'}"></span>
-                ${escapeHtml(m.displayName ?? m.name)}
+                <span>${escapeHtml(m.displayName ?? m.name)}</span>
+                ${capsHtml}
               </div>
               <div class="model-meta">
-                <code>${escapeHtml(m.name)}</code> · ${escapeHtml(m.provider)} · ${escapeHtml(m.externalModelName)}
+                <code>${escapeHtml(m.name)}</code> · <span class="agy-provider-badge ${providerBadgeClass}">${escapeHtml(m.provider)}</span>
+                ${m.provider === 'google' ? ` · <span class="ga-badge ga-badge-account" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;">👥 Dynamic Account Pool</span>` : (m.accountName || m.accountEmail ? ` · <span class="ga-badge ga-badge-account" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;">👤 ${escapeHtml(m.accountName || m.accountEmail || "")}</span>` : "")}
+                · ${escapeHtml(m.externalModelName)}
               </div>
               <div class="model-meta" style="margin-top:4px">
                 <code style="font-size:10px">${escapeHtml(m.apiUrl)}</code> · key: ${escapeHtml(maskKey(m.apiKey))}${m.encrypted ? ' · <span style="color:var(--ok)">encrypted</span>' : ''}
               </div>
             </div>
             <div class="model-actions">
-              <button class="btn btn-ghost btn-sm model-action-test" data-action="test" data-name="${escapeHtml(m.name)}" title="Test connection to ${escapeHtml(m.name)}">
+              <button class="btn btn-ghost btn-sm model-action-ping" data-action="ping" data-name="${escapeHtml(m.name)}" data-provider="${escapeHtml(m.provider)}" data-url="${escapeHtml(m.apiUrl)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="Test Ping-Pong (latence & réponse)">
+                🏓 Ping
+              </button>
+              <button class="btn btn-ghost btn-sm model-action-test" data-action="test" data-name="${escapeHtml(m.name)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="Test connection to ${escapeHtml(m.name)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                 Test
               </button>
-              <button class="btn btn-ghost btn-sm model-action-edit" data-action="edit" data-name="${escapeHtml(m.name)}" data-provider="${escapeHtml(m.provider)}" data-url="${escapeHtml(m.apiUrl)}" title="Edit provider for ${escapeHtml(m.name)}">
+              <button class="btn btn-ghost btn-sm model-action-edit" data-action="edit" data-name="${escapeHtml(m.name)}" data-provider="${escapeHtml(m.provider)}" data-url="${escapeHtml(m.apiUrl)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="Edit provider for ${escapeHtml(m.name)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 Edit
               </button>
-              <button class="btn btn-ghost btn-sm model-action-toggle ${isEnabled ? 'is-active' : 'is-disabled'}" data-action="toggle" data-name="${escapeHtml(m.name)}" title="${isEnabled ? 'Disable model' : 'Enable model'}">
+              <button class="btn btn-ghost btn-sm model-action-toggle ${isEnabled ? 'is-active' : 'is-disabled'}" data-action="toggle" data-name="${escapeHtml(m.name)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="${isEnabled ? 'Disable model' : 'Enable model'}">
                 <span class="status-dot-sm ${isEnabled ? 'ok' : 'off'}"></span>
                 ${isEnabled ? 'Active' : 'Disabled'}
               </button>
-              <button class="btn btn-danger btn-sm model-action-delete" data-action="remove" data-name="${escapeHtml(m.name)}" data-url="${escapeHtml(m.apiUrl)}" title="Delete model ${escapeHtml(m.name)}">
+              <button class="btn btn-danger btn-sm model-action-delete" data-action="remove" data-name="${escapeHtml(m.name)}" data-url="${escapeHtml(m.apiUrl)}" data-account="${escapeHtml(m.accountName || m.accountEmail || '')}" data-provider-id="${escapeHtml(m.providerId || '')}" title="Delete model ${escapeHtml(m.name)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
                 Delete
               </button>
@@ -1431,7 +1794,52 @@ function renderModelsView(): void {
 modelsSearchInput?.addEventListener('input', () => {
   modelsSearchQuery = modelsSearchInput.value;
   modelsCurrentPage = 1;
+  if (modelsSearchClearBtn) modelsSearchClearBtn.hidden = !modelsSearchQuery;
   renderModelsView();
+});
+
+modelsSearchClearBtn?.addEventListener('click', () => {
+  if (modelsSearchInput) modelsSearchInput.value = '';
+  modelsSearchQuery = '';
+  if (modelsSearchClearBtn) modelsSearchClearBtn.hidden = true;
+  modelsCurrentPage = 1;
+  renderModelsView();
+  modelsSearchInput?.focus();
+});
+
+modelsSearchInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    modelsSearchInput.value = '';
+    modelsSearchQuery = '';
+    if (modelsSearchClearBtn) modelsSearchClearBtn.hidden = true;
+    modelsCurrentPage = 1;
+    renderModelsView();
+  }
+});
+
+modelsProviderFilterSelect?.addEventListener('change', () => {
+  modelsProviderFilter = modelsProviderFilterSelect.value;
+  modelsCurrentPage = 1;
+  renderModelsView();
+});
+
+modelsSortSelect?.addEventListener('change', () => {
+  modelsSortOrder = (modelsSortSelect.value || 'default') as 'default' | 'name-asc' | 'name-desc' | 'provider' | 'status';
+  modelsCurrentPage = 1;
+  renderModelsView();
+});
+
+document.querySelectorAll('.models-cap-filter').forEach((btn) => {
+  btn.addEventListener('click', (e) => {
+    const target = e.currentTarget as HTMLButtonElement;
+    const cap = target.dataset.cap as 'all' | 'reasoning' | 'vision' | 'code';
+    if (!cap) return;
+    document.querySelectorAll('.models-cap-filter').forEach((b) => b.classList.remove('active'));
+    target.classList.add('active');
+    modelsCapFilter = cap;
+    modelsCurrentPage = 1;
+    renderModelsView();
+  });
 });
 
 modelsPageSizeSelect?.addEventListener('change', () => {
@@ -1486,10 +1894,10 @@ document.querySelectorAll('.models-cat-tab').forEach(btn => {
     const target = e.currentTarget as HTMLButtonElement;
     const cat = target.dataset.cat as 'all' | 'active' | 'disabled';
     if (!cat) return;
-    
+
     document.querySelectorAll('.models-cat-tab').forEach(b => b.classList.remove('active'));
     target.classList.add('active');
-    
+
     modelsCategoryFilter = cat;
     modelsCurrentPage = 1;
     renderModelsView();
@@ -1545,7 +1953,7 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
         const cleanName = name.replace(/^models\//, '');
         const res = (await window.ag.providers.test({ apiUrl: match.apiUrl, apiKey: match.apiKey, id: match.id, modelId: cleanName })) as { success: boolean; latencyMs?: number; error?: string };
         success = res.success;
-        msg = success ? `✓ ${name} reachable (${res.latencyMs ?? 0}ms)` : `${name} failed: ${res.error || 'Unreachable'}`;
+        msg = success ? `✓ ${name} reachable (${res.latencyMs ?? 0}ms)` : `${name} failed: ${formatApiError(res.error || 'Unreachable')}`;
       } else {
         const r = await window.ag.run(['models', 'test', name]);
         success = r.stdout.includes('✓') || r.code === 0;
@@ -1555,17 +1963,45 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
       toast(msg, 'ok');
       if (dot) dot.className = 'status-dot ok';
     } catch (e) {
-      toast(`Tested ${name}: Failed - ${(e as Error).message}`, 'err');
+      toast(`Tested ${name}: Failed - ${formatApiError((e as Error).message)}`, 'err');
       if (dot) dot.className = 'status-dot off';
     } finally {
       btn.removeAttribute('disabled');
       btn.innerHTML = origHtml;
       setStatus('Ready');
     }
+  } else if (action === 'ping') {
+    setStatus(`Ping ${name}…`, 'busy');
+    btn.setAttribute('disabled', 'true');
+    const origHtml = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner"></span> Ping…`;
+    try {
+      const res = await testSingleModel({ name, provider, apiUrl: url, providerId: btn.dataset.providerId }, 'ping');
+      const badgeHtml = renderPingBadge(res);
+      const card = btn.closest('.model-card');
+      const nameEl = card?.querySelector('.model-name');
+      const existingBadge = card?.querySelector('.ping-badge');
+      if (existingBadge) existingBadge.remove();
+      if (nameEl) {
+        nameEl.insertAdjacentHTML('beforeend', ' ' + badgeHtml);
+      }
+      if (res.ok) {
+        toast(`Pong reçu de ${name} (${res.latencyMs}ms)${res.pongText ? ' : "' + res.pongText.slice(0, 40) + '…"' : ''}`, 'ok', 4000);
+      } else {
+        toast(`Ping échoué pour ${name} : ${formatApiError(res.error || 'Timeout')}`, 'err', 5000);
+      }
+      setStatus('Ready');
+    } catch (e) {
+      toast(`Erreur Ping : ${formatApiError((e as Error).message)}`, 'err');
+      setStatus('Error', 'err');
+    } finally {
+      btn.removeAttribute('disabled');
+      btn.innerHTML = origHtml;
+    }
   } else if (action === 'toggle') {
     const isCurrentlyEnabled = !btn.classList.contains('is-disabled');
     const newEnabled = !isCurrentlyEnabled;
-    
+
     // Toggle active UI state immediately for responsiveness
     btn.classList.toggle('is-disabled', !newEnabled);
     btn.classList.toggle('is-active', newEnabled);
@@ -1574,10 +2010,11 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
       <span class="status-dot-sm ${newEnabled ? 'ok' : 'off'}"></span>
       ${newEnabled ? 'Active' : 'Disabled'}
     `;
+    btn.closest('.model-card')?.classList.toggle('model-disabled', !newEnabled);
 
     // Always find parent provider and save state
     const parentProvider = await getProviderForModelBulk(name);
-    
+
     if (parentProvider) {
       const targetId = resolveModelId(parentProvider, name);
       if (!parentProvider.models) parentProvider.models = [];
@@ -1597,6 +2034,7 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
         <span class="status-dot-sm ${isCurrentlyEnabled ? 'ok' : 'off'}"></span>
         ${isCurrentlyEnabled ? 'Active' : 'Disabled'}
       `;
+      btn.closest('.model-card')?.classList.toggle('model-disabled', !isCurrentlyEnabled);
       return;
     }
 
@@ -1608,6 +2046,14 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
     toast(newEnabled ? `Enabled ${name}` : `Disabled ${name}`, 'ok');
     void loadModels();
     void renderProviderList();
+  } else if (action === 'edit') {
+    const parentProvider = await getProviderForModelBulk(name);
+    if (parentProvider) {
+      openProviderManagerModal();
+      openProviderForm(parentProvider.id);
+    } else {
+      toast(`No editable provider found for ${name}`, 'warn');
+    }
   } else if (action === 'remove') {
     const ok = await confirmModal(
       'Delete this model?',
@@ -1777,6 +2223,7 @@ $('#modelsList')?.addEventListener('change', (e) => {
     if (name) {
       if (target.checked) selectedModelNames.add(name);
       else selectedModelNames.delete(name);
+      target.closest('.model-card')?.classList.toggle('is-selected', target.checked);
       updateBulkActionButtonsState();
     }
   }
@@ -1800,6 +2247,18 @@ $('#modelsSelectAllCb')?.addEventListener('change', (e) => {
     if (checked) selectedModelNames.add(m.name);
     else selectedModelNames.delete(m.name);
   });
+  renderModelsView();
+});
+
+modelsSelectAllMatchesBtn?.addEventListener('click', () => {
+  const filtered = getFilteredModels();
+  filtered.forEach(m => selectedModelNames.add(m.name));
+  renderModelsView();
+  toast(`Selected all ${filtered.length} matching models`, 'ok');
+});
+
+modelsClearSelectionBtn?.addEventListener('click', () => {
+  selectedModelNames.clear();
   renderModelsView();
 });
 
@@ -1837,6 +2296,9 @@ async function getProviderForModelBulk(modelName: string) {
       if (p.provider && targetModel.provider && p.provider.toLowerCase() !== 'openai' && targetModel.provider.toLowerCase() !== 'openai' && p.provider.toLowerCase() === targetModel.provider.toLowerCase()) return true;
       if (!p.apiUrl && !targetModel.apiUrl && p.provider && targetModel.provider && p.provider.toLowerCase() === targetModel.provider.toLowerCase()) return true;
     }
+    if ((p.provider === 'google' || p.provider === 'gemini') && (cleanModelName.startsWith('gemini-') || cleanModelName.startsWith('claude-'))) {
+      return true;
+    }
     return p.name.toLowerCase() === modelName.toLowerCase();
   });
 }
@@ -1846,7 +2308,7 @@ $('#modelsBulkTestBtn')?.addEventListener('click', async () => {
   setStatus(`Testing ${selectedModelNames.size} selected models…`, 'busy');
   let successCount = 0;
   let failCount = 0;
-  
+
   for (const name of Array.from(selectedModelNames)) {
     const dot = document.getElementById(`status-dot-${name}`);
     if (dot) dot.className = 'status-dot'; // reset
@@ -1860,17 +2322,17 @@ $('#modelsBulkTestBtn')?.addEventListener('click', async () => {
         const r = await window.ag.run(['models', 'test', name]);
         success = r.stdout.includes('✓') || r.code === 0;
       }
-      
+
       if (success) successCount++;
       else failCount++;
-      
+
       if (dot) dot.className = `status-dot ${success ? 'ok' : 'err'}`;
     } catch (e) {
       failCount++;
       if (dot) dot.className = 'status-dot err';
     }
   }
-  
+
   if (failCount === 0) {
     toast(`✓ Successfully tested ${successCount} models`, 'ok');
   } else {
@@ -1883,18 +2345,32 @@ $('#modelsBulkEnableBtn')?.addEventListener('click', async () => {
   if (selectedModelNames.size === 0) return;
   setStatus(`Enabling ${selectedModelNames.size} selected models…`, 'busy');
   try {
+    const providers = (await window.ag.providers.get()) as ProviderEntry[];
+    providersCache = providers;
+    const modifiedProviders = new Map<string, ProviderEntry>();
+    let enabledCount = 0;
+
     for (const name of Array.from(selectedModelNames)) {
       const match = await getProviderForModelBulk(name);
       if (match) {
+        const targetId = resolveModelId(match, name);
         const cleanName = name.replace(/^models\//, '');
         if (!match.models) match.models = [];
-        const pModel = match.models.find((m) => m.id === cleanName || m.displayName === cleanName || m.id === name || m.displayName === name);
-        if (pModel) pModel.enabled = true;
-        else match.models.push({ id: cleanName, displayName: cleanName, enabled: true });
-        await window.ag.providers.save(match);
+        const pModel = match.models.find((m) => m.id === targetId || m.displayName === targetId || m.id === name || m.displayName === name || m.id === cleanName);
+        if (pModel) {
+          pModel.enabled = true;
+        } else {
+          match.models.push({ id: targetId, displayName: targetId, enabled: true });
+        }
+        modifiedProviders.set(match.id, match);
+        enabledCount++;
       }
     }
-    const enabledCount = selectedModelNames.size;
+
+    for (const provider of modifiedProviders.values()) {
+      await window.ag.providers.save(provider);
+    }
+
     selectedModelNames.clear();
     toast(`Enabled ${enabledCount} models`, 'ok');
     void loadModels();
@@ -1910,18 +2386,32 @@ $('#modelsBulkDisableBtn')?.addEventListener('click', async () => {
   if (selectedModelNames.size === 0) return;
   setStatus(`Disabling ${selectedModelNames.size} selected models…`, 'busy');
   try {
+    const providers = (await window.ag.providers.get()) as ProviderEntry[];
+    providersCache = providers;
+    const modifiedProviders = new Map<string, ProviderEntry>();
+    let disabledCount = 0;
+
     for (const name of Array.from(selectedModelNames)) {
       const match = await getProviderForModelBulk(name);
       if (match) {
+        const targetId = resolveModelId(match, name);
         const cleanName = name.replace(/^models\//, '');
         if (!match.models) match.models = [];
-        const pModel = match.models.find((m) => m.id === cleanName || m.displayName === cleanName || m.id === name || m.displayName === name);
-        if (pModel) pModel.enabled = false;
-        else match.models.push({ id: cleanName, displayName: cleanName, enabled: false });
-        await window.ag.providers.save(match);
+        const pModel = match.models.find((m) => m.id === targetId || m.displayName === targetId || m.id === name || m.displayName === name || m.id === cleanName);
+        if (pModel) {
+          pModel.enabled = false;
+        } else {
+          match.models.push({ id: targetId, displayName: targetId, enabled: false });
+        }
+        modifiedProviders.set(match.id, match);
+        disabledCount++;
       }
     }
-    const disabledCount = selectedModelNames.size;
+
+    for (const provider of modifiedProviders.values()) {
+      await window.ag.providers.save(provider);
+    }
+
     selectedModelNames.clear();
     toast(`Disabled ${disabledCount} models`, 'ok');
     void loadModels();
@@ -1945,14 +2435,24 @@ $('#modelsBulkDeleteBtn')?.addEventListener('click', async () => {
 
   setStatus(`Deleting ${count} selected models…`, 'busy');
   try {
+    const providers = (await window.ag.providers.get()) as ProviderEntry[];
+    providersCache = providers;
+    const modifiedProviders = new Map<string, ProviderEntry>();
+
     for (const name of Array.from(selectedModelNames)) {
       const match = await getProviderForModelBulk(name);
       if (match && match.models) {
-        match.models = match.models.filter((m) => m.id !== name && m.displayName !== name);
-        await window.ag.providers.save(match);
+        const targetId = resolveModelId(match, name);
+        match.models = match.models.filter((m) => m.id !== targetId && m.displayName !== targetId && m.id !== name && m.displayName !== name);
+        modifiedProviders.set(match.id, match);
       }
       await window.ag.run(['models', 'remove', name, '--yes']);
     }
+
+    for (const provider of modifiedProviders.values()) {
+      await window.ag.providers.save(provider);
+    }
+
     selectedModelNames.clear();
     toast(`Deleted ${count} models`, 'ok');
     void loadModels();
@@ -1989,7 +2489,7 @@ $('#importProvidersBtn')?.addEventListener('click', () => {
       const text = await file.text();
       const providers = JSON.parse(text);
       if (!Array.isArray(providers)) throw new Error('Invalid JSON format: expected an array');
-      
+
       setStatus('Importing providers...', 'busy');
       for (const p of providers) {
         const res = await window.ag.providers.save(p);
@@ -2885,17 +3385,13 @@ let logsFlushScheduled = false;
 const flushLogs = () => {
   logsFlushScheduled = false;
   if (logsPendingChunk) {
-    logsTpl.innerHTML = ansiToHtml(logsPendingChunk);
-    logsOutput.appendChild(logsTpl.content.cloneNode(true));
+    const isNearBottom = logsOutput.scrollHeight - logsOutput.scrollTop - logsOutput.clientHeight < 100;
+    appendLogLines(logsOutput, logsPendingChunk);
+    updateLogsStats();
     logsPendingChunk = null;
-  }
-  const isNearBottom = logsOutput.scrollHeight - logsOutput.scrollTop - logsOutput.clientHeight < 100;
-  if (logsOutput.textContent && logsOutput.textContent.length > LOGS_MAX_BYTES) {
-    const trimmed = logsOutput.textContent.slice(-LOGS_KEEP_BYTES);
-    logsOutput.textContent = trimmed;
-    logsOutput.scrollTop = logsOutput.scrollHeight;
-  } else if (isNearBottom) {
-    logsOutput.scrollTop = logsOutput.scrollHeight;
+    if (isNearBottom) {
+      logsOutput.scrollTop = logsOutput.scrollHeight;
+    }
   }
 };
 const scheduleLogsFlush = () => {
@@ -2915,8 +3411,10 @@ async function loadLogs(): Promise<void> {
   logsOutput.style.display = 'none';
   try {
     const r = await window.ag.run(['logs', '-n', '100', '--source', currentLogSource]);
-    logsTpl.innerHTML = ansiToHtml(r.stdout || r.stderr || '(empty)');
-    logsOutput.replaceChildren(logsTpl.content);
+    logsOutput.textContent = '';
+    resetLogsDedupState();
+    appendLogLines(logsOutput, r.stdout || r.stderr || '(empty)');
+    updateLogsStats();
     logsOutput.scrollTop = logsOutput.scrollHeight;
     setStatus('Ready');
   } catch (e) {
@@ -2970,6 +3468,8 @@ logsFollowBtn.addEventListener('click', () => {
 });
 logsClearBtn.addEventListener('click', async () => {
   logsOutput.textContent = '';
+  resetLogsDedupState();
+  updateLogsStats();
   try {
     await window.ag.run(['logs', '--clear', '--source', currentLogSource]);
   } catch (err) {
@@ -2978,12 +3478,131 @@ logsClearBtn.addEventListener('click', async () => {
   toast('Logs cleared', 'info', 1500);
 });
 logsCopyBtn.addEventListener('click', async () => {
-  await navigator.clipboard.writeText(logsOutput.textContent ?? '');
+  const lines = Array.from(logsOutput.querySelectorAll<HTMLElement>('.log-line:not(.search-hidden)'))
+    .map((el) => el.dataset.raw || el.textContent || '')
+    .filter(Boolean);
+  const text = lines.length > 0 ? lines.join('\n') : (logsOutput.textContent ?? '');
+  await navigator.clipboard.writeText(text);
   const origText = logsCopyBtn.innerHTML;
   logsCopyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
   setTimeout(() => { logsCopyBtn.innerHTML = origText; }, 2000);
   toast('Logs copied to clipboard', 'ok', 2000);
 });
+
+// Copy only errors and warnings
+const logsCopyErrorsBtn = $('#logsCopyErrorsBtn') as HTMLButtonElement | null;
+if (logsCopyErrorsBtn) {
+  logsCopyErrorsBtn.addEventListener('click', async () => {
+    const errorLines = Array.from(logsOutput.querySelectorAll<HTMLElement>('.log-line.log-error, .log-line.log-panic, .log-line.log-warn'))
+      .map((el) => el.dataset.raw || el.textContent || '')
+      .filter(Boolean);
+    if (errorLines.length === 0) {
+      toast('No errors or warnings in current logs', 'info', 1500);
+      return;
+    }
+    await navigator.clipboard.writeText(errorLines.join('\n'));
+    const origText = logsCopyErrorsBtn.innerHTML;
+    logsCopyErrorsBtn.textContent = 'Copied!';
+    setTimeout(() => { logsCopyErrorsBtn.innerHTML = origText; }, 2000);
+    toast(`${errorLines.length} error/warn lines copied`, 'ok', 2000);
+  });
+}
+
+// Clean View filter (default ON)
+logsOutput.classList.add('logs-hide-noise');
+const logsCleanViewBtn = $('#logsCleanViewBtn') as HTMLButtonElement | null;
+if (logsCleanViewBtn) {
+  logsCleanViewBtn.addEventListener('click', () => {
+    logsCleanViewBtn.classList.toggle('active');
+    const isActive = logsCleanViewBtn.classList.contains('active');
+    logsOutput.classList.toggle('logs-hide-noise', isActive);
+    toast(isActive ? 'Clean View enabled (routine noise hidden)' : 'Showing all raw logs including noise', 'info', 1500);
+  });
+}
+
+// Filter ALL button
+const filterAllBtn = $('#filterAllBtn') as HTMLButtonElement | null;
+if (filterAllBtn) {
+  filterAllBtn.addEventListener('click', () => {
+    ['info', 'warn', 'error', 'panic'].forEach((lvl) => {
+      logsOutput.classList.remove(`logs-hide-${lvl}`);
+      const btn = document.querySelector(`.logs-filter-btn[data-level="${lvl}"]`);
+      btn?.classList.add('active');
+    });
+  });
+}
+
+// Logs level filter buttons (INFO, WARN, ERROR, PANIC)
+const logsFilterButtons = $$<HTMLButtonElement>('.logs-filter-btn[data-level]:not([data-level="all"])');
+logsFilterButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const level = btn.getAttribute('data-level');
+    btn.classList.toggle('active');
+    const isActive = btn.classList.contains('active');
+    if (level === 'info') logsOutput.classList.toggle('logs-hide-info', !isActive);
+    if (level === 'warn') logsOutput.classList.toggle('logs-hide-warn', !isActive);
+    if (level === 'error') logsOutput.classList.toggle('logs-hide-error', !isActive);
+    if (level === 'panic') logsOutput.classList.toggle('logs-hide-panic', !isActive);
+  });
+});
+
+// Logs search input with real-time match counter and text highlighting
+const logsSearchInput = $('#logsSearch') as HTMLInputElement | null;
+const logsSearchCount = $('#logsSearchCount') as HTMLElement | null;
+
+function applySearchFilter(query: string): void {
+  currentSearchQuery = query;
+  const lines = logsOutput.querySelectorAll<HTMLElement>('.log-line');
+  let matchCount = 0;
+  lines.forEach((el) => {
+    const raw = el.dataset.raw || el.textContent || '';
+    const msgEl = el.querySelector('.log-msg') as HTMLElement | null;
+    const origMsg = el.dataset.msg || '';
+
+    if (!query) {
+      el.classList.remove('search-hidden');
+      if (msgEl && origMsg) {
+        msgEl.textContent = origMsg;
+      }
+      matchCount++;
+    } else if (raw.toLowerCase().includes(query)) {
+      el.classList.remove('search-hidden');
+      matchCount++;
+      if (msgEl && origMsg) {
+        msgEl.innerHTML = highlightText(origMsg, query);
+      }
+    } else {
+      el.classList.add('search-hidden');
+    }
+  });
+
+  if (logsSearchCount) {
+    if (!query) {
+      logsSearchCount.textContent = '';
+    } else {
+      logsSearchCount.textContent = `${matchCount} match${matchCount === 1 ? '' : 'es'}`;
+    }
+  }
+}
+
+if (logsSearchInput) {
+  logsSearchInput.addEventListener('input', () => {
+    applySearchFilter(logsSearchInput.value.trim().toLowerCase());
+  });
+}
+
+// Floating scroll to bottom button
+const logsScrollBottomBtn = $('#logsScrollBottomBtn') as HTMLButtonElement | null;
+if (logsScrollBottomBtn) {
+  logsOutput.addEventListener('scroll', () => {
+    const distanceToBottom = logsOutput.scrollHeight - logsOutput.scrollTop - logsOutput.clientHeight;
+    logsScrollBottomBtn.style.display = distanceToBottom > 160 ? 'inline-flex' : 'none';
+  });
+  logsScrollBottomBtn.addEventListener('click', () => {
+    logsOutput.scrollTo({ top: logsOutput.scrollHeight, behavior: 'smooth' });
+    logsScrollBottomBtn.style.display = 'none';
+  });
+}
 
 // Logs tabs: switch between log sources
 let currentLogSource = 'language_server';
@@ -3195,13 +3814,13 @@ async function loadAntigravityStatus(): Promise<void> {
         agRunningValue.textContent = 'Stopped';
       }
     }
-    
+
     // Fill Installation Panel
     if (agInstallPath) agInstallPath.textContent = installDir || '—';
     if (agAppAsar) agAppAsar.textContent = (status?.appAsarPath as string | undefined) ?? '—';
     if (agVersionRow) agVersionRow.textContent = version ?? '—';
     if (agChannelRow) agChannelRow.textContent = (status?.channel as string | undefined) ?? '—';
-    
+
     // Fill Running processes Panel
     let agPidCount = 0;
     if (agAgPids) {
@@ -3225,7 +3844,7 @@ async function loadAntigravityStatus(): Promise<void> {
        const lsPids = status?.lsPids as number[] | undefined;
        agLsValue.textContent = (lsPids && lsPids.length > 0) ? 'Running' : 'Stopped';
     }
-    
+
     try {
         const proxyResp = await window.ag.proxyStatus();
         if (agProxyValue) {
@@ -3234,7 +3853,7 @@ async function loadAntigravityStatus(): Promise<void> {
     } catch {
         if (agProxyValue) agProxyValue.textContent = 'Unknown';
     }
-    
+
     setStatus('Ready');
   } catch (e) {
     setAgHero('err', 'Error', (e as Error).message);
@@ -3614,6 +4233,17 @@ interface ProviderEntry {
   latencyMs?: number;
   lastTestedAt?: string;
   lastError?: string;
+  picture?: string;
+  quotas?: any;
+  refreshToken?: string;
+  source?: string;
+  email?: string;
+  tier?: string;
+  isCurrent?: boolean;
+  lastUsed?: number;
+  updatedAt?: number;
+  createdAt?: number;
+  label?: string;
 }
 
 const pmBackdrop = $('#providerManagerModalBackdrop') as HTMLDivElement;
@@ -3622,6 +4252,7 @@ const pmListContainer = $('#pmListContainer') as HTMLDivElement;
 const pmFormContainer = $('#pmFormContainer') as HTMLDivElement;
 const pmModalFooterList = $('#pmModalFooterList') as HTMLDivElement;
 const pmAddBtn = $('#pmAddBtn') as HTMLButtonElement;
+const pmImportLocalBtn = $('#pmImportLocalBtn') as HTMLButtonElement;
 const pmFormBack = $('#pmFormBack') as HTMLButtonElement;
 const pmFormBack2 = $('#pmFormBack2') as HTMLButtonElement;
 const pmFormTitle = $('#pmFormTitle') as HTMLHeadingElement;
@@ -3655,6 +4286,7 @@ let pmModelsSearchQuery = '';
 
 const pmKeyToggle = $('#pmKeyToggle') as HTMLButtonElement | null;
 const pmModelsSearch = $('#pmModelsSearch') as HTMLInputElement | null;
+const pmModelsSearchClear = $('#pmModelsSearchClear') as HTMLButtonElement | null;
 const pmModelsSelectAll = $('#pmModelsSelectAll') as HTMLButtonElement | null;
 const pmModelsDeselectAll = $('#pmModelsDeselectAll') as HTMLButtonElement | null;
 const pmFormCustomModelInput = $('#pmFormCustomModelInput') as HTMLInputElement | null;
@@ -3663,13 +4295,65 @@ const pmModelsCountBadge = $('#pmModelsCountBadge') as HTMLSpanElement | null;
 const pmCapFilters = $('#pmCapFilters') as HTMLDivElement | null;
 let activeCapFilter: 'all' | 'reasoning' | 'vision' | 'code' = 'all';
 
-function detectModelCapabilities(modelId: string): string[] {
-  const caps: string[] = [];
-  const id = modelId.toLowerCase();
-  if (/r1|o1|o3|reasoner|thinking|qwq/.test(id)) caps.push('reasoning');
-  if (/vision|4o|claude-3|gemini-1\.5|flash|pixtral/.test(id)) caps.push('vision');
-  if (/coder|code|starcoder|qwen2\.5-coder/.test(id)) caps.push('code');
-  return caps;
+interface ProviderPresetDef {
+  name: string;
+  provider: 'openai' | 'anthropic' | 'google' | 'custom';
+  apiUrl: string;
+  defaultKey: string;
+}
+
+const PROVIDER_PRESETS: Record<string, ProviderPresetDef> = {
+  ollama: {
+    name: 'Ollama (Local)',
+    provider: 'custom',
+    apiUrl: 'http://localhost:11434/v1',
+    defaultKey: 'ollama',
+  },
+  lmstudio: {
+    name: 'LM Studio (Local)',
+    provider: 'openai',
+    apiUrl: 'http://localhost:1234/v1',
+    defaultKey: 'lm-studio',
+  },
+  openrouter: {
+    name: 'OpenRouter AI',
+    provider: 'openai',
+    apiUrl: 'https://openrouter.ai/api/v1',
+    defaultKey: '',
+  },
+  deepseek: {
+    name: 'DeepSeek Cloud',
+    provider: 'openai',
+    apiUrl: 'https://api.deepseek.com/v1',
+    defaultKey: '',
+  },
+  google: {
+    name: 'Google Gemini',
+    provider: 'google',
+    apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultKey: '',
+  },
+  localai: {
+    name: 'LocalAI',
+    provider: 'custom',
+    apiUrl: 'http://localhost:8000/v1',
+    defaultKey: '',
+  },
+};
+
+function applyProviderPreset(presetKey: string): void {
+  const p = PROVIDER_PRESETS[presetKey];
+  if (!p) return;
+  pmFormName.value = p.name;
+  pmFormType.value = p.provider;
+  pmFormUrl.value = p.apiUrl;
+  if (p.defaultKey) {
+    pmFormKey.value = p.defaultKey;
+  }
+  toast(`Preset applied: ${p.name}`, 'ok');
+  if (!p.defaultKey && p.provider !== 'custom') {
+    pmFormKey.focus();
+  }
 }
 
 function updatePmModelsCounter(): void {
@@ -3712,14 +4396,21 @@ function renderPmModelsCatalog(): void {
   let html = '<div class="agy-model-chips">';
   for (const m of filtered) {
     const checked = m.enabled !== false ? 'checked' : '';
+    const selectedClass = m.enabled !== false ? ' is-selected' : '';
     const caps = detectModelCapabilities(m.id);
-    const badgesHtml = caps
-      .map((c) => `<span class="pm-cap-badge ${c}">${c}</span>`)
-      .join('');
+    const badgesHtml = caps.length > 0
+      ? `<div class="pm-chip-caps">${caps.map((c) => `<span class="pm-cap-badge ${c}">${c}</span>`).join('')}</div>`
+      : '';
+    const hasDiffName = m.displayName && m.displayName !== m.id;
+    const nameLabel = escapeHtml(m.displayName || m.id);
+    const idLabel = hasDiffName ? `<span class="pm-chip-id">${escapeHtml(m.id)}</span>` : '';
 
-    html += `<label class="agy-chip" title="${escapeHtml(m.id)}">
+    html += `<label class="agy-chip${selectedClass}" title="${escapeHtml(m.id)}">
       <input type="checkbox" data-model-id="${escapeHtml(m.id)}" ${checked} />
-      <span>${escapeHtml(m.displayName || m.id)}</span>
+      <div class="pm-chip-info">
+        <span class="pm-chip-name">${nameLabel}</span>
+        ${idLabel}
+      </div>
       ${badgesHtml}
     </label>`;
   }
@@ -3758,7 +4449,13 @@ function showPmView(view: 'list' | 'form'): void {
 }
 
 function renderHealthStatusIndicator(p: ProviderEntry): string {
-  const status = p.status || 'untested';
+  let status = p.status || 'untested';
+  if (Array.isArray((p as any).accounts) && (p as any).accounts.length > 0) {
+    const accs = (p as any).accounts as any[];
+    if (accs.some((a) => a.status === 'healthy')) status = 'healthy';
+    else if (accs.some((a) => a.status === 'degraded')) status = 'degraded';
+    else if (accs.every((a) => a.status === 'offline')) status = 'offline';
+  }
   const titleText = status === 'healthy'
     ? `Healthy · ${p.latencyMs ?? 0}ms response time`
     : status === 'degraded'
@@ -3778,7 +4475,13 @@ function renderProviderStatus(p: ProviderEntry): string {
   if (!p.enabled) {
     return `<span class="agy-pill agy-pill-muted">Disabled</span>`;
   }
-  const status = p.status || 'untested';
+  let status = p.status || 'untested';
+  if (Array.isArray((p as any).accounts) && (p as any).accounts.length > 0) {
+    const accs = (p as any).accounts as any[];
+    if (accs.some((a) => a.status === 'healthy')) status = 'healthy';
+    else if (accs.some((a) => a.status === 'degraded')) status = 'degraded';
+    else if (accs.every((a) => a.status === 'offline')) status = 'offline';
+  }
   if (status === 'offline') {
     return `<span class="agy-pill agy-pill-offline">Offline</span>`;
   }
@@ -3808,8 +4511,17 @@ async function renderProviderList(): Promise<void> {
       return;
     }
 
+    const displayRows = providersCache.map((p) => ({
+      ...p,
+      models: p.models || [],
+    }));
+
     let html = `<div class="agy-provider-list">`;
-    for (const p of providersCache) {
+    for (const p of displayRows) {
+      const accountsCount = Array.isArray((p as any).accounts) ? (p as any).accounts.length : 0;
+      const accountsMeta = accountsCount > 0
+        ? `<span class="agy-dot">·</span><span style="color:var(--text-accent, #38bdf8); font-weight:600; font-size:11px;">${accountsCount} account${accountsCount > 1 ? 's' : ''}</span>`
+        : '';
       html += `
         <div class="agy-provider-row" data-id="${escapeHtml(p.id)}">
           <div class="agy-provider-row-main">
@@ -3818,11 +4530,20 @@ async function renderProviderList(): Promise<void> {
               <span>${escapeHtml(p.name)}</span>
             </div>
             <div class="agy-provider-row-meta">
-              <span>${escapeHtml(p.provider)}</span>
+              <span class="agy-provider-badge ${escapeHtml(p.provider)}">${escapeHtml(p.provider)}</span>
               <span class="agy-dot">·</span>
-              <span>${escapeHtml(p.apiUrl.replace(/^https?:\/\//, ''))}</span>
+              <span>${escapeHtml((p.apiUrl || '').replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span>
               <span class="agy-dot">·</span>
-              <span>${p.models.length} model${p.models.length === 1 ? '' : 's'}</span>
+              <span>${(p.models || []).length} models</span>
+              ${accountsMeta}
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;">
+              ${(p.models || []).slice(0, 6).map((m: any) => {
+                const isEn = m.enabled !== false;
+                const cleanName = (m.displayName || m.name || m.id || '').replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
+                return `<span style="font-size: 10px; padding: 1px 6px; border-radius: 4px; background: ${isEn ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)'}; color: ${isEn ? 'var(--text-1)' : 'var(--text-3)'}; border: 1px solid rgba(255,255,255,0.08); font-family: var(--font-mono);">${escapeHtml(cleanName)}</span>`;
+              }).join('')}
+              ${(p.models || []).length > 6 ? `<span style="font-size: 10px; color: var(--text-3); align-self: center;">+${p.models.length - 6} more</span>` : ''}
             </div>
           </div>
           <div class="agy-provider-row-status">${renderProviderStatus(p)}</div>
@@ -3946,11 +4667,25 @@ function resetProviderForm(): void {
   pmFormType.value = 'openai';
   pmFormUrl.value = '';
   pmFormKey.value = '';
+  pmFormKey.type = 'password';
+  if (pmKeyToggle) {
+    pmKeyToggle.title = 'Show API key';
+    pmKeyToggle.setAttribute('aria-label', 'Show API key');
+    pmKeyToggle.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  }
   pmFormInsecure.checked = false;
   pmModelsList.innerHTML = '';
   pmFormError.hidden = true;
   pmFormError.textContent = '';
   editingProviderId = null;
+  activeCapFilter = 'all';
+  if (pmCapFilters) {
+    pmCapFilters.querySelectorAll('.pm-cap-filter').forEach((b) => b.classList.remove('active'));
+    pmCapFilters.querySelector('[data-cap="all"]')?.classList.add('active');
+  }
+  pmModelsSearchQuery = '';
+  if (pmModelsSearch) pmModelsSearch.value = '';
+  if (pmModelsSearchClear) pmModelsSearchClear.hidden = true;
 }
 
 function openProviderForm(existingId?: string): void {
@@ -3996,6 +4731,62 @@ document.addEventListener('keydown', (e) => {
 pmBackdrop.addEventListener('click', (e) => { if (e.target === pmBackdrop) pmBackdrop.hidden = true; });
 if (pmModalClose2) pmModalClose2.addEventListener('click', () => { pmBackdrop.hidden = true; });
 pmAddBtn.addEventListener('click', () => openProviderForm());
+if (pmImportLocalBtn) {
+  pmImportLocalBtn.addEventListener('click', async () => {
+    const orig = pmImportLocalBtn.innerHTML;
+    pmImportLocalBtn.disabled = true;
+    pmImportLocalBtn.textContent = 'Detecting account...';
+    try {
+      const res = await window.ag.providers.discoverIdeAccount();
+      if (!res || !res.success || !res.account) {
+        toast(res?.error || 'No Antigravity account found in system keyring.', 'warn', 5000);
+        return;
+      }
+
+      const acc = res.account;
+      const email = acc.email || 'antigravity-user@google.com';
+      const refreshToken = acc.refreshToken || acc.accessToken;
+      if (!refreshToken) {
+        toast('Discovered account has no valid credentials.', 'err');
+        return;
+      }
+
+      // Check if already in providers
+      const existing = providersCache.find(
+        (x) => x.provider === 'google' && (x.apiKey === refreshToken || x.name.includes(email)),
+      );
+
+      const entry: ProviderEntry = {
+        id: existing?.id || `provider-google-local-${Date.now()}`,
+        name: existing?.name || `Google (${email})`,
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        apiKey: refreshToken,
+        enabled: true,
+        allowUnauthorized: false,
+        models: [
+          { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro High', enabled: true },
+          { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
+        ],
+      };
+
+      const saveRes = (await window.ag.providers.save(entry)) as { success: boolean; error?: string };
+      if (saveRes.success) {
+        toast(`Imported Google account (${email}) from IDE!`, 'ok');
+        await renderProviderList();
+        await loadModels();
+      } else {
+        toast(`Import failed: ${saveRes.error}`, 'err');
+      }
+    } catch (err) {
+      toast(`Import error: ${(err as Error).message}`, 'err');
+    } finally {
+      pmImportLocalBtn.disabled = false;
+      pmImportLocalBtn.innerHTML = orig;
+    }
+  });
+}
 pmFormBack.addEventListener('click', () => showPmView('list'));
 if (pmFormBack2) pmFormBack2.addEventListener('click', () => showPmView('list'));
 
@@ -4025,6 +4816,12 @@ pmFormSave.addEventListener('click', async () => {
   const selectedModels = currentFetchedModels
     .filter((m) => m.enabled !== false)
     .map((m) => ({ id: m.id, displayName: m.displayName || m.id, enabled: true }));
+
+  if (selectedModels.length === 0 && currentFetchedModels.length > 0) {
+    pmFormError.textContent = 'Please select at least one model to save.';
+    pmFormError.hidden = false;
+    return;
+  }
 
   const entry: ProviderEntry = {
     id: editingProviderId || `provider-${Date.now()}`,
@@ -4138,16 +4935,46 @@ if (pmCapFilters) {
   });
 }
 
+// Delegated change listener for model catalog selection chips
+pmModelsList?.addEventListener('change', (e) => {
+  const target = e.target as HTMLInputElement;
+  if (target && target.matches('input[data-model-id]')) {
+    const modelId = target.dataset.modelId;
+    const model = currentFetchedModels.find((m) => m.id === modelId);
+    if (model) {
+      model.enabled = target.checked;
+      target.closest('.agy-chip')?.classList.toggle('is-selected', target.checked);
+      updatePmModelsCounter();
+    }
+  }
+});
+
 if (pmModelsSelectAll) {
   pmModelsSelectAll.addEventListener('click', () => {
-    currentFetchedModels.forEach((m) => { m.enabled = true; });
+    const q = pmModelsSearchQuery.trim().toLowerCase();
+    currentFetchedModels.forEach((m) => {
+      const caps = detectModelCapabilities(m.id);
+      if (activeCapFilter !== 'all' && !caps.includes(activeCapFilter)) return;
+      if (q && !m.id.toLowerCase().includes(q) && !(m.displayName || '').toLowerCase().includes(q)) return;
+      m.enabled = true;
+    });
     renderPmModelsCatalog();
   });
 }
 
 if (pmModelsDeselectAll) {
   pmModelsDeselectAll.addEventListener('click', () => {
-    currentFetchedModels.forEach((m) => { m.enabled = false; });
+    const q = pmModelsSearchQuery.trim().toLowerCase();
+    if (!q && activeCapFilter === 'all') {
+      currentFetchedModels.forEach((m) => { m.enabled = false; });
+    } else {
+      currentFetchedModels.forEach((m) => {
+        const caps = detectModelCapabilities(m.id);
+        if (activeCapFilter !== 'all' && !caps.includes(activeCapFilter)) return;
+        if (q && !m.id.toLowerCase().includes(q) && !(m.displayName || '').toLowerCase().includes(q)) return;
+        m.enabled = false;
+      });
+    }
     renderPmModelsCatalog();
   });
 }
@@ -4172,6 +4999,59 @@ if (pmFormCustomModelInput) {
       e.preventDefault();
       addCustomModelToCatalog();
     }
+  });
+}
+
+// Quick Preset button handlers
+$('#presetOllama')?.addEventListener('click', () => applyProviderPreset('ollama'));
+$('#presetLMStudio')?.addEventListener('click', () => applyProviderPreset('lmstudio'));
+$('#presetOpenRouter')?.addEventListener('click', () => applyProviderPreset('openrouter'));
+$('#presetDeepSeek')?.addEventListener('click', () => applyProviderPreset('deepseek'));
+$('#presetGoogle')?.addEventListener('click', () => applyProviderPreset('google'));
+$('#presetLocalAI')?.addEventListener('click', () => applyProviderPreset('localai'));
+
+// API Key visibility toggle
+if (pmKeyToggle) {
+  pmKeyToggle.addEventListener('click', () => {
+    const isPassword = pmFormKey.type === 'password';
+    pmFormKey.type = isPassword ? 'text' : 'password';
+    pmKeyToggle.title = isPassword ? 'Hide API key' : 'Show API key';
+    pmKeyToggle.setAttribute('aria-label', isPassword ? 'Hide API key' : 'Show API key');
+    pmKeyToggle.innerHTML = isPassword
+      ? `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  });
+}
+
+// Model Catalog Search & Clear
+if (pmModelsSearch) {
+  pmModelsSearch.addEventListener('input', () => {
+    pmModelsSearchQuery = pmModelsSearch.value;
+    if (pmModelsSearchClear) {
+      pmModelsSearchClear.hidden = !pmModelsSearchQuery;
+    }
+    renderPmModelsCatalog();
+  });
+  pmModelsSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && pmModelsSearch.value) {
+      e.stopPropagation();
+      pmModelsSearch.value = '';
+      pmModelsSearchQuery = '';
+      if (pmModelsSearchClear) pmModelsSearchClear.hidden = true;
+      renderPmModelsCatalog();
+    }
+  });
+}
+
+if (pmModelsSearchClear) {
+  pmModelsSearchClear.addEventListener('click', () => {
+    if (pmModelsSearch) {
+      pmModelsSearch.value = '';
+      pmModelsSearch.focus();
+    }
+    pmModelsSearchQuery = '';
+    pmModelsSearchClear.hidden = true;
+    renderPmModelsCatalog();
   });
 }
 
@@ -4591,7 +5471,7 @@ if (startRemoteBtn) {
       startRemoteBtn.setAttribute('disabled', 'true');
       if (remoteStatusText) remoteStatusText.textContent = 'Starting server...';
       if (remoteConsole) remoteConsole.value = ''; // clear console
-      
+
       const port = parseInt(remotePort?.value || '8090');
       const tunnel = remoteTunnel?.value || 'cloudflare';
       const allowFirstAdmin = remoteAllowFirstAdmin?.checked ?? true;
@@ -4646,4 +5526,1953 @@ setInterval(() => {
   }
   void syncIdeStatus();
 }, 4000);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Google Accounts Manager (Multi-Account Endpoint & Model Discovery)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const gaAccountsContainer = $('#gaAccountsContainer') as HTMLDivElement | null;
+const gaAccountCountBadge = $('#gaAccountCountBadge') as HTMLSpanElement | null;
+const gaStatTotalAccounts = $('#gaStatTotalAccounts') as HTMLDivElement | null;
+const gaStatActiveAccounts = $('#gaStatActiveAccounts') as HTMLDivElement | null;
+const gaStatTotalModels = $('#gaStatTotalModels') as HTMLDivElement | null;
+
+const gaAddAccountBtn = $('#gaAddAccountBtn') as HTMLButtonElement | null;
+const gaTestAllBtn = $('#gaTestAllBtn') as HTMLButtonElement | null;
+const gaSyncAllBtn = $('#gaSyncAllBtn') as HTMLButtonElement | null;
+
+const gaModalBackdrop = $('#googleAccountModalBackdrop') as HTMLDivElement | null;
+const gaModalClose = $('#googleAccountModalClose') as HTMLButtonElement | null;
+const gaModalTitle = $('#gaModalTitle') as HTMLHeadingElement | null;
+const gaFormName = $('#gaFormName') as HTMLInputElement | null;
+const gaFormUrl = $('#gaFormUrl') as HTMLInputElement | null;
+const gaFormKey = $('#gaFormKey') as HTMLInputElement | null;
+const gaKeyToggle = $('#gaKeyToggle') as HTMLButtonElement | null;
+const gaFormFetchModelsBtn = $('#gaFormFetchModelsBtn') as HTMLButtonElement | null;
+const gaFormModelsList = $('#gaFormModelsList') as HTMLDivElement | null;
+const gaFormModelsCountBadge = $('#gaFormModelsCountBadge') as HTMLDivElement | null;
+const gaFormError = $('#gaFormError') as HTMLDivElement | null;
+const gaFormCancelBtn = $('#gaFormCancelBtn') as HTMLButtonElement | null;
+const gaFormSaveBtn = $('#gaFormSaveBtn') as HTMLButtonElement | null;
+const gaOpenAiStudioLink = $('#gaOpenAiStudioLink') as HTMLAnchorElement | null;
+const gaAccountTypeBanner = $('#gaAccountTypeBanner') as HTMLDivElement | null;
+const gaFormKeyLabel = $('#gaFormKeyLabel') as HTMLSpanElement | null;
+const gaFormKeyHelper = $('#gaFormKeyHelper') as HTMLElement | null;
+const gaFormCustomModelInput = $('#gaFormCustomModelInput') as HTMLInputElement | null;
+const gaFormAddCustomModelBtn = $('#gaFormAddCustomModelBtn') as HTMLButtonElement | null;
+const gaFormSelectAllBtn = $('#gaFormSelectAllBtn') as HTMLButtonElement | null;
+const gaFormDeselectAllBtn = $('#gaFormDeselectAllBtn') as HTMLButtonElement | null;
+
+let editingGoogleAccountId: string | null = null;
+let currentGaFetchedModels: Array<{ id: string; displayName: string; enabled: boolean }> = [];
+let googleAccountsCache: ProviderEntry[] = [];
+let gaCurrentQuotaWindow: '5h' | 'weekly' = 'weekly';
+let gaCurrentViewMode: 'list' | 'grid' = 'list';
+let gaCurrentFilter: 'all' | 'pro' | 'ultra' | 'free' = 'all';
+let gaSearchQuery: string = '';
+let gaShowAllQuotas: boolean = false;
+let gaSelectedIds: Set<string> = new Set();
+let gaToolbarInitialized: boolean = false;
+
+function maskKeyPreview(key: string): string {
+  if (!key || key === 'none') return '(none)';
+  if (key.startsWith('enc:')) return '•••••••• (encrypted)';
+  if (key.length <= 8) return '••••••••';
+  return `${key.slice(0, 4)}••••${key.slice(-4)}`;
+}
+
+function formatResetCountdown(isoDateStr?: string): string {
+  if (!isoDateStr) return '';
+  const target = new Date(isoDateStr).getTime();
+  const diffMs = target - Date.now();
+  if (isNaN(diffMs) || diffMs <= 0) return 'Reset imminent';
+  const mins = Math.floor(diffMs / 60000);
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    return `Reset dans ${days}j ${hours % 24}h`;
+  }
+  if (hours > 0) {
+    return `Reset dans ${hours}h ${remMins}m`;
+  }
+  return `Reset dans ${remMins}m`;
+}
+
+function formatCompactCountdown(isoDateStr?: string): string {
+  if (!isoDateStr) return '';
+  const target = new Date(isoDateStr).getTime();
+  const diffMs = target - Date.now();
+  if (isNaN(diffMs) || diffMs <= 0) return '0m';
+  const mins = Math.floor(diffMs / 60000);
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    const remHours = hours % 24;
+    return `${days}d ${remHours}h`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${remMins}m`;
+  }
+  return `${remMins}m`;
+}
+
+function formatLastUsed(ts?: number | string): string {
+  if (!ts) return 'Never';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return 'Never';
+  return d.toLocaleString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+}
+
+function getQuotaColor(pct: number): string {
+  if (pct > 50) return '#10b981'; // Emerald
+  if (pct >= 20) return '#f59e0b'; // Amber
+  return '#f43f5e'; // Rose
+}
+
+function getAccountTier(acc: any): 'PRO' | 'ULTRA' | 'FREE' {
+  if (acc.tierId) {
+    const t = String(acc.tierId).toUpperCase();
+    if (t.includes('ULTRA') || t.includes('PREMIUM') || t.includes('ADVANCED')) return 'ULTRA';
+    if (t.includes('PRO') || t.includes('STANDARD')) return 'PRO';
+    if (t.includes('FREE')) return 'FREE';
+  }
+  if (acc.tier) {
+    const t = String(acc.tier).toUpperCase();
+    if (t.includes('ULTRA') || t.includes('PREMIUM') || t.includes('ADVANCED')) return 'ULTRA';
+    if (t.includes('PRO')) return 'PRO';
+    if (t.includes('FREE')) return 'FREE';
+  }
+  const name = (acc.name || '').toUpperCase();
+  if (name.includes('ULTRA') || name.includes('PREMIUM') || name.includes('ADVANCED')) return 'ULTRA';
+  if (name.includes('FREE')) return 'FREE';
+  return 'PRO';
+}
+
+function updateGoogleAccountToolbarCounts(accounts: any[]): void {
+  const total = accounts.length;
+  let pro = 0;
+  let ultra = 0;
+  let free = 0;
+  for (const a of accounts) {
+    const tier = getAccountTier(a);
+    if (tier === 'ULTRA') ultra++;
+    else if (tier === 'FREE') free++;
+    else pro++;
+  }
+  const elAll = $('#gaCntAll');
+  const elPro = $('#gaCntPro');
+  const elUltra = $('#gaCntUltra');
+  const elFree = $('#gaCntFree');
+  if (elAll) elAll.textContent = String(total);
+  if (elPro) elPro.textContent = String(pro);
+  if (elUltra) elUltra.textContent = String(ultra);
+  if (elFree) elFree.textContent = String(free);
+}
+
+function initGoogleAccountsToolbarOnce(): void {
+  if (gaToolbarInitialized) return;
+  gaToolbarInitialized = true;
+
+  // Search input with debounce
+  const searchInput = $('#gaSearchInput') as HTMLInputElement | null;
+  let searchDebounceTimer: any = null;
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        gaSearchQuery = searchInput.value.trim().toLowerCase();
+        renderGoogleAccountsList(googleAccountsCache);
+      }, 150);
+    });
+  }
+
+  // 5H vs Weekly toggle
+  const w5hBtn = $('#gaWindow5hBtn') as HTMLButtonElement | null;
+  const wWkBtn = $('#gaWindowWeeklyBtn') as HTMLButtonElement | null;
+  w5hBtn?.addEventListener('click', () => {
+    gaCurrentQuotaWindow = '5h';
+    w5hBtn.classList.add('active');
+    wWkBtn?.classList.remove('active');
+    renderGoogleAccountsList(googleAccountsCache);
+  });
+  wWkBtn?.addEventListener('click', () => {
+    gaCurrentQuotaWindow = 'weekly';
+    wWkBtn.classList.add('active');
+    w5hBtn?.classList.remove('active');
+    renderGoogleAccountsList(googleAccountsCache);
+  });
+
+  // List vs Grid view toggle
+  const vListBtn = $('#gaViewListBtn') as HTMLButtonElement | null;
+  const vGridBtn = $('#gaViewGridBtn') as HTMLButtonElement | null;
+  vListBtn?.addEventListener('click', () => {
+    gaCurrentViewMode = 'list';
+    vListBtn.classList.add('active');
+    vGridBtn?.classList.remove('active');
+    renderGoogleAccountsList(googleAccountsCache);
+  });
+  vGridBtn?.addEventListener('click', () => {
+    gaCurrentViewMode = 'grid';
+    vGridBtn.classList.add('active');
+    vListBtn?.classList.remove('active');
+    renderGoogleAccountsList(googleAccountsCache);
+  });
+
+  // Filter chips (All, PRO, ULTRA, FREE)
+  const chips = $$<HTMLButtonElement>('#gaFilterGroup .ga-chip');
+  chips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      chips.forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      gaCurrentFilter = (chip.dataset.filter as any) || 'all';
+      renderGoogleAccountsList(googleAccountsCache);
+    });
+  });
+
+  // Quick toolbar buttons
+  $('#gaToolbarAddBtn')?.addEventListener('click', () => openGoogleAccountModal());
+
+  const refreshAllBtn = $('#gaToolbarRefreshAllBtn') as HTMLButtonElement | null;
+  refreshAllBtn?.addEventListener('click', async () => {
+    if (googleAccountsCache.length === 0) {
+      toast('No Google accounts to refresh', 'warn');
+      return;
+    }
+    refreshAllBtn.setAttribute('disabled', 'true');
+    const origHtml = refreshAllBtn.innerHTML;
+    refreshAllBtn.innerHTML = `<span class="spinner"></span> Refreshing…`;
+    try {
+      let updatedCount = 0;
+      await Promise.allSettled(
+        googleAccountsCache.map(async (acc) => {
+          let tokenToUse = acc.apiKey;
+          if (acc.refreshToken) {
+            try {
+              const r = await window.ag.providers.refreshToken(acc.refreshToken);
+              if (r.success && r.accessToken) {
+                tokenToUse = r.accessToken;
+                acc.apiKey = r.accessToken;
+                if (r.quotas) acc.quotas = r.quotas;
+                if (r.picture && !acc.picture) acc.picture = r.picture;
+                if (r.name && (!acc.name || acc.name.includes('@'))) acc.name = r.name;
+              }
+            } catch {}
+          }
+          if (tokenToUse) {
+            try {
+              const res = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+              if (res.success && res.quotas) {
+                acc.quotas = res.quotas;
+              }
+            } catch {}
+          }
+          if (acc.apiKey) {
+            await window.ag.providers.save(acc);
+            updatedCount++;
+          }
+        })
+      );
+      toast(`Refreshed quotas for ${updatedCount} accounts`, 'ok');
+      await loadGoogleAccounts();
+    } finally {
+      refreshAllBtn.removeAttribute('disabled');
+      refreshAllBtn.innerHTML = origHtml;
+    }
+  });
+
+  const warmupBtn = $('#gaToolbarWarmupBtn') as HTMLButtonElement | null;
+  warmupBtn?.addEventListener('click', async () => {
+    if (googleAccountsCache.length === 0) {
+      toast('No Google accounts to warmup', 'warn');
+      return;
+    }
+    warmupBtn.setAttribute('disabled', 'true');
+    const origHtml = warmupBtn.innerHTML;
+    warmupBtn.innerHTML = `<span class="spinner"></span> Warming…`;
+    try {
+      let warmedCount = 0;
+      for (const acc of googleAccountsCache) {
+        let tokenToUse = acc.apiKey;
+        if (acc.refreshToken) {
+          try {
+            const r = await window.ag.providers.refreshToken(acc.refreshToken);
+            if (r.success && r.accessToken) {
+              tokenToUse = r.accessToken;
+              acc.apiKey = r.accessToken;
+            }
+          } catch {}
+        }
+        if (tokenToUse) {
+          try {
+            const res = await window.ag.providers.warmupAccount(tokenToUse);
+            if (res.success) warmedCount++;
+            // fetch fresh quota
+            const q = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+            if (q.success && q.quotas) {
+              acc.quotas = q.quotas;
+              await window.ag.providers.save(acc);
+            }
+          } catch {}
+        }
+      }
+      toast(`Warmup completed for ${warmedCount} accounts (weekly cycles activated)`, warmedCount > 0 ? 'ok' : 'warn');
+      await loadGoogleAccounts();
+    } finally {
+      warmupBtn.removeAttribute('disabled');
+      warmupBtn.innerHTML = origHtml;
+    }
+  });
+
+  const showAllSwitch = $('#gaShowAllQuotasSwitch') as HTMLInputElement | null;
+  if (showAllSwitch) {
+    showAllSwitch.addEventListener('change', () => {
+      gaShowAllQuotas = showAllSwitch.checked;
+      renderGoogleAccountsList(googleAccountsCache);
+    });
+  }
+
+  // Export JSON
+  $('#gaExportJsonBtn')?.addEventListener('click', () => {
+    if (googleAccountsCache.length === 0) {
+      toast('No Google accounts to export', 'warn');
+      return;
+    }
+    const cleanData = JSON.stringify(googleAccountsCache, null, 2);
+    const blob = new Blob([cleanData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `antigravity-accounts-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`Exported ${googleAccountsCache.length} Google accounts`, 'ok');
+  });
+
+  // Import JSON
+  const importFileInput = $('#gaImportFileInput') as HTMLInputElement | null;
+  $('#gaImportJsonBtn')?.addEventListener('click', () => {
+    importFileInput?.click();
+  });
+  importFileInput?.addEventListener('change', async () => {
+    const file = importFileInput.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const rawAccounts = parseAccountsJson(text);
+      if (!rawAccounts || rawAccounts.length === 0) {
+        toast('Invalid JSON or no accounts detected in file', 'err');
+        return;
+      }
+
+      toast(`Importing ${rawAccounts.length} Google account(s)...`, 'info', 4000);
+
+      let savedCount = 0;
+      let refreshedCount = 0;
+
+      for (let i = 0; i < rawAccounts.length; i++) {
+        const raw = rawAccounts[i];
+        const normalized = normalizeAccountEntry(raw, i);
+        if (!normalized) continue;
+
+        const existing = findMatchingAccount(normalized, googleAccountsCache);
+
+        let finalApiKey = normalized.apiKey || (existing ? existing.apiKey : '');
+        let finalPicture = normalized.picture || (existing ? existing.picture : undefined);
+        let finalName = existing && existing.name ? existing.name : normalized.name;
+        let finalQuotas = normalized.quotas || (existing ? existing.quotas : undefined);
+
+        // Attempt live token exchange if refreshToken is present
+        if (normalized.refreshToken) {
+          try {
+            const rRes = await window.ag.providers.refreshToken(normalized.refreshToken);
+            if (rRes.success && rRes.accessToken) {
+              finalApiKey = rRes.accessToken;
+              if (rRes.name && (!finalName || finalName.includes('@') || finalName === normalized.email?.split('@')[0])) {
+                finalName = rRes.name;
+              }
+              if (rRes.picture && !finalPicture) finalPicture = rRes.picture;
+              if (rRes.quotas) finalQuotas = rRes.quotas;
+              refreshedCount++;
+            }
+          } catch {
+            // continue with unrefreshed token
+          }
+        }
+
+        const candidateToMerge = {
+          ...normalized,
+          name: finalName,
+          apiKey: finalApiKey,
+          picture: finalPicture,
+          quotas: finalQuotas,
+        };
+
+        const merged = mergeAccountWithExisting(candidateToMerge, existing);
+
+        const saveRes = await window.ag.providers.save(merged);
+        if (saveRes.success) {
+          savedCount++;
+        }
+      }
+
+      toast(
+        `Imported ${savedCount} Google account(s) (${refreshedCount} refreshed live)!`,
+        'ok',
+        5000
+      );
+      await loadGoogleAccounts();
+      void loadModels();
+    } catch (err) {
+      toast(`Import error: ${(err as Error).message}`, 'err');
+    } finally {
+      importFileInput.value = '';
+    }
+  });
+
+  // Delegated event listeners for gaAccountsContainer
+  if (gaAccountsContainer) {
+    gaAccountsContainer.addEventListener('click', async (e) => {
+      const target = e.target as HTMLElement;
+
+      // Empty state buttons
+      if (target.closest('#gaEmptyAddBtn')) {
+        openGoogleAccountModal();
+        return;
+      }
+      if (target.closest('#gaEmptyDiscoverBtn')) {
+        void triggerIdeAccountDiscovery();
+        return;
+      }
+
+      // Action buttons
+      const btn = target.closest('.ga-action-btn') as HTMLButtonElement | null;
+      if (!btn) return;
+      const row = btn.closest('[data-id]') as HTMLElement | null;
+      const id = row?.dataset.id;
+      if (!id) return;
+      const account = googleAccountsCache.find((x) => x.id === id);
+
+      // Switch
+      if (btn.classList.contains('ga-switch')) {
+        let switchedToName = account?.name || id;
+        for (const a of googleAccountsCache) {
+          a.isCurrent = (a.id === id);
+          if (a.id === id) {
+            a.lastUsed = Date.now();
+            let effectiveToken = a.apiKey;
+            if (a.refreshToken) {
+              try {
+                const r = await window.ag.providers.refreshToken(a.refreshToken);
+                if (r.success && r.accessToken) {
+                  a.apiKey = r.accessToken;
+                  effectiveToken = r.accessToken;
+                  if (r.quotas) a.quotas = r.quotas;
+                  if (r.picture && !a.picture) a.picture = r.picture;
+                }
+              } catch {}
+            }
+            // Inject new account into Antigravity IDE's state.vscdb
+            if (effectiveToken && typeof window.ag.providers.switchIdeAccount === 'function') {
+              try {
+                await window.ag.providers.switchIdeAccount({
+                  accessToken: effectiveToken,
+                  refreshToken: a.refreshToken,
+                  email: a.email || a.name,
+                  picture: a.picture,
+                });
+              } catch {}
+            }
+            switchedToName = a.name || id;
+          }
+          await window.ag.providers.save(a);
+        }
+        toast(`Compte actif basculé sur ${switchedToName} (synchronisé dans l'IDE)`, 'ok');
+        renderGoogleAccountsList(googleAccountsCache);
+        return;
+      }
+
+      // Details
+      if (btn.classList.contains('ga-details')) {
+        if (!account) return;
+        const tier = getAccountTier(account);
+        const quotas = account.quotas;
+        const detailsHtml = `
+          <div style="font-size: 12.5px; line-height: 1.6;">
+            <div style="display: grid; grid-template-columns: 130px 1fr; gap: 8px 12px; margin-bottom: 16px;">
+              <span style="color: var(--text-2);">Name / Label:</span>
+              <strong>${escapeHtml(account.name)}</strong>
+              <span style="color: var(--text-2);">Email / User ID:</span>
+              <span>${escapeHtml(account.email || account.name || '(unspecified)')}</span>
+              <span style="color: var(--text-2);">Plan / Tier:</span>
+              <span><span class="ga-badge ga-badge-${tier.toLowerCase()}">${tier}</span></span>
+              <span style="color: var(--text-2);">Current Active:</span>
+              <span>${account.isCurrent ? '<span class="ga-badge ga-badge-current">CURRENT (Primary AGY)</span>' : 'No'}</span>
+              <span style="color: var(--text-2);">Last Used:</span>
+              <span>${formatLastUsed(account.lastUsed || account.updatedAt)}</span>
+              <span style="color: var(--text-2);">API Key / Token:</span>
+              <code>${escapeHtml(maskKeyPreview(account.apiKey))}</code>
+              <span style="color: var(--text-2);">Total Models:</span>
+              <span>${(account.models || []).length} models (${(account.models || []).filter((m: any) => m.enabled !== false).length} enabled)</span>
+            </div>
+            <div style="background: var(--bg-1); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+              <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-1);">Live Quota Metrics</div>
+              ${quotas ? `
+                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11.5px;">
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Gemini Weekly:</span>
+                    <strong>${quotas.geminiWeeklyPct ?? quotas.weeklyPercentage ?? 100}% (${formatResetCountdown(quotas.geminiWeeklyReset ?? quotas.weeklyResetTime)})</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Gemini 5H:</span>
+                    <strong>${quotas.geminiFiveHourPct ?? quotas.fiveHourPercentage ?? 100}% (${formatResetCountdown(quotas.geminiFiveHourReset ?? quotas.fiveHourResetTime)})</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Claude/GPT Weekly:</span>
+                    <strong>${quotas.claudeWeeklyPct ?? quotas.weeklyPercentage ?? 100}% (${formatResetCountdown(quotas.claudeWeeklyReset ?? quotas.weeklyResetTime)})</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Claude/GPT 5H:</span>
+                    <strong>${quotas.claudeFiveHourPct ?? quotas.fiveHourPercentage ?? 100}% (${formatResetCountdown(quotas.claudeFiveHourReset ?? quotas.fiveHourResetTime)})</strong>
+                  </div>
+                </div>
+              ` : '<span style="color: var(--text-3); font-style: italic;">No live quota data available.</span>'}
+            </div>
+          </div>
+        `;
+        await modals.confirm(`Account Details: ${account.name}`, detailsHtml, { confirmLabel: 'Close' });
+        return;
+      }
+
+      // Refresh
+      if (btn.classList.contains('ga-refresh')) {
+        if (!account || (!account.apiKey && !account.refreshToken)) {
+          toast('No API key/token available for this account', 'warn');
+          return;
+        }
+        btn.setAttribute('disabled', 'true');
+        btn.classList.add('spinning');
+        try {
+          let tokenToUse = account.apiKey;
+          if (account.refreshToken) {
+            const rRes = await window.ag.providers.refreshToken(account.refreshToken);
+            if (rRes.success && rRes.accessToken) {
+              tokenToUse = rRes.accessToken;
+              account.apiKey = rRes.accessToken;
+              if (rRes.quotas) account.quotas = rRes.quotas;
+              if (rRes.picture && !account.picture) account.picture = rRes.picture;
+              if (rRes.name && (!account.name || account.name.includes('@'))) account.name = rRes.name;
+            }
+          }
+          if (tokenToUse) {
+            const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+            if (qRes.success && qRes.quotas) {
+              account.quotas = qRes.quotas;
+            }
+          }
+          await window.ag.providers.save(account);
+          toast(`Quotas updated for ${account.name}`, 'ok');
+        } catch (err) {
+          toast(`Quota error: ${(err as Error).message}`, 'err');
+        } finally {
+          btn.removeAttribute('disabled');
+          btn.classList.remove('spinning');
+          renderGoogleAccountsList(googleAccountsCache);
+        }
+        return;
+      }
+
+      // Warmup
+      if (btn.classList.contains('ga-warmup')) {
+        if (!account || (!account.apiKey && !account.refreshToken)) {
+          toast('No token available for warmup', 'warn');
+          return;
+        }
+        btn.setAttribute('disabled', 'true');
+        btn.classList.add('spinning');
+        try {
+          let tokenToUse = account.apiKey;
+          if (account.refreshToken) {
+            try {
+              const r = await window.ag.providers.refreshToken(account.refreshToken);
+              if (r.success && r.accessToken) {
+                tokenToUse = r.accessToken;
+                account.apiKey = r.accessToken;
+              }
+            } catch {}
+          }
+          const wRes = await window.ag.providers.warmupAccount(tokenToUse);
+          if (wRes.success) {
+            toast(`Warmup successful for ${account.name}`, 'ok');
+            const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+            if (qRes.success && qRes.quotas) {
+              account.quotas = qRes.quotas;
+              await window.ag.providers.save(account);
+            }
+          } else {
+            toast(`Warmup failed: ${wRes.error || 'Request rejected'}`, 'err');
+          }
+        } catch (err) {
+          toast(`Warmup error: ${(err as Error).message}`, 'err');
+        } finally {
+          btn.removeAttribute('disabled');
+          btn.classList.remove('spinning');
+          renderGoogleAccountsList(googleAccountsCache);
+        }
+        return;
+      }
+
+      // Edit
+      if (btn.classList.contains('ga-edit')) {
+        openGoogleAccountModal(id);
+        return;
+      }
+
+      // Delete
+      if (btn.classList.contains('ga-delete')) {
+        if (!account) return;
+        const ok = await modals.confirm(
+          'Delete Google Account?',
+          `Remove Google account <strong>${escapeHtml(account.name)}</strong> and its associated models from Antigravity?`,
+          { danger: true, confirmLabel: 'Delete Account' }
+        );
+        if (!ok) return;
+        const res = (await window.ag.providers.delete(id)) as { success: boolean; error?: string };
+        if (res.success) {
+          toast('Google account deleted', 'ok');
+          await loadGoogleAccounts();
+        } else {
+          toast(`Delete failed: ${res.error}`, 'err');
+        }
+        return;
+      }
+    });
+
+    gaAccountsContainer.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.id === 'gaMasterCheckbox') {
+        const isChecked = target.checked;
+        gaAccountsContainer.querySelectorAll<HTMLInputElement>('.ga-row-cb').forEach((cb) => {
+          cb.checked = isChecked;
+          const id = cb.dataset.id;
+          if (id) {
+            if (isChecked) gaSelectedIds.add(id);
+            else gaSelectedIds.delete(id);
+          }
+        });
+      } else if (target.classList.contains('ga-row-cb')) {
+        const id = target.dataset.id;
+        if (id) {
+          if (target.checked) gaSelectedIds.add(id);
+          else gaSelectedIds.delete(id);
+        }
+        const masterCb = $('#gaMasterCheckbox') as HTMLInputElement | null;
+        if (masterCb) {
+          const all = gaAccountsContainer.querySelectorAll<HTMLInputElement>('.ga-row-cb');
+          masterCb.checked = all.length > 0 && Array.from(all).every((c) => c.checked);
+        }
+      }
+    });
+  }
+}
+
+function getUnifiedGoogleModelsList(): Array<{ id: string; displayName: string; enabled: boolean }> {
+  const STANDARD_GOOGLE_MODELS = [
+    { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+    { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+    { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+    { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
+    { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro High', enabled: true },
+    { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+    { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
+  ];
+
+  const masterModelMap = new Map<string, { id: string; displayName: string; enabled: boolean }>();
+
+  for (const m of STANDARD_GOOGLE_MODELS) {
+    masterModelMap.set(m.id, { ...m });
+  }
+
+  for (const acc of googleAccountsCache || []) {
+    if (Array.isArray(acc.models)) {
+      for (const m of acc.models) {
+        if (!m || !m.id) continue;
+        const cleanName = (m.displayName || (m as any).name || m.id).replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
+        const existing = masterModelMap.get(m.id);
+        if (existing) {
+          if (cleanName && cleanName !== m.id) {
+            existing.displayName = cleanName;
+          }
+        } else {
+          masterModelMap.set(m.id, {
+            id: m.id,
+            displayName: cleanName || m.id,
+            enabled: m.enabled !== false,
+          });
+        }
+      }
+    }
+  }
+
+  return Array.from(masterModelMap.values());
+}
+
+async function synchronizeGoogleAccountsModels(accounts?: any[]): Promise<void> {
+  const allProviders = (await window.ag.providers.get()) as any[];
+  const googleProv = (allProviders || []).find((p) => p && (p.provider === 'google' || p.provider === 'gemini'));
+  if (googleProv && Array.isArray(googleProv.accounts)) {
+    // In consolidated architecture, models are stored once on the Google provider
+    return;
+  }
+  const targetAccounts = accounts || googleAccountsCache;
+  if (!targetAccounts || targetAccounts.length === 0) return;
+
+  const masterModelsList = getUnifiedGoogleModelsList();
+
+  for (const acc of targetAccounts) {
+    const prevJson = JSON.stringify(acc.models || []);
+    const newJson = JSON.stringify(masterModelsList);
+    acc.models = JSON.parse(newJson);
+    if (prevJson !== newJson && acc.id) {
+      try {
+        await window.ag.providers.save(acc);
+      } catch {}
+    }
+  }
+}
+
+async function loadGoogleAccounts(): Promise<void> {
+  if (!gaAccountsContainer) return;
+  showSkeleton(gaAccountsContainer, 'cards', 2);
+  try {
+    const allProviders = (await window.ag.providers.get()) as any[];
+    const googleProv = (allProviders || []).find(
+      (p) => p && (p.provider === 'google' || p.provider === 'gemini')
+    );
+    if (googleProv && Array.isArray(googleProv.accounts)) {
+      if (!googleProv.models || googleProv.models.length === 0) {
+        googleProv.models = getUnifiedGoogleModelsList();
+        await window.ag.providers.save(googleProv);
+      }
+      googleAccountsCache = googleProv.accounts.map((acc: any) => ({
+        ...acc,
+        provider: 'google',
+        apiUrl: googleProv.apiUrl || 'https://generativelanguage.googleapis.com/v1beta',
+        models: googleProv.models || [],
+      }));
+    } else {
+      googleAccountsCache = (allProviders || []).filter(
+        (p) => p.provider === 'google' || p.provider === 'gemini' || (p.apiUrl && p.apiUrl.includes('googleapis.com'))
+      );
+    }
+
+    // Synchronize models across all Google accounts so all accounts share the exact same model configuration
+    await synchronizeGoogleAccountsModels(googleAccountsCache);
+
+    // Refresh live quotas in parallel for accounts with Google OAuth access tokens or refresh tokens
+    await Promise.allSettled(
+      googleAccountsCache.map(async (acc) => {
+        let tokenToUse = acc.apiKey;
+        let qRes: { success: boolean; quotas?: any } | null = null;
+        if (tokenToUse && tokenToUse.startsWith('ya29.')) {
+          try {
+            qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+          } catch {}
+        }
+        // If fetch failed or returned no quotas, and we have a refreshToken, refresh now!
+        if ((!qRes || !qRes.success) && acc.refreshToken) {
+          try {
+            const r = await window.ag.providers.refreshToken(acc.refreshToken);
+            if (r.success && r.accessToken) {
+              acc.apiKey = r.accessToken;
+              tokenToUse = r.accessToken;
+              if (r.quotas) acc.quotas = r.quotas;
+              if (r.picture && !acc.picture) acc.picture = r.picture;
+              if (r.name && (!acc.name || acc.name.includes('@'))) acc.name = r.name;
+              await window.ag.providers.save(acc);
+              if (!acc.quotas) {
+                qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+              }
+            }
+          } catch {}
+        }
+        if (qRes && qRes.success && qRes.quotas) {
+          acc.quotas = qRes.quotas;
+        }
+      })
+    );
+
+    // Auto-clean any bracketed model display names on load
+    for (const a of googleAccountsCache) {
+      if (Array.isArray(a.models)) {
+        let changed = false;
+        a.models.forEach((m: any) => {
+          if (m.displayName && /^\[[^\]]+\]\s*/.test(m.displayName)) {
+            m.displayName = m.displayName.replace(/^\[[^\]]+\]\s*/, '');
+            changed = true;
+          }
+        });
+        if (changed) {
+          void window.ag.providers.save(a);
+        }
+      }
+    }
+
+    const totalAccounts = googleAccountsCache.length;
+    const activeAccounts = googleAccountsCache.filter((a) => a.enabled !== false).length;
+    const uniqueExposedModelIds = new Set<string>();
+    googleAccountsCache.forEach((a) => {
+      if (a.enabled !== false && Array.isArray(a.models)) {
+        a.models.filter((m: any) => m.enabled !== false).forEach((m: any) => {
+          uniqueExposedModelIds.add(m.id || m.name);
+        });
+      }
+    });
+    const totalModels = uniqueExposedModelIds.size;
+
+    if (gaAccountCountBadge) gaAccountCountBadge.textContent = `${totalAccounts} account${totalAccounts === 1 ? '' : 's'}`;
+    if (gaStatTotalAccounts) gaStatTotalAccounts.textContent = String(totalAccounts);
+    if (gaStatActiveAccounts) gaStatActiveAccounts.textContent = String(activeAccounts);
+    if (gaStatTotalModels) gaStatTotalModels.textContent = String(totalModels);
+
+    initGoogleAccountsToolbarOnce();
+    updateGoogleAccountToolbarCounts(googleAccountsCache);
+    renderGoogleAccountsList(googleAccountsCache);
+  } catch (err) {
+    gaAccountsContainer.innerHTML = `<div class="empty-state"><p>Could not load Google accounts: ${escapeHtml((err as Error).message)}</p></div>`;
+  } finally {
+    hideSkeleton(gaAccountsContainer);
+  }
+}
+
+function renderGoogleAccountsList(accounts: any[]): void {
+  if (!gaAccountsContainer) return;
+  if (!accounts || accounts.length === 0) {
+    gaAccountsContainer.innerHTML = `
+      <div class="agy-empty-state" style="padding: 40px 20px; text-align: center;">
+        <div class="agy-empty-icon" style="margin-bottom: 12px; opacity: 0.7;">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><circle cx="12" cy="12" r="2"/></svg>
+        </div>
+        <div class="agy-empty-title" style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">No Google Accounts Added</div>
+        <div class="agy-empty-text" style="color: var(--text-2); font-size: 13px; max-width: 440px; margin: 0 auto 16px;">
+          Add your Google accounts or click "Importer depuis IDE" to automatically detect the account already connected to Antigravity without manual configuration.
+        </div>
+        <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+          <button class="btn btn-primary" type="button" id="gaEmptyOAuthBtn" style="background: #1a73e8; color: #fff; border: 1px solid rgba(66, 133, 244, 0.5); display: inline-flex; align-items: center; gap: 7px; font-weight: 500;">
+            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg>
+            Se connecter avec Google
+          </button>
+          <button class="btn btn-secondary" type="button" id="gaEmptyDiscoverBtn" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Importer depuis IDE
+          </button>
+          <button class="btn btn-ghost" type="button" id="gaEmptyAddBtn">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Clé manuelle
+          </button>
+        </div>
+      </div>
+    `;
+    $('#gaEmptyOAuthBtn')?.addEventListener('click', () => triggerGoogleOAuthLogin());
+    $('#gaEmptyAddBtn')?.addEventListener('click', () => openGoogleAccountModal());
+    $('#gaEmptyDiscoverBtn')?.addEventListener('click', () => triggerIdeAccountDiscovery());
+    return;
+  }
+
+  // Filter by search query & tier filter
+  const filtered = accounts.filter((a) => {
+    const tier = getAccountTier(a).toLowerCase();
+    if (gaCurrentFilter !== 'all' && tier !== gaCurrentFilter) return false;
+    if (gaSearchQuery) {
+      const name = (a.name || '').toLowerCase();
+      const email = (a.email || '').toLowerCase();
+      const id = (a.id || '').toLowerCase();
+      if (!name.includes(gaSearchQuery) && !email.includes(gaSearchQuery) && !id.includes(gaSearchQuery)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    gaAccountsContainer.innerHTML = `
+      <div style="padding: 32px 16px; text-align: center; color: var(--text-2); font-size: 13px;">
+        No Google accounts match the current filter or search criteria.
+      </div>
+    `;
+    return;
+  }
+
+  const isWeekly = gaCurrentQuotaWindow === 'weekly';
+  const quotaHeaderLabel = gaShowAllQuotas ? 'ALL QUOTAS (5H & WEEKLY)' : (isWeekly ? 'WEEKLY QUOTA' : '5H QUOTA');
+
+  let html = '';
+  if (gaCurrentViewMode === 'list') {
+    html += `
+      <div class="ga-table-wrapper">
+        <table class="ga-table">
+          <thead>
+            <tr>
+              <th style="width: 32px; text-align: center;">
+                <input type="checkbox" id="gaMasterCheckbox" aria-label="Select all accounts" ${filtered.length > 0 && filtered.every((a) => gaSelectedIds.has(a.id)) ? 'checked' : ''} style="cursor: pointer;" />
+              </th>
+              <th style="min-width: 220px;">EMAIL / ACCOUNT</th>
+              <th style="min-width: 280px;">${quotaHeaderLabel}</th>
+              <th style="width: 170px;">LAST USED</th>
+              <th style="width: 170px; text-align: right;">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    for (const a of filtered) {
+      const tier = getAccountTier(a);
+      const tierIcon = tier === 'ULTRA' ? '💎' : (tier === 'PRO' ? '◆' : '⬡');
+      const quotas = a.quotas;
+      const isSelected = gaSelectedIds.has(a.id);
+      const isCurrent = Boolean(a.isCurrent);
+
+      // Quotas calculation
+      const geminiPct = quotas ? (isWeekly ? (quotas.geminiWeeklyPct ?? quotas.weeklyPercentage ?? 100) : (quotas.geminiFiveHourPct ?? quotas.fiveHourPercentage ?? 100)) : null;
+      const geminiReset = quotas ? formatCompactCountdown(isWeekly ? (quotas.geminiWeeklyReset ?? quotas.weeklyResetTime) : (quotas.geminiFiveHourReset ?? quotas.fiveHourResetTime)) : '';
+      const claudePct = quotas ? (isWeekly ? (quotas.claudeWeeklyPct ?? quotas.weeklyPercentage ?? 100) : (quotas.claudeFiveHourPct ?? quotas.fiveHourPercentage ?? 100)) : null;
+      const claudeReset = quotas ? formatCompactCountdown(isWeekly ? (quotas.claudeWeeklyReset ?? quotas.weeklyResetTime) : (quotas.claudeFiveHourReset ?? quotas.fiveHourResetTime)) : '';
+
+      html += `
+        <tr class="${isCurrent ? 'is-current' : ''}" data-id="${escapeHtml(a.id)}">
+          <td style="text-align: center;">
+            <input type="checkbox" class="ga-row-cb" data-id="${escapeHtml(a.id)}" aria-label="Select account ${escapeHtml(a.name || a.email)}" ${isSelected ? 'checked' : ''} style="cursor: pointer;" />
+          </td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              ${a.picture
+                ? `<img src="${escapeHtml(a.picture)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; flex-shrink: 0;" alt="Avatar" />`
+                : `<div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; flex-shrink: 0;">G</div>`
+              }
+              <div style="min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <span style="font-weight: 600; font-size: 12.5px; color: var(--text-0);">${escapeHtml(a.email || (a.name === 'google' ? 'Google API Key (Default)' : (a.name || a.id)))}</span>
+                  ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span><span class="pool-role-badge pool-role-primary" title="Compte actif pour les requêtes Antigravity">● Pool Actif</span>` : `<span class="pool-role-badge pool-role-standby" title="Compte en réserve automatique (failover)">○ Pool Réserve</span>`}
+                  <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
+                </div>
+                ${a.email && a.name && a.email !== a.name
+                  ? `<div style="font-size: 11px; color: var(--text-2);">${escapeHtml(a.name)}</div>`
+                  : (!a.email ? `<div style="font-size: 11px; color: var(--text-2); font-style: italic;">Provider Configuration</div>` : '')}
+                <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">
+                  ${(a.models || []).slice(0, 5).map((m: any) => {
+                    const isEn = m.enabled !== false;
+                    const cleanName = (m.displayName || m.id || '').replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
+                    return `<span style="font-size: 9.5px; padding: 1px 5px; border-radius: 3px; background: ${isEn ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.05)'}; color: ${isEn ? '#60a5fa' : 'var(--text-3)'}; border: 1px solid ${isEn ? 'rgba(59,130,246,0.2)' : 'transparent'}; font-family: var(--font-mono);">${escapeHtml(cleanName)}</span>`;
+                  }).join('')}
+                  ${(a.models || []).length > 5 ? `<span style="font-size: 9.5px; color: var(--text-3); padding: 1px 4px;">+${(a.models || []).length - 5} more</span>` : ''}
+                </div>
+              </div>
+            </div>
+          </td>
+          <td>
+            ${quotas && geminiPct !== null ? `
+              <div class="ga-quota-container">
+                <div class="ga-quota-row">
+                  <span class="ga-quota-name">Gemini</span>
+                  <div class="ga-quota-bar">
+                    <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, geminiPct))}%; background: ${getQuotaColor(geminiPct)};"></div>
+                  </div>
+                  <span class="ga-quota-pct" style="color: ${getQuotaColor(geminiPct)};">${geminiPct}%</span>
+                  <span class="ga-quota-reset">${geminiReset}</span>
+                </div>
+                <div class="ga-quota-row">
+                  <span class="ga-quota-name">Claude/GPT</span>
+                  <div class="ga-quota-bar">
+                    <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claudePct))}%; background: ${getQuotaColor(claudePct)};"></div>
+                  </div>
+                  <span class="ga-quota-pct" style="color: ${getQuotaColor(claudePct)};">${claudePct}%</span>
+                  <span class="ga-quota-reset">${claudeReset}</span>
+                </div>
+                ${gaShowAllQuotas ? `
+                  <div class="ga-quota-row" style="opacity: 0.75; font-size: 10px;">
+                    <span class="ga-quota-name" style="font-size: 10px;">Gemini 5H</span>
+                    <div class="ga-quota-bar">
+                      <div class="ga-quota-fill" style="width: ${quotas.geminiFiveHourPct ?? 100}%; background: ${getQuotaColor(quotas.geminiFiveHourPct ?? 100)};"></div>
+                    </div>
+                    <span class="ga-quota-pct" style="font-size: 10px;">${quotas.geminiFiveHourPct ?? 100}%</span>
+                    <span class="ga-quota-reset">${formatCompactCountdown(quotas.geminiFiveHourReset)}</span>
+                  </div>
+                  <div class="ga-quota-row" style="opacity: 0.75; font-size: 10px;">
+                    <span class="ga-quota-name" style="font-size: 10px;">Claude 5H</span>
+                    <div class="ga-quota-bar">
+                      <div class="ga-quota-fill" style="width: ${quotas.claudeFiveHourPct ?? 100}%; background: ${getQuotaColor(quotas.claudeFiveHourPct ?? 100)};"></div>
+                    </div>
+                    <span class="ga-quota-pct" style="font-size: 10px;">${quotas.claudeFiveHourPct ?? 100}%</span>
+                    <span class="ga-quota-reset">${formatCompactCountdown(quotas.claudeFiveHourReset)}</span>
+                  </div>
+                ` : ''}
+              </div>
+            ` : `
+              <span style="font-size: 11px; color: var(--text-3); font-style: italic;">No quota metrics · Click ↻ to load</span>
+            `}
+          </td>
+          <td style="font-size: 11px; color: var(--text-2); font-family: var(--font-mono);">
+            ${formatLastUsed(a.lastUsed || a.updatedAt)}
+          </td>
+          <td style="text-align: right;">
+            <div style="display: inline-flex; align-items: center; gap: 4px;">
+              <button type="button" class="ga-action-btn ga-details" title="Details" aria-label="Details for ${escapeHtml(a.name)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-switch ${isCurrent ? 'active-switch' : ''}" title="${isCurrent ? 'Current active account' : '1-click switch to this account'}" aria-label="Switch to ${escapeHtml(a.name)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-refresh" title="Refresh quotas" aria-label="Refresh quotas for ${escapeHtml(a.name)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-warmup" title="One-click Warmup" aria-label="Warmup ${escapeHtml(a.name)}" style="color: #ea580c;">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-edit" title="Edit account" aria-label="Edit account ${escapeHtml(a.name)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-delete" title="Delete account" aria-label="Delete account ${escapeHtml(a.name)}" style="color: #ef4444;">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+  } else {
+    // Grid View
+    html += `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px;">`;
+    for (const a of filtered) {
+      const tier = getAccountTier(a);
+      const tierIcon = tier === 'ULTRA' ? '💎' : (tier === 'PRO' ? '◆' : '⬡');
+      const quotas = a.quotas;
+      const isCurrent = Boolean(a.isCurrent);
+      const activeModels = (a.models || []).filter((m: any) => m.enabled !== false);
+
+      const geminiPct = quotas ? (isWeekly ? (quotas.geminiWeeklyPct ?? quotas.weeklyPercentage ?? 100) : (quotas.geminiFiveHourPct ?? quotas.fiveHourPercentage ?? 100)) : null;
+      const geminiReset = quotas ? formatCompactCountdown(isWeekly ? (quotas.geminiWeeklyReset ?? quotas.weeklyResetTime) : (quotas.geminiFiveHourReset ?? quotas.fiveHourResetTime)) : '';
+      const claudePct = quotas ? (isWeekly ? (quotas.claudeWeeklyPct ?? quotas.weeklyPercentage ?? 100) : (quotas.claudeFiveHourPct ?? quotas.fiveHourPercentage ?? 100)) : null;
+      const claudeReset = quotas ? formatCompactCountdown(isWeekly ? (quotas.claudeWeeklyReset ?? quotas.weeklyResetTime) : (quotas.claudeFiveHourReset ?? quotas.fiveHourResetTime)) : '';
+
+      html += `
+        <div class="agy-provider-row ${isCurrent ? 'is-current' : ''}" data-id="${escapeHtml(a.id)}" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; border-radius: var(--r-card, 10px); border: 1px solid ${isCurrent ? 'rgba(59, 130, 246, 0.4)' : 'var(--border)'}; background: var(--bg-1);">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+              ${a.picture
+                ? `<img src="${escapeHtml(a.picture)}" style="width: 26px; height: 26px; border-radius: 50%; object-fit: cover;" alt="Avatar" />`
+                : `<div style="width: 26px; height: 26px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px;">G</div>`
+              }
+              <div style="min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <strong style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(a.name)}</strong>
+                  ${isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span><span class="pool-role-badge pool-role-primary" title="Compte actif pour Antigravity">● Pool Actif</span>` : `<span class="pool-role-badge pool-role-standby" title="Compte en réserve automatique (failover)">○ Pool Réserve</span>`}
+                  <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
+                </div>
+                <div style="font-size: 11px; color: var(--text-2);">${activeModels.length} models · ${escapeHtml(maskKeyPreview(a.apiKey))}</div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <button type="button" class="ga-action-btn ga-details" title="Details" aria-label="Details for ${escapeHtml(a.name || a.email)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-switch ${isCurrent ? 'active-switch' : ''}" title="${isCurrent ? 'Current active account' : '1-click switch to this account'}" aria-label="Switch to ${escapeHtml(a.name || a.email)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-refresh" title="Refresh quotas" aria-label="Refresh quotas for ${escapeHtml(a.name || a.email)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-warmup" title="One-click Warmup" aria-label="Warmup ${escapeHtml(a.name || a.email)}" style="color: var(--warn-orange, #ea580c);">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-edit" title="Edit account" aria-label="Edit account ${escapeHtml(a.name || a.email)}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button type="button" class="ga-action-btn ga-delete" title="Delete account" aria-label="Delete account ${escapeHtml(a.name || a.email)}" style="color: var(--err, #ef4444);">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
+            </div>
+          </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-size: 10.5px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; display: flex; justify-content: space-between;">
+              <span>Models (${activeModels.length}/${(a.models || []).length})</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+              ${(a.models || []).map((m: any) => {
+                const isEn = m.enabled !== false;
+                const cleanName = (m.displayName || m.id || '').replace(/^\[[^\]]+\]\s*/, '').replace(/^models\//, '');
+                return `<span style="font-size: 9.5px; padding: 2px 6px; border-radius: 4px; background: ${isEn ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.04)'}; color: ${isEn ? '#93c5fd' : 'var(--text-3)'}; border: 1px solid ${isEn ? 'rgba(59,130,246,0.25)' : 'rgba(255,255,255,0.05)'}; font-family: var(--font-mono);">${escapeHtml(cleanName)}</span>`;
+              }).join('') || '<span style="font-size: 10px; color: var(--text-3); font-style: italic;">No models configured</span>'}
+            </div>
+          </div>
+
+${quotas && geminiPct !== null ? `
+            <div class="ga-quota-container" style="background: rgba(255,255,255,0.02); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
+              <div class="ga-quota-row">
+                <span class="ga-quota-name">Gemini</span>
+                <div class="ga-quota-bar">
+                  <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, geminiPct))}%; background: ${getQuotaColor(geminiPct)};"></div>
+                </div>
+                <span class="ga-quota-pct" style="color: ${getQuotaColor(geminiPct)};">${geminiPct}%</span>
+                <span class="ga-quota-reset">${geminiReset}</span>
+              </div>
+              <div class="ga-quota-row">
+                <span class="ga-quota-name">Claude/GPT</span>
+                <div class="ga-quota-bar">
+                  <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claudePct))}%; background: ${getQuotaColor(claudePct)};"></div>
+                </div>
+                <span class="ga-quota-pct" style="color: ${getQuotaColor(claudePct)};">${claudePct}%</span>
+                <span class="ga-quota-reset">${claudeReset}</span>
+              </div>
+            </div>
+          ` : '<div style="font-size: 11px; color: var(--text-3); font-style: italic;">No live quotas loaded</div>'}
+        </div>
+      `;
+    }
+    html += `</div>`;
+  }
+
+  gaAccountsContainer.innerHTML = html;
+}
+
+function updateGaModelsCounter(): void {
+  if (!gaFormModelsCountBadge) return;
+  const total = currentGaFetchedModels.length;
+  const selected = currentGaFetchedModels.filter((m) => m.enabled !== false).length;
+  gaFormModelsCountBadge.textContent = `${selected} / ${total} selected for Antigravity`;
+  if (selected === 0) {
+    gaFormModelsCountBadge.className = 'badge badge-warn';
+  } else if (selected === total && total > 0) {
+    gaFormModelsCountBadge.className = 'badge badge-ok';
+  } else {
+    gaFormModelsCountBadge.className = 'badge badge-primary';
+  }
+}
+
+function renderGaFormModelsList(): void {
+  if (!gaFormModelsList) return;
+  updateGaModelsCounter();
+  if (currentGaFetchedModels.length === 0) {
+    gaFormModelsList.innerHTML = `
+      <div class="pm-models-hint" style="font-size: 12px; color: var(--text-2); text-align: center; padding: 20px;">
+        Click <strong>"Get Models from Endpoint"</strong> or choose a Preset above to add models.
+      </div>
+    `;
+    return;
+  }
+
+  let html = `<div style="display: flex; flex-direction: column; gap: 4px;">`;
+  currentGaFetchedModels.forEach((m, idx) => {
+    const isChecked = m.enabled !== false;
+    html += `
+      <label style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: var(--r-sm); cursor: pointer;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" class="ga-model-cb" data-idx="${idx}" ${isChecked ? 'checked' : ''} style="width: 15px; height: 15px; cursor: pointer;" />
+          <span style="font-size: 13px; font-weight: 500;">${escapeHtml(m.displayName || m.id)}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 11px; color: var(--text-2); font-family: var(--font-mono);">${escapeHtml(m.id)}</span>
+          <button type="button" class="agy-icon-btn ga-remove-model-btn" data-idx="${idx}" title="Remove model" style="opacity: 0.6; padding: 2px;">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </label>
+    `;
+  });
+  html += `</div>`;
+  gaFormModelsList.innerHTML = html;
+
+  gaFormModelsList.querySelectorAll<HTMLInputElement>('.ga-model-cb').forEach((cb) => {
+    cb.addEventListener('change', (e) => {
+      const target = e.currentTarget as HTMLInputElement;
+      const idx = parseInt(target.dataset.idx || '0', 10);
+      if (currentGaFetchedModels[idx]) {
+        currentGaFetchedModels[idx].enabled = target.checked;
+        updateGaModelsCounter();
+      }
+    });
+  });
+
+  gaFormModelsList.querySelectorAll<HTMLButtonElement>('.ga-remove-model-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const idx = parseInt(btn.dataset.idx || '0', 10);
+      if (currentGaFetchedModels[idx]) {
+        currentGaFetchedModels.splice(idx, 1);
+        renderGaFormModelsList();
+      }
+    });
+  });
+}
+
+let lastFocusedGaElement: HTMLElement | null = null;
+
+function openGoogleAccountModal(existingId?: string): void {
+  if (!gaModalBackdrop || !gaFormName || !gaFormUrl || !gaFormKey) return;
+  lastFocusedGaElement = document.activeElement as HTMLElement | null;
+  editingGoogleAccountId = null;
+  currentGaFetchedModels = [];
+  if (gaFormError) {
+    gaFormError.hidden = true;
+    gaFormError.textContent = '';
+  }
+
+  if (existingId) {
+    const account = googleAccountsCache.find((x) => x.id === existingId);
+    if (account) {
+      editingGoogleAccountId = account.id;
+      const isIde = account.id.startsWith('google-ide-') || (account.apiKey && account.apiKey.startsWith('ya29.')) || (account as any).source === 'antigravity-ide';
+      if (gaModalTitle) gaModalTitle.textContent = `Edit Google Account: ${account.name}`;
+      gaFormName.value = account.name;
+      gaFormUrl.value = account.apiUrl || 'https://generativelanguage.googleapis.com/v1beta';
+      gaFormKey.value = account.apiKey || '';
+
+      if (gaAccountTypeBanner) {
+        gaAccountTypeBanner.hidden = !isIde;
+      }
+      if (gaFormKeyLabel) {
+        gaFormKeyLabel.textContent = isIde ? 'Antigravity IDE Token / Clé API' : 'Google AI Studio API Key';
+      }
+      if (gaFormKeyHelper) {
+        gaFormKeyHelper.innerHTML = isIde
+          ? 'Compte authentifié via session IDE (OAuth ya29…). Vous pouvez conserver ce jeton ou entrer une clé <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a> (AIzaSy…).'
+          : 'Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.';
+      }
+      if (gaFormKey) {
+        gaFormKey.placeholder = isIde ? 'Géré automatiquement (OAuth ya29…) — ou entrez une clé AIzaSy…' : 'AIzaSy…';
+      }
+
+      currentGaFetchedModels = getUnifiedGoogleModelsList();
+    }
+  } else {
+    if (gaModalTitle) gaModalTitle.textContent = 'Add Google Account';
+    if (gaAccountTypeBanner) gaAccountTypeBanner.hidden = true;
+    if (gaFormKeyLabel) gaFormKeyLabel.textContent = 'Google AI Studio API Key';
+    if (gaFormKeyHelper) {
+      gaFormKeyHelper.innerHTML = 'Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.';
+    }
+    if (gaFormKey) gaFormKey.placeholder = 'AIzaSy…';
+    gaFormName.value = '';
+    gaFormUrl.value = 'https://generativelanguage.googleapis.com/v1beta';
+    gaFormKey.value = '';
+    currentGaFetchedModels = getUnifiedGoogleModelsList();
+  }
+
+  renderGaFormModelsList();
+  gaModalBackdrop.hidden = false;
+  gaFormName.focus();
+}
+
+function closeGoogleAccountModal(): void {
+  if (gaModalBackdrop) gaModalBackdrop.hidden = true;
+  if (gaAccountTypeBanner) gaAccountTypeBanner.hidden = true;
+  editingGoogleAccountId = null;
+  currentGaFetchedModels = [];
+  lastFocusedGaElement?.focus();
+}
+
+// Bind modal controls
+if (gaModalClose) gaModalClose.addEventListener('click', closeGoogleAccountModal);
+if (gaFormCancelBtn) gaFormCancelBtn.addEventListener('click', closeGoogleAccountModal);
+if (gaModalBackdrop) {
+  gaModalBackdrop.addEventListener('click', (e) => {
+    if (e.target === gaModalBackdrop) closeGoogleAccountModal();
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (!gaModalBackdrop || gaModalBackdrop.hidden) return;
+  if (e.key === 'Escape') {
+    closeGoogleAccountModal();
+    return;
+  }
+  if (e.key === 'Tab') {
+    const focusable = Array.from(
+      gaModalBackdrop.querySelectorAll<HTMLElement>(
+        'button:not([disabled]):not([hidden]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => el.offsetParent !== null);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+});
+
+// Bind Add buttons
+gaAddAccountBtn?.addEventListener('click', () => openGoogleAccountModal());
+
+const gaDiscoverIdeBtn = $('#gaDiscoverIdeBtn') as HTMLButtonElement | null;
+
+async function triggerIdeAccountDiscovery(): Promise<void> {
+  const btn = gaDiscoverIdeBtn;
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spin" style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Détection...`;
+  }
+
+  try {
+    const res = await window.ag.providers.discoverIdeAccount();
+    if (res.success && res.account) {
+      const acc = res.account;
+      const accountEmail = acc.email || 'antigravity-account@google.com';
+      const cleanPrefix = acc.name ? acc.name : accountEmail.split('@')[0];
+      const accountName = `${cleanPrefix} (IDE)`;
+
+      // Look for existing account by key or name
+      const existing = googleAccountsCache.find(
+        (a) => a.apiKey === acc.accessToken || a.name.includes(cleanPrefix) || a.name === accountName
+      );
+
+      const targetId = existing ? existing.id : 'google-ide-' + Date.now();
+      const newProvider: any = {
+        id: targetId,
+        name: existing ? existing.name : accountName,
+        provider: 'google',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: acc.accessToken,
+        enabled: true,
+        picture: acc.picture,
+        quotas: acc.quotas,
+        models: existing?.models?.length
+          ? existing.models.map((m: any) => ({
+              id: m.id,
+              displayName: (m.displayName || m.id).replace(/^\[[^\]]+\]\s*/, ''),
+              enabled: m.enabled !== false,
+            }))
+          : [
+              { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
+              { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro High', enabled: true },
+              { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
+            ],
+      };
+
+      if (!existing?.models?.length && acc.accessToken) {
+        try {
+          const mRes = await window.ag.providers.fetchModels({
+            provider: 'google',
+            apiUrl: newProvider.apiUrl,
+            apiKey: acc.accessToken,
+          });
+          if (mRes.success && mRes.models && mRes.models.length > 0) {
+            newProvider.models = mRes.models.map((m) => ({
+              id: m.id,
+              displayName: (m.displayName || m.id).replace(/^models\//, '').replace(/^\[[^\]]+\]\s*/, ''),
+              enabled: true,
+            }));
+          }
+        } catch {}
+      }
+
+      const saveRes = await window.ag.providers.save(newProvider);
+      if (saveRes.success) {
+        toast(`Compte ${accountEmail} importé avec succès depuis Antigravity IDE !`, 'ok');
+        await loadGoogleAccounts();
+      } else {
+        toast(`Erreur d'enregistrement: ${saveRes.error}`, 'err');
+      }
+    } else {
+      toast(res.error || 'Aucun compte Antigravity actif détecté.', 'warn');
+    }
+  } catch (err) {
+    toast(`Erreur: ${(err as Error).message}`, 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+}
+
+gaDiscoverIdeBtn?.addEventListener('click', () => triggerIdeAccountDiscovery());
+
+const gaOAuthLoginBtn = $('#gaOAuthLoginBtn') as HTMLButtonElement | null;
+
+async function triggerGoogleOAuthLogin(): Promise<void> {
+  const btn = gaOAuthLoginBtn;
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spin" style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Connexion...`;
+  }
+  try {
+    toast('Ouverture du navigateur pour la connexion Google...', 'info');
+    const res = await window.ag.providers.startOAuthLogin();
+    if (res.success && res.account) {
+      const email = res.account.email || res.account.name || 'compte Google';
+      toast(`Compte ${email} connecté et synchronisé avec succès !`, 'ok');
+      await loadGoogleAccounts();
+    } else {
+      toast(res.error || 'Connexion Google annulée ou échouée.', 'warn');
+    }
+  } catch (err) {
+    toast(`Erreur: ${(err as Error).message}`, 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+}
+
+gaOAuthLoginBtn?.addEventListener('click', () => triggerGoogleOAuthLogin());
+
+// Key visibility toggle
+if (gaKeyToggle && gaFormKey) {
+  gaKeyToggle.addEventListener('click', () => {
+    const isPass = gaFormKey.type === 'password';
+    gaFormKey.type = isPass ? 'text' : 'password';
+    gaKeyToggle.title = isPass ? 'Hide API key' : 'Show API key';
+    gaKeyToggle.innerHTML = isPass
+      ? `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  });
+}
+
+// Open Google AI Studio Link
+gaOpenAiStudioLink?.addEventListener('click', (e) => {
+  e.preventDefault();
+  void window.ag.openExternal('https://aistudio.google.com/apikey');
+});
+
+// Model management toolbar handlers
+gaFormSelectAllBtn?.addEventListener('click', () => {
+  currentGaFetchedModels.forEach((m) => { m.enabled = true; });
+  renderGaFormModelsList();
+});
+
+gaFormDeselectAllBtn?.addEventListener('click', () => {
+  currentGaFetchedModels.forEach((m) => { m.enabled = false; });
+  renderGaFormModelsList();
+});
+
+function addCustomModelToGaList(id: string, name?: string): void {
+  const cleanId = id.trim().replace(/^models\//, '');
+  if (!cleanId) return;
+  const existing = currentGaFetchedModels.find((m) => m.id === cleanId);
+  if (existing) {
+    existing.enabled = true;
+  } else {
+    currentGaFetchedModels.push({
+      id: cleanId,
+      displayName: name || cleanId,
+      enabled: true,
+    });
+  }
+  renderGaFormModelsList();
+}
+
+gaFormAddCustomModelBtn?.addEventListener('click', () => {
+  if (!gaFormCustomModelInput) return;
+  const val = gaFormCustomModelInput.value.trim();
+  if (val) {
+    addCustomModelToGaList(val);
+    gaFormCustomModelInput.value = '';
+  }
+});
+
+gaFormCustomModelInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const val = gaFormCustomModelInput.value.trim();
+    if (val) {
+      addCustomModelToGaList(val);
+      gaFormCustomModelInput.value = '';
+    }
+  }
+});
+
+document.querySelectorAll<HTMLButtonElement>('.ga-preset-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.id;
+    const name = btn.dataset.name;
+    if (id) addCustomModelToGaList(id, name);
+  });
+});
+
+// Fetch Models from Endpoint button in modal
+gaFormFetchModelsBtn?.addEventListener('click', async () => {
+  if (!gaFormUrl || !gaFormKey) return;
+  const apiUrl = gaFormUrl.value.trim();
+  const apiKey = gaFormKey.value.trim();
+  const isIde = apiKey.startsWith('ya29.') || (editingGoogleAccountId && editingGoogleAccountId.startsWith('google-ide-'));
+
+  if (!apiKey) {
+    toast(isIde ? 'Jeton Antigravity IDE manquant' : 'Please enter your Google AI Studio API key first', 'warn');
+    gaFormKey.focus();
+    return;
+  }
+
+  gaFormFetchModelsBtn.disabled = true;
+  gaFormFetchModelsBtn.innerHTML = `<span class="spinner"></span> Querying Endpoint…`;
+  if (gaFormError) gaFormError.hidden = true;
+
+  try {
+    const res = (await window.ag.providers.fetchModels({
+      provider: 'google',
+      apiUrl,
+      apiKey,
+    })) as { success: boolean; models?: Array<{ id: string; displayName?: string }>; error?: string };
+
+    if (res.success && res.models && res.models.length > 0) {
+      const fetched = res.models.map((m) => {
+        const cleanId = m.id.replace(/^models\//, '');
+        const cleanName = (m.displayName || m.id).replace(/^models\//, '').replace(/^\[[^\]]+\]\s*/, '');
+        return {
+          id: cleanId,
+          displayName: cleanName,
+          enabled: true,
+        };
+      });
+
+      // Retain already selected models if user previously selected them
+      fetched.forEach((m) => {
+        const existing = currentGaFetchedModels.find((x) => x.id === m.id);
+        if (!existing) {
+          currentGaFetchedModels.push(m);
+        }
+      });
+      if (currentGaFetchedModels.length === 0) {
+        currentGaFetchedModels = fetched;
+      }
+      renderGaFormModelsList();
+      toast(isIde ? `Modèles Antigravity IDE synchronisés (${res.models.length} modèles)` : `Found ${res.models.length} models for this account!`, 'ok');
+    } else {
+      const errMsg = res.error || 'No generative models found on this endpoint.';
+      if (gaFormError) {
+        gaFormError.textContent = `Fetch error: ${errMsg}`;
+        gaFormError.hidden = false;
+      }
+      toast(`Fetch failed: ${errMsg}`, 'err', 6000);
+    }
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (gaFormError) {
+      gaFormError.textContent = msg;
+      gaFormError.hidden = false;
+    }
+    toast(`Error: ${msg}`, 'err');
+  } finally {
+    gaFormFetchModelsBtn.disabled = false;
+    gaFormFetchModelsBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Get Models from Endpoint
+    `;
+  }
+});
+
+// Save Google Account button in modal
+gaFormSaveBtn?.addEventListener('click', async () => {
+  if (!gaFormName || !gaFormUrl || !gaFormKey) return;
+  const name = gaFormName.value.trim();
+  const apiUrl = gaFormUrl.value.trim() || 'https://generativelanguage.googleapis.com/v1beta';
+  const apiKey = gaFormKey.value.trim();
+
+  if (!name) {
+    if (gaFormError) {
+      gaFormError.textContent = 'Account label/name is required (e.g. Perso, Pro, Trial).';
+      gaFormError.hidden = false;
+    }
+    gaFormName.focus();
+    return;
+  }
+  if (!apiKey) {
+    if (gaFormError) {
+      gaFormError.textContent = 'Google AI Studio API key (or IDE session token) is required.';
+      gaFormError.hidden = false;
+    }
+    gaFormKey.focus();
+    return;
+  }
+
+  if (currentGaFetchedModels.length === 0) {
+    currentGaFetchedModels.push(
+      { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
+      { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro High', enabled: true }
+    );
+  }
+
+  const existingAccount = editingGoogleAccountId
+    ? googleAccountsCache.find((x) => x.id === editingGoogleAccountId)
+    : undefined;
+
+  const accountEntry: any = {
+    ...(existingAccount || {}),
+    id: editingGoogleAccountId || `provider-google-${Date.now()}`,
+    name,
+    provider: 'google',
+    apiUrl,
+    apiKey,
+    enabled: existingAccount ? existingAccount.enabled !== false : true,
+    models: currentGaFetchedModels.map((m) => {
+      let cleanName = m.displayName || m.id;
+      cleanName = cleanName.replace(/^\[[^\]]+\]\s*/, '');
+      return {
+        id: m.id,
+        displayName: cleanName,
+        enabled: m.enabled !== false,
+      };
+    }),
+  };
+
+  if (existingAccount?.picture) accountEntry.picture = existingAccount.picture;
+  if (existingAccount?.quotas) accountEntry.quotas = existingAccount.quotas;
+  if (existingAccount?.refreshToken) accountEntry.refreshToken = existingAccount.refreshToken;
+  if (existingAccount?.source) accountEntry.source = existingAccount.source;
+
+  gaFormSaveBtn.disabled = true;
+  gaFormSaveBtn.textContent = 'Saving…';
+
+  try {
+    const res = (await window.ag.providers.save(accountEntry)) as { success: boolean; error?: string };
+    if (res.success) {
+      // Propagate updated model choices to ALL Google accounts so they share the common provider model config
+      for (const otherAcc of googleAccountsCache) {
+        if (otherAcc.id !== accountEntry.id) {
+          otherAcc.models = JSON.parse(JSON.stringify(accountEntry.models));
+          try {
+            await window.ag.providers.save(otherAcc);
+          } catch {}
+        }
+      }
+      toast(`Account "${name}" saved! Models are now synchronized across all Google accounts.`, 'ok');
+      closeGoogleAccountModal();
+      await loadGoogleAccounts();
+      void loadModels();
+    } else {
+      if (gaFormError) {
+        gaFormError.textContent = `Failed to save account: ${res.error}`;
+        gaFormError.hidden = false;
+      }
+    }
+  } catch (err) {
+    if (gaFormError) {
+      gaFormError.textContent = (err as Error).message;
+      gaFormError.hidden = false;
+    }
+  } finally {
+    gaFormSaveBtn.disabled = false;
+    gaFormSaveBtn.textContent = 'Save Account';
+  }
+});
+
+// Test All Google Accounts
+gaTestAllBtn?.addEventListener('click', async () => {
+  if (!googleAccountsCache || googleAccountsCache.length === 0) {
+    toast('No Google accounts to test', 'warn');
+    return;
+  }
+  gaTestAllBtn.disabled = true;
+  const orig = gaTestAllBtn.innerHTML;
+  gaTestAllBtn.innerHTML = `<span class="spinner"></span> Testing…`;
+  try {
+    let successCount = 0;
+    for (const a of googleAccountsCache) {
+      try {
+        let tokenToUse = a.apiKey;
+        if (a.refreshToken) {
+          try {
+            const r = await window.ag.providers.refreshToken(a.refreshToken);
+            if (r.success && r.accessToken) {
+              tokenToUse = r.accessToken;
+              a.apiKey = r.accessToken;
+            }
+          } catch {}
+        }
+        const res = (await window.ag.providers.test({
+          apiUrl: a.apiUrl,
+          apiKey: tokenToUse,
+          id: a.id,
+          provider: 'google',
+        })) as { success: boolean; latencyMs?: number };
+        if (res.success) successCount++;
+      } catch { /* ignore individual failures */ }
+    }
+    const toastType = successCount === 0 ? 'err' : (successCount < googleAccountsCache.length ? 'warn' : 'ok');
+    toast(`Tested ${googleAccountsCache.length} accounts: ${successCount} healthy`, toastType);
+    await loadGoogleAccounts();
+  } finally {
+    gaTestAllBtn.disabled = false;
+    gaTestAllBtn.innerHTML = orig;
+  }
+});
+
+// Sync All Google Accounts Models
+gaSyncAllBtn?.addEventListener('click', async () => {
+  if (!googleAccountsCache || googleAccountsCache.length === 0) {
+    toast('No Google accounts to sync', 'warn');
+    return;
+  }
+  gaSyncAllBtn.disabled = true;
+  const orig = gaSyncAllBtn.innerHTML;
+  gaSyncAllBtn.innerHTML = `<span class="spinner"></span> Syncing all…`;
+  try {
+    let totalSyncedModels = 0;
+    for (const a of googleAccountsCache) {
+      try {
+        let tokenToUse = a.apiKey;
+        if (a.refreshToken) {
+          try {
+            const r = await window.ag.providers.refreshToken(a.refreshToken);
+            if (r.success && r.accessToken) {
+              tokenToUse = r.accessToken;
+              a.apiKey = r.accessToken;
+            }
+          } catch {}
+        }
+        const res = (await window.ag.providers.fetchModels({
+          provider: 'google',
+          apiUrl: a.apiUrl,
+          apiKey: tokenToUse,
+        })) as { success: boolean; models?: Array<{ id: string; displayName?: string }> };
+        if (res.success && res.models && res.models.length > 0) {
+          const newModels = res.models.map((m) => {
+            const cleanName = (m.displayName || m.id).replace(/^\[[^\]]+\]\s*/, '');
+            return {
+              id: m.id,
+              displayName: cleanName,
+              enabled: true,
+            };
+          });
+          a.models = newModels;
+          const allProviders = (await window.ag.providers.get()) as any[];
+          const googleProv = (allProviders || []).find((p) => p && (p.provider === 'google' || p.provider === 'gemini'));
+          if (googleProv && Array.isArray(googleProv.accounts)) {
+            googleProv.models = newModels;
+            await window.ag.providers.save(googleProv);
+          } else {
+            await window.ag.providers.save(a);
+          }
+          totalSyncedModels += res.models.length;
+        }
+      } catch { /* continue with next */ }
+    }
+    await synchronizeGoogleAccountsModels(googleAccountsCache);
+    toast(`Synced ${totalSyncedModels} models across ${googleAccountsCache.length} accounts!`, 'ok');
+    await loadGoogleAccounts();
+    void loadModels();
+  } finally {
+    gaSyncAllBtn.disabled = false;
+    gaSyncAllBtn.innerHTML = orig;
+  }
+});
+
+// ── OAuth Intercept Banner & QR Dialog ───────────────────────────────────────
+let lastInterceptedOAuthUrl = '';
+
+function setupOAuthInterception(): void {
+  const banner = document.getElementById('oauthInterceptBanner');
+  const portBadge = document.getElementById('oauthPortBadge');
+  const openBrowserBtn = document.getElementById('oauthOpenBrowserBtn');
+  const copyUrlBtn = document.getElementById('oauthCopyUrlBtn');
+  const qrBtn = document.getElementById('oauthQrBtn');
+  const dismissBtn = document.getElementById('oauthDismissBtn');
+  const qrModal = document.getElementById('oauthQrModalBackdrop');
+  const qrContainer = document.getElementById('oauthQrImageContainer');
+  const qrClose = document.getElementById('oauthQrModalClose');
+  const qrCloseBtn = document.getElementById('oauthQrCloseBtn');
+
+  if (window.ag?.onOAuthIntercepted) {
+    window.ag.onOAuthIntercepted((data: { url: string; port?: string; redirectUri?: string; ts?: number }) => {
+      lastInterceptedOAuthUrl = data.url;
+      if (portBadge) {
+        portBadge.textContent = data.port ? `Port ${data.port}` : 'OAuth';
+      }
+      if (banner) {
+        banner.style.display = 'flex';
+      }
+      toast("Demande d'authentification Google détectée !", 'info', 6000);
+    });
+  }
+
+  openBrowserBtn?.addEventListener('click', () => {
+    if (lastInterceptedOAuthUrl && window.ag?.openExternal) {
+      void window.ag.openExternal(lastInterceptedOAuthUrl);
+    }
+  });
+
+  copyUrlBtn?.addEventListener('click', async () => {
+    if (lastInterceptedOAuthUrl) {
+      await navigator.clipboard.writeText(lastInterceptedOAuthUrl);
+      toast('URL OAuth copiée dans le presse-papiers', 'ok');
+    }
+  });
+
+  qrBtn?.addEventListener('click', async () => {
+    if (!lastInterceptedOAuthUrl) return;
+    if (qrContainer) {
+      qrContainer.innerHTML = '<span class="spinner"></span>';
+      try {
+        if (window.ag?.generateQr) {
+          const qrSvg = await window.ag.generateQr(lastInterceptedOAuthUrl);
+          qrContainer.innerHTML = qrSvg.startsWith('<svg') || qrSvg.startsWith('data:image')
+            ? (qrSvg.startsWith('data:image') ? `<img src="${qrSvg}" alt="QR Code" width="180" height="180" />` : qrSvg)
+            : qrSvg;
+        } else {
+          qrContainer.innerHTML = `<p class="text-sm text-muted">Génération QR locale non disponible.</p><input type="text" class="input input-sm w-full" readonly value="${escapeHtml(lastInterceptedOAuthUrl)}" onclick="this.select()" />`;
+        }
+      } catch {
+        qrContainer.innerHTML = `<p class="text-sm text-muted">Échec de génération du QR code local.</p><input type="text" class="input input-sm w-full" readonly value="${escapeHtml(lastInterceptedOAuthUrl)}" onclick="this.select()" />`;
+      }
+    }
+    if (qrModal) qrModal.hidden = false;
+  });
+
+  dismissBtn?.addEventListener('click', () => {
+    if (banner) banner.style.display = 'none';
+  });
+
+  const closeQr = () => {
+    if (qrModal) qrModal.hidden = true;
+  };
+  qrClose?.addEventListener('click', closeQr);
+  qrCloseBtn?.addEventListener('click', closeQr);
+}
+
+// ── Ping-Pong Modal & Batch Benchmark ───────────────────────────────────────
+function setupPingPongModal(): void {
+  const modal = document.getElementById('pingPongModalBackdrop');
+  const openBtn = document.getElementById('modelsPingPongBtn');
+  const closeBtn = document.getElementById('pingPongModalClose');
+  const footerCloseBtn = document.getElementById('pingPongFooterClose');
+  const runBatchBtn = document.getElementById('pingPongRunBatchBtn');
+  const promptInput = document.getElementById('pingPongCustomPrompt') as HTMLInputElement | null;
+  const progressEl = document.getElementById('pingPongBatchProgress');
+  const tableBody = document.getElementById('pingPongTableBody');
+
+  const closeModal = () => {
+    if (modal) modal.hidden = true;
+  };
+
+  closeBtn?.addEventListener('click', closeModal);
+  footerCloseBtn?.addEventListener('click', closeModal);
+
+  openBtn?.addEventListener('click', () => {
+    if (!modal || !tableBody) return;
+    modal.hidden = false;
+
+    const activeModels = allLoadedModels.filter((m) => m.enabled !== false);
+    if (activeModels.length === 0) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="5" style="padding: 24px; text-align: center; color: var(--text-2);">
+            Aucun modèle actif trouvé. Activez ou ajoutez des modèles dans la liste.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tableBody.innerHTML = activeModels.map((m) => `
+      <tr data-ping-model="${escapeHtml(m.name)}" style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 10px 12px; font-weight: 500;">
+          ${escapeHtml(m.displayName || m.name)}
+          <div style="font-size: 11px; color: var(--text-3); font-family: var(--font-mono);">${escapeHtml(m.name)}</div>
+        </td>
+        <td style="padding: 10px 12px;">
+          <span class="badge badge-muted">${escapeHtml(m.provider || 'custom')}</span>
+        </td>
+        <td style="padding: 10px 12px;" class="ping-status-cell">
+          <span class="badge badge-ghost" style="opacity: 0.6;">En attente</span>
+        </td>
+        <td style="padding: 10px 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--text-2);" class="ping-pong-cell">
+          —
+        </td>
+        <td style="padding: 10px 12px; text-align: right;">
+          <button class="btn btn-ghost btn-sm ping-single-btn" data-model="${escapeHtml(m.name)}" type="button">
+            🏓 Ping
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  });
+
+  tableBody?.addEventListener('click', async (e) => {
+    const target = e.target as HTMLElement;
+    const btn = target.closest<HTMLButtonElement>('.ping-single-btn');
+    if (!btn) return;
+    const modelName = btn.dataset.model;
+    if (!modelName) return;
+
+    const row = btn.closest('tr');
+    const statusCell = row?.querySelector('.ping-status-cell');
+    const pongCell = row?.querySelector('.ping-pong-cell');
+    const prompt = promptInput?.value?.trim() || 'ping';
+
+    const targetModel = allLoadedModels.find((m) => m.name === modelName) || { name: modelName };
+    btn.disabled = true;
+    if (statusCell) statusCell.innerHTML = '<span class="spinner"></span> <span style="font-size: 11px;">Ping…</span>';
+
+    try {
+      const res = await testSingleModel(targetModel, prompt);
+      if (statusCell) statusCell.innerHTML = renderPingBadge(res);
+      if (pongCell) pongCell.textContent = res.pongText || (res.ok ? '(Réponse vide)' : res.error || 'Erreur');
+    } catch (err) {
+      if (statusCell) statusCell.innerHTML = '<span class="ping-badge ping-badge-error">❌ Erreur</span>';
+      if (pongCell) pongCell.textContent = (err as Error).message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  runBatchBtn?.addEventListener('click', async () => {
+    const activeModels = allLoadedModels.filter((m) => m.enabled !== false);
+    if (activeModels.length === 0) {
+      toast('Aucun modèle actif à tester', 'warn');
+      return;
+    }
+
+    const prompt = promptInput?.value?.trim() || 'ping';
+    if (runBatchBtn) (runBatchBtn as HTMLButtonElement).disabled = true;
+    if (progressEl) {
+      progressEl.style.display = 'inline-block';
+      progressEl.textContent = `0 / ${activeModels.length} testés…`;
+    }
+
+    try {
+      await testBatchModels(activeModels, (done: number, total: number, res: PingPongResult) => {
+        if (progressEl) progressEl.textContent = `${done} / ${total} testés…`;
+        const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(res.modelName) : res.modelName.replace(/"/g, '\\"');
+        const row = tableBody?.querySelector(`tr[data-ping-model="${escaped}"]`);
+        if (row) {
+          const statusCell = row.querySelector('.ping-status-cell');
+          const pongCell = row.querySelector('.ping-pong-cell');
+          if (statusCell) statusCell.innerHTML = renderPingBadge(res);
+          if (pongCell) pongCell.textContent = res.pongText || (res.ok ? '(Réponse vide)' : res.error || 'Erreur');
+        }
+      }, prompt);
+      toast(`Test Ping-Pong terminé pour ${activeModels.length} modèles`, 'ok');
+    } finally {
+      if (runBatchBtn) (runBatchBtn as HTMLButtonElement).disabled = false;
+      if (progressEl) progressEl.style.display = 'none';
+    }
+  });
+}
+
+// Initialize OAuth Interception and Ping-Pong modal handlers
+setupOAuthInterception();
+setupPingPongModal();
+
+
 

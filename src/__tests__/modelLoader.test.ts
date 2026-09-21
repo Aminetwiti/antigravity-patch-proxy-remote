@@ -27,10 +27,6 @@ vi.mock('../cryptoStore', () => ({
   backupFile: vi.fn(),
 }));
 
-// Mock schemaValidator
-vi.mock('../schemaValidator', () => ({
-  validateCustomModel: vi.fn(() => ({ valid: true })),
-}));
 
 // Mock fs
 vi.mock('fs', async () => {
@@ -80,7 +76,7 @@ describe('loadCustomModels', () => {
   it('returns models from existing file', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const mockModels = [
-      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiKey: 'enc:abc', encrypted: true },
+      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'enc:abc', encrypted: true },
     ];
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: mockModels }));
 
@@ -92,7 +88,7 @@ describe('loadCustomModels', () => {
   it('strips UTF-8 BOM before parsing', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const bom = '\uFEFF';
-    const mockModels = [{ name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiKey: 'enc:x', encrypted: true }];
+    const mockModels = [{ name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'enc:x', encrypted: true }];
     vi.mocked(fs.readFileSync).mockReturnValue(bom + JSON.stringify({ models: mockModels }));
 
     const models = loadCustomModels();
@@ -118,7 +114,7 @@ describe('loadCustomModels', () => {
   it('migrates plaintext API keys to encrypted format', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const plaintextModels = [
-      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiKey: 'sk-plaintext-key' },
+      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'sk-plaintext-key' },
     ];
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: plaintextModels }));
     vi.mocked(fs.writeFileSync).mockImplementation(() => undefined);
@@ -133,13 +129,10 @@ describe('loadCustomModels', () => {
   it('skips invalid models and warns', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const mixedModels = [
-      { name: 'valid', displayName: 'Valid', provider: 'openai', apiKey: 'enc:x', encrypted: true },
-      { name: 'invalid', displayName: 'Invalid', provider: 'openai', apiKey: 'enc:x', encrypted: true },
+      { name: 'valid', displayName: 'Valid', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'enc:x', encrypted: true },
+      { name: '', displayName: 'Invalid (missing name)', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'enc:x', encrypted: true },
     ];
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: mixedModels }));
-    vi.mocked(validateCustomModel)
-      .mockReturnValueOnce({ valid: true } as never)
-      .mockReturnValueOnce({ valid: false, error: 'missing field' } as never);
 
     const models = loadCustomModels();
     expect(models).toHaveLength(1);
@@ -149,7 +142,7 @@ describe('loadCustomModels', () => {
   it('does not migrate keys already prefixed with enc:', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const encryptedModels = [
-      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiKey: 'enc:abc', encrypted: true },
+      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'enc:abc', encrypted: true },
     ];
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: encryptedModels }));
 
@@ -160,7 +153,7 @@ describe('loadCustomModels', () => {
   it('does not migrate keys prefixed with fallback:', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const fallbackModels = [
-      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiKey: 'fallback:abc', encrypted: true },
+      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'fallback:abc', encrypted: true },
     ];
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: fallbackModels }));
 
@@ -171,7 +164,7 @@ describe('loadCustomModels', () => {
   it('does not migrate keys with value "none"', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const noneModels = [
-      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiKey: 'none', encrypted: true },
+      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'none', encrypted: true },
     ];
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: noneModels }));
 

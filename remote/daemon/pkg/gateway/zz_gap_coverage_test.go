@@ -619,9 +619,18 @@ func TestGapCheckOrigin(t *testing.T) {
 	if checkOrigin(req) {
 		t.Error("Origin arbitraire doit être rejeté (CSWSH)")
 	}
+	// Origin tunnel arbitraire ciblant un Host localhost doit être rejeté (CSWSH)
 	req.Header.Set("Origin", "https://abc.trycloudflare.com")
-	if !checkOrigin(req) {
-		t.Error("Origin tunnel Cloudflare doit être accepté")
+	if checkOrigin(req) {
+		t.Error("Origin tunnel non correspondant à l'Host doit être rejeté (CSWSH)")
+	}
+
+	// Origin tunnel correspondant à l'Host de la requête doit être accepté
+	tunnelReq, _ := http.NewRequest("GET", "https://abc.trycloudflare.com/ws", nil)
+	tunnelReq.Host = "abc.trycloudflare.com"
+	tunnelReq.Header.Set("Origin", "https://abc.trycloudflare.com")
+	if !checkOrigin(tunnelReq) {
+		t.Error("Origin tunnel correspondant à l'Host doit être accepté")
 	}
 }
 

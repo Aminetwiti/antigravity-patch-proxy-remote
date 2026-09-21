@@ -14,7 +14,7 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({
-      'session_model_sess-history-1': 'claude-3-7-sonnet',
+      'session_model_sess-history-1': 'claude-sonnet-4-6',
     });
   });
 
@@ -28,7 +28,7 @@ void main() {
           home: Scaffold(
             bottomNavigationBar: ChatInputBar(
               cascadeId: 'sess-history-2',
-              initialModel: 'claude-3-7-sonnet',
+              initialModel: 'claude-sonnet-4-6',
               onModelChanged: (m) => selectedModelName = m,
               onSend: (_, {base64Data, fileName, images, media, modelEnum, modelUID, queued = false}) {},
             ),
@@ -99,7 +99,7 @@ void main() {
                           'sender': 'assistant',
                           'text': 'Bien sûr ! Voici l\'analyse...',
                           'timestamp': '10:01',
-                          'modelLabel': 'Claude 3.7 Sonnet',
+                          'modelLabel': 'Claude Sonnet 4.6',
                         },
                       ],
                     },

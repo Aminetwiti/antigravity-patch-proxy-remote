@@ -17,7 +17,7 @@ void main() {
 
   group('Real E2E Integration Workflows (Complete Session Lifecycle & Impact Analysis)', () {
     testWidgets('Workflow 1: Interactive Chat Prompt -> Stop Action -> Model Switch to GPT-4o', (WidgetTester tester) async {
-      String currentModel = 'claude-3-7-sonnet';
+      String currentModel = 'claude-sonnet-4-6';
       bool wasStopped = false;
 
       await tester.pumpWidget(

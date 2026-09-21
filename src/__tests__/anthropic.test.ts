@@ -2,14 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as shared from '../proxy/shared';
 import { mapGeminiToAnthropic, mapAnthropicToGemini, mapAnthropicChunkToGemini } from '../proxy/translators/anthropic';
 
-// Mock detectModelCapabilitiesByName to avoid importing the full module chain
-vi.mock('../proxy/modelUtils', () => ({
-  detectModelCapabilitiesByName: vi.fn((name: string) => ({
-    isThinkingModel: name.includes('opus') || name.includes('thinking'),
-    supportsToolCalls: true,
-    supportsReasoning: name.includes('opus') || name.includes('thinking') || name.includes('deepseek'),
-  })),
-}));
 
 // Reset shared state before each test
 beforeEach(() => {
@@ -344,4 +336,63 @@ describe('mapAnthropicChunkToGemini', () => {
     expect(r1).not.toBeNull();
     expect(r2).not.toBeNull();
   });
+
+  it('should generate synthetic toolu_vrtx_ IDs and FIFO pair them when functionCall and functionResponse omit id', () => {
+    const body = {
+      contents: [
+        {
+          role: 'model',
+          parts: [
+            {
+              functionCall: { name: 'read_file', args: { path: 'test.ts' } }, // no id!
+            },
+          ],
+        },
+        {
+          role: 'user',
+          parts: [
+            {
+              functionResponse: { name: 'read_file', response: { content: 'hello' } }, // no id!
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = mapGeminiToAnthropic(body, 'claude-3-5-sonnet-latest');
+    expect(result.messages.length).toBe(2);
+
+    // Assistant message with tool_use
+    const assistantContent = result.messages[0].content as Array<Record<string, unknown>>;
+    const toolUseBlock = assistantContent.find((b) => b.type === 'tool_use')!;
+    expect(toolUseBlock).toBeTruthy();
+    expect((toolUseBlock.id as string).startsWith('toolu_vrtx_')).toBe(true);
+
+    // User message with tool_result
+    const userContent = result.messages[1].content as Array<Record<string, unknown>>;
+    const toolResultBlock = userContent.find((b) => b.type === 'tool_result')!;
+    expect(toolResultBlock).toBeTruthy();
+    // Must match the generated synthetic id!
+    expect(toolResultBlock.tool_use_id).toBe(toolUseBlock.id);
+  });
+
+  it('should normalize empty string texts to . to prevent Anthropic HTTP 400 errors', () => {
+    const body = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: '' }],
+        },
+        {
+          role: 'model',
+          parts: [{ text: '   ' }],
+        },
+      ],
+    };
+
+    const result = mapGeminiToAnthropic(body, 'claude-3-5-sonnet-latest');
+    expect(result.messages[0].content).toBe('.');
+    expect(result.messages[1].content).toBe('.');
+  });
 });
+

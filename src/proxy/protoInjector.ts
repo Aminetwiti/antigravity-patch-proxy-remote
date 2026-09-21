@@ -9,13 +9,19 @@ import {
   findModelEntryFieldTag,
   extractFieldMapping,
   encodeModelEntryForGetModels,
+  parseProtoRaw,
+  encodeStringField,
+  encodeVarintField,
+  encodeMessageField,
+  encodeClientModelConfig,
 } from './protobuf';
 import { generateModelPlaceholderId } from './idGenerator';
 import log from 'electron-log';
 import type { CustomModel } from './types';
 import { isRecentModel } from './recentModelsStore';
-import type { ModelHealthResult } from './modelHealthChecker';
+import { getCachedHealth, type ModelHealthResult } from './modelHealthChecker';
 import { expandModelsWithEffort } from './effortExpander';
+import { detectModelCapabilities } from './modelUtils';
 
 /**
  * Result of injecting custom models into a GetAvailableModels protobuf response.
@@ -44,25 +50,76 @@ export function parseGrpcWebHeader(buf: Buffer): { flags: number; msgLen: number
 /**
  * Formats a model's display name with Status Dot, Latency, and Favorite Star.
  */
-export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResult): string {
+export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResult | null): string {
   const isFav = isRecentModel(m.name) || isRecentModel(m.displayName);
   const star = isFav ? '⭐ ' : '';
-  const name = m.displayName || m.name;
-
-  if (!health) {
-    return `${star}🟢 | ${name}`;
+  let name = m.displayName || m.name;
+  name = name.replace(/^\[[^\]]+\]\s*/, '');
+  
+  if (!health || health.status === 'healthy' || health.status === 'slow') {
+    return `${star}🟢 • ${name}`;
   }
 
   if (health.status === 'unhealthy') {
     const errNotice = health.error ? ` [${health.error}]` : ' [Offline]';
-    return `${star}🔴${errNotice} | ${name}`;
+    return `${star}🔴${errNotice} • ${name}`;
   }
 
-  if (health.status === 'slow') {
-    return `${star}🟡 ⚡ ${health.latencyMs}ms | ${name}`;
+  return `${star}🟢 • ${name}`;
+}
+
+function extractExistingModelKeys(msgBody: Buffer, modelTag: number): {
+  modelIds: Set<string>;
+  labels: Set<string>;
+  placeholderNames: Set<string>;
+} {
+  const modelIds = new Set<string>();
+  const labels = new Set<string>();
+  const placeholderNames = new Set<string>();
+  const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
+
+  for (const f of rawFields) {
+    if (f.tag === modelTag && f.raw) {
+      const subFields = parseProtoRaw(f.raw, 0, f.raw.length);
+      let idStr = '';
+      let labelStr = '';
+      for (const sf of subFields) {
+        if (sf.raw) {
+          if (sf.fieldNum === 1) {
+            idStr = sf.raw.toString('utf8').trim();
+          } else if (sf.fieldNum === 2) {
+            labelStr = sf.raw.toString('utf8').trim();
+          }
+        }
+      }
+
+      if (idStr) {
+        const lowerId = idStr.toLowerCase();
+        modelIds.add(lowerId);
+        modelIds.add(lowerId.replace(/^models\//, ''));
+      }
+      if (labelStr) {
+        labels.add(labelStr);
+        const lowerLabel = labelStr.toLowerCase();
+        labels.add(lowerLabel);
+        if (
+          idStr.toLowerCase().includes('model_placeholder_') ||
+          labelStr.includes('•') ||
+          labelStr.includes('|') ||
+          labelStr.includes('⭐')
+        ) {
+          const norm = labelStr
+            .replace(/^⭐\s*/, '')
+            .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+            .trim()
+            .toLowerCase();
+          if (norm) placeholderNames.add(norm);
+        }
+      }
+    }
   }
 
-  return `${star}🟢 ⚡ ${health.latencyMs}ms | ${name}`;
+  return { modelIds, labels, placeholderNames };
 }
 
 /**
@@ -77,9 +134,10 @@ export function injectCustomModelsIntoResponse(
   responseBuf: Buffer,
   customModels: CustomModel[],
   healthMap?: Map<string, ModelHealthResult>,
+  forceCompatibility = false,
 ): InjectionResult {
-  // No injection if no custom models or buffer too small to contain header + body
-  if (customModels.length === 0 || responseBuf.length <= 6) {
+  // No injection if no custom models (unless forced) or buffer too small to contain header + body
+  if ((customModels.length === 0 && !forceCompatibility) || responseBuf.length <= 6) {
     return { buffer: responseBuf, injectedCount: 0, modified: false };
   }
 
@@ -104,24 +162,52 @@ export function injectCustomModelsIntoResponse(
     }
 
     const fieldMapping = extractFieldMapping(sampleEntry.value);
+    const existing = extractExistingModelKeys(msgBody, modelTag);
     const newParts: Buffer[] = [msgBody];
 
     let injectedCount = 0;
 
     const expandedModels = expandModelsWithEffort(customModels);
+    const seenModelKeys = new Set<string>();
 
     for (const m of expandedModels) {
-      const health = healthMap?.get(m.name);
-      
-      // Unhealthy models are still injected (with red dot status) so the user knows they are loaded.
-      // Removed the filter that was skipping them.
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
+      const effort = m._effortSuffix || '';
+      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
+      if (seenModelKeys.has(modelDedupKey)) continue;
+
+      const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
       const placeholderId = generateModelPlaceholderId(m);
+      const pidKey = placeholderId.toLowerCase();
+
+      // Skip if already in the incoming protobuf message
+      if (existing.modelIds.has(pidKey) || existing.modelIds.has(`models/${pidKey}`)) {
+        continue;
+      }
       const formattedName = formatModelDisplayName(m, health);
+      if (existing.labels.has(formattedName) || existing.labels.has(formattedName.toLowerCase())) {
+        continue;
+      }
+      if (cleanDisp && existing.placeholderNames.has(cleanDisp)) {
+        continue;
+      }
+      if (rawName && existing.placeholderNames.has(rawName)) {
+        continue;
+      }
+
+      seenModelKeys.add(modelDedupKey);
+      existing.modelIds.add(pidKey);
+      existing.modelIds.add(`models/${pidKey}`);
+      existing.labels.add(formattedName);
+
+      const cap = detectModelCapabilities(m);
       const entry = encodeModelEntryForGetModels(
         `models/${placeholderId}`,
         formattedName,
         fieldMapping,
+        cap.supportsImages,
       );
       const tagBuf = encodeVarint(modelTag);
       const lenBuf = encodeVarint(entry.length);
@@ -131,6 +217,27 @@ export function injectCustomModelsIntoResponse(
 
     if (injectedCount === 0) {
       return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M577, MODEL_PLACEHOLDER_M0..M600)
+    // resolve cleanly in Language Server without "unknown model key: model not found"
+    for (let i = 0; i <= 600; i++) {
+      const legacyPid = `MODEL_PLACEHOLDER_M${i}`;
+      const legacyKey = legacyPid.toLowerCase();
+      if (existing.modelIds.has(legacyKey) || existing.modelIds.has(`models/${legacyKey}`)) {
+        continue;
+      }
+      existing.modelIds.add(legacyKey);
+      existing.modelIds.add(`models/${legacyKey}`);
+      const entry = encodeModelEntryForGetModels(
+        `models/${legacyPid}`,
+        legacyPid,
+        fieldMapping,
+        true,
+      );
+      const tagBuf = encodeVarint(modelTag);
+      const lenBuf = encodeVarint(entry.length);
+      newParts.push(tagBuf, lenBuf, entry);
     }
 
     const newMsgBody = Buffer.concat(newParts);
@@ -145,3 +252,413 @@ export function injectCustomModelsIntoResponse(
     return { buffer: responseBuf, injectedCount: 0, modified: false };
   }
 }
+
+function injectCustomModelsIntoUserStatusJson(
+  responseBuf: Buffer,
+  flags: number,
+  trailers: Buffer,
+  bodyStr: string,
+  jsonStart: number,
+  customModels: CustomModel[],
+  healthMap?: Map<string, ModelHealthResult>,
+): InjectionResult {
+  try {
+    let jsonEnd = bodyStr.lastIndexOf('}');
+    let parsed: any = null;
+    while (jsonEnd > jsonStart) {
+      try {
+        parsed = JSON.parse(bodyStr.slice(jsonStart, jsonEnd + 1));
+        break;
+      } catch {
+        jsonEnd = bodyStr.lastIndexOf('}', jsonEnd - 1);
+      }
+    }
+
+    if (!parsed || !parsed.userStatus) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    if (!parsed.userStatus.cascadeModelConfigData) {
+      parsed.userStatus.cascadeModelConfigData = {
+        clientModelConfigs: [],
+        clientModelSorts: [{ name: 'Recommended', groups: [{ modelLabels: [] }] }],
+      };
+    }
+
+    const cascade = parsed.userStatus.cascadeModelConfigData;
+    if (!Array.isArray(cascade.clientModelConfigs)) {
+      cascade.clientModelConfigs = [];
+    }
+    if (!Array.isArray(cascade.clientModelSorts) || cascade.clientModelSorts.length === 0) {
+      cascade.clientModelSorts = [{ name: 'Recommended', groups: [{ modelLabels: [] }] }];
+    }
+    if (!cascade.clientModelSorts[0].groups || !Array.isArray(cascade.clientModelSorts[0].groups) || cascade.clientModelSorts[0].groups.length === 0) {
+      cascade.clientModelSorts[0].groups = [{ modelLabels: [] }];
+    }
+    const sortGroup = cascade.clientModelSorts[0].groups[0];
+    if (!Array.isArray(sortGroup.modelLabels)) {
+      sortGroup.modelLabels = [];
+    }
+
+    const existingLabels = new Set<string>();
+    const existingModelIds = new Set<string>();
+    const existingPlaceholderNames = new Set<string>();
+
+    for (const c of cascade.clientModelConfigs) {
+      const label = (c.label || '').trim();
+      const modelId = String(c.modelId || c.modelOrAlias?.model || '').trim();
+      if (label) {
+        existingLabels.add(label);
+        existingLabels.add(label.toLowerCase());
+        if (
+          modelId.toLowerCase().includes('model_placeholder_') ||
+          label.includes('•') ||
+          label.includes('|') ||
+          label.includes('⭐')
+        ) {
+          const norm = label
+            .replace(/^⭐\s*/, '')
+            .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+            .trim()
+            .toLowerCase();
+          if (norm) existingPlaceholderNames.add(norm);
+        }
+      }
+      if (modelId) {
+        const mid = modelId.toLowerCase();
+        existingModelIds.add(mid);
+        existingModelIds.add(mid.replace(/^models\//, ''));
+      }
+    }
+
+    const expandedModels = expandModelsWithEffort(customModels);
+    const seenModelKeys = new Set<string>();
+    let injectedCount = 0;
+
+    for (const m of expandedModels) {
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
+      const effort = m._effortSuffix || '';
+      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      if (seenModelKeys.has(modelDedupKey)) continue;
+
+      const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
+      const placeholderId = generateModelPlaceholderId(m);
+      const pidKey = placeholderId.toLowerCase();
+
+      if (existingModelIds.has(pidKey) || existingModelIds.has(`models/${pidKey}`)) continue;
+      const label = formatModelDisplayName(m, health);
+      if (existingLabels.has(label) || existingLabels.has(label.toLowerCase())) continue;
+      if (cleanDisp && existingPlaceholderNames.has(cleanDisp)) continue;
+      if (rawName && existingPlaceholderNames.has(rawName)) continue;
+
+      existingLabels.add(label);
+      existingModelIds.add(pidKey);
+      seenModelKeys.add(modelDedupKey);
+
+      const cap = detectModelCapabilities(m);
+
+      cascade.clientModelConfigs.push({
+        label,
+        modelOrAlias: {
+          model: placeholderId,
+        },
+        supportsImages: cap.supportsImages,
+        isRecommended: false,
+        allowedTiers: [
+          'TEAMS_TIER_PRO',
+          'TEAMS_TIER_TEAMS',
+          'TEAMS_TIER_ENTERPRISE_SELF_HOSTED',
+          'TEAMS_TIER_ENTERPRISE_SAAS',
+          'TEAMS_TIER_HYBRID',
+          'TEAMS_TIER_PRO_ULTIMATE',
+        ],
+        tagTitle: m.provider ? m.provider.charAt(0).toUpperCase() + m.provider.slice(1) : 'Custom',
+        quotaInfo: {
+          remainingFraction: 1,
+          resetTime: '2099-01-01T00:00:00Z',
+        },
+        modelId: placeholderId,
+      });
+
+      sortGroup.modelLabels.push(label);
+      injectedCount++;
+    }
+
+    if (injectedCount === 0) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const newJsonBuf = Buffer.from(JSON.stringify(parsed), 'utf8');
+    const newHeader = Buffer.alloc(5);
+    newHeader[0] = flags;
+    newHeader.writeUInt32BE(newJsonBuf.length, 1);
+    const modifiedBuf = Buffer.concat([newHeader, newJsonBuf, trailers]);
+
+    log.info(`[ProtoInjector] Injected ${injectedCount} custom models into UserStatus JSON`);
+    return { buffer: modifiedBuf, injectedCount, modified: true };
+  } catch (err) {
+    log.warn('[ProtoInjector] JSON injection failed, returning original buffer:', (err as Error).message);
+    return { buffer: responseBuf, injectedCount: 0, modified: false };
+  }
+}
+
+/**
+ * Injects custom models into a LanguageServerService/GetUserStatus protobuf response (for Antigravity 2.5+ / 2.12+).
+ * Populates client_model_configs and adds model labels to client_model_sorts.
+ *
+ * @param responseBuf Raw gRPC-Web response buffer
+ * @param customModels Custom models to inject
+ * @param healthMap Optional health status map
+ * @returns Injection result with modified buffer and metadata
+ */
+export function injectCustomModelsIntoUserStatus(
+  responseBuf: Buffer,
+  customModels: CustomModel[],
+  healthMap?: Map<string, ModelHealthResult>,
+): InjectionResult {
+  if (responseBuf.length <= 5) {
+    return { buffer: responseBuf, injectedCount: 0, modified: false };
+  }
+
+  try {
+    const flags = responseBuf[0];
+    const msgLen = responseBuf.readUInt32BE(1);
+    if (5 + msgLen > responseBuf.length) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const msgBody = responseBuf.subarray(5, 5 + msgLen);
+    const trailers = responseBuf.subarray(5 + msgLen);
+
+    // Check if the payload is JSON (Connect-JSON protocol used in Antigravity 2.12+)
+    const bodyStr = msgBody.toString('utf8');
+    const jsonStart = bodyStr.indexOf('{"userStatus"');
+    if (jsonStart !== -1) {
+      return injectCustomModelsIntoUserStatusJson(responseBuf, flags, trailers, bodyStr, jsonStart, customModels, healthMap);
+    }
+
+    const topFields = parseProtoRaw(msgBody, 0, msgBody.length);
+    const usField = topFields.find((f) => f.fieldNum === 1 && f.raw);
+    if (!usField || !usField.raw) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const usFields = parseProtoRaw(usField.raw, 0, usField.raw.length);
+    const cascadeField = usFields.find((f) => f.fieldNum === 33 && f.raw);
+    if (!cascadeField || !cascadeField.raw) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const cascadeFields = parseProtoRaw(cascadeField.raw, 0, cascadeField.raw.length);
+
+    const expandedModels = expandModelsWithEffort(customModels);
+    const newModels: Array<{
+      label: string;
+      modelEnum: number;
+      modelId: string;
+      supportsImages: boolean;
+      supportsThought: boolean;
+    }> = [];
+
+    const existingLabels = new Set<string>();
+    const existingModelIds = new Set<string>();
+    const existingPlaceholderNames = new Set<string>();
+
+    for (const cf of cascadeFields) {
+      if (cf.fieldNum === 1 && cf.raw) {
+        const sub = parseProtoRaw(cf.raw, 0, cf.raw.length);
+        let label = '';
+        let modelId = '';
+        for (const sf of sub) {
+          if (sf.raw) {
+            if (sf.fieldNum === 1) {
+              label = sf.raw.toString('utf8').trim();
+            } else if (sf.fieldNum === 21) {
+              modelId = sf.raw.toString('utf8').trim();
+            }
+          }
+        }
+        if (label) {
+          existingLabels.add(label);
+          existingLabels.add(label.toLowerCase());
+          if (
+            modelId.toLowerCase().includes('model_placeholder_') ||
+            label.includes('•') ||
+            label.includes('|') ||
+            label.includes('⭐')
+          ) {
+            const norm = label
+              .replace(/^⭐\s*/, '')
+              .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+              .trim()
+              .toLowerCase();
+            if (norm) existingPlaceholderNames.add(norm);
+          }
+        }
+        if (modelId) {
+          const mid = modelId.toLowerCase();
+          existingModelIds.add(mid);
+          existingModelIds.add(mid.replace(/^models\//, ''));
+        }
+      }
+    }
+
+    const seenModelKeys = new Set<string>();
+    for (const m of expandedModels) {
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
+      const effort = m._effortSuffix || '';
+      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      if (seenModelKeys.has(modelDedupKey)) continue;
+
+      const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
+      const placeholderId = generateModelPlaceholderId(m);
+      const pidKey = placeholderId.toLowerCase();
+
+      if (existingModelIds.has(pidKey) || existingModelIds.has(`models/${pidKey}`)) continue;
+      const label = formatModelDisplayName(m, health);
+      if (existingLabels.has(label) || existingLabels.has(label.toLowerCase())) continue;
+      if (cleanDisp && existingPlaceholderNames.has(cleanDisp)) continue;
+      if (rawName && existingPlaceholderNames.has(rawName)) continue;
+
+      existingLabels.add(label);
+      existingModelIds.add(pidKey);
+      seenModelKeys.add(modelDedupKey);
+
+      const match = placeholderId.match(/_M(\d+)$/);
+      const num = match ? parseInt(match[1], 10) : 400;
+      const modelEnum = 1000 + num;
+
+      const cap = detectModelCapabilities(m);
+      newModels.push({
+        label,
+        modelEnum,
+        modelId: placeholderId,
+        supportsImages: cap.supportsImages,
+        supportsThought: cap.isThinking,
+      });
+    }
+
+    const customInjectedCount = newModels.length;
+
+    if (customInjectedCount === 0) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    // Build new CascadeModelConfigData
+    const newCascadeParts: Buffer[] = [];
+
+    // 1. Keep existing client_model_configs
+    for (const f of cascadeFields) {
+      if (f.fieldNum === 1 && f.raw) {
+        newCascadeParts.push(encodeMessageField(1, f.raw));
+      }
+    }
+
+    // 2. Append new client_model_configs
+    for (const nm of newModels) {
+      const cfgBuf = encodeClientModelConfig(
+        nm.label,
+        nm.modelEnum,
+        nm.modelId,
+        nm.supportsImages,
+        nm.supportsThought,
+      );
+      newCascadeParts.push(encodeMessageField(1, cfgBuf));
+    }
+
+    // 3. Update client_model_sorts to include the new labels
+    let sortsFound = false;
+    for (const f of cascadeFields) {
+      if (f.fieldNum === 2 && f.raw) {
+        sortsFound = true;
+        const sortFields = parseProtoRaw(f.raw, 0, f.raw.length);
+        const newSortParts: Buffer[] = [];
+        for (const sf of sortFields) {
+          if (sf.fieldNum === 1 && sf.raw) {
+            newSortParts.push(encodeStringField(1, sf.raw.toString('utf8')));
+          } else if (sf.fieldNum === 2 && sf.raw) {
+            const groupFields = parseProtoRaw(sf.raw, 0, sf.raw.length);
+            const newGroupParts: Buffer[] = [];
+            for (const gf of groupFields) {
+              if (gf.fieldNum === 1 && gf.raw) {
+                newGroupParts.push(encodeStringField(1, gf.raw.toString('utf8')));
+              } else if (gf.fieldNum === 2 && gf.raw) {
+                newGroupParts.push(encodeStringField(2, gf.raw.toString('utf8')));
+              }
+            }
+            for (const nm of newModels) {
+              newGroupParts.push(encodeStringField(2, nm.label));
+            }
+            newSortParts.push(encodeMessageField(2, Buffer.concat(newGroupParts)));
+          } else if (sf.wireType === 2 && sf.raw) {
+            newSortParts.push(encodeMessageField(sf.fieldNum, sf.raw));
+          } else if (sf.wireType === 0 && sf.value !== undefined) {
+            newSortParts.push(encodeVarintField(sf.fieldNum, sf.value));
+          }
+        }
+        newCascadeParts.push(encodeMessageField(2, Buffer.concat(newSortParts)));
+      } else if (f.fieldNum !== 1) {
+        if (f.wireType === 2 && f.raw) {
+          newCascadeParts.push(encodeMessageField(f.fieldNum, f.raw));
+        } else if (f.wireType === 0 && f.value !== undefined) {
+          newCascadeParts.push(encodeVarintField(f.fieldNum, f.value));
+        }
+      }
+    }
+
+    if (!sortsFound) {
+      const groupParts = [encodeStringField(1, '')];
+      for (const nm of newModels) {
+        groupParts.push(encodeStringField(2, nm.label));
+      }
+      const sortParts = [
+        encodeStringField(1, 'Recommended'),
+        encodeMessageField(2, Buffer.concat(groupParts)),
+      ];
+      newCascadeParts.push(encodeMessageField(2, Buffer.concat(sortParts)));
+    }
+
+    const newCascadeBuf = Buffer.concat(newCascadeParts);
+
+    // Build new UserStatus
+    const newUsParts: Buffer[] = [];
+    for (const f of usFields) {
+      if (f.fieldNum === 33) {
+        newUsParts.push(encodeMessageField(33, newCascadeBuf));
+      } else if (f.wireType === 2 && f.raw) {
+        newUsParts.push(encodeMessageField(f.fieldNum, f.raw));
+      } else if (f.wireType === 0 && f.value !== undefined) {
+        newUsParts.push(encodeVarintField(f.fieldNum, f.value));
+      }
+    }
+    const newUsBuf = Buffer.concat(newUsParts);
+
+    // Build new Top Message
+    const newTopParts: Buffer[] = [];
+    for (const f of topFields) {
+      if (f.fieldNum === 1) {
+        newTopParts.push(encodeMessageField(1, newUsBuf));
+      } else if (f.wireType === 2 && f.raw) {
+        newTopParts.push(encodeMessageField(f.fieldNum, f.raw));
+      } else if (f.wireType === 0 && f.value !== undefined) {
+        newTopParts.push(encodeVarintField(f.fieldNum, f.value));
+      }
+    }
+    const newMsgBody = Buffer.concat(newTopParts);
+
+    const newHeader = Buffer.alloc(5);
+    newHeader[0] = flags;
+    newHeader.writeUInt32BE(newMsgBody.length, 1);
+    const modifiedBuf = Buffer.concat([newHeader, newMsgBody, trailers]);
+
+    return { buffer: modifiedBuf, injectedCount: customInjectedCount, modified: true };
+  } catch (err) {
+    log.warn('[ProtoInjector] GetUserStatus injection failed, returning original buffer:', (err as Error).message);
+    return { buffer: responseBuf, injectedCount: 0, modified: false };
+  }
+}
+

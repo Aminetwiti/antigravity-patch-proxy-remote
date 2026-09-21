@@ -51,7 +51,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
     'Gemini 3.1 Pro Low',
     'Claude Sonnet 4.6 (Thinking)',
     'Claude Opus 4.6 (Thinking)',
-    'Claude 3.7 Sonnet',
+    'Claude Sonnet 4.6',
     'GPT-4o',
     'GPT-OSS 120B (Medium)',
     'DeepSeek R1',

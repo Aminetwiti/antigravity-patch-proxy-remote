@@ -22,15 +22,16 @@ func FuzzSplitFrames(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		frames, rest := splitFrames(data)
-		// Invariant : frames + rest doit reconstituer exactement l'entrée
-		// (splitFrames ne consomme que des octets de frames complètes).
-		var rebuilt []byte
-		for _, fr := range frames {
-			rebuilt = append(rebuilt, fr...)
+		if !bytes.HasSuffix(data, rest) {
+			t.Fatalf("splitFrames invariant: rest n'est pas un suffixe de l'entrée")
 		}
-		_ = frames
-		_ = rebuilt
-		_ = rest
+		for _, fr := range frames {
+			// Invariant : chaque frame extraite doit reconstituer fidèlement sa payload via Frame()
+			rtFrames, rtRest := splitFrames(Frame(fr))
+			if len(rtFrames) != 1 || !bytes.Equal(rtFrames[0], fr) || len(rtRest) != 0 {
+				t.Fatalf("Frame round-trip échoué pour frame de %d octets", len(fr))
+			}
+		}
 	})
 }
 

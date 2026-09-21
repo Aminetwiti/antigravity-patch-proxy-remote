@@ -151,10 +151,20 @@ const MISSING_JS_MODULES = [
   'ipc/handlers/settingsHandler',
   'ipc/handlers/systemHandler',
   'main/windowManager',
+  'services/certificateService',
+  'services/configExchange',
   'services/cryptoStore',
+  'services/googleAuth',
+  'services/healthProbe',
+  'services/localCredentialDiscovery',
+  'services/localModelDetector',
   'services/modelStore',
+  'services/runtimeStateService',
+  'services/settingsService',
+  'services/telemetryStore',
   'shared/logger',
   'wellKnown/modelIdUtils',
+  'rendererHook',
   // Main proxy entry point
   'proxy',
   // Proxy submodules
@@ -209,6 +219,7 @@ const OVERWRITE_FILES = [
   'dist/constants.js',
   'dist/utils.js',
   'dist/loadingOverlay.js',
+  'dist/main/windowManager.js',
   'dist/keybindings.js',
   'dist/menu.js',
   'dist/tray.js',
@@ -236,15 +247,21 @@ const DUPLICATE_IPC_HANDLERS = [
 // ─── The 1 root-level file that v2.5.x removed ─────────────────────────────
 const NEW_ROOT_FILES = [
   'proxy-runner.js',
+  'constants.js',
 ];
 
 function buildPatchManifest(repoDir) {
   const proxyRoot = path.join(repoDir, 'dist', 'proxy');
   const proxyFiles = discoverJavaScriptFiles(proxyRoot)
     .map((relativePath) => `dist/proxy/${relativePath}`);
+  const servicesRoot = path.join(repoDir, 'dist', 'services');
+  const serviceFiles = fs.existsSync(servicesRoot)
+    ? discoverJavaScriptFiles(servicesRoot).map((relativePath) => `dist/services/${relativePath}`)
+    : [];
   return [...new Set([
     'dist/proxy.js',
     ...proxyFiles,
+    ...serviceFiles,
     'dist/cryptoStore.js',
     'dist/customModelStore.js',
     'dist/schemaValidator.js',
@@ -258,6 +275,7 @@ function buildPatchManifest(repoDir) {
     'dist/preload/logger.js',
     'dist/preload/types.js',
     'dist/wellKnown/modelIdUtils.js',
+    'dist/rendererHook.js',
     ...OVERWRITE_FILES,
     ...NEW_ROOT_FILES,
   ])].sort();
@@ -349,11 +367,23 @@ async function main() {
   let totalBytes = 0;
   let filesAdded = 0;
   for (const mod of MISSING_JS_MODULES) {
-    const srcJs = path.join(repoDist, `${mod}.js`);
+    let srcJs = path.join(repoDist, `${mod}.js`);
     const dstJs = path.join(buildDist, `${mod}.js`);
     if (!fs.existsSync(srcJs)) {
-      die(`required source missing: ${srcJs}\n` +
-          `  (you may need to run \`npm run build\` in the repo first)`);
+      if (mod === 'cryptoStore' && fs.existsSync(path.join(repoDist, 'services', 'cryptoStore.js'))) {
+        srcJs = path.join(repoDist, 'services', 'cryptoStore.js');
+      } else if (mod === 'customModelStore' && fs.existsSync(path.join(repoDist, 'services', 'modelStore.js'))) {
+        srcJs = path.join(repoDist, 'services', 'modelStore.js');
+      } else if (fs.existsSync(path.join(repoDist, 'services', `${mod}.js`))) {
+        srcJs = path.join(repoDist, 'services', `${mod}.js`);
+      } else if (mod.startsWith('gateway/') && fs.existsSync(path.join(repoDist, mod.replace(/^gateway\//, 'proxyGateway/')) + '.js')) {
+        srcJs = path.join(repoDist, mod.replace(/^gateway\//, 'proxyGateway/')) + '.js';
+      } else if (mod.startsWith('ipc/handlers/') || mod === 'ipc/index') {
+        continue;
+      } else {
+        die(`required source missing: ${srcJs}\n` +
+            `  (you may need to run \`npm run build\` in the repo first)`);
+      }
     }
     // Ensure the destination subdirectory exists (e.g. dist/proxy/)
     ensureDir(path.dirname(dstJs));
@@ -601,6 +631,22 @@ async function main() {
     console.log(`            + ${rel} (${size} B)`);
   }
   console.log(`            sub-total: ${nrCount} files, ${nrBytes} B`);
+
+  // Step 4b: update package.json version in app.asar ONLY if AG_FORCE_VERSION is explicitly specified
+  const pkgPathInBuild = path.join(buildDir, 'package.json');
+  if (fs.existsSync(pkgPathInBuild)) {
+    try {
+      const pkgJson = JSON.parse(fs.readFileSync(pkgPathInBuild, 'utf8'));
+      const targetVer = process.env.AG_FORCE_VERSION;
+      if (targetVer && pkgJson.version !== targetVer) {
+        console.log(`            + updated app.asar version: ${pkgJson.version} -> ${targetVer}`);
+        pkgJson.version = targetVer;
+        fs.writeFileSync(pkgPathInBuild, JSON.stringify(pkgJson, null, 2), 'utf8');
+      }
+    } catch (e) {
+      console.warn(`[patch_2_5] notice: package.json version update skipped: ${e.message}`);
+    }
+  }
 
   // Step 5: stage MITM files into app.asar.unpacked/ so proxy-runner.js
   // can spawn the MITM HTTPS forwarder on Antigravity startup.

@@ -45,6 +45,10 @@ _archive/
 ag-doctor-ui/dist/
 ag-doctor-ui/release/
 tool/
+/daemon.exe
+/app.asar.new
+/preload.js
+/temp_asar/
 
 # Temporary text outputs from scripts
 scripts/freebuff/extraction-output.txt
@@ -72,3 +76,12 @@ remote/tools1/*
 remote/tools2/*
 remote/tools3/*
 remote/vendor/*
+
+# Account tokens & secrets
+antigravity_accounts_*.json
+*accounts*.json
+accounts.env
+providerState.json
+test_marker.txt
+
+ag-doctor-ui/tools/*

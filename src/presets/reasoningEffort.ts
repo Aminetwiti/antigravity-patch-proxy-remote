@@ -121,12 +121,12 @@ export function adaptiveReasoningEffort(
  *  - If budget is already provided and not 'auto', keep it.
  *  - If the upstream model is reasoning-class (deepseek-r1, o1, o3, etc.),
  *    return 'enabled'.
- *  - If the upstream model is a thinking-class (claude-3-7-sonnet, etc.),
+ *  - If the upstream model is a thinking-class (claude-sonnet-4-6, etc.),
  *    return 'enabled'.
  *  - Otherwise, return 'disabled' for pure chat models.
  *
  * @example
- * budgetReasoningEffort('auto', 'claude-3-7-sonnet') => 'enabled'
+ * budgetReasoningEffort('auto', 'claude-sonnet-4-6') => 'enabled'
  * budgetReasoningEffort('auto', 'gpt-4o-mini') => 'disabled'
  * budgetReasoningEffort('enabled', 'gpt-4o-mini') => 'enabled'
  */
@@ -147,14 +147,14 @@ export function budgetReasoningEffort(
  * Useful to short-circuit IPC handlers that need to pick a default mode.
  *
  * @example
- * isReasoningLikeModel('claude-3-7-sonnet') => true
+ * isReasoningLikeModel('claude-sonnet-4-6') => true
  * isReasoningLikeModel('gpt-4o') => false
  */
 export function isReasoningLikeModel(modelName: string): boolean {
   if (!modelName || typeof modelName !== 'string') {
     return false;
   }
-  return /(o1|o3|r1|reasoning|reasoner|thinking|claude-3-7|opus|sonnet)/i.test(
+  return /(o1|o3|r1|reasoning|reasoner|thinking|claude-4|opus|sonnet|gemini-3|gpt-oss)/i.test(
     modelName,
   );
 }

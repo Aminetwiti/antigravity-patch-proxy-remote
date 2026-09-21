@@ -1,10 +1,13 @@
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/antigravity/remote-daemon/pkg/cdp"
 	"github.com/antigravity/remote-daemon/pkg/connectrpc"
+	"github.com/antigravity/remote-daemon/pkg/discovery"
 	"github.com/antigravity/remote-daemon/pkg/ide"
 	"github.com/gorilla/websocket"
 )
@@ -14,7 +17,8 @@ func (s *Server) IsIDESupportedAction(action string) bool {
 	switch action {
 	case "ide.list_workspaces", "ide.list_sessions", "ide.create_session", "ide.send_prompt", "ide.focus", "ide.status",
 		"ide.launch", "ide.restart", "ide.kill", "ide_launch", "ide_restart", "ide_kill", "emergency_stop",
-		"ide.open_file", "ide_open_file", "open_file_in_ide", "focus_session":
+		"ide.open_file", "ide_open_file", "open_file_in_ide", "focus_session",
+		"ide.screenshot", "ide_screenshot", "ide.navigate", "ide_navigate", "ide.focus_convo":
 		return true
 	default:
 		return false
@@ -434,5 +438,126 @@ func (s *Server) handleIDEMessage(conn *websocket.Conn, msg IncomingMessage) {
 			// Forcer le focus et rafraîchissement du Webview
 			_ = client.SetFocus(cascadeID)
 		}()
+
+	case "ide.screenshot", "ide_screenshot":
+		info, err := discovery.DiscoverCDP()
+		if err != nil || info == nil || info.ActiveTarget == nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("surface IHM Antigravity introuvable via CDP: %v", err),
+			})
+			return
+		}
+
+		client, err := cdp.Dial(info.ActiveTarget.WebSocketDebuggerURL, 2*time.Second)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec connexion CDP: %v", err),
+			})
+			return
+		}
+		defer client.Close()
+
+		format := "jpeg"
+		quality := 80
+		if msg.Data != nil {
+			if f, ok := msg.Data["format"].(string); ok && f != "" {
+				format = f
+			}
+			if q, ok := msg.Data["quality"].(float64); ok && q > 0 {
+				quality = int(q)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		base64Data, err := client.CaptureScreenshot(ctx, format, quality)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("erreur capture d'écran: %v", err),
+			})
+			return
+		}
+
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":      "success",
+				"screenshot":  base64Data,
+				"format":      format,
+				"targetTitle": info.ActiveTarget.Title,
+				"targetUrl":   info.ActiveTarget.URL,
+			},
+		})
+
+	case "ide.navigate", "ide_navigate", "ide.focus_convo":
+		info, err := discovery.DiscoverCDP()
+		if err != nil || info == nil || info.ActiveTarget == nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("surface IHM Antigravity introuvable via CDP: %v", err),
+			})
+			return
+		}
+
+		client, err := cdp.Dial(info.ActiveTarget.WebSocketDebuggerURL, 2*time.Second)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec connexion CDP: %v", err),
+			})
+			return
+		}
+		defer client.Close()
+
+		targetURL := ""
+		if msg.Data != nil {
+			if u, ok := msg.Data["url"].(string); ok && u != "" {
+				targetURL = u
+			}
+		}
+		if targetURL == "" && msg.CascadeID != "" {
+			targetURL = fmt.Sprintf("https://127.0.0.1:%d/c/%s", info.Port, msg.CascadeID)
+		}
+
+		if targetURL == "" {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     "aucun paramètre url ou cascadeId fourni pour la navigation",
+			})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := client.Navigate(ctx, targetURL); err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("erreur navigation: %v", err),
+			})
+			return
+		}
+
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":    "navigated",
+				"targetUrl": targetURL,
+				"success":   true,
+			},
+		})
 	}
 }

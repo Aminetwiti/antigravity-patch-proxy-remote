@@ -18,6 +18,10 @@ vi.mock('electron-log/main', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+vi.mock('../services/modelStore', () => ({
+  testModelConnection: vi.fn(async () => ({ success: false, error: 'Connection failed' })),
+}));
+
 import { trackTokenUsage, getRealtimeStats, reset as resetMetrics } from '../metrics';
 import { HealthProbeService } from '../services/healthProbe';
 import { exportAgBoxPackage, importAgBoxPackage } from '../services/cryptoStore';

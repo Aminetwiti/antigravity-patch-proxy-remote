@@ -50,6 +50,9 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
   @override
   void didUpdateWidget(covariant BackgroundTasksBar oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.initiallyExpanded != oldWidget.initiallyExpanded) {
+      _expanded = widget.initiallyExpanded;
+    }
   }
 
   @override
@@ -284,7 +287,11 @@ class _BackgroundTasksBarState extends State<BackgroundTasksBar>
                       SizedBox(height: hasKeyboard ? 4 : 6),
                       ConstrainedBox(
                         constraints: BoxConstraints(
-                          maxHeight: hasKeyboard ? 80 : (allCount > 3 ? 140 : 180),
+                          maxHeight: hasKeyboard
+                              ? 80
+                              : (!widget.initiallyExpanded
+                                  ? 100
+                                  : (allCount > 3 ? 140 : 180)),
                         ),
                         child: Scrollbar(
                           controller: _scrollController,

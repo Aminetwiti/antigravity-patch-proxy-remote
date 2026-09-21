@@ -36,7 +36,7 @@ const PROVIDER_SPECS: Record<string, ProviderConfigSpec> = {
     defaultUrl: 'https://generativelanguage.googleapis.com/v1beta',
     requiresKey: true,
     expectedHeaders: ['x-goog-api-key'],
-    sampleModel: 'gemini-1.5-pro',
+    sampleModel: 'gemini-3.1-pro-high',
   },
   ollama: {
     type: 'ollama',

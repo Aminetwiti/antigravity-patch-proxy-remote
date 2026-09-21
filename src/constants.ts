@@ -3,6 +3,8 @@
  * Centralizes magic numbers and configuration values to improve maintainability.
  */
 
+import providersData from './config/providers.json';
+
 // ─── Environment Helpers ──────────────────────────────────────────────────
 function getEnvString(key: string, fallback: string): string {
   return process.env[key] || fallback;
@@ -20,6 +22,18 @@ function getEnvInt(key: string, fallback: number): number {
 // ─── App Constants (used by main.ts, languageServer.ts, paths.ts) ─────────
 
 export const DEFAULT_BIND_HOST = getEnvString('AG_BIND_HOST', '127.0.0.1');
+
+/** Default host for remote runtime connection. Configurable via AG_REMOTE_HOST. */
+export const DEFAULT_REMOTE_HOST = getEnvString('AG_REMOTE_HOST', '');
+
+/** Auth token for remote runtime connection. Must be set via AG_REMOTE_TOKEN env var. */
+export const DEFAULT_REMOTE_TOKEN = getEnvString('AG_REMOTE_TOKEN', '');
+
+// ─── Multi-Account Pool Environment Variables ─────────────────────────────
+export const ENV_ACCOUNTS_JSON = 'AG_ACCOUNTS_JSON';
+export const ENV_ACCOUNTS_FILE = 'AG_ACCOUNTS_FILE';
+export const ENV_ACTIVE_ACCOUNT = 'AG_ACTIVE_ACCOUNT';
+export const ENV_AUTO_ROTATE = 'AG_AUTO_ROTATE';
 
 /** Origin used by the main BrowserWindow. */
 export const WINDOW_ORIGIN = `https://${DEFAULT_BIND_HOST}`;
@@ -66,6 +80,15 @@ export const STUB_PORT_DEFAULT = getEnvInt('AG_STUB_PORT', 51999);
 /** Path (relative to home) where the active proxy port is persisted for IPC. */
 export const ACTIVE_PORT_FILE = '.gemini/antigravity/active_port';
 
+/**
+ * Maximum request body size in bytes (default: 100 MB).
+ * Override via AG_MAX_BODY_SIZE (in bytes) or AG_MAX_BODY_SIZE_MB (in megabytes).
+ */
+export const DEFAULT_MAX_BODY_SIZE = getEnvInt(
+  'AG_MAX_BODY_SIZE',
+  getEnvInt('AG_MAX_BODY_SIZE_MB', 100) * 1024 * 1024,
+);
+
 
 
 /** Timeout for Google proxy requests (60 seconds). */
@@ -75,6 +98,12 @@ export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 6
 
 /** Timeout for downloading file content from external URIs (30 seconds). */
 export const FILE_DOWNLOAD_TIMEOUT_MS = getEnvInt('AG_FILE_DOWNLOAD_TIMEOUT_MS', 30_000);
+
+/** Interval for periodic background model health checks (default: 60 seconds). Set to 0 to disable. */
+export const HEALTH_CHECK_INTERVAL_MS = getEnvInt('AG_HEALTH_CHECK_INTERVAL_MS', 60_000);
+
+/** Cache TTL for model health check results (default: 60 seconds). */
+export const HEALTH_CHECK_CACHE_TTL_MS = getEnvInt('AG_HEALTH_CHECK_CACHE_TTL_MS', 60_000);
 
 /**
  * Per-chunk idle timeout for streaming upstream responses.
@@ -200,6 +229,7 @@ export const PUBLIC_DNS_SERVERS = ['8.8.8.8', '1.1.1.1', '8.8.4.4'];
 
 export const GOOGLE_HOSTS = {
   CLOUD_CODE: getEnvString('AG_GOOGLE_CLOUDCODE_HOST', 'daily-cloudcode-pa.googleapis.com'),
+  CLOUD_CODE_PROD: getEnvString('AG_GOOGLE_CLOUDCODE_PROD_HOST', 'cloudcode-pa.googleapis.com'),
   GENERATIVE_LANGUAGE: getEnvString('AG_GOOGLE_GENLANG_HOST', 'generativelanguage.googleapis.com'),
 } as const;
 
@@ -275,6 +305,7 @@ export const OPENAI_COMPAT = new Set<string>([
   PROVIDERS.NVIDIA,
   PROVIDERS.OPENCODE,
   PROVIDERS.CODESTRAL,
+  PROVIDERS.MINIMAX,
 ]);
 
 /** Providers that use Anthropic-compatible transport. */
@@ -306,6 +337,7 @@ export const PROVIDERS_REQUIRING_API_KEY: readonly ProviderName[] = [
   PROVIDERS.CODESTRAL,
   PROVIDERS.WAFER,
   PROVIDERS.ZAI,
+  PROVIDERS.MINIMAX,
 ];
 
 /** Default API URLs per provider. Override per-model via apiUrl in custom_models.json or environment variables. */
@@ -354,83 +386,32 @@ export interface DetailedProviderPreset {
   suggestedModels: SuggestedModel[];
 }
 
-export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = [
-  {
-    id: PROVIDERS.OPENAI,
-    label: 'OpenAI',
-    defaultApiUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-    suggestedModels: [
-      { id: 'gpt-4o', displayName: 'GPT-4o (Omni)' },
-      { id: 'gpt-4o-mini', displayName: 'GPT-4o Mini' },
-      { id: 'o1', displayName: 'OpenAI o1 Reasoning' },
-      { id: 'o3-mini', displayName: 'OpenAI o3-mini' },
-    ],
-  },
-  {
-    id: PROVIDERS.DEEPSEEK,
-    label: 'DeepSeek (Official)',
-    defaultApiUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
-    suggestedModels: [
-      { id: 'deepseek-chat', displayName: 'DeepSeek-V3 (Chat)' },
-      { id: 'deepseek-reasoner', displayName: 'DeepSeek-R1 (Reasoner)' },
-    ],
-  },
-  {
-    id: PROVIDERS.OPENROUTER,
-    label: 'OpenRouter',
-    defaultApiUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-    suggestedModels: [
-      { id: 'deepseek/deepseek-r1', displayName: 'DeepSeek R1 (OpenRouter)' },
-      { id: 'anthropic/claude-3.5-sonnet', displayName: 'Claude 3.5 Sonnet' },
-      { id: 'meta-llama/llama-3.3-70b-instruct', displayName: 'Llama 3.3 70B' },
-      { id: 'qwen/qwen-2.5-coder-32b-instruct', displayName: 'Qwen 2.5 Coder 32B' },
-    ],
-  },
-  {
-    id: PROVIDERS.GROQ,
-    label: 'Groq (Ultra Fast)',
-    defaultApiUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
-    suggestedModels: [
-      { id: 'llama-3.3-70b-versatile', displayName: 'Llama 3.3 70B Versatile' },
-      { id: 'mixtral-8x7b-32768', displayName: 'Mixtral 8x7B (32k)' },
-      { id: 'deepseek-r1-distill-llama-70b', displayName: 'DeepSeek R1 Distill 70B' },
-    ],
-  },
-  {
-    id: PROVIDERS.OLLAMA,
-    label: 'Ollama (Local)',
-    defaultApiUrl: process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST || 'http://localhost:11434/v1',
-    suggestedModels: [
-      { id: 'llama3', displayName: 'Llama 3 Local' },
-      { id: 'deepseek-r1:8b', displayName: 'DeepSeek R1 8B Local' },
-      { id: 'qwen2.5-coder', displayName: 'Qwen 2.5 Coder Local' },
-    ],
-  },
-  {
-    id: PROVIDERS.ANTHROPIC,
-    label: 'Anthropic Claude',
-    defaultApiUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1',
-    suggestedModels: [
-      { id: 'claude-3-5-sonnet-latest', displayName: 'Claude 3.5 Sonnet' },
-      { id: 'claude-3-5-haiku-latest', displayName: 'Claude 3.5 Haiku' },
-    ],
-  },
-  {
-    id: PROVIDERS.MISTRAL,
-    label: 'Mistral AI',
-    defaultApiUrl: process.env.MISTRAL_BASE_URL || 'https://api.mistral.ai/v1',
-    suggestedModels: [
-      { id: 'mistral-large-latest', displayName: 'Mistral Large' },
-      { id: 'codestral-latest', displayName: 'Codestral (Code)' },
-    ],
-  },
-  {
-    id: PROVIDERS.KIMI,
-    label: 'Moonshot (Kimi)',
-    defaultApiUrl: process.env.KIMI_BASE_URL || process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.ai/v1',
-    suggestedModels: [
-      { id: 'moonshot-v1-8k', displayName: 'Kimi Moonshot 8k' },
-      { id: 'moonshot-v1-32k', displayName: 'Kimi Moonshot 32k' },
-    ],
-  },
+const CORE_DETAILED_PROVIDERS: ProviderName[] = [
+  PROVIDERS.OPENAI,
+  PROVIDERS.DEEPSEEK,
+  PROVIDERS.OPENROUTER,
+  PROVIDERS.GROQ,
+  PROVIDERS.OLLAMA,
+  PROVIDERS.ANTHROPIC,
+  PROVIDERS.MISTRAL,
+  PROVIDERS.KIMI,
+];
+
+export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = CORE_DETAILED_PROVIDERS.map((providerId) => {
+  const p = (providersData as any[]).find((entry) => entry.provider === providerId);
+  const envVar = `${providerId.toUpperCase()}_BASE_URL`;
+  const envOverride = process.env[envVar] || (providerId === PROVIDERS.OLLAMA ? (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST) : undefined);
+  return {
+    id: providerId,
+    label: p?.label || p?.name || providerId,
+    defaultApiUrl: envOverride || p?.defaultApiUrl || '',
+    suggestedModels: (p?.suggestedModels || []) as SuggestedModel[],
+  };
+});
+
+export const STANDARD_GOOGLE_MODELS = [
+  { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+  { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+  { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+  { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
 ];

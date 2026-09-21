@@ -23,7 +23,7 @@ func TestParseFrameEvents(t *testing.T) {
 	}
 
 	// Test regular text containing command word
-	textPayload := "flutter run -d RZCT80F971A"
+	textPayload := "flutter run -d DEVICE_SERIAL_TEST_01"
 	rawText := append([]byte{0x0a, byte(len(textPayload))}, []byte(textPayload)...)
 	textEvents := ParseFrameEvents(rawText, "cascade-123")
 	if len(textEvents) == 0 || textEvents[0].Kind != EventKindText {

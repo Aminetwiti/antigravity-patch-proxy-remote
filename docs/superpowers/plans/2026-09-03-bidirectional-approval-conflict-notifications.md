@@ -133,7 +133,7 @@ Redémarrer `daemon.exe --port 8091`.
 - [ ] **Step 3: Compile APK and deploy to physical Samsung Galaxy S21 FE**
 
 Run: `flutter build apk --debug`
-Run: `adb -s RZCT80F971A install -r build/app/outputs/flutter-apk/app-debug.apk`
+Run: `adb -s <device-id> install -r build/app/outputs/flutter-apk/app-debug.apk`
 Run: `adb shell am start -n com.antigravity.remote.mobile/.MainActivity`
 
 - [ ] **Step 4: Live screen capture and verification**

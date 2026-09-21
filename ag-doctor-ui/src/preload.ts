@@ -18,15 +18,69 @@ const api = {
     get: (): Promise<unknown[]> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_GET),
     save: (p: unknown): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, p),
     delete: (id: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_DELETE, id),
-    fetchModels: (params: { apiUrl: string; apiKey: string }): Promise<{ success: boolean; models?: Array<{ id: string; displayName?: string; enabled?: boolean }>; error?: string }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, params),
-    test: (params: { apiUrl: string; apiKey: string; id?: string; modelId?: string }): Promise<{ success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string }> =>
+    fetchModels: (params: { apiUrl: string; apiKey: string; provider?: string }): Promise<{ success: boolean; models?: Array<{ id: string; displayName?: string; enabled?: boolean }>; error?: string }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, params),
+    test: (params: { apiUrl: string; apiKey: string; id?: string; modelId?: string; provider?: string }): Promise<{ success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string }> =>
       ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, params),
     onChanged: (handler: () => void): (() => void) => {
       const listener = () => handler();
       ipcRenderer.on(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED, listener);
       return () => ipcRenderer.removeListener(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED, listener);
     },
+    discoverIdeAccount: (): Promise<{ success: boolean; account?: any; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_DISCOVER_IDE_ACCOUNT),
+    fetchAccountQuotas: (accessToken: string): Promise<{ success: boolean; quotas?: any; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, accessToken),
+    warmupAccount: (accessToken: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_WARMUP_ACCOUNT, accessToken),
+    refreshToken: (refreshToken: string): Promise<{
+      success: boolean;
+      accessToken?: string;
+      expiresIn?: number;
+      email?: string;
+      name?: string;
+      picture?: string;
+      quotas?: any;
+      projectId?: string;
+      tierId?: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_REFRESH_TOKEN, refreshToken),
+    startOAuthLogin: (): Promise<{
+      success: boolean;
+      account?: any;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_LOGIN),
+    switchIdeAccount: (params: {
+      accessToken: string;
+      refreshToken?: string;
+      email?: string;
+      picture?: string;
+    }): Promise<{ success: boolean; error?: string; dbPath?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_SWITCH_IDE_ACCOUNT, params),
+    onOAuthIntercepted: (handler: (data: { url: string; port?: number; redirectUri?: string; ts?: number }) => void): (() => void) => {
+      const listener = (_: unknown, data: any) => handler(data);
+      ipcRenderer.on(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
+      return () => ipcRenderer.removeListener(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
+    },
+    pingPongModel: (params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
+      ok: boolean;
+      status: number;
+      latencyMs: number;
+      pongText: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.MODEL_PING_PONG, params),
   },
+  onOAuthIntercepted: (handler: (data: { url: string; port?: number; redirectUri?: string; ts?: number }) => void): (() => void) => {
+    const listener = (_: unknown, data: any) => handler(data);
+    ipcRenderer.on(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
+    return () => ipcRenderer.removeListener(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
+  },
+  modelPingPong: (params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
+    ok: boolean;
+    status: number;
+    latencyMs: number;
+    pongText: string;
+    error?: string;
+  }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.MODEL_PING_PONG, params),
   info: (): Promise<{
     platform: string;
     arch: string;

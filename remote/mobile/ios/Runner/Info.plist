@@ -5,7 +5,11 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Mobile</string>
+	<string>Antigravity Remote</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Requis pour scanner le code QR d'appairage avec le daemon Antigravity.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Requis pour joindre des captures d'écran et des fichiers au prompt.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

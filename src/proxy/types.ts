@@ -22,12 +22,14 @@ export interface CustomModelFileEntry {
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
   fallbackModel?: string;
+  fallbackChain?: string[] | string;
   models?: Array<{
     id: string;
     displayName?: string;
     description?: string;
     enabled?: boolean;
     fallbackModel?: string;
+    fallbackChain?: string[] | string;
   }>;
 }
 
@@ -44,10 +46,12 @@ export interface CustomModel {
   externalModelName: string;
   allowUnauthorized?: boolean;
   encrypted?: boolean;
+  enabled?: boolean;
   useRawBaseUrl?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
   fallbackModel?: string;
+  fallbackChain?: string[] | string;
   _slug?: string;
   /** Internal: effort suffix appended by effortExpander for unique placeholder IDs. */
   _effortSuffix?: string;
@@ -60,29 +64,93 @@ export interface CustomModel {
   reasoningEffort?: string;
   /**
    * Thinking budget for this model (fetched from /v1/models, not hardcoded).
-   * Values: 'auto' | 'enabled' | 'disabled'
+   * Values: 'auto' | 'enabled' | 'disabled' | number (token count like 1000, 4000, 10001)
    */
-  thinkingBudget?: string;
+  thinkingBudget?: string | number;
   /**
    * Mode for this model (fetched from /v1/models, not hardcoded).
    * Values: 'thinking' | 'reasoning' | 'non-thinking' | 'auto'
    */
   mode?: string;
+  /** Whether the model supports multimodal image inputs. */
+  supportsImages?: boolean;
+  /** Alias for supportsImages. */
+  supportsVision?: boolean;
+  /** Optional account metadata for multi-account pools. */
+  accountName?: string;
+  accountEmail?: string;
+  refreshToken?: string;
+  projectId?: string;
+  quotas?: {
+    fiveHourPercentage?: number;
+    weeklyPercentage?: number;
+    geminiFiveHourPct?: number;
+    geminiWeeklyPct?: number;
+    claudeFiveHourPct?: number;
+    claudeWeeklyPct?: number;
+    [key: string]: unknown;
+  };
+  /** Internal: marks a real per-account Google entry kept only for dispatch/quota; hidden from dropdown. */
+  _poolOnly?: boolean;
 }
 
 
+
+export interface GeminiFunctionCall {
+  name: string;
+  args?: Record<string, unknown>;
+  id?: string;
+}
+
+export interface GeminiFunctionResponse {
+  name: string;
+  response?: unknown;
+  id?: string;
+}
+
+export interface GeminiPart {
+  text?: string;
+  thought?: boolean;
+  inlineData?: {
+    mimeType: string;
+    data: string;
+  };
+  fileData?: {
+    mimeType: string;
+    fileUri: string;
+  };
+  functionCall?: GeminiFunctionCall;
+  functionResponse?: GeminiFunctionResponse;
+}
+
+export interface GeminiContent {
+  role?: string;
+  parts?: GeminiPart[];
+}
+
+export interface GeminiParameters {
+  type: string;
+  properties?: Record<string, unknown>;
+}
+
+export interface GeminiFunctionDeclaration {
+  name: string;
+  description?: string;
+  parameters?: GeminiParameters;
+}
+
+export interface GeminiTool {
+  functionDeclarations?: GeminiFunctionDeclaration[];
+}
 
 export interface GeminiRequestBody {
   model?: string;
   modelId?: string;
   model_id?: string;
   request?: GeminiRequestBody;
-  systemInstruction?: { parts: { text?: string }[] };
-  contents?: {
-    parts?: { text?: string; functionCall?: unknown; functionResponse?: unknown; thought?: boolean }[];
-    role?: string;
-  }[];
-  tools?: unknown[];
+  systemInstruction?: { parts: GeminiPart[] | { text?: string }[] };
+  contents?: GeminiContent[];
+  tools?: GeminiTool[] | unknown[];
   generationConfig?: {
     temperature?: number;
     maxOutputTokens?: number;
@@ -93,9 +161,10 @@ export interface GeminiRequestBody {
  * Shape of a Gemini-format response candidate.
  */
 export interface GeminiCandidate {
-  content?: { parts?: unknown[]; role?: string };
+  content?: GeminiContent | { parts?: unknown[]; role?: string };
   finishReason?: string;
   index?: number;
+  safetyRatings?: unknown[];
 }
 
 /**

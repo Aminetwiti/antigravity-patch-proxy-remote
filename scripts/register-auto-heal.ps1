@@ -35,6 +35,19 @@ WshShell.Run "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Byp
     Write-Host "Proxy watchdog enregistré: $watchdogVbs" -ForegroundColor Green
 }
 
+# Daemon remote watchdog (supervise-daemon.ps1 -Loop)
+# Démarre le tunnel cloudflare dès que agy.exe (extension VS Code) ou language_server (IDE Electron) est détecté.
+$daemonWatchdog = Join-Path $scriptDir "supervise-daemon.ps1"
+if (Test-Path $daemonWatchdog) {
+    $daemonVbs = Join-Path $startupDir "AntigravityDaemonWatchdog.vbs"
+    $daemonVbsContent = @"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File " & Chr(34) & "$daemonWatchdog" & Chr(34) & " -Loop", 0, False
+"@
+    [System.IO.File]::WriteAllText($daemonVbs, $daemonVbsContent, [System.Text.Encoding]::ASCII)
+    Write-Host "Daemon remote watchdog enregistré: $daemonVbs" -ForegroundColor Green
+}
+
 Write-Host "Auto-healer enregistré: $vbsPath" -ForegroundColor Green
-Write-Host "  -> scripts/auto-heal.ps1 & supervise-proxy.ps1 seront lancés à chaque ouverture de session."
+Write-Host "  -> scripts/auto-heal.ps1 & supervise-proxy.ps1 & supervise-daemon.ps1 seront lancés à chaque ouverture de session."
 

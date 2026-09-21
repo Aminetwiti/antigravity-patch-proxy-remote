@@ -7,14 +7,14 @@ on:
       - 'v*'
     paths:
       - 'remote/mobile/**'
-      - 'remote/antigravity-remote-daemon/**'
+      - 'remote/daemon/**'
       - 'ag-doctor/**'
       - 'ag-doctor-ui/**'
       - '.github/workflows/flutter-mobile.yml'
   pull_request:
     paths:
       - 'remote/mobile/**'
-      - 'remote/antigravity-remote-daemon/**'
+      - 'remote/daemon/**'
       - 'ag-doctor/**'
       - 'ag-doctor-ui/**'
       - '.github/workflows/flutter-mobile.yml'

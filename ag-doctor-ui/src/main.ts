@@ -27,6 +27,16 @@ import {
   DEFAULT_STUB_PORT,
 } from './constants';
 import { detectAntigravityInstallations } from './services/installationDetector';
+import {
+  discoverIdeAccount,
+  fetchGoogleAccountQuotas,
+  warmupGoogleAccount,
+  refreshGoogleToken,
+  fetchGoogleUserInfo,
+  ensureCloudCodeProject,
+  switchActiveIdeAccount,
+} from './services/ideAccountDiscovery';
+import { startGoogleOAuthLogin } from './services/googleOAuthServer';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
@@ -546,26 +556,33 @@ class CliWorkerPool {
     });
   }
 
-  async run(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  async run(args: string[], retries = 1): Promise<{ code: number; stdout: string; stderr: string }> {
     if (!fs.existsSync(this.cliPath)) {
       return { code: -1, stdout: '', stderr: `CLI not found: ${this.cliPath}` };
     }
-    const idle = this.workers.find((w) => !w.busy);
-    if (idle) return this.runOn(idle, args);
+    try {
+      const idle = this.workers.find((w) => !w.busy);
+      if (idle) return await this.runOn(idle, args);
 
-    if (this.workers.length < this.maxWorkers) {
-      const w = this.spawnWorker();
-      if (w) return this.runOn(w, args);
+      if (this.workers.length < this.maxWorkers) {
+        const w = this.spawnWorker();
+        if (w) return await this.runOn(w, args);
+      }
+
+      return await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          const idx = this.waitQueue.findIndex((q) => q.timer === timer);
+          if (idx >= 0) this.waitQueue.splice(idx, 1);
+          reject(new Error(`CLI command timed out in queue after ${WORKER_CMD_TIMEOUT_MS / 1000}s: ${args.join(' ')}`));
+        }, WORKER_CMD_TIMEOUT_MS);
+        this.waitQueue.push({ args, resolve, reject, timer });
+      });
+    } catch (err) {
+      if (retries > 0) {
+        return this.run(args, retries - 1);
+      }
+      throw err;
     }
-
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = this.waitQueue.findIndex((q) => q.timer === timer);
-        if (idx >= 0) this.waitQueue.splice(idx, 1);
-        reject(new Error(`CLI command timed out in queue after ${WORKER_CMD_TIMEOUT_MS / 1000}s: ${args.join(' ')}`));
-      }, WORKER_CMD_TIMEOUT_MS);
-      this.waitQueue.push({ args, resolve, reject, timer });
-    });
   }
 
   shutdown(): void {
@@ -784,8 +801,92 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
     const p = getCustomModelsPath();
     const c = await fs.promises.readFile(p, 'utf8');
     const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
-    if (parsed.providers) return parsed.providers;
-    
+
+    if (parsed.providers && Array.isArray(parsed.providers)) {
+      const googleProviders = parsed.providers.filter(
+        (prov: any) => prov && (prov.provider === 'google' || prov.provider === 'gemini')
+      );
+
+      const hasSeparateGoogleAccounts = googleProviders.some(
+        (prov: any) => !Array.isArray(prov.accounts) && (prov.email || prov.refreshToken || (prov.apiKey && prov.apiKey.startsWith('ya29.')))
+      );
+
+      // Auto-migrate if multiple Google providers exist or if separate Google accounts are at root level
+      if (googleProviders.length > 1 || (googleProviders.length === 1 && hasSeparateGoogleAccounts)) {
+        try {
+          await fs.promises.copyFile(p, `${p}.bak`);
+        } catch {}
+
+        const template = googleProviders.find((prov: any) => Array.isArray(prov.models) && prov.models.length > 0) || googleProviders[0];
+        const nonGoogleProviders = parsed.providers.filter(
+          (prov: any) => prov && prov.provider !== 'google' && prov.provider !== 'gemini'
+        );
+
+        const mergedAccounts: any[] = [];
+        const seenAccountKeys = new Set<string>();
+
+        for (const gp of googleProviders) {
+          if (Array.isArray(gp.accounts) && gp.accounts.length > 0) {
+            for (const acc of gp.accounts) {
+              const key = acc.email || acc.id;
+              if (!seenAccountKeys.has(key)) {
+                seenAccountKeys.add(key);
+                mergedAccounts.push(acc);
+              }
+            }
+          } else {
+            const key = gp.email || gp.id;
+            if (!seenAccountKeys.has(key)) {
+              seenAccountKeys.add(key);
+              mergedAccounts.push({
+                id: gp.id,
+                name: gp.name,
+                email: gp.email,
+                apiKey: gp.apiKey,
+                refreshToken: gp.refreshToken,
+                picture: gp.picture,
+                quotas: gp.quotas,
+                projectId: gp.projectId,
+                enabled: gp.enabled !== false,
+                status: gp.status || 'healthy',
+                latencyMs: gp.latencyMs,
+                lastTestedAt: gp.lastTestedAt,
+                lastError: gp.lastError,
+              });
+            }
+          }
+        }
+
+        const consolidatedGoogleProvider = {
+          id: 'provider-google',
+          name: 'Google Gemini',
+          provider: 'google',
+          apiUrl: template.apiUrl || 'https://generativelanguage.googleapis.com/v1beta',
+          apiKey: 'auto',
+          enabled: googleProviders.some((prov: any) => prov.enabled !== false),
+          models: template.models || [],
+          accounts: mergedAccounts,
+        };
+
+        parsed.providers = [consolidatedGoogleProvider, ...nonGoogleProviders];
+        await atomicWriteCustomModels(p, parsed);
+        return parsed.providers;
+      }
+
+      if (googleProviders.length === 1 && (!googleProviders[0].models || googleProviders[0].models.length === 0)) {
+        const accWithModels = (googleProviders[0].accounts || []).find((a: any) => Array.isArray(a.models) && a.models.length > 0);
+        googleProviders[0].models = accWithModels?.models?.length ? accWithModels.models : [
+          { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+          { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+          { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+        ];
+        await atomicWriteCustomModels(p, parsed);
+      }
+
+      return parsed.providers;
+    }
+
     if (parsed.models && parsed.models.length > 0) {
       const pm = new Map();
       let pid = 1;
@@ -808,13 +909,24 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           enabled: m.enabled !== false
         });
       }
-      return Array.from(pm.values());
+      const migrated = Array.from(pm.values());
+      parsed.providers = migrated;
+      delete parsed.models;
+      await fs.promises.writeFile(p, JSON.stringify(parsed, null, 2), 'utf8');
+      return migrated;
     }
     return [];
   } catch {
     return [];
   }
 });
+
+async function atomicWriteCustomModels(filePath: string, data: unknown): Promise<void> {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+  await fs.promises.rename(tmp, filePath);
+}
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
   try {
@@ -827,18 +939,62 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
 
     if (!parsed.providers) parsed.providers = [];
     const idx = parsed.providers.findIndex((x: any) => x.id === p.id);
-    if (idx !== -1) parsed.providers[idx] = p;
-    else parsed.providers.push(p);
+    if (idx !== -1) {
+      const existing = parsed.providers[idx];
+      const isGoogle = p.provider === 'google' || existing.provider === 'google';
+      const modelsToSave = (isGoogle && (!p.models || p.models.length === 0))
+        ? (existing.models && existing.models.length > 0 ? existing.models : undefined)
+        : (p.models !== undefined ? p.models : existing.models);
+
+      parsed.providers[idx] = {
+        ...existing,
+        ...p,
+        models: modelsToSave ?? existing.models,
+        accounts: p.accounts !== undefined ? p.accounts : existing.accounts,
+        picture: p.picture ?? existing.picture,
+        quotas: p.quotas ?? existing.quotas,
+        refreshToken: p.refreshToken ?? existing.refreshToken,
+        source: p.source ?? existing.source,
+        status: p.status ?? existing.status,
+        latencyMs: p.latencyMs ?? existing.latencyMs,
+      };
+    } else {
+      // Check if p is an account belonging to a provider's accounts array
+      let foundInAccount = false;
+      for (const prov of parsed.providers) {
+        if (Array.isArray(prov.accounts)) {
+          const accIdx = prov.accounts.findIndex((a: any) => a.id === p.id || (p.email && a.email === p.email));
+          if (accIdx !== -1) {
+            prov.accounts[accIdx] = {
+              ...prov.accounts[accIdx],
+              ...p,
+            };
+            foundInAccount = true;
+            break;
+          }
+        }
+      }
+      if (!foundInAccount) {
+        const googleProv = parsed.providers.find((prov: any) => prov.provider === 'google');
+        if (googleProv && Array.isArray(googleProv.accounts) && (p.provider === 'google' || p.refreshToken || p.email)) {
+          googleProv.accounts.push(p);
+        } else {
+          parsed.providers.push(p);
+        }
+      }
+    }
 
     if (Array.isArray(parsed.models) && Array.isArray(p.models)) {
       for (const pm of p.models) {
         const pmId = pm.id || pm.displayName;
         if (!pmId) continue;
         const cleanId = pmId.startsWith('models/') ? pmId.slice(7) : pmId;
+        const pNormUrl = (p.apiUrl || '').replace(/\/+$/, '').toLowerCase();
         const mIdx = parsed.models.findIndex(m => {
           const mClean = (m.name || '').startsWith('models/') ? (m.name || '').slice(7) : (m.name || '');
-          const urlMatch = !p.apiUrl || !m.apiUrl || p.apiUrl.toLowerCase() === m.apiUrl.toLowerCase();
-          return (m.name === pmId || m.name === `models/${pmId}` || mClean === cleanId) && urlMatch;
+          const mNormUrl = (m.apiUrl || '').replace(/\/+$/, '').toLowerCase();
+          const urlMatch = !pNormUrl || !mNormUrl || pNormUrl === mNormUrl;
+          return (m.name === pmId || m.name === `models/${pmId}` || mClean === cleanId || m.displayName === pm.displayName) && urlMatch;
         });
         if (mIdx !== -1) {
           parsed.models[mIdx].enabled = pm.enabled !== false && p.enabled !== false;
@@ -846,7 +1002,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
       }
     }
 
-    await fs.promises.writeFile(fp, JSON.stringify(parsed, null, 2), 'utf8');
+    await atomicWriteCustomModels(fp, parsed);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
     return { success: true };
   } catch(e) {
@@ -860,8 +1016,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_DELETE, async (_, id) => {
     const c = await fs.promises.readFile(fp, 'utf8');
     const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
     if (parsed.providers) {
+      const initialCount = parsed.providers.length;
       parsed.providers = parsed.providers.filter((x: any) => x.id !== id);
-      await fs.promises.writeFile(fp, JSON.stringify(parsed, null, 2), 'utf8');
+      if (parsed.providers.length === initialCount) {
+        for (const prov of parsed.providers) {
+          if (Array.isArray(prov.accounts)) {
+            prov.accounts = prov.accounts.filter((a: any) => a.id !== id);
+          }
+        }
+      }
+      delete parsed.models;
+      await atomicWriteCustomModels(fp, parsed);
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
     }
     return { success: true };
@@ -870,9 +1035,97 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_DELETE, async (_, id) => {
   }
 });
 
-ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: { apiUrl: string; apiKey: string }) => {
+ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: { apiUrl: string; apiKey: string; provider?: string }) => {
   try {
     const { net } = require('electron') as typeof import('electron');
+    let rawKey = (params.apiKey || '').trim();
+    let isGoogle = params.provider === 'google' || (params.apiUrl && params.apiUrl.includes('googleapis.com'));
+
+    // If apiKey is auto/none/empty and provider is google, resolve active Google account token
+    if ((isGoogle || !rawKey || rawKey === 'auto' || rawKey === 'none') && !rawKey.startsWith('ya29.')) {
+      try {
+        const fp = getCustomModelsPath();
+        const c = await fs.promises.readFile(fp, 'utf8');
+        const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+        if (parsed.providers && Array.isArray(parsed.providers)) {
+          const googleProv = parsed.providers.find((p: any) => p.provider === 'google' || p.provider === 'gemini');
+          if (googleProv && Array.isArray(googleProv.accounts)) {
+            const activeAcc = googleProv.accounts.find((a: any) => a.enabled !== false && (a.apiKey?.startsWith('ya29.') || a.refreshToken)) || googleProv.accounts[0];
+            if (activeAcc) {
+              if (activeAcc.apiKey && activeAcc.apiKey.startsWith('ya29.')) {
+                rawKey = activeAcc.apiKey;
+              } else if (activeAcc.refreshToken) {
+                const refreshed = await refreshGoogleToken(activeAcc.refreshToken);
+                if (refreshed?.accessToken) {
+                  rawKey = refreshed.accessToken;
+                  activeAcc.apiKey = refreshed.accessToken;
+                  await atomicWriteCustomModels(fp, parsed);
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    const isIdeToken = rawKey.startsWith('ya29.');
+
+    // If an Antigravity IDE OAuth access token is provided, query Cloud Code fetchAvailableModels live
+    if (isIdeToken || (params.provider === 'google' && isIdeToken)) {
+      try {
+        const cloudCodeRes = await fetch('https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${rawKey}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'antigravity',
+          },
+          body: JSON.stringify({}),
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (cloudCodeRes.ok) {
+          const data = (await cloudCodeRes.json()) as any;
+          const rawModels = data.models || data.availableModels || {};
+          const models = Object.keys(rawModels)
+            .filter((k) => !k.startsWith('chat_') && !k.startsWith('tab_'))
+            .map((k) => {
+              const m = rawModels[k];
+              const rawDisplayName = (m.displayName || k).replace(/^\[[^\]]+\]\s*/, '');
+              return {
+                id: k,
+                displayName: rawDisplayName || k,
+                enabled: true,
+              };
+            });
+
+          if (models.length > 0) {
+            return { success: true, models };
+          }
+        }
+      } catch {
+        // Continue to fallback below if network fails
+      }
+
+      const fallbackModels = [
+        { id: 'gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)', enabled: true },
+        { id: 'gemini-3.8-flash-medium', displayName: 'Gemini 3.8 Flash (Medium)', enabled: true },
+        { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)', enabled: true },
+        { id: 'gemini-3.7-flash-low', displayName: 'Gemini 3.7 Flash (Low)', enabled: true },
+        { id: 'gemini-3.7-flash-medium', displayName: 'Gemini 3.7 Flash (Medium)', enabled: true },
+        { id: 'gemini-3.7-flash-high', displayName: 'Gemini 3.7 Flash (High)', enabled: true },
+        { id: 'gemini-3.6-flash-low', displayName: 'Gemini 3.6 Flash (Low)', enabled: true },
+        { id: 'gemini-3.6-flash-medium', displayName: 'Gemini 3.6 Flash (Medium)', enabled: true },
+        { id: 'gemini-3.6-flash-high', displayName: 'Gemini 3.6 Flash (High)', enabled: true },
+        { id: 'gemini-3.1-pro-low', displayName: 'Gemini 3.1 Pro (Low)', enabled: true },
+        { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro (High)', enabled: true },
+        { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+        { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
+        { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', enabled: true },
+      ];
+      return { success: true, models: fallbackModels };
+    }
+
     const baseUrl = params.apiUrl.replace(/\/+$/, '');
     const url = new URL(baseUrl.endsWith('/models') ? baseUrl : `${baseUrl}/models`);
     if (!['http:', 'https:'].includes(url.protocol)) {
@@ -883,10 +1136,19 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
       return { success: false, error: 'Blocked: metadata endpoint' };
     }
 
+    isGoogle = isGoogle || url.hostname.includes('googleapis.com');
+    if (isGoogle && rawKey && !rawKey.startsWith('enc:')) {
+      url.searchParams.set('key', rawKey);
+    }
+
     return new Promise((resolve) => {
       const req = net.request({ url: url.toString(), method: 'GET' });
-      if (params.apiKey && !params.apiKey.startsWith('enc:')) {
-        req.setHeader('Authorization', 'Bearer ' + params.apiKey);
+      if (rawKey && !rawKey.startsWith('enc:')) {
+        if (isGoogle) {
+          req.setHeader('x-goog-api-key', rawKey);
+        } else {
+          req.setHeader('Authorization', 'Bearer ' + rawKey);
+        }
       }
       req.on('response', (res: Electron.IncomingMessage) => {
         let data = '';
@@ -900,17 +1162,38 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
               else if (Array.isArray(parsed.models)) rawList = parsed.models;
               else if (Array.isArray(parsed)) rawList = parsed;
 
-              const models = rawList.map((m: any) => {
-                const id = typeof m === 'string' ? m : (m.id || m.name || 'unknown');
-                const displayName = typeof m === 'string' ? m : (m.displayName || m.name || m.id || 'unknown');
-                return { id, displayName, enabled: true };
-              });
+              const models = rawList
+                .filter((m: any) => {
+                  if (isGoogle && Array.isArray(m.supportedGenerationMethods)) {
+                    return m.supportedGenerationMethods.includes('generateContent');
+                  }
+                  return true;
+                })
+                .map((m: any) => {
+                  let id = typeof m === 'string' ? m : (m.id || m.name || 'unknown');
+                  let displayName = typeof m === 'string' ? m : (m.displayName || m.name || m.id || 'unknown');
+                  if (isGoogle) {
+                    id = id.replace(/^models\//, '');
+                    displayName = displayName.replace(/^models\//, '');
+                  }
+                  return { id, displayName, enabled: true };
+                });
               resolve({ success: true, models });
             } catch {
               resolve({ success: false, error: 'Invalid JSON response from /models endpoint' });
             }
           } else {
-            resolve({ success: false, error: `HTTP ${res.statusCode}: ${data ? data.slice(0, 150) : 'Failed to fetch models'}` });
+            let errDetail = data ? data.slice(0, 150) : 'Failed to fetch models';
+            try {
+              const parsedErr = JSON.parse(data);
+              if (parsedErr?.error?.message) {
+                errDetail = parsedErr.error.message;
+              }
+            } catch {}
+            if (isGoogle && errDetail.toLowerCase().includes('api key not valid')) {
+              errDetail = 'API key not valid. Please enter a valid Google AI Studio API key starting with "AIzaSy…" from https://aistudio.google.com/apikey. (If connecting Antigravity IDE, use "Importer depuis IDE").';
+            }
+            resolve({ success: false, error: `HTTP ${res.statusCode}: ${errDetail}` });
           }
         });
       });
@@ -922,12 +1205,84 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
   }
 });
 
-ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMainInvokeEvent, params: { apiUrl: string; apiKey: string; id?: string; modelId?: string }) => {
-   try {
-       const { net } = require('electron') as typeof import('electron');
-       const baseUrl = params.apiUrl.replace(/\/+$/, '');
+function formatApiError(raw: any, statusCode?: number): string {
+  if (!raw) return statusCode ? `HTTP ${statusCode}` : 'Erreur inconnue';
+  const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const msg = parsed?.error?.message || parsed?.message || (typeof parsed?.error === 'string' ? parsed.error : '');
+    if (msg) {
+      if (parsed?.error?.type === 'billing_error' || /insufficient balance/i.test(msg)) {
+        return `Solde épuisé : ${msg}`;
+      }
+      if (parsed?.error?.status === 'RESOURCE_EXHAUSTED' || /quota|exhausted/i.test(msg)) {
+        return `Quota épuisé : ${msg}`;
+      }
+      if (parsed?.error?.details?.[0]?.reason === 'API_KEY_INVALID' || /API key not valid/i.test(msg)) {
+        return `Clé API invalide ou expirée`;
+      }
+      return msg;
+    }
+  } catch {}
+  return text.length > 200 ? text.slice(0, 200) + '…' : text;
+}
 
-       const parsedBase = new URL(baseUrl);
+ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMainInvokeEvent, params: { apiUrl: string; apiKey: string; id?: string; modelId?: string; provider?: string }) => {
+  try {
+    const { net } = require('electron') as typeof import('electron');
+    let rawKey = (params.apiKey || '').trim();
+    let isGoogle = params.provider === 'google' || (params.apiUrl && params.apiUrl.includes('googleapis.com'));
+    let targetAccountId: string | undefined = undefined;
+
+    // If apiKey is auto/none/empty or Google provider, resolve active Google account token from accounts pool
+    if ((isGoogle || !rawKey || rawKey === 'auto' || rawKey === 'none') && !rawKey.startsWith('ya29.')) {
+      try {
+        const fp = getCustomModelsPath();
+        const c = await fs.promises.readFile(fp, 'utf8');
+        const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+        if (parsed.providers && Array.isArray(parsed.providers)) {
+          let prov = parsed.providers.find((x: any) => x.id === params.id || (isGoogle && (x.provider === 'google' || x.provider === 'gemini')));
+          let activeAcc: any = null;
+          if (prov && Array.isArray(prov.accounts) && prov.accounts.length > 0) {
+            activeAcc = prov.accounts.find((a: any) => a.enabled !== false && (a.apiKey?.startsWith('ya29.') || a.refreshToken)) || prov.accounts[0];
+          } else {
+            for (const p of parsed.providers) {
+              if (Array.isArray(p.accounts)) {
+                const acc = p.accounts.find((a: any) => a.id === params.id);
+                if (acc) {
+                  activeAcc = acc;
+                  prov = p;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (activeAcc) {
+            isGoogle = true;
+            targetAccountId = activeAcc.id;
+            if (activeAcc.apiKey && activeAcc.apiKey.startsWith('ya29.')) {
+              rawKey = activeAcc.apiKey;
+            } else if (activeAcc.refreshToken) {
+              const refreshed = await refreshGoogleToken(activeAcc.refreshToken);
+              if (refreshed && refreshed.accessToken) {
+                rawKey = refreshed.accessToken;
+                activeAcc.apiKey = refreshed.accessToken;
+                await atomicWriteCustomModels(fp, parsed);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[PROVIDERS_TEST] Failed to resolve account token from pool:', err);
+      }
+    }
+
+    const baseUrl = params.apiUrl ? params.apiUrl.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta';
+
+    let parsedBase: URL;
+    try {
+      parsedBase = new URL(baseUrl);
       if (!['http:', 'https:'].includes(parsedBase.protocol)) {
         return { success: false, healthStatus: 'offline' as const, error: `Unsupported URL scheme: ${parsedBase.protocol}` };
       }
@@ -935,129 +1290,387 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_TEST, async (_evt: Electron.IpcMain
       if (blockedHosts.includes(parsedBase.hostname.toLowerCase())) {
         return { success: false, healthStatus: 'offline' as const, error: 'Blocked: metadata endpoint' };
       }
-      const startTime = Date.now();
+    } catch (err) {
+      return { success: false, healthStatus: 'offline' as const, error: `Invalid URL: ${(err as Error).message}` };
+    }
 
-     const doRequest = (targetUrl: string, method: string, body?: string): Promise<{ statusCode: number; data: string; latencyMs: number }> => {
-       return new Promise((resolve, reject) => {
-         const req = net.request({ url: targetUrl, method });
-         if (params.apiKey && !params.apiKey.startsWith('enc:')) {
-           req.setHeader('Authorization', 'Bearer ' + params.apiKey);
-         }
-         if (body) {
-           req.setHeader('Content-Type', 'application/json');
-         }
-         req.on('response', (res: Electron.IncomingMessage) => {
-           let data = '';
-           res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-           res.on('end', () => {
-             resolve({ statusCode: res.statusCode ?? 500, data, latencyMs: Date.now() - startTime });
-           });
-         });
-         req.on('error', (err: Error) => reject(err));
-         if (body) req.write(body);
-         req.end();
-       });
-     };
+    const startTime = Date.now();
+    const isIdeToken = !!(rawKey && rawKey.startsWith('ya29.'));
+    if (isIdeToken && !params.modelId) {
+      try {
+        let quotaRes = await fetchGoogleAccountQuotas(rawKey);
+        let freshToken: string | undefined;
+        if (!quotaRes) {
+          try {
+            const fp = getCustomModelsPath();
+            const c = await fs.promises.readFile(fp, 'utf8');
+            const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+            if (parsed.providers && Array.isArray(parsed.providers)) {
+              let prov = parsed.providers.find((x: any) => x.id === params.id);
+              let targetAcc: any = null;
+              if (prov && Array.isArray(prov.accounts)) {
+                targetAcc = prov.accounts.find((a: any) => a.id === targetAccountId || a.apiKey === rawKey || a.enabled !== false);
+              } else {
+                for (const pr of parsed.providers) {
+                  if (Array.isArray(pr.accounts)) {
+                    const acc = pr.accounts.find((a: any) => a.id === params.id || a.id === targetAccountId || a.apiKey === rawKey);
+                    if (acc) {
+                      targetAcc = acc;
+                      prov = pr;
+                      break;
+                    }
+                  }
+                }
+              }
+              if (targetAcc && targetAcc.refreshToken) {
+                const refreshed = await refreshGoogleToken(targetAcc.refreshToken);
+                if (refreshed && refreshed.accessToken) {
+                  freshToken = refreshed.accessToken;
+                  quotaRes = await fetchGoogleAccountQuotas(refreshed.accessToken);
+                }
+              }
+            }
+          } catch { /* ignore */ }
+        }
+        const latencyMs = Date.now() - startTime;
+        const isSuccess = quotaRes !== null;
+        const healthStatus = isSuccess ? (latencyMs >= 1500 ? 'degraded' : 'healthy') : 'offline';
+        const result = {
+          success: isSuccess,
+          status: isSuccess ? 200 : 401,
+          latencyMs,
+          healthStatus,
+          error: isSuccess ? undefined : 'Jeton Antigravity IDE expiré ou inaccessible',
+        };
 
-      let statusCode = 500;
-     let responseData = '';
-     let latencyMs = 0;
+        if (params.id || targetAccountId) {
+          try {
+            const fp = getCustomModelsPath();
+            const c = await fs.promises.readFile(fp, 'utf8');
+            const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+            if (parsed.providers && Array.isArray(parsed.providers)) {
+              const idx = parsed.providers.findIndex((x: any) => x.id === params.id);
+              if (idx !== -1) {
+                parsed.providers[idx].status = result.healthStatus;
+                parsed.providers[idx].latencyMs = result.latencyMs;
+                parsed.providers[idx].lastTestedAt = new Date().toISOString();
+                parsed.providers[idx].lastError = result.error;
+                if (freshToken && parsed.providers[idx].apiKey !== 'auto') parsed.providers[idx].apiKey = freshToken;
+                if (targetAccountId && Array.isArray(parsed.providers[idx].accounts)) {
+                  const acc = parsed.providers[idx].accounts.find((a: any) => a.id === targetAccountId);
+                  if (acc) {
+                    acc.status = result.healthStatus;
+                    acc.latencyMs = result.latencyMs;
+                    acc.lastTestedAt = new Date().toISOString();
+                    acc.lastError = result.error;
+                    if (freshToken) acc.apiKey = freshToken;
+                    if (quotaRes) acc.quotas = quotaRes;
+                  }
+                }
+                await atomicWriteCustomModels(fp, parsed);
+              } else {
+                for (const pr of parsed.providers) {
+                  if (Array.isArray(pr.accounts)) {
+                    const aIdx = pr.accounts.findIndex((a: any) => a.id === params.id || a.id === targetAccountId);
+                    if (aIdx !== -1) {
+                      pr.accounts[aIdx].status = result.healthStatus;
+                      pr.accounts[aIdx].latencyMs = result.latencyMs;
+                      pr.accounts[aIdx].lastTestedAt = new Date().toISOString();
+                      pr.accounts[aIdx].lastError = result.error;
+                      if (freshToken) pr.accounts[aIdx].apiKey = freshToken;
+                      if (quotaRes) pr.accounts[aIdx].quotas = quotaRes;
+                      await atomicWriteCustomModels(fp, parsed);
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          } catch { /* ignore */ }
+        }
+        return result;
+      } catch (err) {
+        return { success: false, healthStatus: 'offline' as const, error: (err as Error).message };
+      }
+    }
 
-     if (params.modelId) {
-       try {
-         const postBody = JSON.stringify({
-           model: params.modelId,
-           messages: [{ role: 'user', content: 'ping' }],
-           max_tokens: 1
-         });
-         const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
-         statusCode = postRes.statusCode;
-         responseData = postRes.data;
-         latencyMs = postRes.latencyMs;
-       } catch (err) {
-         responseData = (err as Error).message;
-       }
-     } else {
-       try {
-         const res = await doRequest(`${baseUrl}/models`, 'GET');
-         statusCode = res.statusCode;
-         responseData = res.data;
-         latencyMs = res.latencyMs;
-       } catch (err) {
-         responseData = (err as Error).message;
-       }
+    const doRequest = (targetUrl: string, method: string, body?: string): Promise<{ statusCode: number; data: string; latencyMs: number }> => {
+      return new Promise((resolve, reject) => {
+        const req = net.request({ url: targetUrl, method });
+        const keyToUse = rawKey || params.apiKey;
+        if (keyToUse && !keyToUse.startsWith('enc:') && keyToUse !== 'auto' && keyToUse !== 'none') {
+          if (keyToUse.startsWith('ya29.')) {
+            req.setHeader('Authorization', 'Bearer ' + keyToUse);
+            req.setHeader('User-Agent', 'antigravity');
+          } else if (isGoogle) {
+            req.setHeader('x-goog-api-key', keyToUse);
+          } else {
+            req.setHeader('Authorization', 'Bearer ' + keyToUse);
+          }
+        }
+        if (body) {
+          req.setHeader('Content-Type', 'application/json');
+        }
+        req.on('response', (res: Electron.IncomingMessage) => {
+          let data = '';
+          res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+          res.on('end', () => {
+            resolve({ statusCode: res.statusCode ?? 500, data, latencyMs: Date.now() - startTime });
+          });
+        });
+        req.on('error', (err: Error) => reject(err));
+        if (body) req.write(body);
+        req.end();
+      });
+    };
 
-       if (statusCode < 200 || statusCode >= 300) {
-         let testModel: string | undefined = undefined;
-         if (params.id) {
-           try {
-             const fp = getCustomModelsPath();
-             const c = await fs.promises.readFile(fp, 'utf8');
-             const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
-             const prov = (parsed.providers || []).find((x: any) => x.id === params.id);
-             if (prov && prov.models && prov.models.length > 0) {
-               testModel = prov.models[0].id || prov.models[0].name;
-             }
-           } catch { /* ignore */ }
-         }
-         if (!testModel) testModel = 'MiniMax-M3';
+    let statusCode = 500;
+    let responseData = '';
+    let latencyMs = 0;
 
-         try {
-           const postBody = JSON.stringify({
-             model: testModel,
-             messages: [{ role: 'user', content: 'ping' }],
-             max_tokens: 1
-           });
-           const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
-           if (postRes.statusCode >= 200 && postRes.statusCode < 300) {
-             statusCode = postRes.statusCode;
-             responseData = postRes.data;
-             latencyMs = postRes.latencyMs;
-           } else if (postRes.statusCode === 401 || postRes.statusCode === 403) {
-             statusCode = postRes.statusCode;
-             responseData = postRes.data;
-             latencyMs = postRes.latencyMs;
-           }
-         } catch { /* keep original */ }
-       }
-     }
+    if (params.modelId) {
+      try {
+        if (isGoogle) {
+          const cleanModel = params.modelId.replace(/^models\//, '');
+          const keyToUse = rawKey || params.apiKey;
+          const isCloudCode = isIdeToken || keyToUse?.startsWith('ya29.') || cleanModel.includes('tiered') || cleanModel.includes('-pro-high');
+          if (isCloudCode) {
+            const postBody = JSON.stringify({
+              project: 'aicode-consumers',
+              model: cleanModel,
+              request: {
+                contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+                generationConfig: { maxOutputTokens: 5 },
+              },
+            });
+            let postRes = await doRequest('https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent', 'POST', postBody);
+            if (postRes.statusCode === 429) {
+              const fbRes = await doRequest('https://cloudcode-pa.googleapis.com/v1internal:generateContent', 'POST', postBody);
+              if (fbRes.statusCode >= 200 && fbRes.statusCode < 300) postRes = fbRes;
+            }
+            statusCode = postRes.statusCode;
+            responseData = postRes.data;
+            latencyMs = postRes.latencyMs;
+          } else {
+            const postBody = JSON.stringify({
+              contents: [{ parts: [{ text: 'ping' }] }],
+              generationConfig: { maxOutputTokens: 5 },
+            });
+            const postRes = await doRequest(`${baseUrl}/models/${cleanModel}:generateContent`, 'POST', postBody);
+            statusCode = postRes.statusCode;
+            responseData = postRes.data;
+            latencyMs = postRes.latencyMs;
+          }
+        } else {
+          const postBody = JSON.stringify({
+            model: params.modelId,
+            messages: [{ role: 'user', content: 'ping' }],
+            max_tokens: 16
+          });
+          const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
+          statusCode = postRes.statusCode;
+          responseData = postRes.data;
+          latencyMs = postRes.latencyMs;
+        }
+      } catch (err) {
+        responseData = (err as Error).message;
+      }
+    } else {
+      try {
+        const res = await doRequest(`${baseUrl}/models`, 'GET');
+        statusCode = res.statusCode;
+        responseData = res.data;
+        latencyMs = res.latencyMs;
+      } catch (err) {
+        responseData = (err as Error).message;
+      }
 
-     const isSuccess = statusCode >= 200 && statusCode < 300;
-     const healthStatus = isSuccess
-       ? (latencyMs >= 1500 ? 'degraded' : 'healthy')
-       : (statusCode === 429 ? 'degraded' : 'offline');
+      if (!isGoogle && (statusCode < 200 || statusCode >= 300)) {
+        let testModel: string | undefined = undefined;
+        if (params.id) {
+          try {
+            const fp = getCustomModelsPath();
+            const c = await fs.promises.readFile(fp, 'utf8');
+            const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+            const prov = (parsed.providers || []).find((x: any) => x.id === params.id);
+            if (prov && prov.models && prov.models.length > 0) {
+              testModel = prov.models[0].id || prov.models[0].name;
+            }
+          } catch { /* ignore */ }
+        }
+        if (!testModel) testModel = 'MiniMax-M3';
 
-     const result = {
-       success: isSuccess,
-       status: statusCode,
-       latencyMs,
-       healthStatus,
-       error: isSuccess ? undefined : (responseData || `HTTP ${statusCode}`)
-     };
+        try {
+          const postBody = JSON.stringify({
+            model: testModel,
+            messages: [{ role: 'user', content: 'ping' }],
+            max_tokens: 16
+          });
+          const postRes = await doRequest(`${baseUrl}/chat/completions`, 'POST', postBody);
+          if (postRes.statusCode >= 200 && postRes.statusCode < 300) {
+            statusCode = postRes.statusCode;
+            responseData = postRes.data;
+            latencyMs = postRes.latencyMs;
+          } else if (postRes.statusCode === 401 || postRes.statusCode === 403) {
+            statusCode = postRes.statusCode;
+            responseData = postRes.data;
+            latencyMs = postRes.latencyMs;
+          }
+        } catch { /* keep original */ }
+      }
+    }
 
-     if (params.id) {
-       try {
-         const fp = getCustomModelsPath();
-         const c = await fs.promises.readFile(fp, 'utf8');
-         const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
-         if (parsed.providers && Array.isArray(parsed.providers)) {
-           const idx = parsed.providers.findIndex((x: any) => x.id === params.id);
-           if (idx !== -1) {
-             parsed.providers[idx].status = result.healthStatus;
-             parsed.providers[idx].latencyMs = result.latencyMs;
-             parsed.providers[idx].lastTestedAt = new Date().toISOString();
-             parsed.providers[idx].lastError = result.error;
-             await fs.promises.writeFile(fp, JSON.stringify(parsed, null, 2), 'utf8');
-           }
-         }
-       } catch { /* ignore */ }
-     }
+    const isSuccess = statusCode >= 200 && statusCode < 300;
+    const healthStatus = isSuccess
+      ? (latencyMs >= 1500 ? 'degraded' : 'healthy')
+      : (statusCode === 429 ? 'degraded' : 'offline');
 
-     return result;
-   } catch(e) {
-     const err = e as Error;
-     return { success: false, healthStatus: 'offline' as const, error: err.message };
-   }
+    let pongText = '';
+    if (params.modelId && isSuccess) {
+      try {
+        const parsed = JSON.parse(responseData);
+        if (isGoogle) {
+          pongText = parsed.response?.candidates?.[0]?.content?.parts?.[0]?.text
+            || parsed.candidates?.[0]?.content?.parts?.[0]?.text
+            || '';
+        } else {
+          pongText = parsed.choices?.[0]?.message?.content || parsed.choices?.[0]?.text || '';
+        }
+      } catch {
+        pongText = responseData;
+      }
+    }
+
+    const result = {
+      success: isSuccess,
+      status: statusCode,
+      latencyMs,
+      healthStatus,
+      pongText: pongText ? pongText.trim() : undefined,
+      error: isSuccess ? undefined : formatApiError(responseData, statusCode)
+    };
+
+    if (params.id) {
+      try {
+        const fp = getCustomModelsPath();
+        const c = await fs.promises.readFile(fp, 'utf8');
+        const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+        if (parsed.providers && Array.isArray(parsed.providers)) {
+          const idx = parsed.providers.findIndex((x: any) => x.id === params.id);
+          if (idx !== -1) {
+            parsed.providers[idx].status = result.healthStatus;
+            parsed.providers[idx].latencyMs = result.latencyMs;
+            parsed.providers[idx].lastTestedAt = new Date().toISOString();
+            parsed.providers[idx].lastError = result.error;
+            await atomicWriteCustomModels(fp, parsed);
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    return result;
+  } catch(e) {
+    const err = e as Error;
+    return { success: false, healthStatus: 'offline' as const, error: err.message };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_DISCOVER_IDE_ACCOUNT, async () => {
+  try {
+    const account = await discoverIdeAccount();
+    if (!account) {
+      return { success: false, error: 'Aucun compte Google actif détecté dans Antigravity IDE ou le trousseau système.' };
+    }
+    return { success: true, account };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la découverte du compte.' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, async (_evt, tokenOrKey: string) => {
+  try {
+    if (!tokenOrKey) return { success: false, error: 'Token requis.' };
+    let effectiveToken = tokenOrKey;
+    let freshAccessToken: string | undefined;
+    if (tokenOrKey.startsWith('1//') || tokenOrKey.startsWith('g1//')) {
+      const refreshed = await refreshGoogleToken(tokenOrKey);
+      if (refreshed) {
+        effectiveToken = refreshed.accessToken;
+        freshAccessToken = refreshed.accessToken;
+      }
+    }
+    const quotas = await fetchGoogleAccountQuotas(effectiveToken);
+    if (!quotas) {
+      return { success: false, error: 'Impossible de récupérer les quotas Google.' };
+    }
+    return { success: true, quotas, accessToken: freshAccessToken };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la récupération des quotas.' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_WARMUP_ACCOUNT, async (_evt, accessToken: string) => {
+  try {
+    if (!accessToken) return { success: false, error: 'Access token requis.' };
+    let effectiveToken = accessToken;
+    if (accessToken.startsWith('1//') || accessToken.startsWith('g1//')) {
+      const refreshed = await refreshGoogleToken(accessToken);
+      if (refreshed) effectiveToken = refreshed.accessToken;
+    }
+    const ok = await warmupGoogleAccount(effectiveToken);
+    return { success: ok };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors du warmup du compte.' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_REFRESH_TOKEN, async (_evt, refreshToken: string) => {
+  try {
+    if (!refreshToken) return { success: false, error: 'Refresh token requis.' };
+    const res = await refreshGoogleToken(refreshToken);
+    if (!res) {
+      return { success: false, error: 'Échec du rafraîchissement du token Google (révoqué ou réseau indisponible).' };
+    }
+    const userInfo = await fetchGoogleUserInfo(res.accessToken);
+    const quotas = await fetchGoogleAccountQuotas(res.accessToken);
+    const projectInfo = await ensureCloudCodeProject(res.accessToken);
+    return {
+      success: true,
+      accessToken: res.accessToken,
+      expiresIn: res.expiresIn,
+      email: userInfo?.email || projectInfo?.accountEmail,
+      name: userInfo?.name,
+      picture: userInfo?.picture,
+      quotas: quotas || undefined,
+      projectId: projectInfo?.projectId,
+      tierId: projectInfo?.tierId,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors du rafraîchissement du token.' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_LOGIN, async () => {
+  try {
+    const res = await startGoogleOAuthLogin();
+    return res;
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la connexion OAuth' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_SWITCH_IDE_ACCOUNT, async (_evt, params: {
+  accessToken: string;
+  refreshToken?: string;
+  email?: string;
+  picture?: string;
+}) => {
+  try {
+    const res = switchActiveIdeAccount(params);
+    return res;
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors du changement de compte IDE' };
+  }
 });
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.RUN, async (_evt, args: string[]) => {
@@ -1229,14 +1842,18 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROXY_RESTART, async () => {
 
 // Antigravity Lifecycle
 ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_STATUS, async () => {
-  const r = await getCliPool().run(['antigravity', 'status', '--json']);
-  if (r.code !== 0 && r.code !== 1) {
-    return { ok: false, error: r.stderr || r.stdout || `exit ${r.code}` };
-  }
   try {
-    return { ok: true, data: JSON.parse(r.stdout) };
-  } catch (e) {
-    return { ok: false, error: `parse failed: ${(e as Error).message}` };
+    const r = await getCliPool().run(['antigravity', 'status', '--json']);
+    if (r.code !== 0 && r.code !== 1) {
+      return { ok: false, error: r.stderr || r.stdout || `exit ${r.code}` };
+    }
+    try {
+      return { ok: true, data: JSON.parse(r.stdout) };
+    } catch (e) {
+      return { ok: false, error: `parse failed: ${(e as Error).message}` };
+    }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
   }
 });
 
@@ -1276,6 +1893,31 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_RESTART, async () => {
   }
 });
 
+function checkAndNotifyOAuthIntercept(chunk: string): void {
+  const match = chunk.match(/(?:ANTIGRAVITY_OPEN_URL|Intercepted auth URL):\s*(https:\/\/accounts\.google\.com\/[^\s\r\n"']+)/i);
+  if (match && match[1]) {
+    const url = match[1].trim();
+    let redirectUri: string | undefined;
+    let port: number | undefined;
+    try {
+      const parsed = new URL(url);
+      redirectUri = parsed.searchParams.get('redirect_uri') || undefined;
+      if (redirectUri) {
+        const u = new URL(redirectUri);
+        port = u.port ? parseInt(u.port, 10) : undefined;
+      }
+    } catch {}
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, {
+        url,
+        port,
+        redirectUri,
+        ts: Date.now(),
+      });
+    }
+  }
+}
+
 ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_LAUNCH_LOGS, async (evt) => {
   const streamId = `launch-logs-${Date.now()}`;
   const cli = getCliPath();
@@ -1305,13 +1947,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_LAUNCH_LOGS, async (evt) => {
   };
 
   proc.stdout?.on('data', (d: Buffer) => {
+    const str = d.toString();
+    checkAndNotifyOAuthIntercept(str);
     if (!pending) pending = { stdout: '', stderr: '' };
-    pending.stdout += d.toString();
+    pending.stdout += str;
     schedule();
   });
   proc.stderr?.on('data', (d: Buffer) => {
+    const str = d.toString();
+    checkAndNotifyOAuthIntercept(str);
     if (!pending) pending = { stdout: '', stderr: '' };
-    pending.stderr += d.toString();
+    pending.stderr += str;
     schedule();
   });
   proc.on('close', (code) => {
@@ -1389,6 +2035,182 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.TEST_MODEL, async (_evt, name: string) => {
     }
   } catch (e) {
     return { ok: false, error: (e as Error).message };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.MODEL_PING_PONG, async (_evt, params: { modelId: string; providerId?: string; prompt?: string }) => {
+  try {
+    const cleanModel = (params.modelId || '').replace(/^models\//, '');
+    const prompt = params.prompt || 'ping';
+    let apiKey = '';
+    let apiUrl = '';
+    let providerName = '';
+    let provId = params.providerId;
+    let isOAuthGoogle = false;
+    let projectId = 'aicode-consumers';
+
+    let fp = '';
+    let parsed: any = null;
+    let prov: any = null;
+    let candidateAccounts: any[] = [];
+
+    try {
+      fp = getCustomModelsPath();
+      if (fs.existsSync(fp)) {
+        const c = await fs.promises.readFile(fp, 'utf8');
+        parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
+        if (parsed.providers && Array.isArray(parsed.providers)) {
+          prov = provId
+            ? parsed.providers.find((p: any) => p.id === provId)
+            : parsed.providers.find((p: any) =>
+                (p.models || []).some((m: any) => (m.id || m.name) === cleanModel || (m.id || m.name) === params.modelId || (m.id || m.name) === `models/${cleanModel}`)
+              );
+          if (!prov && (cleanModel.startsWith('gemini-') || cleanModel.startsWith('claude-'))) {
+            prov = parsed.providers.find((p: any) => p.provider === 'google' || p.provider === 'gemini');
+          }
+          if (prov) {
+            apiKey = prov.apiKey || '';
+            apiUrl = prov.apiUrl || '';
+            providerName = prov.provider || '';
+            provId = prov.id;
+            if (Array.isArray(prov.accounts) && prov.accounts.length > 0) {
+              candidateAccounts = prov.accounts.filter((a: any) => a.enabled !== false && (a.apiKey || a.refreshToken));
+              if (candidateAccounts.length === 0) candidateAccounts = [prov.accounts[0]];
+              const firstAcc = candidateAccounts[0];
+              if (firstAcc) {
+                if (firstAcc.projectId) projectId = firstAcc.projectId;
+                if (firstAcc.apiKey) apiKey = firstAcc.apiKey;
+                if (firstAcc.refreshToken || (firstAcc.apiKey && firstAcc.apiKey.startsWith('ya29.'))) {
+                  isOAuthGoogle = true;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+
+    const isGoogle = providerName === 'google' || providerName === 'gemini' || (apiUrl && apiUrl.includes('googleapis.com')) || (!apiUrl && cleanModel.toLowerCase().includes('gemini'));
+    const isCloudCodeGoogle = isGoogle && (isOAuthGoogle || (apiKey && apiKey.startsWith('ya29.')) || cleanModel.includes('tiered') || cleanModel.includes('-pro-high'));
+
+    if (!apiUrl) {
+      apiUrl = isGoogle ? 'https://generativelanguage.googleapis.com/v1beta' : 'http://127.0.0.1:51074/v1';
+    }
+
+    const { net } = require('electron') as typeof import('electron');
+    const startTime = Date.now();
+
+    const doRequest = (targetUrl: string, body: string, headers: Record<string, string>): Promise<{ statusCode: number; data: string; latencyMs: number }> => {
+      return new Promise((resolve, reject) => {
+        const req = net.request({ url: targetUrl, method: 'POST' });
+        for (const [k, v] of Object.entries(headers)) {
+          if (v) req.setHeader(k, v);
+        }
+        req.on('response', (res: Electron.IncomingMessage) => {
+          let data = '';
+          res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+          res.on('end', () => {
+            resolve({ statusCode: res.statusCode ?? 500, data, latencyMs: Date.now() - startTime });
+          });
+        });
+        req.on('error', (err: Error) => reject(err));
+        req.write(body);
+        req.end();
+      });
+    };
+
+    let targetUrl = '';
+    let body = '';
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    let res: { statusCode: number; data: string; latencyMs: number } = { statusCode: 500, data: '', latencyMs: 0 };
+
+    if (isCloudCodeGoogle) {
+      const cloudCodeHosts = ['https://daily-cloudcode-pa.googleapis.com', 'https://cloudcode-pa.googleapis.com'];
+      headers['User-Agent'] = 'antigravity';
+
+      const accountsList = candidateAccounts.length > 0 ? candidateAccounts : [{ apiKey, refreshToken: undefined, projectId }];
+      for (let i = 0; i < accountsList.length; i++) {
+        const curAcc = accountsList[i];
+        let curKey = curAcc.apiKey || apiKey;
+        if (curAcc.refreshToken) {
+          const refreshed = await refreshGoogleToken(curAcc.refreshToken);
+          if (refreshed && refreshed.accessToken) {
+            curKey = refreshed.accessToken;
+            curAcc.apiKey = refreshed.accessToken;
+            if (fp && parsed) {
+              try { await atomicWriteCustomModels(fp, parsed); } catch {}
+            }
+          }
+        }
+        if (curKey && curKey !== 'auto' && curKey !== 'none' && !curKey.startsWith('enc:')) {
+          headers['Authorization'] = `Bearer ${curKey}`;
+        }
+        body = JSON.stringify({
+          project: curAcc.projectId || projectId,
+          model: cleanModel,
+          request: {
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 64, thinkingConfig: { thinkingBudget: 0 } }
+          }
+        });
+
+        for (const host of cloudCodeHosts) {
+          res = await doRequest(`${host}/v1internal:generateContent`, body, headers);
+          if (res.statusCode >= 200 && res.statusCode < 300) break;
+        }
+        if (res.statusCode >= 200 && res.statusCode < 300) break;
+      }
+    } else if (isGoogle) {
+      targetUrl = `${apiUrl.replace(/\/+$/, '')}/models/${cleanModel}:generateContent`;
+      if (apiKey && apiKey !== 'auto' && apiKey !== 'none' && !apiKey.startsWith('enc:')) {
+        headers['x-goog-api-key'] = apiKey;
+      }
+      body = JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 64, thinkingConfig: { thinkingBudget: 0 } }
+      });
+      res = await doRequest(targetUrl, body, headers);
+    } else {
+      targetUrl = `${apiUrl.replace(/\/+$/, '')}/chat/completions`;
+      if (apiKey && apiKey !== 'auto' && apiKey !== 'none' && !apiKey.startsWith('enc:')) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+      body = JSON.stringify({
+        model: cleanModel,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 16
+      });
+      res = await doRequest(targetUrl, body, headers);
+    }
+    let pongText = '';
+    try {
+      const parsed = JSON.parse(res.data);
+      if (isGoogle) {
+        const parts = parsed.response?.candidates?.[0]?.content?.parts || parsed.candidates?.[0]?.content?.parts;
+        pongText = parts?.find((p: any) => p.text)?.text || parts?.[0]?.text || '';
+      } else {
+        pongText = parsed.choices?.[0]?.message?.content || parsed.choices?.[0]?.text || '';
+      }
+    } catch {
+      pongText = res.data;
+    }
+
+    const ok = res.statusCode >= 200 && res.statusCode < 300;
+    return {
+      ok,
+      status: res.statusCode,
+      latencyMs: res.latencyMs,
+      pongText: pongText.trim(),
+      error: ok ? undefined : formatApiError(res.data, res.statusCode)
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      latencyMs: 0,
+      pongText: '',
+      error: (err as Error).message
+    };
   }
 });
 
@@ -1564,13 +2386,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.STREAM_START, (evt, args: string[], streamId:
   };
 
   proc.stdout?.on('data', (d: Buffer) => {
+    const str = d.toString();
+    checkAndNotifyOAuthIntercept(str);
     if (!pending) pending = { stdout: '', stderr: '' };
-    pending.stdout += d.toString();
+    pending.stdout += str;
     schedule();
   });
   proc.stderr?.on('data', (d: Buffer) => {
+    const str = d.toString();
+    checkAndNotifyOAuthIntercept(str);
     if (!pending) pending = { stdout: '', stderr: '' };
-    pending.stderr += d.toString();
+    pending.stderr += str;
     schedule();
   });
   proc.on('close', (code) => {
@@ -1635,13 +2461,13 @@ app.on('window-all-closed', () => {
   try {
     killOrphanDaemonProcesses();
   } catch { /* ignore */ }
-  
+
   try {
     getProxyManager().cleanup();
   } catch (err) {
     console.error('[App] Failed to cleanup proxy manager:', err);
   }
-  
+
   if (process.platform !== 'darwin') app.quit();
 });
 

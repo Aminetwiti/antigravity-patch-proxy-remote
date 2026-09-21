@@ -26,7 +26,7 @@
 import fs from 'fs';
 import path from 'path';
 import { findAntigravityIdeInstallDir, getIdeSettingsJson } from './paths';
-import { DEFAULT_PROXY_PORT, DEFAULT_BIND_HOST } from './config';
+import { DEFAULT_PROXY_PORT, DEFAULT_MITM_PORT, DEFAULT_BIND_HOST } from './config';
 
 /** Read the IDE product version from resources/app/package.json (best-effort). */
 export function getIdeVersion(installDir?: string): string | null {
@@ -70,7 +70,13 @@ const LEGACY_LOCALHOST_ENDPOINT = `http://localhost:${DEFAULT_PROXY_PORT}`;
 
 function isPatchedEndpoint(value: string | null): boolean {
   if (!value) return false;
-  return value === IDE_PATCHED_ENDPOINT || value === LEGACY_LOCALHOST_ENDPOINT;
+  return (
+    value === IDE_PATCHED_ENDPOINT ||
+    value === LEGACY_LOCALHOST_ENDPOINT ||
+    value === `http://127.0.0.1:${DEFAULT_PROXY_PORT}` ||
+    value === `http://localhost:${DEFAULT_MITM_PORT}` ||
+    value === `http://127.0.0.1:${DEFAULT_MITM_PORT}`
+  );
 }
 
 /** Read the current setting value without mutating the file. */
@@ -167,7 +173,7 @@ export function applyIdePatch(): { ok: boolean; message: string } {
     return { ok: false, message: 'Could not resolve the IDE settings.json path' };
   }
   if (status.applied) {
-    const needsNormalize = status.currentValue === LEGACY_LOCALHOST_ENDPOINT;
+    const needsNormalize = status.currentValue !== IDE_PATCHED_ENDPOINT;
     if (needsNormalize && status.exists && !status.backupExists) {
       fs.copyFileSync(status.settingsPath, status.settingsPath + '.bak');
     }

@@ -240,10 +240,13 @@ export function classifyError(
 
   // Detect server errors (5xx)
   if (status && status >= 500 && status < 600) {
+    const upstreamDetail = bodyJson?.error?.message || (typeof bodyJson?.error === 'string' ? bodyJson.error : '') || bodyJson?.message || '';
     return {
       errorType: 'server',
       title: 'Provider Server Error',
-      message: `The upstream server encountered an error (HTTP ${status}).`,
+      message: upstreamDetail
+        ? `The upstream server returned an error: ${upstreamDetail}`
+        : `The upstream server encountered an error (HTTP ${status}).`,
       suggestions: [
         'Try again later or check the model provider\'s service status page.',
         'If using a custom or local server, check its log output for details.',
@@ -255,14 +258,18 @@ export function classifyError(
   }
 
   // Fallback to unknown error
+  const upstreamDetail = bodyJson?.error?.message || (typeof bodyJson?.error === 'string' ? bodyJson.error : '') || bodyJson?.message || '';
+  const title = status === 404 ? 'Model Not Found (404)' : status === 400 ? 'Invalid Request (400)' : status ? `API Error (HTTP ${status})` : 'Unexpected Error';
   return {
     errorType: 'unknown',
-    title: 'Unexpected Error',
-    message: status
+    title,
+    message: upstreamDetail
+      ? `The provider returned an error: ${upstreamDetail}`
+      : status
       ? `Request failed with status code HTTP ${status}.`
       : `An unexpected request error occurred: ${errorMsg || errorCode || 'Unknown error'}`,
     suggestions: [
-      'Check the application logs for a full stack trace or debugging information.',
+      status === 404 ? 'Check if the external model name matches the provider\'s exact model identifier.' : 'Check the application logs for a full stack trace or debugging information.',
       'Check your Custom Models configuration settings.',
       'Retry the request or try a different model.'
     ],

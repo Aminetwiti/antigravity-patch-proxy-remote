@@ -4,6 +4,8 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import log from 'electron-log';
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -445,14 +447,6 @@ function applyUniversalPathFallback(args: Record<string, unknown>): Record<strin
     }
   }
 
-  for (const [, value] of Object.entries(args)) {
-    if (typeof value === 'string' && (value.includes('/') || value.includes('\\') || value.includes('.'))) {
-      result['AbsolutePath'] = value;
-      sanitizePathProperties(result);
-      return result;
-    }
-  }
-
   sanitizePathProperties(result);
   return result;
 }
@@ -489,9 +483,38 @@ export function fixParamTypes(properties: Record<string, unknown> | undefined): 
 }
 
 /**
+ * Resolves the absolute path to the remote-exec bridge script.
+ * Prefers the persistent ~/.gemini/antigravity/scripts/remote-exec.js path.
+ */
+export function getRemoteExecScriptPath(): string {
+  const userGeminiPath = path.join(os.homedir(), '.gemini', 'antigravity', 'scripts', 'remote-exec.js');
+  if (fs.existsSync(userGeminiPath)) return userGeminiPath;
+
+  const rel1 = path.resolve(__dirname, '../../../scripts/remote-exec.js');
+  if (fs.existsSync(rel1)) return rel1;
+
+  const rel2 = path.resolve(__dirname, '../../scripts/remote-exec.js');
+  if (fs.existsSync(rel2)) return rel2;
+
+  return userGeminiPath;
+}
+
+/**
+ * Wraps a shell command to execute remotely via the remote-exec daemon bridge.
+ */
+export function wrapCommandForRemoteExec(cmd: string, remoteCwd?: string): string {
+  // Remote VPS mode disabled by user - always execute locally
+  return cmd;
+}
+
+/**
  * Translates generic shell/terminal commands (run_command) into native Antigravity file tools.
  */
-export function translateToolCallToNative(name: string, args: ToolCallArgs): TranslatedToolCall {
+export function translateToolCallToNative(
+  name: string,
+  args: ToolCallArgs,
+  isRemoteOverride?: boolean,
+): TranslatedToolCall {
   if (name !== 'run_command' || !args || !args.CommandLine) {
     return { name, args: args as Record<string, unknown> };
   }
@@ -500,13 +523,14 @@ export function translateToolCallToNative(name: string, args: ToolCallArgs): Tra
   const cwd = args.Cwd || process.cwd();
 
   // 1. list_dir translation
-  const isListDir = /^(ls|dir)(\s+[\w\-\/\\\.\*]+)*$/i.test(cmd);
+  const isListDir = /^(ls|dir)(\s+[\w\-\/\\\.\*"]+)*$/i.test(cmd);
   if (isListDir) {
     let dirPath = cwd;
     const tokens = cmd.split(/\s+/).slice(1);
     const pathToken = tokens.find((t) => !t.startsWith('-') && !t.startsWith('/'));
     if (pathToken) {
-      dirPath = path.isAbsolute(pathToken) ? pathToken : path.resolve(cwd, pathToken);
+      const cleanToken = pathToken.replace(/^["']|["']$/g, '');
+      dirPath = path.isAbsolute(cleanToken) ? cleanToken : path.resolve(cwd, cleanToken);
     }
     log.info(`[Proxy] Translating run_command "${cmd}" to list_dir on "${dirPath}"`);
     return { name: 'list_dir', args: { DirectoryPath: dirPath } };
@@ -534,24 +558,43 @@ export function translateToolCallToNative(name: string, args: ToolCallArgs): Tra
   // 3. grep_search translation
   if (cmd.toLowerCase().startsWith('grep') || cmd.toLowerCase().startsWith('findstr')) {
     let query = '';
-    let searchPath = cwd;
+    let searchPath = '.';
     const regexQuotes = /"([^"]+)"|'([^']+)'/g;
     const quotesFound = [...cmd.matchAll(regexQuotes)];
     if (quotesFound.length > 0) {
       query = quotesFound[0][1] || quotesFound[0][2];
+      const unquotedTokens = cmd.replace(regexQuotes, ' ').split(/\s+/).slice(1).filter((t) => t && !t.startsWith('-') && !t.startsWith('/'));
+      if (unquotedTokens.length > 0) {
+        searchPath = unquotedTokens[unquotedTokens.length - 1];
+      }
     } else {
-      const tokens = cmd.split(/\s+/);
-      query = tokens[tokens.length - 1];
-    }
-    const tokens = cmd.split(/\s+/);
-    const pathToken = tokens.find(
-      (t, idx) =>
-        idx > 0 && !t.startsWith('-') && !t.startsWith('/') && !t.includes('"') && !t.includes("'") && t !== query,
-    );
-    if (pathToken) {
-      searchPath = path.isAbsolute(pathToken) ? pathToken : path.resolve(cwd, pathToken);
+      const nonFlagTokens = cmd.split(/\s+/).slice(1).filter((t) => t && !t.startsWith('-') && !t.startsWith('/'));
+      if (nonFlagTokens.length > 0) {
+        query = nonFlagTokens[0];
+        if (nonFlagTokens.length > 1) {
+          searchPath = nonFlagTokens[nonFlagTokens.length - 1];
+        }
+      }
     }
     if (query) {
+      // Antigravity Language Server (grep_handler.go:518) splits ripgrep output with strings.Split(line, ":").
+      // On Windows with drive letters (e.g. C:\...), parts[0]="C", parts[1]=path, causing strconv.Atoi(parts[1]) to fail.
+      // Keep as native run_command shell execution to avoid IDE parse crash.
+      if (/^[a-zA-Z]:/i.test(searchPath)) {
+        log.info(`[Proxy] run_command grep target "${searchPath}" has Windows drive letter. Leaving as native shell command to avoid IDE parse bugs.`);
+        return { name, args: args as Record<string, unknown> };
+      }
+
+      try {
+        const resolvedPath = path.isAbsolute(searchPath) ? searchPath : path.resolve(cwd, searchPath);
+        if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
+          log.info(`[Proxy] run_command grep target "${resolvedPath}" is a file. Leaving as native shell command to avoid IDE parse bugs.`);
+          return { name, args: args as Record<string, unknown> };
+        }
+      } catch (err) {
+        // Ignore stat errors
+      }
+
       log.info(`[Proxy] Translating run_command "${cmd}" to grep_search (Query: "${query}", Path: "${searchPath}")`);
       return {
         name: 'grep_search',
@@ -572,30 +615,36 @@ export function translateToolCallToNative(name: string, args: ToolCallArgs): Tra
 /**
  * Formats native file tool outputs (JSON/Array) back into standard textual command-line outputs.
  */
-export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo, responseData: unknown): string {
-  const { translatedName, cmd } = translatedInfo;
+export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo | string, responseData: unknown): string {
+  const translatedName = typeof translatedInfo === 'string' ? translatedInfo : translatedInfo?.translatedName;
+  const cmd = typeof translatedInfo === 'object' ? translatedInfo?.cmd : '';
   // S-3: Redact secrets before logging — SSH passwords, Bearer tokens, API keys.
   const safeCmd = (cmd ?? '')
     .replace(/(-pw\s+|--password[= ])\S+/gi, '$1[REDACTED]')
     .replace(/(Authorization:\s*(?:Bearer|Basic)\s+)\S+/gi, '$1[REDACTED]')
     .replace(/(apikey|api_key|api-key)[=: ]+\S+/gi, '$1=[REDACTED]');
-  log.info(`[Proxy] Formatting native response back to CLI for translated tool "${translatedName}" (Cmd: "${safeCmd}")`);
+  if (translatedName) {
+    log.info(`[Proxy] Formatting native response back to CLI for translated tool "${translatedName}"${safeCmd ? ` (Cmd: "${safeCmd}")` : ''}`);
+  }
 
   if (translatedName === 'list_dir') {
     if (Array.isArray(responseData)) {
-      return (responseData as DirectoryItem[])
+      return (responseData as any[])
         .map((item) => {
-          const typeIndicator = item.isDir ? '<DIR>' : '     ';
-          const sizeStr = item.isDir ? '' : ` (${item.sizeBytes || 0} bytes)`;
-          return `${typeIndicator}  ${item.name}${sizeStr}`;
+          const isDir = item.isDir ?? item.IsDir;
+          const name = item.name ?? item.Name ?? '';
+          const sizeBytes = item.sizeBytes ?? item.SizeBytes ?? item.size ?? 0;
+          const typeIndicator = isDir ? '<DIR>' : '     ';
+          const sizeStr = isDir ? '' : ` (${sizeBytes} bytes)`;
+          return `${typeIndicator}  ${name}${sizeStr}`;
         })
         .join('\n');
     }
     if (responseData && typeof responseData === 'object') {
-      const data = responseData as FileListResponse;
-      const items = data.files || data.children || [];
+      const data = responseData as any;
+      const items = data.files || data.Files || data.children || data.Children || data.entries || data.items || [];
       if (Array.isArray(items)) {
-        return items.map((item) => `${item.isDir ? '<DIR>' : '     '}  ${item.name}`).join('\n');
+        return items.map((item: any) => `${(item.isDir ?? item.IsDir) ? '<DIR>' : '     '}  ${item.name ?? item.Name ?? ''}`).join('\n');
       }
     }
     return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
@@ -603,16 +652,30 @@ export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo, res
 
   if (translatedName === 'view_file') {
     if (responseData && typeof responseData === 'object') {
-      const data = responseData as FileListResponse;
-      return data.content || data.CodeContent || JSON.stringify(responseData);
+      const data = responseData as any;
+      const fileText = data.content ?? data.Content ?? data.CodeContent ?? data.codeContent ?? data.file_content ?? data.text;
+      if (fileText !== undefined) {
+        return typeof fileText === 'string' ? fileText : JSON.stringify(fileText);
+      }
+      return JSON.stringify(responseData);
     }
     return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
   }
 
   if (translatedName === 'grep_search') {
-    if (Array.isArray(responseData)) {
-      return (responseData as MatchResult[])
-        .map((match) => `${match.Filename}:${match.LineNumber}:${match.LineContent}`)
+    const list = Array.isArray(responseData)
+      ? responseData
+      : (responseData && typeof responseData === 'object')
+        ? ((responseData as any).matches || (responseData as any).results || (responseData as any).Matches || (responseData as any).Results)
+        : null;
+    if (Array.isArray(list)) {
+      return list
+        .map((match: any) => {
+          const file = match.Filename ?? match.filename ?? match.file ?? match.path ?? '';
+          const line = match.LineNumber ?? match.lineNumber ?? match.line ?? '';
+          const content = match.LineContent ?? match.lineContent ?? match.content ?? match.text ?? '';
+          return `${file}${line !== '' ? `:${line}` : ''}:${content}`;
+        })
         .join('\n');
     }
     return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
@@ -620,12 +683,16 @@ export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo, res
 
   if (translatedName === 'write_file') {
     if (responseData && typeof responseData === 'object') {
-      const data = responseData as Record<string, unknown>;
-      if (data.success) return `File written successfully: ${data.path || 'unknown'}`;
-      return `Failed to write file: ${data.error || 'Unknown error'}`;
+      const data = responseData as any;
+      const success = data.success ?? data.Success;
+      const targetPath = data.path ?? data.Path;
+      const error = data.error ?? data.Error;
+      if (success) return `File written successfully: ${targetPath || 'unknown'}`;
+      return `Failed to write file: ${error || 'Unknown error'}`;
     }
     return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
   }
 
   return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
 }
+

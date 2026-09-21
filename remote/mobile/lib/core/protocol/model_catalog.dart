@@ -165,7 +165,7 @@ class ModelCatalog {
         return m;
       }
     }
-    // Dynamic fallback for custom/injected proxy models (e.g. gpt-4o, claude-3-7-sonnet, deepseek-r1)
+    // Dynamic fallback for custom/injected proxy models (e.g. gpt-4o, claude-sonnet-4-6, deepseek-r1)
     return AntigravityModel(
       id: query.trim(),
       displayName: query.trim(),

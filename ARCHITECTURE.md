@@ -9,46 +9,55 @@ Antigravity is a desktop application built on Electron, Node.js, and TypeScript.
 
 ```
 src/
-├── main/                        # Electron Main Process Entry & Windows
-│   ├── main.ts                  # Main process bootstrap & application lifecycle
-│   ├── windowManager.ts         # Window bounds, loading overlay, & viewport state
-│   ├── tray.ts                  # System tray icon & active agent counter
-│   ├── menu.ts                  # Application menus & global keyboard shortcuts
-│   └── updater.ts               # Electron auto-updater event listeners
+├── main.ts                      # Electron bootstrap, lifecycle, and LS proxy invocation
+├── proxy.ts                     # Core HTTP proxy server orchestration & interception
+├── preload.ts                   # Injected Settings UI, model management & preload bridge
+├── ipcHandlers.ts               # Canonical IPC registry & handler dispatcher
+├── languageServer.ts            # Language Server process supervisor & port discovery
+├── constants.ts                 # Source of truth (providers, default ports, timeouts, limits)
+├── schemaValidator.ts           # Runtime response & custom model schema validation
+├── paths.ts                     # User data & application path resolvers
+├── utils.ts                     # Utility helpers & API key masking
+├── metrics.ts                   # Upstream latency & error metrics registry
+├── updater.ts                   # Electron auto-updater event listeners
+├── tray.ts                      # System tray icon & status controls
+├── menu.ts                      # Application menus & keyboard shortcuts
 │
-├── ipc/                         # Inter-Process Communication (IPC Layer)
-│   ├── index.ts                 # Centralized IPC registration orchestrator
-│   └── handlers/                # Domain-driven IPC Handlers
-│       ├── modelHandler.ts      # Provider & custom model IPC (CRUD, export/import base64)
-│       ├── settingsHandler.ts   # Persistent user preferences & dialogs
-│       ├── doctorHandler.ts     # System diagnostics & ag-doctor metrics
-│       └── systemHandler.ts     # Window controls, shell execution, & notifications
+├── proxy/                       # Proxy internals & protocol translation
+│   ├── registry.ts              # Auto-discovering translator module registry
+│   ├── protoInjector.ts         # Protobuf payload injection for native model picker
+│   ├── protobuf.ts              # Manual varint protobuf encoding/decoding
+│   ├── jsonRepair.ts            # Safe non-eval SSE JSON repair
+│   ├── circuitBreaker.ts        # Per-model circuit breaker & failure isolation
+│   ├── retryStrategy.ts         # Adaptive exponential backoff retry logic
+│   ├── retryBudget.ts           # Provider retry budget manager
+│   ├── idGenerator.ts           # DJB2 hash generator for model placeholder IDs
+│   ├── urlBuilder.ts            # URL sanitization & binary padding stripping
+│   └── translators/             # Format mapping modules (openai.ts, anthropic.ts, google.ts, ollama.ts)
 │
-├── gateway/                     # HTTP Proxy Engine & Protocol Router
-│   ├── server.ts                # HTTP Proxy server bootstrap & graceful connection shutdown
-│   ├── router.ts                # Route dispatcher for completion & discovery endpoints
-│   ├── handlers/                # Request handlers per API protocol (Gemini, OpenAI, Claude)
-│   └── middleware/              # Authentication, header injection, & log throttling
+├── services/                    # Core domain services & persistent stores
+│   ├── modelStore.ts            # Custom model storage with write-lock mutex (`withWriteLock`)
+│   ├── cryptoStore.ts           # AES-256-GCM encryption wrapper (`safeStorage`)
+│   ├── configExchange.ts        # Model configuration import/export & backup
+│   ├── settingsService.ts       # Application persistent preferences
+│   ├── telemetryStore.ts        # Local telemetry & metrics persistence
+│   ├── certificateService.ts    # MITM CA certificate provisioning & inspection
+│   ├── localModelDetector.ts    # Auto-detection of local Ollama / LM Studio instances
+│   └── healthProbe.ts           # Upstream provider health checks
 │
-├── services/                    # Core Domain Services & Stores
-│   ├── modelStore.ts            # Atomic custom model & provider store (`withWriteLock`)
-│   ├── cryptoStore.ts           # SafeStorage OS keychain encryption & base64 fallback
-│   ├── settingsService.ts       # Application configuration service
-│   └── languageServer.ts        # LSP / IDE integration client
+├── ipc/                         # IPC channel definitions
+│   └── channels.ts              # Canonical IPC channel constants & types
 │
-├── preload/                     # Renderer Preload & ContextBridge
-│   ├── index.ts                 # Preload module entry point
-│   ├── api.ts                   # Type-safe `contextBridge` exposure (`window.nativeStorage`, etc.)
-│   └── doctor-ui.ts             # Doctor UI management panel & modal components
+├── preload/                     # Renderer preload components & modular managers
+│   ├── api.ts                   # Type-safe contextBridge exposure
+│   ├── doctor-ui.ts             # Diagnostic UI bridge & panel components
+│   ├── provider-manager.ts      # UI modal controller for provider settings
+│   └── types.ts                 # Preload interface type definitions
 │
-├── shared/                      # Shared Utilities, Schemas & Constants
-│   ├── logger.ts                # Structured facade logger (`createLogger`)
-│   ├── constants.ts             # Application-wide configuration constants
-│   ├── schemaValidator.ts       # Runtime JSON schema validation
-│   ├── paths.ts                 # User data & application path resolvers
-│   └── utils.ts                 # Pure helper functions
+├── presets/                     # Provider presets & reasoning configuration
+│   └── reasoningEffort.ts       # Reasoning parameter detectors (o1, o3-mini, DeepSeek R1)
 │
-└── presets/                     # Pre-configured model presets & reasoning parameters
+└── __tests__/                   # 1000+ unit tests across 58 test files (Vitest)
 ```
 
 ---
@@ -65,8 +74,9 @@ src/
 3. **Secure Encryption at Rest**
    - API keys are encrypted using OS keychain credentials via Electron `safeStorage`. Fallback encoding is provided for systems without keychains.
 
-4. **Modular IPC Architecture**
-   - IPC channels are segregated by domain (`modelHandler`, `settingsHandler`, `doctorHandler`, `systemHandler`), eliminating monolithic handler files.
+4. **IPC Architecture & Channel Isolation**
+   - Centralized IPC channels are strictly typed under `src/ipc/channels.ts`.
+   - Handlers are executed through the canonical registry `src/ipcHandlers.ts` with safe argument validation, input sanitization, and structured error boundaries.
 
 5. **Slim Preload Scripts**
    - The root `preload.ts` is lightweight, delegating contextBridge registrations to `src/preload/api.ts`.
@@ -98,4 +108,67 @@ IDE Chat UI ↔ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go
 2. **Flutter Mobile Companion (`remote/mobile`)**:
    - **Antigravity 2.0 Design System**: Replicated design tokens directly from IDE computed stylesheets (`htmlcss.log`) — including `#101010` canvas, `#21252B` sidebars, `#528BFF` focus borders, `#D7BA7D` syntax highlights, and IDE-native diff editor coloration.
    - **Typed Protocol Client (`DaemonApi`)**: Full WebSocket client handling request/response correlations, real-time token streams, tool approval queues, and outbox persistence.
+   - **Typed Protocol Client (`DaemonApi`)**: Full WebSocket client handling request/response correlations, real-time token streams, tool approval queues, outbox persistence, and Protocol v2 session attachment (`attachSession`, `sendPromptV2`, `respondApprovalV2`).
    - **Core Screens**: Quiet Console chat stream, session manager, file tree with syntax icons & code viewer, MCP server explorer, scheduled tasks dashboard, and diagnostic export.
+
+---
+
+## Antigravity Remote Server Agent Runtime (`ag-agentd` / Protocol v2)
+
+The Remote Server Agent Runtime transforms Antigravity into an authoritative, autonomous agent runtime running directly on cloud servers (VPS / Bare Metal), inspired by the Claude Code Cloud model.
+
+### 1. Authoritative Architecture
+
+```
+                       LOCAL CLIENTS
+┌────────────────────────┐      ┌────────────────────────┐      ┌────────────────────────┐
+│  Desktop Electron IDE  │      │ Flutter Mobile Client  │      │  Web Console (Browser) │
+│   (Attach / Control)   │      │   (Attach / Control)   │      │   (Attach / Control)   │
+└───────────┬────────────┘      └───────────┬────────────┘      └───────────┬────────────┘
+            │                               │                               │
+            └───────────────────────┬───────┴───────────────────────────────┘
+                                    │ WebSocket Protocol v2 / REST
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        REMOTE SERVER RUNTIME (ag-agentd)                               │
+│                                                                                        │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────────────┐  │
+│  │ WebSocket Gateway v2 │  │  Session Controller  │  │    Terminal Exec Service     │  │
+│  │ (Multi-Client Mux)   │  │ (Lifecycle & State)  │  │   (POST /v2/terminal/exec)   │  │
+│  └──────────┬───────────┘  └──────────┬───────────┘  └──────────────┬───────────────┘  │
+│             │                         │                             │                  │
+│             ▼                         ▼                             ▼                  │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────────────┐  │
+│  │   Agent Core Loop    │  │  SQLite EventStore   │  │      Workspace Manager       │  │
+│  │ (Context Compaction) │  │  (WAL Checkpointed)  │  │    (Tree, File, Git Sync)    │  │
+│  └──────────┬───────────┘  └──────────────────────┘  └──────────────┬───────────────┘  │
+│             │                                                       │                  │
+│             ▼                                                       ▼                  │
+│   LLM Providers (Proxy/API)                               Local Host Filesystem & Git  │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2. Core Pillars
+
+1. **Authoritative Execution & Detachment**:
+   - The agent loop runs as a server daemon (`ag-agentd`), persisting its execution state, memory, and trajectory inside an append-only SQLite EventStore (`runtime.db`).
+   - Clients can disconnect at any point without interrupting execution.
+   - Upon reconnection, clients supply their `lastSequence` cursor (`session.attach`), and the server replays all intermediate events (`session.catchup`) with zero message loss.
+
+2. **High-Frequency Streaming Decoupling (`EmitEphemeralEvent`)**:
+   - Real-time token streaming (`agent.thought_chunk`) and stdout chunks (`tool.output`) are broadcast to connected WebSockets with ephemeral sequences (`Sequence = -1`).
+   - Consolidated milestone events (`agent.thought`, `tool.result`, `session.state_changed`) are committed to SQLite with strict monotonic ordering and WAL checkpoints.
+
+3. **Intelligent Context Compaction (`CompactContextMessages`)**:
+   - Prevents token blowout during extended sessions.
+   - Preserves recent turns while compacting older massive tool outputs (> 2,000 chars) in the middle with head/tail preservation (`[... N bytes omitted for context compaction ...]`).
+
+4. **Bi-Directional Workspace Synchronization**:
+   - REST API: `GET /v2/workspaces/tree`, `GET/POST /v2/workspaces/file`, `GET /v2/workspaces/search`, `POST /v2/workspaces/sync`.
+   - Git primitives: `Pull` and `Push` methods in `workspace.Manager` support upstream synchronization between local repos and server workspaces.
+
+5. **Security Confinement**:
+   - Dedicated unprivileged system user `ag-agent` (`/bin/false`).
+   - Systemd hardening: `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`, `NoNewPrivileges=true`, `LimitNOFILE=65536`.
+   - Path confinement strictly enforces that all file operations remain within the registered workspace boundary (`ResolveAndValidatePath`).
+

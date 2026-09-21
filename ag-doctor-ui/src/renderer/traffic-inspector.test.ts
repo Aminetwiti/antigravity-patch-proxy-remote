@@ -12,8 +12,8 @@ describe('Traffic Inspector Engine', () => {
     const engine = new TrafficInspectorEngine();
     const entry = engine.logTraffic({
       method: 'POST',
-      path: '/v1beta/models/gemini-1.5-pro:generateContent',
-      targetModel: 'gemini-1.5-pro',
+      path: '/v1beta/models/gemini-3.1-pro-high:generateContent',
+      targetModel: 'gemini-3.1-pro-high',
       translatedProvider: 'OpenAI',
       statusCode: 200,
       latencyMs: 145,

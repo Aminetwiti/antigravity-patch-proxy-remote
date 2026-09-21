@@ -42,20 +42,42 @@ foreach ($Junk in $JunkTargets) {
 }
 
 # Repack using @electron/asar.
-# NOTE: pack from a STAGING dir containing only what the app.asar needs
-# (package.json + dist/ + proxy-runner.js). Packing the repo root directly
-# dragged nested node_modules (ag-doctor-ui/node_modules with the 176 MB
-# Electron binary) into the archive — a 569 MB junk asar that broke version
-# detection and bloated the install.
+# Extract base asar first (to preserve app assets and dependencies), then overlay dist/ and node_modules.
 $AsarBin = Join-Path $SourceDir "node_modules\@electron\asar\bin\asar.js"
 $StageDir = Join-Path $env:TEMP "antigravity-repack-stage"
 if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
 New-Item -ItemType Directory -Path $StageDir | Out-Null
+
+$BaseAsar = "$env:LOCALAPPDATA\Programs\antigravity\resources\app.asar.bak"
+if (-not (Test-Path $BaseAsar)) {
+    $BaseAsar = $DestAsar
+}
+
+if ((Test-Path $BaseAsar) -and ((Get-Item $BaseAsar).Length -gt 5MB)) {
+    Write-Host "Extracting base app.asar ($BaseAsar)..." -ForegroundColor Yellow
+    if (Test-Path $AsarBin) {
+        node $AsarBin extract $BaseAsar $StageDir
+    } else {
+        npx -y @electron/asar extract $BaseAsar $StageDir
+    }
+}
+
 Copy-Item (Join-Path $SourceDir "package.json") (Join-Path $StageDir "package.json") -Force
 Copy-Item (Join-Path $SourceDir "dist") (Join-Path $StageDir "dist") -Recurse -Force
 if (Test-Path (Join-Path $SourceDir "proxy-runner.js")) {
     Copy-Item (Join-Path $SourceDir "proxy-runner.js") (Join-Path $StageDir "proxy-runner.js") -Force
 }
+
+$StageNodeModules = Join-Path $StageDir "node_modules"
+if (-not (Test-Path $StageNodeModules)) {
+    New-Item -ItemType Directory -Path $StageNodeModules | Out-Null
+}
+$SourceNodeModules = Join-Path $SourceDir "node_modules"
+if (Test-Path $SourceNodeModules) {
+    Write-Host "Copying dependencies from $SourceNodeModules..." -ForegroundColor Yellow
+    Copy-Item (Join-Path $SourceNodeModules "*") $StageNodeModules -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if (Test-Path $AsarBin) {
     node $AsarBin pack $StageDir $DestAsar
 } else {

@@ -12,7 +12,7 @@ import { registerKeybindings } from './keybindings';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getSettingsPbPath } from './paths';
-import { attachLoadingOverlay } from './loadingOverlay';
+import { attachLoadingOverlay } from './main/windowManager';
 
 export let showQuitConfirmation = false;
 
@@ -104,8 +104,19 @@ export function createWindow(url: string): BrowserWindowInstance {
     },
   });
   win.webContents.setWindowOpenHandler((details) => {
-    void shell.openExternal(details.url);
+    if (details.url.startsWith('https://') || details.url.startsWith('http://')) {
+      void shell.openExternal(details.url);
+    }
     return { action: 'deny' };
+  });
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    console.log(`[Renderer Console] [${level}] ${message} (${sourceId}:${line})`);
+  });
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[Renderer] Failed to load ${validatedURL}: ${errorCode} ${errorDescription}`);
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[Renderer] Render process gone: ${details.reason} (exitCode: ${details.exitCode})`);
   });
   attachLoadingOverlay(win, foregroundColor, backgroundColor);
   registerKeybindings(win, {

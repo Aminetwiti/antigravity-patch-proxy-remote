@@ -103,7 +103,7 @@ func (s *Server) reactiveSyncUpdates(updates map[string]connectrpc.ReactiveUpdat
 				// Même garde que le chemin binaire (websocket.go) : une
 				// auto-approbation de session déjà traitée ne doit ni poser
 				// de carte ni diffuser.
-				if s.hasSessionApproval(id, tool) {
+				if s.hasSessionApproval(id, tool) || s.shouldAutoApprove(tool) {
 					continue
 				}
 				ev := connectrpc.StreamEvent{

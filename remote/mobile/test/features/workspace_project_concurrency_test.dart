@@ -20,8 +20,8 @@ void main() {
       const ProjectItem(
         id: 'p3',
         name: 'www - Copie',
-        folderUri: 'file:///c%3A/Users/amine/Downloads/raouf%20taxi/www%20-%20Copie',
-        path: 'c:/Users/amine/Downloads/raouf taxi/www - Copie',
+        folderUri: 'file:///c%3A/Users/amine/Downloads/demo%20taxi/www%20-%20Copie',
+        path: 'c:/Users/amine/Downloads/demo taxi/www - Copie',
       ),
       const ProjectItem(
         id: 'p4',
@@ -37,9 +37,9 @@ void main() {
       ),
       const ProjectItem(
         id: 'p6',
-        name: 'c:\\Users\\amine\\Desktop\\ooredoo\\posweb',
-        folderUri: 'file:///c%3A%5CUsers%5Camine%5CDesktop%5Cooredoo%5Cposweb',
-        path: 'c:/Users/amine/Desktop/ooredoo/posweb',
+        name: 'c:\\Users\\amine\\Desktop\\client-project\\posweb',
+        folderUri: 'file:///c%3A%5CUsers%5Camine%5CDesktop%5Cclient-project%5Cposweb',
+        path: 'c:/Users/amine/Desktop/client-project/posweb',
       ),
     ];
 
@@ -82,7 +82,7 @@ void main() {
         const CascadeSession(
           id: 's-user-1',
           workspacePath: 'c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main',
-          title: 'Implémenter le nouveau modèle Claude 3.7',
+          title: 'Implémenter le nouveau modèle Claude Sonnet 4.6',
           status: 'CASCADE_STATUS_READY',
           time: 'Maintenant',
         ),
@@ -135,7 +135,7 @@ void main() {
         ),
         const CascadeSession(
           id: 'pos-1',
-          workspacePath: 'c:/Users/amine/Desktop/ooredoo/posweb',
+          workspacePath: 'c:/Users/amine/Desktop/client-project/posweb',
           title: 'Mise à jour caisse',
           status: 'CASCADE_STATUS_READY',
           time: '1h',
@@ -149,7 +149,7 @@ void main() {
       );
 
       expect(grouped['c:\\Users\\amine\\OmniRoute']?.length, equals(2));
-      expect(grouped['c:\\Users\\amine\\Desktop\\ooredoo\\posweb']?.length, equals(1));
+      expect(grouped['c:\\Users\\amine\\Desktop\\client-project\\posweb']?.length, equals(1));
       expect(grouped.containsKey('Outside of Project'), isFalse);
     });
 

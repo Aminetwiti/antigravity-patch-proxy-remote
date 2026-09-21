@@ -220,6 +220,17 @@ Map<String, List<CascadeSession>> groupSessions({
         matchedProject = byNameLower[sessionFolder];
       }
 
+      // 5. Priority 5: slug / project name contained in workspacePath (mirror of daemon matchOfficialProject)
+      if (matchedProject == null && s.workspacePath.isNotEmpty) {
+        final wsLower = (cWsLower ?? s.workspacePath.toLowerCase());
+        for (final entry in byNameLower.entries) {
+          if (entry.key.isNotEmpty && wsLower.contains(entry.key)) {
+            matchedProject = entry.value;
+            break;
+          }
+        }
+      }
+
       if (matchedProject != null) {
         grouped.putIfAbsent(matchedProject.name, () => []).add(s);
       } else {

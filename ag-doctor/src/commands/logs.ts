@@ -6,7 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { CommandContext } from '../types';
-import { getLsLogPath, getAntigravityDataDir } from '../core/paths';
+import { getLsLogPath, getMainLogPath, getProxyLogPath, getAntigravityDataDir } from '../core/paths';
 import { error, info, ok, warn, c, header } from '../cli/output';
 
 /** All known log sources and their paths. */
@@ -14,8 +14,12 @@ function getLogSources(): Record<string, string> {
   const dir = getAntigravityDataDir();
   return {
     language_server: getLsLogPath(),
+    main: getMainLogPath(),
+    electron: getMainLogPath(),
+    'ag-doctor': getMainLogPath(),
+    proxy: getProxyLogPath(),
+    serve: path.join(dir, 'serve.log'),
     daemon: path.join(dir, 'daemon.log'),
-    proxy: path.join(dir, 'serve.log'),
     'proxy-err': path.join(dir, 'serve.err.log'),
     recovery: path.join(dir, 'recovery.log'),
   };
@@ -37,6 +41,23 @@ function humanSize(bytes: number): string {
 function matchesLevel(line: string, level: string): boolean {
   const upper = level.toUpperCase();
   if (upper === 'ALL') return true;
+
+  // Handle Google glog prefix: "ERROR: logging before google.Init: [IWEF]MMDD..."
+  const glogMatch = line.match(/^ERROR: logging before google\.Init:\s*([IWEF])/);
+  if (glogMatch) {
+    const glogSeverity = glogMatch[1];
+    switch (upper) {
+      case 'ERROR':
+        return glogSeverity === 'E' || glogSeverity === 'F';
+      case 'WARN':
+        return glogSeverity === 'W' || glogSeverity === 'E' || glogSeverity === 'F';
+      case 'INFO':
+        return glogSeverity === 'I' || glogSeverity === 'W' || glogSeverity === 'E' || glogSeverity === 'F';
+      default:
+        return true;
+    }
+  }
+
   // Match explicit level tags: [ERROR], [WARN], [INFO], [DEBUG]
   // Also match daemon format: ok=0 warn=1 error=1
   switch (upper) {

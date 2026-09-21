@@ -8,11 +8,13 @@ import '../theme/app_colors.dart';
 class AppNotificationBanner extends StatelessWidget {
   final BannerNotificationData data;
   final bool isCompact;
+  final VoidCallback? onDismiss;
 
   const AppNotificationBanner({
     super.key,
     required this.data,
     this.isCompact = false,
+    this.onDismiss,
   });
 
   @override
@@ -49,6 +51,7 @@ class AppNotificationBanner extends StatelessWidget {
 
     final dismissAction = data.actions.where((a) => a.label.toLowerCase() == 'dismiss' || a.label.toLowerCase() == 'ignorer').firstOrNull;
     final otherActions = data.actions.where((a) => a != dismissAction).toList();
+    final effectiveDismiss = onDismiss ?? dismissAction?.onPressed;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -91,28 +94,47 @@ class AppNotificationBanner extends StatelessWidget {
                 ),
               ),
               if (data.errorId != null && !isCompact)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: InkWell(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: data.errorId!));
+                      HapticFeedback.lightImpact();
+                    },
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.copy_rounded, size: 11, color: isDark ? AppColors.inkMuted : scheme.outline),
+                          const SizedBox(width: 4),
+                          Text(
+                            'ID',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isDark ? AppColors.inkMuted : scheme.outline,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              if (effectiveDismiss != null)
                 InkWell(
                   onTap: () {
-                    Clipboard.setData(ClipboardData(text: data.errorId!));
                     HapticFeedback.lightImpact();
+                    effectiveDismiss();
                   },
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(12),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.copy_rounded, size: 11, color: isDark ? AppColors.inkMuted : scheme.outline),
-                        const SizedBox(width: 4),
-                        Text(
-                          'ID',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? AppColors.inkMuted : scheme.outline,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 16,
+                      color: isDark ? AppColors.inkMuted : scheme.outline,
                     ),
                   ),
                 ),
@@ -134,11 +156,11 @@ class AppNotificationBanner extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // Bouton Dismiss à gauche
-              if (dismissAction != null)
+              if (dismissAction != null && effectiveDismiss != null)
                 InkWell(
                   onTap: () {
                     HapticFeedback.lightImpact();
-                    dismissAction.onPressed();
+                    effectiveDismiss();
                   },
                   borderRadius: BorderRadius.circular(6),
                   child: Container(

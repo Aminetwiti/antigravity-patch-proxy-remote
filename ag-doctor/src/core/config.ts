@@ -57,7 +57,7 @@ export interface AgDoctorConfig {
 }
 
 export const DEFAULT_CONFIG: AgDoctorConfig = {
-  mitmPort: 443,
+  mitmPort: 51074,
   logLines: 100,
   doctorInterval: 5000,
   ui: {

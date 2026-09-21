@@ -13,7 +13,16 @@ const path = require('path');
 const net = require('net');
 const { spawn } = require('child_process');
 
-const constants_1 = require('./constants');
+let constants_1;
+try {
+  constants_1 = require('./dist/constants');
+} catch (_) {
+  try {
+    constants_1 = require('./constants');
+  } catch (__) {
+    constants_1 = { DEFAULT_BIND_HOST: process.env.AG_BIND_HOST || '127.0.0.1' };
+  }
+}
 
 const MITM_443_PROBE_TIMEOUT_MS = 500;
 
@@ -23,12 +32,12 @@ const LOG_PATH = process.env.AG_PROXY_RUNNER_LOG || path.join(os.tmpdir(), 'ag-p
 const PORT_FILE = process.env.AG_PROXY_RUNNER_PORT_FILE || path.join(os.tmpdir(), 'ag-proxy-runner.port');
 
 function w(line) {
-  try {
-    fs.appendFileSync(LOG_PATH, '[' + new Date().toISOString() + '] ' + line + '\n');
-  } catch (e) {
-    // last-resort: try writing to CWD
-    try { fs.appendFileSync('ag-proxy-runner.log', line + '\n'); } catch (_) {}
-  }
+  const formatted = '[' + new Date().toISOString() + '] ' + line + '\n';
+  fs.appendFile(LOG_PATH, formatted, (err) => {
+    if (err) {
+      fs.appendFile('ag-proxy-runner.log', formatted, () => {});
+    }
+  });
 }
 // Clear previous log
 try { fs.writeFileSync(LOG_PATH, ''); } catch (_) {}

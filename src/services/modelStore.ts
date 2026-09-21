@@ -6,11 +6,13 @@ import log from 'electron-log/main';
 
 import * as cryptoStore from '../cryptoStore';
 import { generateModelPlaceholderId } from '../proxy/idGenerator';
+import { normalizeCloudCodeModelId, normalizeGoogleModelId } from './googleAuth';
 import {
   CUSTOM_MODEL_MAX_TOKENS,
   CUSTOM_MODEL_MAX_OUTPUT_TOKENS,
   PROVIDERS,
   type ProviderName,
+  STANDARD_GOOGLE_MODELS,
 } from '../constants';
 
 let _writeLock: Promise<void> = Promise.resolve();
@@ -33,6 +35,8 @@ export interface CustomModelFileEntry {
   useRawBaseUrl?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
+  refreshToken?: string;
+  projectId?: string;
   [key: string]: unknown;
 }
 
@@ -66,8 +70,12 @@ export interface ProviderModelEntry {
   id: string;
   displayName?: string;
   enabled: boolean;
+  supportsImages?: boolean;
+  supportsVision?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
+  fallbackModel?: string;
+  fallbackChain?: string[] | string;
 }
 
 export interface ProviderFileEntry {
@@ -79,10 +87,17 @@ export interface ProviderFileEntry {
   allowUnauthorized?: boolean;
   encrypted?: boolean;
   enabled: boolean;
+  supportsImages?: boolean;
+  supportsVision?: boolean;
   useRawBaseUrl?: boolean;
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
+  fallbackModel?: string;
+  fallbackChain?: string[] | string;
+  refreshToken?: string;
+  projectId?: string;
   models: ProviderModelEntry[];
+  accounts?: Array<Record<string, unknown>>;
   usage?: {
     promptTokens: number;
     completionTokens: number;
@@ -111,26 +126,58 @@ export async function loadCustomModels(): Promise<CustomModelFileEntry[]> {
   if (providers && providers.length > 0) {
     const flatModels: CustomModelFileEntry[] = [];
     for (const p of providers) {
-      if (!p || p.enabled === false) continue;
-      const models = Array.isArray(p.models) ? p.models : [];
-      for (const m of models) {
-        if (!m || m.enabled === false) continue;
-        const mergedHeaders = { ...p.extraHeaders, ...m.extraHeaders };
-        const mergedBody = { ...p.extraBody, ...m.extraBody };
+      if (!p) continue;
+      const hasEnabledAccounts = Array.isArray((p as any).accounts) && (p as any).accounts.some((a: any) => a && a.enabled !== false);
+      if (p.enabled === false && !hasEnabledAccounts) continue;
+      const accounts = Array.isArray((p as any).accounts) && (p as any).accounts.length > 0
+        ? (p as any).accounts
+        : [{ id: p.id, apiKey: p.apiKey, refreshToken: p.refreshToken, projectId: p.projectId, enabled: p.enabled }];
 
-        flatModels.push({
-          name: `${p.id || 'provider-unknown'}-${m.id}`,
-          displayName: m.displayName || m.id,
-          provider: p.provider || 'openai',
-          apiKey: p.apiKey || 'none',
-          apiUrl: p.apiUrl || '',
-          externalModelName: m.id,
-          allowUnauthorized: p.allowUnauthorized,
-          encrypted: p.encrypted,
-          useRawBaseUrl: p.useRawBaseUrl,
-          extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
-          extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
-        });
+      const isGoogle = p.provider === 'google' || p.provider === 'gemini' || p.id === 'provider-google';
+      let models = Array.isArray(p.models) && p.models.length > 0 ? p.models : [];
+      if (models.length === 0 && isGoogle) {
+        const accWithModels = accounts.find((a: any) => Array.isArray(a.models) && a.models.length > 0);
+        models = accWithModels ? accWithModels.models : STANDARD_GOOGLE_MODELS;
+      }
+
+      for (const acc of accounts) {
+        if (acc.enabled === false) continue;
+        for (const m of models) {
+          if (!m || m.enabled === false) continue;
+          const mergedHeaders = { ...p.extraHeaders, ...m.extraHeaders };
+          const mergedBody = { ...p.extraBody, ...m.extraBody };
+
+          let extName = m.id || '';
+          if (isGoogle && extName) {
+            const isCC = Boolean(
+              acc.refreshToken ||
+              p.refreshToken ||
+              (acc.apiKey && acc.apiKey.startsWith('ya29.')) ||
+              (p.apiKey && p.apiKey.startsWith('ya29.')) ||
+              p.apiUrl?.includes('cloudcode')
+            );
+            const norm = isCC ? normalizeCloudCodeModelId(extName) : normalizeGoogleModelId(extName);
+            if (norm) extName = norm;
+          }
+
+          flatModels.push({
+            name: `${p.id || 'provider-unknown'}-${extName}`,
+            displayName: m.displayName || m.id,
+            provider: p.provider || 'openai',
+            apiKey: acc.apiKey || p.apiKey || 'none',
+            apiUrl: p.apiUrl || '',
+            externalModelName: extName,
+            allowUnauthorized: p.allowUnauthorized,
+            encrypted: p.encrypted,
+            useRawBaseUrl: p.useRawBaseUrl,
+            supportsImages: m.supportsImages ?? p.supportsImages ?? true,
+            supportsVision: m.supportsVision ?? p.supportsVision ?? true,
+            extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
+            extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
+            refreshToken: acc.refreshToken || p.refreshToken,
+            projectId: acc.projectId || p.projectId,
+          });
+        }
       }
     }
     return flatModels;
@@ -232,7 +279,25 @@ function atomicWriteJson(filePath: string, payload: unknown): Promise<void> {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2), 'utf-8');
-    await fs.rename(tmp, filePath);
+    // ponytail: Windows NTFS retry on EPERM/EBUSY caused by active fs.watch or antivirus locks
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        await fs.rename(tmp, filePath);
+        return;
+      } catch (err: any) {
+        if ((err?.code === 'EPERM' || err?.code === 'EBUSY') && attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+          continue;
+        }
+        try {
+          await fs.copyFile(tmp, filePath);
+          await fs.unlink(tmp).catch(() => {});
+          return;
+        } catch {
+          throw err;
+        }
+      }
+    }
   })();
 }
 
@@ -250,6 +315,7 @@ async function saveProvidersInternal(providers: ProviderFileEntry[]): Promise<vo
   const filePath = getCustomModelsPath();
   const existing = readExistingJson(filePath);
   existing.providers = providers;
+  delete existing.models;
   await atomicWriteJson(filePath, existing);
 }
 

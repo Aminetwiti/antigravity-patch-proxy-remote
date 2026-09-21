@@ -23,63 +23,23 @@ import {
 } from '../shared';
 import { detectModelCapabilitiesByName } from '../modelUtils';
 
+import type {
+  GeminiTool,
+  GeminiFunctionDeclaration,
+  GeminiParameters,
+  GeminiContent,
+  GeminiPart,
+  GeminiFunctionCall,
+  GeminiFunctionResponse,
+  GeminiRequestBody,
+} from '../types';
+
 // ─── Types ────────────────────────────────────────────────────────────────
-
-interface GeminiTool {
-  functionDeclarations?: GeminiFunctionDeclaration[];
-}
-
-interface GeminiFunctionDeclaration {
-  name: string;
-  description?: string;
-  parameters?: GeminiParameters;
-}
-
-interface GeminiParameters {
-  type: string;
-  properties?: Record<string, unknown>;
-}
 
 interface AnthropicTool {
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
-}
-
-interface GeminiContent {
-  role?: string;
-  parts?: GeminiPart[];
-}
-
-interface GeminiPart {
-  text?: string;
-  thought?: boolean;
-  functionCall?: GeminiFunctionCall;
-  functionResponse?: GeminiFunctionResponse;
-  fileData?: { mimeType: string; fileUri: string };
-  inlineData?: { mimeType: string; data: string };
-}
-
-interface GeminiFunctionCall {
-  name: string;
-  args: Record<string, unknown>;
-  id?: string;
-}
-
-interface GeminiFunctionResponse {
-  name: string;
-  response: unknown;
-  id?: string;
-}
-
-interface GeminiRequestBody {
-  systemInstruction?: { parts: GeminiPart[] };
-  contents?: GeminiContent[];
-  tools?: GeminiTool[];
-  generationConfig?: {
-    temperature?: number;
-    maxOutputTokens?: number;
-  };
 }
 
 interface AnthropicContentBlock {
@@ -90,6 +50,7 @@ interface AnthropicContentBlock {
   name?: string;
   input?: Record<string, unknown>;
   tool_use_id?: string;
+  signature?: string;
   content?: string | AnthropicContentBlock[];
   source?: {
     type: 'base64' | 'url';
@@ -182,9 +143,14 @@ function mapGeminiToolsToAnthropic(geminiTools: GeminiTool[]): AnthropicTool[] {
   return anthropicTools;
 }
 
+function generateSyntheticToolId(): string {
+  return 'toolu_vrtx_' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+}
+
 export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: string): AnthropicRequestBody {
   const messages: AnthropicMessage[] = [];
   let system: string | undefined = undefined;
+  const pendingToolCallsByName = new Map<string, string[]>();
 
   if (geminiBody.systemInstruction && geminiBody.systemInstruction.parts) {
     system = geminiBody.systemInstruction.parts.map((p) => p.text || '').join('');
@@ -199,11 +165,26 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
         if (hasFunctionCall && item.role === 'model') {
           const contentBlocks: AnthropicContentBlock[] = [];
           for (const p of item.parts) {
-            if (p.text) contentBlocks.push({ type: 'text', text: p.text });
+            if (p.thought === true || (p as any).type === 'thinking') {
+              contentBlocks.push({
+                type: 'thinking',
+                thinking: p.text || (p as any).thinking || '',
+                signature: (p as any).thought_signature || (p as any).thoughtSignature || (p as any).signature || '',
+              });
+            } else if (p.text) {
+              const textVal = p.text.trim().length === 0 ? '.' : p.text;
+              contentBlocks.push({ type: 'text', text: textVal });
+            }
             if (p.functionCall) {
-              const callId = p.functionCall.id || 'call_' + Math.random().toString(36).slice(2, 10);
+              const callId = p.functionCall.id || generateSyntheticToolId();
               let originalName = p.functionCall.name;
               let originalArgs = p.functionCall.args;
+              if (originalName) {
+                if (!pendingToolCallsByName.has(originalName)) {
+                  pendingToolCallsByName.set(originalName, []);
+                }
+                pendingToolCallsByName.get(originalName)!.push(callId);
+              }
               const translatedInfo = translatedToolCalls.get(callId);
               if (translatedInfo) {
                 originalName = translatedInfo.originalName;
@@ -226,9 +207,11 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
           for (const p of item.parts) {
             if (p.functionResponse) {
               const funcName = p.functionResponse.name || '';
+              const pendingList = pendingToolCallsByName.get(funcName);
+              const pairedId = pendingList && pendingList.length > 0 ? pendingList.shift() : undefined;
               const modelKey = getSessionModelKey(modelName, (geminiBody as any)?.sessionId || (geminiBody as any)?.conversationId);
               const modelTCIds = modelToolCallIds.get(modelKey) || modelToolCallIds.get(modelName) || {};
-              const toolCallId = p.functionResponse.id || modelTCIds[funcName] || 'call_' + funcName;
+              const toolCallId = p.functionResponse.id || pairedId || modelTCIds[funcName] || 'call_' + funcName;
               const responseData = p.functionResponse.response;
               let contentStr = '';
               const translatedInfo = translatedToolCalls.get(toolCallId);
@@ -251,13 +234,25 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
           if (item.parts) {
             const partsContent: AnthropicContentBlock[] = [];
             for (const p of item.parts) {
-              if (p.text) { partsContent.push({ type: 'text', text: p.text }); }
+              if (p.thought === true || (p as any).type === 'thinking') {
+                partsContent.push({
+                  type: 'thinking',
+                  thinking: p.text || (p as any).thinking || '',
+                  signature: (p as any).thought_signature || (p as any).thoughtSignature || (p as any).signature || '',
+                });
+              } else if (p.text !== undefined && p.text !== null) {
+                const textVal = p.text.trim().length === 0 ? '.' : p.text;
+                partsContent.push({ type: 'text', text: textVal });
+              }
               else if ((p as any).fileData) { const fd = (p as any).fileData; if (fd.mimeType?.startsWith('image/')) { partsContent.push({ type: 'image', source: { type: 'url', media_type: fd.mimeType, data: fd.fileUri } }); } else { try { const url = new URL(fd.fileUri); if (url.protocol === 'file:') { const fs = require('fs'); partsContent.push({ type: 'text', text: `[File:\n${fs.readFileSync(url.pathname.replace(/^\//, '').replace(/\//g, path.sep), 'utf-8')}\n]` }); } else { partsContent.push({ type: 'text', text: `[File: ${fd.fileUri} (${fd.mimeType})]` }); } } catch { partsContent.push({ type: 'text', text: `[File: ${fd.fileUri} (${fd.mimeType})]` }); } } }
               else if ((p as any).inlineData) { const id = (p as any).inlineData; if (id.mimeType?.startsWith('image/')) { partsContent.push({ type: 'image', source: { type: 'base64', media_type: id.mimeType, data: id.data } }); } else if (id.mimeType === 'application/pdf') { partsContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: id.data } } as any); } else { partsContent.push({ type: 'text', text: `[${id.mimeType}: ${id.data}]` }); } }
             }
             // Preserve legacy behavior: a single plain-text part stays a string.
-            if (partsContent.length === 1 && partsContent[0].type === 'text') {
-              content = partsContent[0].text;
+            if (partsContent.length === 0) {
+              content = '.';
+            } else if (partsContent.length === 1 && partsContent[0].type === 'text') {
+              const txt = partsContent[0].text;
+              content = typeof txt === 'string' && txt.trim().length === 0 ? '.' : txt;
             } else {
               content = partsContent;
             }
@@ -300,12 +295,18 @@ export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: stri
   const contentBlocks = anthRes.content || [];
   const parts: GeminiPart[] = [];
   const functionCalls: GeminiPart[] = [];
+  let signature: string | undefined;
 
   for (const block of contentBlocks) {
     if (block.type === 'text' && block.text) {
       parts.push({ text: block.text });
     } else if (block.type === 'thinking' && block.thinking) {
-      parts.push({ text: block.thinking, thought: true });
+      if ((block as any).signature) {
+        signature = (block as any).signature;
+      }
+      const part: GeminiPart = { text: block.thinking, thought: true };
+      if (signature) (part as any).thoughtSignature = signature;
+      parts.push(part);
     } else if (block.type === 'tool_use') {
       const modelKey = getSessionModelKey(modelName, (anthRes as any)?._sessionId || (anthRes as any)?.sessionId);
       const modelTCIds = modelToolCallIds.get(modelKey) || {};
@@ -320,6 +321,14 @@ export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: stri
 
       const normalizedInput = normalizeToolArgs(block.name || '', block.input || {});
       const translated = translateToolCallToNative(block.name || '', normalizedInput);
+      if (translated.name && translated.name !== block.name) {
+        modelTCIds[translated.name] = block.id || '';
+        if (modelKey !== modelName) {
+          const fallbackTCIds = modelToolCallIds.get(modelName) || {};
+          fallbackTCIds[translated.name] = block.id || '';
+          modelToolCallIds.set(modelName, fallbackTCIds);
+        }
+      }
       if (translated.name !== block.name) {
         translated.args = normalizeToolArgs(translated.name, translated.args) as Record<string, unknown>;
         translatedToolCalls.set(block.id || '', {
@@ -331,9 +340,11 @@ export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: stri
         touchStateTimestamp(stateTimestamps.translatedCalls, block.id || '');
       }
 
-      functionCalls.push({
+      const tcPart: GeminiPart = {
         functionCall: { name: translated.name, args: translated.args as Record<string, unknown>, id: block.id },
-      });
+      };
+      if (signature) (tcPart as any).thoughtSignature = signature;
+      functionCalls.push(tcPart);
     }
   }
 
@@ -380,6 +391,8 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
     const idx = chunk.index ?? 0;
     if (block?.type === 'tool_use') {
       context.toolCalls[idx] = { id: block.id || '', name: block.name || '', arguments: '' };
+    } else if (block?.type === 'thinking' && (block as any).signature) {
+      context.signature = (block as any).signature;
     }
   }
 
@@ -393,8 +406,10 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
     } else if (delta?.type === 'thinking_delta') {
       const thinkingText = delta.thinking || '';
       context.accumulatedReasoning += thinkingText;
+      const part: GeminiPart = { text: thinkingText, thought: true };
+      if (context.signature) (part as any).thoughtSignature = context.signature;
       return {
-        content: { parts: [{ text: thinkingText, thought: true }], role: 'model' },
+        content: { parts: [part], role: 'model' },
         finishReason: 'OTHER',
         index: 0,
       };
@@ -428,6 +443,14 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
         }
         touchStateTimestamp(stateTimestamps.toolCallIds, modelKey);
         const translated = translateToolCallToNative(tc.name, args);
+        if (translated.name && translated.name !== tc.name) {
+          modelTCIds[translated.name] = tc.id;
+          if (modelKey !== modelName) {
+            const fallbackTCIds = modelToolCallIds.get(modelName) || {};
+            fallbackTCIds[translated.name] = tc.id;
+            modelToolCallIds.set(modelName, fallbackTCIds);
+          }
+        }
         if (translated.name !== tc.name) {
           translatedToolCalls.set(tc.id, {
             originalName: tc.name,
@@ -437,7 +460,9 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
           });
           touchStateTimestamp(stateTimestamps.translatedCalls, tc.id);
         }
-        return { functionCall: { name: translated.name, args: translated.args as Record<string, unknown>, id: tc.id } };
+        const tcPart: GeminiPart = { functionCall: { name: translated.name, args: translated.args as Record<string, unknown>, id: tc.id } };
+        if (context.signature) (tcPart as any).thoughtSignature = context.signature;
+        return tcPart;
       });
       activeStreamContexts.delete(streamId);
       return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
@@ -446,7 +471,7 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
 
   if (type === 'message_stop') {
     activeStreamContexts.delete(streamId);
-    return { content: { parts: [], role: 'model' }, finishReason: 'STOP', index: 0 };
+    return { content: { parts: [{ text: '' }], role: 'model' }, finishReason: 'STOP', index: 0 };
   }
 
   return null;

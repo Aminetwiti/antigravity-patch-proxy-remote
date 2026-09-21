@@ -105,14 +105,27 @@ export function resolveWithSystemDns(hostname: string): Promise<string[]> {
 
 /**
  * In-memory DNS cache – stores the last successfully resolved IP for each
- * hostname so we can reuse it when all DNS servers are unreachable.
- * Entries expire after DNS_CACHE_TTL_MS.
+ * hostname so we can reuse it immediately for 0ms resolution, and fall back
+ * to it when all DNS servers are unreachable. Entries expire after DNS_CACHE_TTL_MS.
  */
 const DNS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const dnsCache = new Map<string, { ip: string; ts: number }>();
 
+export function clearDnsCache(): void {
+  dnsCache.clear();
+}
+
 function cacheDnsResult(hostname: string, ip: string): void {
   dnsCache.set(hostname, { ip, ts: Date.now() });
+}
+
+function getFreshCachedDns(hostname: string): string | undefined {
+  const entry = dnsCache.get(hostname);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts <= DNS_CACHE_TTL_MS) {
+    return entry.ip;
+  }
+  return undefined;
 }
 
 function getCachedDns(hostname: string): string | undefined {
@@ -144,6 +157,12 @@ export async function resolveGoogleIp(hostname: string): Promise<string> {
         }
       });
     });
+  }
+
+  // 0. Fast path: check fresh in-memory DNS cache (0ms, avoids 70ms parallel DNS query)
+  const freshIp = getFreshCachedDns(hostname);
+  if (freshIp) {
+    return freshIp;
   }
 
   const deadline = Date.now() + DNS_RESOLUTION_TIMEOUT_MS;

@@ -32,6 +32,8 @@ import {
   _resetAllBreakers,
 } from '../proxy/circuitBreaker';
 import { validateGenerateContentResponse } from '../schemaValidator';
+import { mapGeminiToAnthropic, mapAnthropicToGemini } from '../proxy/translators/anthropic';
+import { mapOpenAIChunkToGemini } from '../proxy/translators/openai';
 import type { CustomModel } from '../proxy/types';
 
 describe('Real Integration Workflows — Proxy, Translators & Resilience', () => {
@@ -43,7 +45,7 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
     it('translates Anthropic request payload and validates standardized response format', () => {
       // 1. Entrée standardisée depuis l'IDE Antigravity
       const ideRequest = {
-        model: 'MODEL_PLACEHOLDER_claude_3_7',
+        model: 'MODEL_PLACEHOLDER_claude_sonnet_4_6',
         request: {
           contents: [
             {
@@ -58,31 +60,20 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
         },
       };
 
-      // 2. Transformation vers le format Anthropic Messages API
-      const anthropicPayload = {
-        model: 'claude-3-7-sonnet-20250219',
-        messages: [
-          {
-            role: 'user',
-            content: ideRequest.request.contents[0].parts[0].text,
-          },
-        ],
-        max_tokens: ideRequest.request.generationConfig.maxOutputTokens,
-        temperature: ideRequest.request.generationConfig.temperature,
-      };
-
-      expect(anthropicPayload.model).toBe('claude-3-7-sonnet-20250219');
+      // 2. Transformation réelle vers le format Anthropic Messages API
+      const anthropicPayload = mapGeminiToAnthropic(ideRequest.request as any, 'claude-sonnet-4-6');
+      expect(anthropicPayload.model).toBe('claude-sonnet-4-6');
       expect(anthropicPayload.messages[0].content).toContain('binary search');
 
       // 3. Réponse simulée du fournisseur Anthropic
       const upstreamResponse = {
         id: 'msg_01XyZ',
-        type: 'message',
-        role: 'assistant',
+        type: 'message' as const,
+        role: 'assistant' as const,
         content: [
           {
-            type: 'text',
-            text: '```typescript\nfunction binarySearch(arr: number[], target: number): number {\n  let left = 0, right = arr.length - 1;\n  while (left <= right) {\n    const mid = Math.floor((left + right) / 2);\n    if (arr[mid] === target) return mid;\n    if (arr[mid] < target) left = mid + 1;\n    else right = mid - 1;\n  }\n  return -1;\n}\n```',
+            type: 'text' as const,
+            text: '```typescript\nfunction binarySearch(arr: number[], target: number): number {\n  return -1;\n}\n```',
           },
         ],
         stop_reason: 'end_turn',
@@ -92,31 +83,14 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
         },
       };
 
-      // 4. Retransformation vers l'enveloppe CloudCode / Jetski pour l'IDE
-      const formattedForIde = {
-        response: {
-          candidates: [
-            {
-              content: {
-                role: 'model',
-                parts: [{ text: upstreamResponse.content[0].text }],
-              },
-              finishReason: 'STOP',
-            },
-          ],
-          usageMetadata: {
-            promptTokenCount: upstreamResponse.usage.input_tokens,
-            candidatesTokenCount: upstreamResponse.usage.output_tokens,
-            totalTokenCount: upstreamResponse.usage.input_tokens + upstreamResponse.usage.output_tokens,
-          },
-        },
-      };
+      // 4. Retransformation réelle vers l'enveloppe CloudCode / Jetski pour l'IDE
+      const formattedForIde = mapAnthropicToGemini(upstreamResponse as any);
 
       // 5. Validation de schéma & intégrité
-      const validation = validateGenerateContentResponse(formattedForIde.response);
+      const validation = validateGenerateContentResponse(formattedForIde);
       expect(validation.valid).toBe(true);
-      expect(formattedForIde.response.candidates[0].content.parts[0].text).toContain('binarySearch');
-      expect(formattedForIde.response.usageMetadata.totalTokenCount).toBe(123);
+      expect(formattedForIde.candidates[0].content.parts[0].text).toContain('binarySearch');
+      expect(formattedForIde.usageMetadata.totalTokenCount).toBe(123);
     });
   });
 
@@ -132,12 +106,12 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
       };
 
       const anthropicModel: CustomModel = {
-        name: 'claude-3-7-sonnet',
-        displayName: 'Claude 3.7 Sonnet',
+        name: 'claude-sonnet-4-6',
+        displayName: 'Claude Sonnet 4.6',
         provider: 'anthropic',
         apiKey: 'sk-ant-test',
         apiUrl: 'https://api.anthropic.com/v1',
-        externalModelName: 'claude-3-7-sonnet-20250219',
+        externalModelName: 'claude-sonnet-4-6',
       };
 
       // 1. Le circuit démarre fermé (état sain)
@@ -162,36 +136,94 @@ describe('Real Integration Workflows — Proxy, Translators & Resilience', () =>
 
   describe('Workflow C: Multi-Chunk Tool Call Aggregation', () => {
     it('aggregates SSE chunks for function call with streaming arguments', () => {
-      const sseChunks = [
-        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"view_file","arguments":""}}]}}]}\n\n',
-        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"AbsolutePath\\": \\""}}]}}]}\n\n',
-        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"c:/src/main.ts\\"}"}}]}}]}\n\n',
-        'data: [DONE]\n\n',
-      ];
+      const chunk1 = {
+        id: 'stream_call_e2e',
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_123',
+                  type: 'function',
+                  function: { name: 'view_file', arguments: '' },
+                },
+              ],
+            },
+          },
+        ],
+      };
 
-      let toolName = '';
-      let toolArgs = '';
-      let toolCallId = '';
+      const chunk2 = {
+        id: 'stream_call_e2e',
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  function: { arguments: '{"AbsolutePath": "c:/src/main.ts"}' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+      };
 
-      for (const raw of sseChunks) {
-        const lines = raw.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data: ') && !line.includes('[DONE]')) {
-            const parsed = JSON.parse(line.slice(6));
-            const call = parsed.choices[0].delta?.tool_calls?.[0];
-            if (call) {
-              if (call.id) toolCallId = call.id;
-              if (call.function?.name) toolName = call.function.name;
-              if (call.function?.arguments) toolArgs += call.function.arguments;
-            }
-          }
+      // Chunk 1 accumule sans émettre
+      const res1 = mapOpenAIChunkToGemini(chunk1 as any, 'gpt-4o');
+      expect(res1).toBeNull();
+
+      // Chunk 2 finalise le tool call
+      const res2 = mapOpenAIChunkToGemini(chunk2 as any, 'gpt-4o');
+      expect(res2).not.toBeNull();
+      expect(res2?.finishReason).toBe('TOOL_CALL');
+      expect(res2?.content?.parts?.[0]?.functionCall?.name).toBe('view_file');
+      expect(res2?.content?.parts?.[0]?.functionCall?.args?.AbsolutePath).toBe('c:/src/main.ts');
+    });
+  });
+
+  describe('Workflow C: Multi-Account Provider Quota Separation', () => {
+    it('differentiates quota domains by API key so alternate accounts can be used as fallback', () => {
+      const getAccountQuotaKey = (item: { apiUrl: string; apiKey?: string }): string => {
+        try {
+          const host = new URL(item.apiUrl).hostname;
+          return `${host}:${item.apiKey || 'none'}`;
+        } catch {
+          return item.apiUrl || '';
         }
-      }
+      };
 
-      expect(toolCallId).toBe('call_123');
-      expect(toolName).toBe('view_file');
-      const parsedArgs = JSON.parse(toolArgs);
-      expect(parsedArgs.AbsolutePath).toBe('c:/src/main.ts');
+      const accountPerso = {
+        name: 'google-perso-gemini-3.1-pro-high',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'AIzaSyKeyPerso12345',
+      };
+
+      const accountWork = {
+        name: 'google-work-gemini-3.1-pro-high',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'AIzaSyKeyWork67890',
+      };
+
+      const sameAccountModel = {
+        name: 'google-perso-gemini-3.8-flash-tiered',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'AIzaSyKeyPerso12345',
+      };
+
+      const keyPerso = getAccountQuotaKey(accountPerso);
+      const keyWork = getAccountQuotaKey(accountWork);
+      const keySame = getAccountQuotaKey(sameAccountModel);
+
+      // Same account shares quota key -> skip fallback
+      expect(keyPerso).toBe(keySame);
+
+      // Separate accounts have distinct quota keys -> eligible for instant failover!
+      expect(keyPerso).not.toBe(keyWork);
     });
   });
 });

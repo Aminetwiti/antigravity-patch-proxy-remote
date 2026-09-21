@@ -53,9 +53,35 @@ interface AgAPI {
     get(): Promise<unknown[]>;
     save(p: unknown): Promise<{ success: boolean; error?: string }>;
     delete(id: string): Promise<{ success: boolean; error?: string }>;
-    fetchModels(params: { apiUrl: string; apiKey: string }): Promise<{ success: boolean; models?: Array<{ id: string; displayName?: string; enabled?: boolean }>; error?: string }>;
-    test(params: { apiUrl: string; apiKey: string; id?: string; modelId?: string }): Promise<{ success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string }>;
+    fetchModels(params: { apiUrl: string; apiKey: string; provider?: string }): Promise<{ success: boolean; models?: Array<{ id: string; displayName?: string; enabled?: boolean }>; error?: string }>;
+    test(params: { apiUrl: string; apiKey: string; id?: string; modelId?: string; provider?: string }): Promise<{ success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string }>;
     onChanged(handler: () => void): () => void;
+    discoverIdeAccount(): Promise<{ success: boolean; account?: any; error?: string }>;
+    fetchAccountQuotas(accessToken: string): Promise<{ success: boolean; quotas?: any; error?: string }>;
+    warmupAccount(accessToken: string): Promise<{ success: boolean; message?: string; error?: string }>;
+    refreshToken(refreshToken: string): Promise<{
+      success: boolean;
+      accessToken?: string;
+      expiresIn?: number;
+      email?: string;
+      name?: string;
+      picture?: string;
+      quotas?: any;
+      projectId?: string;
+      tierId?: string;
+      error?: string;
+    }>;
+    startOAuthLogin(): Promise<{
+      success: boolean;
+      account?: any;
+      error?: string;
+    }>;
+    switchIdeAccount(params: {
+      accessToken: string;
+      refreshToken?: string;
+      email?: string;
+      picture?: string;
+    }): Promise<{ success: boolean; error?: string; dbPath?: string }>;
   };
 
   // MITM Proxy Server Management
@@ -109,6 +135,16 @@ interface AgAPI {
   // Proxy stub lifecycle — emergency fallback when Antigravity's bundled proxy fails
   proxyStartStub(): Promise<{ ok: boolean; pid?: number; port?: number; note?: string; error?: string }>;
   proxyStubStatus(): Promise<{ ok: boolean; data?: { ok: boolean; stub: boolean; latencyMs: number; error?: string }; error?: string }>;
+
+  // OAuth Interception & Model Ping-Pong
+  onOAuthIntercepted(handler: (data: { url: string; port?: string; redirectUri?: string; ts?: number }) => void): () => void;
+  modelPingPong(params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
+    ok: boolean;
+    status: number;
+    latencyMs: number;
+    pongText?: string;
+    error?: string;
+  }>;
 }
 
 interface Window {

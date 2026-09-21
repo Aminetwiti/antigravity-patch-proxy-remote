@@ -178,18 +178,92 @@ export function getAppAsarPath(installDir?: string): string | null {
   return path.join(dir, 'resources', 'app.asar');
 }
 
+/** Helper to pick the best existing log file from candidate paths. */
+function findBestLogFile(candidates: string[]): string {
+  const existing = candidates.filter((p) => fs.existsSync(p));
+  if (existing.length === 0) return candidates[0]!;
+  // Prefer files with size > 0, then most recently modified
+  existing.sort((a, b) => {
+    try {
+      const statA = fs.statSync(a);
+      const statB = fs.statSync(b);
+      if (statA.size > 0 && statB.size === 0) return -1;
+      if (statB.size > 0 && statA.size === 0) return 1;
+      return statB.mtimeMs - statA.mtimeMs;
+    } catch {
+      return 0;
+    }
+  });
+  return existing[0]!;
+}
+
 /** Path to the LS log file. */
 export function getLsLogPath(): string {
   const platform = getPlatform();
   if (platform === 'win32') {
-    return path.join(process.env.APPDATA ?? os.homedir(), 'Antigravity', 'logs', 'language_server.log');
+    const appData = process.env.APPDATA ?? os.homedir();
+    return findBestLogFile([
+      path.join(appData, 'Antigravity Patch Proxy', 'logs', 'language_server.log'),
+      path.join(appData, 'Antigravity', 'logs', 'language_server.log'),
+      path.join(appData, 'Antigravity IDE', 'logs', 'language_server.log'),
+    ]);
   }
   if (platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Logs', 'Antigravity', 'language_server.log');
+    return findBestLogFile([
+      path.join(os.homedir(), 'Library', 'Logs', 'Antigravity Patch Proxy', 'language_server.log'),
+      path.join(os.homedir(), 'Library', 'Logs', 'Antigravity', 'language_server.log'),
+    ]);
   }
   if (isWsl()) {
     const username = process.env.USER || os.userInfo().username;
-    return `/mnt/c/Users/${username}/AppData/Roaming/Antigravity/logs/language_server.log`;
+    return findBestLogFile([
+      `/mnt/c/Users/${username}/AppData/Roaming/Antigravity Patch Proxy/logs/language_server.log`,
+      `/mnt/c/Users/${username}/AppData/Roaming/Antigravity/logs/language_server.log`,
+    ]);
   }
-  return path.join(os.homedir(), '.config', 'Antigravity', 'logs', 'language_server.log');
+  return findBestLogFile([
+    path.join(os.homedir(), '.config', 'Antigravity Patch Proxy', 'logs', 'language_server.log'),
+    path.join(os.homedir(), '.config', 'Antigravity', 'logs', 'language_server.log'),
+  ]);
+}
+
+/** Path to the main Electron & proxy log file. */
+export function getMainLogPath(): string {
+  const platform = getPlatform();
+  if (platform === 'win32') {
+    const appData = process.env.APPDATA ?? os.homedir();
+    return findBestLogFile([
+      path.join(appData, 'Antigravity Patch Proxy', 'logs', 'main.log'),
+      path.join(appData, 'Antigravity', 'logs', 'main.log'),
+    ]);
+  }
+  if (platform === 'darwin') {
+    return findBestLogFile([
+      path.join(os.homedir(), 'Library', 'Logs', 'Antigravity Patch Proxy', 'main.log'),
+      path.join(os.homedir(), 'Library', 'Logs', 'Antigravity', 'main.log'),
+    ]);
+  }
+  if (isWsl()) {
+    const username = process.env.USER || os.userInfo().username;
+    return findBestLogFile([
+      `/mnt/c/Users/${username}/AppData/Roaming/Antigravity Patch Proxy/logs/main.log`,
+      `/mnt/c/Users/${username}/AppData/Roaming/Antigravity/logs/main.log`,
+    ]);
+  }
+  return findBestLogFile([
+    path.join(os.homedir(), '.config', 'Antigravity Patch Proxy', 'logs', 'main.log'),
+    path.join(os.homedir(), '.config', 'Antigravity', 'logs', 'main.log'),
+  ]);
+}
+
+/** Path to the proxy log file. */
+export function getProxyLogPath(): string {
+  const dir = getAntigravityDataDir();
+  const serveLog = path.join(dir, 'serve.log');
+  if (fs.existsSync(serveLog)) {
+    try {
+      if (fs.statSync(serveLog).size > 0) return serveLog;
+    } catch { /* ignore */ }
+  }
+  return getMainLogPath();
 }

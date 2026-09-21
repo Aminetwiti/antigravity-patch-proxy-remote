@@ -3,65 +3,48 @@ import { detectModelCapabilities, detectModelCapabilitiesByName, detectModelUXBa
 
 
 describe('detectModelCapabilities', () => {
-  it('detects thinking for anthropic provider', () => {
-    const result = detectModelCapabilities({ name: 'claude-3-5-sonnet', provider: 'anthropic' });
-    expect(result.isThinking).toBe(true);
-    expect(result.isClaude).toBe(true);
-    expect(result.maxTokens).toBe(200_000);
-    expect(result.maxOutputTokens).toBe(32_768);
-  });
-
-  it('detects thinking for openai provider', () => {
-    const result = detectModelCapabilities({ name: 'gpt-4o', provider: 'openai' });
-    expect(result.isThinking).toBe(true);
-    expect(result.isClaude).toBe(false);
-  });
-
-  it('detects thinking for openrouter provider', () => {
-    const result = detectModelCapabilities({ name: 'openai/gpt-4o', provider: 'openrouter' });
-    expect(result.isThinking).toBe(true);
-    expect(result.isClaude).toBe(false);
-    expect(result.maxTokens).toBe(1_048_576);
-  });
-
-  it('detects thinking by name pattern', () => {
-    const result = detectModelCapabilities({
-      name: 'deepseek-r1',
-      provider: 'ollama',
-      externalModelName: 'deepseek-r1',
-    });
-    expect(result.isThinking).toBe(true);
-    expect(result.isDeepSeek).toBe(true);
-    expect(result.maxOutputTokens).toBe(32_768);
-  });
-
-  it('detects o1/o3 style reasoning models', () => {
-    const result = detectModelCapabilities({ name: 'o1-preview', provider: 'openai' });
-    expect(result.isThinking).toBe(true);
-  });
-
-  it('detects opus-4 / sonnet-4 as thinking', () => {
-    const result = detectModelCapabilities({ name: 'claude-sonnet-4', provider: 'anthropic' });
-    expect(result.isThinking).toBe(true);
-  });
-
-  it('detects non-thinking ollama model', () => {
-    const result = detectModelCapabilities({ name: 'llama3', provider: 'ollama' });
-    expect(result.isThinking).toBe(false);
-    expect(result.isDeepSeek).toBe(false);
-    expect(result.isClaude).toBe(false);
-    expect(result.maxTokens).toBe(1_048_576);
-    expect(result.maxOutputTokens).toBe(16_384);
-  });
-
-  it('detects anthropic models as claude regardless of name', () => {
-    const result = detectModelCapabilities({ name: 'some-unknown-model', provider: 'anthropic' });
-    expect(result.isClaude).toBe(true);
-  });
-
-  it('detects claude by name pattern', () => {
-    const result = detectModelCapabilities({ name: 'claude-haiku', provider: 'custom' });
-    expect(result.isClaude).toBe(true);
+  it.each([
+    [
+      { name: 'claude-3-5-sonnet', provider: 'anthropic' },
+      { isThinking: true, isClaude: true, maxTokens: 200_000, maxOutputTokens: 32_768 },
+    ],
+    [
+      { name: 'gpt-4o', provider: 'openai' },
+      { isThinking: true, isClaude: false },
+    ],
+    [
+      { name: 'openai/gpt-4o', provider: 'openrouter' },
+      { isThinking: true, isClaude: false, maxTokens: 1_048_576 },
+    ],
+    [
+      { name: 'deepseek-r1', provider: 'ollama', externalModelName: 'deepseek-r1' },
+      { isThinking: true, isDeepSeek: true, maxOutputTokens: 32_768 },
+    ],
+    [
+      { name: 'o1-preview', provider: 'openai' },
+      { isThinking: true },
+    ],
+    [
+      { name: 'claude-sonnet-4', provider: 'anthropic' },
+      { isThinking: true },
+    ],
+    [
+      { name: 'llama3', provider: 'ollama' },
+      { isThinking: false, isDeepSeek: false, isClaude: false, maxTokens: 1_048_576, maxOutputTokens: 16_384 },
+    ],
+    [
+      { name: 'some-unknown-model', provider: 'anthropic' },
+      { isClaude: true },
+    ],
+    [
+      { name: 'claude-haiku', provider: 'custom' },
+      { isClaude: true },
+    ],
+  ])('detects capabilities for %j', (input, expected) => {
+    const result = detectModelCapabilities(input as any);
+    for (const [key, val] of Object.entries(expected)) {
+      expect((result as any)[key]).toBe(val);
+    }
   });
 
   it('detects deepseek by name', () => {
@@ -146,10 +129,10 @@ describe('detectModelCapabilitiesByName', () => {
     expect(result.isThinkingModel).toBe(false);
   });
 
-  it('handles claude-3-7 models', () => {
-    const result = detectModelCapabilitiesByName('claude-3-7-sonnet');
+  it('handles claude-sonnet-4-6 models', () => {
+    const result = detectModelCapabilitiesByName('claude-sonnet-4-6');
     expect(result.isClaudeThinkingModel).toBe(true);
-    expect(result.isThinkingModel).toBe(false);
+    expect(result.isThinkingModel).toBe(true);
   });
 
   it('handles empty/null input gracefully', () => {

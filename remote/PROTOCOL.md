@@ -8,7 +8,7 @@
 
 Le moteur d'Antigravity est composé de deux types d'instances de `language_server` (binaire Go) :
 - `language_server_windows_x64.exe` — instances liées aux fenêtres IDE (`--subclient_type ide`).
-- `language_server.exe` — instance centrale standalone (`--subclient_type hub`), patchée par le proxy : `--api_server_url http://localhost:50999`.
+- `language_server.exe` — instance centrale standalone (`--subclient_type hub`), patchée par le proxy : `--api_server_url http://localhost:51074`.
 
 ### Arguments Critiques du Hub
 | Argument | Rôle | Exemple réel |
@@ -229,6 +229,43 @@ Retourne la télémétrie complète du Daemon et de sa liaison avec le Language 
 {
   "type": "ide_launch",
   "requestId": "req_107c"
+}
+```
+
+#### 7d. Capture d'Écran Live IHM Electron (`ide.screenshot`)
+Permet d'extraire une capture d'écran exacte de la fenêtre Antigravity du PC de bureau via Chrome DevTools Protocol (CDP).
+```json
+{
+  "type": "ide.screenshot",
+  "requestId": "req_107d",
+  "data": {
+    "format": "jpeg",
+    "quality": 80
+  }
+}
+```
+**Réponse succès (HTTP/WS 200) :**
+```json
+{
+  "type": "response",
+  "requestId": "req_107d",
+  "data": {
+    "status": "success",
+    "screenshot": "<base64_image_data>",
+    "format": "jpeg",
+    "targetTitle": "Architecture Remote Agent Runtime",
+    "targetUrl": "https://127.0.0.1:53079/c/cas_123"
+  }
+}
+```
+
+#### 7e. Redirection & Focus IHM Electron (`ide.navigate`, `ide.focus_convo`)
+Redirige la fenêtre de bureau de l'IDE sur l'URL ou la cascade spécifiée.
+```json
+{
+  "type": "ide.navigate",
+  "requestId": "req_107e",
+  "cascadeId": "cas_abc123"
 }
 ```
 
@@ -538,6 +575,65 @@ Retourne la télémétrie complète du Daemon et de sa liaison avec le Language 
 }
 ```
 
+#### 35b. `resolve_artifact` (Résolution floue d'artefacts & médias sur disque)
+Localise un fichier généré ou média uploadé dans `brain/<cascadeId>/` en utilisant un algorithme flou en 3 passes (Regex, Alphanumérique pur, Sous-chaînes).
+```json
+{
+  "type": "resolve_artifact",
+  "requestId": "req_135b",
+  "cascadeId": "cas_abc123",
+  "data": {
+    "title": "Architecture V2"
+  }
+}
+```
+**Réponse :**
+```json
+{
+  "type": "response",
+  "requestId": "req_135b",
+  "data": {
+    "result": {
+      "cascadeId": "cas_abc123",
+      "originalName": "Architecture V2",
+      "resolvedPath": "C:\\Users\\user\\.gemini\\antigravity\\brain\\cas_abc123\\architecture_v2.png",
+      "exists": true,
+      "isDirectory": false,
+      "isImage": true,
+      "sizeBytes": 204850,
+      "modTime": 1723908600
+    },
+    "success": true
+  }
+}
+```
+
+#### 35c. `reveal_in_explorer` (Révélation dans l'Explorateur OS hôte)
+Ouvre le fichier ou dossier dans l'Explorateur de fichiers de l'ordinateur (`explorer.exe /select,"..."` sur Windows, `open -R` sur macOS, `xdg-open` sur Linux).
+```json
+{
+  "type": "reveal_in_explorer",
+  "requestId": "req_135c",
+  "cascadeId": "cas_abc123",
+  "data": {
+    "title": "Architecture V2"
+  }
+}
+```
+
+#### 35d. `clipboard_copy_image` (Copie d'image Bitmap dans le presse-papiers OS)
+Copie l'image bitmap directement dans le presse-papiers de la machine hôte via PowerShell STA / Applescript.
+```json
+{
+  "type": "clipboard_copy_image",
+  "requestId": "req_135d",
+  "cascadeId": "cas_abc123",
+  "data": {
+    "title": "Architecture V2"
+  }
+}
+```
+
 ---
 
 ### H. Gestion de Versions Git / VCS
@@ -768,9 +864,9 @@ Retourne la télémétrie complète du Daemon et de sa liaison avec le Language 
   "requestId": "req_159",
   "workspaceUri": "file:///C:/projects/myapp",
   "prompt": "Implémente un algorithme de tri rapide",
-  "modelUIDA": "claude-3-7-sonnet",
+  "modelUIDA": "claude-sonnet-4-6",
   "modelEnumA": 312,
-  "modelUIDB": "gemini-2-5-pro",
+  "modelUIDB": "gemini-3-1-pro-high",
   "modelEnumB": 246
 }
 ```
@@ -852,9 +948,98 @@ Retourne la télémétrie complète du Daemon et de sa liaison avec le Language 
 
 ---
 
-## 8. Source de Vérité Canonique : `remote/tools/`
+## 8. Source de Vérité Canonique : `remote/proto/`
 
-Pour toute inspection des schémas RPC Protobuf et des composants de référence :
-- Schémas gRPC & Protobuf : [`remote/tools/protocols/grpc-schemas/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/tools/protocols/grpc-schemas) et [`remote/proto/remote_service.proto`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/remote_service.proto).
-- Implémentations clientes de référence : [`remote/tools/clients/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/tools/clients).
-- Bridges & Proxies : [`remote/tools/bridges/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/tools/bridges).
+Pour toute inspection des schémas RPC Protobuf et des services :
+- Schémas gRPC & Protobuf canoniques : [`remote/proto/remote_service.proto`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/remote_service.proto).
+- Définitions Protobuf du moteur : [`remote/proto/exa/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/exa) et [`remote/proto/google/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/google).
+
+---
+
+## 9. Protocole WebSocket v2 (`/v2/ws`) & Architecture Authoritaire (`ag-agentd`)
+
+Le **Protocole v2** est conçu pour l'exécution d'agents autonomes côté serveur (Cloud Server Runtime). Contrairement au mode bridge v1 asservi à l'IDE de bureau, le runtime v2 est **authoritaire** : l'agent s'exécute en continu sur un serveur cloud ou VPS avec persistance append-only SQLite (`runtime.db`), même si tous les clients mobiles et navigateurs sont déconnectés.
+
+### Format d'Enveloppe v2
+
+Toutes les trames échangées sur `WS /v2/ws` respectent le format d'enveloppe suivant :
+
+```json
+{
+  "version": 2,
+  "type": "<event_or_command_type>",
+  "requestId": "req_uuid_123",
+  "sessionId": "sess_456",
+  "lastSequence": 42,
+  "payload": {
+    "key": "value"
+  }
+}
+```
+
+### Messages Clients (Client ➔ Serveur)
+
+| Type | Rôle | Champs critiques | Description |
+|:---|:---|:---|:---|
+| **`session.attach`** | Attachement à une session | `sessionId`, `lastSequence` | Connecte le client à une session active et demande le rejeu des événements manqués depuis `lastSequence`. |
+| **`session.prompt`** | Envoi de prompt | `sessionId`, `payload.text`, `payload.images` | Déclenche un tour d'agent autonome avec instructions textuelles et/ou visuelles. |
+| **`approval.response`** | Réponse à une approbation | `sessionId`, `payload.approvalId`, `payload.approved` | Autorise (`approved: true`) ou refuse (`approved: false`) l'exécution d'un outil sensible bloquant. |
+
+### Événements Serveur (Serveur ➔ Client)
+
+| Type | Ordre | Sequence | Description |
+|:---|:---:|:---:|:---|
+| **`session.ack`** | Confirm | - | Accusé de réception confirmant la prise en compte d'une commande client. |
+| **`agent.thought_chunk`** | Éphémère | `-1` | Fragment de streaming temps réel du raisonnement du modèle (affiché sans persistance). |
+| **`agent.thought`** | Milestone | Monotone (>0) | Pensée intermédiaire consolidée, commitée dans l'EventStore SQLite avec WAL. |
+| **`tool.call`** | Milestone | Monotone (>0) | Notification de l'outil et des arguments appelés par l'agent. |
+| **`tool.output`** | Éphémère | `-1` | Flux stdout/stderr partiel lors de l'exécution de l'outil. |
+| **`tool.result`** | Milestone | Monotone (>0) | Sortie définitive et statut de complétion de l'outil. |
+| **`session.state_changed`** | Milestone | Monotone (>0) | Nouvel état du runtime (`idle`, `running`, `waiting_approval`, `completed`, `error`). |
+| **`session.catchup`** | Sync | Monotone | Trame de rattrapage envoyée lors d'un `session.attach` pour rejouer l'historique sans rupture. |
+
+---
+
+## 10. API REST v2 (`ag-agentd`)
+
+Le daemon en mode serveur autonome expose une API REST complète sur son port HTTP (`:8090` par défaut).
+
+### Authentification & Sécurité
+- Header d'authentification : `Authorization: Bearer <AG_AUTH_TOKEN>` ou paramètre URL `?token=<AG_AUTH_TOKEN>`.
+- Rôles RBAC appliqués :
+  - **`admin`** : accès complet à toutes les sessions, configurations, MCP et terminaux.
+  - **`user`** : accès restreint aux sessions et workspaces dont il est propriétaire.
+  - **`readonly`** : consultation des sessions et flux sans droit de modification ni approbation.
+
+### Catalogue des Routes REST
+
+| Méthode | Endpoint | Rôle | RBAC minimum |
+|:---|:---|:---|:---:|
+| `GET` | `/health` | Statut de santé, uptime, plateforme et mode d'exécution | Public |
+| `GET` | `/console` | Console Web Single-Page Application (SPA) embarquée | User |
+| `GET` | `/metrics` | Métriques d'observabilité format Prometheus | User |
+| `GET` | `/v2/sessions` | Liste des sessions actives et archivées | User |
+| `POST` | `/v2/sessions` | Création d'une nouvelle session attachée à un workspace | User |
+| `GET` | `/v2/sessions/:id` | Détail d'une session et résumé de trajectoire | User |
+| `DELETE` | `/v2/sessions/:id` | Suppression ou archivage d'une session | User |
+| `GET` | `/v2/sessions/export` | Export post-mortem JSON avec anonymisation des secrets | User |
+| `POST` | `/v2/sessions/rollback` | Retour arrière (revert) sur une étape antérieure | User |
+| `GET` | `/v2/workspaces` | Liste des répertoires de travail et dépôts Git enregistrés | User |
+| `POST` | `/v2/workspaces` | Déclaration d'un nouveau projet local ou distant | User |
+| `GET` | `/v2/workspaces/diff` | Extraction du Git diff unifié en temps réel | User |
+| `POST` | `/v2/workspaces/commit` | Génération de message de commit et validation Git | User |
+| `GET` | `/v2/workspaces/branches` | Consultation des branches locales et distantes | User |
+| `POST` | `/v2/workspaces/worktrees` | Création de Git worktrees isolés pour tests concurrents | User |
+| `WS` | `/v2/terminal` | Session terminal shell PTY interactive persistante | User |
+| `POST` | `/v2/terminal/exec` | Exécution ponctuelle de commande shell en sandbox | User |
+| `GET` | `/v2/approvals` | Liste des demandes d'approbation d'actions en attente | User |
+| `POST` | `/v2/approvals/:id/respond` | Validation (`allow`) ou refus (`deny`) d'action | User |
+| `GET` | `/v2/memories` | Consultation de la mémoire à long terme de l'agent | User |
+| `POST` | `/v2/memories` | Ajout ou mise à jour manuelle de faits mémorisés | User |
+| `GET` | `/v2/schedules` | Tableau de bord des tâches planifiées (cron) | User |
+| `POST` | `/v2/schedules` | Création d'une tâche récurrente autonome | User |
+| `GET` | `/v2/mcp/servers` | Découverte des serveurs MCP configurés et de leurs outils | User |
+| `POST` | `/v2/mcp/servers` | Déclaration et rafraîchissement des hôtes MCP | Admin |
+| `WS` | `/v2/ws` | Canal WebSocket principal Protocole v2 multiplexé | User |
+| `WS` | `/ws` | Canal WebSocket legacy Protocole v1 (Bridge mode) | User |
+

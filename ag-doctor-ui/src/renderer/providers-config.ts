@@ -46,6 +46,18 @@ export const RENDERER_PROVIDER_PRESETS: Record<string, RendererProviderPreset> =
     defaultApiUrl: 'https://api.deepseek.com/v1',
     defaultModel: 'deepseek-chat',
   },
+  google: {
+    id: 'google',
+    name: 'Google Gemini',
+    defaultApiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-3.8-flash-tiered',
+  },
+  gemini: {
+    id: 'gemini',
+    name: 'Google Gemini',
+    defaultApiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-3.8-flash-tiered',
+  },
 };
 
 export function getRendererDefaultUrl(providerType: string): string {

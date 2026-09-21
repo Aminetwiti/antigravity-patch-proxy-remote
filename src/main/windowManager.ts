@@ -79,12 +79,22 @@ export function attachLoadingOverlay(
   };
   updateBounds();
   win.on('resize', updateBounds);
-  win.webContents.once('did-finish-load', () => {
+
+  let cleanedUp = false;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
     try {
       win.contentView.removeChildView(view);
     } catch (_) {
       // In case window was closed quickly
     }
     win.off('resize', updateBounds);
-  });
+  };
+
+  win.webContents.once('did-finish-load', cleanup);
+  win.webContents.once('did-fail-load', cleanup);
+  // Fail-safe: remove loading overlay after 4s max even if events fail or hang
+  setTimeout(cleanup, 4000);
 }
+

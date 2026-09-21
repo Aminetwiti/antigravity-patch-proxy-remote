@@ -72,7 +72,7 @@ CREATE TABLE trajectory_meta (
     created_timestamp INTEGER,         -- Timestamp UNIX (millisecondes)
     last_modified_timestamp INTEGER,   -- Timestamp UNIX de dernière écriture
     title TEXT,                        -- Titre automatique résumé par l'IA
-    active_model_uid TEXT              -- Modèle utilisé (ex: gemini-2.5-flash)
+    active_model_uid TEXT              -- Modèle utilisé (ex: gemini-3.8-flash-tiered)
 );
 ```
 
@@ -191,9 +191,9 @@ alwaysApply: false
   "mcpServers": {
     "coolify_production": {
       "command": "node",
-      "args": ["C:/Users/amine/.gemini/antigravity/mcp/coolify/index.js"],
+      "args": ["~/.gemini/antigravity/mcp/coolify/index.js"],
       "env": {
-        "COOLIFY_API_URL": "http://62.169.27.8:8000",
+        "COOLIFY_API_URL": "http://coolify.example.com:8000",
         "NODE_ENV": "production"
       },
       "tools": {

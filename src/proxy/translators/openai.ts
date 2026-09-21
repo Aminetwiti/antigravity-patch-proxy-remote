@@ -16,7 +16,6 @@ import {
 import { repairPartialJson } from '../jsonRepair';
 import {
   modelToolCallIds,
-  modelReasoningContent,
   activeStreamContexts,
   translatedToolCalls,
   stateTimestamps,
@@ -24,23 +23,18 @@ import {
   getSessionModelKey,
   StreamContext,
 } from '../shared';
+import type {
+  GeminiTool,
+  GeminiFunctionDeclaration,
+  GeminiParameters,
+  GeminiContent,
+  GeminiPart,
+  GeminiFunctionCall,
+  GeminiFunctionResponse,
+  GeminiRequestBody,
+} from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────
-
-interface GeminiTool {
-  functionDeclarations?: GeminiFunctionDeclaration[];
-}
-
-interface GeminiFunctionDeclaration {
-  name: string;
-  description?: string;
-  parameters?: GeminiParameters;
-}
-
-interface GeminiParameters {
-  type: string;
-  properties?: Record<string, unknown>;
-}
 
 interface OpenAITool {
   type: 'function';
@@ -48,42 +42,6 @@ interface OpenAITool {
     name: string;
     description: string;
     parameters: Record<string, unknown>;
-  };
-}
-
-interface GeminiContent {
-  role?: string;
-  parts?: GeminiPart[];
-}
-
-interface GeminiPart {
-  text?: string;
-  thought?: boolean;
-  functionCall?: GeminiFunctionCall;
-  functionResponse?: GeminiFunctionResponse;
-  fileData?: { mimeType: string; fileUri: string };
-  inlineData?: { mimeType: string; data: string };
-}
-
-interface GeminiFunctionCall {
-  name: string;
-  args: Record<string, unknown>;
-  id?: string;
-}
-
-interface GeminiFunctionResponse {
-  name: string;
-  response: unknown;
-  id?: string;
-}
-
-interface GeminiRequestBody {
-  systemInstruction?: { parts: GeminiPart[] };
-  contents?: GeminiContent[];
-  tools?: GeminiTool[];
-  generationConfig?: {
-    temperature?: number;
-    maxOutputTokens?: number;
   };
 }
 
@@ -270,12 +228,13 @@ export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: stri
         } else {
           const role = item.role === 'model' ? 'assistant' : item.role || 'user';
           let content: string | OpenAIContentBlock[] = '';
-          let reasoning_content = '';
           if (role === 'assistant') {
             const regularParts = (item.parts || []).filter((p) => !p.thought);
-            const thoughtParts = (item.parts || []).filter((p) => p.thought);
-            content = regularParts.map((p) => p.text || '').join('');
-            reasoning_content = thoughtParts.map((p) => p.text || '').join('');
+            if (regularParts.length > 0) {
+              content = regularParts.map((p) => p.text || '').join('');
+            } else {
+              content = (item.parts || []).map((p) => p.text || '').join('');
+            }
           } else {
             const parts = item.parts || [];
             const partsContent: OpenAIContentBlock[] = [];
@@ -313,23 +272,9 @@ export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: stri
             content = partsContent.length === 1 && partsContent[0].type === 'text' ? partsContent[0].text! : partsContent;
           }
           const msg: OpenAIMessage = { role, content };
-          if (reasoning_content) msg.reasoning_content = reasoning_content;
           messages.push(msg);
         }
       }
-    }
-  }
-
-  // Inject reasoning_content into assistant messages missing it
-  let lastAssistantIdx = -1;
-  for (let i = 0; i < messages.length; i++) {
-    if (messages[i].role === 'assistant') lastAssistantIdx = i;
-  }
-  for (let i = 0; i < messages.length; i++) {
-    if (messages[i].role === 'assistant' && !(messages[i] as OpenAIMessage).reasoning_content) {
-      const modelKey = getSessionModelKey(modelName, (geminiBody as any)?.sessionId || (geminiBody as any)?.conversationId);
-      const preservedReasoning = modelReasoningContent.get(modelKey) || modelReasoningContent.get(modelName) || '';
-      messages[i].reasoning_content = i === lastAssistantIdx && preservedReasoning ? preservedReasoning : '';
     }
   }
 
@@ -344,8 +289,9 @@ export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: stri
   const is41Model = /(^|\/|^openai\/)(gpt-)?4\.1(-|mini|nano)/i.test(lowerName);
   const is5Pro = /(^|\/|^openai\/)(gpt-)?5\.5-pro/i.test(lowerName);
   const is5Thinking = /(^|\/|^openai\/)(gpt-)?5\.4/i.test(lowerName);
-  const needsCompletionTokens = isThinkingModel || isReasoningModel || is41Model || is5Pro || is5Thinking;
-  const needsNoTemperature = isThinkingModel || isReasoningModel;
+  const isNextGenReasoning = /gpt-6|astra|luna/i.test(lowerName);
+  const needsCompletionTokens = isThinkingModel || isReasoningModel || is41Model || is5Pro || is5Thinking || isNextGenReasoning;
+  const needsNoTemperature = isThinkingModel || isReasoningModel || isNextGenReasoning;
 
   const maxTokens = geminiBody.generationConfig?.maxOutputTokens ?? 4000;
   const payload: OpenAIRequestBody = {
@@ -433,6 +379,14 @@ export function mapOpenAIToGemini(openAiRes: OpenAIResponse, modelName: string):
       }
       touchStateTimestamp(stateTimestamps.toolCallIds, modelKey);
       const translated = translateToolCallToNative(tc.function.name, args);
+      if (translated.name && translated.name !== tc.function.name) {
+        modelTCIds[translated.name] = tc.id;
+        if (modelKey !== modelName) {
+          const fallbackTCIds = modelToolCallIds.get(modelName) || {};
+          fallbackTCIds[translated.name] = tc.id;
+          modelToolCallIds.set(modelName, fallbackTCIds);
+        }
+      }
       if (translated.name !== tc.function.name) {
         translated.args = normalizeToolArgs(translated.name, translated.args) as Record<string, unknown>;
         translatedToolCalls.set(tc.id, {
@@ -556,6 +510,14 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
         }
         touchStateTimestamp(stateTimestamps.toolCallIds, modelKey);
         const translated = translateToolCallToNative(tc.name, args);
+        if (translated.name && translated.name !== tc.name) {
+          modelTCIds[translated.name] = tc.id;
+          if (modelKey !== modelName) {
+            const fallbackTCIds = modelToolCallIds.get(modelName) || {};
+            fallbackTCIds[translated.name] = tc.id;
+            modelToolCallIds.set(modelName, fallbackTCIds);
+          }
+        }
         if (translated.name !== tc.name) {
           translatedToolCalls.set(tc.id, {
             originalName: tc.name,
@@ -585,7 +547,7 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
       }
     }
     activeStreamContexts.delete(streamId);
-    return { content: { parts: text ? [{ text }] : [], role: 'model' }, finishReason: 'STOP', index: 0 };
+    return { content: { parts: [{ text: text || '' }], role: 'model' }, finishReason: 'STOP', index: 0 };
   }
 
   // Only emit tool calls when finishReason signals completion (args are fully accumulated)

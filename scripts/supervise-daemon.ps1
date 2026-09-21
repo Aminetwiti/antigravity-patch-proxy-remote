@@ -123,8 +123,10 @@ function Test-PatchLost {
 if ($Loop) {
     Write-Log "watchdog demarre (boucle 30s, token=$Token, port=$Port)"
     while ($true) {
-        # IDE fermé (language_server absent) : pas de daemon à maintenir.
-        if (-not (Get-Process -Name language_server -ErrorAction SilentlyContinue)) {
+        # Ni l'IDE Electron (language_server) ni l'extension VS Code (agy) ne tournent : rien à faire.
+        $agentRunning = (Get-Process -Name "*language_server*" -ErrorAction SilentlyContinue) -or
+                        (Get-Process -Name "agy" -ErrorAction SilentlyContinue)
+        if (-not $agentRunning) {
             Start-Sleep -Seconds 30
             continue
         }
@@ -150,8 +152,10 @@ if ($Loop) {
         Start-Sleep -Seconds 30
     }
 } elseif ($Once) {
-    if (-not (Get-Process -Name language_server)) {
-        Write-Host "IDE (language_server) non demarre - daemon inutile pour l'instant"
+    $agentRunning = (Get-Process -Name "*language_server*" -ErrorAction SilentlyContinue) -or
+                    (Get-Process -Name "agy" -ErrorAction SilentlyContinue)
+    if (-not $agentRunning) {
+        Write-Host "IDE (language_server / agy) non demarre - daemon inutile pour l'instant"
         exit 0
     }
     if (Test-DaemonOk) {

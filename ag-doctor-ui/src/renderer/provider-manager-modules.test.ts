@@ -92,6 +92,22 @@ export function appendCustomModel(
   return [...existing, { id: cleanId, displayName: cleanId, enabled: true }];
 }
 
+export function toggleModelById(
+  models: Array<{ id: string; enabled: boolean; displayName?: string }>,
+  modelId: string,
+  enabled: boolean
+): Array<{ id: string; enabled: boolean; displayName?: string }> {
+  return models.map((m) => (m.id === modelId ? { ...m, enabled } : m));
+}
+
+export function filterSelectedModelsForSave(
+  models: Array<{ id: string; displayName?: string; enabled?: boolean }>
+): Array<{ id: string; displayName: string; enabled: boolean }> {
+  return models
+    .filter((m) => m.enabled !== false)
+    .map((m) => ({ id: m.id, displayName: m.displayName || m.id, enabled: true }));
+}
+
 describe('Provider Manager Module 1: Presets & Credentials', () => {
   it('correctly maps quick presets to default endpoints and provider types', () => {
     expect(PRESETS.ollama.apiUrl).toBe('http://localhost:11434/v1');
@@ -151,5 +167,37 @@ describe('Provider Manager Module 2: Model Fetcher & Catalog', () => {
     const updated = appendCustomModel(catalog, 'GPT-4O');
 
     expect(updated).toHaveLength(1);
+  });
+
+  it('toggles individual model by ID without affecting others', () => {
+    const catalog = [
+      { id: 'gpt-4o', enabled: true },
+      { id: 'claude-3-5-sonnet', enabled: true },
+      { id: 'deepseek-r1', enabled: true },
+    ];
+
+    // User unchecks claude-3-5-sonnet
+    const updated1 = toggleModelById(catalog, 'claude-3-5-sonnet', false);
+    expect(updated1[0].enabled).toBe(true);
+    expect(updated1[1].enabled).toBe(false);
+    expect(updated1[2].enabled).toBe(true);
+
+    // User checks it back
+    const updated2 = toggleModelById(updated1, 'claude-3-5-sonnet', true);
+    expect(updated2[1].enabled).toBe(true);
+  });
+
+  it('filters only preferred models for save and ignores unselected', () => {
+    const catalog = [
+      { id: 'model-1', displayName: 'Model 1', enabled: false },
+      { id: 'model-2', displayName: 'Model 2', enabled: true },
+      { id: 'model-3', displayName: 'Model 3', enabled: false },
+      { id: 'model-4', displayName: 'Model 4', enabled: true },
+    ];
+
+    const saved = filterSelectedModelsForSave(catalog);
+    expect(saved).toHaveLength(2);
+    expect(saved.map((m) => m.id)).toEqual(['model-2', 'model-4']);
+    expect(saved.every((m) => m.enabled)).toBe(true);
   });
 });

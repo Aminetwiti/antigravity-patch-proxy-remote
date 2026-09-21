@@ -8,28 +8,14 @@
 
 import log from 'electron-log';
 
+import type {
+  GeminiPart,
+  GeminiContent,
+  GeminiCandidate,
+  GeminiRequestBody,
+} from '../types';
+
 // ─── Types ────────────────────────────────────────────────────────────────
-
-interface GeminiPart {
-  text?: string;
-  functionCall?: { name: string; args: Record<string, unknown> };
-  functionResponse?: { name: string; response: Record<string, unknown> };
-  thought?: boolean;
-  inlineData?: { mimeType: string; data: string };
-  fileData?: { mimeType: string; fileUri: string };
-}
-
-interface GeminiContent {
-  parts?: GeminiPart[];
-  role?: string;
-}
-
-interface GeminiCandidate {
-  content?: GeminiContent;
-  finishReason?: string;
-  index?: number;
-  safetyRatings?: unknown[];
-}
 
 interface GeminiStreamChunk {
   candidates?: GeminiCandidate[];
@@ -37,20 +23,9 @@ interface GeminiStreamChunk {
   modelVersion?: string;
 }
 
-interface GeminiRequestBody {
-  model?: string;
-  modelId?: string;
-  contents?: GeminiContent[];
-  systemInstruction?: { parts: { text?: string }[] };
-  tools?: unknown[];
-  generationConfig?: {
-    temperature?: number;
-    maxOutputTokens?: number;
-    topP?: number;
-    topK?: number;
-    stopSequences?: string[];
-  };
-}
+// ─── Model Normalization ──────────────────────────────────────────────────
+import { normalizeGoogleModelId } from '../../services/googleAuth';
+export { normalizeGoogleModelId };
 
 // ─── Request Translation (Passthrough) ────────────────────────────────────
 
@@ -59,11 +34,10 @@ interface GeminiRequestBody {
  * The caller handles URL routing (streamGenerateContent vs generateContent).
  */
 export function mapGeminiToGoogle(geminiBody: GeminiRequestBody, modelName: string): GeminiRequestBody {
-  // Ensure the external model name is set
+  // Ensure the external model name is set and normalized
   const body: GeminiRequestBody = { ...geminiBody };
-  if (modelName && !body.model) {
-    body.model = modelName;
-  }
+  const targetModel = normalizeGoogleModelId(modelName || body.model || '');
+  body.model = targetModel;
   return body;
 }
 
@@ -105,7 +79,7 @@ export function mapGoogleChunkToGemini(chunk: unknown, _modelName: string): Gemi
     // Might be a final chunk with just finishReason
     if (candidate.finishReason) {
       return {
-        content: { parts: [], role: 'model' },
+        content: { parts: [{ text: '' }], role: 'model' },
         finishReason: candidate.finishReason,
         index: candidate.index ?? 0,
       };
@@ -123,40 +97,58 @@ export function mapGoogleChunkToGemini(chunk: unknown, _modelName: string): Gemi
 
 // ─── URL Helpers ──────────────────────────────────────────────────────────
 
-/**
- * Constructs the correct Google AI Studio endpoint URL based on streaming mode.
- *
- * Google AI Studio uses different endpoints:
- *   - Non-streaming: :generateContent
- *   - Streaming:     :streamGenerateContent
- *
- * If the user's URL already contains one of these endpoints, it's kept as-is.
- */
 export function getGoogleApiUrl(baseUrl: string, modelName: string, isStream: boolean): string {
-  let url = baseUrl;
+  let urlObj: URL;
+  try {
+    urlObj = new URL(baseUrl);
+  } catch {
+    // Fallback if somehow not a valid URL (e.g. just a path)
+    log.warn(`[GoogleTranslator] Invalid baseUrl provided: ${baseUrl}`);
+    return baseUrl;
+  }
 
-  // If the URL doesn't already specify a method, append one
-  if (!url.includes(':generateContent') && !url.includes(':streamGenerateContent')) {
-    // Strip trailing slash if present
-    url = url.replace(/\/$/, '');
+  const method = isStream ? ':streamGenerateContent' : ':generateContent';
 
-    // Check if the URL ends with the model path (e.g. /models/gemini-1.5-pro)
+  if (!urlObj.pathname.includes(':generateContent') && !urlObj.pathname.includes(':streamGenerateContent')) {
+    urlObj.pathname = urlObj.pathname.replace(/\/$/, '');
+
+    // Check if the URL ends with the model path (e.g. /models/gemini-3.1-pro-high)
     const modelPathPattern = /\/models\/([^\/]+)$/;
-    const modelMatch = modelPathPattern.exec(url);
+    const modelMatch = modelPathPattern.exec(urlObj.pathname);
 
     if (modelMatch) {
-      // URL like .../v1beta/models/gemini-1.5-pro → append :method
-      const method = isStream ? ':streamGenerateContent' : ':generateContent';
-      url += method;
+      // URL like .../v1beta/models/gemini-3.1-pro-high → normalize model & append :method
+      const normalized = normalizeGoogleModelId(modelMatch[1]);
+      if (normalized !== modelMatch[1]) {
+        urlObj.pathname = urlObj.pathname.replace(modelPathPattern, `/models/${normalized}`);
+      }
+      urlObj.pathname += method;
     } else if (modelName) {
-      // Append full path with model name
-      const method = isStream ? ':streamGenerateContent' : ':generateContent';
-      url += `models/${modelName}${method}`;
+      // Append full path with normalized model name
+      const cleanName = normalizeGoogleModelId(modelName);
+      urlObj.pathname += `/models/${cleanName}${method}`;
     } else {
       // Fallback: assume the URL is already complete
       log.warn('[GoogleTranslator] Could not determine model name for URL construction');
     }
+  } else {
+    // URL already has method suffix — normalize existing model name in path
+    const existingModelMatch = /\/models\/([^/:]+)(:(?:streamG|g)enerateContent)/.exec(urlObj.pathname);
+    if (existingModelMatch) {
+      const norm = normalizeGoogleModelId(existingModelMatch[1]);
+      if (norm !== existingModelMatch[1]) {
+        urlObj.pathname = urlObj.pathname.replace(
+          existingModelMatch[0],
+          `/models/${norm}${existingModelMatch[2]}`,
+        );
+      }
+    }
   }
 
-  return url;
+  // Add alt=sse for streaming if not already present
+  if (isStream && !urlObj.searchParams.has('alt')) {
+    urlObj.searchParams.set('alt', 'sse');
+  }
+
+  return urlObj.toString();
 }

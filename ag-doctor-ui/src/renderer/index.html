@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data: https://*.googleusercontent.com https://*.ggpht.com;" />
   <title>ag-doctor — Diagnostic &amp; Repair</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="styles-extra.css" />
@@ -92,6 +92,10 @@
         <li class="nav-group">
           <ul>
             <li><span class="nav-group-label">Configuration</span></li>
+            <li><button class="nav-item" data-view="google-accounts" type="button" title="Google Accounts">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><circle cx="12" cy="12" r="2"/></svg>
+              <span>Google Accounts</span>
+            </button></li>
             <li><button class="nav-item" data-view="models" type="button" title="Models">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08l4.24 4.24M1 12h6m10 0h6M4.22 19.78l4.24-4.24m7.08-7.08l4.24-4.24"/></svg>
               <span>Models</span>
@@ -130,6 +134,41 @@
 
     <!-- Content -->
     <section class="content">
+      <!-- Intercepted OAuth Challenge Banner -->
+      <div id="oauthInterceptBanner" class="oauth-intercept-banner" style="display: none;">
+        <div class="oauth-banner-content">
+          <div class="oauth-banner-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+          </div>
+          <div class="oauth-banner-text">
+            <div class="oauth-banner-title">
+              <strong>Demande d'Authentification Google Détectée</strong>
+              <span class="badge badge-accent" id="oauthPortBadge">Port 58475</span>
+            </div>
+            <div class="oauth-banner-desc">
+              Le Language Server Antigravity attend votre approbation OAuth pour activer les modèles Gemini et l'IDE.
+            </div>
+          </div>
+        </div>
+        <div class="oauth-banner-actions">
+          <button class="btn btn-sm btn-primary" id="oauthOpenBrowserBtn" type="button">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Ouvrir dans le navigateur
+          </button>
+          <button class="btn btn-sm btn-secondary" id="oauthCopyUrlBtn" type="button">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copier l'URL
+          </button>
+          <button class="btn btn-sm btn-ghost" id="oauthQrBtn" type="button" title="Afficher QR Code Mobile">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            QR Mobile
+          </button>
+          <button class="btn btn-sm btn-icon btn-ghost" id="oauthDismissBtn" type="button" title="Masquer">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+
       <!-- Remote -->
       <div class="view" id="view-remote">
         <div class="view-header">
@@ -548,6 +587,7 @@
             <p class="subtitle">Detailed output from <code>ag-doctor doctor</code></p>
           </div>
           <div class="header-actions">
+            <button class="btn btn-ghost" id="doctorPruneBtn" type="button" title="Purge orphan conversation trajectories & vacuum SQLite database" aria-label="Prune database">Prune Database</button>
             <button class="btn btn-ghost" id="doctorJsonBtn" type="button" title="Show the raw JSON returned by the doctor command" aria-label="Show raw JSON output">Show JSON</button>
             <button class="btn btn-primary" id="doctorRunBtn" type="button" aria-label="Run doctor diagnostic again">Run doctor again</button>
           </div>
@@ -560,6 +600,166 @@
         </div>
       </div>
 
+      <!-- Google Accounts view -->
+      <div class="view" id="view-google-accounts">
+        <div class="view-header">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h1>Google Accounts</h1>
+              <span class="badge badge-primary" id="gaAccountCountBadge">0 accounts</span>
+            </div>
+            <p class="subtitle">Add multiple Google accounts, fetch models per account, and use them in Antigravity without relogging.</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" id="gaTestAllBtn" type="button" aria-label="Test all Google accounts">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              Test all
+            </button>
+            <button class="btn btn-ghost" id="gaSyncAllBtn" type="button" aria-label="Sync models for all Google accounts">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Sync all models
+            </button>
+            <button class="btn btn-secondary" id="gaDiscoverIdeBtn" type="button" aria-label="Import from Antigravity IDE" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Import from IDE
+            </button>
+            <button class="btn btn-primary" id="gaOAuthLoginBtn" type="button" aria-label="Se connecter avec Google" style="background: #1a73e8; color: #fff; border: 1px solid rgba(66, 133, 244, 0.5); display: inline-flex; align-items: center; gap: 7px; font-weight: 500;">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg>
+              Se connecter avec Google
+            </button>
+            <button class="btn btn-ghost" id="gaAddAccountBtn" type="button" aria-label="Add a Google Account manually">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Clé manuelle
+            </button>
+          </div>
+        </div>
+
+        <!-- Smart Auto-Pool Banner -->
+        <div class="patch-banner info" style="margin-bottom: 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div>
+              <div class="patch-banner-title">Seamless Multi-Account Failover &amp; No-Relog Dropdown</div>
+              <div class="patch-banner-text">
+                Every account's models appear directly in Antigravity's model list (e.g. <code>[Perso] Gemini 3.1 Pro High</code>, <code>[Work] Gemini 3.1 Pro High</code>). If an account runs out of quota (HTTP 429), the proxy automatically retries on an alternate active Google account with zero session downtime.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stat summary cards -->
+        <div class="stat-grid" style="margin-bottom: 20px;">
+          <div class="stat-card">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Google Accounts</div>
+              <div class="stat-value" id="gaStatTotalAccounts">0</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon ok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Healthy &amp; Active</div>
+              <div class="stat-value" id="gaStatActiveAccounts">0</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon models">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Exposed Models in AGY</div>
+              <div class="stat-value" id="gaStatTotalModels">0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Accounts List Panel with High-Density Toolbar -->
+        <div class="panel">
+          <div class="panel-body" style="padding: 16px;">
+            <!-- Antigravity Tools High-Density Toolbar -->
+            <div class="ga-toolbar">
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                <!-- Search email... -->
+                <div class="ga-search-box">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input type="text" id="gaSearchInput" placeholder="Search email..." aria-label="Search accounts">
+                </div>
+
+                <!-- 5H / Weekly toggle -->
+                <div class="ga-btn-group" id="gaWindowToggleGroup">
+                  <button type="button" class="ga-window-btn" id="gaWindow5hBtn" data-window="5h" title="5-Hour Rolling Limit">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 5H
+                  </button>
+                  <button type="button" class="ga-window-btn active" id="gaWindowWeeklyBtn" data-window="weekly" title="7-Day Weekly Limit">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Weekly
+                  </button>
+                </div>
+
+                <!-- List / Grid view switcher -->
+                <div class="ga-btn-group" id="gaViewToggleGroup">
+                  <button type="button" class="ga-view-btn active" id="gaViewListBtn" data-view="list" title="Compact Table View">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  </button>
+                  <button type="button" class="ga-view-btn" id="gaViewGridBtn" data-view="grid" title="Card Grid View">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  </button>
+                </div>
+
+                <!-- Filter chips: All, PRO, ULTRA, FREE -->
+                <div style="display: inline-flex; gap: 4px;" id="gaFilterGroup">
+                  <button type="button" class="ga-chip active" data-filter="all">
+                    All <span class="ga-chip-cnt" id="gaCntAll">0</span>
+                  </button>
+                  <button type="button" class="ga-chip" data-filter="pro">
+                    PRO <span class="ga-chip-cnt" id="gaCntPro">0</span>
+                  </button>
+                  <button type="button" class="ga-chip" data-filter="ultra">
+                    ULTRA <span class="ga-chip-cnt" id="gaCntUltra">0</span>
+                  </button>
+                  <button type="button" class="ga-chip" data-filter="free">
+                    FREE <span class="ga-chip-cnt" id="gaCntFree">0</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Right action buttons -->
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <button type="button" class="btn btn-ghost" id="gaToolbarAddBtn" title="Add Google Account" aria-label="Add Google Account" style="padding: 5px 9px; font-weight: bold; font-size: 13px; border-radius: 7px; border: 1px solid var(--border);">
+                  +
+                </button>
+                <button type="button" class="btn btn-primary" id="gaToolbarRefreshAllBtn" style="background: var(--accent-blue, #2563eb); color: #fff; padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Refresh All
+                </button>
+                <button type="button" class="btn" id="gaToolbarWarmupBtn" style="background: var(--warn-orange, #ea580c); color: #fff; padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; border: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> One-click Warmup
+                </button>
+                <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-2); cursor: pointer; user-select: none; margin-left: 4px;">
+                  <span>Show All Quotas</span>
+                  <input type="checkbox" id="gaShowAllQuotasSwitch" aria-label="Show All Quotas (5-Hour & Weekly)" style="cursor: pointer;" />
+                </label>
+                <div style="width: 1px; height: 16px; background: var(--border); margin: 0 2px;"></div>
+                <button type="button" class="btn btn-ghost btn-sm" id="gaImportJsonBtn" title="Import Accounts JSON" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="gaExportJsonBtn" title="Export Accounts JSON" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export
+                </button>
+                <input type="file" id="gaImportFileInput" accept=".json" style="display: none;" />
+              </div>
+            </div>
+
+            <div id="gaAccountsContainer">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Models view -->
       <div class="view" id="view-models">
         <div class="view-header">
@@ -568,6 +768,10 @@
             <p class="subtitle">Configured providers and their status</p>
           </div>
           <div class="header-actions">
+            <button class="btn btn-secondary" id="modelsPingPongBtn" type="button" aria-label="Test Ping-Pong & Benchmark" title="Test de latence Ping-Pong en direct sur les modèles">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+              🏓 Ping-Pong Test
+            </button>
             <button class="btn btn-ghost" id="modelsTestBtn" type="button" aria-label="Test all custom models">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
               Test all models
@@ -593,16 +797,44 @@
               <div class="models-search-wrap">
                 <svg class="search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input type="text" id="modelsSearchInput" class="input-sm models-search-input" placeholder="Search models by name, provider, model ID, or endpoint…" aria-label="Search models">
+                <button type="button" class="models-search-clear" id="modelsSearchClearBtn" aria-label="Clear search" title="Clear search" hidden>&times;</button>
               </div>
               <div class="models-category-tabs">
                 <button class="models-cat-tab active" data-cat="all">All</button>
                 <button class="models-cat-tab" data-cat="active">Active</button>
                 <button class="models-cat-tab" data-cat="disabled">Disabled</button>
               </div>
+              <div class="models-cap-filters" id="modelsCapFilters">
+                <button type="button" class="models-cap-filter active" data-cap="all">All</button>
+                <button type="button" class="models-cap-filter" data-cap="reasoning" title="Reasoning models (o1, r1, thinking, etc.)">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 10 10 0 0 0-10-10z"/><path d="M12 6a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/></svg> Reasoning
+                </button>
+                <button type="button" class="models-cap-filter" data-cap="vision" title="Vision models (4o, sonnet, flash, etc.)">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Vision
+                </button>
+                <button type="button" class="models-cap-filter" data-cap="code" title="Code models (coder, starcoder, etc.)">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> Code
+                </button>
+              </div>
+              <div class="models-filter-selects">
+                <select id="modelsProviderFilter" class="input-sm models-provider-filter" aria-label="Filter by provider" title="Filter by provider">
+                  <option value="all">All providers</option>
+                </select>
+                <select id="modelsSortSelect" class="input-sm models-sort-select" aria-label="Sort models" title="Sort models">
+                  <option value="default">Default order</option>
+                  <option value="name-asc">Name (A → Z)</option>
+                  <option value="name-desc">Name (Z → A)</option>
+                  <option value="provider">By Provider</option>
+                  <option value="status">Active first</option>
+                </select>
+              </div>
               <div class="models-bulk-actions">
-                <label class="models-select-all" title="Select all models on this page" style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:12px;cursor:pointer;">
+                <label class="models-select-all" title="Select all models on this page" style="display:flex;align-items:center;gap:6px;margin-right:6px;font-size:12px;cursor:pointer;">
                   <input type="checkbox" id="modelsSelectAllCb" /> Select page
                 </label>
+                <span id="modelsSelectedBadge" class="badge badge-primary" style="display: none; font-size: 11px;">0 selected</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="modelsSelectAllMatchesBtn" title="Select all models matching active filter" style="display: none;">Select all (<span id="modelsSelectAllCount">0</span>)</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="modelsClearSelectionBtn" title="Clear selection" style="display: none;">Clear</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="modelsBulkTestBtn" title="Test selected models" disabled>
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                   Test
@@ -747,8 +979,9 @@
             <p class="subtitle">Live output from <code>language_server</code> and related processes</p>
           </div>
           <div class="header-actions">
-            <button class="btn btn-ghost" id="logsClearBtn" type="button" aria-label="Clear logs">Clear logs</button>
-            <button class="btn btn-ghost" id="logsCopyBtn" type="button" aria-label="Copy logs to clipboard">Copy logs</button>
+            <button class="btn btn-ghost" id="logsCopyErrorsBtn" type="button" title="Copy only errors and warnings">Copy errors</button>
+            <button class="btn btn-ghost" id="logsClearBtn" type="button" aria-label="Clear logs">Clear</button>
+            <button class="btn btn-ghost" id="logsCopyBtn" type="button" aria-label="Copy logs to clipboard">Copy all</button>
             <button class="btn btn-primary" id="logsFollowBtn" type="button" aria-label="Follow live logs">
               <span class="dot-live"></span>
               Follow live
@@ -762,19 +995,50 @@
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
             language_server
           </button>
-          <button class="tab" role="tab" aria-selected="false" data-source="ag-doctor" type="button">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            ag-doctor
-          </button>
           <button class="tab" role="tab" aria-selected="false" data-source="proxy" type="button">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             Proxy
           </button>
+          <button class="tab" role="tab" aria-selected="false" data-source="main" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            Main (App)
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-source="daemon" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Daemon
+          </button>
+        </div>
+
+        <div class="logs-toolbar" id="logsToolbar">
+          <div class="logs-filters">
+            <button class="logs-filter-btn" data-level="all" id="filterAllBtn" type="button" title="Show all levels">ALL <span class="filter-count" id="countAll">0</span></button>
+            <button class="logs-filter-btn active" data-level="info" id="filterInfoBtn" type="button" title="Toggle INFO logs">INFO <span class="filter-count" id="countInfo">0</span></button>
+            <button class="logs-filter-btn active" data-level="warn" id="filterWarnBtn" type="button" title="Toggle WARN logs">WARN <span class="filter-count" id="countWarn">0</span></button>
+            <button class="logs-filter-btn active" data-level="error" id="filterErrorBtn" type="button" title="Toggle ERROR logs">ERROR <span class="filter-count" id="countError">0</span></button>
+            <button class="logs-filter-btn panic-btn" data-level="panic" id="filterPanicBtn" type="button" title="Toggle PANIC / CRASH logs" style="display:none">CRASH <span class="filter-count" id="countPanic">0</span></button>
+          </div>
+          <button class="logs-filter-btn active" id="logsCleanViewBtn" type="button" title="Clean View: Hide routine noise (CORTEX canceled steps, SSE traces, skipped configs)">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Clean View
+          </button>
+          <div class="logs-search-box">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="logs-search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="search" id="logsSearch" class="logs-search" placeholder="Filter logs by keyword…" />
+            <span id="logsSearchCount" class="logs-search-count"></span>
+          </div>
+          <div class="logs-stats">
+            <span id="logsLineCount" class="logs-badge">0 lines</span>
+            <span id="logsDedupCount" class="logs-badge dim">0 deduped</span>
+          </div>
         </div>
 
         <div class="panel">
-          <div class="panel-body panel-body-flush">
-            <pre class="terminal terminal-flush" id="logsOutput" tabindex="0" role="region" aria-label="Log stream output">$ ag-doctor logs -n 100</pre>
+          <div class="panel-body panel-body-flush logs-panel-body">
+            <pre class="terminal terminal-flush" id="logsOutput" tabindex="0" role="region" aria-label="Log stream output"></pre>
+            <button id="logsScrollBottomBtn" class="logs-scroll-bottom-btn" title="Scroll to bottom" type="button" style="display:none">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+              Bottom
+            </button>
             <div id="logsSkeleton" style="display:none; padding:16px">
               <div class="skeleton skeleton-line long"></div>
               <div class="skeleton skeleton-line medium"></div>
@@ -1011,6 +1275,97 @@
     </div>
   </div>
 
+  <!-- Modal: Google Account Manager -->
+  <div class="modal-backdrop" id="googleAccountModalBackdrop" hidden>
+    <div class="modal modal-lg" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div class="modal-header-title-wrap">
+          <div class="modal-header-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><circle cx="12" cy="12" r="2"/></svg>
+          </div>
+          <h2 id="gaModalTitle" class="pm-modal-title">Add Google Account</h2>
+        </div>
+        <button class="modal-close" id="googleAccountModalClose" type="button" aria-label="Close modal">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="gaFormContainer" class="pm-form" onsubmit="return false;">
+          <div id="gaAccountTypeBanner" class="patch-banner info" hidden style="margin-bottom: 14px; font-size: 12px; display: flex; align-items: flex-start; gap: 10px;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <div id="gaAccountTypeBannerText">
+              <strong>Compte connecté via Antigravity IDE (OAuth)</strong><br />
+              Ce compte utilise votre session active Antigravity IDE. Les quotas et modèles natifs sont synchronisés automatiquement.
+            </div>
+          </div>
+
+          <div class="pm-form-section">
+            <h3 class="pm-form-section-title">1. Account Credentials</h3>
+            <div class="pm-form-grid">
+              <label class="form-field" for="gaFormName">
+                <span>Account Label / Name</span>
+                <input type="text" id="gaFormName" placeholder="e.g. Perso, Pro, Secondary" autocomplete="off" />
+              </label>
+              <label class="form-field" for="gaFormUrl">
+                <span>API Endpoint URL</span>
+                <input type="url" id="gaFormUrl" value="https://generativelanguage.googleapis.com/v1beta" autocomplete="off" />
+              </label>
+            </div>
+
+            <label class="form-field" for="gaFormKey">
+              <span id="gaFormKeyLabel">Google AI Studio API Key</span>
+              <div class="input-with-action">
+                <input type="password" id="gaFormKey" placeholder="AIzaSy…" autocomplete="off" />
+                <button type="button" class="agy-icon-btn" id="gaKeyToggle" title="Show/Hide API Key" aria-label="Show or hide API key">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+              <small id="gaFormKeyHelper" style="color: var(--text-2); font-size: 11px; margin-top: 4px; display: block;">
+                Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" id="gaOpenAiStudioLink" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.
+              </small>
+            </label>
+          </div>
+
+          <div class="pm-form-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 class="pm-form-section-title" style="margin: 0;">2. Models Available for this Account</h3>
+              <button type="button" class="btn btn-primary btn-sm" id="gaFormFetchModelsBtn">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Get Models from Endpoint
+              </button>
+            </div>
+            <div id="gaFormModelsCountBadge" class="badge badge-muted" style="margin-bottom: 8px;">0 models selected</div>
+            <div class="pm-manual-model-row" style="display: flex; gap: 6px; margin-bottom: 8px;">
+              <input type="text" id="gaFormCustomModelInput" placeholder="Add model ID (e.g. gemini-3.8-flash-tiered)…" class="input-sm" style="flex: 1;" autocomplete="off" />
+              <button type="button" class="btn btn-ghost btn-sm" id="gaFormAddCustomModelBtn">+ Add</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gaFormSelectAllBtn">Select all</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gaFormDeselectAllBtn">Deselect all</button>
+            </div>
+            <div class="ga-model-presets" style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; font-size: 11px;">
+              <span style="color: var(--text-2); margin-right: 2px;">Presets:</span>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-3.8-flash-tiered" data-name="Gemini 3.8 Flash" style="cursor: pointer;">+ Gemini 3.8 Flash</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-3.7-flash-tiered" data-name="Gemini 3.7 Flash" style="cursor: pointer;">+ Gemini 3.7 Flash</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-3.1-pro-high" data-name="Gemini 3.1 Pro (High)" style="cursor: pointer;">+ Gemini 3.1 Pro</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="claude-sonnet-4-6" data-name="Claude Sonnet 4.6" style="cursor: pointer;">+ Claude Sonnet 4.6</button>
+            </div>
+            <div id="gaFormModelsList" class="pm-models-list" style="max-height: 220px; overflow-y: auto; background: var(--bg-0); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px;">
+              <div class="pm-models-hint" style="font-size: 12px; color: var(--text-2); text-align: center; padding: 20px;">
+                Enter your API key and click "Get Models from Endpoint" to discover models for this account.
+              </div>
+            </div>
+          </div>
+
+          <div id="gaFormError" class="patch-banner err" hidden style="margin-top: 10px;"></div>
+
+          <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+            <button type="button" class="btn btn-ghost" id="gaFormCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="gaFormSaveBtn">Save Account</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Provider Manager -->
   <div class="modal-backdrop" id="providerManagerModalBackdrop" hidden>
     <div class="modal modal-lg" role="dialog" aria-modal="true">
@@ -1041,27 +1396,31 @@
             <div class="pm-presets-bar">
               <span class="pm-presets-label">Quick Presets</span>
               <div class="pm-presets-row">
-                <button type="button" class="btn btn-ghost btn-sm" id="presetOllama" title="Ollama local server">Ollama (11434)</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="presetLMStudio" title="LM Studio local server">LM Studio (1234)</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="presetOpenRouter" title="OpenRouter cloud AI">OpenRouter</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="presetLocalAI" title="LocalAI server">LocalAI (8000)</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetOllama" title="Ollama local server">Ollama (11434)</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetLMStudio" title="LM Studio local server">LM Studio (1234)</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetOpenRouter" title="OpenRouter cloud AI">OpenRouter</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetDeepSeek" title="DeepSeek API">DeepSeek</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetGoogle" title="Google Gemini API">Google Gemini</button>
+                <button type="button" class="btn btn-ghost btn-sm pm-preset-btn" id="presetLocalAI" title="LocalAI server">LocalAI (8000)</button>
               </div>
             </div>
 
-            <label class="form-field" for="pmFormName">
-              <span>Display name</span>
-              <input type="text" id="pmFormName" placeholder="My OpenAI-compatible API" autocomplete="off" />
-            </label>
+            <div class="pm-form-grid">
+              <label class="form-field" for="pmFormName">
+                <span>Display name</span>
+                <input type="text" id="pmFormName" placeholder="My OpenAI-compatible API" autocomplete="off" />
+              </label>
 
-            <label class="form-field" for="pmFormType">
-              <span>Provider type</span>
-              <select id="pmFormType">
-                <option value="openai">OpenAI-compatible</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="google">Google Gemini</option>
-                <option value="custom">Custom</option>
-              </select>
-            </label>
+              <label class="form-field" for="pmFormType">
+                <span>Provider type</span>
+                <select id="pmFormType">
+                  <option value="openai">OpenAI-compatible</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="google">Google Gemini</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+            </div>
 
             <label class="form-field" for="pmFormUrl">
               <span>API URL</span>
@@ -1110,6 +1469,7 @@
             <div class="pm-models-toolbar">
               <div class="pm-models-search-wrap">
                 <input type="text" id="pmModelsSearch" placeholder="Search models…" autocomplete="off" class="input-sm" />
+                <button type="button" class="pm-search-clear" id="pmModelsSearchClear" aria-label="Clear search" title="Clear search" hidden>&times;</button>
               </div>
               <div class="pm-models-actions-wrap">
                 <button type="button" class="btn btn-ghost btn-sm" id="pmModelsSelectAll">Select all</button>
@@ -1142,6 +1502,10 @@
       <!-- LIST VIEW FOOTER — canonical footer, toggled by showPmView() -->
       <div class="modal-footer" id="pmModalFooterList" hidden>
         <button class="btn btn-ghost" id="pmModalClose2" type="button">Close</button>
+        <button class="btn btn-ghost" id="pmImportLocalBtn" type="button" title="Auto-detect and import Google account from Antigravity IDE">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Import from IDE
+        </button>
         <button class="btn btn-primary" id="pmAddBtn" type="button">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Add provider
@@ -1149,6 +1513,82 @@
       </div>
 
       <!-- FORM VIEW FOOTER -->
+    </div>
+  </div>
+
+  <!-- Modal: OAuth QR Code Display -->
+  <div class="modal-backdrop" id="oauthQrModalBackdrop" hidden>
+    <div class="modal modal-sm" role="dialog" aria-modal="true" style="text-align: center; max-width: 420px;">
+      <div class="modal-header">
+        <div class="modal-header-title-wrap">
+          <h2>Scanner avec votre Téléphone</h2>
+        </div>
+        <button class="modal-close" id="oauthQrModalClose" type="button" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 14px;">
+        <div id="oauthQrImageContainer" style="background: #ffffff; padding: 12px; border-radius: 12px; display: flex; align-items: center; justify-content: center; min-width: 200px; min-height: 200px;">
+          <!-- QR SVG / Image rendered here -->
+        </div>
+        <p style="font-size: 12.5px; color: var(--text-2); margin: 0; line-height: 1.4;">
+          Scannez ce QR Code avec l'appareil photo de votre smartphone pour vous connecter à votre compte Google et autoriser Antigravity.
+        </p>
+      </div>
+      <div class="modal-footer" style="justify-content: center;">
+        <button class="btn btn-ghost" id="oauthQrCloseBtn" type="button">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Ping-Pong Benchmark & Latency Tester -->
+  <div class="modal-backdrop" id="pingPongModalBackdrop" hidden>
+    <div class="modal modal-lg" role="dialog" aria-modal="true" style="max-width: 820px;">
+      <div class="modal-header">
+        <div class="modal-header-title-wrap">
+          <div class="modal-header-icon" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; font-size: 16px;">
+            🏓
+          </div>
+          <div>
+            <h2 class="pm-modal-title">Live Model Ping-Pong Tester &amp; Benchmark</h2>
+            <div style="font-size: 12px; color: var(--text-2);">Test direct de connectivité, latence réelle et extraction du Pong textuel</div>
+          </div>
+        </div>
+        <button class="modal-close" id="pingPongModalClose" type="button" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="pingPongCustomPrompt" class="input input-sm" value="ping" placeholder="Prompt de test (défaut: ping)" style="max-width: 260px;" />
+          <button class="btn btn-primary btn-sm" id="pingPongRunBatchBtn" type="button">
+            🚀 Tester tous les modèles
+          </button>
+          <div id="pingPongBatchProgress" style="font-size: 12px; color: var(--text-2); display: none;"></div>
+        </div>
+        <div id="pingPongResultsTable" style="max-height: 380px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-1);">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border); background: var(--bg-2); color: var(--text-2); text-align: left;">
+                <th style="padding: 10px 12px;">Modèle</th>
+                <th style="padding: 10px 12px;">Fournisseur</th>
+                <th style="padding: 10px 12px;">Statut &amp; Latence</th>
+                <th style="padding: 10px 12px;">Réponse Pong</th>
+                <th style="padding: 10px 12px; text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="pingPongTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="font-size: 12px; color: var(--text-3);">
+          ⚡ &lt;400ms Rapide &bull; ⏱️ 400-1200ms Normal &bull; 🐢 &gt;1200ms Lent
+        </div>
+        <button class="btn btn-ghost" id="pingPongFooterClose" type="button">Fermer</button>
+      </div>
     </div>
   </div>
 
@@ -1160,11 +1600,14 @@
   <script src="smart-banner.js"></script>
   <script src="traffic-inspector.js"></script>
   <script src="config-export-import.js"></script>
+  <script src="account-import.js"></script>
   <script src="health-sentinel.js"></script>
   <script src="failure-scenario-showcase.js"></script>
   <script src="custom-error-scenarios.js"></script>
   <script src="native-quota-card.js"></script>
   <script src="execution-feed.js"></script>
+  <script src="log-viewer.js"></script>
+  <script src="ping-pong-tester.js"></script>
   <script src="app.js"></script>
   <script src="features.js"></script>
 </body>

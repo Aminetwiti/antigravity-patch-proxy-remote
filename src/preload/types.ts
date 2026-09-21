@@ -11,6 +11,7 @@ export interface UpdaterState {
 export type UnsubscribeFn = () => void;
 
 export interface UpdaterAPI {
+  getState: () => Promise<UpdaterState>;
   onStateChanged: (callback: (state: UpdaterState) => void) => UnsubscribeFn;
   applyUpdate: () => Promise<void>;
   quitAndInstall: () => Promise<void>;
@@ -99,9 +100,19 @@ export interface StorageAPI {
   getProviders: () => Promise<ProviderFileEntry[]>;
   saveProvider: (provider: ProviderFileEntry) => Promise<{ success: boolean; error?: string }>;
   deleteProvider: (providerId: string) => Promise<{ success: boolean; error?: string }>;
+  discoverLocalAntigravityAccount?: () => Promise<{ success: boolean; credential?: any; error?: string }>;
   exportProviders: () => Promise<{ success: boolean; base64?: string; count?: number; error?: string }>;
   importProviders: (base64Code?: string) => Promise<{ success: boolean; count?: number; error?: string }>;
   getDoctorDiagnostics: () => Promise<any>;
+  testRemoteHealth?: (payload: { host: string; token?: string } | string) => Promise<{ ok: boolean; status?: number; data?: Record<string, unknown>; error?: string }>;
+  executeRemoteCommand?: (payload: { host?: string; token?: string; command: string; timeoutMs?: number }) => Promise<{ ok: boolean; stdout?: string; stderr?: string; exitCode?: number; error?: string }>;
+  listRemoteSessions?: (payload?: { host?: string; token?: string }) => Promise<{ ok: boolean; sessions?: any[]; error?: string }>;
+  createRemoteSession?: (payload?: { host?: string; token?: string; title?: string; workspaceId?: string }) => Promise<{ ok: boolean; session?: any; error?: string }>;
+  getRemoteWorkspaces?: (payload?: { host?: string; token?: string }) => Promise<{ ok: boolean; workspaces?: any[]; error?: string }>;
+  injectUserStatus?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
+  injectAvailableModels?: (rawBuffer: Uint8Array) => Promise<Uint8Array>;
+  setRemoteState?: (payload: { active?: boolean; host?: string; token?: string; remoteSessions?: Record<string, boolean> }) => Promise<{ ok: boolean; state?: any; error?: string }>;
+  getRemoteState?: () => Promise<{ ok: boolean; state?: any; error?: string }>;
 }
 
 export interface LogsAPI {

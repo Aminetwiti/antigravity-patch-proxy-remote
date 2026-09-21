@@ -25,21 +25,174 @@ export interface RetryDecision {
   nextRetryCount: number;
 }
 
+
+/**
+ * Regex for duration strings (e.g. "1.5s", "200ms", "4m 12s", "1h")
+ */
+const DURATION_RE = /([\d.]+)\s*(milliseconds?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)/gi;
+
+const TEXT_DELAY_PATTERNS = [
+  /quota will reset after ([^.,;\]\n]+)/i,
+  /quota will reset in ([^.,;\]\n]+)/i,
+  /retry after ([^.,;\]\n]+)/i,
+  /reset after ([^.,;\]\n]+)/i,
+  /try again in ([^.,;\]\n]+)/i,
+  /backoff for ([^.,;\]\n]+)/i,
+  /(?:^|[\s(])wait\s+([^,;\]\n)]+)/i,
+];
+
+const RETRY_HINT_KEYS = new Set([
+  'retryafter',
+  'retry_after',
+  'retrydelay',
+  'retry_delay',
+  'quotaresetdelay',
+  'quota_reset_delay',
+  'backofflimit',
+  'backoff_limit',
+]);
+
+/**
+ * Parses duration string into milliseconds (e.g. "1.5s" -> 1500, "2m 10s" -> 130000).
+ */
+export function parseDurationMs(durationStr: string): number | null {
+  if (!durationStr || typeof durationStr !== 'string') return null;
+  let totalMs = 0;
+  let matched = false;
+
+  const re = new RegExp(DURATION_RE.source, 'gi');
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(durationStr)) !== null) {
+    matched = true;
+    const value = parseFloat(match[1]);
+    if (isNaN(value)) continue;
+    const unit = match[2].toLowerCase();
+
+    if (unit === 'ms' || unit.startsWith('millisecond')) {
+      totalMs += value;
+    } else if (unit === 's' || unit.startsWith('sec') || unit.startsWith('second')) {
+      totalMs += value * 1000;
+    } else if (unit === 'm' || unit.startsWith('min') || unit.startsWith('minute')) {
+      totalMs += value * 60 * 1000;
+    } else if (unit === 'h' || unit.startsWith('hr') || unit.startsWith('hour')) {
+      totalMs += value * 60 * 60 * 1000;
+    }
+  }
+
+  return matched ? Math.round(totalMs) : null;
+}
+
+/**
+ * Recursively inspects JSON objects for known retry delay hint keys or Google duration format {seconds, nanos}.
+ */
+function extractStructuredDelay(val: unknown, depth = 0): number | null {
+  if (!val || depth > 8) return null;
+
+  if (typeof val === 'object') {
+    if (Array.isArray(val)) {
+      for (const item of val) {
+        const found = extractStructuredDelay(item, depth + 1);
+        if (found !== null) return found;
+      }
+      return null;
+    }
+
+    const obj = val as Record<string, unknown>;
+
+    // Google protobuf duration format: { seconds: 1, nanos: 0 }
+    if ('seconds' in obj || 'nanos' in obj) {
+      const secs = Number(obj.seconds || obj.Seconds || 0);
+      const nanos = Number(obj.nanos || obj.Nanos || 0);
+      if (secs > 0 || nanos > 0) {
+        return Math.round(secs * 1000 + nanos / 1_000_000);
+      }
+    }
+
+    for (const [k, v] of Object.entries(obj)) {
+      const normKey = k.toLowerCase().replace(/[-_]/g, '');
+      if (RETRY_HINT_KEYS.has(normKey)) {
+        if (typeof v === 'string') {
+          const parsed = parseDurationMs(v);
+          if (parsed !== null) return parsed;
+        } else if (typeof v === 'number' && v > 0) {
+          return v > 1000 ? Math.round(v) : Math.round(v * 1000);
+        } else if (typeof v === 'object' && v !== null) {
+          const parsed = extractStructuredDelay(v, depth + 1);
+          if (parsed !== null) return parsed;
+        }
+      }
+
+      const child = extractStructuredDelay(v, depth + 1);
+      if (child !== null) return child;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extracts exact retry delay in milliseconds from HTTP 429 error bodies
+ * (either structured JSON metadata from Google/OpenAI or natural language text).
+ */
+export function parseRetryDelayFromError(errorBody: string | unknown): number | null {
+  if (!errorBody) return null;
+
+  let text = typeof errorBody === 'string' ? errorBody : '';
+  if (typeof errorBody === 'object') {
+    const struct = extractStructuredDelay(errorBody);
+    if (struct !== null) return struct;
+    try {
+      text = JSON.stringify(errorBody);
+    } catch {
+      return null;
+    }
+  }
+
+  // Try parsing JSON string first
+  if (text.startsWith('{') || text.startsWith('[')) {
+    try {
+      const parsedJson = JSON.parse(text);
+      const struct = extractStructuredDelay(parsedJson);
+      if (struct !== null) return struct;
+    } catch {}
+  }
+
+  // Scan natural text patterns
+  for (const pat of TEXT_DELAY_PATTERNS) {
+    const m = pat.exec(text);
+    if (m && m[1]) {
+      const ms = parseDurationMs(m[1]);
+      if (ms !== null) return ms;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Computes the retry delay for a given strategy.
  *
  * @param strategy Type of retry scenario
  * @param retryCount Current retry count (0-indexed)
- * @param retryAfterMs Delay from Retry-After header (0 if not present)
+ * @param retryAfterMs Delay from Retry-After header or parsed error body (0 if not present)
+ * @param errorBody Optional raw error body to extract fine-grained retry delay
  * @returns Delay in milliseconds
  */
 export function computeRetryDelay(
   strategy: RetryStrategy,
   retryCount: number,
   retryAfterMs: number,
+  errorBody?: string | unknown,
 ): number {
-  // Respect Retry-After header if present
+  // Respect explicit Retry-After header or parsed body delay
   if (retryAfterMs > 0) return retryAfterMs;
+
+  if (errorBody) {
+    const parsedBodyDelay = parseRetryDelayFromError(errorBody);
+    if (parsedBodyDelay !== null && parsedBodyDelay > 0) {
+      // Add 250ms buffer to ensure provider lock window has expired
+      return parsedBodyDelay + 250;
+    }
+  }
 
   // Map strategy -> (initialDelayMs, maxDelayMs) pair.
   // The base * multiplier^retryCount is delegated to calculateBackoffDelay,
@@ -191,6 +344,7 @@ export function buildRetryDecision(
     nowMs: number;
     ceilingMs: number;
   },
+  errorBody?: string | unknown,
 ): RetryDecision {
   if (retryCount >= maxRetries) {
     return { shouldRetry: false, delayMs: 0, nextRetryCount: retryCount };
@@ -201,7 +355,7 @@ export function buildRetryDecision(
       return { shouldRetry: false, delayMs: 0, nextRetryCount: retryCount };
     }
   }
-  const delayMs = computeRetryDelay(strategy, retryCount, retryAfterMs);
+  const delayMs = computeRetryDelay(strategy, retryCount, retryAfterMs, errorBody);
   return {
     shouldRetry: true,
     delayMs,

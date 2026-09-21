@@ -47,13 +47,36 @@ try {
         Start-Sleep -Seconds 2
     }
 
-    Copy-Item -Path $cached -Destination $asarPath -Force
+    # Inspection de version : évite de rétrograder un app.asar nouvellement mis à jour avec un vieux cache.
+    $repoDir = Split-Path -Parent $PSScriptRoot
+    $patchScript = Join-Path $repoDir "scripts\patch-version.js"
+    $readerPath = Join-Path $repoDir "ag-doctor\dist\core\asar-reader.js"
 
-    if (Test-Path $cachedUn) {
-        if (Test-Path $destUn) {
-            Remove-Item -Path $destUn -Recurse -Force
+    $asarVer = & node -e "try { const { readAsarFile } = require(process.argv[1]); const b = readAsarFile(process.argv[2], 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}" "$readerPath" "$asarPath"
+    $cachedVer = & node -e "try { const { readAsarFile } = require(process.argv[1]); const b = readAsarFile(process.argv[2], 'package.json'); if (b) console.log(JSON.parse(b.toString()).version); } catch(e){}" "$readerPath" "$cached"
+
+    if ($asarVer -and $cachedVer -and $asarVer -ne $cachedVer -and (Test-Path $patchScript)) {
+        # Nouvelle version officielle détectée : re-patcher la nouvelle version au lieu d'imposer l'ancien cache
+        $stagingDir = "$env:TEMP\antigravity-autoheal-staging-$((Get-Random))"
+        & node "$patchScript" "$asarPath" "$stagingDir" "$asarPath"
+        if ($LASTEXITCODE -eq 0) {
+            Copy-Item -Path $asarPath -Destination $cached -Force
+            if (Test-Path "$appPath\resources\app.asar.unpacked") {
+                if (Test-Path $cachedUn) { Remove-Item -Path $cachedUn -Recurse -Force }
+                Copy-Item -Path "$appPath\resources\app.asar.unpacked" -Destination $scratch -Recurse -Force
+            }
+        } else {
+            Copy-Item -Path $cached -Destination $asarPath -Force
         }
-        Copy-Item -Path $cachedUn -Destination "$appPath\resources" -Recurse -Force
+    } else {
+        Copy-Item -Path $cached -Destination $asarPath -Force
+
+        if (Test-Path $cachedUn) {
+            if (Test-Path $destUn) {
+                Remove-Item -Path $destUn -Recurse -Force
+            }
+            Copy-Item -Path $cachedUn -Destination "$appPath\resources" -Recurse -Force
+        }
     }
 
     # Relance l'app pour que l'utilisateur ne voie pas de disruption.

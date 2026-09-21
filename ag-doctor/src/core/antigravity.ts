@@ -411,6 +411,9 @@ export async function launchAntigravity(): Promise<AntigravityLaunchResult> {
   let launchMethod: AntigravityLaunchResult['launchMethod'] = 'unix-spawn';
 
   try {
+    const launchEnv = { ...process.env };
+    delete launchEnv.ELECTRON_RUN_AS_NODE;
+
     if (process.platform === 'win32') {
       launchMethod = 'windows-cmd-start';
       const { exec } = await import('child_process');
@@ -419,6 +422,7 @@ export async function launchAntigravity(): Promise<AntigravityLaunchResult> {
       execAsync(`cmd.exe /c start "" "${winExe}"`, {
         cwd: dir,
         windowsHide: false,
+        env: launchEnv,
       }).catch(() => {});
     } else if (wslLaunch) {
       launchMethod = 'wsl-cmd-start';
@@ -426,6 +430,7 @@ export async function launchAntigravity(): Promise<AntigravityLaunchResult> {
         detached: true,
         stdio: 'ignore',
         cwd: dir,
+        env: launchEnv,
       });
       child.unref();
     } else {
@@ -434,7 +439,7 @@ export async function launchAntigravity(): Promise<AntigravityLaunchResult> {
         detached: true,
         stdio: 'ignore',
         cwd: dir,
-        env: { ...process.env },
+        env: launchEnv,
       });
       child.unref();
     }

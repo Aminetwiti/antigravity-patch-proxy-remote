@@ -38,6 +38,7 @@ import 'widgets/overview_panel_view.dart';
 import 'widgets/session_review_view.dart';
 import 'widgets/queued_messages_card.dart';
 import 'widgets/revert_step_preview_dialog.dart';
+import 'widgets/turn_navigation_fab.dart';
 import '../../services/offline_outbox_store.dart';
 import '../../services/session_history_cache_store.dart';
 import '../../widgets/skeleton_loader.dart';
@@ -247,6 +248,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
   
   bool _showStillWorking = false;
   final Map<String, Map<String, dynamic>> _sessionLastStreamEnds = {};
+  final Map<String, Map<String, dynamic>> _sessionTelemetry = {};
   final Map<String, String> _externalThoughts = {};
   final Map<String, String> _streamRequestToMessageId = {};
 
@@ -580,6 +582,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     if (mounted) {
       setState(() {
         _dismissedBannerIds.add(bannerId);
+        _activeBanners.remove(bannerId);
       });
     }
   }
@@ -719,6 +722,30 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     });
   }
 
+  void _navigateTurnUp() {
+    HapticFeedback.lightImpact();
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final target = (pos.pixels - pos.viewportDimension * 0.75).clamp(0.0, pos.maxScrollExtent);
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _navigateTurnDown() {
+    HapticFeedback.lightImpact();
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final target = (pos.pixels + pos.viewportDimension * 0.75).clamp(0.0, pos.maxScrollExtent);
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   void _loadMoreOlderMessages() {
     if (_isLoadingMoreOlder || _hiddenOlderCount <= 0) return;
     setState(() {
@@ -753,6 +780,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
     _loadHistoryIfEmpty();
     _fetchSubagentsForSession(widget.activeSessionId);
     _refreshQuotaSummary();
+    _refreshSessionTelemetry();
     _quotaTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (mounted) _refreshQuotaSummary();
     });
@@ -843,6 +871,64 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         });
       }
     } catch (_) {}
+  }
+
+  Future<void> _refreshSessionTelemetry([String? sessionId]) async {
+    final api = widget.api;
+    final target = sessionId ?? widget.activeSessionId;
+    if (api == null || !widget.isConnected || target.isEmpty) return;
+    try {
+      final res = await api.getSessionTelemetry(target);
+      final tele = res['telemetry'] ?? (res['data'] is Map ? res['data']['telemetry'] : null) ?? res;
+      if (mounted && tele is Map) {
+        setState(() {
+          _sessionTelemetry[target] = Map<String, dynamic>.from(tele);
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _promoteShadowWorktree() async {
+    final api = widget.api;
+    if (api == null || widget.activeSessionId.isEmpty) return;
+    try {
+      final res = await api.promoteShadowWorktree(widget.activeProjectName, widget.activeSessionId);
+      if (mounted) {
+        final msg = res['message'] ?? 'Shadow worktree fusionné avec succès';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$msg'), backgroundColor: AppColors.positive),
+        );
+        _fetchVcsChanges();
+        _refreshSessionTelemetry();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors de la fusion : $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
+
+  Future<void> _discardShadowWorktree() async {
+    final api = widget.api;
+    if (api == null || widget.activeSessionId.isEmpty) return;
+    try {
+      await api.discardShadowWorktree(widget.activeProjectName, widget.activeSessionId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Shadow worktree rejeté avec succès')),
+        );
+        _fetchVcsChanges();
+        _refreshSessionTelemetry();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors du rejet : $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
   }
 
   void _scrollToBottomSettled({int maxAttempts = 4}) {
@@ -1035,14 +1121,18 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                     fullError.contains('stream was interrupted') ||
                     fullError.contains('baseline model') ||
                     fullError.contains('429') ||
-                    fullError.contains('insufficient_quota')) {
+                    fullError.contains('insufficient_quota') ||
+                    fullError.contains('401') ||
+                    fullError.contains('invalid_api_key') ||
+                    fullError.contains('unauthorized')) {
                   final banner = BannerClassifier.classifyError(
                     msg.text.isNotEmpty
                         ? msg.text
                         : (segError.isNotEmpty ? segError : (msg.thought ?? '')),
-                    onDismiss: () => _dismissBanner('quota-exceeded'),
+                    onDismiss: _dismissBanner,
                     onSwitchModel: _showModelSelector,
                     onSeePlans: _showPlansOrLimitsSheet,
+                    onOpenSettings: _showPlansOrLimitsSheet,
                   );
                   if (banner != null) {
                     _activeBanners[banner.id] = banner;
@@ -1052,10 +1142,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               }
             }
           }
+          // Always invoke StepRecovery to catch up missed events and sync status
+          widget.api?.syncSession(cascadeId: targetSession, lastStepIndex: 0).catchError((_) => <String, dynamic>{});
           if (isStreaming) {
             _onStreamStarted(targetSession);
-            // Catch up any in-flight live events from the daemon's StepRecovery buffer
-            widget.api?.syncSession(cascadeId: targetSession, lastStepIndex: 0);
             if (data['hasPendingApproval'] == true) {
               widget.api?.getPendingApproval(targetSession);
             }
@@ -1273,6 +1363,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
         _loadHistoryIfEmpty(widget.activeSessionId);
       }
       _refreshQuotaSummary();
+      _refreshSessionTelemetry();
       _checkAndFlushOfflineOutbox();
     }
 
@@ -1345,6 +1436,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       _loadPersistedDraft();
       _loadOfflineOutbox(widget.activeSessionId);
       _refreshRunningTasks();
+      _refreshSessionTelemetry(widget.activeSessionId);
       _restoreOrScrollToBottom(widget.activeSessionId);
     }
     if (!oldWidget.isConnected && widget.isConnected) {
@@ -1660,6 +1752,8 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           type == 'approval_expired' ||
           type == 'session_status_update' ||
           type == 'quota_update' ||
+          type == 'session.telemetry' ||
+          type == 'session_telemetry' ||
           type == 'sessions_updated' ||
           type == 'cascade_reverted';
       if (!isBroadcast || !mounted) return;
@@ -1690,6 +1784,17 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
               ),
             );
           }
+        }
+        return;
+      }
+
+      if (type == 'session.telemetry' || type == 'session_telemetry') {
+        final data = (msg['data'] is Map) ? msg['data'] as Map : msg;
+        final targetSession = sessionId ?? widget.activeSessionId;
+        if (mounted && data.isNotEmpty && targetSession.isNotEmpty) {
+          setState(() {
+            _sessionTelemetry[targetSession] = Map<String, dynamic>.from(data);
+          });
         }
         return;
       }
@@ -1920,6 +2025,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           if (mounted) setState(() => _isSyncing = false);
         });
         final data = msg['data'] as Map<String, dynamic>? ?? const {};
+        final isStreamingFromSync = data['isStreaming'] == true;
+        if (isStreamingFromSync) {
+          _onStreamStarted(targetSessionId);
+        }
         final missedEvents = data['missedEvents'] as List<dynamic>? ?? const [];
         if (missedEvents.isNotEmpty) {
           for (final rawEv in missedEvents) {
@@ -1936,6 +2045,14 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                 final cur = buf[idx];
                 final newText = textDelta.isNotEmpty ? cur.text + textDelta : cur.text;
                 buf[idx] = cur.copyWith(text: newText);
+              } else if (textDelta.isNotEmpty) {
+                buf.add(ChatMessage(
+                  id: 'ext-$reqId',
+                  sender: 'assistant',
+                  text: textDelta,
+                  timestamp: _timestamp(),
+                  isStreaming: isStreamingFromSync,
+                ));
               }
             }
           }
@@ -2082,9 +2199,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             ));
             final banner = BannerClassifier.classifyError(
               errorDelta,
-              onDismiss: () => _dismissBanner('quota-exceeded'),
+              onDismiss: _dismissBanner,
               onSwitchModel: _showModelSelector,
               onSeePlans: _showPlansOrLimitsSheet,
+              onOpenSettings: _showPlansOrLimitsSheet,
             );
             if (banner != null) {
               _activeBanners[banner.id] = banner;
@@ -2645,15 +2763,17 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             if (candidateError != null) {
               final banner = BannerClassifier.classifyError(
                 candidateError,
-                onDismiss: () => _dismissBanner('quota-exceeded'),
+                onDismiss: _dismissBanner,
                 onSwitchModel: _showModelSelector,
                 onSeePlans: _showPlansOrLimitsSheet,
+                onOpenSettings: _showPlansOrLimitsSheet,
               );
               if (banner != null) {
                 _activeBanners[banner.id] = banner;
                 _dismissedBannerIds.remove(banner.id);
               }
               _refreshQuotaSummary();
+              _refreshSessionTelemetry(widget.activeSessionId);
             }
             final isQuotaErr = candidateError != null && candidateError.toLowerCase().contains('quota');
             if (error != null && (error.contains('MODEL_CAPACITY_EXHAUSTED') || error.contains('No capacity available') || error.contains('503'))) {
@@ -2677,9 +2797,10 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           final errorText = 'Erreur: $err';
           final banner = BannerClassifier.classifyError(
             errorText,
-            onDismiss: () => _dismissBanner('quota-exceeded'),
+            onDismiss: _dismissBanner,
             onSwitchModel: _showModelSelector,
             onSeePlans: _showPlansOrLimitsSheet,
+            onOpenSettings: _showPlansOrLimitsSheet,
           );
           if (banner != null) {
             _activeBanners[banner.id] = banner;
@@ -2865,39 +2986,29 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
       final q = questions.first;
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: hasKeyboard
-                ? 110.0
-                : (MediaQuery.sizeOf(context).height * 0.35).clamp(120.0, 360.0),
-          ),
-          child: SingleChildScrollView(
-            physics: const ClampingScrollPhysics(),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 4, bottom: 6),
-                  child: Text(
-                    'Waiting for user input.',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? AppColors.inkSecondary
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 6),
+              child: Text(
+                'Waiting for user input.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? AppColors.inkSecondary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w400,
                 ),
-                AskQuestionChoiceCard(
-                  request: q,
-                  onSubmit: (selected, custom) =>
-                      _handleQuestionSubmit(q, selected, custom),
-                ),
-              ],
+              ),
             ),
-          ),
+            AskQuestionChoiceCard(
+              request: q,
+              onSubmit: (selected, custom) =>
+                  _handleQuestionSubmit(q, selected, custom),
+            ),
+          ],
         ),
       );
     }
@@ -2909,99 +3020,89 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: hasKeyboard
-              ? 110.0
-              : (MediaQuery.sizeOf(context).height * 0.35).clamp(120.0, 360.0),
-        ),
-        child: SingleChildScrollView(
-          physics: const ClampingScrollPhysics(),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 6, bottom: 6),
+            child: Text(
+              'Waiting for user input.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? AppColors.inkSecondary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+          Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 6, bottom: 6),
-                child: Text(
-                  'Waiting for user input.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? AppColors.inkSecondary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w400,
-                  ),
+              if (total > 1)
+                IconButton(
+                  key: const Key('approval-prev'),
+                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.chevron_left, size: 16),
+                  tooltip: 'Approbation précédente',
+                  onPressed: () => setState(() {
+                    _approvalIndex =
+                        (_approvalIndex - 1 + total) % total;
+                  }),
+                ),
+              Text(
+                'Approbation ${_approvalIndex + 1}/$total',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
-              Row(
-                children: [
-                  if (total > 1)
-                    IconButton(
-                      key: const Key('approval-prev'),
-                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.chevron_left, size: 16),
-                      tooltip: 'Approbation précédente',
-                      onPressed: () => setState(() {
-                        _approvalIndex =
-                            (_approvalIndex - 1 + total) % total;
-                      }),
-                    ),
-                  Text(
-                    'Approbation ${_approvalIndex + 1}/$total',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (total > 1)
-                    IconButton(
-                      key: const Key('approval-next'),
-                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.chevron_right, size: 16),
-                      tooltip: 'Approbation suivante',
-                      onPressed: () => setState(() {
-                        _approvalIndex = (_approvalIndex + 1) % total;
-                      }),
-                    ),
-                  const Spacer(),
-                  IconButton(
-                    key: const Key('approval-dismiss'),
-                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.close, size: 14),
-                    tooltip: 'Fermer cette approbation',
-                    onPressed: () => _removeApproval(approval.callId),
-                  ),
-                ],
-              ),
-              TweenAnimationBuilder<double>(
-                key: ValueKey('approval-${approval.callId}'),
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutQuart,
-                tween: Tween(begin: 0.0, end: 1.0),
-                builder: (context, value, child) => Opacity(
-                  opacity: value,
-                  child: Transform.translate(
-                    offset: Offset(0, 8 * (1 - value)),
-                    child: child,
-                  ),
+              if (total > 1)
+                IconButton(
+                  key: const Key('approval-next'),
+                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.chevron_right, size: 16),
+                  tooltip: 'Approbation suivante',
+                  onPressed: () => setState(() {
+                    _approvalIndex = (_approvalIndex + 1) % total;
+                  }),
                 ),
-                child: ToolApprovalCard(
-                  request: approval,
-                  onDecision: _handleToolDecision,
-                  isExpired: expired,
-                ),
+              const Spacer(),
+              IconButton(
+                key: const Key('approval-dismiss'),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close, size: 14),
+                tooltip: 'Fermer cette approbation',
+                onPressed: () => _removeApproval(approval.callId),
               ),
             ],
           ),
-        ),
+          TweenAnimationBuilder<double>(
+            key: ValueKey('approval-${approval.callId}'),
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutQuart,
+            tween: Tween(begin: 0.0, end: 1.0),
+            builder: (context, value, child) => Opacity(
+              opacity: value,
+              child: Transform.translate(
+                offset: Offset(0, 8 * (1 - value)),
+                child: child,
+              ),
+            ),
+            child: ToolApprovalCard(
+              request: approval,
+              onDecision: _handleToolDecision,
+              isExpired: expired,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3230,6 +3331,14 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
     final canPopScreen = _activeArtifact == null && _currentTab == SessionTabType.chat && !_isSearching;
     final isDocumentMode = _activeArtifact != null || _currentTab == SessionTabType.plan || _currentTab == SessionTabType.review;
+    final hasApprovalOrQuestion = _currentSessionQuestions.isNotEmpty || _currentSessionApprovals.isNotEmpty;
+    final hasAuxItems = _sideQuestion != null ||
+        _runningBackgroundTasks.isNotEmpty ||
+        _activeGoals.isNotEmpty ||
+        _subagents.any((s) => s.status.toLowerCase() == 'running') ||
+        (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
+        _topActiveBanner != null;
+    final hasDockItems = hasApprovalOrQuestion || hasAuxItems;
 
     final content = ZenithalCanvas(
       child: Center(
@@ -3313,95 +3422,110 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
                       onTap: _jumpToBottom,
                     ),
                   ),
+
+                // Navigation intelligente par tour (TurnNavigationFab inspiré de agy-enhancer)
+                if (_messages.isNotEmpty &&
+                    _activeArtifact == null &&
+                    _currentTab == SessionTabType.chat)
+                  Positioned(
+                    right: 14,
+                    bottom: _showJumpToBottom ? 66 : 14,
+                    child: TurnNavigationFab(
+                      onNavigateUp: _navigateTurnUp,
+                      onNavigateDown: _navigateTurnDown,
+                      onScrollToBottom: _jumpToBottom,
+                      isAtBottom: !_showJumpToBottom,
+                    ),
+                  ),
               ],
             ),
           ),
-          if (_currentSessionQuestions.isNotEmpty || _currentSessionApprovals.isNotEmpty)
-            _buildApprovalArea(hasKeyboard),
-          if (!isDocumentMode &&
-              (_sideQuestion != null ||
-                  _runningBackgroundTasks.isNotEmpty ||
-                  _activeGoals.isNotEmpty ||
-                  _subagents.isNotEmpty ||
-                  (_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false) ||
-                  _topActiveBanner != null))
+          if (!isDocumentMode && hasDockItems)
             ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: hasKeyboard ? 110 : 200),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_sideQuestion != null)
-                        SideQuestionCard(
-                          question: _sideQuestion!,
-                          answer: _sideQuestionAnswer,
-                          isLoading: _isSideQuestionLoading,
-                          onClose: () => setState(() {
-                            _sideQuestion = null;
-                            _sideQuestionAnswer = null;
-                          }),
-                        ),
-                      if (_runningBackgroundTasks.isNotEmpty || _activeGoals.isNotEmpty)
-                        BackgroundTasksBar(
-                          runningTasks: _runningBackgroundTasks,
-                          activeGoals: _activeGoals,
-                          onTapTask: _openTaskOutputSheet,
-                          onStopTask: _handleStopBackgroundTask,
-                          onStopGoal: (g) {
-                            setState(() => _activeGoals.remove(g));
-                            _handleStopGeneration();
-                          },
-                          onViewTasks: () {
-                            if (_runningBackgroundTasks.isNotEmpty) {
-                              _openTaskOutputSheet(_runningBackgroundTasks.first);
-                            }
-                          },
-                        ),
-                      // Seuls les sous-agents en cours d'exécution sont affichés dans la conversation
-                      // Dès qu'un sous-agent se termine, il disparaît de ce bandeau (libérant l'espace vertical)
-                      if (_subagents.any((s) => s.status.toLowerCase() == 'running'))
-                        SubagentTreeCard(
-                          onlyRunning: true,
-                          subagents: _subagents,
-                          projectName: widget.activeProjectName,
-                          sessionTitle: widget.activeSessionTitle,
-                          onOpenFullTree: () {
-                            SubagentsTreeSheet.show(
-                              context,
-                              api: widget.api,
-                              cascadeId: widget.activeSessionId,
-                              projectName: widget.activeProjectName,
-                              sessionTitle: widget.activeSessionTitle,
-                            );
-                          },
-                          onSelectSubagent: (sub) {
-                            SubagentDetailModal.show(
-                              context,
-                              agent: sub,
-                              api: widget.api,
-                              cascadeId: widget.activeSessionId,
-                              projectName: widget.activeProjectName,
-                              sessionTitle: widget.activeSessionTitle,
-                              onKill: () => _fetchSubagentsForSession(widget.activeSessionId),
-                            );
-                          },
-                        ),
-                      if ((_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false))
-                        QueuedMessagesCard(
-                          queuedMessages: _sessionMessageQueues[widget.activeSessionId]!,
-                          onSendNow: _handleQueueSendNow,
-                          onEdit: _handleQueueEdit,
-                          onDelete: _handleQueueDelete,
-                        ),
-                      if (_topActiveBanner != null)
-                        AppNotificationBanner(
-                          data: _topActiveBanner!,
-                          isCompact: hasKeyboard,
-                        ),
-                    ],
-                  ),
+              constraints: BoxConstraints(
+                maxHeight: hasKeyboard
+                    ? 110.0
+                    : (MediaQuery.sizeOf(context).height * 0.38).clamp(120.0, 300.0),
+              ),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (hasApprovalOrQuestion)
+                      _buildApprovalArea(hasKeyboard),
+                    if (_sideQuestion != null)
+                      SideQuestionCard(
+                        question: _sideQuestion!,
+                        answer: _sideQuestionAnswer,
+                        isLoading: _isSideQuestionLoading,
+                        onClose: () => setState(() {
+                          _sideQuestion = null;
+                          _sideQuestionAnswer = null;
+                        }),
+                      ),
+                    if (_runningBackgroundTasks.isNotEmpty || _activeGoals.isNotEmpty)
+                      BackgroundTasksBar(
+                        runningTasks: _runningBackgroundTasks,
+                        activeGoals: _activeGoals,
+                        initiallyExpanded: !hasApprovalOrQuestion,
+                        onTapTask: _openTaskOutputSheet,
+                        onStopTask: _handleStopBackgroundTask,
+                        onStopGoal: (g) {
+                          setState(() => _activeGoals.remove(g));
+                          _handleStopGeneration();
+                        },
+                        onViewTasks: () {
+                          if (_runningBackgroundTasks.isNotEmpty) {
+                            _openTaskOutputSheet(_runningBackgroundTasks.first);
+                          }
+                        },
+                      ),
+                    // Seuls les sous-agents en cours d'exécution sont affichés dans la conversation
+                    // Dès qu'un sous-agent se termine, il disparaît de ce bandeau (libérant l'espace vertical)
+                    if (_subagents.any((s) => s.status.toLowerCase() == 'running'))
+                      SubagentTreeCard(
+                        onlyRunning: true,
+                        subagents: _subagents,
+                        projectName: widget.activeProjectName,
+                        sessionTitle: widget.activeSessionTitle,
+                        onOpenFullTree: () {
+                          SubagentsTreeSheet.show(
+                            context,
+                            api: widget.api,
+                            cascadeId: widget.activeSessionId,
+                            projectName: widget.activeProjectName,
+                            sessionTitle: widget.activeSessionTitle,
+                          );
+                        },
+                        onSelectSubagent: (sub) {
+                          SubagentDetailModal.show(
+                            context,
+                            agent: sub,
+                            api: widget.api,
+                            cascadeId: widget.activeSessionId,
+                            projectName: widget.activeProjectName,
+                            sessionTitle: widget.activeSessionTitle,
+                          );
+                        },
+                      ),
+                    if ((_sessionMessageQueues[widget.activeSessionId]?.isNotEmpty ?? false))
+                      QueuedMessagesCard(
+                        queuedMessages: _sessionMessageQueues[widget.activeSessionId]!,
+                        onSendNow: _handleQueueSendNow,
+                        onEdit: _handleQueueEdit,
+                        onDelete: _handleQueueDelete,
+                      ),
+                    if (_topActiveBanner != null)
+                      AppNotificationBanner(
+                        data: _topActiveBanner!,
+                        isCompact: hasKeyboard || hasApprovalOrQuestion,
+                        onDismiss: () => _dismissBanner(_topActiveBanner!.id),
+                      ),
+                  ],
                 ),
               ),
+            ),
           if (!isDocumentMode) ...[
             if (isCurrentSessionArchived && !_hasCurrentActiveStream && _activeStreamCount == 0)
               _buildArchivedChatBar(scheme, Theme.of(context).brightness == Brightness.dark)
@@ -3659,6 +3783,9 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
           artifacts: _artifacts,
           subagentsCount: _subagentsCount,
           backgroundTasks: _runningBackgroundTasks,
+          telemetry: _sessionTelemetry[widget.activeSessionId],
+          onPromoteWorktree: _promoteShadowWorktree,
+          onDiscardWorktree: _discardShadowWorktree,
           onOpenReview: () => setState(() {
             _activeArtifact = null;
             _currentTab = SessionTabType.review;

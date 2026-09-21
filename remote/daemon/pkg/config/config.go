@@ -63,7 +63,7 @@ func LoadConfig() *DaemonConfig {
 		}
 	}
 
-	cfg.PingPeriod = (cfg.PongWait * 9) / 10
+	cfg.PingPeriod = getEnvDuration("AG_WS_PING_PERIOD", (cfg.PongWait*9)/10)
 	return cfg
 }
 

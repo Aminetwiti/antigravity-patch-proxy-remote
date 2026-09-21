@@ -158,7 +158,7 @@ CREATE TABLE trajectory_meta (
     created_timestamp INTEGER,         -- Timestamp UNIX (ms)
     last_modified_timestamp INTEGER,   -- Timestamp UNIX de dernière écriture
     title TEXT,                        -- Titre automatique résumé
-    active_model_uid TEXT              -- Modèle utilisé (ex: gemini-2.5-flash)
+    active_model_uid TEXT              -- Modèle utilisé (ex: gemini-3.8-flash-tiered)
 );
 ```
 

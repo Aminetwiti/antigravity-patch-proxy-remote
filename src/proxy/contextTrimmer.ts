@@ -26,7 +26,20 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
     totalPartsBefore += content.parts.length;
 
     const uniqueParts = content.parts.filter((part) => {
+      // Never dedup function calls/responses — each one is a distinct agent action
+      if (part.functionCall || part.functionResponse) return true;
+      // Never dedup thought/thinking parts
+      if ((part as any).thought || (part as any).type === 'thinking') return true;
       if (!part.text) return true;
+
+      // ponytail: only dedup pure-text parts in turns that have NO function ops.
+      // Turns with functionCall/functionResponse often repeat tool output text
+      // (e.g. same list_dir result) — deduping those makes the model lose context
+      // and loop infinitely calling the same tool.
+      const hasFunctionOps = content.parts.some(
+        (p) => p.functionCall || p.functionResponse
+      );
+      if (hasFunctionOps) return true;
 
       // Hash short string representations of text blocks (>100 chars)
       if (part.text.length > 100) {

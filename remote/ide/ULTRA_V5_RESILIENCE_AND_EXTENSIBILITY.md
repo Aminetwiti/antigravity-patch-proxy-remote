@@ -258,7 +258,7 @@ Confidence: 100%
 [HTTP POST /v1internal:streamGenerateContent] ──────────── (Root Span: 1850ms)
   ├── [ConnectRPC: SendUserCascadeMessage] ─────────────── (Child Span: 1840ms)
   │     ├── [SQLite: ReadStepsBatch] ───────────────────── (DB Span: 4ms)
-  │     ├── [LLM Provider: Claude-3.7-Sonnet Stream] ───── (Inference Span: 1420ms)
+  │     ├── [LLM Provider: Claude-Sonnet-4-6 Stream] ───── (Inference Span: 1420ms)
   │     │     ├── [TTFT: First Chunk Received] ─────────── (Event: +230ms)
   │     │     └── [Token Processing Pipeline] ──────────── (Event: 52 tokens/s)
   │     ├── [Policy Guardian: Tool Authorization] ──────── (Security Span: 2ms)
@@ -275,8 +275,8 @@ antigravity_session_active_count{workspace_id="88586e91",mode="ide"} 8
 
 # HELP antigravity_llm_token_latency_seconds Latence du premier token TTFT
 # TYPE antigravity_llm_token_latency_seconds histogram
-antigravity_llm_token_latency_seconds_bucket{le="0.25",model="gemini-2.5-flash"} 142
-antigravity_llm_token_latency_seconds_bucket{le="0.50",model="gemini-2.5-flash"} 280
+antigravity_llm_token_latency_seconds_bucket{le="0.25",model="gemini-3.8-flash-tiered"} 142
+antigravity_llm_token_latency_seconds_bucket{le="0.50",model="gemini-3.8-flash-tiered"} 280
 
 # HELP antigravity_tool_execution_total Nombre d'outils exécutés par statut
 # TYPE antigravity_tool_execution_total counter

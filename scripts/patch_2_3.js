@@ -151,8 +151,17 @@ const MISSING_JS_MODULES = [
   'ipc/handlers/settingsHandler',
   'ipc/handlers/systemHandler',
   'main/windowManager',
+  'services/certificateService',
+  'services/configExchange',
   'services/cryptoStore',
+  'services/googleAuth',
+  'services/healthProbe',
+  'services/localCredentialDiscovery',
+  'services/localModelDetector',
   'services/modelStore',
+  'services/runtimeStateService',
+  'services/settingsService',
+  'services/telemetryStore',
   'shared/logger',
   'wellKnown/modelIdUtils',
   // Main proxy entry point
@@ -209,6 +218,7 @@ const OVERWRITE_FILES = [
   'dist/constants.js',
   'dist/utils.js',
   'dist/loadingOverlay.js',
+  'dist/main/windowManager.js',
   'dist/keybindings.js',
   'dist/menu.js',
   'dist/tray.js',
@@ -236,15 +246,21 @@ const DUPLICATE_IPC_HANDLERS = [
 // ─── The 1 root-level file that v2.3.x removed ─────────────────────────────
 const NEW_ROOT_FILES = [
   'proxy-runner.js',
+  'constants.js',
 ];
 
 function buildPatchManifest(repoDir) {
   const proxyRoot = path.join(repoDir, 'dist', 'proxy');
   const proxyFiles = discoverJavaScriptFiles(proxyRoot)
     .map((relativePath) => `dist/proxy/${relativePath}`);
+  const servicesRoot = path.join(repoDir, 'dist', 'services');
+  const serviceFiles = fs.existsSync(servicesRoot)
+    ? discoverJavaScriptFiles(servicesRoot).map((relativePath) => `dist/services/${relativePath}`)
+    : [];
   return [...new Set([
     'dist/proxy.js',
     ...proxyFiles,
+    ...serviceFiles,
     'dist/cryptoStore.js',
     'dist/customModelStore.js',
     'dist/schemaValidator.js',
@@ -361,6 +377,10 @@ async function main() {
         srcJs = path.join(repoDist, 'services', 'modelStore.js');
       } else if (fs.existsSync(path.join(repoDist, 'services', `${mod}.js`))) {
         srcJs = path.join(repoDist, 'services', `${mod}.js`);
+      } else if (mod.startsWith('gateway/') && fs.existsSync(path.join(repoDist, mod.replace(/^gateway\//, 'proxyGateway/')) + '.js')) {
+        srcJs = path.join(repoDist, mod.replace(/^gateway\//, 'proxyGateway/')) + '.js';
+      } else if (mod.startsWith('ipc/handlers/') || mod === 'ipc/index') {
+        continue;
       } else {
         die(`required source missing: ${srcJs}\n` +
             `  (you may need to run \`npm run build\` in the repo first)`);

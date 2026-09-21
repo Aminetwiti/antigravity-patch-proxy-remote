@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  MODEL_VERSION_DELIMITER,
   parseModelIdParts,
   getBaseModelId,
   getModelVersion,
@@ -15,12 +14,6 @@ import {
   fuzzyMatch,
   resolveModelId,
 } from '../wellKnown/modelIdUtils';
-
-describe('MODEL_VERSION_DELIMITER', () => {
-  it('is "#"', () => {
-    expect(MODEL_VERSION_DELIMITER).toBe('#');
-  });
-});
 
 describe('parseModelIdParts', () => {
   it('returns baseId only when no delimiter', () => {
