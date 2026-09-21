@@ -32,7 +32,6 @@ tsc_*.txt
 
 # Temporary development & extract directories
 scratch/
-.env
 test-extract/
 .kimchi/
 
@@ -85,3 +84,4 @@ providerState.json
 test_marker.txt
 
 ag-doctor-ui/tools/*
+config.bat

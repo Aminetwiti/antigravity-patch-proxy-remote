@@ -285,6 +285,28 @@ describe('Google Multi-Account Pool & Failover', () => {
       expect(d2.cooldownMs).toBe(5 * 60 * 60 * 1000);
     });
 
+    it('parses "Resets in Xh Ym Zs" from 429 body and uses the exact reset duration (floor 5h)', () => {
+      // Production: "Individual quota reached. Resets in 42h52m9s" → 42h52m9s = 154329s
+      const d42h = classifyGoogleCloudCode429(
+        'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 42h52m9s',
+      );
+      expect(d42h.category).toBe('quota_exhausted');
+      const expected42h = (42 * 3600 + 52 * 60 + 9) * 1000;
+      expect(d42h.cooldownMs).toBe(expected42h); // ~154.3M ms, well above 5h floor
+
+      // Production: "Individual quota reached. Resets in 4h7m17s" → 4h7m17s = 14837s → floor to 5h
+      const d4h = classifyGoogleCloudCode429(
+        'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 4h7m17s',
+      );
+      expect(d4h.category).toBe('quota_exhausted');
+      expect(d4h.cooldownMs).toBe(5 * 60 * 60 * 1000); // floor: 4h7m < 5h → uses 5h
+
+      // Short form: "Resets in 52m" → floor to 5h
+      const d52m = classifyGoogleCloudCode429('quota reached Resets in 52m');
+      expect(d52m.category).toBe('quota_exhausted');
+      expect(d52m.cooldownMs).toBe(5 * 60 * 60 * 1000);
+    });
+
     it('respects Retry-After header duration when larger', () => {
       const d = classifyGoogleCloudCode429('Rate limit exceeded', '45');
       expect(d.category).toBe('rate_limited');
