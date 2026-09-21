@@ -80,6 +80,8 @@ export const DEFAULT_CONFIG: AgDoctorConfig = {
 
 export const DEFAULT_MITM_PORT = DEFAULT_CONFIG.mitmPort;
 
+export const DEFAULT_PROXY_PORT = 51074;
+
 export const DEFAULT_BIND_HOST = '127.0.0.1';
 
 /** Type guard for a string that is one of the known patch ranges. */
