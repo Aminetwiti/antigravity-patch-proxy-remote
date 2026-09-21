@@ -69,7 +69,7 @@
 - **Evaluation Criteria:** Autonomous multi-turn LLM generation with live streaming, tool calls, and final response using an active commercial provider (Anthropic, OpenAI, DeepSeek, or Gemini).
 - **Empirical Observation:**
   - On the live VPS session `sess_1788945181673_506861`, a prompt was dispatched over WebSocket `/v2/ws`.
-  - The headless daemon running on `vmi2743594` attempted to dial `http://127.0.0.1:51074/v1/chat/completions` (the local desktop proxy port) and failed immediately:
+  - The headless daemon running on the remote VPS attempted to dial `http://127.0.0.1:51074/v1/chat/completions` (the local desktop proxy port) and failed immediately:
     ```text
     LLM generation failed: connection to Antigravity proxy failed (http://127.0.0.1:51074/v1/chat/completions): 
     please ensure IDE proxy is active, or configure ANTHROPIC_API_KEY/OPENAI_API_KEY for headless server execution: 

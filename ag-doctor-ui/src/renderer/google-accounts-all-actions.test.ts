@@ -17,8 +17,8 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
     mockAccounts = [
       {
         id: 'google-ide-1',
-        name: 'Amine Perso',
-        email: 'amine.benammar17@gmail.com',
+        name: 'Account 1',
+        email: 'user1@example.com',
         provider: 'google',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'ya29.test-token-1',
@@ -37,14 +37,14 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
           claudeWeeklyPct: 85,
         },
         models: [
-          { id: 'gemini-3.8-flash-tiered', displayName: '[Amine Perso] Gemini 3.8 Flash', enabled: true },
-          { id: 'gemini-3.1-pro-high', displayName: '[Amine Perso] Gemini 3.1 Pro', enabled: true },
+          { id: 'gemini-3.8-flash-tiered', displayName: '[Account 1] Gemini 3.8 Flash', enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: '[Account 1] Gemini 3.1 Pro', enabled: true },
         ],
       },
       {
         id: 'google-ide-2',
-        name: 'Amine Pro',
-        email: 'benammar.benammar17@gmail.com',
+        name: 'Account 2',
+        email: 'user2@example.com',
         provider: 'google',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'ya29.test-token-2',
@@ -239,7 +239,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
 
       const active = mockAccounts.find((x) => x.isCurrent);
       expect(active?.id).toBe('google-ide-2');
-      expect(active?.name).toBe('Amine Pro');
+      expect(active?.name).toBe('Account 2');
       expect(mockAccounts.find((x) => x.id === 'google-ide-1')?.isCurrent).toBe(false);
       expect(active?.lastUsed).toBe(1789391000000);
     });
@@ -337,12 +337,12 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
   describe('Action 11: Export JSON', () => {
     it('serializes accounts to valid JSON format', () => {
       const serialized = JSON.stringify(mockAccounts, null, 2);
-      expect(serialized).toContain('amine.benammar17@gmail.com');
+      expect(serialized).toContain('user1@example.com');
       expect(serialized).toContain('1//refresh-token-1');
 
       const reParsed = JSON.parse(serialized);
       expect(reParsed).toHaveLength(3);
-      expect(reParsed[0].name).toBe('Amine Perso');
+      expect(reParsed[0].name).toBe('Account 1');
     });
   });
 
@@ -351,8 +351,8 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
     it('imports and normalizes accounts from export file', () => {
       const rawText = JSON.stringify([
         {
-          email: 'lignelady@gmail.com',
-          refresh_token: '1//03CHHXPF9u1S9CgYIARAAGAMSNwF-L9IrBhtwA6PVXpQMWEH2qfO6FU6h6MYGvu4OcPaY3crwiSZUrIQGuU_6AzjNyVYaANK19sE',
+          email: 'user3@example.com',
+          refresh_token: '1//mock-refresh-token-vector-03',
         },
       ]);
 
@@ -361,15 +361,15 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
 
       const normalized = normalizeAccountEntry(parsed[0]);
       expect(normalized).not.toBeNull();
-      expect(normalized?.name).toBe('lignelady');
-      expect(normalized?.email).toBe('lignelady@gmail.com');
+      expect(normalized?.name).toBe('user3');
+      expect(normalized?.email).toBe('user3@example.com');
       expect(normalized?.refreshToken?.startsWith('1//')).toBe(true);
       expect(normalized?.models).toHaveLength(4);
     });
 
     it('deduplicates incoming account against existing accounts cache', () => {
       const raw = {
-        email: 'amine.benammar17@gmail.com',
+        email: 'user1@example.com',
         refresh_token: '1//refresh-token-1-updated',
       };
 
@@ -382,7 +382,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
 
       const merged = mergeAccountWithExisting(normalized!, matched);
       expect(merged.id).toBe('google-ide-1');
-      expect(merged.name).toBe('Amine Perso'); // preserves original name
+      expect(merged.name).toBe('Account 1'); // preserves original name
       expect(merged.refreshToken).toBe('1//refresh-token-1-updated'); // updates token
       expect(merged.models).toHaveLength(2); // preserves existing models
     });
@@ -434,13 +434,13 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
     it('filters by PRO tier', () => {
       const pros = filterAndSearch(mockAccounts, '', 'pro');
       expect(pros).toHaveLength(1);
-      expect(pros[0].name).toBe('Amine Perso');
+      expect(pros[0].name).toBe('Account 1');
     });
 
     it('filters by ULTRA tier', () => {
       const ultras = filterAndSearch(mockAccounts, '', 'ultra');
       expect(ultras).toHaveLength(1);
-      expect(ultras[0].name).toBe('Amine Pro');
+      expect(ultras[0].name).toBe('Account 2');
     });
 
     it('filters by FREE tier', () => {
@@ -450,9 +450,9 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
     });
 
     it('searches by email substring', () => {
-      const results = filterAndSearch(mockAccounts, 'benammar.benammar17', 'all');
+      const results = filterAndSearch(mockAccounts, 'user2@example.com', 'all');
       expect(results).toHaveLength(1);
-      expect(results[0].email).toBe('benammar.benammar17@gmail.com');
+      expect(results[0].email).toBe('user2@example.com');
     });
   });
 

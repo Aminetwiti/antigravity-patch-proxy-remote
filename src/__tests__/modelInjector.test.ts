@@ -39,7 +39,7 @@ describe('mergeModels', () => {
     apiKey: 'ya29.twiti',
     externalModelName: 'gemini-3.7-flash-tiered',
     accountName: 'Twi Ti',
-    accountEmail: 'amine.twiti17@gmail.com',
+    accountEmail: 'dev.user@example.com',
     _poolOnly: true,
   };
 

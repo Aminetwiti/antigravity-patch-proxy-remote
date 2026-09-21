@@ -16,12 +16,12 @@ describe('ideAccountDiscovery', () => {
 
   describe('extractTokensFromBuffer', () => {
     it('extracts direct plaintext access and refresh tokens from buffer', () => {
-      const payload = 'header\x00ya29.a0AdMD6EgvCV9KhcPWvC1JPfv_cUD5WosBb9kYJaV0gwazdLVfNA1qRW7aMdqoOP8VvINfr24U-EDI_UTlCKCyzxklhJ\x00middle\x00g1//03MxCaslwcb7SCgYIARAAGAMSNwF-L9IruEhWX4ST7lbTBH9hcRjxJA1mFaDx2C_g4gOEVFlChkuRp2vFs3otJPDN2-wI09qu4xk\x00';
+      const payload = 'header\x00ya29.mock-vector-access-token-01\x00middle\x00g1//mock-vector-refresh-token-01\x00';
       const buf = Buffer.from(payload, 'latin1');
       const res = extractTokensFromBuffer(buf);
 
-      expect(res.accessToken).toBe('ya29.a0AdMD6EgvCV9KhcPWvC1JPfv_cUD5WosBb9kYJaV0gwazdLVfNA1qRW7aMdqoOP8VvINfr24U-EDI_UTlCKCyzxklhJ');
-      expect(res.refreshToken).toBe('g1//03MxCaslwcb7SCgYIARAAGAMSNwF-L9IruEhWX4ST7lbTBH9hcRjxJA1mFaDx2C_g4gOEVFlChkuRp2vFs3otJPDN2-wI09qu4xk');
+      expect(res.accessToken).toBe('ya29.mock-vector-access-token-01');
+      expect(res.refreshToken).toBe('g1//mock-vector-refresh-token-01');
     });
 
     it('extracts tokens from embedded base64 protobuf payload', () => {

@@ -10,18 +10,18 @@ describe('Account Import & Normalization', () => {
   it('parses raw array format (antigravity_accounts_2026-09-11.json)', () => {
     const rawJson = `[
       {
-        "email": "amine.benammar17@gmail.com",
-        "refresh_token": "1//03BzworUKIs8wCgYIARAAGAMSNwF-L9IrwnOVI96x6uWT_9HOouSWF_ZC41Ngu_5gR8-8Bq2muNPn36kX0rh5hzGSe50cQi8bZlk"
+        "email": "user1@example.com",
+        "refresh_token": "1//mock-refresh-token-vector-01"
       },
       {
-        "email": "benammar.benammar17@gmail.com",
-        "refresh_token": "1//03HxlDhR_wcBOCgYIARAAGAMSNwF-L9IrQxKf8G71Odj3aBlsuk-w-U5VJR9y5N8on6uSMoWXcz-Vk-t9qzSbPGJb6dJy5YFVsV0"
+        "email": "user2@example.com",
+        "refresh_token": "1//mock-refresh-token-vector-02"
       }
     ]`;
 
     const list = parseAccountsJson(rawJson);
     expect(list).toHaveLength(2);
-    expect(list[0].email).toBe('amine.benammar17@gmail.com');
+    expect(list[0].email).toBe('user1@example.com');
   });
 
   it('parses wrapped object formats ({ accounts: [...] }, { providers: [...] })', () => {
@@ -40,15 +40,15 @@ describe('Account Import & Normalization', () => {
 
   it('normalizes account with email and refresh_token and generates default models', () => {
     const raw = {
-      email: 'amine.benammar17@gmail.com',
-      refresh_token: '1//03BzworUKIs8wCgYIARAAGAMSNwF-L9IrwnOVI96x6uWT_9HOouSWF_ZC41Ngu_5gR8-8Bq2muNPn36kX0rh5hzGSe50cQi8bZlk',
+      email: 'user1@example.com',
+      refresh_token: '1//mock-refresh-token-vector-01',
     };
 
     const normalized = normalizeAccountEntry(raw, 0);
     expect(normalized).not.toBeNull();
-    expect(normalized?.email).toBe('amine.benammar17@gmail.com');
-    expect(normalized?.name).toBe('amine.benammar17');
-    expect(normalized?.refreshToken).toBe('1//03BzworUKIs8wCgYIARAAGAMSNwF-L9IrwnOVI96x6uWT_9HOouSWF_ZC41Ngu_5gR8-8Bq2muNPn36kX0rh5hzGSe50cQi8bZlk');
+    expect(normalized?.email).toBe('user1@example.com');
+    expect(normalized?.name).toBe('user1');
+    expect(normalized?.refreshToken).toBe('1//mock-refresh-token-vector-01');
     expect(normalized?.provider).toBe('google');
     expect(normalized?.apiUrl).toBe('https://generativelanguage.googleapis.com/v1beta');
     expect(normalized?.models).toHaveLength(4);
@@ -72,7 +72,7 @@ describe('Account Import & Normalization', () => {
       {
         id: 'google-existing-1',
         name: 'sneakers (IDE)',
-        email: 'sneakersparis97@gmail.com',
+        email: 'tester@example.com',
         apiKey: 'ya29.oldAccess',
         refreshToken: '1//oldRefresh',
         models: [{ id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true }],
@@ -80,7 +80,7 @@ describe('Account Import & Normalization', () => {
     ];
 
     const candidate = normalizeAccountEntry({
-      email: 'sneakersparis97@gmail.com',
+      email: 'tester@example.com',
       refresh_token: '1//newRefresh',
     });
     expect(candidate).not.toBeNull();

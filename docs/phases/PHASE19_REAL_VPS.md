@@ -89,9 +89,9 @@ All verification steps executed live on the remote VPS:
 
 ### F. Public Internet Cloudflare Ingress
 - Cloudflare Quick Tunnel auto-provisioned and active:
-  - Public Web Console: `https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/console?token=4d8b9f1a...`
-  - Public Health: `https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/health` (`HTTP/1.1 200 OK`)
-  - Public Schedules: `https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/v2/schedules?token=...` (`HTTP/1.1 200 OK`)
+  - Public Web Console: `https://tunnel-id.trycloudflare.com/console?token=4d8b9f1a...`
+  - Public Health: `https://tunnel-id.trycloudflare.com/health` (`HTTP/1.1 200 OK`)
+  - Public Schedules: `https://tunnel-id.trycloudflare.com/v2/schedules?token=...` (`HTTP/1.1 200 OK`)
   - Public Security: Unauthenticated public request returns `HTTP/1.1 401 Unauthorized`.
 
 ---

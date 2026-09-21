@@ -15,7 +15,7 @@ During the Phase 20 Final Ship Certification audit, a recursive repository and l
    - `scripts/patch_ide_remote.py` (line 30: `let t=localStorage.getItem(...) || "4d8b9f1a..."`)
 2. **Recorded in plaintext** across Phase 19 audit markdown reports (`PHASE19_SECURITY_INCIDENT.md`, `PHASE19_REAL_VPS.md`).
 3. **Still active and unrevoked on the live production VPS**:
-   - `curl -i "https://pharmaceuticals-willing-warrant-pound.trycloudflare.com/v2/schedules?token=4d8b9f1a..."` returned `HTTP/1.1 200 OK` on 2026-09-09 at 10:11 UTC.
+   - `curl -i "https://tunnel-id.trycloudflare.com/v2/schedules?token=4d8b9f1a..."` returned `HTTP/1.1 200 OK` on 2026-09-09 at 10:11 UTC.
 
 ---
 
