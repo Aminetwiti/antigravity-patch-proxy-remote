@@ -26,8 +26,9 @@ services:
     volumes:
       - ag_data:/data
       - ag_workspaces:/workspaces
-      # Docker socket mount allows Docker-in-Docker sandbox execution if --sandbox=docker
-      - /var/run/docker.sock:/var/run/docker.sock
+      # SÉCURITÉ : Le montage du socket Docker hôte confère des droits root complets sur l'hôte.
+      # Désactivé par défaut. Décommentez uniquement si vous activez le bac à sable Docker (--sandbox=docker).
+      # - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
       interval: 15s

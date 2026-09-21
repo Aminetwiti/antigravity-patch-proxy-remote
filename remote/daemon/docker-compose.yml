@@ -18,7 +18,8 @@ services:
       - APPROVAL_TIMEOUT=300
     volumes:
       - ./data:/data
-      - ~/.ssh:/root/.ssh:ro
+      # SÉCURITÉ : Remplacement du montage en clair des clés privées ~/.ssh par l'agent SSH forwarding si disponible
+      # - ${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
       interval: 30s

@@ -12,7 +12,7 @@ import { registerKeybindings } from './keybindings';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getSettingsPbPath } from './paths';
-import { attachLoadingOverlay } from './loadingOverlay';
+import { attachLoadingOverlay } from './main/windowManager';
 
 export let showQuitConfirmation = false;
 

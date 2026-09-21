@@ -2,14 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as shared from '../proxy/shared';
 import { mapGeminiToAnthropic, mapAnthropicToGemini, mapAnthropicChunkToGemini } from '../proxy/translators/anthropic';
 
-// Mock detectModelCapabilitiesByName to avoid importing the full module chain
-vi.mock('../proxy/modelUtils', () => ({
-  detectModelCapabilitiesByName: vi.fn((name: string) => ({
-    isThinkingModel: name.includes('opus') || name.includes('thinking'),
-    supportsToolCalls: true,
-    supportsReasoning: name.includes('opus') || name.includes('thinking') || name.includes('deepseek'),
-  })),
-}));
 
 // Reset shared state before each test
 beforeEach(() => {

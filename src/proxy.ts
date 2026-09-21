@@ -474,6 +474,10 @@ function sendGracefulNonStreamError(res: http.ServerResponse, diagnostic: ErrorD
   safeEnd(res, JSON.stringify(errResponse));
 }
 
+/**
+ * Dispatch error response based on stream mode.
+ * Prefers explicit stream or non-stream call at call sites to avoid boolean flags.
+ */
 function sendGracefulError(res: http.ServerResponse, isStream: boolean, diagnostic: ErrorDiagnostic, model?: CustomModel): void {
   if (isStream) {
     sendGracefulStreamError(res, diagnostic, model);
@@ -1667,7 +1671,11 @@ export async function executeGoogleCloudCodeWithPool(
       diagnostic.message = `L'ensemble des ${totalAttempts} comptes configurés ont été testés automatiquement en arrière-plan, mais aucun n'est actuellement disponible (${diagnostic.errorType}).`;
     }
     if (!res.headersSent) {
-      sendGracefulError(res, isStream, diagnostic, failedModel);
+      if (isStream) {
+        sendGracefulStreamError(res, diagnostic, failedModel);
+      } else {
+        sendGracefulNonStreamError(res, diagnostic, failedModel);
+      }
     } else {
       if (isStream) {
         sendGracefulStreamError(res, diagnostic, failedModel);
@@ -2139,7 +2147,11 @@ function handleRequestTimeout(request: http.ClientRequest, ctx: StreamRequestCtx
 
   if (ctx.attemptFallback(diagnostic)) return;
 
-  sendGracefulError(res, ctx.isStream, diagnostic, model);
+  if (ctx.isStream) {
+    sendGracefulStreamError(res, diagnostic, model);
+  } else {
+    sendGracefulNonStreamError(res, diagnostic, model);
+  }
 }
 
 /** Request-level network error — breaker + budget + retry or 502 envelope. */
@@ -2165,7 +2177,11 @@ function handleRequestError(err: Error, ctx: StreamRequestCtx): void {
 
   if (ctx.attemptFallback(diagnostic)) return;
 
-  sendGracefulError(res, ctx.isStream, diagnostic, model);
+  if (ctx.isStream) {
+    sendGracefulStreamError(res, diagnostic, model);
+  } else {
+    sendGracefulNonStreamError(res, diagnostic, model);
+  }
 }
 
 // ─── Custom Model Request Handler ─────────────────────────────────────────
@@ -2489,7 +2505,11 @@ function handleCustomModelRequest(
       return;
     }
 
-    sendGracefulError(res, isStream, cached, model);
+    if (isStream) {
+      sendGracefulStreamError(res, cached, model);
+    } else {
+      sendGracefulNonStreamError(res, cached, model);
+    }
     return;
   }
 

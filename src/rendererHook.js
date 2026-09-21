@@ -12,6 +12,8 @@
 
   const DEFAULT_HOST = 'https://dqlwdgordp4apddvek8gvgn0.ty-dev.site';
   const DEFAULT_TOKEN = ''; // Set AG_REMOTE_TOKEN or configure via settings UI
+  const LOCAL_PROXY_PORT = window.__AG_PROXY_PORT || 51074;
+  const LOCAL_PROXY_ORIGIN = window.__AG_PROXY_ORIGIN || `http://127.0.0.1:${LOCAL_PROXY_PORT}`;
 
   function getRemoteConfig() {
     try {
@@ -47,12 +49,16 @@
       window.nativeStorage.setRemoteState({ active, host: finalHost, token: finalToken, remoteSessions }).catch(() => {});
     }
     try {
-      fetch('http://127.0.0.1:51074/api/remote/status', {
+      fetch(`${LOCAL_PROXY_ORIGIN}/api/remote/status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ active, host: finalHost, token: finalToken, remoteSessions }),
-      }).catch(() => {});
-    } catch (_) {}
+      }).catch((err) => {
+        console.debug('[RemoteHook] Could not reach proxy status endpoint:', err);
+      });
+    } catch (err) {
+      console.debug('[RemoteHook] syncRemoteStateToProxy fetch exception:', err);
+    }
   }
 
   function saveRemoteConfig(host, token) {
@@ -179,7 +185,7 @@
 
       async function fallbackViaProxy() {
         try {
-          const resp = await fetch('http://127.0.0.1:51074/api/remote/cmd', {
+          const resp = await fetch(`${LOCAL_PROXY_ORIGIN}/api/remote/cmd`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ command, host, token, workspaceId: targetWs })
@@ -188,7 +194,9 @@
             const d = await resp.json();
             return { ok: d.ok !== false, stdout: d.stdout || '', stderr: d.stderr || '', exitCode: d.exitCode ?? 0 };
           }
-        } catch (_) {}
+        } catch (err) {
+          console.debug('[RemoteHook] Proxy fallback error:', err);
+        }
         return null;
       }
 
@@ -1009,7 +1017,7 @@
 
   // Sync initial state from Proxy / nativeStorage
   try {
-    fetch('http://127.0.0.1:51074/api/remote/status')
+    fetch(`${LOCAL_PROXY_ORIGIN}/api/remote/status`)
       .then((r) => r.json())
       .then((data) => {
         if (data && data.remoteSessions) {

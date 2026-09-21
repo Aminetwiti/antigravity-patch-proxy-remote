@@ -21,6 +21,7 @@ import { DEFAULT_PROXY_PORT, DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from '.
 import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from './proxy/protoInjector';
 import { loadCustomModels as loadProxyCustomModels } from './proxy/modelLoader';
 import { discoverLocalAntigravityCredential } from './services/localCredentialDiscovery';
+import { IPC_CHANNELS } from './ipc/channels';
 
 
 
@@ -41,7 +42,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
   });
 
   // Dialog
-  ipcMain.handle('dialog:open-workspace', async () => {
+  ipcMain.handle(IPC_CHANNELS.DIALOG_OPEN_WORKSPACE, async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
       title: 'Open workspace',
@@ -53,10 +54,10 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
   });
 
   // Auto-updater
-  ipcMain.handle('updater:apply', async () => {
+  ipcMain.handle(IPC_CHANNELS.UPDATER_APPLY, async () => {
     broadcastState({ type: 'ready' });
   });
-  ipcMain.handle('updater:quit-and-install', () => {
+  ipcMain.handle(IPC_CHANNELS.UPDATER_QUIT_AND_INSTALL, () => {
     if (!app.isPackaged) {
       console.log('[AutoUpdater] Skipping quitAndInstall (requires a packaged app).');
       return;
@@ -69,11 +70,11 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
   // IS the IDE process, we always answer true. Without this handler the renderer
   // hits "No handler registered for 'ide:is-installed'" and stays on a black
   // screen because the mount path throws before React can render.
-  ipcMain.handle('ide:is-installed', () => true);
+  ipcMain.handle(IPC_CHANNELS.IDE_IS_INSTALLED, () => true);
 
   // Notifications
   ipcMain.handle(
-    'notification:send',
+    IPC_CHANNELS.NOTIFICATION_SEND,
     (_event, options: { title: string; body: string; silent?: boolean; payload?: unknown }) => {
       const notification = new Notification({
         title: options.title,
@@ -89,7 +90,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
           win.show();
           win.focus();
           if (options.payload) {
-            win.webContents.send('notification:clicked', options.payload);
+            win.webContents.send(IPC_CHANNELS.NOTIFICATION_CLICKED, options.payload);
           }
         }
       });
@@ -99,7 +100,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
 
   // Note: copied from our desktop AGY implementation:
   // vs/platform/nativeNotification/electron-main/electronNotificationService.ts
-  ipcMain.handle('notification:open-system-preferences', async () => {
+  ipcMain.handle(IPC_CHANNELS.NOTIFICATION_OPEN_PREFS, async () => {
     if (process.platform === 'darwin') {
       void shell.openExternal('x-apple.systempreferences:com.apple.preference.notifications');
     } else if (process.platform === 'win32') {
@@ -125,18 +126,18 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
   });
 
   // Storage
-  ipcMain.handle('storage:get-items', async () => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_ITEMS, async () => {
     return storageManager.getItems();
   });
-  ipcMain.handle('storage:update-items', async (_event, changes: Record<string, string | null>) => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_UPDATE_ITEMS, async (_event, changes: Record<string, string | null>) => {
     await storageManager.updateItems(changes);
   });
-  ipcMain.handle('storage:get-custom-models', async () => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_CUSTOM_MODELS, async () => {
     // Unmasked version for preload.ts injection
     return await customModelStore.loadCustomModels();
   });
 
-  ipcMain.handle('storage:get-providers', async () => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_PROVIDERS, async () => {
     const providers = await customModelStore.loadProviders();
     return providers.map(p => ({
       ...p,
@@ -144,15 +145,15 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }));
   });
 
-  ipcMain.handle('storage:get-well-known-presets', async () => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_PRESETS, async () => {
     return WELL_KNOWN_PRESETS;
   });
 
-  ipcMain.handle('storage:test-provider-health', async (_event, params: customModelStore.TestModelParams) => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_TEST_PROVIDER_HEALTH, async (_event, params: customModelStore.TestModelParams) => {
     return customModelStore.testProviderHealth(params);
   });
 
-  ipcMain.handle('storage:export-providers-base64', async () => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_EXPORT_PROVIDERS_BASE64, async () => {
     try {
       const providers = await customModelStore.loadProviders();
       const base64 = configExchange.exportProvidersToBase64(providers);
@@ -162,7 +163,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }
   });
 
-  ipcMain.handle('storage:import-providers-base64', async (_event, base64Str: string, strategy: configExchange.MergeStrategy = 'merge') => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_IMPORT_PROVIDERS_BASE64, async (_event, base64Str: string, strategy: configExchange.MergeStrategy = 'merge') => {
     try {
       const incoming = configExchange.parseProvidersFromBase64(base64Str);
       const existing = await customModelStore.loadProviders();
@@ -181,7 +182,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
 
 
 
-  ipcMain.handle('storage:save-provider', async (_event, newProvider: customModelStore.ProviderFileEntry) => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_SAVE_PROVIDER, async (_event, newProvider: customModelStore.ProviderFileEntry) => {
     try {
       const providers = await customModelStore.loadProviders();
       const existingIdx = providers.findIndex((p) => p.id === newProvider.id);
@@ -230,7 +231,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }
   });
 
-  ipcMain.handle('storage:delete-provider', async (_event, providerId: string) => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_DELETE_PROVIDER, async (_event, providerId: string) => {
     try {
       const providers = await customModelStore.loadProviders();
       const filtered = providers.filter((p) => p.id !== providerId);
@@ -242,7 +243,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }
   });
 
-  ipcMain.handle('storage:discover-local-antigravity-account', async () => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_DISCOVER_LOCAL_ACCOUNT, async () => {
     try {
       const cred = await discoverLocalAntigravityCredential();
       if (!cred || !cred.refreshToken) {
@@ -255,7 +256,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }
   });
 
-  ipcMain.handle('storage:export-providers', async () => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_EXPORT_PROVIDERS, async () => {
     try {
       const providers = await customModelStore.loadProviders();
       const saveResult = await (dialog as unknown as {
@@ -279,7 +280,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
   // channel (not the -base64 variant) when the user picks "Import" from the UI,
   // so the main process must open a file dialog, parse the JSON, and merge it
   // into the existing provider store.
-  ipcMain.handle('storage:import-providers', async () => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_IMPORT_PROVIDERS, async () => {
     try {
       const openResult = await (dialog as unknown as {
         showOpenDialog: (opts: { title: string; properties: string[]; filters: Array<{ name: string; extensions: string[] }>; }) => Promise<{ canceled: boolean; filePaths: string[] }>;
@@ -313,7 +314,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
 
 
 
-  ipcMain.handle('storage:get-doctor-diagnostics', async () => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_DOCTOR_DIAGNOSTICS, async () => {
     try {
       const providers = await customModelStore.loadProviders();
       const customModels = await customModelStore.loadCustomModels();
@@ -356,7 +357,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }
   });
 
-  ipcMain.handle('storage:save-custom-model', async (_event, newModel: CustomModelFileEntry & { apiKey?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_SAVE_CUSTOM_MODEL, async (_event, newModel: CustomModelFileEntry & { apiKey?: string }) => {
     try {
       const models = await customModelStore.loadCustomModels();
       const existingIdx = models.findIndex((m) => m.name === newModel.name);
@@ -384,7 +385,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }
   });
 
-  ipcMain.handle('storage:delete-custom-model', async (_event, modelName: string) => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_DELETE_CUSTOM_MODEL, async (_event, modelName: string) => {
     try {
       await customModelStore.deleteCustomModel(modelName);
       return { success: true };
@@ -394,7 +395,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }
   });
 
-  ipcMain.handle('proto:inject-user-status', async (_event, rawBytes: Uint8Array | number[]) => {
+  ipcMain.handle(IPC_CHANNELS.PROTO_INJECT_USER_STATUS, async (_event, rawBytes: Uint8Array | number[]) => {
     try {
       const models = loadProxyCustomModels();
       if (!models || models.length === 0) {
@@ -409,7 +410,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }
   });
 
-  ipcMain.handle('proto:inject-available-models', async (_event, rawBytes: Uint8Array | number[]) => {
+  ipcMain.handle(IPC_CHANNELS.PROTO_INJECT_AVAILABLE_MODELS, async (_event, rawBytes: Uint8Array | number[]) => {
     try {
       const models = loadProxyCustomModels();
       if (!models || models.length === 0) {
@@ -438,7 +439,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
 }
 
   // P3-17: Test model connectivity — sends a lightweight HEAD/GET to the model endpoint
-  ipcMain.handle('storage:test-model-connection', async (_event, model: TestModelParams) => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_TEST_MODEL_CONNECTION, async (_event, model: TestModelParams) => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const https = require('https');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -587,7 +588,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Test Remote daemon connectivity and authentication (bypasses browser CORS & TLS)
-  ipcMain.handle('remote:test-health', async (_event, payload: { host: string; token?: string } | string) => {
+  ipcMain.handle(IPC_CHANNELS.REMOTE_TEST_HEALTH, async (_event, payload: { host: string; token?: string } | string) => {
     return new Promise<{ ok: boolean; status?: number; data?: Record<string, unknown>; error?: string }>((resolve) => {
       try {
         const rawHost = (typeof payload === 'string' ? payload : (payload && payload.host ? payload.host : '')).trim().replace(/\/+$/, '');
@@ -701,7 +702,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Execute remote command on VPS daemon
-  ipcMain.handle('remote:execute-command', async (_event, payload: { host?: string; token?: string; command: string; timeoutMs?: number }) => {
+  ipcMain.handle(IPC_CHANNELS.REMOTE_EXECUTE_COMMAND, async (_event, payload: { host?: string; token?: string; command: string; timeoutMs?: number }) => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const https = require('https');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -747,23 +748,23 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
               if (res.statusCode >= 200 && res.statusCode < 300) {
                 try {
                   const json = JSON.parse(body);
-                  resolve({ ok: true, stdout: json.stdout || body, stderr: json.stderr || '', exitCode: json.exitCode ?? 0 });
-                } catch (_) {
-                  resolve({ ok: true, stdout: body, stderr: '', exitCode: 0 });
+                  resolve({
+                    ok: true,
+                    stdout: json.stdout ?? '',
+                    stderr: json.stderr ?? '',
+                    exitCode: json.exit_code ?? 0,
+                  });
+                } catch {
+                  resolve({ ok: false, error: 'Format de réponse invalide' });
                 }
               } else {
-                resolve({ ok: false, error: `HTTP ${res.statusCode}`, stdout: body, exitCode: res.statusCode });
+                resolve({ ok: false, error: `HTTP ${res.statusCode}: ${body}` });
               }
             });
           }
         );
-        req.on('error', (err: any) => {
-          resolve({ ok: false, error: err.message || 'Échec exécution remote' });
-        });
-        req.on('timeout', () => {
-          req.destroy();
-          resolve({ ok: false, error: 'Délai d\'attente dépassé' });
-        });
+        req.on('error', (err: any) => resolve({ ok: false, error: err.message || 'Erreur réseau' }));
+        req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Timeout' }); });
         req.write(postData);
         req.end();
       } catch (err: any) {
@@ -773,7 +774,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // List sessions from remote VPS daemon (/v2/sessions)
-  ipcMain.handle('remote:list-sessions', async (_event, payload?: { host?: string; token?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.REMOTE_LIST_SESSIONS, async (_event, payload?: { host?: string; token?: string }) => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const https = require('https');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -826,7 +827,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Create autonomous session on remote VPS daemon (POST /v2/sessions)
-  ipcMain.handle('remote:create-session', async (_event, payload?: { host?: string; token?: string; title?: string; workspaceId?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.REMOTE_CREATE_SESSION, async (_event, payload?: { host?: string; token?: string; title?: string; workspaceId?: string }) => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const https = require('https');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -887,7 +888,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Get remote workspaces on VPS daemon (GET /v2/workspaces)
-  ipcMain.handle('remote:get-workspaces', async (_event, payload?: { host?: string; token?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.REMOTE_GET_WORKSPACES, async (_event, payload?: { host?: string; token?: string }) => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const https = require('https');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -940,7 +941,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Save / update remote VPS runtime state (active, host, token, remoteSessions)
-  ipcMain.handle('remote:set-state', async (_event, payload: { active?: boolean; host?: string; token?: string; remoteSessions?: Record<string, boolean> }) => {
+  ipcMain.handle(IPC_CHANNELS.REMOTE_SET_STATE, async (_event, payload: { active?: boolean; host?: string; token?: string; remoteSessions?: Record<string, boolean> }) => {
     try {
       const os = require('os');
       const nodeFs = require('fs');
@@ -979,7 +980,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Get current remote VPS runtime state
-  ipcMain.handle('remote:get-state', async () => {
+  ipcMain.handle(IPC_CHANNELS.REMOTE_GET_STATE, async () => {
     try {
       const os = require('os');
       const nodeFs = require('fs');
@@ -1031,7 +1032,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   }
 
   // ─── Fetch Models from /v1/models endpoint ──────────────────────────────────────
-  ipcMain.handle('storage:fetch-models', async (_event, params: FetchModelsParams) => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_FETCH_MODELS, async (_event, params: FetchModelsParams) => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const https = require('https');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -1174,7 +1175,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Logs
-  ipcMain.handle('logs:electron', async () => {
+  ipcMain.handle(IPC_CHANNELS.LOGS_ELECTRON, async () => {
     try {
       const logPath = log.transports.file.getFile().path;
       const contents = await fs.readFile(logPath, 'utf-8');
@@ -1188,7 +1189,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Sidecar extension custom scheme
-  ipcMain.handle('extensions:send-authorities', async (_event, authorities: Record<string, string>) => {
+  ipcMain.handle(IPC_CHANNELS.EXTENSIONS_SEND_AUTHORITIES, async (_event, authorities: Record<string, string>) => {
     extensionAuthorities.clear();
     for (const [key, value] of Object.entries(authorities)) {
       extensionAuthorities.set(key, value);
@@ -1196,12 +1197,12 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Agent
-  ipcMain.handle('agent:update-active-count', async (_event, count: number) => {
+  ipcMain.handle(IPC_CHANNELS.AGENT_UPDATE_ACTIVE_COUNT, async (_event, count: number) => {
     updateTrayAgentCount(count);
   });
 
   // Window
-  ipcMain.handle('window:set-title-bar-overlay', async (_event, options: { color: string; symbolColor: string }) => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW_SET_TITLE_BAR_OVERLAY, async (_event, options: { color: string; symbolColor: string }) => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     if (win && process.platform === 'win32') {
       win.setTitleBarOverlay({
@@ -1211,35 +1212,35 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
       });
     }
   });
-  ipcMain.handle('window:minimize', async () => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     if (win) {
       win.minimize();
     }
   });
-  ipcMain.handle('window:maximize', async () => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE, async () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     if (win) {
       win.maximize();
     }
   });
-  ipcMain.handle('window:unmaximize', async () => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW_UNMAXIMIZE, async () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     if (win) {
       win.unmaximize();
     }
   });
-  ipcMain.handle('window:is-maximized', async () => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, async () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     return win ? win.isMaximized() : false;
   });
-  ipcMain.handle('window:close', async () => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, async () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     if (win) {
       win.close();
     }
   });
-  ipcMain.handle('window:toggle-devtools', async () => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW_TOGGLE_DEVTOOLS, async () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     if (win) {
       win.webContents.toggleDevTools();
@@ -1247,13 +1248,13 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   });
 
   // Auto-updater manual check
-  ipcMain.handle('updater:get-state', () => ({ type: 'idle' }));
-  ipcMain.handle('updater:check-for-updates', () => {
+  ipcMain.handle(IPC_CHANNELS.UPDATER_GET_STATE, () => ({ type: 'idle' }));
+  ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK_FOR_UPDATES, () => {
     checkForUpdates(true);
   });
 
   // Safe external shell launch
-  ipcMain.handle('shell:open-external', async (_event, url: string) => {
+  ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
     if (url.startsWith('https://') || url.startsWith('http://')) {
       await shell.openExternal(url);
     }
@@ -1263,7 +1264,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
    * IPC handler to fetch available models from a provider's API.
    * Supports OpenAI-compatible providers (GET /v1/models).
    */
-  ipcMain.handle('storage:fetch-provider-models', async (_event, params: FetchModelsParams): Promise<FetchModelsResult> => {
+  ipcMain.handle(IPC_CHANNELS.STORAGE_FETCH_PROVIDER_MODELS, async (_event, params: FetchModelsParams): Promise<FetchModelsResult> => {
     return new Promise((resolve) => {
       try {
         const parsedUrl = new URL(params.apiUrl);

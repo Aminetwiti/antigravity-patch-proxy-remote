@@ -7326,12 +7326,14 @@ function setupOAuthInterception(): void {
       try {
         if (window.ag?.generateQr) {
           const qrSvg = await window.ag.generateQr(lastInterceptedOAuthUrl);
-          qrContainer.innerHTML = qrSvg;
+          qrContainer.innerHTML = qrSvg.startsWith('<svg') || qrSvg.startsWith('data:image')
+            ? (qrSvg.startsWith('data:image') ? `<img src="${qrSvg}" alt="QR Code" width="180" height="180" />` : qrSvg)
+            : qrSvg;
         } else {
-          qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(lastInterceptedOAuthUrl)}" alt="QR Code" width="180" height="180" />`;
+          qrContainer.innerHTML = `<p class="text-sm text-muted">Génération QR locale non disponible.</p><input type="text" class="input input-sm w-full" readonly value="${escapeHtml(lastInterceptedOAuthUrl)}" onclick="this.select()" />`;
         }
       } catch {
-        qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(lastInterceptedOAuthUrl)}" alt="QR Code" width="180" height="180" />`;
+        qrContainer.innerHTML = `<p class="text-sm text-muted">Échec de génération du QR code local.</p><input type="text" class="input input-sm w-full" readonly value="${escapeHtml(lastInterceptedOAuthUrl)}" onclick="this.select()" />`;
       }
     }
     if (qrModal) qrModal.hidden = false;

@@ -12,6 +12,7 @@ export const IPC_CHANNELS = {
   UPDATER_QUIT_AND_INSTALL: 'updater:quit-and-install',
   UPDATER_GET_STATE: 'updater:get-state',
   UPDATER_CHECK_FOR_UPDATES: 'updater:check-for-updates',
+  UPDATER_STATE_CHANGED: 'updater:state-changed',
 
   // IDE Installation
   IDE_IS_INSTALLED: 'ide:is-installed',
@@ -41,10 +42,15 @@ export const IPC_CHANNELS = {
   STORAGE_TEST_MODEL_CONNECTION: 'storage:test-model-connection',
   STORAGE_FETCH_MODELS: 'storage:fetch-models',
   STORAGE_FETCH_PROVIDER_MODELS: 'storage:fetch-provider-models',
+  STORAGE_CHANGED: 'storage:changed',
 
   // Logs & Diagnostics
   LOGS_ELECTRON: 'logs:electron',
   PROXY_ERROR: 'proxy:error',
+
+  // Deep Link
+  DEEP_LINK: 'deep-link',
+  DEEP_LINK_GET_STORED: 'deep-link:get-stored',
 
   // Extensions & Agents
   EXTENSIONS_SEND_AUTHORITIES: 'extensions:send-authorities',
@@ -62,9 +68,19 @@ export const IPC_CHANNELS = {
   // External Shell
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
 
+  // Storage Extensions
+  STORAGE_DISCOVER_LOCAL_ACCOUNT: 'storage:discover-local-antigravity-account',
+
+  // Protobuf Injection
+  PROTO_INJECT_USER_STATUS: 'proto:inject-user-status',
+  PROTO_INJECT_AVAILABLE_MODELS: 'proto:inject-available-models',
+
   // Remote Agent Runtime
   REMOTE_TEST_HEALTH: 'remote:test-health',
   REMOTE_EXECUTE_COMMAND: 'remote:execute-command',
+  REMOTE_LIST_SESSIONS: 'remote:list-sessions',
+  REMOTE_CREATE_SESSION: 'remote:create-session',
+  REMOTE_GET_WORKSPACES: 'remote:get-workspaces',
   REMOTE_SET_STATE: 'remote:set-state',
   REMOTE_GET_STATE: 'remote:get-state',
 } as const;

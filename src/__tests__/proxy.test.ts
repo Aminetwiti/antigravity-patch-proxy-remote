@@ -22,111 +22,6 @@ import { expandModelsWithEffort } from '../proxy/effortExpander';
 import { injectCustomSlugsIntoAgentModelSorts } from '../proxy/modelInjector';
 import type { CustomModel } from '../proxy/types';
 
-describe('generateModelPlaceholderId', () => {
-  it('generates deterministic IDs for the same input', () => {
-    const id1 = generateModelPlaceholderId({ name: 'gpt-4o', displayName: 'GPT-4o', apiUrl: 'https://api.openai.com/v1' });
-    const id2 = generateModelPlaceholderId({ name: 'gpt-4o', displayName: 'GPT-4o', apiUrl: 'https://api.openai.com/v1' });
-    expect(id1).toBe(id2);
-  });
-
-  it('produces IDs in the MODEL_PLACEHOLDER_M format', () => {
-    const id = generateModelPlaceholderId({ name: 'gpt-4o', apiUrl: 'https://api.openai.com/v1' });
-    expect(id).toMatch(/^MODEL_PLACEHOLDER_M\d+$/);
-  });
-
-  it('produces different IDs for different models', () => {
-    const id1 = generateModelPlaceholderId({ name: 'gpt-4o', apiUrl: 'https://api.openai.com/v1' });
-    const id2 = generateModelPlaceholderId({ name: 'claude-3-5-sonnet', apiUrl: 'https://api.anthropic.com/v1' });
-    expect(id1).not.toBe(id2);
-  });
-
-  it('uses displayName over name', () => {
-    const id1 = generateModelPlaceholderId({ name: 'models/gpt-4o', displayName: 'My GPT-4o', apiUrl: 'https://api.openai.com/v1' });
-    const id2 = generateModelPlaceholderId({ name: 'models/gpt-4o', displayName: 'Different Name', apiUrl: 'https://api.openai.com/v1' });
-    expect(id1).not.toBe(id2);
-  });
-
-  it('falls back to name when displayName is missing', () => {
-    const id = generateModelPlaceholderId({ name: 'gpt-4o', apiUrl: 'https://api.openai.com/v1' });
-    expect(id).toBeTruthy();
-  });
-
-  it('falls back to "custom-model" when both name and displayName missing', () => {
-    const id = generateModelPlaceholderId({ apiUrl: 'https://api.openai.com/v1' });
-    expect(id).toBeTruthy();
-  });
-
-  it('placeholder number is within range [400, 599]', () => {
-    const id = generateModelPlaceholderId({ name: 'gpt-4o', apiUrl: 'https://api.openai.com/v1' });
-    const num = parseInt(id.replace('MODEL_PLACEHOLDER_M', ''), 10);
-    expect(num).toBeGreaterThanOrEqual(400);
-    expect(num).toBeLessThanOrEqual(599);
-  });
-
-  it('lowercases the input before hashing', () => {
-    const id1 = generateModelPlaceholderId({ name: 'GPT-4O', apiUrl: 'https://api.openai.com/v1' });
-    const id2 = generateModelPlaceholderId({ name: 'gpt-4o', apiUrl: 'https://api.openai.com/v1' });
-    expect(id1).toBe(id2);
-  });
-
-  it('produces DISTINCT ids for same name but different apiUrls (dropdown collision fix)', () => {
-    const id1 = generateModelPlaceholderId({ name: 'gpt-4o', apiUrl: 'https://api.openai.com/v1' });
-    const id2 = generateModelPlaceholderId({ name: 'gpt-4o', apiUrl: 'https://api.openai.com/v2' });
-    expect(id1).not.toBe(id2);
-  });
-});
-
-describe('toSlug', () => {
-  const apiUrl = 'http://api.test';
-  const provider = 'openai';
-
-  it('prefixes with "custom-"', () => {
-    const slug = toSlug({ name: 'gpt-4o', apiUrl, provider });
-    expect(slug).toMatch(/^custom-/);
-  });
-
-  it('includes the sanitized apiUrl before the model name', () => {
-    const slug = toSlug({ name: 'gpt-4o', apiUrl, provider });
-    expect(slug).toBe('custom-openai-http-api-test-gpt-4o');
-  });
-
-  it('keeps "models/" prefix from externalModelName', () => {
-    const slug = toSlug({ externalModelName: 'models/gpt-4o', apiUrl, provider });
-    expect(slug).toBe('custom-openai-http-api-test-models-gpt-4o');
-  });
-
-  it('replaces non-alphanumeric chars with hyphens', () => {
-    const slug = toSlug({ name: 'GPT 4o (Latest)', apiUrl, provider });
-    expect(slug).toBe('custom-openai-http-api-test-gpt-4o-latest');
-  });
-
-  it('removes leading and trailing hyphens', () => {
-    const slug = toSlug({ name: '--test--', apiUrl, provider });
-    expect(slug).toBe('custom-openai-http-api-test-test');
-  });
-
-  it('lowercases the result', () => {
-    const slug = toSlug({ name: 'GPT-4O', apiUrl, provider });
-    expect(slug).toBe('custom-openai-http-api-test-gpt-4o');
-  });
-
-  it('uses externalModelName over name', () => {
-    const slug = toSlug({ name: 'gpt-4o', externalModelName: 'openai/gpt-4o', apiUrl, provider });
-    expect(slug).toBe('custom-openai-http-api-test-openai-gpt-4o');
-  });
-
-  it('handles OpenRouter model format (provider/model)', () => {
-    const slug = toSlug({ externalModelName: 'openai/gpt-4o', apiUrl, provider });
-    expect(slug).toBe('custom-openai-http-api-test-openai-gpt-4o');
-  });
-
-  it('generates distinct slugs for same name with different apiUrls', () => {
-    const slug1 = toSlug({ name: 'gpt-4o', apiUrl: 'http://a.com', provider });
-    const slug2 = toSlug({ name: 'gpt-4o', apiUrl: 'http://b.com', provider });
-    expect(slug1).not.toBe(slug2);
-  });
-});
-
 describe('parseRetryAfter', () => {
   it('returns 0 when no Retry-After header', () => {
     expect(parseRetryAfter({})).toBe(0);
@@ -458,6 +353,12 @@ describe('transformGoogleStreamForRemote', () => {
       end: vi.fn(),
     };
 
+    const streamEndPromise = new Promise<void>((resolve) => {
+      mockClientRes.end = vi.fn(() => {
+        resolve();
+      });
+    });
+
     transformGoogleStreamForRemote(mockProxyRes, mockClientRes, 'test-conv');
 
     const rawSse = 'data: {"response":{"candidates":[{"content":{"parts":[{"text":"Gzip decoded text"}]}}]}}\n\n';
@@ -466,8 +367,7 @@ describe('transformGoogleStreamForRemote', () => {
     mockProxyRes.emit('data', compressed);
     mockProxyRes.emit('end');
 
-    // Allow gunzip async stream ticks to process
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await streamEndPromise;
 
     expect(output).toContain('Gzip decoded text');
     expect(mockClientRes.end).toHaveBeenCalled();

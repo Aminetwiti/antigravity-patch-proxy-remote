@@ -1,0 +1,269 @@
+[
+  {
+    "id": "openai-preset",
+    "name": "OpenAI",
+    "label": "OpenAI",
+    "category": "General",
+    "provider": "openai",
+    "defaultApiUrl": "https://api.openai.com/v1",
+    "chatUrl": "https://api.openai.com/v1/chat/completions",
+    "description": "OpenAI official API (GPT-4o, GPT-4o-mini, o1, o3-mini)",
+    "docsUrl": "https://platform.openai.com",
+    "suggestedModels": [
+      { "id": "gpt-4o", "displayName": "GPT-4o (Omni)" },
+      { "id": "gpt-4o-mini", "displayName": "GPT-4o Mini" },
+      { "id": "o1", "displayName": "OpenAI o1 Reasoning" },
+      { "id": "o3-mini", "displayName": "OpenAI o3-mini" }
+    ]
+  },
+  {
+    "id": "anthropic-preset",
+    "name": "Anthropic",
+    "label": "Anthropic Claude",
+    "category": "General",
+    "provider": "anthropic",
+    "defaultApiUrl": "https://api.anthropic.com/v1",
+    "chatUrl": "https://api.anthropic.com/v1/messages",
+    "description": "Anthropic Claude 3.5 Sonnet, Claude 3.5 Haiku, Claude 3 Opus",
+    "docsUrl": "https://console.anthropic.com",
+    "suggestedModels": [
+      { "id": "claude-3-5-sonnet-latest", "displayName": "Claude 3.5 Sonnet" },
+      { "id": "claude-3-5-haiku-latest", "displayName": "Claude 3.5 Haiku" }
+    ]
+  },
+  {
+    "id": "openrouter-preset",
+    "name": "OpenRouter",
+    "label": "OpenRouter",
+    "category": "General",
+    "provider": "openrouter",
+    "defaultApiUrl": "https://openrouter.ai/api/v1",
+    "chatUrl": "https://openrouter.ai/api/v1/chat/completions",
+    "description": "Unified gateway for 200+ models (Claude, GPT, DeepSeek, Llama)",
+    "docsUrl": "https://openrouter.ai",
+    "suggestedModels": [
+      { "id": "deepseek/deepseek-r1", "displayName": "DeepSeek R1 (OpenRouter)" },
+      { "id": "anthropic/claude-3.5-sonnet", "displayName": "Claude 3.5 Sonnet" },
+      { "id": "meta-llama/llama-3.3-70b-instruct", "displayName": "Llama 3.3 70B" },
+      { "id": "qwen/qwen-2.5-coder-32b-instruct", "displayName": "Qwen 2.5 Coder 32B" }
+    ]
+  },
+  {
+    "id": "deepseek-preset",
+    "name": "DeepSeek",
+    "label": "DeepSeek (Official)",
+    "category": "General",
+    "provider": "deepseek",
+    "defaultApiUrl": "https://api.deepseek.com/v1",
+    "chatUrl": "https://api.deepseek.com/v1/chat/completions",
+    "description": "DeepSeek V3 and DeepSeek R1 reasoning model",
+    "docsUrl": "https://platform.deepseek.com",
+    "suggestedModels": [
+      { "id": "deepseek-chat", "displayName": "DeepSeek-V3 (Chat)" },
+      { "id": "deepseek-reasoner", "displayName": "DeepSeek-R1 (Reasoner)" }
+    ]
+  },
+  {
+    "id": "groq-preset",
+    "name": "Groq (Ultra-Fast LPUs)",
+    "label": "Groq (Ultra Fast)",
+    "category": "General",
+    "provider": "groq",
+    "defaultApiUrl": "https://api.groq.com/openai/v1",
+    "chatUrl": "https://api.groq.com/openai/v1/chat/completions",
+    "description": "Ultra-low latency inference for Llama 3.3, Mixtral, DeepSeek",
+    "docsUrl": "https://console.groq.com",
+    "suggestedModels": [
+      { "id": "llama-3.3-70b-versatile", "displayName": "Llama 3.3 70B Versatile" },
+      { "id": "mixtral-8x7b-32768", "displayName": "Mixtral 8x7B (32k)" },
+      { "id": "deepseek-r1-distill-llama-70b", "displayName": "DeepSeek R1 Distill 70B" }
+    ]
+  },
+  {
+    "id": "google-ai-studio-preset",
+    "name": "Google AI Studio",
+    "label": "Google AI Studio",
+    "category": "General",
+    "provider": "google",
+    "defaultApiUrl": "https://generativelanguage.googleapis.com/v1beta/models/",
+    "chatUrl": "https://generativelanguage.googleapis.com/v1beta/models/",
+    "description": "Google Gemini 3.8 Flash Tiered, Gemini 3.1 Pro High via AI Studio API key",
+    "docsUrl": "https://aistudio.google.com",
+    "suggestedModels": [
+      { "id": "gemini-2.0-flash", "displayName": "Gemini 2.0 Flash" },
+      { "id": "gemini-1.5-pro", "displayName": "Gemini 1.5 Pro" }
+    ]
+  },
+  {
+    "id": "ollama-preset",
+    "name": "Ollama (Local)",
+    "label": "Ollama (Local)",
+    "category": "Local",
+    "provider": "ollama",
+    "defaultApiUrl": "http://localhost:11434/v1",
+    "chatUrl": "http://localhost:11434/v1/chat/completions",
+    "description": "Run open-source LLMs locally on your own GPU/CPU",
+    "docsUrl": "https://ollama.com",
+    "suggestedModels": [
+      { "id": "llama3", "displayName": "Llama 3 Local" },
+      { "id": "deepseek-r1:8b", "displayName": "DeepSeek R1 8B Local" },
+      { "id": "qwen2.5-coder", "displayName": "Qwen 2.5 Coder Local" }
+    ]
+  },
+  {
+    "id": "mistral-preset",
+    "name": "Mistral",
+    "label": "Mistral AI",
+    "category": "General",
+    "provider": "mistral",
+    "defaultApiUrl": "https://api.mistral.ai/v1",
+    "chatUrl": "https://api.mistral.ai/v1/chat/completions",
+    "description": "Mistral Large 3, Codestral, Pixtral multimodal",
+    "docsUrl": "https://docs.mistral.ai",
+    "suggestedModels": [
+      { "id": "mistral-large-latest", "displayName": "Mistral Large" },
+      { "id": "codestral-latest", "displayName": "Codestral (Code)" }
+    ]
+  },
+  {
+    "id": "moonshot-preset",
+    "name": "Moonshot (Kimi)",
+    "label": "Moonshot (Kimi)",
+    "category": "General",
+    "provider": "kimi",
+    "defaultApiUrl": "https://api.moonshot.ai/v1",
+    "chatUrl": "https://api.moonshot.ai/v1/chat/completions",
+    "description": "Moonshot Kimi K2 with 128K-256K context windows",
+    "docsUrl": "https://platform.moonshot.cn",
+    "suggestedModels": [
+      { "id": "moonshot-v1-8k", "displayName": "Kimi Moonshot 8k" },
+      { "id": "moonshot-v1-32k", "displayName": "Kimi Moonshot 32k" }
+    ]
+  },
+  {
+    "id": "xai-preset",
+    "name": "xAI (Grok)",
+    "label": "xAI (Grok)",
+    "category": "General",
+    "provider": "xai",
+    "defaultApiUrl": "https://api.x.ai/v1",
+    "chatUrl": "https://api.x.ai/v1/chat/completions",
+    "description": "xAI Grok conversational models with reasoning support",
+    "docsUrl": "https://docs.x.ai",
+    "suggestedModels": [
+      { "id": "grok-beta", "displayName": "Grok Beta" },
+      { "id": "grok-2-latest", "displayName": "Grok 2" }
+    ]
+  },
+  {
+    "id": "cohere-preset",
+    "name": "Cohere",
+    "label": "Cohere",
+    "category": "General",
+    "provider": "cohere",
+    "defaultApiUrl": "https://api.cohere.com/v1",
+    "chatUrl": "https://api.cohere.com/v1/chat",
+    "description": "Cohere Command R+ with grounded RAG support",
+    "docsUrl": "https://docs.cohere.com",
+    "suggestedModels": [
+      { "id": "command-r-plus", "displayName": "Command R+" },
+      { "id": "command-r", "displayName": "Command R" }
+    ]
+  },
+  {
+    "id": "cerebras-preset",
+    "name": "Cerebras",
+    "label": "Cerebras",
+    "category": "General",
+    "provider": "cerebras",
+    "defaultApiUrl": "https://api.cerebras.ai/v1",
+    "chatUrl": "https://api.cerebras.ai/v1/chat/completions",
+    "description": "Cerebras Ultra-Fast wafer-scale AI inference",
+    "docsUrl": "https://cerebras.ai",
+    "suggestedModels": [
+      { "id": "llama3.1-70b", "displayName": "Llama 3.1 70B (Cerebras)" }
+    ]
+  },
+  {
+    "id": "fireworks-preset",
+    "name": "Fireworks AI",
+    "label": "Fireworks AI",
+    "category": "General",
+    "provider": "fireworks",
+    "defaultApiUrl": "https://api.fireworks.ai/inference/v1",
+    "chatUrl": "https://api.fireworks.ai/inference/v1/chat/completions",
+    "description": "Fireworks fast production model inference",
+    "docsUrl": "https://fireworks.ai",
+    "suggestedModels": [
+      { "id": "accounts/fireworks/models/llama-v3p1-70b-instruct", "displayName": "Llama 3.1 70B Instruct" }
+    ]
+  },
+  {
+    "id": "lmstudio-preset",
+    "name": "LM Studio (Local)",
+    "label": "LM Studio",
+    "category": "Local",
+    "provider": "lmstudio",
+    "defaultApiUrl": "http://localhost:1234/v1",
+    "chatUrl": "http://localhost:1234/v1/chat/completions",
+    "description": "LM Studio local API server",
+    "docsUrl": "https://lmstudio.ai",
+    "suggestedModels": [
+      { "id": "local-model", "displayName": "Loaded Local Model" }
+    ]
+  },
+  {
+    "id": "llamacpp-preset",
+    "name": "llama.cpp (Local)",
+    "label": "llama.cpp",
+    "category": "Local",
+    "provider": "llamacpp",
+    "defaultApiUrl": "http://localhost:8080/v1",
+    "chatUrl": "http://localhost:8080/v1/chat/completions",
+    "description": "llama.cpp local server instance",
+    "docsUrl": "https://github.com/ggerganov/llama.cpp",
+    "suggestedModels": [
+      { "id": "default", "displayName": "Default Loaded Model" }
+    ]
+  },
+  {
+    "id": "nvidia-preset",
+    "name": "NVIDIA NIM",
+    "label": "NVIDIA",
+    "category": "General",
+    "provider": "nvidia",
+    "defaultApiUrl": "https://integrate.api.nvidia.com/v1",
+    "chatUrl": "https://integrate.api.nvidia.com/v1/chat/completions",
+    "description": "NVIDIA NIM microservices and optimized models",
+    "docsUrl": "https://build.nvidia.com",
+    "suggestedModels": [
+      { "id": "meta/llama-3.1-70b-instruct", "displayName": "Llama 3.1 70B Instruct" }
+    ]
+  },
+  {
+    "id": "minimax-preset",
+    "name": "MiniMax",
+    "label": "MiniMax",
+    "category": "General",
+    "provider": "minimax",
+    "defaultApiUrl": "https://api.minimaxi.chat/v1",
+    "chatUrl": "https://api.minimaxi.chat/v1/chat/completions",
+    "description": "MiniMax abab6.5s and conversational models",
+    "docsUrl": "https://minimaxi.com",
+    "suggestedModels": [
+      { "id": "abab6.5s-chat", "displayName": "MiniMax abab6.5s" }
+    ]
+  },
+  {
+    "id": "custom-preset",
+    "name": "Custom OpenAI-Compatible",
+    "label": "Custom",
+    "category": "Experimental",
+    "provider": "custom",
+    "defaultApiUrl": "",
+    "chatUrl": "",
+    "description": "Connect any custom OpenAI-compatible inference endpoint",
+    "docsUrl": "",
+    "suggestedModels": []
+  }
+]
