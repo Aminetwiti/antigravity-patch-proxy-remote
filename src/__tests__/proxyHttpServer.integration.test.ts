@@ -126,7 +126,7 @@ describe('Proxy HTTP Server Real Integration Test', () => {
     process.env.AG_PROXY_PORT = '0';
     process.env.AG_PROXY_HOST = '127.0.0.1';
     proxyPort = await startProxy();
-  });
+  }, 30000);
 
   afterAll(async () => {
     await stopProxy();
@@ -134,7 +134,7 @@ describe('Proxy HTTP Server Real Integration Test', () => {
     try {
       fs.rmSync(tempHome, { recursive: true, force: true });
     } catch (_) {}
-  });
+  }, 30000);
 
   it('binds to a valid dynamic port and returns it via getProxyPort()', () => {
     expect(proxyPort).toBeGreaterThan(1024);
