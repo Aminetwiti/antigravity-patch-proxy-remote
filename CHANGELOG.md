@@ -2,6 +2,19 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.6.1] - 2026-09-21 (Smart Account Pooling & Live Quotas)
+
+### Added
+- **Smart Google Account Pooling & P2C**: Power of Two Choices candidate selection with dynamic scoring, real-time in-flight concurrency tracking (20-point penalty per active request), and 60s sliding window RPM governor.
+- **Intelligent 429 Classification (OmniRoute Parity)**: 4-tier error classification (soft rate limit, RPM limit, quota exhausted, unknown) with adaptive cooldowns and fast-fail recovery.
+- **Local Credential & Account Discovery**: Automatic extraction and import of local Google Antigravity IDE credentials and accounts.
+- **Live Quota Polling & Telemetry**: Background polling of quota summaries every 3 minutes and `/pool-status` endpoint for live observability.
+
+### Changed
+- Bumped project release version to v3.6.1 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
 ## [3.6.0] - 2026-09-21 (Remote Agent Runtime & Quality Consolidation)
 
 ### Added
