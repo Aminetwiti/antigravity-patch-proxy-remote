@@ -7,20 +7,20 @@ import 'package:mobile/features/sessions/display_options.dart';
 void main() {
   group('Advanced Rare Cases: Path Normalization & Prefix Collisions', () {
     test('Extreme path normalizations: mixed separators, percent-encoding, long Windows paths', () {
-      const p1 = 'file:///c%3A/Users/amine/Downloads/raouf%20taxi/www%20-%20Copie';
-      const p2 = 'C:\\Users\\amine\\Downloads\\raouf taxi\\www - Copie';
-      const p3 = 'c:/users/amine/downloads/raouf taxi/www - copie/';
-      const p4 = '\\\\?\\C:\\Users\\amine\\Downloads\\raouf taxi\\www - Copie';
+      const p1 = 'file:///c%3A/Users/developer/Downloads/demo%20taxi/www%20-%20Copie';
+      const p2 = 'C:\\Users\\developer\\Downloads\\demo taxi\\www - Copie';
+      const p3 = 'c:/users/developer/downloads/demo taxi/www - copie/';
+      const p4 = '\\\\?\\C:\\Users\\developer\\Downloads\\demo taxi\\www - Copie';
 
       final c1 = WorkspacePath.canonicalPath(p1);
       final c2 = WorkspacePath.canonicalPath(p2);
       final c3 = WorkspacePath.canonicalPath(p3);
       final c4 = WorkspacePath.canonicalPath(p4);
 
-      expect(c1, equals('c:/Users/amine/Downloads/raouf taxi/www - Copie'));
-      expect(c2, equals('c:/Users/amine/Downloads/raouf taxi/www - Copie'));
-      expect(c3, equals('c:/users/amine/downloads/raouf taxi/www - copie'));
-      expect(c4, equals('c:/Users/amine/Downloads/raouf taxi/www - Copie'));
+      expect(c1, equals('c:/Users/developer/Downloads/demo taxi/www - Copie'));
+      expect(c2, equals('c:/Users/developer/Downloads/demo taxi/www - Copie'));
+      expect(c3, equals('c:/users/developer/downloads/demo taxi/www - copie'));
+      expect(c4, equals('c:/Users/developer/Downloads/demo taxi/www - Copie'));
 
       expect(WorkspacePath.isSameWorkspace(p1, p2), isTrue);
       expect(WorkspacePath.isSameWorkspace(p2, p3), isTrue);

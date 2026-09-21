@@ -317,8 +317,8 @@ Analyzed c:\\Users\\amine\\.gemini\\config\\skills\\impeccable\\reference
 Analyzed audit.native.md #L1-100
 Analyzed audit.native.md #L101-140
 Search *course* 2 results
-Analyzed c:\\Users\\amine\\Downloads\\raouf taxi\\www - Copie\\resources\\views\\driver
-Analyzed c:\\Users\\amine\\Downloads\\raouf taxi\\www - Copie\\resources\\views\\driver\\cou
+Analyzed c:\\Users\\developer\\Downloads\\demo taxi\\www - Copie\\resources\\views\\driver
+Analyzed c:\\Users\\developer\\Downloads\\demo taxi\\www - Copie\\resources\\views\\driver\\cou
 ''';
 
       await tester.pumpWidget(

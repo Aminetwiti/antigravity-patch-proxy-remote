@@ -21,8 +21,8 @@ func TestParseWorkspaceFromTranscript(t *testing.T) {
 			want:    "c:\\Users\\amine\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main",
 		},
 		{
-			content: "The mapping is shown as follows in the format [URI] -> [CorpusName]:\nc:\\Users\\amine\\Downloads\\raouf taxi\\www - Copie -> Aminetwiti/www-copie\n",
-			want:    "c:\\Users\\amine\\Downloads\\raouf taxi\\www - Copie",
+			content: "The mapping is shown as follows in the format [URI] -> [CorpusName]:\nc:\\Users\\amine\\Downloads\\demo taxi\\www - Copie -> Aminetwiti/www-copie\n",
+			want:    "c:\\Users\\amine\\Downloads\\demo taxi\\www - Copie",
 		},
 		{
 			content: "Workspace: /home/user/my-project\nSome other text",

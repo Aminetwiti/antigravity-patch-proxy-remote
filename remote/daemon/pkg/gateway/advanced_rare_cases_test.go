@@ -17,20 +17,20 @@ func TestRareCase_MonorepoPrefixCollisionsAndSpecialCharacters(t *testing.T) {
 		{
 			ID:        "p-www",
 			Name:      "www",
-			Path:      "c:/raouf taxi/www",
-			FolderURI: "file:///c:/raouf%20taxi/www",
+			Path:      "c:/demo taxi/www",
+			FolderURI: "file:///c:/demo%20taxi/www",
 		},
 		{
 			ID:        "p-www-copie",
 			Name:      "www - Copie",
-			Path:      "c:/raouf taxi/www - Copie",
-			FolderURI: "file:///c:/raouf%20taxi/www%20-%20Copie",
+			Path:      "c:/demo taxi/www - Copie",
+			FolderURI: "file:///c:/demo%20taxi/www%20-%20Copie",
 		},
 		{
 			ID:        "p-www-sub",
 			Name:      "www-frontend",
-			Path:      "c:/raouf taxi/www/frontend",
-			FolderURI: "file:///c:/raouf%20taxi/www/frontend",
+			Path:      "c:/demo taxi/www/frontend",
+			FolderURI: "file:///c:/demo%20taxi/www/frontend",
 		},
 		{
 			ID:        "p-unicode",
@@ -51,30 +51,30 @@ func TestRareCase_MonorepoPrefixCollisionsAndSpecialCharacters(t *testing.T) {
 	}{
 		{
 			name:         "Exact path match for www - Copie",
-			wsPath:       "C:\\raouf taxi\\www - Copie",
+			wsPath:       "C:\\demo taxi\\www - Copie",
 			expectedName: "www - Copie",
-			expectedPath: "c:/raouf taxi/www - Copie",
+			expectedPath: "c:/demo taxi/www - Copie",
 			expectedID:   "p-www-copie",
 		},
 		{
 			name:         "URL-encoded path match for www - Copie",
-			wsPath:       "file:///c%3A/raouf%20taxi/www%20-%20Copie",
+			wsPath:       "file:///c%3A/demo%20taxi/www%20-%20Copie",
 			expectedName: "www - Copie",
-			expectedPath: "c:/raouf taxi/www - Copie",
+			expectedPath: "c:/demo taxi/www - Copie",
 			expectedID:   "p-www-copie",
 		},
 		{
 			name:         "Subfolder inside www/frontend matches most specific child www-frontend",
-			wsPath:       "c:/raouf taxi/www/frontend/src/components",
+			wsPath:       "c:/demo taxi/www/frontend/src/components",
 			expectedName: "www-frontend",
-			expectedPath: "c:/raouf taxi/www/frontend",
+			expectedPath: "c:/demo taxi/www/frontend",
 			expectedID:   "p-www-sub",
 		},
 		{
 			name:         "Subfolder inside www (outside frontend) matches www",
-			wsPath:       "c:/raouf taxi/www/backend/api",
+			wsPath:       "c:/demo taxi/www/backend/api",
 			expectedName: "www",
-			expectedPath: "c:/raouf taxi/www",
+			expectedPath: "c:/demo taxi/www",
 			expectedID:   "p-www",
 		},
 		{
@@ -86,9 +86,9 @@ func TestRareCase_MonorepoPrefixCollisionsAndSpecialCharacters(t *testing.T) {
 		},
 		{
 			name:         "Unrelated path returns empty match",
-			wsPath:       "c:/raouf taxi/www-other-project",
+			wsPath:       "c:/demo taxi/www-other-project",
 			expectedName: "",
-			expectedPath: "c:/raouf taxi/www-other-project",
+			expectedPath: "c:/demo taxi/www-other-project",
 			expectedID:   "",
 		},
 	}

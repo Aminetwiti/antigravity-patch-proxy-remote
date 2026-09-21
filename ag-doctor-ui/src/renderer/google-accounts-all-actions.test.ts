@@ -61,14 +61,14 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
           claudeWeeklyPct: 50,
         },
         models: [
-          { id: 'gemini-3.1-pro-high', displayName: '[Amine Pro] Gemini 3.1 Pro', enabled: true },
-          { id: 'claude-sonnet-4-6', displayName: '[Amine Pro] Claude Sonnet 4.6', enabled: true },
+          { id: 'gemini-3.1-pro-high', displayName: '[Account 2] Gemini 3.1 Pro', enabled: true },
+          { id: 'claude-sonnet-4-6', displayName: '[Account 2] Claude Sonnet 4.6', enabled: true },
         ],
       },
       {
         id: 'google-ai-studio-1',
         name: 'Trial Free Key',
-        email: 'taconaandax@gmail.com',
+        email: 'free.tier@example.com',
         provider: 'google',
         apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: 'AIzaSyTestApiKey',

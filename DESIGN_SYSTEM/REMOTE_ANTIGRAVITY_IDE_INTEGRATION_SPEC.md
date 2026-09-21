@@ -180,7 +180,7 @@ Emplacement : `%APPDATA%\Antigravity IDE\User\globalStorage\storage.json`
   "profileAssociations": {
     "workspaces": {
       "file:///c%3A/Users/amine/Downloads/antigravity-add-model-main": "__default__profile__",
-      "file:///c%3A/Users/amine/Desktop/ooredoo/posweb": "__default__profile__"
+      "file:///c%3A/Users/amine/Desktop/sample-project": "__default__profile__"
     }
   },
   "windowsState": {

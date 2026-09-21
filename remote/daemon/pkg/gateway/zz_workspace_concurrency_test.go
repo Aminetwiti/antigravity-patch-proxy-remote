@@ -165,11 +165,11 @@ func TestWindowsUriAndPathNormalizationIdempotence(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"file:///c%3A/Users/amine/test", "c:/Users/amine/test"},
-		{"file:///c%3A%5CUsers%5Camine%5COmniRoute", "c:/Users/amine/OmniRoute"},
-		{"C:\\Users\\amine\\Desktop\\ooredoo\\posweb", "C:/Users/amine/Desktop/ooredoo/posweb"},
-		{"file:///C:/Users/amine/Downloads/raouf%20taxi/www%20-%20Copie/", "C:/Users/amine/Downloads/raouf taxi/www - Copie"},
-		{"c:/Users/amine/repo", "c:/Users/amine/repo"},
+		{"file:///c%3A/Users/developer/test", "c:/Users/developer/test"},
+		{"file:///c%3A%5CUsers%5Cdeveloper%5COmniRoute", "c:/Users/developer/OmniRoute"},
+		{"C:\\Users\\developer\\Desktop\\client-project\\posweb", "C:/Users/developer/Desktop/client-project/posweb"},
+		{"file:///C:/Users/developer/Downloads/demo%20taxi/www%20-%20Copie/", "C:/Users/developer/Downloads/demo taxi/www - Copie"},
+		{"c:/Users/developer/repo", "c:/Users/developer/repo"},
 		{"", ""},
 	}
 

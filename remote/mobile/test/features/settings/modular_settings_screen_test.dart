@@ -33,7 +33,7 @@ void main() {
             if (!ctrl.isClosed) {
               ctrl.add(jsonEncode({
                 'requestId': reqId,
-                'email': 'lesjardindelavie@gmail.com',
+                'email': 'user@example.com',
                 'plan': 'Google AI Pro',
                 'telemetryEnabled': true,
                 'marketingEmails': false,
