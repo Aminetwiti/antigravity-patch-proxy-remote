@@ -285,7 +285,7 @@ export async function executeOnRemoteDaemon(
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload),
           Authorization: `Bearer ${token || DEFAULT_REMOTE_TOKEN}`,
-          'User-Agent': 'AntigravityPatchProxy/3.6.0',
+          'User-Agent': 'AntigravityPatchProxy/3.6.1',
         },
         timeout: timeoutMs,
       },
@@ -1355,7 +1355,12 @@ export async function executeGoogleCloudCodeWithPool(
 
   for (let i = 0; i < totalAttempts; i++) {
     const candidate = sortedAccounts[i];
-    const candidateName = candidate.accountEmail || candidate.accountName || candidate.displayName || candidate.name;
+    const candidateName =
+      candidate.accountEmail ||
+      candidate.accountName ||
+      (candidate.refreshToken ? `token:..${candidate.refreshToken.slice(-6)}` : '') ||
+      candidate.displayName ||
+      candidate.name;
 
     // Fast-skip: if this candidate is already in active cooldown for this model family
     if (isAccountInCooldown(candidate, modelFamily)) {
@@ -2770,6 +2775,19 @@ export function classifyGoogleCloudCode429(
     }
   }
 
+  // Parse "Resets in Xh Ym Zs" from the 429 body when no Retry-After header is present.
+  // Handles: "42h52m9s", "4h7m17s", "52m", "30s", etc.
+  if (retryAfterMs === null) {
+    const resetMatch = msg.match(/resets?\s+in\s+(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
+    if (resetMatch && (resetMatch[1] || resetMatch[2] || resetMatch[3])) {
+      const h = parseInt(resetMatch[1] || '0', 10);
+      const m = parseInt(resetMatch[2] || '0', 10);
+      const s = parseInt(resetMatch[3] || '0', 10);
+      const parsed = (h * 3600 + m * 60 + s) * 1000;
+      if (parsed > 0) retryAfterMs = parsed;
+    }
+  }
+
   // 1. Soft / burst rate limit (micro-throttle, e.g. reset in 0s, try again, or retryAfter <= 3s)
   if (
     /\breset\s+(?:after|in)\s+0s\b/.test(msg) ||
@@ -2830,10 +2848,14 @@ export function classifyGoogleCloudCode429(
 
   for (const kw of QUOTA_EXHAUSTED_KEYWORDS) {
     if (msg.includes(kw)) {
+      // Use the parsed reset time from header or body. Floor at 5h so we never under-cool a quota account.
+      const quotaCooldownMs = retryAfterMs && retryAfterMs > 0
+        ? Math.max(retryAfterMs, 5 * 60 * 60 * 1000)
+        : 5 * 60 * 60 * 1000;
       return {
         category: 'quota_exhausted',
-        cooldownMs: retryAfterMs && retryAfterMs > 60_000 ? retryAfterMs : 5 * 60 * 60 * 1000,
-        reason: 'Quota exhausted — 5h cooldown and switch account',
+        cooldownMs: quotaCooldownMs,
+        reason: `Quota exhausted — ${Math.round(quotaCooldownMs / 3_600_000)}h cooldown and switch account`,
       };
     }
   }
