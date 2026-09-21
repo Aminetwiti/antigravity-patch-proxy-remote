@@ -10,7 +10,7 @@
 
   console.log('[Antigravity 2.0] Initializing Remote Environment Hook...');
 
-  const DEFAULT_HOST = 'https://dqlwdgordp4apddvek8gvgn0.ty-dev.site';
+  const DEFAULT_HOST = window.__AG_REMOTE_HOST || 'http://127.0.0.1:8090';
   const DEFAULT_TOKEN = ''; // Set AG_REMOTE_TOKEN or configure via settings UI
   const LOCAL_PROXY_PORT = window.__AG_PROXY_PORT || 51074;
   const LOCAL_PROXY_ORIGIN = window.__AG_PROXY_ORIGIN || `http://127.0.0.1:${LOCAL_PROXY_PORT}`;
@@ -19,7 +19,7 @@
     try {
       let storedHost = localStorage.getItem('ag_remote_host');
       let storedToken = localStorage.getItem('ag_remote_token');
-      if (!storedHost || storedHost === 'null' || storedHost === 'undefined' || storedHost === '127.0.0.1' || storedHost === '127.0.0.1:8090') {
+      if (!storedHost || storedHost === 'null' || storedHost === 'undefined') {
         storedHost = DEFAULT_HOST;
         localStorage.setItem('ag_remote_host', DEFAULT_HOST);
       }

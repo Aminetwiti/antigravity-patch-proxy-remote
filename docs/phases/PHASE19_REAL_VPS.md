@@ -16,19 +16,19 @@
 > > Documenter explicitement : EXTERNAL VPS = YES / NO"*
 >
 > **EXTERNAL VPS = YES**  
-> Host: `62.169.27.8:4155` (Hostname: `vmi2743594`)  
+> Host: `vps.example.com` (Hostname: `vps-host`)  
 > Environment: Real External Cloud VPS (Ubuntu 24.04.4 LTS, Linux Kernel 6.8.0-137-generic)
 
 ---
 
 ## 2. Real External Host Topology & Hardware Specifications
 
-Empirical observation conducted live over SSH (`62.169.27.8:4155`):
+Empirical observation conducted live over SSH (`vps.example.com`):
 
 | Hardware Parameter | Observed Value | Classification |
 |:---|:---|:---:|
-| **Server Hostname** | `vmi2743594` | OBSERVED |
-| **Public IP Address** | `62.169.27.8` (Port 4155) | OBSERVED |
+| **Server Hostname** | `vps-host` | OBSERVED |
+| **Public IP Address** | `198.51.100.1` (Port 22) | OBSERVED |
 | **Operating System** | `Ubuntu 24.04.4 LTS` | OBSERVED |
 | **Linux Kernel** | `Linux 6.8.0-137-generic #137-Ubuntu SMP PREEMPT_DYNAMIC x86_64` | OBSERVED |
 | **CPU Resources** | 8 virtual cores (`nproc`) | OBSERVED |
@@ -100,7 +100,7 @@ All verification steps executed live on the remote VPS:
 
 | Gate | Status | Notes |
 |:---|:---:|:---|
-| **External VPS** | **PASS** | Fully deployed, verified, and operational on `62.169.27.8:4155`. |
+| **External VPS** | **PASS** | Fully deployed, verified, and operational on external VPS. |
 | **Clean Installation** | **PASS** | Installed via dedicated user and systemd unit. |
 | **TLS / Public Ingress** | **PASS** | Cloudflare Quick Tunnel accessible from external public clients. |
 | **Process Secret Hygiene** | **PASS** | Zero tokens in `/proc/<PID>/cmdline` or `ps aux`. |

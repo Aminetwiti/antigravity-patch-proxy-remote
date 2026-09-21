@@ -11,7 +11,7 @@ Ce document détaille le fonctionnement, l'installation et l'utilisation du mode
    - Antigravity travaille nativement sur vos projets locaux (ex: `structuba`, etc.).
    - Aucune injection de prompt, aucun appel vers le VPS, aucun risque d'exécuter des commandes Linux sur Windows.
 2. **En mode "Remote" (Serveur Privé / VPS Ubuntu)** :
-   - Antigravity se connecte au démon autonome `ag-agentd` qui s'exécute sur votre serveur distant (ex: `62.169.27.8`).
+   - Antigravity se connecte au démon autonome `ag-agentd` qui s'exécute sur votre serveur distant (ex: `vps.monserveur.com`).
    - Vous lancez une mission (ex: refactorisation, audit de sécurité, exécution de tests Docker, migrations).
    - **Vous pouvez fermer Antigravity et éteindre complètement votre ordinateur.**
    - L'agent continue d'exécuter la tâche 24/7 sur le serveur distant dans son conteneur Docker et enregistre tous les événements dans sa base SQLite WAL.
@@ -120,7 +120,7 @@ sudo systemctl restart ag-agentd.service
 
 1. Dans la pastille `Runtime Agent Remote`, cliquez sur l'icône **`⚙️`**.
 2. Renseignez :
-   - **Hôte** : L'adresse IP ou le domaine HTTPS de votre serveur (ex: `https://agent.monserveur.com` ou `http://62.169.27.8:8090`).
+   - **Hôte** : L'adresse IP ou le domaine HTTPS de votre serveur (ex: `https://agent.monserveur.com` ou `http://vps.monserveur.com:8090`).
    - **Auth Token** : La valeur de `AG_AUTH_TOKEN` définie dans `/etc/antigravity/ag-agentd.env`.
 3. Cliquez sur **Tester la connexion** -> Le voyant vert `● En ligne (linux / ag-agentd v2.0.0)` confirme la liaison.
 4. Cliquez sur **Sélectionner Runtime Remote**.

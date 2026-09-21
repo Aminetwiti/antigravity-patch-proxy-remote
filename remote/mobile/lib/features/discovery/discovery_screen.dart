@@ -698,12 +698,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     children: [
                       ActionChip(
                         avatar: const Text('☁️', style: TextStyle(fontSize: 12)),
-                        label: const Text('Cloud VPS (ty-dev.site)', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                        label: const Text('Remote VPS (daemon.example.com)', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
                         onPressed: () {
                           setState(() {
-                            _hostController.text = 'https://dqlwdgordp4apddvek8gvgn0.ty-dev.site';
+                            _hostController.text = 'https://daemon.example.com';
                             _portController.text = '443';
-                            _csrfController.text = '37aeea86418dcd4b9bae9daeb79c90e5';
+                            _csrfController.text = '00000000000000000000000000000000';
                           });
                         },
                       ),

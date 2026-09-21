@@ -9,14 +9,14 @@
 
 ## 1. Executive Summary & Go-Live Status
 
-Phase 20 formally transitions `ag-agentd` from Release Candidate (`v2.0.0-rc2`) to **General Availability (`v2.0.0`)** on the dedicated private cloud host `62.169.27.8:4155`.
+Phase 20 formally transitions `ag-agentd` from Release Candidate (`v2.0.0-rc2`) to **General Availability (`v2.0.0`)** on a dedicated private cloud host.
 
 All 23 security, persistence, and reliability gates established across Phases 11 through 19 have been empirically verified under zero-trust conditions.
 
 | Dimension | Target | Operational Status | Evidence |
 |:---|:---|:---:|:---|
 | **Software Release** | `ag-agentd v2.0.0` (GA) | **RELEASED** | SHA-256 verified cross-platform binaries in `release/v2.0.0/` |
-| **External Cloud Host** | `root@62.169.27.8:4155` | **ONLINE** | Service running under systemd, 0 token leakage in `/proc` |
+| **External Cloud Host** | `root@vps.example.com` | **ONLINE** | Service running under systemd, 0 token leakage in `/proc` |
 | **Public TLS Ingress** | Cloudflare Quick Tunnel | **ACTIVE** | Web Console & Mobile WS reachable from public internet |
 | **Mobile Companion** | Samsung Galaxy S21 FE 5G | **INSTALLED** | Impeller Vulkan debug APK installed and verified |
 | **Desktop Proxy** | Antigravity Patch Proxy v3.5.0 | **VERIFIED** | 1,469 Vitest tests passing, 0 TypeScript errors |
@@ -114,7 +114,7 @@ To enable autonomous LLM generation on the headless cloud server:
 
 - [x] Static cross-platform binaries compiled and hashed with SHA-256
 - [x] Process credential exposure fixed: zero tokens in `/proc/<PID>/cmdline`
-- [x] Real VPS deployment verified on `62.169.27.8:4155`
+- [x] Real VPS deployment verified on external VPS host
 - [x] Disaster recovery verified on real host with RTO 47s
 - [x] Public HTTPS/WSS access verified via Cloudflare Quick Tunnel
 - [x] Companion mobile app compiled with Impeller Vulkan and deployed to Galaxy S21 FE
@@ -134,8 +134,8 @@ To enable autonomous LLM generation on the headless cloud server:
 
   TARGET: PRIVATE SINGLE-TENANT VPS / TRUSTED DEVELOPER ENVIRONMENT
   VERDICT: SHIP & OPERATIONAL (ONLINE)
-  HOST: 62.169.27.8:4155 (Ubuntu 24.04 LTS)
-  INGRESS: https://pharmaceuticals-willing-warrant-pound.trycloudflare.com
+  HOST: vps.example.com (Ubuntu 24.04 LTS)
+  INGRESS: https://tunnel.example.com
   CLIENTS: Web Console (Active), Mobile App (Installed), Desktop Proxy (Ready)
 
 ==============================================================================

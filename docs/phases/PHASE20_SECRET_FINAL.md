@@ -23,7 +23,7 @@ During the Phase 20 Final Ship Certification audit, a recursive repository and l
 
 1. **Client Ergonomics Shortcut**: During Phase 19 IDE integration, developers embedded the active VPS token as a fallback default in `preload.ts` and `patch_ide_remote.py` to allow instant UI testing without manual configuration.
 2. **Documentation Leakage**: The token was quoted verbatim in Phase 19 verification reports without redaction.
-3. **Remote Access Boundary**: Rotating the secret on the remote VPS requires SSH access to edit `/etc/antigravity/ag-agentd.env` and restart `ag-agentd.service`. Because external SSH access to `root@62.169.27.8:4155` returned `Permission denied (publickey,password)` during this black-box verification session, the token could not be rotated remotely by the automated test harness.
+3. **Remote Access Boundary**: Rotating the secret on the remote VPS requires SSH access to edit `/etc/antigravity/ag-agentd.env` and restart `ag-agentd.service`. Because external SSH access to `root@vps.example.com` returned `Permission denied (publickey,password)` during this black-box verification session, the token could not be rotated remotely by the automated test harness.
 
 ---
 
@@ -74,11 +74,11 @@ Findings:
 
 ## 5. Required Day-1 Operational Action for VPS Administrator
 
-The host administrator must execute the following rotation on `62.169.27.8`:
+The host administrator must execute the following rotation on the VPS host:
 
 ```bash
 # 1. Connect as root
-ssh -p 4155 root@62.169.27.8
+ssh root@vps.example.com
 
 # 2. Generate new 256-bit CSPRNG token
 NEW_TOKEN=$(openssl rand -hex 32)

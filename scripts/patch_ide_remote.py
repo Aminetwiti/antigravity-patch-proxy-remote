@@ -2,7 +2,7 @@
 patch_ide_remote.py — Surgical patch for Antigravity IDE Environment Selector
 Implements Claude Code Remote architecture:
 - Local Mode: 100% native local Windows execution
-- Remote Mode: Pure autonomous server execution on Ubuntu VPS (62.169.27.8)
+- Remote Mode: Pure autonomous server execution on Ubuntu VPS
   Tasks continue 24/7 on the server even when PC is shut down.
 
 Usage:
@@ -29,7 +29,7 @@ window.__ag_remote_mode=!1;
 function getRemoteConfig(){
   let h=localStorage.getItem("ag_remote_host");
   let t=localStorage.getItem("ag_remote_token");
-  if(!h||h==="null"||h==="undefined"||h==="127.0.0.1"||h==="127.0.0.1:8090"){h="https://dqlwdgordp4apddvek8gvgn0.ty-dev.site";try{localStorage.setItem("ag_remote_host",h);}catch(_){}}
+  if(!h||h==="null"||h==="undefined"){h="http://127.0.0.1:8090";try{localStorage.setItem("ag_remote_host",h);}catch(_){}}
   if(!t||t==="null"||t==="undefined"||t.trim()===""){t="antigravity-secret-cloud-2026";try{localStorage.setItem("ag_remote_token",t);}catch(_){}}
   return{host:h,token:t};
 }
@@ -39,11 +39,11 @@ window.__ag_open_cfg=function(){
   let cfg=getRemoteConfig();
   m=document.createElement("div");m.id="__ag_remote_config_modal";
   m.style.cssText="position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;";
-  m.innerHTML='<div style="width:460px;background:#1e1e1e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px;color:#e5e5e5;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:20px;">☁️</span><span style="font-size:15px;font-weight:600;color:#fff;">Configuration Runtime Agent Remote (VPS)</span></div><p style="font-size:12px;color:#a3a3a3;margin:0 0 16px 0;">Configurez l\\\'accès au démon autonome <code>ag-agentd</code> sur votre VPS.</p><div style="margin-bottom:12px;"><label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Hôte / IP du Serveur (ex: https://dqlwdgordp4apddvek8gvgn0.ty-dev.site)</label><input id="__ag_cfg_host" type="text" value="'+cfg.host+'" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /></div><div style="margin-bottom:14px;"><label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Jeton d\\\'authentification (Auth Token)</label><input id="__ag_cfg_token" type="password" value="'+cfg.token+'" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /></div><div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button id="__ag_cfg_cancel" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#ccc;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;">Annuler</button><button id="__ag_cfg_save" style="background:#2563eb;border:none;color:#fff;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;">Enregistrer</button></div></div>';
+  m.innerHTML='<div style="width:460px;background:#1e1e1e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px;color:#e5e5e5;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:20px;">☁️</span><span style="font-size:15px;font-weight:600;color:#fff;">Configuration Runtime Agent Remote (VPS)</span></div><p style="font-size:12px;color:#a3a3a3;margin:0 0 16px 0;">Configurez l\\\'accès au démon autonome <code>ag-agentd</code> sur votre VPS.</p><div style="margin-bottom:12px;"><label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Hôte / IP du Serveur (ex: https://daemon.example.com ou http://127.0.0.1:8090)</label><input id="__ag_cfg_host" type="text" value="'+cfg.host+'" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /></div><div style="margin-bottom:14px;"><label style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;color:#d4d4d4;">Jeton d\\\'authentification (Auth Token)</label><input id="__ag_cfg_token" type="password" value="'+cfg.token+'" style="width:100%;box-sizing:border-box;background:#262626;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /></div><div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button id="__ag_cfg_cancel" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#ccc;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;">Annuler</button><button id="__ag_cfg_save" style="background:#2563eb;border:none;color:#fff;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;">Enregistrer</button></div></div>';
   document.body.appendChild(m);
   m.querySelector("#__ag_cfg_cancel").onclick=()=>m.remove();
   m.querySelector("#__ag_cfg_save").onclick=()=>{
-    let h=m.querySelector("#__ag_cfg_host").value.trim()||"https://dqlwdgordp4apddvek8gvgn0.ty-dev.site";
+    let h=m.querySelector("#__ag_cfg_host").value.trim()||"http://127.0.0.1:8090";
     let t=m.querySelector("#__ag_cfg_token").value.trim()||"antigravity-secret-cloud-2026";
     localStorage.setItem("ag_remote_host",h);
     localStorage.setItem("ag_remote_token",t);
@@ -110,7 +110,7 @@ window.__ag_open_console=function(prefilledPrompt){
 
   function startMission(promptText,workspacePath,sandboxMode){
     let sid="sess_"+Date.now()+"_"+Math.floor(Math.random()*10000);
-    body.innerHTML='<div style="flex:1;display:flex;flex-direction:column;overflow:hidden;"><div style="padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;"><div><div style="font-size:13.5px;font-weight:600;color:#fff;">'+promptText.slice(0,55)+'</div><div style="font-size:11px;color:#9ca3af;margin-top:2px;">ID: <code>'+sid+'</code> &bull; Statut : <strong style="color:#4ade80;">EN COURS D\\\'EXÉCUTION (24/7 sur VPS)</strong> &bull; Sandbox: '+sandboxMode+'</div></div><div style="display:flex;gap:6px;"><button id="__ag_s_term" style="background:#27272a;border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">>_ Terminal VPS</button></div></div><div id="__ag_s_stream" style="flex:1;background:#09090b;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:12px;margin-top:10px;overflow-y:auto;font-family:monospace;font-size:11.5px;line-height:1.5;color:#93c5fd;display:flex;flex-direction:column;gap:4px;"><div style="color:#6b7280;">[Connexion au démon ag-agentd sur vmi2743594 ('+cfg.host+')...]</div><div style="color:#4ade80;">[Session autonome '+sid+' initialisée dans /var/lib/antigravity]</div><div style="color:#e5e7eb;">> Consigne : '+promptText+'</div><div style="color:#a3e635;">[Loop autonome démarrée en goroutine de fond - Sandbox: '+sandboxMode+']</div><div style="color:#60a5fa;">[Persistance SQLite WAL active : vous pouvez éteindre ce PC à tout moment]</div></div><div style="margin-top:10px;display:flex;gap:8px;"><input id="__ag_s_in" type="text" placeholder="Envoyer une instruction supplémentaire à l\\\'agent sur le VPS..." style="flex:1;background:#18191d;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /><button id="__ag_s_send" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;cursor:pointer;">Envoyer</button></div></div>';
+    body.innerHTML='<div style="flex:1;display:flex;flex-direction:column;overflow:hidden;"><div style="padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;"><div><div style="font-size:13.5px;font-weight:600;color:#fff;">'+promptText.slice(0,55)+'</div><div style="font-size:11px;color:#9ca3af;margin-top:2px;">ID: <code>'+sid+'</code> &bull; Statut : <strong style="color:#4ade80;">EN COURS D\\\'EXÉCUTION (24/7 sur VPS)</strong> &bull; Sandbox: '+sandboxMode+'</div></div><div style="display:flex;gap:6px;"><button id="__ag_s_term" style="background:#27272a;border:1px solid rgba(255,255,255,0.15);color:#93c5fd;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">>_ Terminal VPS</button></div></div><div id="__ag_s_stream" style="flex:1;background:#09090b;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:12px;margin-top:10px;overflow-y:auto;font-family:monospace;font-size:11.5px;line-height:1.5;color:#93c5fd;display:flex;flex-direction:column;gap:4px;"><div style="color:#6b7280;">[Connexion au démon ag-agentd ('+cfg.host+')...]</div><div style="color:#4ade80;">[Session autonome '+sid+' initialisée dans /var/lib/antigravity]</div><div style="color:#e5e7eb;">> Consigne : '+promptText+'</div><div style="color:#a3e635;">[Loop autonome démarrée en goroutine de fond - Sandbox: '+sandboxMode+']</div><div style="color:#60a5fa;">[Persistance SQLite WAL active : vous pouvez éteindre ce PC à tout moment]</div></div><div style="margin-top:10px;display:flex;gap:8px;"><input id="__ag_s_in" type="text" placeholder="Envoyer une instruction supplémentaire à l\\\'agent sur le VPS..." style="flex:1;background:#18191d;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 10px;font-size:12px;color:#fff;outline:none;" /><button id="__ag_s_send" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;cursor:pointer;">Envoyer</button></div></div>';
     let termBtn=body.querySelector("#__ag_s_term");
     if(termBtn)termBtn.onclick=()=>window.__ag_open_terminal();
     let sin=body.querySelector("#__ag_s_in"),ssend=body.querySelector("#__ag_s_send"),stream=body.querySelector("#__ag_s_stream");
@@ -162,7 +162,7 @@ window.__ag_update_pill=function(active){
     let ed=document.querySelector('[contenteditable="true"],textarea');
     if(ed){
       ed.setAttribute("data-ag-orig-ph",ed.getAttribute("placeholder")||"");
-      ed.setAttribute("placeholder","⚡ Mission Cloud Autonome sur VPS 62.169.27.8 (exécute même PC éteint)...");
+      ed.setAttribute("placeholder","⚡ Mission Cloud Autonome sur Remote VPS (exécute même PC éteint)...");
     }
   }else{
     if(pill)pill.style.display="none";
@@ -191,7 +191,7 @@ S3_NEW = 'children:[j(),f("span",{className:"select-none truncate max-w-36",chil
 
 S4_OLD = 'children:f($Ss,{availableResources:d,onSelectSot:l,setIsOpen:C})}),D.length>=2&&f(cn,{id:W,place:"right",noFade:!0,children:f(sSt,{resources:d,mode:"sot"})})]}),f(Dt,{children:[f("div",{"data-tooltip-id":U.length>=2?G:void 0,className:"w-full",children:f(qSs,{availableResources:d,rawResources:e.rawResources,onSelectNewCopy:o,setIsOpen:C,disabledSubtitle:r})}),U.length>=2&&f(cn,{id:G,place:"right",noFade:!0,children:f(sSt,{resources:d,mode:"copy"})})]}),'
 
-REMOTE_ITEM = 'f(Dt,{children:[f("div",{className:"w-full",children:f(Kw,{title:"Remote",icon:f(xe,{name:"cloud",size:14,className:"mt-0.5"}),subtitle:"Remote Agent Runtime (VPS - 62.169.27.8)",selected:rem||a.type==="remote",onClick:(e)=>{if(e&&(e.shiftKey||e.altKey||!localStorage.getItem("ag_remote_configured"))){window.__ag_open_cfg&&window.__ag_open_cfg()}else{setRem(!0),C(!1),window.__ag_update_pill&&window.__ag_update_pill(!0),window.__ag_open_console&&window.__ag_open_console()}}})})]})'
+REMOTE_ITEM = 'f(Dt,{children:[f("div",{className:"w-full",children:f(Kw,{title:"Remote",icon:f(xe,{name:"cloud",size:14,className:"mt-0.5"}),subtitle:"Remote Agent Runtime (VPS)",selected:rem||a.type==="remote",onClick:(e)=>{if(e&&(e.shiftKey||e.altKey||!localStorage.getItem("ag_remote_configured"))){window.__ag_open_cfg&&window.__ag_open_cfg()}else{setRem(!0),C(!1),window.__ag_update_pill&&window.__ag_update_pill(!0),window.__ag_open_console&&window.__ag_open_console()}}})})]})'
 
 S4_NEW = (
     'children:f($Ss,{availableResources:d,onSelectSot:()=>{setRem(!1),window.__ag_update_pill&&window.__ag_update_pill(!1),l()},setIsOpen:C})}),D.length>=2&&f(cn,{id:W,place:"right",noFade:!0,children:f(sSt,{resources:d,mode:"sot"})})]}),f(Dt,{children:[f("div",{"data-tooltip-id":U.length>=2?G:void 0,className:"w-full",children:f(qSs,{availableResources:d,rawResources:e.rawResources,onSelectNewCopy:()=>{setRem(!1),window.__ag_update_pill&&window.__ag_update_pill(!1),o()},setIsOpen:C,disabledSubtitle:r})}),U.length>=2&&f(cn,{id:G,place:"right",noFade:!0,children:f(sSt,{resources:d,mode:"copy"})})]}),'
@@ -213,7 +213,7 @@ S_HWN_OLD = 'function hwn({isGitRepo:e,isCitcWorkspace:t,isPendingNewWorkspace:r
 S_HWN_NEW = 'function hwn({isGitRepo:e,isCitcWorkspace:t,isPendingNewWorkspace:r}){if(r)return[nu.LOCAL,nu.REMOTE];let n=[nu.LOCAL];return(e!==!1||t===!0)&&n.push(nu.BACKGROUND_WORKTREE),t===!0&&n.push(nu.BACKGROUND_CITC_WORKSPACE_CLONE),n.push(nu.REMOTE),n}'
 
 S_LSS_OLD = 'LSs=[{environment:nu.LOCAL,label:"Local",description:"Run in your current workspace",icon:"computer"},{environment:nu.BACKGROUND_WORKTREE,label:"Worktree",description:"Run in a new worktree",icon:"fork_right"},{environment:nu.BACKGROUND_CITC_WORKSPACE_CLONE,label:"CitC Clone",description:"Clone current workspace into a new independent workspace",icon:"cloud"}]'
-S_LSS_NEW = 'LSs=[{environment:nu.LOCAL,label:"Local",description:"Run on this computer (Windows)",icon:"computer"},{environment:nu.BACKGROUND_WORKTREE,label:"New Worktree",description:"Local branch copy",icon:"fork_right"},{environment:nu.BACKGROUND_CITC_WORKSPACE_CLONE,label:"CitC Clone",description:"Clone current workspace into a new independent workspace",icon:"cloud"},{environment:nu.REMOTE,label:"Remote (VPS)",description:"62.169.27.8 — Ubuntu 24.04 (24/7 Autonome)",icon:"cloud"}]'
+S_LSS_NEW = 'LSs=[{environment:nu.LOCAL,label:"Local",description:"Run on this computer (Windows)",icon:"computer"},{environment:nu.BACKGROUND_WORKTREE,label:"New Worktree",description:"Local branch copy",icon:"fork_right"},{environment:nu.BACKGROUND_CITC_WORKSPACE_CLONE,label:"CitC Clone",description:"Clone current workspace into a new independent workspace",icon:"cloud"},{environment:nu.REMOTE,label:"Remote (VPS)",description:"Linux Cloud — Ubuntu 24.04 (24/7 Autonome)",icon:"cloud"}]'
 
 S_MWN_C_OLD = 'C=ie(T=>{t?.(T),h(!1)},[t])'
 S_MWN_C_NEW = 'C=ie(T=>{t?.(T),h(!1);let isR=(T===nu.REMOTE);window.__ag_remote_mode=isR;window.__ag_update_pill&&window.__ag_update_pill(isR);if(isR&&window.event&&(window.event.shiftKey||window.event.altKey||!localStorage.getItem("ag_remote_configured"))){window.__ag_open_cfg&&window.__ag_open_cfg()}},[t])'
@@ -229,9 +229,9 @@ def check_status():
     with open(TARGET_FILE, "r", encoding="utf-8") as f:
         content = f.read()
     applied = (
-        "Remote Agent Runtime (VPS - 62.169.27.8)" in content
+        "Remote Agent Runtime (VPS" in content
         and 'e[e.REMOTE=5]="REMOTE"' in content
-        and "62.169.27.8 — Ubuntu 24.04 (24/7 Autonome)" in content
+        and "Ubuntu 24.04 (24/7 Autonome)" in content
     )
     print(f"Status: {'PATCHED (Complete Claude Code Remote System active)' if applied else 'UNPATCHED / PARTIAL'}")
     return applied

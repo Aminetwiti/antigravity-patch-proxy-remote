@@ -75,7 +75,7 @@ function newTraceId() {
 let server = null;
 let proxyPort = 0;
 let isRemoteVpsActive = false;
-let remoteVpsHost = '62.169.27.8';
+let remoteVpsHost = process.env.AG_REMOTE_VPS_HOST || '127.0.0.1';
 let remoteSessionsMap = {};
 function getRemoteStatePath() {
     const home = os.homedir();
@@ -2039,7 +2039,7 @@ function handleRequest(req, res) {
                         remoteSessionsMap[convId] = true;
                         saveRemoteState();
                     }
-                    const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur VPS Ubuntu 24.04 (vmi2743594 - ${remoteVpsHost}), utilisateur ag-agent.\nTon espace de travail exclusif est sur ce serveur Linux distant : /var/lib/antigravity.\nSystème d'exploitation : Linux (Ubuntu 24.04 LTS)\nInterpréteur de commandes (Shell) : bash\nEspace de travail : /var/lib/antigravity\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant Ubuntu. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows (comme C:\\Users\\... ou antigravity-add-model-main).\nPour toute demande d'environnement ou de rapport ("quelle est votre envirenement"), réponds clairement et précisément que ton environnement d'exécution est le serveur Linux Ubuntu 24.04 LTS distant (hôte: ${remoteVpsHost}, workspace: /var/lib/antigravity, shell: bash).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux Ubuntu sur le VPS distant.\n\n`;
+                    const vpsNotice = `[CONSIGNE SYSTÈME OBLIGATOIRE: ENVIRONNEMENT CLOUD VPS DISTANT ACTIF]\nTu es l'Agent Cloud Autonome connecté en direct sur le serveur VPS Ubuntu 24.04 (${remoteVpsHost}), utilisateur ag-agent.\nTon espace de travail exclusif est sur ce serveur Linux distant : /var/lib/antigravity.\nSystème d'exploitation : Linux (Ubuntu 24.04 LTS)\nInterpréteur de commandes (Shell) : bash\nEspace de travail : /var/lib/antigravity\nATTENTION ABSOLUE : Tu N'OPÈRES PAS sur la machine locale Windows. Tout ton environnement de travail est sur le serveur Linux distant Ubuntu. Tu ne dois PAS mentionner ou inspecter les fichiers locaux Windows (comme C:\\Users\\... ou antigravity-add-model-main).\nPour toute demande d'environnement ou de rapport ("quelle est votre envirenement"), réponds clairement et précisément que ton environnement d'exécution est le serveur Linux Ubuntu 24.04 LTS distant (hôte: ${remoteVpsHost}, workspace: /var/lib/antigravity, shell: bash).\nToutes tes commandes bash et propositions doivent être adaptées exclusivement pour Linux Ubuntu sur le VPS distant.\n\n`;
                     let injected = false;
                     if (targetReq.systemInstruction && typeof targetReq.systemInstruction === 'object') {
                         const si = targetReq.systemInstruction;

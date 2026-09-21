@@ -223,9 +223,9 @@ Supporté nativement sous `~/.gemini/antigravity-ide/mcp_config.json` ou à la r
   "mcpServers": {
     "coolify": {
       "command": "node",
-      "args": ["C:/Users/amine/.gemini/antigravity/mcp/coolify/index.js"],
+      "args": ["~/.gemini/antigravity/mcp/coolify/index.js"],
       "env": {
-        "COOLIFY_API_URL": "http://62.169.27.8:8000"
+        "COOLIFY_API_URL": "http://coolify.example.com:8000"
       },
       "tools": {
         "list_servers": { "eager": true },

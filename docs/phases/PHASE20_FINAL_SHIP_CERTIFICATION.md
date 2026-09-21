@@ -20,13 +20,13 @@
 
 ## 2. Real External VPS Assessment
 
-- **Host Identification:** `62.169.27.8:4155` (`vmi2743594`)
+- **Host Identification:** `vps.example.com` (`vps-host`)
 - **Operating System:** Ubuntu 24.04.4 LTS (Linux kernel `6.8.0-137-generic`)
 - **Daemon Runtime Status:** **ONLINE** (`status: ONLINE`, `uptimeSeconds: 63095`, `serverId: srv_1788882085886`)
-- **Ingress Protocol:** Cloudflare Quick Tunnel (`https://pharmaceuticals-willing-warrant-pound.trycloudflare.com`)
+- **Ingress Protocol:** Cloudflare Quick Tunnel (`https://tunnel.example.com`)
 - **Systemd Unit Configuration:** `/etc/systemd/system/ag-agentd.service` running as dedicated unprivileged user `ag-agent` (`docker` group), `0600` permissions on environment file.
 - **Process Credential Hygiene:** Verified clean via `/proc/<PID>/cmdline` and `ps aux` (zero CLI token leakage).
-- **Environment Multi-Tenancy Observation:** The host is an active multi-workload server hosting client projects, CRM, Coolify management (`http://62.169.27.8:8000`), and databases.
+- **Environment Multi-Tenancy Observation:** The host is an active multi-workload server hosting client projects, CRM, Coolify management (`http://coolify.example.com:8000`), and databases.
 
 ---
 
@@ -38,7 +38,7 @@
   1. Revoked token (`80950aff...`) successfully rejected with `HTTP 401 Unauthorized`.
   2. The Phase 19 token (`4d8b9f1a...`) was discovered hardcoded in client source files ([src/preload.ts](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/src/preload.ts) line 204 and [scripts/patch_ide_remote.py](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/scripts/patch_ide_remote.py) line 30).
   3. The hardcoded fallbacks were eliminated from the local codebase and verified via `npm run lint` and `npm run build`.
-  4. However, the token **remains live and active on the remote VPS** (`HTTP 200 OK`) because external automated SSH access to `root@62.169.27.8:4155` is denied (`Permission denied (publickey,password)`).
+  4. However, the token **remains live and active on the remote VPS** (`HTTP 200 OK`) because external automated SSH access to `root@vps.example.com` is denied (`Permission denied (publickey,password)`).
   5. The host administrator must execute token rotation on the remote VPS prior to production signoff.
 
 ---
@@ -205,7 +205,7 @@ Three mandatory blocking gates failed or remain unproven on the real cloud infra
 
 Release:                ag-agentd v2.0.0 (GA Candidate)
 Commit:                 53c7afd67380161e54bdcf6dfa3e489b67ca75ba
-External VPS:           PASS (Deployed & live on 62.169.27.8:4155)
+External VPS:           PASS (Deployed & live on external VPS)
 Real Mobile:            NOT TESTED (0 physical devices attached via ADB)
 Real Provider:          FAIL (Connection refused on 127.0.0.1:51074 on VPS; no key set)
 Full Machine Reboot:    NOT PROVEN (Host uptime 63,095s; bare-metal reboot deferred)

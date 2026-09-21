@@ -16,33 +16,33 @@ void main() {
   group('DaemonWebSocketClient.formatWsUrl', () {
     test('normalise domaine HTTPS avec port 8090 laissé par défaut vers WSS sans port', () {
       expect(
-        DaemonWebSocketClient.formatWsUrl('https://dqlwdgordp4apddvek8gvgn0.ty-dev.site', 8090),
-        'wss://dqlwdgordp4apddvek8gvgn0.ty-dev.site/ws',
+        DaemonWebSocketClient.formatWsUrl('https://daemon.example.com', 8090),
+        'wss://daemon.example.com/ws',
       );
     });
 
     test('normalise domaine HTTPS avec port 443 explicite vers WSS sans :443', () {
       expect(
-        DaemonWebSocketClient.formatWsUrl('https://dqlwdgordp4apddvek8gvgn0.ty-dev.site', 443),
-        'wss://dqlwdgordp4apddvek8gvgn0.ty-dev.site/ws',
+        DaemonWebSocketClient.formatWsUrl('https://daemon.example.com', 443),
+        'wss://daemon.example.com/ws',
       );
     });
 
     test('normalise domaine nu sans schéma vers WSS sans port', () {
       expect(
-        DaemonWebSocketClient.formatWsUrl('dqlwdgordp4apddvek8gvgn0.ty-dev.site', 8090),
-        'wss://dqlwdgordp4apddvek8gvgn0.ty-dev.site/ws',
+        DaemonWebSocketClient.formatWsUrl('daemon.example.com', 8090),
+        'wss://daemon.example.com/ws',
       );
     });
 
     test('retire les slashs de fin et /ws en trop', () {
       expect(
-        DaemonWebSocketClient.formatWsUrl('https://dqlwdgordp4apddvek8gvgn0.ty-dev.site/'),
-        'wss://dqlwdgordp4apddvek8gvgn0.ty-dev.site/ws',
+        DaemonWebSocketClient.formatWsUrl('https://daemon.example.com/'),
+        'wss://daemon.example.com/ws',
       );
       expect(
-        DaemonWebSocketClient.formatWsUrl('https://dqlwdgordp4apddvek8gvgn0.ty-dev.site/ws'),
-        'wss://dqlwdgordp4apddvek8gvgn0.ty-dev.site/ws',
+        DaemonWebSocketClient.formatWsUrl('https://daemon.example.com/ws'),
+        'wss://daemon.example.com/ws',
       );
     });
 

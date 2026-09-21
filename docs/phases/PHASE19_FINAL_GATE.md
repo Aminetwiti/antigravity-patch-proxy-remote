@@ -5,7 +5,7 @@
 Version: 2.0.0
 Commit: 026dc531014a7f7254dd5ba8c8e7eab29ef4fe9b
 RC: v2.0.0-rc2
-External VPS: PASS (Verified live on 62.169.27.8:4155 - Ubuntu 24.04 LTS)
+External VPS: PASS (Verified live on external Linux VPS host - Ubuntu 24.04 LTS)
 Real Mobile: PASS (Debug APK built & launched on Samsung Galaxy S21 FE 5G SM G990B2)
 Real Desktop: PASS (Electron Desktop Patch Proxy linted & tested)
 Real Provider: NOT TESTED (Configured key api.experientiallabs.ai hits 429 insufficient quota)
@@ -24,7 +24,7 @@ FIX BEFORE RELEASE
 
 | Gate | Result | Notes / Empirical Evidence |
 |:---|:---|:---|
-| **External VPS** | **PASS** | Deployed, started under systemd, and verified live over SSH on `62.169.27.8:4155` (Ubuntu 24.04). |
+| **External VPS** | **PASS** | Deployed, started under systemd, and verified live over SSH on external VPS (Ubuntu 24.04). |
 | **Clean Installation** | **PASS** | Installed via dedicated `ag-agent` service user; pure Go static binary verified matching SHA-256. |
 | **TLS** | **PASS** | Cloudflare Quick Tunnel automated HTTPS/WSS ingress verified with external HTTP 200 responses. |
 | **Authentication** | **PASS** | Dynamic CSPRNG and configured tokens strictly verified via Constant-Time comparison. |
@@ -56,7 +56,7 @@ In strict accordance with the Section 37 directive:
 > *"Dès qu'un problème critique ou une preuve insuffisante sur un gate obligatoire est découvert :  
 > **FIX BEFORE RELEASE**"*
 
-The **External VPS Deployment Gate** has now been **empirically validated and passed** on `62.169.27.8:4155`.  
+The **External VPS Deployment Gate** has now been **empirically validated and passed** on external VPS.  
 However, under strict black-box zero-trust rules, the release gate verdict remains:
 
 ```text
@@ -81,7 +81,7 @@ For **Private Single-Tenant VPS deployment**, all codebase, security, daemon pac
 
 1. PRIVATE SINGLE-TENANT VPS (Self-Hosted Developer)
    Verdict: READY FOR USER PACKAGING & MOBILE PAIRING
-   Status: Verified live on 62.169.27.8 (Ubuntu 24.04). Zero-leak systemd,
+   Status: Verified live on external VPS (Ubuntu 24.04). Zero-leak systemd,
            SQLite WAL, Docker engine, Cloudflare tunnel all operational.
 
 2. TRUSTED INTERNAL TEAM SERVER

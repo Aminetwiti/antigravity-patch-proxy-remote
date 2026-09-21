@@ -27,8 +27,9 @@ RUN apk add --no-cache \
     tzdata \
     bash
 
-# Download cloudflared for Linux x86_64
-RUN curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared \
+# Download pinned cloudflared release for Linux x86_64
+ARG CLOUDFLARED_VERSION=2024.12.2
+RUN curl -sL "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64" -o /usr/local/bin/cloudflared \
     && chmod +x /usr/local/bin/cloudflared
 
 WORKDIR /app
