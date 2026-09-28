@@ -58,8 +58,9 @@ echo.
 
 REM -- 1. Stop Classic Antigravity + language servers + proxy-stub (keep Antigravity IDE intact)
 echo [1/5] Stopping Classic Antigravity processes...
-powershell -ExecutionPolicy Bypass -Command "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"
-powershell -ExecutionPolicy Bypass -Command "Get-Process -Name node -ErrorAction SilentlyContinue | ForEach-Object { try { $cmd = (Get-CimInstance Win32_Process -Filter 'ProcessId='+$_.Id).CommandLine; if ($cmd -like '*proxy-stub*' -or $cmd -like '*standalone-proxy-runner*') { $_ | Stop-Process -Force } } catch {} }"
+powershell -ExecutionPolicy Bypass -Command "Stop-Process -Name Antigravity, language_server, language_server_windows_x64 -Force -ErrorAction SilentlyContinue"
+powershell -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*proxy-stub*' -or $_.CommandLine -like '*standalone-proxy-runner*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+powershell -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort %PROXY_PORT% -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }"
 timeout /t 2 /nobreak >nul
 
 REM -- 2. Build TS
@@ -102,7 +103,9 @@ if exist "%AG_CLASSIC_EXE%" (
       xcopy /E /I /H /Y "%AG_CLASSIC%\resources\app.asar.unpacked" "%AG_SCRATCH%\app.asar.unpacked" >nul
       echo   app.asar.unpacked cached as well
     )
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\register-auto-heal.ps1"
+    if "%AG_AUTO_HEAL%"=="1" (
+      powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\register-auto-heal.ps1"
+    )
   )
 )
 
@@ -127,10 +130,14 @@ if errorlevel 1 (
 )
 
 REM -- 5. Start the local proxy (real proxy via bundled Electron; stub fallback)
-echo [5/5] Starting local proxy on port %PROXY_PORT%...
-node "%SCRIPT_DIR%ag-doctor\bin\ag-doctor.js" proxy start
-if errorlevel 1 (
-  echo   [WARN] Proxy did not start cleanly -- models may not be injected.
+if "!TARGET!"=="IDE" (
+  echo [5/5] Starting local proxy on port %PROXY_PORT% for Antigravity IDE...
+  node "%SCRIPT_DIR%ag-doctor\bin\ag-doctor.js" proxy start
+  if errorlevel 1 (
+    echo   [WARN] Proxy did not start cleanly -- models may not be injected.
+  )
+) else (
+  echo [5/5] Classic install: proxy is hosted internally inside Antigravity on port %PROXY_PORT%.
 )
 
 REM -- Launch the detected app
@@ -140,6 +147,7 @@ REM TARGET is set inside the if-exist block above, and the else-branch
 REM echo must not contain unescaped parentheses (cmd parses both branches
 REM of an if/else as one block -- "(classic)" caused "... was unexpected
 REM at this time." and broke the launch step).
+set "ELECTRON_RUN_AS_NODE="
 if "!TARGET!"=="IDE" (
   echo  Launching Antigravity IDE...
   start "" "%AG_IDE_EXE%"

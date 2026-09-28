@@ -79,6 +79,12 @@ try {
         }
     }
 
+    # Applique le patch binaire sur language_server.exe pour que les modèles soient actifs
+    $doctorJs = Join-Path $repoDir "ag-doctor\bin\ag-doctor.js"
+    if (Test-Path $doctorJs) {
+        & node "$doctorJs" patch apply --yes
+    }
+
     # Relance l'app pour que l'utilisateur ne voie pas de disruption.
     if ($wasRunning) {
         Start-Process -FilePath "$appPath\Antigravity.exe"

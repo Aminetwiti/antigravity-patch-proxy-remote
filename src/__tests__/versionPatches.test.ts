@@ -7,6 +7,8 @@ describe('Antigravity Version Patch Registry Resolution', () => {
     ['2.14.99', '2.6.0+'],
     ['2.15.0', '2.6.0+'],
     ['2.15.99', '2.6.0+'],
+    ['2.17.0', '2.6.0+'],
+    ['2.17.99', '2.6.0+'],
   ])('matches Antigravity %s to patch range %s', (version, expectedRange) => {
     const patch = findPatchForVersion(version);
     expect(patch).not.toBeNull();

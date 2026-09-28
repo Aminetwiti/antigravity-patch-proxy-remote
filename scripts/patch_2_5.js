@@ -91,7 +91,7 @@ const fs = require('fs');
 const path = require('path');
 const asar = require('@electron/asar');
 
-// v2.4.x patch: Monkey-patch fs.readFileSync to bypass ENOENT on missing unpacked files 
+// v2.4.x patch: Monkey-patch fs.readFileSync to bypass ENOENT on missing unpacked files
 // (e.g. chrome-devtools-mcp which is declared in ASAR header but missing from disk in v2.4.2)
 const originalReadFileSync = fs.readFileSync;
 fs.readFileSync = function(pathStr, options) {
@@ -136,6 +136,7 @@ const MISSING_JS_MODULES = [
   // New repo modules not present in v2.5.x original asar
   'presets',
   'presets/reasoningEffort',
+  'config/environment',
   'configExchange',
   'logger',
   'metrics',
@@ -143,6 +144,12 @@ const MISSING_JS_MODULES = [
   'preload/doctor-ui',
   'preload/logger',
   'preload/types',
+  'preload/provider-manager',
+  'preload/model-fetcher',
+  'preload/native-quota-card',
+  'preload/index',
+  'ipc/channels',
+  'i18n/messages',
   'gateway/server',
   'gateway/streamBuffer',
   'ipc/index',
@@ -156,9 +163,11 @@ const MISSING_JS_MODULES = [
   'services/cryptoStore',
   'services/googleAuth',
   'services/healthProbe',
+  'services/localAccountDiscovery',
   'services/localCredentialDiscovery',
   'services/localModelDetector',
   'services/modelStore',
+  'services/quotaCacheStore',
   'services/runtimeStateService',
   'services/settingsService',
   'services/telemetryStore',
@@ -258,22 +267,27 @@ function buildPatchManifest(repoDir) {
   const serviceFiles = fs.existsSync(servicesRoot)
     ? discoverJavaScriptFiles(servicesRoot).map((relativePath) => `dist/services/${relativePath}`)
     : [];
+  const preloadRoot = path.join(repoDir, 'dist', 'preload');
+  const preloadFiles = fs.existsSync(preloadRoot)
+    ? discoverJavaScriptFiles(preloadRoot).map((relativePath) => `dist/preload/${relativePath}`)
+    : [];
   return [...new Set([
     'dist/proxy.js',
     ...proxyFiles,
     ...serviceFiles,
+    ...preloadFiles,
     'dist/cryptoStore.js',
     'dist/customModelStore.js',
     'dist/schemaValidator.js',
     'dist/presets.js',
     'dist/presets/reasoningEffort.js',
+    'dist/config/environment.js',
     'dist/logger.js',
     'dist/configExchange.js',
     'dist/metrics.js',
-    'dist/preload/api.js',
-    'dist/preload/doctor-ui.js',
-    'dist/preload/logger.js',
-    'dist/preload/types.js',
+    'dist/ipc/channels.js',
+    'dist/shared/logger.js',
+    'dist/i18n/messages.js',
     'dist/wellKnown/modelIdUtils.js',
     'dist/rendererHook.js',
     ...OVERWRITE_FILES,
@@ -393,6 +407,16 @@ async function main() {
     filesAdded++;
     console.log(`            + dist/${mod}.js (${size} B)`);
     filesAdded += copySiblings(srcJs, dstJs);
+  }
+  const srcProvidersJson = path.join(repoDist, 'config', 'providers.json');
+  if (fs.existsSync(srcProvidersJson)) {
+    const dstProvidersJson = path.join(buildDist, 'config', 'providers.json');
+    ensureDir(path.dirname(dstProvidersJson));
+    fs.copyFileSync(srcProvidersJson, dstProvidersJson);
+    const size = fs.statSync(srcProvidersJson).size;
+    totalBytes += size;
+    filesAdded++;
+    console.log(`            + dist/config/providers.json (${size} B)`);
   }
   console.log(`            sub-total: ${filesAdded} files, ${totalBytes} B`);
 

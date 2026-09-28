@@ -145,7 +145,7 @@ if ($Loop) {
         }
         # Patch écrasé par un update officiel pendant la session ? Le VBS startup
         # ne couvre que le boot — ce check attrape le cas « update en cours d'usage ».
-        if ((Test-Path $HealScript) -and (Test-PatchLost)) {
+        if ($env:AG_AUTO_HEAL -eq "1" -and (Test-Path $HealScript) -and (Test-PatchLost)) {
             Write-Log "patch perdu (update officiel?) - auto-heal"
             & powershell -NoProfile -ExecutionPolicy Bypass -File $HealScript
         }

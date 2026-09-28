@@ -4493,6 +4493,23 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               if (!googleJson.agentModelSorts) googleJson.agentModelSorts = synth.agentModelSorts;
             }
 
+            // Sanitize modelExperiments: replace any unresolvable placeholder IDs in experiment strings
+            // (e.g. CASCADE_USE_EXPERIMENT_CHECKPOINTER checkpoint_model: MODEL_PLACEHOLDER_M50) with gemini-2.5-flash
+            if (googleJson.models && typeof googleJson.models === 'object') {
+              for (const mEntry of Object.values(googleJson.models as Record<string, any>)) {
+                if (mEntry?.modelExperiments?.experiments) {
+                  for (const exp of Object.values(mEntry.modelExperiments.experiments as Record<string, any>)) {
+                    if (typeof exp?.stringValue === 'string' && exp.stringValue.includes('MODEL_PLACEHOLDER_')) {
+                      exp.stringValue = exp.stringValue.replace(
+                        /"checkpoint_model":\s*"MODEL_PLACEHOLDER_[^"]+"/g,
+                        '"checkpoint_model": "gemini-2.5-flash"',
+                      );
+                    }
+                  }
+                }
+              }
+            }
+
             // 2. Injecter les modèles personnalisés dans agentModelSorts (menu déroulant Antigravity IDE)
             // Modèles originaux en tête de liste, modèles personnalisés ajoutés sans duplication
             try {

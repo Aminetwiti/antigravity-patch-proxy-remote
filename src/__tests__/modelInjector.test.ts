@@ -70,10 +70,25 @@ describe('mergeModels', () => {
     // Historical placeholder from past conversations must resolve
     expect(merged['MODEL_PLACEHOLDER_M577']).toBeDefined();
     expect(merged['MODEL_PLACEHOLDER_M50']).toBeDefined();
+    expect(merged['MODEL_PLACEHOLDER_M50'].model).toBe('MODEL_PLACEHOLDER_M50');
+    expect(merged['models/MODEL_PLACEHOLDER_M50']).toBeDefined();
     expect(merged['MODEL_PLACEHOLDER_M35']).toBeDefined();
     expect(merged['MODEL_PLACEHOLDER_M71']).toBeDefined();
     expect(merged['MODEL_PLACEHOLDER_M0']).toBeDefined();
     expect(merged['MODEL_PLACEHOLDER_M600']).toBeDefined();
+  });
+
+  it('aliases upstream models whose inner model field differs from map key (e.g. M50)', () => {
+    const upstream = {
+      'gemini-3.1-flash-lite': {
+        displayName: 'Gemini 3.1 Flash Lite',
+        model: 'MODEL_PLACEHOLDER_M50',
+      },
+    };
+    const merged = mergeModels(upstream, []) as Record<string, any>;
+    expect(merged['MODEL_PLACEHOLDER_M50']).toBeDefined();
+    expect(merged['MODEL_PLACEHOLDER_M50'].displayName).toBe('Gemini 3.1 Flash Lite');
+    expect(merged['models/MODEL_PLACEHOLDER_M50']).toBeDefined();
   });
 
   it('buildSyntheticModelsResponse includes custom models and historical placeholders', () => {

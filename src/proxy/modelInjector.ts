@@ -144,7 +144,9 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
     const result: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(target as Record<string, unknown>)) {
       const disp = (v as any)?.displayName || '';
-      if (!isObsoleteModel(k, disp)) {
+      const innerModel = (v as any)?.model;
+      const isNativeModel = typeof innerModel === 'string' && innerModel.startsWith('MODEL_');
+      if (isNativeModel || !isObsoleteModel(k, disp)) {
         result[k] = v;
       }
     }
@@ -265,6 +267,24 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       });
     }
 
+    // Register aliases for existing Google models so internal enum keys
+    // (e.g. entry.model === 'MODEL_PLACEHOLDER_M50' for gemini-3.1-flash-lite,
+    //  or 'MODEL_PLACEHOLDER_M71' for gemini-3.6-flash-high)
+    // are directly resolvable by key in Language Server's model table.
+    for (const [k, v] of Object.entries(result)) {
+      if (v && typeof v === 'object') {
+        const innerModel = (v as { model?: unknown }).model;
+        if (typeof innerModel === 'string' && innerModel && innerModel !== k) {
+          if (!result[innerModel]) {
+            result[innerModel] = v;
+          }
+          if (!result[`models/${innerModel}`]) {
+            result[`models/${innerModel}`] = v;
+          }
+        }
+      }
+    }
+
     // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M0..M600)
     // resolve cleanly in Language Server without "unknown model key: model not found"
     const fallbackPid = sortedCustomModels.length > 0 ? generateModelPlaceholderId(sortedCustomModels[0]) : '';
@@ -278,11 +298,18 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
     if (fallbackEntry) {
       for (let i = 0; i <= 600; i++) {
         const legacyKey = `MODEL_PLACEHOLDER_M${i}`;
-        if (!(result as Record<string, unknown>)[legacyKey]) {
-          (result as Record<string, unknown>)[legacyKey] = fallbackEntry;
-        }
-        if (!(result as Record<string, unknown>)[`models/${legacyKey}`]) {
-          (result as Record<string, unknown>)[`models/${legacyKey}`] = fallbackEntry;
+        if (!result[legacyKey]) {
+          const placeholderEntry = {
+            ...(fallbackEntry as Record<string, unknown>),
+            displayName: `Model Placeholder ${i}`,
+            model: legacyKey,
+            planModel: legacyKey,
+            requestedModel: legacyKey,
+          };
+          (result as Record<string, unknown>)[legacyKey] = placeholderEntry;
+          (result as Record<string, unknown>)[`models/${legacyKey}`] = placeholderEntry;
+        } else if (!result[`models/${legacyKey}`]) {
+          (result as Record<string, unknown>)[`models/${legacyKey}`] = result[legacyKey];
         }
       }
     }
@@ -371,6 +398,97 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     supportsImages: false,
     supportsVision: false,
     supportsThinking: false,
+  },
+  'gpt-oss-120b-medium': {
+    displayName: 'GPT-OSS 120B (Medium)',
+    maxTokens: 131072,
+    maxOutputTokens: 16384,
+    model: 'gpt-oss-120b-medium',
+    planModel: 'gpt-oss-120b-medium',
+    requestedModel: 'gpt-oss-120b-medium',
+    apiProvider: 'API_PROVIDER_OPENAI',
+    modelProvider: 'MODEL_PROVIDER_OPENAI',
+    supportsImages: false,
+    supportsVision: false,
+    supportsThinking: true,
+  },
+  'gemini-3.6-flash-high': {
+    displayName: 'Gemini 3.6 Flash (High)',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.6-flash-high',
+    planModel: 'gemini-3.6-flash-high',
+    requestedModel: 'gemini-3.6-flash-high',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.6-flash-medium': {
+    displayName: 'Gemini 3.6 Flash (Medium)',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.6-flash-medium',
+    planModel: 'gemini-3.6-flash-medium',
+    requestedModel: 'gemini-3.6-flash-medium',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.6-flash-low': {
+    displayName: 'Gemini 3.6 Flash (Low)',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.6-flash-low',
+    planModel: 'gemini-3.6-flash-low',
+    requestedModel: 'gemini-3.6-flash-low',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-pro-agent': {
+    displayName: 'Gemini Pro Agent',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-pro-agent',
+    planModel: 'gemini-pro-agent',
+    requestedModel: 'gemini-pro-agent',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.1-pro-low': {
+    displayName: 'Gemini 3.1 Pro (Low)',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.1-pro-low',
+    planModel: 'gemini-3.1-pro-low',
+    requestedModel: 'gemini-3.1-pro-low',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.1-flash-lite': {
+    displayName: 'Gemini 3.1 Flash Lite',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.1-flash-lite',
+    planModel: 'gemini-3.1-flash-lite',
+    requestedModel: 'gemini-3.1-flash-lite',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
   },
 };
 

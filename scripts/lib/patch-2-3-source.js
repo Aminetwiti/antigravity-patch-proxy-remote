@@ -121,7 +121,8 @@ function addUpdaterStateBridgeToPreload(source) {
   if (source.includes("getState: () => electron_1.ipcRenderer.invoke('updater:get-state')")) return source;
   const anchor = "    checkForUpdates: () => electron_1.ipcRenderer.invoke('updater:check-for-updates'),";
   if (!source.includes(anchor)) {
-    throw new Error('Unable to add updater state bridge: checkForUpdates was not found.');
+    // v2.15.0 removed the checkForUpdates IPC — bridge is decorative, skip.
+    return source;
   }
   return source.replace(
     anchor,
