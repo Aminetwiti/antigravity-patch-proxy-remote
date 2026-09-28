@@ -214,6 +214,14 @@ describe('translateToolCallToNative', () => {
     expect(result.args).toHaveProperty('CaseInsensitive', true);
   });
 
+  it('should not translate grep on single files to avoid IDE strconv.Atoi crash', () => {
+    const result = translateToolCallToNative('run_command', {
+      CommandLine: 'grep "pattern" /src/renderer/app.ts',
+      Cwd: '/',
+    });
+    expect(result.name).toBe('run_command');
+  });
+
   it('should pass through unknown commands', () => {
     const result = translateToolCallToNative('run_command', {
       CommandLine: 'npm install',

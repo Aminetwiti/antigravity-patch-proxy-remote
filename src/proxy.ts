@@ -1294,7 +1294,8 @@ export async function executeGoogleCloudCodeWithPool(
   });
 
   let boundAccount: CustomModel | undefined;
-  if (sessId) {
+  const useStickySessions = process.env.AG_STICKY_GOOGLE_ACCOUNTS === '1';
+  if (sessId && useStickySessions) {
     boundAccount = sortedAccounts.find((m) => {
       const affinity = sessionAffinities.get(sessId);
       return affinity && getAccountQuotaKey(m) === affinity.accountKey && !getOpenBreaker(m) && !isAccountInCooldown(m, modelFamily) && getModelQuotaScore(m) > 0;
@@ -1372,6 +1373,16 @@ export async function executeGoogleCloudCodeWithPool(
       continue;
     }
 
+    // Fast-skip: if this candidate has 0% quota remaining and reset has not passed
+    const candidateQuotaScore = getModelQuotaScore(candidate, modelFamily);
+    if (candidateQuotaScore <= 0) {
+      const hasPositiveRemaining = sortedAccounts.slice(i + 1).some((c) => getModelQuotaScore(c, modelFamily) > 0 && !isAccountInCooldown(c, modelFamily));
+      if (hasPositiveRemaining) {
+        log.info(`[Proxy] Fast-skipping candidate ${candidateName}: 0% quota remaining for ${modelFamily}`);
+        continue;
+      }
+    }
+
     log.info(`[Proxy] Google account pool: trying candidate ${candidateName} (attempt ${i + 1}/${totalAttempts})`);
 
     let accessToken: string | null = null;
@@ -1436,7 +1447,7 @@ export async function executeGoogleCloudCodeWithPool(
       recordSuccess(candidate);
       clearAccountCooldown(candidate, modelFamily);
       endAccountProbation(candidate, modelFamily);
-      if (sessId) {
+      if (sessId && useStickySessions) {
         bindSessionToModel(sessId, candidate);
       }
       log.info(`[Proxy] Google Cloud Code request SUCCEEDED on account ${candidateName}`);
@@ -1456,6 +1467,10 @@ export async function executeGoogleCloudCodeWithPool(
 
       if (decision.category === 'quota_exhausted') {
         const liveKey = getAccountQuotaKey(candidate);
+        quotaExhaustedAccountKeys.add(liveKey);
+        if (modelFamily) {
+          quotaExhaustedAccountKeys.add(`${liveKey}:${modelFamily}`);
+        }
         const existingLive = getLiveAccountQuota(liveKey);
         if (existingLive) {
           if (isClaude) {
@@ -1629,7 +1644,7 @@ export async function executeGoogleCloudCodeWithPool(
   if (!res.writableEnded && !res.destroyed) {
     const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
     const allCustomModels = expandModelsWithEffort(loadCustomModels());
-    const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.7-flash-tiered', 'gemini-2.0-flash'];
+    const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.8-pro'];
     const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || '');
     const eligibleFallbacks = fallbackTargets.filter((m) => m !== currentBase);
 
@@ -2397,6 +2412,10 @@ export function getAccountQuotaKey(item: CustomModel): string {
 // ─── Google Account 429 Cooldown & Probation Registry ─────────────────────────
 const googleAccountCooldowns = new Map<string, number>();
 const accountProbationUntil = new Map<string, number>();
+// Tracks accounts that just received a quota_exhausted 429 so concurrent requests
+// already past the cooldown snapshot can fast-skip them without an extra network round-trip.
+// ponytail: global Set, cleared when setAccountCooldown is called — O(1) lookup, zero overhead.
+const quotaExhaustedAccountKeys = new Set<string>();
 
 export function isAccountInProbation(candidate: CustomModel, modelFamily?: string): boolean {
   const baseKey = getAccountQuotaKey(candidate);
@@ -2425,10 +2444,15 @@ export function _resetAccountProbation(): void {
 export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string): boolean {
   const baseKey = getAccountQuotaKey(candidate);
   const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
+  if (quotaExhaustedAccountKeys.has(key) || quotaExhaustedAccountKeys.has(baseKey)) {
+    return true;
+  }
   const until = googleAccountCooldowns.get(key) || (modelFamily ? googleAccountCooldowns.get(baseKey) : undefined);
   if (!until) return false;
   if (Date.now() >= until) {
     googleAccountCooldowns.delete(key);
+    quotaExhaustedAccountKeys.delete(key);
+    quotaExhaustedAccountKeys.delete(baseKey);
     // Transition to 15s half-open probation to prevent thundering herd stampede
     accountProbationUntil.set(key, Date.now() + 15_000);
     return false;
@@ -2459,14 +2483,17 @@ export function clearAccountCooldown(candidate: CustomModel, modelFamily?: strin
   if (modelFamily) {
     googleAccountCooldowns.delete(`${baseKey}:${modelFamily}`);
     accountProbationUntil.delete(`${baseKey}:${modelFamily}`);
+    quotaExhaustedAccountKeys.delete(`${baseKey}:${modelFamily}`);
   }
   googleAccountCooldowns.delete(baseKey);
   accountProbationUntil.delete(baseKey);
+  quotaExhaustedAccountKeys.delete(baseKey);
 }
 
 export function _resetAllAccountCooldowns(): void {
   googleAccountCooldowns.clear();
   accountProbationUntil.clear();
+  quotaExhaustedAccountKeys.clear();
 }
 
 /**
@@ -2589,16 +2616,23 @@ export function _resetAccountInFlight(): void {
   accountInFlightRequests.clear();
 }
 
-// ─── Google Account RPM Governor (Sliding Window 60s) ─────────────────────────
+// ─── Google Account RPM Governor (Sliding Window 60s) & LRU Tracker ───────────
 const accountRequestTimestamps = new Map<string, number[]>();
+const accountLastUsedTimestamp = new Map<string, number>();
 
 export function recordAccountRequest(candidate: CustomModel): void {
   const key = getAccountQuotaKey(candidate);
   const now = Date.now();
+  accountLastUsedTimestamp.set(key, now);
   const list = accountRequestTimestamps.get(key) || [];
   const recent = list.filter((t) => now - t < 60_000);
   recent.push(now);
   accountRequestTimestamps.set(key, recent);
+}
+
+export function getAccountLastUsed(candidate: CustomModel): number {
+  const key = getAccountQuotaKey(candidate);
+  return accountLastUsedTimestamp.get(key) || 0;
 }
 
 export function getAccountRpmCount(candidate: CustomModel): number {
@@ -2615,6 +2649,7 @@ export function getAccountRpmCount(candidate: CustomModel): number {
 
 export function _resetAccountRpm(): void {
   accountRequestTimestamps.clear();
+  accountLastUsedTimestamp.clear();
 }
 
 export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number {
@@ -2642,8 +2677,19 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
       ? q.weeklyPercentage
       : 50;
 
-  if (fiveHour === 0) return 0;
-  return (fiveHour * 0.7) + (weekly * 0.3);
+  const now = Date.now();
+  const fiveHourResetStr = isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime);
+  const fiveHourResetPassed = fiveHourResetStr ? new Date(fiveHourResetStr).getTime() <= now : false;
+
+  const weeklyResetStr = isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime);
+  const weeklyResetPassed = weeklyResetStr ? new Date(weeklyResetStr).getTime() <= now : false;
+
+  if (fiveHour === 0 && !fiveHourResetPassed) return 0;
+  if (weekly === 0 && !weeklyResetPassed) return 0;
+
+  const effFiveHour = (fiveHour === 0 && fiveHourResetPassed) ? 50 : fiveHour;
+  const effWeekly = (weekly === 0 && weeklyResetPassed) ? 50 : weekly;
+  return (effFiveHour * 0.7) + (effWeekly * 0.3);
 }
 
 // ─── Google Account Latency Tracker (EWMA alpha = 0.2) ────────────────────────
@@ -2892,6 +2938,14 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
   const candA = topTier[i];
   const candB = topTier[j];
 
+  const lastA = getAccountLastUsed(candA);
+  const lastB = getAccountLastUsed(candB);
+
+  // If one candidate was used more recently, favor the fresher idle account for intelligent rotation
+  if (lastA !== lastB) {
+    return lastA < lastB ? candA : candB;
+  }
+
   const scoreA = getAccountDynamicScore(candA, modelFamily);
   const scoreB = getAccountDynamicScore(candB, modelFamily);
 
@@ -3033,6 +3087,8 @@ export function clearSessionAffinities(): void {
   sessionModelFallbacks.clear();
 }
 
+export const SESSION_MODEL_FALLBACK_TTL_MS = 3 * 60 * 1000; // 3 minutes auto-recovery back to primary model
+
 export interface SessionModelFallback {
   originalModel: string;
   fallbackModel: string;
@@ -3046,7 +3102,11 @@ export function getSessionModelFallback(sessionKey: string): SessionModelFallbac
   if (!sessionKey) return undefined;
   const fb = sessionModelFallbacks.get(sessionKey);
   if (!fb) return undefined;
-  if (Date.now() - fb.lastUsed > SESSION_AFFINITY_TTL_MS) {
+  if (
+    Date.now() - fb.lastUsed > SESSION_MODEL_FALLBACK_TTL_MS ||
+    /gemini-(?:3\.[0-7]|2\.|1\.)/i.test(fb.fallbackModel) ||
+    /gpt-[34]/i.test(fb.fallbackModel)
+  ) {
     sessionModelFallbacks.delete(sessionKey);
     return undefined;
   }
@@ -3060,6 +3120,9 @@ export function setSessionModelFallback(
   notified = false,
 ): void {
   if (!sessionKey) return;
+  if (/gemini-(?:3\.[0-7]|2\.|1\.)/i.test(fallbackModel) || /gpt-[34]/i.test(fallbackModel)) {
+    return;
+  }
   sessionModelFallbacks.set(sessionKey, {
     originalModel,
     fallbackModel,
@@ -3070,6 +3133,19 @@ export function setSessionModelFallback(
 
 export function clearSessionModelFallbacks(): void {
   sessionModelFallbacks.clear();
+}
+
+export function getActiveSessionModelFallbacks(): Record<string, SessionModelFallback> {
+  const result: Record<string, SessionModelFallback> = {};
+  const now = Date.now();
+  for (const [key, fb] of sessionModelFallbacks.entries()) {
+    if (now - fb.lastUsed <= SESSION_MODEL_FALLBACK_TTL_MS) {
+      result[key] = { ...fb };
+    } else {
+      sessionModelFallbacks.delete(key);
+    }
+  }
+  return result;
 }
 
 
@@ -3167,6 +3243,12 @@ function handleCustomModelRequest(
         }
       } else if (model.fallbackModel) {
         chainItems.push(model.fallbackModel);
+      } else if (model.provider === 'google' && !isGoogleCloudCodeModel(model)) {
+        // Intelligent default fallback cascade for Google AI Studio models (e.g. 503 high demand or 429)
+        const norm = (model.externalModelName || model.name || '').toLowerCase();
+        if (norm.includes('gemini-3.8-flash')) {
+          chainItems.push('gemini-3.8-pro');
+        }
       }
 
       if (poolSiblings.length > 0 || chainItems.length > 0) {
@@ -3188,15 +3270,15 @@ function handleCustomModelRequest(
         orderedModels = [...poolSiblings, ...chainModels, ...rest];
       }
 
-      // ponytail: skip same account on rate_limit — shared quota, fallback is a no-op.
-      // Separate accounts (different API keys) on the same provider have independent quotas.
+      // ponytail: skip same account on rate_limit if it's the exact same base model (shared quota).
+      // Separate accounts (different API keys) or different model tiers on the same provider/key are allowed.
       const failedAccountKey = diagnostic.errorType === 'rate_limit'
         ? getAccountQuotaKey(model)
         : null;
       for (const m of orderedModels) {
         if (m.name !== model.name && m.apiKey && !m.apiKey.startsWith('fallback:')) {
-          if (failedAccountKey && getAccountQuotaKey(m) === failedAccountKey) {
-            log.warn(`[Proxy] Auto-fallback: skipping ${m.displayName || m.name} (same account credentials, shared quota)`);
+          if (failedAccountKey && getAccountQuotaKey(m) === failedAccountKey && getBaseModelId(m.name) === targetBase) {
+            log.warn(`[Proxy] Auto-fallback: skipping ${m.displayName || m.name} (same account credentials, shared quota on ${targetBase})`);
             continue;
           }
           const fromName = model.displayName || model.name;
@@ -4983,6 +5065,11 @@ export function stopQuotaPollingInterval(): void {
 // ─── Server Start/Stop ────────────────────────────────────────────────────
 
 export function startProxy(): Promise<number> {
+  // Guard: proxy-runner.js and languageServer.ts both call startProxy().
+  // If the server is already listening, return the existing port.
+  if (server?.listening && proxyPort > 0) {
+    return Promise.resolve(proxyPort);
+  }
   return new Promise((resolve, reject) => {
     try {
       server = http.createServer(handleRequest);

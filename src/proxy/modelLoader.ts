@@ -9,7 +9,7 @@ import { app } from 'electron';
 import log from 'electron-log';
 import * as cryptoStore from '../cryptoStore';
 import { validateCustomModel } from '../schemaValidator';
-import { ALL_PROVIDERS, type ProviderName, LOCAL_SERVICES, STANDARD_GOOGLE_MODELS } from '../constants';
+import { ALL_PROVIDERS, type ProviderName, LOCAL_SERVICES, STANDARD_GOOGLE_MODELS, isObsoleteModel } from '../constants';
 import { generateModelPlaceholderId } from './idGenerator';
 import type { CustomModel } from './types';
 import { normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel } from '../services/googleAuth';
@@ -149,6 +149,10 @@ function validateModels(decrypted: CustomModel[]): CustomModel[] {
   const validModels: CustomModel[] = [];
   for (let i = 0; i < decrypted.length; i++) {
     const m = decrypted[i];
+    if (isObsoleteModel(m.externalModelName || m.name, m.displayName)) {
+      log.info(`[Proxy] Skipping obsolete model: ${m.name || m.externalModelName}`);
+      continue;
+    }
     const provider = m.provider as string;
     if (!ALL_PROVIDERS.includes(provider as ProviderName)) {
       log.warn(`[Proxy] Skipping model at index ${i}: Unsupported provider ${provider}. Must be one of: ${ALL_PROVIDERS.join(', ')}`);
@@ -188,12 +192,14 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
 
     for (const acc of accounts) {
       if (acc.enabled === false) continue;
-      for (const m of models) {
-      if (m.enabled === false) continue;
-      const mergedHeaders = { ...p.extraHeaders, ...(m as { extraHeaders?: Record<string, string> }).extraHeaders };
-      const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
+      const targetModels = Array.isArray((acc as any).models) && (acc as any).models.length > 0 ? (acc as any).models : models;
+      for (const m of targetModels) {
+        if (m.enabled === false) continue;
+        if (isObsoleteModel(m.id, m.displayName)) continue;
+        const mergedHeaders = { ...p.extraHeaders, ...(m as { extraHeaders?: Record<string, string> }).extraHeaders };
+        const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
-      let displayName = m.displayName ?? m.id ?? '';
+        let displayName = m.displayName ?? m.id ?? '';
 
       const partialModel: CustomModel = {
         name: m.id ?? '',
@@ -277,6 +283,7 @@ export function loadCustomModels(): CustomModel[] {
       const models = parsed.models || [];
       loadedModels = parseModelsSchema(models, filePath);
     }
+    loadedModels = loadedModels.filter(m => !isObsoleteModel(m.externalModelName || m.name, m.displayName));
 
     // Auto-remap unhosted Google model IDs so stale saved configs on disk are cleaned up in memory and updated
     for (const m of loadedModels) {
@@ -297,14 +304,14 @@ export function loadCustomModels(): CustomModel[] {
       }
     }
 
-    // For Google accounts: collapse to ONE pooled entry per unique model ID.
+    // For Google Cloud Code accounts (Antigravity independent quota): collapse to ONE pooled entry per unique model ID.
     // The proxy routes to the best real account at dispatch time (apiKey === 'auto' path).
-    // Non-Google providers: keep their entries as-is.
-    const googleModels = loadedModels.filter(m => m.provider === 'google' && m.apiKey && !m.apiKey.startsWith('fallback:'));
-    const otherModels = loadedModels.filter(m => m.provider !== 'google' || !m.apiKey || m.apiKey.startsWith('fallback:'));
+    // Google AI Studio accounts (API keys / shared developer quota) and Non-Google providers: keep their entries as-is.
+    const googleCloudCodeModels = loadedModels.filter(m => m.provider === 'google' && isGoogleCloudCodeModel(m) && m.apiKey && !m.apiKey.startsWith('fallback:'));
+    const otherModels = loadedModels.filter(m => !(m.provider === 'google' && isGoogleCloudCodeModel(m)) || !m.apiKey || m.apiKey.startsWith('fallback:'));
 
     const seenBaseIds = new Map<string, CustomModel>();
-    for (const m of googleModels) {
+    for (const m of googleCloudCodeModels) {
       const baseId = (m.externalModelName || m.name || '').replace(/^models\//, '');
       if (!seenBaseIds.has(baseId)) {
         seenBaseIds.set(baseId, m);
@@ -313,13 +320,13 @@ export function loadCustomModels(): CustomModel[] {
 
     const pooledGoogleModels: CustomModel[] = [];
     seenBaseIds.forEach((template, baseId) => {
-      const accountCount = googleModels.filter(m => (m.externalModelName || m.name || '').replace(/^models\//, '') === baseId).length;
+      const accountCount = googleCloudCodeModels.filter(m => (m.externalModelName || m.name || '').replace(/^models\//, '') === baseId).length;
       pooledGoogleModels.push({
         ...template,
         name: `models/${template.provider}:${baseId}:auto-pool`,
         displayName: (template.displayName || baseId).replace(/^\[[^\]]+\]\s*/, ''),
         externalModelName: baseId,
-        // Always use 'auto' dispatch for Google — the proxy picks the best account.
+        // Always use 'auto' dispatch for Google Cloud Code — the proxy picks the best account.
         // For a single account, 'auto' falls through to that one account.
         apiKey: 'auto',
         accountName: '',
@@ -328,8 +335,8 @@ export function loadCustomModels(): CustomModel[] {
       });
     });
 
-    // Mark real per-account entries as dispatch-only (hidden from dropdown)
-    const realGoogleModels = googleModels.map(m => ({ ...m, _poolOnly: true as const }));
+    // Mark real per-account Cloud Code entries as dispatch-only (hidden from dropdown)
+    const realGoogleModels = googleCloudCodeModels.map(m => ({ ...m, _poolOnly: true as const }));
 
     return [...pooledGoogleModels, ...realGoogleModels, ...otherModels];
   } catch (e) {

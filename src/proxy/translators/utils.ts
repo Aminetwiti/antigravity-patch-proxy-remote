@@ -563,12 +563,14 @@ export function translateToolCallToNative(
     const quotesFound = [...cmd.matchAll(regexQuotes)];
     if (quotesFound.length > 0) {
       query = quotesFound[0][1] || quotesFound[0][2];
-      const unquotedTokens = cmd.replace(regexQuotes, ' ').split(/\s+/).slice(1).filter((t) => t && !t.startsWith('-') && !t.startsWith('/'));
+      const isFlag = (t: string) => !t || t.startsWith('-') || /^\/[a-zA-Z](:|$)/.test(t);
+      const unquotedTokens = cmd.replace(regexQuotes, ' ').split(/\s+/).slice(1).filter((t) => !isFlag(t));
       if (unquotedTokens.length > 0) {
         searchPath = unquotedTokens[unquotedTokens.length - 1];
       }
     } else {
-      const nonFlagTokens = cmd.split(/\s+/).slice(1).filter((t) => t && !t.startsWith('-') && !t.startsWith('/'));
+      const isFlag = (t: string) => !t || t.startsWith('-') || /^\/[a-zA-Z](:|$)/.test(t);
+      const nonFlagTokens = cmd.split(/\s+/).slice(1).filter((t) => !isFlag(t));
       if (nonFlagTokens.length > 0) {
         query = nonFlagTokens[0];
         if (nonFlagTokens.length > 1) {
@@ -578,10 +580,10 @@ export function translateToolCallToNative(
     }
     if (query) {
       // Antigravity Language Server (grep_handler.go:518) splits ripgrep output with strings.Split(line, ":").
-      // On Windows with drive letters (e.g. C:\...), parts[0]="C", parts[1]=path, causing strconv.Atoi(parts[1]) to fail.
-      // Keep as native run_command shell execution to avoid IDE parse crash.
-      if (/^[a-zA-Z]:/i.test(searchPath)) {
-        log.info(`[Proxy] run_command grep target "${searchPath}" has Windows drive letter. Leaving as native shell command to avoid IDE parse bugs.`);
+      // On Windows with drive letters (e.g. C:\...) or explicit single file paths (e.g. /path/to/file.ts),
+      // parts mismatch causes strconv.Atoi to fail. Keep as native run_command shell execution to avoid IDE parse crash.
+      if (/^[a-zA-Z]:/i.test(searchPath) || ((searchPath.includes('/') || searchPath.includes('\\')) && !searchPath.includes('*') && /\.[a-zA-Z0-9]{1,8}$/i.test(searchPath))) {
+        log.info(`[Proxy] run_command grep target "${searchPath}" has Windows drive letter or is an explicit file path. Leaving as native shell command to avoid IDE parse bugs.`);
         return { name, args: args as Record<string, unknown> };
       }
 

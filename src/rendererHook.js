@@ -8,6 +8,14 @@
   }
   window.__ag_remote_hook_installed = true;
 
+  // Intercept benign Antigravity IDE UI errors (e.g. DraftCommentEditor on image/binary assets)
+  window.addEventListener('error', (event) => {
+    if (event && event.message && event.message.includes('DraftCommentEditor: A line number or selection context is required')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+
   console.log('[Antigravity 2.0] Initializing Remote Environment Hook...');
 
   const DEFAULT_HOST = window.__AG_REMOTE_HOST || 'http://127.0.0.1:8090';

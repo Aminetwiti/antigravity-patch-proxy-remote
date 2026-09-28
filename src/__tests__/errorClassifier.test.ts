@@ -167,6 +167,14 @@ describe('Error Classifier', () => {
       expect(result.message).toContain('Model free/mimo-v2.5 not found');
     });
 
+    it('classifies HTTP 404 with SSE-encoded body (Google upstream format)', () => {
+      // Google returns 404 as an SSE stream: "data: {...}\n\n"
+      const sseBody = `data: ${JSON.stringify({ error: { message: 'models/gemini-3.8-flash-tiered is not found' } })}\n\n`;
+      const result = classifyError(404, null, sseBody);
+      expect(result.title).toBe('Model Not Found (404)');
+      expect(result.message).toContain('models/gemini-3.8-flash-tiered is not found');
+    });
+
     it('classifies HTTP 400 as Invalid Request with upstream detail', () => {
       const result = classifyError(400, null, JSON.stringify({ error: { message: 'Context window exceeded' } }));
       expect(result.title).toBe('Invalid Request (400)');

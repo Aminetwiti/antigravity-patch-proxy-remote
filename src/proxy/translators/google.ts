@@ -27,6 +27,14 @@ interface GeminiStreamChunk {
 import { normalizeGoogleModelId } from '../../services/googleAuth';
 export { normalizeGoogleModelId };
 
+/**
+ * Strips internal Cloud Code suffixes (-tiered, -high) when calling Google AI Studio REST endpoints.
+ */
+export function toAiStudioModelId(modelName: string): string {
+  const norm = normalizeGoogleModelId(modelName);
+  return norm.replace(/-tiered$/, '').replace(/-high$/, '');
+}
+
 // ─── Request Translation (Passthrough) ────────────────────────────────────
 
 /**
@@ -34,9 +42,9 @@ export { normalizeGoogleModelId };
  * The caller handles URL routing (streamGenerateContent vs generateContent).
  */
 export function mapGeminiToGoogle(geminiBody: GeminiRequestBody, modelName: string): GeminiRequestBody {
-  // Ensure the external model name is set and normalized
+  // Ensure the external model name is set and normalized for Google AI Studio
   const body: GeminiRequestBody = { ...geminiBody };
-  const targetModel = normalizeGoogleModelId(modelName || body.model || '');
+  const targetModel = toAiStudioModelId(modelName || body.model || '');
   body.model = targetModel;
   return body;
 }
@@ -118,14 +126,14 @@ export function getGoogleApiUrl(baseUrl: string, modelName: string, isStream: bo
 
     if (modelMatch) {
       // URL like .../v1beta/models/gemini-3.1-pro-high → normalize model & append :method
-      const normalized = normalizeGoogleModelId(modelMatch[1]);
+      const normalized = toAiStudioModelId(modelMatch[1]);
       if (normalized !== modelMatch[1]) {
         urlObj.pathname = urlObj.pathname.replace(modelPathPattern, `/models/${normalized}`);
       }
       urlObj.pathname += method;
     } else if (modelName) {
-      // Append full path with normalized model name
-      const cleanName = normalizeGoogleModelId(modelName);
+      // Append full path with normalized model name (without internal Cloud Code suffixes)
+      const cleanName = toAiStudioModelId(modelName);
       urlObj.pathname += `/models/${cleanName}${method}`;
     } else {
       // Fallback: assume the URL is already complete
@@ -135,7 +143,7 @@ export function getGoogleApiUrl(baseUrl: string, modelName: string, isStream: bo
     // URL already has method suffix — normalize existing model name in path
     const existingModelMatch = /\/models\/([^/:]+)(:(?:streamG|g)enerateContent)/.exec(urlObj.pathname);
     if (existingModelMatch) {
-      const norm = normalizeGoogleModelId(existingModelMatch[1]);
+      const norm = toAiStudioModelId(existingModelMatch[1]);
       if (norm !== existingModelMatch[1]) {
         urlObj.pathname = urlObj.pathname.replace(
           existingModelMatch[0],

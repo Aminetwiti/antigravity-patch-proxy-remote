@@ -496,10 +496,8 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.8-flash-tiered',
     'gemini-3.7-flash-tiered',
     'gemini-3.6-flash-tiered',
-    'gemini-3.1-pro-high',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
-    'gpt-oss-120b-medium',
   ]);
 
   if (validCloudCodeModels.has(clean)) {
@@ -519,10 +517,11 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.6-flash-medium': 'gemini-3.6-flash-tiered',
     'gemini-3.6-flash-high': 'gemini-3.6-flash-tiered',
     'gemini-3.6-flash': 'gemini-3.6-flash-tiered',
-    'gemini-3.1-pro-low': 'gemini-3.1-pro-high',
-    'gemini-3.1-pro': 'gemini-3.1-pro-high',
+    'gemini-3.1-pro-low': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-pro-high': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-pro': 'gemini-3.8-flash-tiered',
     'gemini-flash': 'gemini-3.8-flash-tiered',
-    'gemini-pro': 'gemini-3.1-pro-high',
+    'gemini-pro': 'gemini-3.8-flash-tiered',
     'claude-sonnet': 'claude-sonnet-4-6',
     'claude-opus': 'claude-opus-4-6-thinking',
   };
@@ -531,16 +530,15 @@ export function normalizeCloudCodeModelId(modelId: string): string {
 
   if (clean.includes('opus')) return 'claude-opus-4-6-thinking';
   if (clean.includes('claude') || clean.includes('sonnet')) return 'claude-sonnet-4-6';
-  if (clean.includes('pro')) return 'gemini-3.1-pro-high';
-  if (clean.includes('flash')) return 'gemini-3.8-flash-tiered';
-  if (clean.includes('gpt-oss')) return 'gpt-oss-120b-medium';
+  if (clean.includes('flash') || clean.includes('pro')) return 'gemini-3.8-flash-tiered';
+  if (clean.includes('gpt')) return 'gemini-3.8-flash-tiered';
 
   return 'gemini-3.8-flash-tiered';
 }
 
 /**
  * Normalizes Google AI Studio / Gemini model identifiers, mapping unknown, legacy, or alias
- * model names to canonical Google Cloud Code models (e.g. gemini-3.8-flash-tiered, gemini-3.1-pro-high, claude-sonnet-4-6) without throwing 404.
+ * model names to canonical Google Cloud Code models (e.g. gemini-3.8-flash-tiered, claude-sonnet-4-6) without throwing 404.
  */
 export function normalizeGoogleModelId(modelName: string): string {
   if (!modelName) return 'gemini-3.8-flash-tiered';
@@ -549,8 +547,8 @@ export function normalizeGoogleModelId(modelName: string): string {
   const validModels = new Set([
     'gemini-3.8-flash-tiered',
     'gemini-3.7-flash-tiered',
-    'gemini-3.1-pro-high',
     'claude-sonnet-4-6',
+    'claude-opus-4-6-thinking',
   ]);
 
   if (validModels.has(clean)) {
@@ -561,22 +559,28 @@ export function normalizeGoogleModelId(modelName: string): string {
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
     'gemini-3.7-flash': 'gemini-3.7-flash-tiered',
     'gemini-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.1-pro': 'gemini-3.1-pro-high',
-    'gemini-3.0-pro': 'gemini-3.1-pro-high',
-    'gemini-pro': 'gemini-3.1-pro-high',
+    'gemini-3.1-pro-high': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-pro': 'gemini-3.8-flash-tiered',
+    'gemini-3.0-pro': 'gemini-3.8-flash-tiered',
+    'gemini-pro': 'gemini-3.8-flash-tiered',
     'claude-sonnet': 'claude-sonnet-4-6',
+    'claude-opus': 'claude-opus-4-6-thinking',
   };
 
   if (aliasMap[clean]) {
     return aliasMap[clean];
   }
 
+  if (clean.includes('opus')) {
+    return 'claude-opus-4-6-thinking';
+  }
+
   if (clean.includes('claude') || clean.includes('sonnet')) {
     return 'claude-sonnet-4-6';
   }
 
-  if (clean.includes('pro') || clean.includes('opus')) {
-    return 'gemini-3.1-pro-high';
+  if (clean.includes('pro') || clean.includes('flash') || clean.includes('gpt')) {
+    return 'gemini-3.8-flash-tiered';
   }
 
   return 'gemini-3.8-flash-tiered';
@@ -594,8 +598,8 @@ export function isGoogleCloudCodeModel(m: {
   apiUrl?: string;
 }): boolean {
   if (m.provider !== 'google') return false;
-  // If explicitly using an AI Studio Developer API key (AIzaSy...), treat as AI Studio
-  if (m.apiKey && m.apiKey.startsWith('AIzaSy')) return false;
+  // If explicitly using an AI Studio Developer API key (AIzaSy... or AQ...), treat as AI Studio
+  if (m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ.'))) return false;
 
   return Boolean(
     m.refreshToken ||

@@ -44,7 +44,11 @@ export function classifyError(
   let bodyJson: any = null;
   if (responseBody) {
     try {
-      bodyJson = JSON.parse(responseBody);
+      // Google may return a 404 body encoded as an SSE frame: "data: {...}\n\n"
+      const toParse = responseBody.trimStart().startsWith('data:')
+        ? responseBody.trimStart().slice(5).trimStart()
+        : responseBody;
+      bodyJson = JSON.parse(toParse);
     } catch {
       // ignore parse errors
     }

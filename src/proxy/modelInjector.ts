@@ -6,6 +6,7 @@ import { getCachedHealth, ModelHealthResult } from './modelHealthChecker';
 import { isRecentModel } from './recentModelsStore';
 import type { CustomModel } from './types';
 import { expandModelsWithEffort } from './effortExpander';
+import { isObsoleteModel } from '../constants';
 
 function getHealthScore(health: ModelHealthResult | null): number {
   if (!health) return 2; // pending
@@ -106,8 +107,16 @@ export function getCustomModelsList() {
 }
 
 export function mergeModels(target: unknown, customModels: CustomModel[]): unknown {
-  const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(customModels)));
+  const filteredCustom = (customModels || []).filter(
+    (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName),
+  );
+  const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(filteredCustom)));
   if (Array.isArray(target)) {
+    const cleanTarget = target.filter((t: any) => {
+      const id = t?.name || t?.model || t?.id || '';
+      const disp = t?.displayName || '';
+      return !isObsoleteModel(id, disp);
+    });
     const mapped = sortedCustomModels.map((m) => {
       const cap = detectModelCapabilities(m, true);
       const pid = generateModelPlaceholderId(m);
@@ -122,19 +131,23 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         inputTokenLimit: cap.maxTokens,
         outputTokenLimit: cap.maxOutputTokens,
         supportedGenerationMethods: ['generateContent', 'countTokens'],
-        supportsImages: cap.supportsImages,
-        supportsVision: cap.supportsImages,
-        temperature: cap.isThinking ? undefined : 0.7,
-        topP: cap.isThinking ? undefined : 0.9,
+        temperature: 0.7,
+        topP: 0.9,
         topK: cap.isThinking ? undefined : 40,
         reasoningEffort: m.reasoningEffort || undefined,
         thinkingBudget: m.thinkingBudget || undefined,
         mode: m.mode || undefined,
       };
     });
-    return [...mapped, ...target];
+    return [...mapped, ...cleanTarget];
   } else if (target && typeof target === 'object') {
-    const result = { ...(target as Record<string, unknown>) };
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(target as Record<string, unknown>)) {
+      const disp = (v as any)?.displayName || '';
+      if (!isObsoleteModel(k, disp)) {
+        result[k] = v;
+      }
+    }
     sortedCustomModels.forEach((m) => {
       const slug = toSlug(m);
       const cap = detectModelCapabilities(m, true);
@@ -314,19 +327,6 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     model: 'gemini-3.6-flash',
     planModel: 'gemini-3.6-flash',
     requestedModel: 'gemini-3.6-flash',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
-  'gemini-3.1-pro': {
-    displayName: 'Gemini 3.1 Pro Low',
-    maxTokens: 2097152,
-    maxOutputTokens: 65536,
-    model: 'gemini-3.1-pro',
-    planModel: 'gemini-3.1-pro',
-    requestedModel: 'gemini-3.1-pro',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
     supportsImages: true,

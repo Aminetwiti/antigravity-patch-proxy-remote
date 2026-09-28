@@ -548,6 +548,39 @@ describe('Google Multi-Account Pool & Failover', () => {
       expect(getModelQuotaScore(dualModel2, 'gemini')).toBe(0);
       expect(getModelQuotaScore(dualModel2, 'claude')).toBe(75 * 0.7 + 90 * 0.3);
     });
+
+    it('returns 0 when weekly quota is 0% and reset time is in the future', () => {
+      const futureReset = new Date(Date.now() + 3600_000).toISOString();
+      const exhaustedWeekly: CustomModel = {
+        name: 'exhausted-weekly',
+        provider: 'google',
+        refreshToken: 'mock_token',
+        accountEmail: 'weekly0@gmail.com',
+        quotas: {
+          geminiFiveHourPct: 100,
+          geminiWeeklyPct: 0,
+          geminiWeeklyReset: futureReset,
+        },
+      };
+      expect(getModelQuotaScore(exhaustedWeekly, 'gemini')).toBe(0);
+      expect(getAccountDynamicScore(exhaustedWeekly, 'gemini')).toBe(0);
+    });
+
+    it('recovers score when 0% quota reset timestamp has passed', () => {
+      const pastReset = new Date(Date.now() - 3600_000).toISOString();
+      const recoveredWeekly: CustomModel = {
+        name: 'recovered-weekly',
+        provider: 'google',
+        refreshToken: 'mock_token',
+        accountEmail: 'recovered@gmail.com',
+        quotas: {
+          geminiFiveHourPct: 100,
+          geminiWeeklyPct: 0,
+          geminiWeeklyReset: pastReset,
+        },
+      };
+      expect(getModelQuotaScore(recoveredWeekly, 'gemini')).toBeGreaterThan(0);
+    });
   });
 
   describe('Live Quota Cache Overriding', () => {

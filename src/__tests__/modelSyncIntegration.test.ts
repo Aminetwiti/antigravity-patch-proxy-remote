@@ -79,13 +79,13 @@ describe('Live Model Synchronization & Cache Invalidation', () => {
   it('should inject models even when health status is pending/undefined', () => {
     const customModels: CustomModel[] = [
       {
-        name: 'models/gpt-4o',
-        displayName: 'GPT-4o Test',
+        name: 'models/deepseek-chat',
+        displayName: 'DeepSeek-V3 Test',
         description: 'Test model',
-        provider: 'openai',
+        provider: 'deepseek',
         apiKey: 'test-key',
-        apiUrl: 'https://api.openai.com/v1/chat/completions',
-        externalModelName: 'gpt-4o',
+        apiUrl: 'https://api.deepseek.com/v1/chat/completions',
+        externalModelName: 'deepseek-chat',
       },
     ];
 

@@ -31,15 +31,15 @@ describe('googleAuth service', () => {
 
     it('preserves valid standard model IDs', () => {
       expect(normalizeCloudCodeModelId('gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
-      expect(normalizeCloudCodeModelId('gemini-3.1-pro-high')).toBe('gemini-3.1-pro-high');
       expect(normalizeCloudCodeModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
-      expect(normalizeCloudCodeModelId('gemini-3.1-pro-high')).toBe('gemini-3.1-pro-high');
+      expect(normalizeCloudCodeModelId('claude-opus-4-6-thinking')).toBe('claude-opus-4-6-thinking');
     });
 
     it('maps alias models to canonical Cloud Code models', () => {
       expect(normalizeCloudCodeModelId('claude-sonnet')).toBe('claude-sonnet-4-6');
       expect(normalizeCloudCodeModelId('gemini-flash')).toBe('gemini-3.8-flash-tiered');
-      expect(normalizeCloudCodeModelId('gemini-pro')).toBe('gemini-3.1-pro-high');
+      expect(normalizeCloudCodeModelId('gemini-pro')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-3.1-pro-high')).toBe('gemini-3.8-flash-tiered');
     });
   });
 
@@ -194,25 +194,30 @@ describe('googleAuth service', () => {
   });
 
   describe('normalizeGoogleModelId', () => {
-    it('preserves canonical models gemini-3.8-flash-tiered and gemini-3.1-pro-high', () => {
+    it('preserves canonical models gemini-3.8-flash-tiered, claude-sonnet-4-6, and claude-opus-4-6-thinking', () => {
       expect(normalizeGoogleModelId('gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
-      expect(normalizeGoogleModelId('gemini-3.1-pro-high')).toBe('gemini-3.1-pro-high');
       expect(normalizeGoogleModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
+      expect(normalizeGoogleModelId('claude-opus-4-6-thinking')).toBe('claude-opus-4-6-thinking');
+      expect(normalizeGoogleModelId('models/claude-opus-4-6-thinking')).toBe('claude-opus-4-6-thinking');
       expect(normalizeGoogleModelId('models/gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
     });
 
     it('maps legacy flash models to canonical gemini-3.8-flash-tiered', () => {
       expect(normalizeGoogleModelId('gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
-      expect(normalizeGoogleModelId('gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
       expect(normalizeGoogleModelId('gemini-3.8-flash')).toBe('gemini-3.8-flash-tiered');
       expect(normalizeGoogleModelId('gemini-flash')).toBe('gemini-3.8-flash-tiered');
     });
 
-    it('maps legacy pro models to canonical gemini-3.1-pro-high', () => {
-      expect(normalizeGoogleModelId('gemini-3.1-pro-high')).toBe('gemini-3.1-pro-high');
-      expect(normalizeGoogleModelId('gemini-3.1-pro-high')).toBe('gemini-3.1-pro-high');
-      expect(normalizeGoogleModelId('gemini-3.1-pro')).toBe('gemini-3.1-pro-high');
-      expect(normalizeGoogleModelId('gemini-pro')).toBe('gemini-3.1-pro-high');
+    it('maps legacy pro models to canonical gemini-3.8-flash-tiered', () => {
+      expect(normalizeGoogleModelId('gemini-3.1-pro-high')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeGoogleModelId('gemini-3.1-pro')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeGoogleModelId('gemini-pro')).toBe('gemini-3.8-flash-tiered');
+    });
+
+    it('maps opus aliases to claude-opus-4-6-thinking without degrading to sonnet or pro', () => {
+      expect(normalizeGoogleModelId('claude-opus')).toBe('claude-opus-4-6-thinking');
+      expect(normalizeGoogleModelId('claude-opus-4.6')).toBe('claude-opus-4-6-thinking');
+      expect(normalizeGoogleModelId('models/claude-opus')).toBe('claude-opus-4-6-thinking');
     });
 
     it('falls back safely for non-Gemini model names routed to Google', () => {

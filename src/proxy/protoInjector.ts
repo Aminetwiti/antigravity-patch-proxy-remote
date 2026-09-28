@@ -22,6 +22,7 @@ import { isRecentModel } from './recentModelsStore';
 import { getCachedHealth, type ModelHealthResult } from './modelHealthChecker';
 import { expandModelsWithEffort } from './effortExpander';
 import { detectModelCapabilities } from './modelUtils';
+import { isObsoleteModel } from '../constants';
 
 /**
  * Result of injecting custom models into a GetAvailableModels protobuf response.
@@ -163,11 +164,40 @@ export function injectCustomModelsIntoResponse(
 
     const fieldMapping = extractFieldMapping(sampleEntry.value);
     const existing = extractExistingModelKeys(msgBody, modelTag);
-    const newParts: Buffer[] = [msgBody];
+
+    // Strip any obsolete models already present in msgBody
+    const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
+    const keptBodyParts: Buffer[] = [];
+    let strippedAnyNative = false;
+
+    for (const f of rawFields) {
+      if (f.tag === modelTag && f.raw) {
+        const subFields = parseProtoRaw(f.raw, 0, f.raw.length);
+        let idStr = '';
+        let labelStr = '';
+        for (const sf of subFields) {
+          if (sf.raw) {
+            if (sf.fieldNum === 1) idStr = sf.raw.toString('utf8').trim();
+            else if (sf.fieldNum === 2) labelStr = sf.raw.toString('utf8').trim();
+          }
+        }
+        if (isObsoleteModel(idStr, labelStr)) {
+          strippedAnyNative = true;
+          continue;
+        }
+      }
+      keptBodyParts.push(msgBody.subarray(f.start, f.end));
+    }
+
+    const cleanMsgBody = strippedAnyNative ? Buffer.concat(keptBodyParts) : msgBody;
+    const newParts: Buffer[] = [cleanMsgBody];
 
     let injectedCount = 0;
 
-    const expandedModels = expandModelsWithEffort(customModels);
+    const filteredModels = (customModels || []).filter(
+      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName),
+    );
+    const expandedModels = expandModelsWithEffort(filteredModels);
     const seenModelKeys = new Set<string>();
 
     for (const m of expandedModels) {
@@ -215,7 +245,7 @@ export function injectCustomModelsIntoResponse(
       injectedCount++;
     }
 
-    if (injectedCount === 0) {
+    if (injectedCount === 0 && !strippedAnyNative) {
       return { buffer: responseBuf, injectedCount: 0, modified: false };
     }
 
@@ -453,7 +483,6 @@ export function injectCustomModelsIntoUserStatus(
 
     const cascadeFields = parseProtoRaw(cascadeField.raw, 0, cascadeField.raw.length);
 
-    const expandedModels = expandModelsWithEffort(customModels);
     const newModels: Array<{
       label: string;
       modelEnum: number;
@@ -461,7 +490,12 @@ export function injectCustomModelsIntoUserStatus(
       supportsImages: boolean;
       supportsThought: boolean;
     }> = [];
+    const filteredCascadeCustom = (customModels || []).filter(
+      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName),
+    );
+    const expandedModels = expandModelsWithEffort(filteredCascadeCustom);
 
+    // Extract existing model labels and IDs from the Cascade config
     const existingLabels = new Set<string>();
     const existingModelIds = new Set<string>();
     const existingPlaceholderNames = new Set<string>();
@@ -544,18 +578,32 @@ export function injectCustomModelsIntoUserStatus(
 
     const customInjectedCount = newModels.length;
 
-    if (customInjectedCount === 0) {
-      return { buffer: responseBuf, injectedCount: 0, modified: false };
-    }
-
     // Build new CascadeModelConfigData
     const newCascadeParts: Buffer[] = [];
+    let strippedAnyCascade = false;
 
-    // 1. Keep existing client_model_configs
+    // 1. Keep existing client_model_configs (filtering out obsolete ones)
     for (const f of cascadeFields) {
       if (f.fieldNum === 1 && f.raw) {
+        const sub = parseProtoRaw(f.raw, 0, f.raw.length);
+        let label = '';
+        let modelId = '';
+        for (const sf of sub) {
+          if (sf.raw) {
+            if (sf.fieldNum === 1) label = sf.raw.toString('utf8').trim();
+            else if (sf.fieldNum === 21) modelId = sf.raw.toString('utf8').trim();
+          }
+        }
+        if (isObsoleteModel(modelId, label)) {
+          strippedAnyCascade = true;
+          continue;
+        }
         newCascadeParts.push(encodeMessageField(1, f.raw));
       }
+    }
+
+    if (customInjectedCount === 0 && !strippedAnyCascade) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
     }
 
     // 2. Append new client_model_configs

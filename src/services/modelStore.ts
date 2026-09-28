@@ -13,6 +13,7 @@ import {
   PROVIDERS,
   type ProviderName,
   STANDARD_GOOGLE_MODELS,
+  isObsoleteModel,
 } from '../constants';
 
 let _writeLock: Promise<void> = Promise.resolve();
@@ -144,6 +145,7 @@ export async function loadCustomModels(): Promise<CustomModelFileEntry[]> {
         if (acc.enabled === false) continue;
         for (const m of models) {
           if (!m || m.enabled === false) continue;
+          if (isObsoleteModel(m.id, m.displayName)) continue;
           const mergedHeaders = { ...p.extraHeaders, ...m.extraHeaders };
           const mergedBody = { ...p.extraBody, ...m.extraBody };
 

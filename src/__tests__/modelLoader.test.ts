@@ -76,7 +76,7 @@ describe('loadCustomModels', () => {
   it('returns models from existing file', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const mockModels = [
-      { name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'enc:abc', encrypted: true },
+      { name: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', provider: 'anthropic', apiUrl: 'https://api.anthropic.com/v1', apiKey: 'enc:abc', encrypted: true },
     ];
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: mockModels }));
 
@@ -88,7 +88,7 @@ describe('loadCustomModels', () => {
   it('strips UTF-8 BOM before parsing', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const bom = '\uFEFF';
-    const mockModels = [{ name: 'gpt-4o', displayName: 'GPT-4o', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'enc:x', encrypted: true }];
+    const mockModels = [{ name: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', provider: 'anthropic', apiUrl: 'https://api.anthropic.com/v1', apiKey: 'enc:x', encrypted: true }];
     vi.mocked(fs.readFileSync).mockReturnValue(bom + JSON.stringify({ models: mockModels }));
 
     const models = loadCustomModels();
@@ -188,7 +188,7 @@ describe('loadCustomModels', () => {
           enabled: true,
           encrypted: true,
           models: [
-            { id: 'gpt-4o', displayName: 'GPT-4o', enabled: true },
+            { id: 'deepseek-chat', displayName: 'DeepSeek V3', enabled: true },
           ],
         },
       ],
@@ -206,7 +206,7 @@ describe('loadCustomModels', () => {
       expect(suffix).toMatch(/^\d+$/);
       // Must NOT contain underscores or provider names (old broken format)
       expect(model.name).not.toContain('openai_');
-      expect(model.name).not.toContain('gpt-4o');
+      expect(model.name).not.toContain('deepseek-chat');
     }
   });
 
@@ -220,7 +220,7 @@ describe('loadCustomModels', () => {
           apiKey: 'enc:abc',
           apiUrl: 'https://api.openai.com/v1/chat/completions',
           enabled: false,
-          models: [{ id: 'gpt-4o', enabled: true }],
+          models: [{ id: 'deepseek-chat', enabled: true }],
         },
         {
           id: 'enabled-provider',
@@ -228,7 +228,7 @@ describe('loadCustomModels', () => {
           apiKey: 'enc:abc',
           apiUrl: 'https://api.anthropic.com/v1/messages',
           // enabled is undefined — should default to active
-          models: [{ id: 'claude-3-5-sonnet-latest', enabled: true }],
+          models: [{ id: 'claude-sonnet-4-6', enabled: true }],
         },
       ],
     };
@@ -251,8 +251,8 @@ describe('loadCustomModels', () => {
           apiUrl: 'https://api.openai.com/v1/chat/completions',
           enabled: true,
           models: [
-            { id: 'gpt-4o', enabled: false },
-            { id: 'gpt-4o-mini' },    // undefined enabled → should be active
+            { id: 'deepseek-reasoner', enabled: false },
+            { id: 'deepseek-chat' },    // undefined enabled → should be active
           ],
         },
       ],
@@ -260,8 +260,8 @@ describe('loadCustomModels', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(providersFile));
 
     const models = loadCustomModels();
-    // Only gpt-4o-mini (undefined enabled) should appear, not disabled gpt-4o
+    // Only deepseek-chat (undefined enabled) should appear, not disabled deepseek-reasoner
     expect(models.length).toBe(1);
-    expect(models[0].externalModelName).toBe('gpt-4o-mini');
+    expect(models[0].externalModelName).toBe('deepseek-chat');
   });
 });

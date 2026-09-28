@@ -141,6 +141,11 @@ describe('Proxy HTTP Server Real Integration Test', () => {
     expect(getProxyPort()).toBe(proxyPort);
   });
 
+  it('returns the same port on a second startProxy() call (idempotency guard)', async () => {
+    const secondPort = await startProxy();
+    expect(secondPort).toBe(proxyPort);
+  });
+
   it('handles CORS OPTIONS preflight request with appropriate headers', async () => {
     const res = await httpRequest(`http://127.0.0.1:${proxyPort}/v1/chat/completions`, {
       method: 'OPTIONS',
