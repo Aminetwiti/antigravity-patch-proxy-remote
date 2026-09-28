@@ -245,13 +245,14 @@ export function injectCustomModelsIntoResponse(
       injectedCount++;
     }
 
-    if (injectedCount === 0 && !strippedAnyNative) {
+    if (injectedCount === 0 && !strippedAnyNative && !forceCompatibility) {
       return { buffer: responseBuf, injectedCount: 0, modified: false };
     }
 
-    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M577, MODEL_PLACEHOLDER_M0..M600)
+    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M577, MODEL_PLACEHOLDER_M0..M650)
     // resolve cleanly in Language Server without "unknown model key: model not found"
-    for (let i = 0; i <= 600; i++) {
+    let fallbackInjected = 0;
+    for (let i = 0; i <= 650; i++) {
       const legacyPid = `MODEL_PLACEHOLDER_M${i}`;
       const legacyKey = legacyPid.toLowerCase();
       if (existing.modelIds.has(legacyKey) || existing.modelIds.has(`models/${legacyKey}`)) {
@@ -268,6 +269,11 @@ export function injectCustomModelsIntoResponse(
       const tagBuf = encodeVarint(modelTag);
       const lenBuf = encodeVarint(entry.length);
       newParts.push(tagBuf, lenBuf, entry);
+      fallbackInjected++;
+    }
+
+    if (injectedCount === 0 && !strippedAnyNative && fallbackInjected === 0) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
     }
 
     const newMsgBody = Buffer.concat(newParts);

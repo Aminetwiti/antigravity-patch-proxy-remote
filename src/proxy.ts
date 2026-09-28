@@ -4067,7 +4067,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   req.url = req.url!.replace(/^.*\/dummy_path_padding/, '');
   // Strip binary patch padding (from LS hostname replacement)
-  req.url = req.url!.replace(/\/v1internal\/x{7}/, '');
+  req.url = req.url!.replace(/\/v1internal\/x+/, '');
 
   // P0-4: Enforce maximum request body size to prevent memory exhaustion DoS
   const MAX_BODY_SIZE = DEFAULT_MAX_BODY_SIZE;

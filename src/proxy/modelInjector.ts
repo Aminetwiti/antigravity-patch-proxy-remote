@@ -296,7 +296,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       DEFAULT_CANONICAL_GOOGLE_MODELS['gemini-3.6-flash'];
 
     if (fallbackEntry) {
-      for (let i = 0; i <= 600; i++) {
+      for (let i = 0; i <= 650; i++) {
         const legacyKey = `MODEL_PLACEHOLDER_M${i}`;
         if (!result[legacyKey]) {
           const placeholderEntry = {

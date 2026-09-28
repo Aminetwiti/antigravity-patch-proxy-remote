@@ -126,8 +126,7 @@ try {
   log.transports.file.file = LOG_PATH;
   log.transports.file.level = 'info';
   log.transports.console.level = 'info';
-  log.initialize({ preload: true });
-  w('runner: electron-log initialised, file=' + log.transports.file.file);
+  w('runner: electron-log configured, file=' + log.transports.file.file);
 } catch (e) {
   w('runner: electron-log init failed (continuing with fs log): ' + e.message);
 }
@@ -142,8 +141,10 @@ w('runner: home=' + home + ' userData=' + userData + ' isPackaged=' + app.isPack
 
 app.whenReady().then(async () => {
   w('runner: app ready');
-  // v2.3.x patch: MITM-443 auto-launch — fire-and-forget UAC prompt.
-  try { spawnAntigravityMitm443(); } catch (e) { w('runner: MITM-443 dispatch threw: ' + (e && e.stack || e)); }
+  // MITM-443 auto-launch — only if explicitly enabled via AG_ENABLE_MITM
+  if (process.env.AG_ENABLE_MITM === '1') {
+    try { spawnAntigravityMitm443(); } catch (e) { w('runner: MITM-443 dispatch threw: ' + (e && e.stack || e)); }
+  }
   try {
     const proxyMod = require('./dist/proxy');
     w('runner: proxy module loaded; calling startProxy()');
@@ -152,7 +153,7 @@ app.whenReady().then(async () => {
     try { fs.writeFileSync(PORT_FILE, String(port)); } catch (_) {}
   } catch (e) {
     w('runner: startProxy FAILED: ' + (e && e.stack || e));
-    setTimeout(() => app.exit(3), 500);
+    // Do not call app.exit(3) to avoid crashing the IDE on proxy initialization error
   }
 }).catch((e) => w('runner: whenReady error: ' + (e && e.stack || e)));
 

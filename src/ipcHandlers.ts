@@ -423,12 +423,9 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
 
   ipcMain.handle(IPC_CHANNELS.PROTO_INJECT_AVAILABLE_MODELS, async (_event, rawBytes: Uint8Array | number[]) => {
     try {
-      const models = loadProxyCustomModels();
-      if (!models || models.length === 0) {
-        return rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(Buffer.from(rawBytes));
-      }
+      const models = loadProxyCustomModels() || [];
       const buf = Buffer.from(rawBytes);
-      const result = injectCustomModelsIntoResponse(buf, models);
+      const result = injectCustomModelsIntoResponse(buf, models, undefined, true);
       return new Uint8Array(result.buffer);
     } catch (err) {
       log.error('[IPC] Failed to inject custom models into AvailableModels:', err);
