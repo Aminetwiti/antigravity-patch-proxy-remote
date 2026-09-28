@@ -15,6 +15,11 @@
 
 $ErrorActionPreference = "SilentlyContinue"
 
+# Si auto-heal n'est pas explicitement activé via AG_AUTO_HEAL=1, sortir immédiatement.
+if ($env:AG_AUTO_HEAL -ne "1") {
+    exit 0
+}
+
 $appPath   = if ($env:ANTIGRAVITY_APP_DIR) { $env:ANTIGRAVITY_APP_DIR } else { "$env:LOCALAPPDATA\Programs\Antigravity" }
 $asarPath  = "$appPath\resources\app.asar"
 $scratch   = if ($env:ANTIGRAVITY_CACHE_DIR) { $env:ANTIGRAVITY_CACHE_DIR } else { "$env:USERPROFILE\.gemini\antigravity\scratch" }
