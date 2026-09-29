@@ -675,20 +675,26 @@
 
   // --- Permanent Inline Retry Button ---
   function injectRetryButton() {
+    const promptBox = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+    const inputCard = document.querySelector('#antigravity\\.agentSidePanelInputBox') ||
+                      document.querySelector('.relative.flex.flex-col.p-px.rounded-2xl.bg-card-border') ||
+                      (promptBox ? (promptBox.closest('.rounded-2xl') || promptBox.closest('.relative.flex.flex-col.p-px') || promptBox.closest('[class*="rounded"]') || promptBox.parentElement?.parentElement?.parentElement) : null);
+
     const sendBtn = document.querySelector('button[data-testid="send-button"]') ||
                     document.querySelector('[data-tooltip-id="input-send-button-send-tooltip"]') ||
                     document.querySelector('[data-testid="send-button-pending"]') ||
-                    document.querySelector('button[data-tooltip-id="input-send-button-cancel-tooltip"]');
+                    document.querySelector('button[data-tooltip-id="input-send-button-cancel-tooltip"]') ||
+                    document.querySelector('button[aria-label*="Send"]') ||
+                    document.querySelector('button[aria-label*="send"]') ||
+                    (inputCard ? inputCard.querySelector('button:last-of-type') : null);
 
     let container = null;
     if (sendBtn && sendBtn.parentElement) {
       container = sendBtn.parentElement;
-    } else {
-      const inputCard = document.querySelector('#antigravity\\.agentSidePanelInputBox') ||
-                        document.querySelector('.relative.flex.flex-col.p-px.rounded-2xl.bg-card-border');
-      if (inputCard) {
-        container = inputCard.querySelector('.flex.items-center.gap-1');
-      }
+    } else if (inputCard) {
+      container = inputCard.querySelector('.flex.items-center.gap-1') ||
+                  inputCard.querySelector('.flex.items-center:last-child') ||
+                  inputCard.querySelector('div:last-child');
     }
 
     if (!container) return;
@@ -917,7 +923,11 @@
     if (!inputCard) {
       const promptBox = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
       if (promptBox) {
-        inputCard = promptBox.closest('.relative.flex.flex-col.p-px') || promptBox.closest('.rounded-2xl') || promptBox.parentElement?.parentElement?.parentElement?.parentElement;
+        inputCard = promptBox.closest('.relative.flex.flex-col.p-px') ||
+                    promptBox.closest('.rounded-2xl') ||
+                    promptBox.closest('[class*="rounded"]') ||
+                    promptBox.parentElement?.parentElement?.parentElement?.parentElement ||
+                    promptBox.parentElement?.parentElement;
       }
     }
     if (!inputCard || !inputCard.parentElement) return;
@@ -1060,7 +1070,16 @@
   };
 
   setInterval(scheduleUpdate, 1500);
-  startObserver();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      startObserver();
+      scheduleUpdate();
+    });
+    window.addEventListener('load', scheduleUpdate);
+  } else {
+    startObserver();
+    scheduleUpdate();
+  }
 
   // Prompt submit interceptor: guarantees active session is registered on proxy before LLM dispatch
   document.addEventListener('keydown', (e) => {

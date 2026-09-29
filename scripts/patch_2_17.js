@@ -298,33 +298,51 @@ try {
 } catch (e) {
   console.warn('[v2.17 patch] Error installing fetch interceptor:', e);
 }
-
-// [v2.17 patch] Remote Agent & Custom Models UI Hook
-try {
-  electron_1.ipcRenderer.invoke('ag:get-renderer-hook').then(function(hookScript) {
-    if (hookScript) {
-      electron_1.webFrame.executeJavaScript(hookScript).catch(function() {});
-    }
-  }).catch(function() {});
-} catch (e) {
-  console.warn('[v2.17 patch] Non-fatal error requesting rendererHook:', e);
-}
 `;
 
-  if (!preloadJs.includes('[v2.17 patch]')) {
-    // Insert storageExtension right after storageAPI declaration
-    const storageApiAnchor = 'const storageAPI = {';
-    if (preloadJs.includes(storageApiAnchor)) {
-      preloadJs = preloadJs.replace(
-        /const storageAPI = \{[\s\S]*?\n\};/,
-        (match) => `${match}\n${storageExtension}`,
-      );
-    } else {
-      preloadJs += `\n${storageExtension}\n`;
-    }
-    preloadJs += `\n${fetchInterceptorScript}\n`;
-    fs.writeFileSync(preloadJsPath, preloadJs, 'utf8');
+  // Strip any previous patch block so re-running patch_2_17 never nests wrappers or keeps stale hooks
+  const preloadPatchMarkerIndex = preloadJs.indexOf('// [v2.17 patch]');
+  if (preloadPatchMarkerIndex !== -1) {
+    preloadJs = preloadJs.substring(0, preloadPatchMarkerIndex).trimEnd() + '\n';
   }
+
+  const hookScriptPath = path.join(repoDist, 'rendererHook.js');
+  const hookScript = fs.existsSync(hookScriptPath) ? fs.readFileSync(hookScriptPath, 'utf8') : '';
+
+  const hookInjectionScript = [
+    '// [v2.17 patch] Remote Agent & Custom Models UI Hook',
+    'try {',
+    '  const _inlinedHook = ' + JSON.stringify(hookScript) + ';',
+    '  if (_inlinedHook) {',
+    '    electron_1.webFrame.executeJavaScript(_inlinedHook).catch(function(err) {',
+    "      console.warn('[v2.17 patch] Error executing inlined rendererHook:', err);",
+    '    });',
+    '  }',
+    '} catch (e) {',
+    "  console.warn('[v2.17 patch] Non-fatal error in inlined rendererHook:', e);",
+    '}',
+    '',
+    'try {',
+    "  electron_1.ipcRenderer.invoke('ag:get-renderer-hook').then(function(hookScript) {",
+    '    if (hookScript) {',
+    '      electron_1.webFrame.executeJavaScript(hookScript).catch(function() {});',
+    '    }',
+    '  }).catch(function() {});',
+    '} catch (e) {}',
+  ].join('\n');
+
+  // Insert storageExtension right after storageAPI declaration
+  const storageApiAnchor = 'const storageAPI = {';
+  if (preloadJs.includes(storageApiAnchor)) {
+    preloadJs = preloadJs.replace(
+      /const storageAPI = \{[\s\S]*?\n\};/,
+      (match) => `${match}\n${storageExtension}`,
+    );
+  } else {
+    preloadJs += `\n${storageExtension}\n`;
+  }
+  preloadJs += `\n${fetchInterceptorScript}\n${hookInjectionScript}\n`;
+  fs.writeFileSync(preloadJsPath, preloadJs, 'utf8');
 
   // 5. Surgical patch of dist/ipcHandlers.js
   console.log('[patch_2_17] Step 5: Surgical patch of dist/ipcHandlers.js...');
