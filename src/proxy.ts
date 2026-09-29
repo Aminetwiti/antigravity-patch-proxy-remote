@@ -2837,8 +2837,22 @@ export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): nu
   const rpmCount = getAccountRpmCount(m);
   // Each active request penalizes dynamic score by 20 points;
   // each request served in the last 60 seconds penalizes by 2 points (RPM governor);
-  // elevated EWMA latency penalizes up to 25 points.
-  return Math.max(1, baseScore + priorityBonus - inFlight * 20 - rpmCount * 2 - latencyPenalty);
+  // elevated EWMA latency penalizes up to 25 points;
+  // weekly quota under 15% penalizes progressively to protect near-exhausted accounts.
+  const isClaude = modelFamily
+    ? modelFamily.toLowerCase().includes('claude')
+    : (m.externalModelName || m.name || '').toLowerCase().includes('claude');
+  const q = m.quotas;
+  const weeklyPct = q
+    ? (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
+      ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
+      : typeof q.weeklyPercentage === 'number'
+        ? q.weeklyPercentage
+        : 100)
+    : 100;
+  const weeklyPenalty = (weeklyPct < 15 && weeklyPct > 0) ? Math.floor((15 - weeklyPct) * 1.5) : 0;
+
+  return Math.max(1, baseScore + priorityBonus - inFlight * 20 - rpmCount * 2 - latencyPenalty - weeklyPenalty);
 }
 
 // ─── Intelligent 429 Classification (OmniRoute Parity) ─────────────────────────

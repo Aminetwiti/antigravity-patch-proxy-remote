@@ -6711,6 +6711,12 @@ setInterval(() => {
   void syncIdeStatus();
 }, 4000);
 
+setInterval(() => {
+  if (Array.isArray(googleAccountsCache) && googleAccountsCache.length > 0) {
+    updateGoogleAccountsTokenStats(googleAccountsCache);
+  }
+}, 30000);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Google Accounts Manager (Multi-Account Endpoint & Model Discovery)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7014,6 +7020,62 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
   if (gaStatPoolValue) gaStatPoolValue.textContent = `$${summary.equivDollarValue.toFixed(2)}`;
   if (gaStatPoolValueSub) {
     gaStatPoolValueSub.textContent = `${summary.maxRpm.toLocaleString()} RPM max · 0$ Coût`;
+  }
+
+  // Prochain Reset Countdown computation
+  let soonestResetMs = Infinity;
+  let soonestAccountName = '';
+  const now = Date.now();
+
+  for (const acc of accounts) {
+    if (acc.enabled === false) continue;
+    const q = acc.quotas;
+    if (!q) continue;
+    const geminiPct = isWeekly ? (q.geminiWeeklyPct ?? q.weeklyPercentage ?? 100) : (q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100);
+    const claudePct = isWeekly ? (q.claudeWeeklyPct ?? q.weeklyPercentage ?? 100) : (q.claudeFiveHourPct ?? q.fiveHourPercentage ?? 100);
+
+    if (geminiPct < 100) {
+      const resetStr = isWeekly ? (q.geminiWeeklyReset ?? q.weeklyResetTime) : (q.geminiFiveHourReset ?? q.fiveHourResetTime);
+      if (resetStr) {
+        const ms = new Date(resetStr).getTime();
+        if (ms > now && ms < soonestResetMs) {
+          soonestResetMs = ms;
+          const label = acc.name || acc.email || 'Compte';
+          soonestAccountName = `${label.split('@')[0]} (Gemini)`;
+        }
+      }
+    }
+    if (claudePct < 100) {
+      const resetStr = isWeekly ? (q.claudeWeeklyReset ?? q.weeklyResetTime) : (q.claudeFiveHourReset ?? q.fiveHourResetTime);
+      if (resetStr) {
+        const ms = new Date(resetStr).getTime();
+        if (ms > now && ms < soonestResetMs) {
+          soonestResetMs = ms;
+          const label = acc.name || acc.email || 'Compte';
+          soonestAccountName = `${label.split('@')[0]} (Claude)`;
+        }
+      }
+    }
+  }
+
+  const gaNextResetBadge = $('#gaNextResetBadge');
+  const gaStatNextReset = $('#gaStatNextReset');
+  const gaStatNextResetSub = $('#gaStatNextResetSub');
+
+  if (gaNextResetBadge) gaNextResetBadge.textContent = isWeekly ? 'Hebdo' : '5 Heures';
+  if (gaStatNextReset && gaStatNextResetSub) {
+    if (soonestResetMs !== Infinity) {
+      const countdown = formatCompactCountdown(new Date(soonestResetMs).toISOString());
+      gaStatNextReset.textContent = countdown || 'Imminent';
+      const targetDate = new Date(soonestResetMs);
+      const isToday = targetDate.toDateString() === new Date().toDateString();
+      const datePart = isToday ? "Aujourd'hui" : targetDate.toLocaleDateString(undefined, { weekday: 'short' });
+      const timePart = targetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      gaStatNextResetSub.textContent = `${soonestAccountName} · ${datePart} à ${timePart}`;
+    } else {
+      gaStatNextReset.textContent = '100% Plein';
+      gaStatNextResetSub.textContent = 'Aucun compte en attente de reset';
+    }
   }
 }
 
