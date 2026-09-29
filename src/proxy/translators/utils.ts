@@ -532,7 +532,7 @@ export function translateToolCallToNative(
       const cleanToken = pathToken.replace(/^["']|["']$/g, '');
       dirPath = path.isAbsolute(cleanToken) ? cleanToken : path.resolve(cwd, cleanToken);
     }
-    log.info(`[Proxy] Translating run_command "${cmd}" to list_dir on "${dirPath}"`);
+    log.debug(`[Proxy] Translating run_command "${cmd}" to list_dir on "${dirPath}"`);
     return { name: 'list_dir', args: { DirectoryPath: dirPath } };
   }
 
@@ -541,7 +541,7 @@ export function translateToolCallToNative(
   if (catMatch) {
     const filePath = catMatch[3].trim();
     const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
-    log.info(`[Proxy] Translating run_command "${cmd}" to view_file on "${absPath}"`);
+    log.debug(`[Proxy] Translating run_command "${cmd}" to view_file on "${absPath}"`);
     return { name: 'view_file', args: { AbsolutePath: absPath } };
   }
 
@@ -551,7 +551,7 @@ export function translateToolCallToNative(
     const content = echoRedirectMatch[2].replace(/^["']|["']$/g, '');
     const filePath = echoRedirectMatch[3].trim();
     const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
-    log.info(`[Proxy] Translating run_command "${cmd}" to write_file on "${absPath}"`);
+    log.debug(`[Proxy] Translating run_command "${cmd}" to write_file on "${absPath}"`);
     return { name: 'write_file', args: { AbsolutePath: absPath, Content: content, Append: cmd.includes('>>') } };
   }
 
@@ -583,21 +583,21 @@ export function translateToolCallToNative(
       // On Windows with drive letters (e.g. C:\...) or explicit single file paths (e.g. /path/to/file.ts),
       // parts mismatch causes strconv.Atoi to fail. Keep as native run_command shell execution to avoid IDE parse crash.
       if (/^[a-zA-Z]:/i.test(searchPath) || ((searchPath.includes('/') || searchPath.includes('\\')) && !searchPath.includes('*') && /\.[a-zA-Z0-9]{1,8}$/i.test(searchPath))) {
-        log.info(`[Proxy] run_command grep target "${searchPath}" has Windows drive letter or is an explicit file path. Leaving as native shell command to avoid IDE parse bugs.`);
+        log.debug(`[Proxy] run_command grep target "${searchPath}" has Windows drive letter or is an explicit file path. Leaving as native shell command to avoid IDE parse bugs.`);
         return { name, args: args as Record<string, unknown> };
       }
 
       try {
         const resolvedPath = path.isAbsolute(searchPath) ? searchPath : path.resolve(cwd, searchPath);
         if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
-          log.info(`[Proxy] run_command grep target "${resolvedPath}" is a file. Leaving as native shell command to avoid IDE parse bugs.`);
+          log.debug(`[Proxy] run_command grep target "${resolvedPath}" is a file. Leaving as native shell command to avoid IDE parse bugs.`);
           return { name, args: args as Record<string, unknown> };
         }
       } catch (err) {
         // Ignore stat errors
       }
 
-      log.info(`[Proxy] Translating run_command "${cmd}" to grep_search (Query: "${query}", Path: "${searchPath}")`);
+      log.debug(`[Proxy] Translating run_command "${cmd}" to grep_search (Query: "${query}", Path: "${searchPath}")`);
       return {
         name: 'grep_search',
         args: {
@@ -626,7 +626,7 @@ export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo | st
     .replace(/(Authorization:\s*(?:Bearer|Basic)\s+)\S+/gi, '$1[REDACTED]')
     .replace(/(apikey|api_key|api-key)[=: ]+\S+/gi, '$1=[REDACTED]');
   if (translatedName) {
-    log.info(`[Proxy] Formatting native response back to CLI for translated tool "${translatedName}"${safeCmd ? ` (Cmd: "${safeCmd}")` : ''}`);
+    log.debug(`[Proxy] Formatting native response back to CLI for translated tool "${translatedName}"${safeCmd ? ` (Cmd: "${safeCmd}")` : ''}`);
   }
 
   if (translatedName === 'list_dir') {

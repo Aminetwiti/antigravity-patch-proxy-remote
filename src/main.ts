@@ -145,6 +145,12 @@ app
   .then(async () => {
     // Initialize electron-log and override console
     log.initialize();
+    if (log.transports?.file) {
+      log.transports.file.level = (process.env.AG_LOG_LEVEL as any) || 'info';
+    }
+    if (log.transports?.console) {
+      log.transports.console.level = (process.env.AG_LOG_LEVEL as any) || 'info';
+    }
     Object.assign(console, log.functions);
 
     const storagePath = getAppStoragePath();

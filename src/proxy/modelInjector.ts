@@ -117,14 +117,11 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
     (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName),
   );
   const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(filteredCustom)));
-  const customCanonKeys = new Set(
-    sortedCustomModels.map((m) => getCanonicalModelKey(m.externalModelName || m.name, m.displayName)),
-  );
   if (Array.isArray(target)) {
     const cleanTarget = target.filter((t: any) => {
       const id = t?.name || t?.model || t?.id || '';
       const disp = t?.displayName || '';
-      return !isObsoleteModel(id, disp) && !customCanonKeys.has(getCanonicalModelKey(id, disp));
+      return !isObsoleteModel(id, disp);
     });
     const mapped = sortedCustomModels.map((m) => {
       const cap = detectModelCapabilities(m, true);
@@ -155,7 +152,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       const disp = (v as any)?.displayName || '';
       const innerModel = (v as any)?.model;
       const isNativeModel = typeof innerModel === 'string' && innerModel.startsWith('MODEL_');
-      if ((isNativeModel || !isObsoleteModel(k, disp)) && !customCanonKeys.has(getCanonicalModelKey(k, disp))) {
+      if (isNativeModel || !isObsoleteModel(k, disp)) {
         result[k] = v;
       }
     }
@@ -543,18 +540,13 @@ export function injectCustomSlugsIntoAgentModelSorts(
     if (sort.groups && Array.isArray(sort.groups)) {
       sort.groups.forEach((group) => {
         if (group.modelIds && Array.isArray(group.modelIds)) {
-          const customCanonKeys = new Set(
-            sortedCustomModels.map((m) => getCanonicalModelKey(m.externalModelName || m.name, m.displayName)),
-          );
-          // Keep genuine original models first; filter out any duplicate or stale custom entries,
-          // as well as any original Google model IDs whose canonical key matches an injected custom model
+          // Keep genuine original models first; filter out any duplicate or stale custom entries
           let originalModelIds = group.modelIds.filter(
             (id) =>
               !customSlugs.includes(id) &&
               !id.startsWith('custom-') &&
               !id.startsWith('MODEL_PLACEHOLDER_') &&
-              !customPlaceholders.has(id) &&
-              !customCanonKeys.has(getCanonicalModelKey(id)),
+              !customPlaceholders.has(id),
           );
           if (originalModelIds.length === 0) {
             originalModelIds = [...DEFAULT_CANONICAL_MODEL_IDS];

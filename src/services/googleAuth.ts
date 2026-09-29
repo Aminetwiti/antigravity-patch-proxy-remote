@@ -457,15 +457,25 @@ export async function pollAllGoogleQuotas(
       if (!accessToken) continue;
       const quota = await fetchLiveUserQuota(accessToken);
       if (quota) {
+        const prevQuota = accountLiveQuotas.get(accountKey);
+        const quotaChanged = !prevQuota ||
+          prevQuota.geminiFiveHourPct !== quota.geminiFiveHourPct ||
+          prevQuota.claudeFiveHourPct !== quota.claudeFiveHourPct;
         accountLiveQuotas.set(accountKey, quota);
         if (onQuotaSync) {
           try {
             onQuotaSync(accountKey, quota);
           } catch (_) {}
         }
-        log.info(
-          `[GoogleAuth] Live quota synced for ${email || 'account'}: Gemini 5h=${quota.geminiFiveHourPct}%, Claude 5h=${quota.claudeFiveHourPct}%`
-        );
+        if (quotaChanged) {
+          log.info(
+            `[GoogleAuth] Live quota synced for ${email || 'account'}: Gemini 5h=${quota.geminiFiveHourPct}%, Claude 5h=${quota.claudeFiveHourPct}%`
+          );
+        } else {
+          log.debug(
+            `[GoogleAuth] Live quota unchanged for ${email || 'account'}: Gemini 5h=${quota.geminiFiveHourPct}%, Claude 5h=${quota.claudeFiveHourPct}%`
+          );
+        }
       }
     } catch (err: any) {
       log.debug(`[GoogleAuth] Live quota sync skipped for ${email || 'account'}: ${err?.message || err}`);
@@ -702,7 +712,7 @@ export function sanitizeCloudCodeGenerationConfig(
           }
 
           if (removedThinkingBlocks > 0) {
-            log.info(`[Proxy] Sanitized ${removedThinkingBlocks} historical thinking block(s) for Claude request to avoid invalid signature error`);
+            log.debug(`[Proxy] Sanitized ${removedThinkingBlocks} historical thinking block(s) for Claude request to avoid invalid signature error`);
           }
         }
       }

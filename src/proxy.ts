@@ -172,6 +172,8 @@ function ensureRemoteExecScriptOnDisk(): void {
   }
 }
 
+let lastRemoteStateSummary = '';
+
 function loadRemoteState(): void {
   try {
     ensureRemoteExecScriptOnDisk();
@@ -188,7 +190,13 @@ function loadRemoteState(): void {
       if (data.remoteSessions && typeof data.remoteSessions === 'object') {
         remoteSessionsMap = data.remoteSessions;
       }
-      log.info(`[Proxy] Loaded Remote VPS state: active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
+      const remoteSummary = `active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`;
+      if (remoteSummary !== lastRemoteStateSummary) {
+        lastRemoteStateSummary = remoteSummary;
+        log.info(`[Proxy] Loaded Remote VPS state: ${remoteSummary}`);
+      } else {
+        log.debug(`[Proxy] Loaded Remote VPS state: ${remoteSummary}`);
+      }
     }
   } catch (e) {
     log.warn('[Proxy] Failed to load remote VPS state from disk:', e);
@@ -1393,7 +1401,7 @@ export async function executeGoogleCloudCodeWithPool(
 
   let lastStatus = 500;
   let lastErrorText = 'All accounts in Google Cloud Code pool exhausted';
-  const totalAttempts = Math.min(sortedAccounts.length, 10);
+  const totalAttempts = sortedAccounts.length;
   let consecutive429Count = 0;
 
   for (let i = 0; i < totalAttempts; i++) {
@@ -5429,7 +5437,7 @@ export function startProxy(): Promise<number> {
 
       let attemptIdx = 0;
       let eaddrinuseRetries = 0;
-      const MAX_PORT_RETRIES = 5;
+      const MAX_PORT_RETRIES = 10;
 
       const tryListen = (port: number, host: string): void => {
         server!.listen(port, host, () => {
@@ -5480,10 +5488,10 @@ export function startProxy(): Promise<number> {
         if (err.code === 'EADDRINUSE') {
           if (attemptIdx === 0 && eaddrinuseRetries < MAX_PORT_RETRIES) {
             eaddrinuseRetries += 1;
-            log.warn(`[Proxy] Port ${primaryPort} busy (EADDRINUSE), retrying in 250ms (${eaddrinuseRetries}/${MAX_PORT_RETRIES})...`);
+            log.warn(`[Proxy] Port ${primaryPort} busy (EADDRINUSE), retrying in 350ms (${eaddrinuseRetries}/${MAX_PORT_RETRIES})...`);
             setTimeout(() => {
               tryListen(primaryPort, primaryHost);
-            }, 250);
+            }, 350);
             return;
           }
           if (attemptIdx + 1 < portCandidates.length) {

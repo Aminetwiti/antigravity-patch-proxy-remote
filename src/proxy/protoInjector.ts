@@ -165,10 +165,7 @@ export function injectCustomModelsIntoResponse(
     const fieldMapping = extractFieldMapping(sampleEntry.value);
     const existing = extractExistingModelKeys(msgBody, modelTag);
 
-    // Strip any obsolete models or models superseded by custom models already present in msgBody
-    const customCanonKeys = new Set(
-      (customModels || []).map((m) => getCanonicalModelKey(m.externalModelName || m.name, m.displayName)),
-    );
+    // Strip any obsolete models already present in msgBody
     const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
     const keptBodyParts: Buffer[] = [];
     let strippedAnyNative = false;
@@ -184,7 +181,7 @@ export function injectCustomModelsIntoResponse(
             else if (sf.fieldNum === 2) labelStr = sf.raw.toString('utf8').trim();
           }
         }
-        if (isObsoleteModel(idStr, labelStr) || customCanonKeys.has(getCanonicalModelKey(idStr, labelStr))) {
+        if (isObsoleteModel(idStr, labelStr)) {
           strippedAnyNative = true;
           continue;
         }

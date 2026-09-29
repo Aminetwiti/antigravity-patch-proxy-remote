@@ -57,7 +57,7 @@ const translators = new Map<string, TranslatorModule>([
   ['openai', openaiTranslator as unknown as TranslatorModule],
 ]);
 
-// ─── Auto-Discovery ───────────────────────────────────────────────────────
+let hasLoggedTranslators = false;
 
 function loadTranslators(): void {
   const translatorDir = path.join(__dirname, 'translators');
@@ -73,7 +73,7 @@ function loadTranslators(): void {
           // eslint-disable-next-line @typescript-eslint/no-var-requires
           const mod = require(path.join(translatorDir, file)) as TranslatorModule;
           translators.set(provider, mod);
-          log.info(`[TranslatorRegistry] Loaded provider translator: "${provider}"`);
+          log.debug(`[TranslatorRegistry] Loaded provider translator: "${provider}"`);
         } catch (err) {
           log.error(`[TranslatorRegistry] Failed to load translator "${provider}":`, (err as Error).message);
         }
@@ -83,9 +83,16 @@ function loadTranslators(): void {
     log.error('[TranslatorRegistry] Failed to scan translators directory:', (err as Error).message);
   }
 
-  log.info(
-    `[TranslatorRegistry] ${translators.size} provider translator(s) loaded: ${[...translators.keys()].join(', ')}`,
-  );
+  if (!hasLoggedTranslators) {
+    hasLoggedTranslators = true;
+    log.info(
+      `[TranslatorRegistry] ${translators.size} provider translator(s) loaded: ${[...translators.keys()].join(', ')}`,
+    );
+  } else {
+    log.debug(
+      `[TranslatorRegistry] ${translators.size} provider translator(s) loaded: ${[...translators.keys()].join(', ')}`,
+    );
+  }
 }
 
 // Providers grouped by transport compatibility.
