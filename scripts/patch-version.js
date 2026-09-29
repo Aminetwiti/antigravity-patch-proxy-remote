@@ -153,10 +153,13 @@ let exitCode = 0;
 // 2.5.x/2.6.x/2.7.x+ use the full overlay patcher; the explicit startsWith checks
 // cover 2.5-2.9, while /^2\.[1-9]\d+\./ is a best-effort catch-all for future
 // 2.10+ builds (the layout may change in newer majors — verify after applying).
-if (version.startsWith('2.17.')) {
+if (version.startsWith('2.18.')) {
+  targetScript = path.join(scriptsDir, 'patch_2_18.js');
+  console.log(`[patch-version] dispatching to patch_2_18.js (surgical non-destructive patch) for Antigravity ${version}`);
+} else if (version.startsWith('2.17.') || /^2\.(1[7-9]|[2-9]\d+)\./.test(version) || version.startsWith('3.') || /^3\./.test(version)) {
   targetScript = path.join(scriptsDir, 'patch_2_17.js');
   console.log(`[patch-version] dispatching to patch_2_17.js (surgical non-destructive patch) for Antigravity ${version}`);
-} else if (version.startsWith('3.') || /^3\./.test(version) || version.startsWith('2.5.') || version.startsWith('2.6.') || version.startsWith('2.7.') || version.startsWith('2.8.') || version.startsWith('2.9.') || version.startsWith('2.10.') || version.startsWith('2.12.') || version.startsWith('2.14.') || version.startsWith('2.15.') || /^2\.[5-9]\./.test(version) || /^2\.[1-9]\d+\./.test(version)) {
+} else if (version.startsWith('2.5.') || version.startsWith('2.6.') || version.startsWith('2.7.') || version.startsWith('2.8.') || version.startsWith('2.9.') || version.startsWith('2.10.') || version.startsWith('2.12.') || version.startsWith('2.14.') || version.startsWith('2.15.') || /^2\.[5-9]\./.test(version)) {
   targetScript = path.join(scriptsDir, 'patch_2_5.js');
   console.log(`[patch-version] dispatching to patch_2_5.js (full overlay + modular JS modules) for Antigravity ${version}`);
 } else if (version.startsWith('2.3.') || version.startsWith('2.4.')) {

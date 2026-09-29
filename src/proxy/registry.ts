@@ -43,9 +43,19 @@ export interface ProviderHeaders {
   [key: string]: string | undefined;
 }
 
+import * as anthropicTranslator from './translators/anthropic';
+import * as googleTranslator from './translators/google';
+import * as ollamaTranslator from './translators/ollama';
+import * as openaiTranslator from './translators/openai';
+
 // ─── Registry State ───────────────────────────────────────────────────────
 
-const translators = new Map<string, TranslatorModule>();
+const translators = new Map<string, TranslatorModule>([
+  ['anthropic', anthropicTranslator as unknown as TranslatorModule],
+  ['google', googleTranslator as unknown as TranslatorModule],
+  ['ollama', ollamaTranslator as unknown as TranslatorModule],
+  ['openai', openaiTranslator as unknown as TranslatorModule],
+]);
 
 // ─── Auto-Discovery ───────────────────────────────────────────────────────
 
@@ -53,17 +63,20 @@ function loadTranslators(): void {
   const translatorDir = path.join(__dirname, 'translators');
 
   try {
-    const files = fs.readdirSync(translatorDir).filter((f) => f.endsWith('.js') && f !== 'utils.js');
+    if (fs.existsSync(translatorDir)) {
+      const files = fs.readdirSync(translatorDir).filter((f) => f.endsWith('.js') && f !== 'utils.js');
 
-    for (const file of files) {
-      const provider = path.basename(file, '.js');
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const mod = require(path.join(translatorDir, file)) as TranslatorModule;
-        translators.set(provider, mod);
-        log.info(`[TranslatorRegistry] Loaded provider translator: "${provider}"`);
-      } catch (err) {
-        log.error(`[TranslatorRegistry] Failed to load translator "${provider}":`, (err as Error).message);
+      for (const file of files) {
+        const provider = path.basename(file, path.extname(file));
+        if (translators.has(provider)) continue;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const mod = require(path.join(translatorDir, file)) as TranslatorModule;
+          translators.set(provider, mod);
+          log.info(`[TranslatorRegistry] Loaded provider translator: "${provider}"`);
+        } catch (err) {
+          log.error(`[TranslatorRegistry] Failed to load translator "${provider}":`, (err as Error).message);
+        }
       }
     }
   } catch (err) {
@@ -85,7 +98,7 @@ function loadTranslators(): void {
 export function getTranslator(provider: string): TranslatorModule | null {
   if (OPENAI_COMPAT.has(provider)) return translators.get('openai') || null;
   if (ANTHROPIC_COMPAT.has(provider)) return translators.get('anthropic') || null;
-  if (provider === 'google') return translators.get('google') || null;
+  if (provider === 'google' || provider === 'google-gemini') return translators.get('google') || null;
   return translators.get('openai') || null;
 }
 
@@ -98,7 +111,7 @@ export function translateRequest(
   const t = getTranslator(provider);
   let payload: unknown = geminiBody;
 
-  if (provider === 'google') {
+  if (provider === 'google' || provider === 'google-gemini') {
     payload = geminiBody;
   } else if (OPENAI_COMPAT.has(provider)) {
     payload = t?.mapGeminiToOpenAI ? t.mapGeminiToOpenAI(geminiBody, modelName) : geminiBody;
@@ -129,7 +142,7 @@ export function translateRequest(
 export function translateResponse(provider: string, providerRes: unknown, modelName: string): unknown {
   const t = getTranslator(provider);
 
-  if (provider === 'google') return providerRes;
+  if (provider === 'google' || provider === 'google-gemini') return providerRes;
   if (OPENAI_COMPAT.has(provider)) return t?.mapOpenAIToGemini ? t.mapOpenAIToGemini(providerRes, modelName) : providerRes;
   if (ANTHROPIC_COMPAT.has(provider)) return t?.mapAnthropicToGemini ? t.mapAnthropicToGemini(providerRes, modelName) : providerRes;
 
@@ -145,7 +158,7 @@ export function translateResponse(provider: string, providerRes: unknown, modelN
 export function translateStreamChunk(provider: string, chunk: unknown, modelName: string): unknown {
   const t = getTranslator(provider);
 
-  if (provider === 'google') return t?.mapGoogleChunkToGemini ? t.mapGoogleChunkToGemini(chunk, modelName) : null;
+  if (provider === 'google' || provider === 'google-gemini') return t?.mapGoogleChunkToGemini ? t.mapGoogleChunkToGemini(chunk, modelName) : null;
   if (OPENAI_COMPAT.has(provider)) return t?.mapOpenAIChunkToGemini ? t.mapOpenAIChunkToGemini(chunk, modelName) : null;
   if (ANTHROPIC_COMPAT.has(provider)) return t?.mapAnthropicChunkToGemini ? t.mapAnthropicChunkToGemini(chunk, modelName) : null;
 
@@ -173,7 +186,7 @@ export function getProviderHeaders(
   if (provider === 'anthropic' || ANTHROPIC_COMPAT.has(provider)) {
     headers['x-api-key'] = apiKey;
     headers['anthropic-version'] = '2025-04-01';
-  } else if (provider === 'google') {
+  } else if (provider === 'google' || provider === 'google-gemini') {
     if (apiKey.startsWith('ya29.')) {
       headers['Authorization'] = `Bearer ${apiKey}`;
     } else {
@@ -196,7 +209,7 @@ export function getProviderHeaders(
 
 
 export function supportsStreaming(provider: string): boolean {
-  return OPENAI_COMPAT.has(provider) || ANTHROPIC_COMPAT.has(provider) || provider === 'google';
+  return OPENAI_COMPAT.has(provider) || ANTHROPIC_COMPAT.has(provider) || provider === 'google' || provider === 'google-gemini';
 }
 
 // ─── URL Helpers ──────────────────────────────────────────────────────────

@@ -51,13 +51,17 @@ function copyRecursive(src, dst) {
       copyRecursive(path.join(src, entry), path.join(dst, entry));
     }
   } else {
+    // Exclude development artifacts (.d.ts, .map, test files) to keep production asar lean
+    if (src.endsWith('.d.ts') || src.endsWith('.d.ts.map') || src.endsWith('.js.map') || src.endsWith('.test.js') || src.endsWith('.test.d.ts')) {
+      return;
+    }
     ensureDir(path.dirname(dst));
     fs.copyFileSync(src, dst);
   }
 }
 
 async function main() {
-  console.log(`[patch_2_17] Surgical patch for Antigravity 2.17.x`);
+  console.log(`[patch_2_17] Surgical patch for Antigravity 2.17.x / 2.18.x`);
   console.log(`  in:  ${asarIn}`);
   console.log(`  out: ${asarOut}`);
 

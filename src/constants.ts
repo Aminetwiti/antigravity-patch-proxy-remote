@@ -279,6 +279,8 @@ export const PROVIDERS = {
   MINIMAX: 'minimax',
   // Native
   GOOGLE: 'google',
+  // Google AI Studio (independent developer API key & quota)
+  GOOGLE_GEMINI: 'google-gemini',
 } as const;
 
 export type ProviderName = (typeof PROVIDERS)[keyof typeof PROVIDERS];
@@ -357,6 +359,7 @@ export const PROVIDER_DEFAULT_URLS: Record<ProviderName, string> = {
       ? `${process.env.OLLAMA_HOST.replace(/\/$/, '')}/v1/chat/completions`
       : 'http://localhost:11434/v1/chat/completions',
   [PROVIDERS.GOOGLE]: process.env.GOOGLE_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/models/',
+  [PROVIDERS.GOOGLE_GEMINI]: process.env.GOOGLE_GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
   [PROVIDERS.CUSTOM]: process.env.CUSTOM_PROVIDER_URL || '',
   [PROVIDERS.DEEPSEEK]: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
   [PROVIDERS.GROQ]: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
