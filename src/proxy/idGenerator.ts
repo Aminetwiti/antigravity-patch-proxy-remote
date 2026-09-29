@@ -37,10 +37,14 @@ export function generateModelPlaceholderId(model: CustomModel): string {
 export function toSlug(model: CustomModel): string {
   const provider = (model.provider || 'custom').toLowerCase();
   const effortTag = model._effortSuffix || '';
-  // Google models used to be pooled, but this caused conflicts when multiple Google accounts were added
-  const accountTag = (model.accountName || model.accountEmail || '');
-  const input = `${provider}-${model.apiUrl}-${model.externalModelName || model.name}${accountTag ? `-${accountTag}` : ''}${effortTag}`
-    .replace(/^models\//, '')
+  const isGoogle = provider === 'google' || provider === 'google-gemini' || provider === 'gemini';
+  // Google models are pooled across accounts in the backend, so they share a unified slug
+  const accountTag = isGoogle ? '' : (model.accountName || model.accountEmail || '');
+  const urlPart = isGoogle ? 'google' : (model.apiUrl || '');
+  const rawModel = isGoogle
+    ? (model.externalModelName || model.name || '').replace(/^models\//, '')
+    : (model.externalModelName || model.name || '');
+  const input = `${isGoogle ? 'google' : provider}-${urlPart}-${rawModel}${accountTag ? `-${accountTag}` : ''}${effortTag}`
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase();

@@ -170,17 +170,9 @@ export function spawnInherit(cmd: string, args: string[]): Promise<number> {
  * safeStorage (only `fallback:`-style keys decrypt).
  */
 export function resolveProxyRuntime(): { bin: string; args: string[]; isElectron: boolean } {
-  const platform = getPlatform();
-  if (platform === 'win32' || platform === 'linux' || platform === 'darwin') {
-    const exeName = platform === 'win32' ? 'electron.exe' : 'electron';
-    const candidates = [
-      path.resolve(__dirname, '..', '..', '..', 'ag-doctor-ui', 'node_modules', 'electron', 'dist', exeName),
-      path.resolve(__dirname, '..', '..', '..', 'node_modules', 'electron', 'dist', exeName),
-    ];
-    for (const c of candidates) {
-      if (fs.existsSync(c)) return { bin: c, args: [], isElectron: true };
-    }
-  }
+  // Use node.exe (process.execPath) by default for stability, headless background
+  // execution, and minimal memory footprint (~40MB vs ~150MB for Chromium).
+  // standalone-proxy-runner.js already provides a complete Electron mock.
   return { bin: process.execPath, args: [], isElectron: false };
 }
 

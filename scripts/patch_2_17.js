@@ -268,13 +268,103 @@ try {
         const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : (args[0] && args[0].href ? args[0].href : ''));
         const isUserStatus = typeof url === 'string' && url.includes('LanguageServerService/GetUserStatus');
         const isAvailableModels = typeof url === 'string' && url.includes('LanguageServerService/GetAvailableModels');
+        const isSlashCommands = typeof url === 'string' && url.includes('LanguageServerService/GetSlashCommands');
 
-        if (!isUserStatus && !isAvailableModels) {
+        if (!isUserStatus && !isAvailableModels && !isSlashCommands) {
           return origFetch.apply(this, args);
+        }
+
+        // Sanitize outgoing GetSlashCommands request: ensure planModel is a valid ModelPlaceholder enum
+        if (isSlashCommands && args[1] && typeof args[1].body === 'string') {
+          try {
+            const reqObj = JSON.parse(args[1].body);
+            if (reqObj && reqObj.cascadeConfig && reqObj.cascadeConfig.plannerConfig) {
+              const pm = reqObj.cascadeConfig.plannerConfig.planModel;
+              if (!pm || !/^MODEL_PLACEHOLDER_M\d+$/.test(pm)) {
+                reqObj.cascadeConfig.plannerConfig.planModel = (pm && typeof pm === 'string' && pm.toLowerCase().includes('flash')) ? 'MODEL_PLACEHOLDER_M16' : 'MODEL_PLACEHOLDER_M54';
+                args[1].body = JSON.stringify(reqObj);
+                if (args[1].headers && typeof args[1].headers === 'object') {
+                  delete args[1].headers['content-length'];
+                  delete args[1].headers['Content-Length'];
+                }
+              }
+            }
+          } catch (_) {}
         }
 
         try {
           const response = await origFetch.apply(this, args);
+
+          if (isSlashCommands) {
+            try {
+              if (response.ok) {
+                const text = await response.text();
+                const data = JSON.parse(text);
+                if (data && Array.isArray(data.commands)) {
+                  const hasPlan = data.commands.some(function(c) { return c && c.info && c.info.name === 'plan'; });
+                  if (!hasPlan) {
+                    data.commands.unshift({
+                      info: {
+                        name: 'plan',
+                        type: 'SLASH_COMMAND_TYPE_SYSTEM',
+                        modelFacingText: '<PLAN>The user is requesting that you enter planning mode. Carefully research first, construct an implementation plan artifact, and obtain approval before making changes.</PLAN>'
+                      },
+                      title: 'plan',
+                      description: 'Plan carefully before executing a task.'
+                    });
+                    return new Response(JSON.stringify(data), {
+                      status: 200,
+                      headers: { 'content-type': 'application/json' }
+                    });
+                  }
+                }
+                return new Response(text, {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers: response.headers
+                });
+              } else {
+                // Fallback slash commands if Language Server encountered an unresolvable planModel error
+                const fallbackData = {
+                  commands: [
+                    {
+                      info: { name: 'plan', type: 'SLASH_COMMAND_TYPE_SYSTEM', modelFacingText: '<PLAN>The user is requesting that you enter planning mode. Carefully research first, construct an implementation plan artifact, and obtain approval before making changes.</PLAN>' },
+                      title: 'plan',
+                      description: 'Plan carefully before executing a task.'
+                    },
+                    {
+                      info: { name: 'goal', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
+                      title: 'goal',
+                      description: 'Persist until user goal is achieved.'
+                    },
+                    {
+                      info: { name: 'schedule', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
+                      title: 'schedule',
+                      description: 'Schedule a task or recurring background cron.'
+                    },
+                    {
+                      info: { name: 'grill-me', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
+                      title: 'grill-me',
+                      description: 'Interview me to align on a plan.'
+                    },
+                    {
+                      info: { name: 'learn', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
+                      title: 'learn',
+                      description: 'Reflect on recent successes or corrections to capture reusable skills or rules.'
+                    }
+                  ]
+                };
+                return new Response(JSON.stringify(fallbackData), {
+                  status: 200,
+                  headers: { 'content-type': 'application/json' }
+                });
+              }
+            } catch (slashErr) {
+              console.warn('[AG] GetSlashCommands processing error:', slashErr);
+              return response;
+            }
+          }
+
           if (!response.ok) return response;
           const rawBuf = await response.arrayBuffer();
           let modifiedBytes = null;

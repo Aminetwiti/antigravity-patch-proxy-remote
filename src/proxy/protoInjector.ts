@@ -21,7 +21,7 @@ import type { CustomModel } from './types';
 import { isRecentModel } from './recentModelsStore';
 import { getCachedHealth, type ModelHealthResult } from './modelHealthChecker';
 import { expandModelsWithEffort } from './effortExpander';
-import { detectModelCapabilities } from './modelUtils';
+import { detectModelCapabilities, getCanonicalModelKey } from './modelUtils';
 import { isObsoleteModel } from '../constants';
 
 /**
@@ -165,7 +165,10 @@ export function injectCustomModelsIntoResponse(
     const fieldMapping = extractFieldMapping(sampleEntry.value);
     const existing = extractExistingModelKeys(msgBody, modelTag);
 
-    // Strip any obsolete models already present in msgBody
+    // Strip any obsolete models or models superseded by custom models already present in msgBody
+    const customCanonKeys = new Set(
+      (customModels || []).map((m) => getCanonicalModelKey(m.externalModelName || m.name, m.displayName)),
+    );
     const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
     const keptBodyParts: Buffer[] = [];
     let strippedAnyNative = false;
@@ -181,7 +184,7 @@ export function injectCustomModelsIntoResponse(
             else if (sf.fieldNum === 2) labelStr = sf.raw.toString('utf8').trim();
           }
         }
-        if (isObsoleteModel(idStr, labelStr)) {
+        if (isObsoleteModel(idStr, labelStr) || customCanonKeys.has(getCanonicalModelKey(idStr, labelStr))) {
           strippedAnyNative = true;
           continue;
         }
@@ -204,9 +207,10 @@ export function injectCustomModelsIntoResponse(
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+      const canonKey = `${getCanonicalModelKey(rawName, cleanDisp)}${effort}`;
 
-      if (seenModelKeys.has(modelDedupKey)) continue;
+      if (seenModelKeys.has(canonKey)) continue;
+      seenModelKeys.add(canonKey);
 
       const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
       const placeholderId = generateModelPlaceholderId(m);
@@ -372,10 +376,22 @@ function injectCustomModelsIntoUserStatusJson(
     let injectedCount = 0;
 
     for (const m of expandedModels) {
+      if (m._poolOnly) continue;
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini';
+      const canonicalBase = isGoogleFamily
+        ? (rawName.includes('claude') || cleanDisp.includes('claude')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus') ? 'claude-opus-4-6-thinking' : 'claude-sonnet-4-6')
+            : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
+                : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
+        : rawName;
+
+      const modelDedupKey = isGoogleFamily
+        ? `google-unified:${canonicalBase}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
@@ -497,7 +513,7 @@ export function injectCustomModelsIntoUserStatus(
       supportsThought: boolean;
     }> = [];
     const filteredCascadeCustom = (customModels || []).filter(
-      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName),
+      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName) && !m._poolOnly,
     );
     const expandedModels = expandModelsWithEffort(filteredCascadeCustom);
 
@@ -547,10 +563,22 @@ export function injectCustomModelsIntoUserStatus(
 
     const seenModelKeys = new Set<string>();
     for (const m of expandedModels) {
+      if (m._poolOnly) continue;
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini';
+      const canonicalBase = isGoogleFamily
+        ? (rawName.includes('claude') || cleanDisp.includes('claude')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus') ? 'claude-opus-4-6-thinking' : 'claude-sonnet-4-6')
+            : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
+                : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
+        : rawName;
+
+      const modelDedupKey = isGoogleFamily
+        ? `google-unified:${canonicalBase}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 

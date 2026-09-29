@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { app } from 'electron';
 import log from 'electron-log';
 import * as cryptoStore from '../cryptoStore';
@@ -70,7 +71,11 @@ interface CustomModelsFile {
  * Returns the absolute path to the custom_models.json file.
  */
 export function getCustomModelsPath(): string {
-  const geminiDir = path.join(app.getPath('home'), '.gemini', 'antigravity');
+  if (process.env.AG_CUSTOM_MODELS_PATH) {
+    return process.env.AG_CUSTOM_MODELS_PATH;
+  }
+  const homeDir = (app && typeof app.getPath === 'function' && app.getPath('home')) || process.env.USERPROFILE || process.env.HOME || os.homedir();
+  const geminiDir = path.join(homeDir, '.gemini', 'antigravity');
   return path.join(geminiDir, 'custom_models.json');
 }
 
@@ -193,19 +198,40 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
     for (const acc of accounts) {
       if (acc.enabled === false) continue;
       const targetModels = Array.isArray((acc as any).models) && (acc as any).models.length > 0 ? (acc as any).models : models;
-      for (const m of targetModels) {
+      for (const rawM of targetModels) {
+        const m = typeof rawM === 'string' ? { id: rawM, displayName: '', enabled: true } : rawM;
         if (m.enabled === false) continue;
-        if (isObsoleteModel(m.id, m.displayName)) continue;
+        const mId = m.id ?? '';
+        if (isObsoleteModel(mId, m.displayName)) continue;
         const mergedHeaders = { ...p.extraHeaders, ...(m as { extraHeaders?: Record<string, string> }).extraHeaders };
         const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
-        let displayName = m.displayName ?? m.id ?? '';
+        let displayName = m.displayName ?? '';
+        if (!displayName || displayName === mId || displayName.includes('-tiered')) {
+          const norm = normalizeCloudCodeModelId(mId);
+          if (norm === 'gemini-3.8-flash-tiered') displayName = 'Gemini 3.8 Flash';
+          else if (norm === 'gemini-3.7-flash-tiered') displayName = 'Gemini 3.7 Flash';
+          else if (norm === 'gemini-3.6-flash-tiered') displayName = 'Gemini 3.6 Flash';
+          else if (norm === 'claude-sonnet-4-6') displayName = 'Claude Sonnet 4.6 (Thinking)';
+          else if (norm === 'claude-opus-4-6-thinking') displayName = 'Claude Opus 4.6 (Thinking)';
+          else displayName = mId;
+        }
 
         const accProvider = (acc as any).provider || (p.provider ?? 'openai');
         const accApiUrl = (acc as any).apiUrl || (p.apiUrl ?? '');
         const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ.')) && !acc.refreshToken);
+
+        // Google AI Studio does not support Claude models
+        const isClaude = mId.includes('claude') || displayName.toLowerCase().includes('claude');
+        if (isAiStudio && isClaude) {
+          continue;
+        }
+
+        const isCloudCode = !isAiStudio && isGoogle;
         const resolvedProvider = isAiStudio ? 'google-gemini' : accProvider;
-        const resolvedApiUrl = isAiStudio ? (accApiUrl || 'https://generativelanguage.googleapis.com/v1beta') : accApiUrl;
+        const resolvedApiUrl = isAiStudio
+          ? (accApiUrl || 'https://generativelanguage.googleapis.com/v1beta')
+          : (isCloudCode ? 'https://daily-cloudcode-pa.googleapis.com' : (accApiUrl || p.apiUrl || ''));
 
         const partialModel: CustomModel = {
           name: m.id ?? '',
@@ -316,15 +342,21 @@ export function loadCustomModels(): CustomModel[] {
       }
     }
 
-    // For Google Cloud Code accounts (Antigravity independent quota): collapse to ONE pooled entry per unique model ID.
-    // The proxy routes to the best real account at dispatch time (apiKey === 'auto' path).
-    // Google AI Studio accounts (API keys / shared developer quota) and Non-Google providers: keep their entries as-is.
-    const googleCloudCodeModels = loadedModels.filter(m => m.provider === 'google' && isGoogleCloudCodeModel(m) && m.apiKey && !m.apiKey.startsWith('fallback:'));
-    const otherModels = loadedModels.filter(m => !(m.provider === 'google' && isGoogleCloudCodeModel(m)) || !m.apiKey || m.apiKey.startsWith('fallback:'));
+    // For all Google family models (both Cloud Code OAuth accounts and Google AI Studio API key accounts):
+    // collapse to ONE unified pooled entry per unique canonical model in the Antigravity dropdown.
+    // The backend proxy dispatches across all accounts and handles fallbacks automatically.
+    const isGoogleFamily = (m: CustomModel) =>
+      (m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini') &&
+      Boolean(m.apiKey) &&
+      !m.apiKey.startsWith('fallback:');
+
+    const googleFamilyModels = loadedModels.filter(isGoogleFamily);
+    const otherModels = loadedModels.filter(m => !isGoogleFamily(m));
 
     const seenBaseIds = new Map<string, CustomModel>();
-    for (const m of googleCloudCodeModels) {
-      const baseId = (m.externalModelName || m.name || '').replace(/^models\//, '');
+    for (const m of googleFamilyModels) {
+      const raw = (m.externalModelName || m.name || '').replace(/^models\//, '');
+      const baseId = normalizeCloudCodeModelId(raw);
       if (!seenBaseIds.has(baseId)) {
         seenBaseIds.set(baseId, m);
       }
@@ -332,14 +364,20 @@ export function loadCustomModels(): CustomModel[] {
 
     const pooledGoogleModels: CustomModel[] = [];
     seenBaseIds.forEach((template, baseId) => {
-      const accountCount = googleCloudCodeModels.filter(m => (m.externalModelName || m.name || '').replace(/^models\//, '') === baseId).length;
+      let displayName = template.displayName || baseId;
+      displayName = displayName.replace(/^\[[^\]]+\]\s*/, '');
+      if (baseId === 'gemini-3.8-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.8 Flash';
+      if (baseId === 'gemini-3.7-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.7 Flash';
+      if (baseId === 'gemini-3.6-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.6 Flash';
+      if (baseId === 'claude-sonnet-4-6' && (displayName === baseId || displayName.includes('-4-6'))) displayName = 'Claude Sonnet 4.6 (Thinking)';
+      if (baseId === 'claude-opus-4-6-thinking' && (displayName === baseId || displayName.includes('-4-6'))) displayName = 'Claude Opus 4.6 (Thinking)';
+
       pooledGoogleModels.push({
         ...template,
-        name: `models/${template.provider}:${baseId}:auto-pool`,
-        displayName: (template.displayName || baseId).replace(/^\[[^\]]+\]\s*/, ''),
+        provider: 'google',
+        name: `models/google:${baseId}:auto-pool`,
+        displayName,
         externalModelName: baseId,
-        // Always use 'auto' dispatch for Google Cloud Code — the proxy picks the best account.
-        // For a single account, 'auto' falls through to that one account.
         apiKey: 'auto',
         accountName: '',
         accountEmail: '',
@@ -347,8 +385,8 @@ export function loadCustomModels(): CustomModel[] {
       });
     });
 
-    // Mark real per-account Cloud Code entries as dispatch-only (hidden from dropdown)
-    const realGoogleModels = googleCloudCodeModels.map(m => ({ ...m, _poolOnly: true as const }));
+    // Mark ALL real per-account entries (both Cloud Code and AI Studio) as dispatch-only (hidden from dropdown)
+    const realGoogleModels = googleFamilyModels.map(m => ({ ...m, _poolOnly: true as const }));
 
     return [...pooledGoogleModels, ...realGoogleModels, ...otherModels];
   } catch (e) {

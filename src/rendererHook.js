@@ -795,6 +795,7 @@
 
   // --- Message Suggestion Pills Bar & Retry Button Configuration ---
   const DEFAULT_SUGGESTIONS = [
+    { label: '/plan', text: '/plan ' },
     { label: 'Continue', text: 'Continue' },
     { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
     { label: 'Keep going', text: 'Keep going' },

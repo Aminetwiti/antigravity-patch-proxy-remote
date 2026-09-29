@@ -1,6 +1,6 @@
 import log from 'electron-log';
 import { loadCustomModels } from './modelLoader';
-import { detectModelCapabilities } from './modelUtils';
+import { detectModelCapabilities, getCanonicalModelKey } from './modelUtils';
 import { generateModelPlaceholderId, toSlug } from './idGenerator';
 import { getCachedHealth, ModelHealthResult } from './modelHealthChecker';
 import { isRecentModel } from './recentModelsStore';
@@ -44,10 +44,9 @@ export function deduplicateModels(models: CustomModel[]): CustomModel[] {
     // Per-account Google entries are dispatch/quota only — the unified
     // "auto-pool" entry represents them in the model dropdown.
     if (m._poolOnly) return false;
-    const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
-    const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
     const effort = m._effortSuffix || '';
-    const key = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+    const key = `${getCanonicalModelKey(m.externalModelName || m.name, m.displayName)}${effort}`;
+
     if (seenKeys.has(key)) return false;
     seenKeys.add(key);
     return true;
@@ -70,6 +69,13 @@ function formatDisplayName(m: CustomModel): string {
   return `${favTag}🔴 [${err}] • ${dispName}`;
 }
 
+export function resolvePlanModelEnum(modelName?: string): string {
+  if (!modelName) return 'MODEL_PLACEHOLDER_M54';
+  const norm = modelName.toLowerCase();
+  if (norm.includes('flash')) return 'MODEL_PLACEHOLDER_M16';
+  return 'MODEL_PLACEHOLDER_M54';
+}
+
 export function getMappedCustomModels() {
   const customModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(loadCustomModels())));
   const mappedCustom: Record<string, unknown> = {};
@@ -81,7 +87,7 @@ export function getMappedCustomModels() {
       maxTokens: 1048576,
       maxOutputTokens: 4096,
       model: pid,
-      planModel: pid,
+      planModel: resolvePlanModelEnum(m.externalModelName || m.name),
       requestedModel: pid,
       apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
       modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -111,11 +117,14 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
     (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName),
   );
   const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(filteredCustom)));
+  const customCanonKeys = new Set(
+    sortedCustomModels.map((m) => getCanonicalModelKey(m.externalModelName || m.name, m.displayName)),
+  );
   if (Array.isArray(target)) {
     const cleanTarget = target.filter((t: any) => {
       const id = t?.name || t?.model || t?.id || '';
       const disp = t?.displayName || '';
-      return !isObsoleteModel(id, disp);
+      return !isObsoleteModel(id, disp) && !customCanonKeys.has(getCanonicalModelKey(id, disp));
     });
     const mapped = sortedCustomModels.map((m) => {
       const cap = detectModelCapabilities(m, true);
@@ -123,7 +132,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       return {
         name: 'models/' + pid,
         model: pid,
-        planModel: pid,
+        planModel: resolvePlanModelEnum(m.externalModelName || m.name),
         requestedModel: pid,
         version: '1.0',
         displayName: formatDisplayName(m),
@@ -146,7 +155,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       const disp = (v as any)?.displayName || '';
       const innerModel = (v as any)?.model;
       const isNativeModel = typeof innerModel === 'string' && innerModel.startsWith('MODEL_');
-      if (isNativeModel || !isObsoleteModel(k, disp)) {
+      if ((isNativeModel || !isObsoleteModel(k, disp)) && !customCanonKeys.has(getCanonicalModelKey(k, disp))) {
         result[k] = v;
       }
     }
@@ -167,7 +176,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         maxOutputTokens: cap.maxOutputTokens,
         tokenizerType: 'LLAMA_WITH_SPECIAL',
         model: pid,
-        planModel: pid,
+        planModel: resolvePlanModelEnum(m.externalModelName || m.name),
         requestedModel: pid,
         apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
         modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -247,7 +256,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
             maxOutputTokens: cap.maxOutputTokens,
             tokenizerType: 'LLAMA_WITH_SPECIAL',
             model: pid,
-            planModel: pid,
+            planModel: resolvePlanModelEnum(m.externalModelName || m.name),
             requestedModel: pid,
             apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
             modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -326,7 +335,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.8-flash',
-    planModel: 'gemini-3.8-flash',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.8-flash',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -339,7 +348,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.7-flash',
-    planModel: 'gemini-3.7-flash',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.7-flash',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -352,7 +361,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.6-flash',
-    planModel: 'gemini-3.6-flash',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.6-flash',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -365,7 +374,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 200000,
     maxOutputTokens: 64000,
     model: 'claude-sonnet-4-6',
-    planModel: 'claude-sonnet-4-6',
+    planModel: 'MODEL_PLACEHOLDER_M54',
     requestedModel: 'claude-sonnet-4-6',
     apiProvider: 'API_PROVIDER_ANTHROPIC',
     modelProvider: 'MODEL_PROVIDER_ANTHROPIC',
@@ -378,7 +387,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 200000,
     maxOutputTokens: 64000,
     model: 'claude-opus-4-6',
-    planModel: 'claude-opus-4-6',
+    planModel: 'MODEL_PLACEHOLDER_M54',
     requestedModel: 'claude-opus-4-6',
     apiProvider: 'API_PROVIDER_ANTHROPIC',
     modelProvider: 'MODEL_PROVIDER_ANTHROPIC',
@@ -391,7 +400,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 131072,
     maxOutputTokens: 16384,
     model: 'gpt-oss-120b',
-    planModel: 'gpt-oss-120b',
+    planModel: 'MODEL_PLACEHOLDER_M54',
     requestedModel: 'gpt-oss-120b',
     apiProvider: 'API_PROVIDER_OPENAI',
     modelProvider: 'MODEL_PROVIDER_OPENAI',
@@ -404,7 +413,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 131072,
     maxOutputTokens: 16384,
     model: 'gpt-oss-120b-medium',
-    planModel: 'gpt-oss-120b-medium',
+    planModel: 'MODEL_PLACEHOLDER_M54',
     requestedModel: 'gpt-oss-120b-medium',
     apiProvider: 'API_PROVIDER_OPENAI',
     modelProvider: 'MODEL_PROVIDER_OPENAI',
@@ -417,7 +426,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.6-flash-high',
-    planModel: 'gemini-3.6-flash-high',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.6-flash-high',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -430,7 +439,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.6-flash-medium',
-    planModel: 'gemini-3.6-flash-medium',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.6-flash-medium',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -443,7 +452,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.6-flash-low',
-    planModel: 'gemini-3.6-flash-low',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.6-flash-low',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -456,7 +465,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-pro-agent',
-    planModel: 'gemini-pro-agent',
+    planModel: 'MODEL_PLACEHOLDER_M54',
     requestedModel: 'gemini-pro-agent',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -469,7 +478,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.1-pro-low',
-    planModel: 'gemini-3.1-pro-low',
+    planModel: 'MODEL_PLACEHOLDER_M54',
     requestedModel: 'gemini-3.1-pro-low',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -482,7 +491,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.1-flash-lite',
-    planModel: 'gemini-3.1-flash-lite',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.1-flash-lite',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -534,13 +543,18 @@ export function injectCustomSlugsIntoAgentModelSorts(
     if (sort.groups && Array.isArray(sort.groups)) {
       sort.groups.forEach((group) => {
         if (group.modelIds && Array.isArray(group.modelIds)) {
-          // Keep genuine original models first; filter out any duplicate or stale custom entries
+          const customCanonKeys = new Set(
+            sortedCustomModels.map((m) => getCanonicalModelKey(m.externalModelName || m.name, m.displayName)),
+          );
+          // Keep genuine original models first; filter out any duplicate or stale custom entries,
+          // as well as any original Google model IDs whose canonical key matches an injected custom model
           let originalModelIds = group.modelIds.filter(
             (id) =>
               !customSlugs.includes(id) &&
               !id.startsWith('custom-') &&
               !id.startsWith('MODEL_PLACEHOLDER_') &&
-              !customPlaceholders.has(id),
+              !customPlaceholders.has(id) &&
+              !customCanonKeys.has(getCanonicalModelKey(id)),
           );
           if (originalModelIds.length === 0) {
             originalModelIds = [...DEFAULT_CANONICAL_MODEL_IDS];
