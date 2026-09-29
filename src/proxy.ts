@@ -4245,7 +4245,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     let fullBody = Buffer.concat(bodyChunks);
     const bodyStr = fullBody.toString('utf-8');
 
-    log.info(`[Proxy] Request: ${req.method} ${req.url}`);
+    const isRoutineNoise = req.url?.includes('Heartbeat') || req.url?.includes('GetUserStatus') || req.url === '/health';
+    if (isRoutineNoise) {
+      log.debug(`[Proxy] Request: ${req.method} ${req.url}`);
+    } else {
+      log.info(`[Proxy] Request: ${req.method} ${req.url}`);
+    }
 
     // MCP relay: the mobile companion asks the desktop session for the list
     // of configured MCP servers (name + tools + status) because the phone

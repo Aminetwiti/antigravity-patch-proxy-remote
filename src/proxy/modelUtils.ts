@@ -347,4 +347,41 @@ export function modelHasReasoningCapability(modelName: string): boolean {
   return isReasoningLikeModel(modelName);
 }
 
+/**
+ * Returns a canonical key for a model to deduplicate identical models across
+ * different provider aliases (e.g. 'google' vs 'google-gemini'), accounts,
+ * or native Google vs custom models.
+ */
+export function getCanonicalModelKey(idOrName?: string, displayName?: string): string {
+  const norm = (s: string) =>
+    (s || '')
+      .toLowerCase()
+      .replace(/^models\//, '')
+      .replace(/^\[[^\]]+\]\s*/, '')
+      .replace(/^[🟢🟡🔴⭐\s•|]+/g, '')
+      .replace(/\(thinking\)/g, '')
+      .replace(/-tiered$/, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+  const idNorm = norm(idOrName || '');
+  const dispNorm = norm(displayName || '');
+  const combined = `${idNorm} ${dispNorm}`;
+
+  if (combined.includes('gemini-3-8-flash') || combined.includes('gemini-38-flash')) return 'gemini-3.8-flash';
+  if (combined.includes('gemini-3-7-flash') || combined.includes('gemini-37-flash')) return 'gemini-3.7-flash';
+  if (combined.includes('gemini-3-6-flash') || combined.includes('gemini-36-flash')) return 'gemini-3.6-flash';
+  if (combined.includes('gemini-2-5-pro') || combined.includes('gemini-25-pro')) return 'gemini-2.5-pro';
+  if (combined.includes('gemini-2-5-flash') || combined.includes('gemini-25-flash')) return 'gemini-2.5-flash';
+  if (combined.includes('claude-sonnet-4-6') || combined.includes('claude-4-6-sonnet')) return 'claude-sonnet-4-6';
+  if (combined.includes('claude-opus-4-6') || combined.includes('claude-4-6-opus')) return 'claude-opus-4-6';
+  if (combined.includes('claude-3-7-sonnet') || combined.includes('claude-37-sonnet')) return 'claude-3.7-sonnet';
+  if (combined.includes('claude-3-5-sonnet') || combined.includes('claude-35-sonnet')) return 'claude-3.5-sonnet';
+  if (combined.includes('gpt-4o')) return 'gpt-4o';
+  if (combined.includes('deepseek-r1')) return 'deepseek-r1';
+  if (combined.includes('deepseek-v3') || combined.includes('deepseek-chat')) return 'deepseek-v3';
+
+  return dispNorm || idNorm;
+}
+
 

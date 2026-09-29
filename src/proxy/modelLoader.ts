@@ -147,6 +147,10 @@ function migrateToEncrypted(filePath: string, models: CustomModel[]): CustomMode
   }
 }
 
+const loggedObsoleteModels = new Set<string>();
+let lastReportedValidationSummary = '';
+const globalRemappedLogged = new Set<string>();
+
 /**
  * Validates all models and returns only the valid ones.
  */
@@ -154,8 +158,12 @@ function validateModels(decrypted: CustomModel[]): CustomModel[] {
   const validModels: CustomModel[] = [];
   for (let i = 0; i < decrypted.length; i++) {
     const m = decrypted[i];
+    const modelKey = m.name || m.externalModelName || `index-${i}`;
     if (isObsoleteModel(m.externalModelName || m.name, m.displayName)) {
-      log.info(`[Proxy] Skipping obsolete model: ${m.name || m.externalModelName}`);
+      if (!loggedObsoleteModels.has(modelKey)) {
+        loggedObsoleteModels.add(modelKey);
+        log.info(`[Proxy] Skipping obsolete model: ${modelKey}`);
+      }
       continue;
     }
     const provider = m.provider as string;
@@ -170,7 +178,9 @@ function validateModels(decrypted: CustomModel[]): CustomModel[] {
       log.warn(`[Proxy] Skipping invalid model at index ${i}: ${validation.error}`);
     }
   }
-  if (validModels.length < decrypted.length) {
+  const summaryKey = `${validModels.length}/${decrypted.length}`;
+  if (validModels.length < decrypted.length && summaryKey !== lastReportedValidationSummary) {
+    lastReportedValidationSummary = summaryKey;
     log.info(
       `[Proxy] Loaded ${validModels.length}/${decrypted.length} valid models (${decrypted.length - validModels.length} skipped)`,
     );
@@ -319,7 +329,6 @@ export function loadCustomModels(): CustomModel[] {
     loadedModels = loadedModels.filter(m => !isObsoleteModel(m.externalModelName || m.name, m.displayName));
 
     // Auto-remap unhosted Google model IDs so stale saved configs on disk are cleaned up in memory and updated
-    const remappedLogged = new Set<string>();
     for (const m of loadedModels) {
       if (m.provider === 'google' || isGoogleCloudCodeModel(m)) {
         const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim();
@@ -329,8 +338,8 @@ export function loadCustomModels(): CustomModel[] {
             : normalizeGoogleModelId(rawName);
           if (norm && norm !== rawName) {
             const remapKey = `${rawName}->${norm}`;
-            if (!remappedLogged.has(remapKey)) {
-              remappedLogged.add(remapKey);
+            if (!globalRemappedLogged.has(remapKey)) {
+              globalRemappedLogged.add(remapKey);
               log.info(`[ModelLoader] Auto-remapped unhosted/alias Google model ID '${rawName}' to '${norm}'`);
             }
             m.externalModelName = norm;

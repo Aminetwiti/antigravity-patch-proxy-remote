@@ -54,17 +54,31 @@ export function notifyQuotaOrTokenChange(): void {
   }
 }
 
+type TokenRevokedSubscriber = (tokenPrefix: string) => void;
+const tokenRevokedSubscribers = new Set<TokenRevokedSubscriber>();
+
+export function onTokenRevoked(cb: TokenRevokedSubscriber): () => void {
+  tokenRevokedSubscribers.add(cb);
+  return () => tokenRevokedSubscribers.delete(cb);
+}
+
 /**
  * Marks a refresh token as revoked / requiring re-authentication.
  */
 export function markTokenRevoked(refreshToken?: string): void {
   const clean = (refreshToken || '').trim();
   if (!clean) return;
+  const isNew = !revokedRefreshTokens.has(clean);
   revokedRefreshTokens.add(clean);
   tokenCache.delete(clean);
   inFlightRefreshes.delete(clean);
   log.warn(`[GoogleAuth] Refresh token quarantined as REVOKED / REAUTH_REQUIRED: ${clean.substring(0, 10)}...`);
   notifyQuotaOrTokenChange();
+  if (isNew) {
+    for (const sub of tokenRevokedSubscribers) {
+      try { sub(clean.substring(0, 10)); } catch (_) {}
+    }
+  }
 }
 
 /**
