@@ -66,6 +66,12 @@ async function main() {
   }
   ensureDir(buildDir);
 
+  if (!fs.existsSync(path.join(repoDist, 'proxy.js')) || !fs.existsSync(path.join(repoDist, 'config', 'providers.json'))) {
+    console.log('[patch_2_17] Building dist/ modules...');
+    const { execSync } = require('child_process');
+    execSync('npm run build', { cwd: repoRoot, stdio: 'inherit' });
+  }
+
   // 1. Extract official asar
   console.log('[patch_2_17] Step 1: Extracting official asar...');
   asar.extractAll(asarIn, buildDir);
@@ -99,6 +105,17 @@ async function main() {
     if (fs.existsSync(src)) {
       copyRecursive(src, dst);
     }
+  }
+
+  // Ensure providers.json is present in dist/config and config
+  const providersSrc = fs.existsSync(path.join(repoDist, 'config', 'providers.json'))
+    ? path.join(repoDist, 'config', 'providers.json')
+    : path.join(repoRoot, 'src', 'config', 'providers.json');
+  if (fs.existsSync(providersSrc)) {
+    ensureDir(path.join(buildDir, 'dist', 'config'));
+    fs.copyFileSync(providersSrc, path.join(buildDir, 'dist', 'config', 'providers.json'));
+    ensureDir(path.join(buildDir, 'config'));
+    fs.copyFileSync(providersSrc, path.join(buildDir, 'config', 'providers.json'));
   }
 
   // Individual files to copy into dist/
@@ -163,12 +180,6 @@ async function main() {
   mainJs = mainJs.replace(
     /main_1\.default\.initialize\(\);/,
     'try { main_1.default.initialize(); } catch (e) { /* electron-log already initialized */ }',
-  );
-
-  // Bypass IDE wizard
-  mainJs = mainJs.replace(
-    /if \(!HEADLESS\) \{\s*await \(0, ideInstall_1\.maybeShowIdeInstallWizard\)\(storageManager\);\s*\}/,
-    '/* [v2.17 patch] IDE wizard bypassed */\n    if (false && !HEADLESS) {\n        await (0, ideInstall_1.maybeShowIdeInstallWizard)(storageManager);\n    }',
   );
 
   fs.writeFileSync(mainJsPath, mainJs, 'utf8');

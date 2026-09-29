@@ -31,6 +31,7 @@ interface AgAPI {
   }) => void): () => void;
   setTheme(theme: 'dark' | 'light'): Promise<boolean>;
   setNotifyEnabled(enabled: boolean): Promise<boolean>;
+  setChatEnhancements(enhancements: { retryButton?: boolean; suggestionPills?: boolean; suggestions?: Array<{ label: string; text: string }> }): Promise<boolean>;
   getProxyErrorHistory(): Promise<Array<{
     traceId: string;
     provider: string;

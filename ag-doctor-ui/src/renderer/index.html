@@ -1107,6 +1107,51 @@
             <button class="btn btn-primary" id="themeToggle" type="button" role="switch" aria-pressed="false" aria-label="Toggle light or dark theme">Switch to light theme</button>
           </div>
         </div>
+        <div class="panel" style="margin-top:24px" id="settingsChatEnhancementsPanel">
+          <div class="panel-header"><h2>Chat Enhancements & Suggestions (Antigravity Patch)</h2></div>
+          <div class="panel-body">
+            <label class="toggle-row" for="retryBtnToggle">
+              <span class="toggle-label">
+                <span class="toggle-title">Inline Retry Button</span>
+                <span class="toggle-subtitle">Display a quick "Retry" button next to the Send button in the Antigravity chat input bar.</span>
+              </span>
+              <span class="toggle-control">
+                <input type="checkbox" id="retryBtnToggle" checked />
+                <span class="toggle-slider" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="toggle-row" for="suggestionPillsToggle" style="margin-top:16px">
+              <span class="toggle-label">
+                <span class="toggle-title">Suggestion Pills Bar</span>
+                <span class="toggle-subtitle">Display quick action pills above the prompt box (Continue, Analyser et auditer, Keep going, etc.).</span>
+              </span>
+              <span class="toggle-control">
+                <input type="checkbox" id="suggestionPillsToggle" checked />
+                <span class="toggle-slider" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <div id="suggestionsEditorContainer" style="margin-top:24px; border-top:1px solid var(--border, rgba(255,255,255,0.08)); padding-top:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div>
+                  <div style="font-weight:600; font-size:14px;">Quick Action Suggestions</div>
+                  <div style="font-size:12px; color:var(--text-muted, rgba(255,255,255,0.6)); margin-top:2px;">Customize the action pills shown above the input box in Antigravity.</div>
+                </div>
+                <button class="btn btn-ghost btn-sm" id="resetSuggestionsBtn" type="button">Reset to default</button>
+              </div>
+
+              <div id="suggestionsList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;"></div>
+
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input type="text" id="newSuggestionLabel" class="input" placeholder="Button Label (ex: Continue)" style="flex:1;" />
+                <input type="text" id="newSuggestionText" class="input" placeholder="Prompt text to insert into input" style="flex:2;" />
+                <button class="btn btn-primary btn-sm" id="addSuggestionBtn" type="button">+ Add Pill</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="panel" style="margin-top:24px">
           <div class="panel-header"><h2>Notifications</h2></div>
           <div class="panel-body">

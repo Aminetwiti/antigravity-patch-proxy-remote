@@ -1716,6 +1716,31 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.CONFIG_SET_NOTIFY, async (_evt, enabled: bool
   }
 });
 
+ipcMain.handle(DOCTOR_IPC_CHANNELS.CONFIG_SET_CHAT_ENHANCEMENTS, async (_evt, enhancements: {
+  retryButton?: boolean;
+  suggestionPills?: boolean;
+  suggestions?: Array<{ label: string; text: string }>;
+}) => {
+  try {
+    const cfgPath = getConfigPath();
+    let cfg: Record<string, any> = {};
+    if (fs.existsSync(cfgPath)) {
+      cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    }
+    cfg.ui = { ...(typeof cfg.ui === 'object' && cfg.ui !== null ? cfg.ui : {}) };
+    if (enhancements.retryButton !== undefined) cfg.ui.retryButton = Boolean(enhancements.retryButton);
+    if (enhancements.suggestionPills !== undefined) cfg.ui.suggestionPills = Boolean(enhancements.suggestionPills);
+    if (Array.isArray(enhancements.suggestions)) cfg.ui.suggestions = enhancements.suggestions;
+
+    fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n');
+    configCache = cfg;
+    return true;
+  } catch {
+    return false;
+  }
+});
+
 ipcMain.handle(DOCTOR_IPC_CHANNELS.CONFIG_RESTORE_BACKUP, async () => {
   try {
     const customModelsPath = getCustomModelsPath();

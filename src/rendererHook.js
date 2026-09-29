@@ -694,6 +694,10 @@
     if (!container) return;
 
     let retryBtn = document.getElementById('__ag_inline_retry_btn');
+    if (chatUiConfig.retryButton === false) {
+      if (retryBtn) retryBtn.remove();
+      return;
+    }
     if (!retryBtn) {
       retryBtn = document.createElement('button');
       retryBtn.id = '__ag_inline_retry_btn';
@@ -783,7 +787,7 @@
     }
   }
 
-  // --- Message Suggestion Pills Bar Above Input ---
+  // --- Message Suggestion Pills Bar & Retry Button Configuration ---
   const DEFAULT_SUGGESTIONS = [
     { label: 'Continue', text: 'Continue' },
     { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
@@ -791,6 +795,52 @@
     { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
     { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' }
   ];
+
+  let chatUiConfig = {
+    retryButton: true,
+    suggestionPills: true,
+    suggestions: DEFAULT_SUGGESTIONS
+  };
+
+  try {
+    const rawStored = localStorage.getItem('ag_chat_ui_config');
+    if (rawStored) {
+      const parsed = JSON.parse(rawStored);
+      if (parsed && typeof parsed === 'object') {
+        chatUiConfig = {
+          retryButton: parsed.retryButton !== undefined ? Boolean(parsed.retryButton) : true,
+          suggestionPills: parsed.suggestionPills !== undefined ? Boolean(parsed.suggestionPills) : true,
+          suggestions: Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0 ? parsed.suggestions : DEFAULT_SUGGESTIONS
+        };
+      }
+    }
+  } catch (_) {}
+
+  async function fetchChatUiConfig() {
+    try {
+      const res = await fetch(`${LOCAL_PROXY_ORIGIN}/api/ui/config`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') {
+          const next = {
+            retryButton: data.retryButton !== undefined ? Boolean(data.retryButton) : true,
+            suggestionPills: data.suggestionPills !== undefined ? Boolean(data.suggestionPills) : true,
+            suggestions: Array.isArray(data.suggestions) && data.suggestions.length > 0 ? data.suggestions : DEFAULT_SUGGESTIONS
+          };
+          const changed = JSON.stringify(next) !== JSON.stringify(chatUiConfig);
+          chatUiConfig = next;
+          localStorage.setItem('ag_chat_ui_config', JSON.stringify(chatUiConfig));
+          if (changed) {
+            scheduleUpdate();
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  fetchChatUiConfig();
+  window.addEventListener('focus', () => { fetchChatUiConfig(); });
+  setInterval(fetchChatUiConfig, 10000);
 
   function insertTextIntoPrompt(text, autoSubmit = false) {
     const promptBox = document.querySelector('[contenteditable="true"]');
@@ -856,6 +906,12 @@
   }
 
   function injectSuggestionPills() {
+    let bar = document.getElementById('__ag_suggestion_pills_bar');
+    if (chatUiConfig.suggestionPills === false) {
+      if (bar) bar.remove();
+      return;
+    }
+
     let inputCard = document.querySelector('#antigravity\\.agentSidePanelInputBox') ||
                     document.querySelector('.relative.flex.flex-col.p-px.rounded-2xl.bg-card-border');
     if (!inputCard) {
@@ -866,16 +922,21 @@
     }
     if (!inputCard || !inputCard.parentElement) return;
 
-    let bar = document.getElementById('__ag_suggestion_pills_bar');
     if (!bar) {
       bar = document.createElement('div');
       bar.id = '__ag_suggestion_pills_bar';
       bar.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 2px 8px 2px;width:100%;user-select:none;z-index:10;';
     }
 
-    if (bar.children.length !== DEFAULT_SUGGESTIONS.length) {
+    const currentSuggestions = Array.isArray(chatUiConfig.suggestions) && chatUiConfig.suggestions.length > 0
+      ? chatUiConfig.suggestions
+      : DEFAULT_SUGGESTIONS;
+
+    const signature = JSON.stringify(currentSuggestions);
+    if (bar.dataset.suggestionsSignature !== signature) {
+      bar.dataset.suggestionsSignature = signature;
       bar.innerHTML = '';
-      DEFAULT_SUGGESTIONS.forEach((sug) => {
+      currentSuggestions.forEach((sug) => {
         const pill = document.createElement('button');
         pill.type = 'button';
         pill.className = '__ag_suggestion_pill';

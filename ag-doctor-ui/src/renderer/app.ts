@@ -5050,6 +5050,144 @@ async function loadSettingsExtras(): Promise<void> {
       else { toast('Failed to save preference', 'err', 1800); notifyToggle.checked = !enabled; }
     });
   }
+
+  // Chat UI & Suggestions (Antigravity Patch)
+  const retryBtnToggle = $('#retryBtnToggle') as HTMLInputElement | null;
+  const suggestionPillsToggle = $('#suggestionPillsToggle') as HTMLInputElement | null;
+  const suggestionsList = $('#suggestionsList') as HTMLDivElement | null;
+  const resetSuggestionsBtn = $('#resetSuggestionsBtn') as HTMLButtonElement | null;
+  const addSuggestionBtn = $('#addSuggestionBtn') as HTMLButtonElement | null;
+  const newSuggestionLabel = $('#newSuggestionLabel') as HTMLInputElement | null;
+  const newSuggestionText = $('#newSuggestionText') as HTMLInputElement | null;
+
+  const DEFAULT_SUGGESTION_ITEMS: Array<{ label: string; text: string }> = [
+    { label: 'Continue', text: 'Continue' },
+    { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
+    { label: 'Keep going', text: 'Keep going' },
+    { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
+    { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' },
+  ];
+
+  let currentChatSuggestions: Array<{ label: string; text: string }> = [...DEFAULT_SUGGESTION_ITEMS];
+
+  const renderSuggestionsList = () => {
+    if (!suggestionsList) return;
+    suggestionsList.innerHTML = '';
+    if (currentChatSuggestions.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'font-size:12px; color:var(--text-muted, rgba(255,255,255,0.5)); padding:4px 0;';
+      empty.textContent = 'No suggestions configured. Click "Reset to default" or add one below.';
+      suggestionsList.appendChild(empty);
+      return;
+    }
+
+    currentChatSuggestions.forEach((sug, idx) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:8px;';
+
+      const pillBadge = document.createElement('span');
+      pillBadge.style.cssText = 'display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; background:rgba(255,255,255,0.1); color:#ffffff; white-space:nowrap;';
+      pillBadge.innerHTML = `<span style="opacity:0.6;font-size:9px;">✦</span><span>${escapeHtml(sug.label)}</span>`;
+
+      const textSpan = document.createElement('span');
+      textSpan.style.cssText = 'flex:1; font-size:12px; color:var(--text-muted, rgba(255,255,255,0.7)); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+      textSpan.textContent = sug.text;
+      textSpan.title = sug.text;
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn btn-ghost btn-sm';
+      delBtn.style.cssText = 'padding:2px 6px; font-size:11px; color:#ef4444;';
+      delBtn.textContent = '✕';
+      delBtn.title = 'Remove this suggestion';
+      delBtn.addEventListener('click', async () => {
+        currentChatSuggestions.splice(idx, 1);
+        renderSuggestionsList();
+        invalidateCache('config');
+        await window.ag.setChatEnhancements({ suggestions: currentChatSuggestions });
+        toast('Suggestion removed', 'info', 1500);
+      });
+
+      row.append(pillBadge, textSpan, delBtn);
+      suggestionsList.appendChild(row);
+    });
+  };
+
+  if (retryBtnToggle || suggestionPillsToggle) {
+    try {
+      const cfg = await window.ag.config();
+      const ui = (cfg.ui as Record<string, unknown> | undefined) ?? {};
+      if (retryBtnToggle) retryBtnToggle.checked = ui.retryButton !== false;
+      if (suggestionPillsToggle) suggestionPillsToggle.checked = ui.suggestionPills !== false;
+      if (Array.isArray(ui.suggestions) && ui.suggestions.length > 0) {
+        currentChatSuggestions = (ui.suggestions as Array<{ label: string; text: string }>).map((s) => ({
+          label: String(s.label || ''),
+          text: String(s.text || ''),
+        }));
+      } else {
+        currentChatSuggestions = [...DEFAULT_SUGGESTION_ITEMS];
+      }
+      renderSuggestionsList();
+    } catch {
+      if (retryBtnToggle) retryBtnToggle.checked = true;
+      if (suggestionPillsToggle) suggestionPillsToggle.checked = true;
+      currentChatSuggestions = [...DEFAULT_SUGGESTION_ITEMS];
+      renderSuggestionsList();
+    }
+
+    if (retryBtnToggle && !retryBtnToggle.dataset.bound) {
+      retryBtnToggle.dataset.bound = 'true';
+      retryBtnToggle.addEventListener('change', async () => {
+        const enabled = retryBtnToggle.checked;
+        invalidateCache('config');
+        const ok = await window.ag.setChatEnhancements({ retryButton: enabled });
+        if (ok) toast(enabled ? 'Inline Retry button enabled' : 'Inline Retry button disabled', 'ok', 1800);
+        else { toast('Failed to save preference', 'err', 1800); retryBtnToggle.checked = !enabled; }
+      });
+    }
+
+    if (suggestionPillsToggle && !suggestionPillsToggle.dataset.bound) {
+      suggestionPillsToggle.dataset.bound = 'true';
+      suggestionPillsToggle.addEventListener('change', async () => {
+        const enabled = suggestionPillsToggle.checked;
+        invalidateCache('config');
+        const ok = await window.ag.setChatEnhancements({ suggestionPills: enabled });
+        if (ok) toast(enabled ? 'Suggestion pills bar enabled' : 'Suggestion pills bar disabled', 'ok', 1800);
+        else { toast('Failed to save preference', 'err', 1800); suggestionPillsToggle.checked = !enabled; }
+      });
+    }
+
+    if (resetSuggestionsBtn && !resetSuggestionsBtn.dataset.bound) {
+      resetSuggestionsBtn.dataset.bound = 'true';
+      resetSuggestionsBtn.addEventListener('click', async () => {
+        currentChatSuggestions = [...DEFAULT_SUGGESTION_ITEMS];
+        renderSuggestionsList();
+        invalidateCache('config');
+        await window.ag.setChatEnhancements({ suggestions: currentChatSuggestions });
+        toast('Reset suggestions to default', 'ok', 1800);
+      });
+    }
+
+    if (addSuggestionBtn && !addSuggestionBtn.dataset.bound) {
+      addSuggestionBtn.dataset.bound = 'true';
+      addSuggestionBtn.addEventListener('click', async () => {
+        const label = (newSuggestionLabel?.value || '').trim();
+        const text = (newSuggestionText?.value || '').trim();
+        if (!label || !text) {
+          toast('Please enter both label and prompt text', 'warn', 2000);
+          return;
+        }
+        currentChatSuggestions.push({ label, text });
+        if (newSuggestionLabel) newSuggestionLabel.value = '';
+        if (newSuggestionText) newSuggestionText.value = '';
+        renderSuggestionsList();
+        invalidateCache('config');
+        await window.ag.setChatEnhancements({ suggestions: currentChatSuggestions });
+        toast(`Added suggestion "${label}"`, 'ok', 1800);
+      });
+    }
+  }
+
   await loadProxyErrorHistory();
 }
 

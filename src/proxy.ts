@@ -1733,58 +1733,65 @@ export async function executeGoogleCloudCodeWithPool(
     }
 
     // If all Google accounts and internal Google Cloud Code fallbacks failed,
-    // check for configured third-party models (OpenAI, Anthropic, DeepSeek, Ollama, OpenRouter, etc.)
-    // to provide universal zero-downtime resilience.
+    // try configured Google AI Studio accounts first (independent quota, same Gemini family),
+    // then fall through to OpenAI / Anthropic / DeepSeek / Ollama / OpenRouter / etc.
+    // Note: google-gemini (AI Studio) uses a per-account API key — rotate across all configured accounts.
     const nonGoogleFallbacks = allCustomModels.filter(
       (m) =>
         m.provider !== 'google' &&
-        m.provider !== 'google-gemini' &&
         !m._poolOnly &&
         !getOpenBreaker(m),
     );
 
     if (nonGoogleFallbacks.length > 0) {
-      const thirdPartyFallback = nonGoogleFallbacks[0];
+      // Prioritise AI Studio accounts (google-gemini) — same model family, independent quota.
+      // Rotate through all of them before falling to third-party providers.
+      const aiStudioFallbacks = nonGoogleFallbacks.filter((m) => m.provider === 'google-gemini');
+      const otherFallbacks = nonGoogleFallbacks.filter((m) => m.provider !== 'google-gemini');
+      const orderedFallbacks = [...aiStudioFallbacks, ...otherFallbacks];
+
       const sessionKey = convId || sessId;
       const existingFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
       const alreadyNotified = existingFallback?.notified === true;
+      const actualGeminiBody = (reqJson.request as GeminiRequestBody) || (reqJson as unknown as GeminiRequestBody);
 
-      if (sessionKey) {
-        setSessionModelFallback(sessionKey, currentBase, thirdPartyFallback.displayName || thirdPartyFallback.name, true);
-      }
+      for (let fi = 0; fi < orderedFallbacks.length; fi++) {
+        const fallbackModel = orderedFallbacks[fi];
+        const isAiStudio = fallbackModel.provider === 'google-gemini';
 
-      log.warn(
-        `[Proxy] Pool exhaustion: All Google accounts and internal fallbacks failed. Cascading to third-party provider ${thirdPartyFallback.provider} (${thirdPartyFallback.name})...`,
-      );
+        if (sessionKey && fi === 0) {
+          setSessionModelFallback(sessionKey, currentBase, fallbackModel.displayName || fallbackModel.name, true);
+        }
 
-      if (isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
-        if (!res.headersSent) {
-          safeWriteHead(res, 200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
+        log.warn(
+          `[Proxy] Pool exhaustion: Cascading to ${isAiStudio ? 'Google AI Studio' : fallbackModel.provider} account (${fallbackModel.displayName || fallbackModel.name}) [${fi + 1}/${orderedFallbacks.length}]...`,
+        );
+
+        if (fi === 0 && isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
+          if (!res.headersSent) {
+            safeWriteHead(res, 200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+            });
+          }
+          const notice = isAiStudio
+            ? `> 🔄 **Pool Cloud Code saturé** — Poursuite avec **Google AI Studio** (${fallbackModel.displayName || fallbackModel.name}).\n\n`
+            : `> 🌐 **Pool Google saturé** — Poursuite automatique avec **${fallbackModel.displayName || fallbackModel.name}** (${fallbackModel.provider}).\n\n`;
+          writeSafeSseChunk(res, {
+            response: {
+              candidates: [{ content: { parts: [{ text: notice }], role: 'model' }, index: 0 }],
+            },
           });
         }
-        const thirdPartyNotice = `> 🌐 **Pool Google saturé** — Poursuite automatique avec le modèle alternatif **${thirdPartyFallback.displayName || thirdPartyFallback.name}** (${thirdPartyFallback.provider}).\n\n`;
-        const chunk = {
-          response: {
-            candidates: [
-              {
-                content: { parts: [{ text: thirdPartyNotice }], role: 'model' },
-                index: 0,
-              },
-            ],
-          },
-        };
-        writeSafeSseChunk(res, chunk);
-      }
 
-      const actualGeminiBody = (reqJson.request as GeminiRequestBody) || (reqJson as unknown as GeminiRequestBody);
-      try {
-        handleCustomModelRequest(res, thirdPartyFallback, actualGeminiBody, isStream);
-        return true;
-      } catch (tpErr) {
-        log.warn(`[Proxy] Third-party fallback to ${thirdPartyFallback.name} failed:`, (tpErr as Error).message);
+        try {
+          handleCustomModelRequest(res, fallbackModel, actualGeminiBody, isStream);
+          return true;
+        } catch (tpErr) {
+          log.warn(`[Proxy] Fallback to ${fallbackModel.name} (${fallbackModel.provider}) failed: ${(tpErr as Error).message}. Trying next...`);
+          if (res.writableEnded || res.destroyed) return true;
+        }
       }
     }
 
@@ -3828,6 +3835,82 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         } catch {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
+  }
+
+  // UI & Chat Enhancements Configuration Bridge (GET/POST /api/ui/config)
+  if (req.url === '/api/ui/config' || req.url?.startsWith('/api/ui/config?')) {
+    const DEFAULT_SUGGESTIONS = [
+      { label: 'Continue', text: 'Continue' },
+      { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
+      { label: 'Keep going', text: 'Keep going' },
+      { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
+      { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' }
+    ];
+    const getConfigPath = () => {
+      const home = process.env.USERPROFILE || process.env.HOME || os.homedir();
+      return path.join(home, '.gemini', 'antigravity', 'config.json');
+    };
+    const readUiConfig = () => {
+      try {
+        const p = getConfigPath();
+        if (fs.existsSync(p)) {
+          const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+          const ui = parsed.ui || {};
+          return {
+            retryButton: ui.retryButton !== undefined ? Boolean(ui.retryButton) : true,
+            suggestionPills: ui.suggestionPills !== undefined ? Boolean(ui.suggestionPills) : true,
+            suggestions: Array.isArray(ui.suggestions) && ui.suggestions.length > 0 ? ui.suggestions : DEFAULT_SUGGESTIONS,
+          };
+        }
+      } catch (err) {
+        log.warn('[Proxy] Failed to read ui config from disk:', err);
+      }
+      return { retryButton: true, suggestionPills: true, suggestions: DEFAULT_SUGGESTIONS };
+    };
+
+    if (req.method === 'GET' || req.method === 'OPTIONS') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      });
+      if (req.method === 'OPTIONS') { res.end(); return; }
+      res.end(JSON.stringify(readUiConfig()));
+      return;
+    }
+
+    if (req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
+            retryButton?: boolean;
+            suggestionPills?: boolean;
+            suggestions?: Array<{ label: string; text: string }>;
+          };
+          const p = getConfigPath();
+          let parsed: Record<string, any> = {};
+          if (fs.existsSync(p)) {
+            parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+          }
+          parsed.ui = { ...(parsed.ui || {}) };
+          if (body.retryButton !== undefined) parsed.ui.retryButton = Boolean(body.retryButton);
+          if (body.suggestionPills !== undefined) parsed.ui.suggestionPills = Boolean(body.suggestionPills);
+          if (Array.isArray(body.suggestions)) parsed.ui.suggestions = body.suggestions;
+          fs.mkdirSync(path.dirname(p), { recursive: true });
+          fs.writeFileSync(p, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+          log.info(`[Proxy] Updated UI configuration: retryButton=${parsed.ui.retryButton}, suggestionPills=${parsed.ui.suggestionPills}`);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ ok: true, ...readUiConfig() }));
+        } catch (e: any) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: e?.message || 'Invalid JSON' }));
         }
       });
       return;

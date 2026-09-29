@@ -286,6 +286,7 @@ export function loadCustomModels(): CustomModel[] {
     loadedModels = loadedModels.filter(m => !isObsoleteModel(m.externalModelName || m.name, m.displayName));
 
     // Auto-remap unhosted Google model IDs so stale saved configs on disk are cleaned up in memory and updated
+    const remappedLogged = new Set<string>();
     for (const m of loadedModels) {
       if (m.provider === 'google' || isGoogleCloudCodeModel(m)) {
         const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim();
@@ -294,7 +295,11 @@ export function loadCustomModels(): CustomModel[] {
             ? normalizeCloudCodeModelId(rawName)
             : normalizeGoogleModelId(rawName);
           if (norm && norm !== rawName) {
-            log.info(`[ModelLoader] Auto-remapped unhosted/alias Google model ID '${rawName}' to '${norm}'`);
+            const remapKey = `${rawName}->${norm}`;
+            if (!remappedLogged.has(remapKey)) {
+              remappedLogged.add(remapKey);
+              log.info(`[ModelLoader] Auto-remapped unhosted/alias Google model ID '${rawName}' to '${norm}'`);
+            }
             m.externalModelName = norm;
             if (m.name && (m.name === rawName || m.name === `models/${rawName}`)) {
               m.name = `models/${norm}`;

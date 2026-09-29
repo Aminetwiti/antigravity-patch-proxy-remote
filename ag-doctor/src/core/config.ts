@@ -31,6 +31,11 @@ export const KNOWN_PATCH_RANGES = [
 ] as const;
 export type KnownPatchRange = (typeof KNOWN_PATCH_RANGES)[number];
 
+export interface SuggestionItem {
+  label: string;
+  text: string;
+}
+
 export interface AgDoctorConfig {
   mitmPort: number;
   logLines: number;
@@ -38,6 +43,10 @@ export interface AgDoctorConfig {
   ui: {
     theme: 'dark' | 'light';
     accent: string;
+    notifyEnabled?: boolean;
+    retryButton: boolean;
+    suggestionPills: boolean;
+    suggestions: SuggestionItem[];
   };
   history: {
     maxRuns: number;
@@ -63,6 +72,16 @@ export const DEFAULT_CONFIG: AgDoctorConfig = {
   ui: {
     theme: 'dark',
     accent: '#22d3ee',
+    notifyEnabled: false,
+    retryButton: true,
+    suggestionPills: true,
+    suggestions: [
+      { label: 'Continue', text: 'Continue' },
+      { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
+      { label: 'Keep going', text: 'Keep going' },
+      { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
+      { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' },
+    ],
   },
   history: {
     maxRuns: 50,
@@ -96,10 +115,17 @@ export function getConfigPath(): string {
 /** Deep-merge a partial config onto defaults to ensure all keys exist. */
 function mergeWithDefaults(partial: Partial<AgDoctorConfig> | null | undefined): AgDoctorConfig {
   if (!partial || typeof partial !== 'object') return { ...DEFAULT_CONFIG };
+  const partialUi: Partial<AgDoctorConfig['ui']> = partial.ui ?? {};
   const merged: AgDoctorConfig = {
     ...DEFAULT_CONFIG,
     ...partial,
-    ui: { ...DEFAULT_CONFIG.ui, ...(partial.ui ?? {}) },
+    ui: {
+      ...DEFAULT_CONFIG.ui,
+      ...partialUi,
+      retryButton: partialUi.retryButton !== undefined ? Boolean(partialUi.retryButton) : DEFAULT_CONFIG.ui.retryButton,
+      suggestionPills: partialUi.suggestionPills !== undefined ? Boolean(partialUi.suggestionPills) : DEFAULT_CONFIG.ui.suggestionPills,
+      suggestions: Array.isArray(partialUi.suggestions) ? partialUi.suggestions : DEFAULT_CONFIG.ui.suggestions,
+    },
     history: { ...DEFAULT_CONFIG.history, ...(partial.history ?? {}) },
     snapshot: { ...DEFAULT_CONFIG.snapshot, ...(partial.snapshot ?? {}) },
     patch: {
@@ -156,8 +182,22 @@ export function setConfigValue(path: string, value: string | number | boolean): 
     const n = Number(value);
     if (!Number.isFinite(n)) throw new Error(`Invalid number for ${path}: ${value}`);
     cursor[last] = n;
-  } else if (fullPath === 'snapshot.enabled') {
+  } else if (fullPath === 'snapshot.enabled' || fullPath === 'ui.retryButton' || fullPath === 'ui.suggestionPills') {
     cursor[last] = Boolean(value) && value !== 'false' && value !== '0';
+  } else if (fullPath === 'ui.suggestions') {
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (!Array.isArray(parsed)) throw new Error('ui.suggestions must be a JSON array of {label, text}');
+        cursor[last] = parsed;
+      } catch (err: unknown) {
+        throw new Error(`Invalid JSON for ui.suggestions: ${(err as Error).message}`);
+      }
+    } else if (Array.isArray(value)) {
+      cursor[last] = value;
+    } else {
+      throw new Error('ui.suggestions must be an array of {label, text}');
+    }
   } else if (fullPath === 'ui.theme') {
     if (value !== 'dark' && value !== 'light') throw new Error(`theme must be 'dark' or 'light'`);
     cursor[last] = value;
