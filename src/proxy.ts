@@ -1269,7 +1269,10 @@ export function executeGoogleCloudCodeRequest(
         }
       });
 
+      let isTimedOut = false;
+
       proxyReq.on('error', (err) => {
+        if (isTimedOut) return;
         if (!hostOverride && isCloudCodeUrl && !res.headersSent && !res.writableEnded) {
           log.warn(`[Proxy] Google Cloud Code network error on ${targetHost} (${err.message}). Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
           executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD)
@@ -1288,6 +1291,7 @@ export function executeGoogleCloudCodeRequest(
       });
 
       proxyReq.setTimeout(GOOGLE_PROXY_TIMEOUT_MS, () => {
+        isTimedOut = true;
         log.error(`[Proxy] Google pool request timed out waiting for response headers after ${GOOGLE_PROXY_TIMEOUT_MS / 1000}s`);
         proxyReq?.destroy();
         finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
@@ -1316,20 +1320,31 @@ export async function executeGoogleCloudCodeWithPool(
   sessId: string | null,
 ): Promise<boolean> {
   const targetRaw = String(reqJson.model || (reqJson.request as any)?.model || '');
-  const isClaude = targetRaw.toLowerCase().includes('claude');
+  const resolvedTarget = normalizeCloudCodeModelId(
+    accountPool[0]?.externalModelName || accountPool[0]?.name || targetRaw
+  ).toLowerCase();
+  const isClaude = resolvedTarget.includes('claude');
   const modelFamily = isClaude ? 'claude' : 'gemini';
 
   // Eco-Routing / Graceful Degradation: If pool is under severe quota stress (<15% average),
-  // downgrade background / auxiliary tasks (summaries, titles) to Flash to preserve Pro quota
+  // downgrade background / auxiliary tasks (summaries, titles) to Flash to preserve Pro quota.
+  // Guard: only redirect if at least one account is still available — redirecting into a fully
+  // exhausted pool just wastes a retry slot on the same drained accounts.
   if (isPoolUnderQuotaStress(accountPool, modelFamily)) {
-    const reqStr = JSON.stringify(reqJson);
-    const isAuxiliary = /summariz|summary|trajectory|title|conversation_title/i.test(reqStr);
-    if (isAuxiliary && !targetRaw.includes('flash')) {
+    const hasAnyAvailable = accountPool.some(
+      (a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && !isTokenRevoked(a.refreshToken),
+    );
+    const reqType = String(reqJson.requestType || (reqJson.request as any)?.requestType || '').toUpperCase();
+    const isAuxiliary = reqType === 'CONVERSATION_TITLE' || reqType === 'TITLE' || reqType === 'SUMMARY' || reqType === 'CONVERSATION_SUMMARY';
+    const isAlreadyFlash = resolvedTarget.includes('flash') || resolvedTarget.includes('lite');
+    if (isAuxiliary && !isAlreadyFlash && hasAnyAvailable) {
       log.info('[Proxy] [Eco-Routing] Pool under quota stress (<15% avg): routing auxiliary request to gemini-3.8-flash-tiered.');
       reqJson.model = 'gemini-3.8-flash-tiered';
       if (reqJson.request && typeof reqJson.request === 'object') {
         (reqJson.request as Record<string, unknown>).model = 'gemini-3.8-flash-tiered';
       }
+    } else if (isAuxiliary && !hasAnyAvailable) {
+      log.debug('[Proxy] [Eco-Routing] Pool fully exhausted — skipping flash redirect, fast-fail will handle it.');
     }
   }
 
@@ -1517,9 +1532,10 @@ export async function executeGoogleCloudCodeWithPool(
 
       if (decision.category === 'quota_exhausted') {
         const liveKey = getAccountQuotaKey(candidate);
-        quotaExhaustedAccountKeys.add(liveKey);
         if (modelFamily) {
           quotaExhaustedAccountKeys.add(`${liveKey}:${modelFamily}`);
+        } else {
+          quotaExhaustedAccountKeys.add(liveKey);
         }
         const existingLive = getLiveAccountQuota(liveKey);
         if (existingLive) {
@@ -2501,20 +2517,24 @@ export function _resetAccountProbation(): void {
 export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string): boolean {
   const baseKey = getAccountQuotaKey(candidate);
   const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
-  if (quotaExhaustedAccountKeys.has(key) || quotaExhaustedAccountKeys.has(baseKey)) {
-    return true;
-  }
   const until = googleAccountCooldowns.get(key) || (modelFamily ? googleAccountCooldowns.get(baseKey) : undefined);
-  if (!until) return false;
-  if (Date.now() >= until) {
+
+  if (until && Date.now() >= until) {
     googleAccountCooldowns.delete(key);
     quotaExhaustedAccountKeys.delete(key);
-    quotaExhaustedAccountKeys.delete(baseKey);
+    if (modelFamily) {
+      googleAccountCooldowns.delete(baseKey);
+      quotaExhaustedAccountKeys.delete(baseKey);
+    }
     // Transition to 15s half-open probation to prevent thundering herd stampede
     accountProbationUntil.set(key, Date.now() + 15_000);
     return false;
   }
-  return true;
+
+  if (quotaExhaustedAccountKeys.has(key) || (!modelFamily && quotaExhaustedAccountKeys.has(baseKey))) {
+    return true;
+  }
+  return Boolean(until);
 }
 
 export function setAccountCooldown(candidate: CustomModel, durationMs = 10 * 60_000, modelFamily?: string): void {
@@ -2560,32 +2580,36 @@ export function _resetAllAccountCooldowns(): void {
 export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: AccountLiveQuota): void {
   if (!quota || !accountKey) return;
 
-  // If Gemini quota recovered above 20%, heal Gemini-specific cooldown
-  if (quota.geminiFiveHourPct > 20) {
+  // Heal once quota recovers to ≥5% — enough to be useful. 20% was too conservative:
+  // accounts at 10% were being skipped despite successfully serving requests in the log.
+  if (quota.geminiFiveHourPct >= 5) {
     const geminiKey = `${accountKey}:gemini`;
-    if (googleAccountCooldowns.has(geminiKey)) {
+    if (googleAccountCooldowns.has(geminiKey) || quotaExhaustedAccountKeys.has(geminiKey)) {
       log.info(`[Proxy] Auto-healing Gemini cooldown for ${accountKey}: quota recovered to ${quota.geminiFiveHourPct}%`);
       googleAccountCooldowns.delete(geminiKey);
       accountProbationUntil.delete(geminiKey);
+      quotaExhaustedAccountKeys.delete(geminiKey);
     }
   }
 
-  // If Claude quota recovered above 20%, heal Claude-specific cooldown
-  if (quota.claudeFiveHourPct > 20) {
+  // If Claude quota recovered to ≥5%, heal Claude-specific cooldown
+  if (quota.claudeFiveHourPct >= 5) {
     const claudeKey = `${accountKey}:claude`;
-    if (googleAccountCooldowns.has(claudeKey)) {
+    if (googleAccountCooldowns.has(claudeKey) || quotaExhaustedAccountKeys.has(claudeKey)) {
       log.info(`[Proxy] Auto-healing Claude cooldown for ${accountKey}: quota recovered to ${quota.claudeFiveHourPct}%`);
       googleAccountCooldowns.delete(claudeKey);
       accountProbationUntil.delete(claudeKey);
+      quotaExhaustedAccountKeys.delete(claudeKey);
     }
   }
 
   // If either major quota recovered, heal general account cooldown
-  if (quota.geminiFiveHourPct > 20 || quota.claudeFiveHourPct > 20) {
-    if (googleAccountCooldowns.has(accountKey)) {
+  if (quota.geminiFiveHourPct >= 5 || quota.claudeFiveHourPct >= 5) {
+    if (googleAccountCooldowns.has(accountKey) || quotaExhaustedAccountKeys.has(accountKey)) {
       log.info(`[Proxy] Auto-healing general cooldown for ${accountKey}`);
       googleAccountCooldowns.delete(accountKey);
       accountProbationUntil.delete(accountKey);
+      quotaExhaustedAccountKeys.delete(accountKey);
     }
   }
 }
@@ -2734,6 +2758,9 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
       ? q.weeklyPercentage
       : 50;
 
+  const modelName = (m.externalModelName || m.name || '').toLowerCase();
+  const isFlash = modelName.includes('flash') || modelName.includes('lite');
+
   const now = Date.now();
   const fiveHourResetStr = isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime);
   const fiveHourResetPassed = fiveHourResetStr ? new Date(fiveHourResetStr).getTime() <= now : false;
@@ -2742,7 +2769,7 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   const weeklyResetPassed = weeklyResetStr ? new Date(weeklyResetStr).getTime() <= now : false;
 
   if (fiveHour === 0 && !fiveHourResetPassed) return 0;
-  if (weekly === 0 && !weeklyResetPassed) return 0;
+  if (!isFlash && weekly === 0 && !weeklyResetPassed) return 0;
 
   const effFiveHour = (fiveHour === 0 && fiveHourResetPassed) ? 50 : fiveHour;
   const effWeekly = (weekly === 0 && weeklyResetPassed) ? 50 : weekly;
