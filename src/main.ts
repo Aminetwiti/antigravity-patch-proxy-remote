@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session, Menu, Notification } from 'electron';
 import log from 'electron-log/main';
 import { registerIpcHandlers } from './ipcHandlers';
 import * as fs from 'fs';
@@ -22,6 +22,7 @@ import { getAppStoragePath, getLsLogPath } from './paths';
 import { setupApplicationMenu } from './menu';
 import { registerCustomSchemes, registerCustomSchemeHandlers } from './customScheme';
 import { DEFAULTS, SettingsService, SettingKey } from './services/settingsService';
+import { onTokenRevoked } from './services/googleAuth';
 import { maybeShowIdeInstallWizard } from './ideInstall';
 
 
@@ -159,6 +160,23 @@ app
 
     // Register IPC handlers
     registerIpcHandlers(storageManager);
+
+    // Notify the user when Google revokes a token (new QR / re-auth security challenge).
+    onTokenRevoked((_prefix) => {
+      if (!HEADLESS && (Notification as unknown as { isSupported?: () => boolean }).isSupported?.()) {
+        new Notification({
+          title: 'Compte Google — Vérification requise',
+          body: 'Un compte Google doit être re-vérifié (sécurité Google). Ouvrez Paramètres → Comptes pour reconnecter.',
+          silent: false,
+        }).show();
+      }
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('google:reauth-required');
+        }
+      }
+    });
+
     ipcMain.handle('deep-link:get-stored', () => {
       const link = pendingDeepLink;
       pendingDeepLink = null; // Clear after read

@@ -198,19 +198,31 @@ export function injectCustomModelsIntoResponse(
     let injectedCount = 0;
 
     const filteredModels = (customModels || []).filter(
-      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName),
+      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName) && !m._poolOnly,
     );
     const expandedModels = expandModelsWithEffort(filteredModels);
     const seenModelKeys = new Set<string>();
 
     for (const m of expandedModels) {
+      if (m._poolOnly) continue;
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const canonKey = `${getCanonicalModelKey(rawName, cleanDisp)}${effort}`;
 
-      if (seenModelKeys.has(canonKey)) continue;
-      seenModelKeys.add(canonKey);
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini';
+      const canonicalBase = isGoogleFamily
+        ? (rawName.includes('claude') || cleanDisp.includes('claude')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus') ? 'claude-opus-4-6-thinking' : 'claude-sonnet-4-6')
+            : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
+                : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
+        : rawName;
+
+      const modelDedupKey = isGoogleFamily
+        ? `google-unified:${canonicalBase}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      if (seenModelKeys.has(modelDedupKey)) continue;
+      seenModelKeys.add(modelDedupKey);
 
       const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
       const placeholderId = generateModelPlaceholderId(m);
@@ -231,7 +243,6 @@ export function injectCustomModelsIntoResponse(
         continue;
       }
 
-      seenModelKeys.add(modelDedupKey);
       existing.modelIds.add(pidKey);
       existing.modelIds.add(`models/${pidKey}`);
       existing.labels.add(formattedName);
