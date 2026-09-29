@@ -14,9 +14,21 @@ export function registerCustomIpcHandlers(storageManager: any): void {
   isRegistered = true;
 
   // Wrap ipcMain.handle with safe deduplication so Electron never throws
-  // "Attempted to register a second handler for <channel>"
+  // "Attempted to register a second handler for <channel>".
+  // Only register custom channels so official 2.18.1 handlers are never overwritten.
   const origHandle = ipcMain.handle.bind(ipcMain);
   (ipcMain as any).handle = function (channel: string, listener: any) {
+    const isCustom =
+      (channel.startsWith('storage:') &&
+        !['storage:get-items', 'storage:update-items'].includes(channel)) ||
+      channel.startsWith('remote:') ||
+      channel.startsWith('proto:') ||
+      channel.startsWith('ag:') ||
+      channel.startsWith('chat-ui:');
+
+    if (!isCustom) {
+      return;
+    }
     try {
       ipcMain.removeHandler(channel);
     } catch (_) {}

@@ -42,18 +42,21 @@ function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-function copyRecursive(src, dst) {
+function copyRecursive(src, dst, overwrite = true) {
   if (!fs.existsSync(src)) return;
   const stat = fs.statSync(src);
   if (stat.isDirectory()) {
     ensureDir(dst);
     for (const entry of fs.readdirSync(src)) {
-      copyRecursive(path.join(src, entry), path.join(dst, entry));
+      copyRecursive(path.join(src, entry), path.join(dst, entry), overwrite);
     }
   } else {
     // Exclude development artifacts (.d.ts, .map, test files) to keep production asar lean
     if (src.endsWith('.d.ts') || src.endsWith('.d.ts.map') || src.endsWith('.js.map') || src.endsWith('.test.js') || src.endsWith('.test.d.ts')) {
       return;
+    }
+    if (!overwrite && fs.existsSync(dst)) {
+      return; // Do not overwrite existing official files
     }
     ensureDir(path.dirname(dst));
     fs.copyFileSync(src, dst);
@@ -107,7 +110,9 @@ async function main() {
     const src = path.join(repoDist, dir);
     const dst = path.join(buildDir, 'dist', dir);
     if (fs.existsSync(src)) {
-      copyRecursive(src, dst);
+      // For services, never overwrite existing official service files
+      const overwrite = dir !== 'services';
+      copyRecursive(src, dst, overwrite);
     }
   }
 
@@ -126,7 +131,6 @@ async function main() {
   const filesToCopy = [
     'proxy.js',
     'presets.js',
-    'constants.js',
     'cryptoStore.js',
     'customModelStore.js',
     'schemaValidator.js',
@@ -145,10 +149,21 @@ async function main() {
     }
   }
 
+  // Merge official constants.js with proxy constants.js so both official and custom exports are available
+  const officialConstantsPath = path.join(buildDir, 'dist', 'constants.js');
+  const repoConstantsPath = path.join(repoDist, 'constants.js');
+  if (fs.existsSync(officialConstantsPath) && fs.existsSync(repoConstantsPath)) {
+    const officialContent = fs.readFileSync(officialConstantsPath, 'utf8');
+    const repoContent = fs.readFileSync(repoConstantsPath, 'utf8');
+    fs.writeFileSync(officialConstantsPath, `${repoContent}\n// [v2.18 patch] Official constants\n${officialContent}\n`, 'utf8');
+  } else if (fs.existsSync(repoConstantsPath)) {
+    fs.copyFileSync(repoConstantsPath, officialConstantsPath);
+  }
+
   // Restore official settingsService
   if (officialSettingsService) {
     fs.writeFileSync(officialSettingsServicePath, officialSettingsService, 'utf8');
-    console.log('[patch_2_17] Restored official 2.17 settingsService.js');
+    console.log('[patch_2_17] Restored official 2.17/2.18 settingsService.js');
   }
 
   // Copy our repo's ipcHandlers as customIpcHandlers so customIpcBridge can use it
@@ -389,9 +404,9 @@ exports.registerIpcHandlers = function(storageManager) {
     copyRecursive(unpackedIn, unpackedOut);
   }
 
-  // 7. Repack asar
+  // 7. Repack asar with unpackDir for MCP tools (matches official Google Antigravity package structure)
   console.log('[patch_2_17] Step 6: Repacking app.asar...');
-  await asar.createPackage(buildDir, asarOut);
+  await asar.createPackageWithOptions(buildDir, asarOut, { unpackDir: '**/chrome-devtools-mcp' });
 
   // 8. Clean up build directory
   try {

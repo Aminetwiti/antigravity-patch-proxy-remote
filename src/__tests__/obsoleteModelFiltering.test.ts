@@ -53,6 +53,8 @@ describe('Obsolete and Deprecated Model Masking & Filtering', () => {
       expect(isObsoleteModel('gemini-3.8-flash')).toBe(false);
       expect(isObsoleteModel('gemini-3.7-flash-tiered')).toBe(false);
       expect(isObsoleteModel('gemini-3.7-flash')).toBe(false);
+      expect(isObsoleteModel('gemini-3.6-flash-tiered')).toBe(false);
+      expect(isObsoleteModel('gemini-3.6-flash')).toBe(false);
       expect(isObsoleteModel('claude-sonnet-4-6')).toBe(false);
       expect(isObsoleteModel('claude-opus-4-6-thinking')).toBe(false);
       expect(isObsoleteModel('deepseek-chat')).toBe(false);

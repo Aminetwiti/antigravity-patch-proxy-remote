@@ -487,6 +487,15 @@
   padding: 1px 6px;
   border-radius: 4px;
 }
+.ga-badge-studio {
+  background: rgba(16, 185, 129, 0.18);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
 
 .ga-quota-container {
   display: flex;

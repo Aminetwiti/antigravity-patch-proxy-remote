@@ -201,29 +201,36 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
 
         let displayName = m.displayName ?? m.id ?? '';
 
-      const partialModel: CustomModel = {
-        name: m.id ?? '',
-        displayName,
-        description: (m as { description?: string }).description ?? '',
-        provider: (p.provider ?? 'openai') as ProviderName,
-        apiKey: acc.apiKey ?? p.apiKey ?? 'none',
-        apiUrl: p.apiUrl ?? '',
-        externalModelName: m.id ?? '',
-        allowUnauthorized: p.allowUnauthorized,
-        encrypted: p.encrypted,
-        useRawBaseUrl: p.useRawBaseUrl,
-        fallbackModel: m.fallbackModel ?? p.fallbackModel,
-        fallbackChain: m.fallbackChain ?? p.fallbackChain,
-        supportsImages: m.supportsImages ?? p.supportsImages ?? true,
-        supportsVision: m.supportsVision ?? p.supportsVision ?? true,
-        extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
-        extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
-        accountName: acc.name || p.name,
-        accountEmail: acc.email || p.email,
-        refreshToken: acc.refreshToken || p.refreshToken,
-        projectId: acc.projectId || p.projectId,
-        quotas: acc.quotas || p.quotas,
-      };
+        const accProvider = (acc as any).provider || (p.provider ?? 'openai');
+        const accApiUrl = (acc as any).apiUrl || (p.apiUrl ?? '');
+        const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ.')) && !acc.refreshToken);
+        const resolvedProvider = isAiStudio ? 'google-gemini' : accProvider;
+        const resolvedApiUrl = isAiStudio ? (accApiUrl || 'https://generativelanguage.googleapis.com/v1beta') : accApiUrl;
+
+        const partialModel: CustomModel = {
+          name: m.id ?? '',
+          displayName,
+          description: (m as { description?: string }).description ?? '',
+          provider: resolvedProvider as ProviderName,
+          apiKey: acc.apiKey ?? p.apiKey ?? 'none',
+          apiUrl: resolvedApiUrl,
+          externalModelName: m.id ?? '',
+          allowUnauthorized: p.allowUnauthorized,
+          encrypted: p.encrypted,
+          useRawBaseUrl: p.useRawBaseUrl,
+          fallbackModel: m.fallbackModel ?? p.fallbackModel,
+          fallbackChain: m.fallbackChain ?? p.fallbackChain,
+          supportsImages: m.supportsImages ?? p.supportsImages ?? true,
+          supportsVision: m.supportsVision ?? p.supportsVision ?? true,
+          extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
+          extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
+          accountName: acc.name || p.name,
+          accountEmail: acc.email || p.email,
+          refreshToken: acc.refreshToken || p.refreshToken,
+          projectId: acc.projectId || p.projectId,
+          quotas: acc.quotas || p.quotas,
+          _poolOnly: isAiStudio && isGoogle ? true : undefined,
+        };
       const placeholderId = generateModelPlaceholderId(partialModel);
 
       flatModels.push({

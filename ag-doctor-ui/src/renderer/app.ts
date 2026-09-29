@@ -6823,7 +6823,16 @@ function getQuotaColor(pct: number): string {
   return '#f43f5e'; // Rose
 }
 
-function getAccountTier(acc: any): 'PRO' | 'ULTRA' | 'FREE' {
+function isAiStudioAccount(acc: any): boolean {
+  if (!acc) return false;
+  if (acc.provider === 'google-gemini') return true;
+  if (typeof acc.apiKey === 'string' && (acc.apiKey.startsWith('AQ.') || acc.apiKey.startsWith('AIzaSy'))) return true;
+  if (typeof acc.name === 'string' && acc.name.toLowerCase().includes('studio')) return true;
+  return false;
+}
+
+function getAccountTier(acc: any): 'PRO' | 'ULTRA' | 'FREE' | 'STUDIO' {
+  if (isAiStudioAccount(acc)) return 'STUDIO';
   if (acc.tierId) {
     const t = String(acc.tierId).toUpperCase();
     if (t.includes('ULTRA') || t.includes('PREMIUM') || t.includes('ADVANCED')) return 'ULTRA';
@@ -6906,7 +6915,7 @@ function estimateAccountTokens(acc: any): {
   availableTokens5h: number;
   availableTokensWeekly: number;
 } {
-  const isAiStudio = acc.apiKey?.startsWith('AQ.') || (acc.name && acc.name.toLowerCase().includes('studio'));
+  const isAiStudio = isAiStudioAccount(acc);
   if (isAiStudio) {
     const est = getAiStudioQuotaEstimate(acc);
     return {
@@ -7414,7 +7423,7 @@ function initGoogleAccountsToolbarOnce(): void {
         btn.setAttribute('disabled', 'true');
         btn.classList.add('spinning');
         try {
-          if (account.apiKey && (account.apiKey.startsWith('AQ.') || (account.name && account.name.toLowerCase().includes('studio')))) {
+          if (account.apiKey && isAiStudioAccount(account)) {
             try {
               const testRes = await window.ag.providers.test({
                 provider: 'google',
@@ -7647,7 +7656,7 @@ async function loadGoogleAccounts(): Promise<void> {
         await window.ag.providers.save(googleProv);
       }
       googleAccountsCache = googleProv.accounts.map((acc: any) => {
-        const isStudio = Boolean(acc.apiKey?.startsWith('AQ.') || (acc.name && acc.name.toLowerCase().includes('studio')));
+        const isStudio = isAiStudioAccount(acc);
         const defaultModels = isStudio
           ? [
               { id: 'gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', enabled: true },
@@ -7657,8 +7666,8 @@ async function loadGoogleAccounts(): Promise<void> {
           : (googleProv.models || []);
         return {
           ...acc,
-          provider: 'google',
-          apiUrl: googleProv.apiUrl || 'https://generativelanguage.googleapis.com/v1beta',
+          provider: acc.provider || 'google',
+          apiUrl: acc.apiUrl || googleProv.apiUrl || 'https://generativelanguage.googleapis.com/v1beta',
           models: (Array.isArray(acc.models) && acc.models.length > 0) ? acc.models : defaultModels,
         };
       });
@@ -7829,8 +7838,9 @@ function renderGoogleAccountsList(accounts: any[]): void {
     `;
 
     for (const a of filtered) {
+      const isStudio = isAiStudioAccount(a);
       const tier = getAccountTier(a);
-      const tierIcon = tier === 'ULTRA' ? '💎' : (tier === 'PRO' ? '◆' : '⬡');
+      const tierIcon = isStudio ? '⚡' : (tier === 'ULTRA' ? '💎' : (tier === 'PRO' ? '◆' : '⬡'));
       const quotas = a.quotas;
       const isSelected = gaSelectedIds.has(a.id);
       const isCurrent = Boolean(a.isCurrent);
@@ -7850,17 +7860,21 @@ function renderGoogleAccountsList(accounts: any[]): void {
             <div style="display: flex; align-items: center; gap: 8px;">
               ${a.picture
                 ? `<img src="${escapeHtml(a.picture)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; flex-shrink: 0;" alt="Avatar" />`
-                : `<div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; flex-shrink: 0;">G</div>`
+                : isStudio
+                  ? `<div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(16, 185, 129, 0.18); color: #10b981; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; flex-shrink: 0;" title="Clé API Développeur Google AI Studio">✦</div>`
+                  : `<div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; flex-shrink: 0;">G</div>`
               }
               <div style="min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <span style="font-weight: 600; font-size: 12.5px; color: var(--text-0);">${escapeHtml(a.email || (a.name === 'google' ? 'Google API Key (Default)' : (a.name || a.id)))}</span>
-                  ${(a.apiKey?.startsWith('AQ.') || (a.name && a.name.toLowerCase().includes('studio'))) ? `<span class="pool-role-badge" style="background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25);" title="Clé API Développeur Google AI Studio">● Studio Actif</span>` : (isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span><span class="pool-role-badge pool-role-primary" title="Compte actif pour les requêtes Antigravity">● Pool Actif</span>` : `<span class="pool-role-badge pool-role-standby" title="Compte en réserve automatique (failover)">○ Pool Réserve</span>`)}
+                  <span style="font-weight: 600; font-size: 12.5px; color: var(--text-0);">${escapeHtml(a.email || (isStudio ? (a.name || 'Google AI Studio Key') : (a.name === 'google' ? 'Google API Key (Default)' : (a.name || a.id))))}</span>
+                  ${isStudio ? `<span class="pool-role-badge" style="background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25);" title="Clé API Développeur Google AI Studio">● Studio Actif</span>` : (isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span><span class="pool-role-badge pool-role-primary" title="Compte actif pour les requêtes Antigravity">● Pool Actif</span>` : `<span class="pool-role-badge pool-role-standby" title="Compte en réserve automatique (failover)">○ Pool Réserve</span>`)}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
                 </div>
                 ${a.email && a.name && a.email !== a.name
                   ? `<div style="font-size: 11px; color: var(--text-2);">${escapeHtml(a.name)}</div>`
-                  : (!a.email ? `<div style="font-size: 11px; color: var(--text-2); font-style: italic;">Provider Configuration</div>` : '')}
+                  : (isStudio
+                    ? `<div style="font-size: 11px; color: #10b981;">Google AI Studio · Clé API (${escapeHtml(maskKeyPreview(a.apiKey))})</div>`
+                    : (!a.email ? `<div style="font-size: 11px; color: var(--text-2); font-style: italic;">Provider Configuration</div>` : ''))}
                 <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">
                   ${(() => {
                     const validModels = (a.models || []).filter((m: any) => !isObsoleteModelUI(m.id, m.displayName));
@@ -7901,7 +7915,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
                 </div>
               </div>
               `;
-            })() : (a.apiKey?.startsWith('AQ.') || (a.name && a.name.toLowerCase().includes('studio'))) ? (() => {
+            })() : isStudio ? (() => {
               const estStudio = getAiStudioQuotaEstimate(a);
               return `
               <div class="ga-quota-container">
@@ -7964,8 +7978,9 @@ function renderGoogleAccountsList(accounts: any[]): void {
     // Grid View
     html += `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px;">`;
     for (const a of filtered) {
+      const isStudio = isAiStudioAccount(a);
       const tier = getAccountTier(a);
-      const tierIcon = tier === 'ULTRA' ? '💎' : (tier === 'PRO' ? '◆' : '⬡');
+      const tierIcon = isStudio ? '⚡' : (tier === 'ULTRA' ? '💎' : (tier === 'PRO' ? '◆' : '⬡'));
       const quotas = a.quotas;
       const isCurrent = Boolean(a.isCurrent);
       const activeModels = (a.models || []).filter((m: any) => m.enabled !== false && !isObsoleteModelUI(m.id, m.displayName));
@@ -7981,12 +7996,14 @@ function renderGoogleAccountsList(accounts: any[]): void {
             <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
               ${a.picture
                 ? `<img src="${escapeHtml(a.picture)}" style="width: 26px; height: 26px; border-radius: 50%; object-fit: cover;" alt="Avatar" />`
-                : `<div style="width: 26px; height: 26px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px;">G</div>`
+                : isStudio
+                  ? `<div style="width: 26px; height: 26px; border-radius: 50%; background: rgba(16, 185, 129, 0.18); color: #10b981; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px;" title="Clé API Développeur Google AI Studio">✦</div>`
+                  : `<div style="width: 26px; height: 26px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px;">G</div>`
               }
               <div style="min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 6px;">
                   <strong style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(a.name)}</strong>
-                  ${(a.apiKey?.startsWith('AQ.') || (a.name && a.name.toLowerCase().includes('studio'))) ? `<span class="pool-role-badge" style="background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25);" title="Clé API Développeur Google AI Studio">● Studio Actif</span>` : (isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span><span class="pool-role-badge pool-role-primary" title="Compte actif pour Antigravity">● Pool Actif</span>` : `<span class="pool-role-badge pool-role-standby" title="Compte en réserve automatique (failover)">○ Pool Réserve</span>`)}
+                  ${isStudio ? `<span class="pool-role-badge" style="background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25);" title="Clé API Développeur Google AI Studio">● Studio Actif</span>` : (isCurrent ? `<span class="ga-badge ga-badge-current">CURRENT</span><span class="pool-role-badge pool-role-primary" title="Compte actif pour Antigravity">● Pool Actif</span>` : `<span class="pool-role-badge pool-role-standby" title="Compte en réserve automatique (failover)">○ Pool Réserve</span>`)}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
                 </div>
                 <div style="font-size: 11px; color: var(--text-2);">${activeModels.length} models · ${escapeHtml(maskKeyPreview(a.apiKey))}</div>
@@ -8053,7 +8070,7 @@ ${quotas && geminiPct !== null ? (() => {
               </div>
             </div>
             `;
-            })() : (a.apiKey?.startsWith('AQ.') || (a.name && a.name.toLowerCase().includes('studio'))) ? (() => {
+            })() : isStudio ? (() => {
               const estStudio = getAiStudioQuotaEstimate(a);
               return `
             <div class="ga-quota-container" style="background: rgba(255,255,255,0.02); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">

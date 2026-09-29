@@ -253,6 +253,48 @@ function saveCachedCodeAssist(content: string): void {
   }
 }
 
+// ─── listExperiments Cache (Feature Flags & Planning Resilience) ────────────
+
+let memoryListExperimentsCache: string | null = null;
+let memoryListExperimentsTime = 0;
+
+function getListExperimentsCachePath(): string {
+  const home = os.homedir();
+  const dir = path.join(home, '.gemini', 'antigravity');
+  if (!fs.existsSync(dir)) {
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  }
+  return path.join(dir, 'list_experiments_cache.json');
+}
+
+function loadCachedExperiments(): string | null {
+  if (memoryListExperimentsCache) return memoryListExperimentsCache;
+  try {
+    const p = getListExperimentsCachePath();
+    if (fs.existsSync(p)) {
+      const content = fs.readFileSync(p, 'utf-8').trim();
+      if (content.startsWith('{')) {
+        memoryListExperimentsCache = content;
+        return content;
+      }
+    }
+  } catch (e) {
+    log.debug('[Proxy] Failed to load cached experiments:', e);
+  }
+  return null;
+}
+
+function saveCachedExperiments(content: string): void {
+  try {
+    memoryListExperimentsCache = content;
+    memoryListExperimentsTime = Date.now();
+    const p = getListExperimentsCachePath();
+    fs.writeFileSync(p, content, 'utf-8');
+  } catch (e) {
+    log.warn('[Proxy] Failed to save cached experiments:', e);
+  }
+}
+
 export async function executeOnRemoteDaemon(
   rawHost: string,
   token: string,
@@ -1738,8 +1780,8 @@ export async function executeGoogleCloudCodeWithPool(
     // Note: google-gemini (AI Studio) uses a per-account API key — rotate across all configured accounts.
     const nonGoogleFallbacks = allCustomModels.filter(
       (m) =>
-        m.provider !== 'google' &&
-        !m._poolOnly &&
+        (m.provider !== 'google' || !isGoogleCloudCodeModel(m)) &&
+        (!m._poolOnly || m.provider === 'google-gemini') &&
         !getOpenBreaker(m),
     );
 
@@ -4329,11 +4371,176 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       return;
     }
 
-    // 0.5. Intercept /v1internal:listExperiments
+    // 0.5. Intercept /v1internal:listExperiments with caching, enrichment, and fallback
     if (req.url!.includes('/v1internal:listExperiments')) {
-      if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
-        safeEnd(res, JSON.stringify({ experiments: [] }));
+      log.info('[Proxy] Intercepting listExperiments request');
+
+      const buildDefaultExperimentsFallback = () => {
+        const flags = [
+          { name: 'use-slash-plan', boolValue: true },
+          { name: 'customization-token-budget', intValue: 20000 },
+          { name: 'rules-token-budget', intValue: 20000 },
+          { name: 'enable-subagent-hub', boolValue: true },
+          { name: 'enable-skill-search-tool', boolValue: true },
+          { name: 'enable-owl-slash-command', boolValue: true },
+          { name: 'enable-browser-subagent-v2', boolValue: true },
+          { name: 'enable-customization-load-error-notice', boolValue: true },
+          { name: 'send-subagent-initial-prompt-as-message', boolValue: true },
+          { name: 'enable-battle-mode-custom-agents', boolValue: true },
+          { name: 'enable-command-assessor', boolValue: true },
+          { name: 'enable-daemon-commands', boolValue: true },
+          { name: 'enable-hook-status', boolValue: true },
+          { name: 'enable-mcp-non-blocking-turn-load', boolValue: true },
+          { name: 'enable-model-capacity-exhausted-retries', boolValue: true },
+          { name: 'enable-persistent-terminals', boolValue: true },
+          { name: 'enable-pty', boolValue: true },
+          { name: 'enable-sidecars', boolValue: true },
+          { name: 'deprecate-workflows', boolValue: true },
+          { name: 'use-core-direct', boolValue: true },
+          { name: 'tool-output-max-bytes', intValue: 46080 },
+          { name: 'max-tokens-per-step', intValue: 16384 },
+          { name: 'show-model-selection-change', boolValue: true },
+          { name: 'auto-command-config', stringValue: '{"system_allowlist": [], "sandbox_system_allowlist": ["head", "tail", "mkdir", "cd", "cp", "mv", "cat", "find", "grep", "rm", "touch", "less", "clear", "ls"]}' },
+          { name: 'cascade-conversation-history-config', stringValue: '{"enabled": true, "max_conversations": 20}' },
+          { name: 'invoke-subagent-config', stringValue: '{"enabled": true, "always_inherit_model": false}' },
+          { name: 'log-artifacts-config', stringValue: '{"enabled": true, "hideNominalToolSteps": false, "hidePlannerResponseText": false, "maxBytesPerStep": 4096, "maxBytesPerToolArg": 2048, "hideSystemSteps": false, "hideUserImplicitSteps": false}' },
+        ];
+        return JSON.stringify({
+          experimentIds: ['antigravity-2.18-full', 'plan-enabled', 'customizations-unlocked'],
+          flags,
+        });
+      };
+
+      const enrichExperiments = (rawBody: string) => {
+        try {
+          const data = JSON.parse(rawBody);
+          if (!Array.isArray(data.flags)) {
+            data.flags = [];
+          }
+          const requiredFlags = [
+            { name: 'use-slash-plan', boolValue: true },
+            { name: 'customization-token-budget', intValue: 20000 },
+            { name: 'rules-token-budget', intValue: 20000 },
+            { name: 'enable-subagent-hub', boolValue: true },
+            { name: 'enable-skill-search-tool', boolValue: true },
+            { name: 'enable-owl-slash-command', boolValue: true },
+            { name: 'enable-browser-subagent-v2', boolValue: true },
+            { name: 'send-subagent-initial-prompt-as-message', boolValue: true },
+            { name: 'enable-battle-mode-custom-agents', boolValue: true },
+            { name: 'show-model-selection-change', boolValue: true },
+          ];
+          for (const reqFlag of requiredFlags) {
+            const existing = data.flags.find((f: any) => f && f.name === reqFlag.name);
+            if (!existing) {
+              data.flags.push(reqFlag);
+            } else if (reqFlag.boolValue !== undefined && !existing.boolValue) {
+              existing.boolValue = true;
+            }
+          }
+          return JSON.stringify(data);
+        } catch (_) {
+          return rawBody;
+        }
+      };
+
+      // If we have a fresh cache (< 3 minutes), serve it immediately
+      const freshCache = (Date.now() - memoryListExperimentsTime < 180_000) ? loadCachedExperiments() : null;
+      if (freshCache) {
+        log.info('[Proxy] Serving fresh cached listExperiments response');
+        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+          safeEnd(res, freshCache);
+        }
+        return;
       }
+
+      const targetHost = GOOGLE_HOSTS.CLOUD_CODE;
+      const targetUrl = `https://${targetHost}`;
+      let parsedUrl: URL;
+      try {
+        const realIp = await resolveGoogleIp(targetHost);
+        parsedUrl = new URL(req.url!, targetUrl);
+        parsedUrl.hostname = realIp;
+      } catch (e) {
+        log.warn(`[Proxy] DNS resolution failed for ${targetHost} on listExperiments:`, e);
+        const cached = loadCachedExperiments() || buildDefaultExperimentsFallback();
+        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+          safeEnd(res, cached);
+        }
+        return;
+      }
+
+      const fwdHeaders: Record<string, string | string[] | undefined> = {
+        ...(req.headers as Record<string, string | string[] | undefined>),
+      };
+      fwdHeaders['host'] = targetHost;
+      fwdHeaders['user-agent'] = 'antigravity';
+      delete fwdHeaders['connection'];
+      delete fwdHeaders['keep-alive'];
+      delete fwdHeaders['accept-encoding'];
+
+      const fwdOptions: https.RequestOptions = {
+        method: req.method,
+        headers: fwdHeaders as Record<string, string>,
+        servername: targetHost,
+      };
+
+      const fallback = () => {
+        if (res.headersSent || res.writableEnded) return;
+        const cached = loadCachedExperiments() || buildDefaultExperimentsFallback();
+        log.warn('[Proxy] Upstream listExperiments fallback active, serving 2.18 enabled flags');
+        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+          safeEnd(res, cached);
+        }
+      };
+
+      let completed = false;
+      const googleReq = https.request(parsedUrl, fwdOptions, (googleRes) => {
+        if (googleRes.statusCode === 429 || googleRes.statusCode === 503 || googleRes.statusCode === 401) {
+          completed = true;
+          fallback();
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        googleRes.on('data', (c) => chunks.push(c));
+        googleRes.on('end', () => {
+          if (completed || res.headersSent || res.writableEnded) return;
+          completed = true;
+          const body = Buffer.concat(chunks).toString('utf-8');
+          if (googleRes.statusCode === 200 && body.startsWith('{')) {
+            const enriched = enrichExperiments(body);
+            saveCachedExperiments(enriched);
+            if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+              safeEnd(res, enriched);
+            }
+          } else if (googleRes.statusCode && googleRes.statusCode < 500) {
+            fallback();
+          } else {
+            fallback();
+          }
+        });
+      });
+
+      googleReq.setTimeout(8_000, () => {
+        if (!completed) {
+          completed = true;
+          googleReq.destroy();
+          fallback();
+        }
+      });
+
+      googleReq.on('error', (err) => {
+        if (!completed) {
+          completed = true;
+          log.warn('[Proxy] Upstream listExperiments network error:', err.message);
+          fallback();
+        }
+      });
+
+      if (fullBody && fullBody.length > 0) {
+        googleReq.write(fullBody);
+      }
+      googleReq.end();
       return;
     }
 
@@ -5202,6 +5409,8 @@ export function startProxy(): Promise<number> {
       portCandidates.push(0); // 0 = OS-assigned dynamic port (last resort)
 
       let attemptIdx = 0;
+      let eaddrinuseRetries = 0;
+      const MAX_PORT_RETRIES = 5;
 
       const tryListen = (port: number, host: string): void => {
         server!.listen(port, host, () => {
@@ -5249,12 +5458,23 @@ export function startProxy(): Promise<number> {
       server.on('error', (err: NodeJS.ErrnoException) => {
         // Log full error details for diagnostics on new machines.
         log.error(`[Proxy] Server error: code=${err.code} message=${err.message} syscall=${err.syscall || ''} address=${(err as any).address || ''} port=${(err as any).port || ''}`);
-        if (err.code === 'EADDRINUSE' && attemptIdx + 1 < portCandidates.length) {
-          const triedPort = portCandidates[attemptIdx];
-          const nextPort = portCandidates[attemptIdx + 1];
-          log.warn(`[Proxy] Port ${triedPort} is already in use. Trying ${nextPort === 0 ? 'OS-assigned dynamic port' : 'port ' + nextPort}...`);
-          attemptIdx += 1;
-          tryListen(nextPort, primaryHost);
+        if (err.code === 'EADDRINUSE') {
+          if (attemptIdx === 0 && eaddrinuseRetries < MAX_PORT_RETRIES) {
+            eaddrinuseRetries += 1;
+            log.warn(`[Proxy] Port ${primaryPort} busy (EADDRINUSE), retrying in 250ms (${eaddrinuseRetries}/${MAX_PORT_RETRIES})...`);
+            setTimeout(() => {
+              tryListen(primaryPort, primaryHost);
+            }, 250);
+            return;
+          }
+          if (attemptIdx + 1 < portCandidates.length) {
+            const triedPort = portCandidates[attemptIdx];
+            const nextPort = portCandidates[attemptIdx + 1];
+            log.warn(`[Proxy] Port ${triedPort} is already in use after retries. Trying ${nextPort === 0 ? 'OS-assigned dynamic port' : 'port ' + nextPort}...`);
+            attemptIdx += 1;
+            tryListen(nextPort, primaryHost);
+            return;
+          }
         } else if (err.code === 'EACCES') {
           log.warn(`[Proxy] Permission denied binding to ${primaryHost}:${primaryPort}. Trying fallback ports...`);
           if (attemptIdx + 1 < portCandidates.length) {
