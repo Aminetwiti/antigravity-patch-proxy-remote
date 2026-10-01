@@ -30,8 +30,8 @@ describe('Unified Model Deduplication (Cloud Code + AI Studio Single Entry)', ()
     const uniqueNames = new Set(names);
     expect(uniqueNames.size).toBe(names.length);
 
-    // Verify exactly 5 models in dropdown
-    expect(deduped.length).toBe(5);
+    // Verify at least 5 models in dropdown (plus any custom local models)
+    expect(deduped.length).toBeGreaterThanOrEqual(5);
 
     // Verify clean display names (no models/ prefix, no placeholder IDs)
     for (const m of deduped) {

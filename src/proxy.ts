@@ -1320,9 +1320,7 @@ export async function executeGoogleCloudCodeWithPool(
   sessId: string | null,
 ): Promise<boolean> {
   const targetRaw = String(reqJson.model || (reqJson.request as any)?.model || '');
-  const resolvedTarget = normalizeCloudCodeModelId(
-    accountPool[0]?.externalModelName || accountPool[0]?.name || targetRaw
-  ).toLowerCase();
+  const resolvedTarget = normalizeCloudCodeModelId(targetRaw).toLowerCase();
   const isClaude = resolvedTarget.includes('claude');
   const modelFamily = isClaude ? 'claude' : 'gemini';
 
@@ -5466,47 +5464,50 @@ export function startProxy(): Promise<number> {
       let eaddrinuseRetries = 0;
       const MAX_PORT_RETRIES = 10;
 
+      server.once('listening', () => {
+        proxyPort = (server!.address() as import('net').AddressInfo).port;
+        const requestedPort = portCandidates[attemptIdx];
+        const isFallback = requestedPort !== defaultPort && requestedPort !== 0;
+        const isDynamic = requestedPort === 0;
+        if (isFallback) {
+          log.warn(`[Proxy] Default port ${defaultPort} unavailable. Using fallback port ${proxyPort}.`);
+          log.warn(`[Proxy] Set AG_PROXY_PORT=${proxyPort} in your environment to silence this warning.`);
+        } else if (isDynamic) {
+          log.warn(`[Proxy] All configured ports in use. Using OS-assigned dynamic port ${proxyPort}.`);
+        } else {
+          log.info(`[Proxy] Server listening on http://${primaryHost}:${proxyPort}`);
+        }
+
+        // Persist the active port so other processes (ag-doctor-ui, scripts)
+        // can discover which port the proxy is actually bound to.
+        try {
+          const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+          const portFile = path.join(home, ACTIVE_PORT_FILE);
+          fs.mkdirSync(path.dirname(portFile), { recursive: true });
+          fs.writeFileSync(portFile, String(proxyPort), 'utf-8');
+          log.debug(`[Proxy] Active port persisted to ${portFile}`);
+        } catch (err) {
+          log.warn('[Proxy] Could not persist active port:', (err as Error).message);
+        }
+
+        // Execute cleanup initialization after the server is already listening
+        // so that failures here don't prevent the port from binding.
+        try {
+          loadPersistentQuotaCache().catch(() => {});
+          startCleanupInterval();
+          startQuotaPollingInterval();
+          setupCustomModelsWatcher();
+          const models = loadCustomModels();
+          prewarmGoogleAccounts(models);
+        } catch (err) {
+          log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
+        }
+
+        resolve(proxyPort);
+      });
+
       const tryListen = (port: number, host: string): void => {
-        server!.listen(port, host, () => {
-          proxyPort = (server!.address() as import('net').AddressInfo).port;
-          const isFallback = port !== defaultPort && port !== 0;
-          const isDynamic = port === 0;
-          if (isFallback) {
-            log.warn(`[Proxy] Default port ${defaultPort} unavailable. Using fallback port ${proxyPort}.`);
-            log.warn(`[Proxy] Set AG_PROXY_PORT=${proxyPort} in your environment to silence this warning.`);
-          } else if (isDynamic) {
-            log.warn(`[Proxy] All configured ports in use. Using OS-assigned dynamic port ${proxyPort}.`);
-          } else {
-            log.info(`[Proxy] Server listening on http://${host}:${proxyPort}`);
-          }
-
-          // Persist the active port so other processes (ag-doctor-ui, scripts)
-          // can discover which port the proxy is actually bound to.
-          try {
-            const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
-            const portFile = path.join(home, ACTIVE_PORT_FILE);
-            fs.mkdirSync(path.dirname(portFile), { recursive: true });
-            fs.writeFileSync(portFile, String(proxyPort), 'utf-8');
-            log.debug(`[Proxy] Active port persisted to ${portFile}`);
-          } catch (err) {
-            log.warn('[Proxy] Could not persist active port:', (err as Error).message);
-          }
-
-          // Execute cleanup initialization after the server is already listening
-          // so that failures here don't prevent the port from binding.
-          try {
-            loadPersistentQuotaCache().catch(() => {});
-            startCleanupInterval();
-            startQuotaPollingInterval();
-            setupCustomModelsWatcher();
-            const models = loadCustomModels();
-            prewarmGoogleAccounts(models);
-          } catch (err) {
-            log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
-          }
-
-          resolve(proxyPort);
-        });
+        server!.listen(port, host);
       };
 
       server.on('error', (err: NodeJS.ErrnoException) => {

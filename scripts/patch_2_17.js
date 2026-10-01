@@ -269,24 +269,63 @@ try {
         const isUserStatus = typeof url === 'string' && url.includes('LanguageServerService/GetUserStatus');
         const isAvailableModels = typeof url === 'string' && url.includes('LanguageServerService/GetAvailableModels');
         const isSlashCommands = typeof url === 'string' && url.includes('LanguageServerService/GetSlashCommands');
+        const isAllWorkflows = typeof url === 'string' && url.includes('LanguageServerService/GetAllWorkflows');
 
-        if (!isUserStatus && !isAvailableModels && !isSlashCommands) {
+        if (!isUserStatus && !isAvailableModels && !isSlashCommands && !isAllWorkflows) {
           return origFetch.apply(this, args);
         }
 
-        // Sanitize outgoing GetSlashCommands request: ensure planModel is a valid ModelPlaceholder enum
-        if (isSlashCommands && args[1] && typeof args[1].body === 'string') {
+        // Intercept GetAllWorkflows: populate with all skills as WorkflowSpec so all 86 skills appear on /
+        if (isAllWorkflows) {
           try {
-            const reqObj = JSON.parse(args[1].body);
-            if (reqObj && reqObj.cascadeConfig && reqObj.cascadeConfig.plannerConfig) {
-              const pm = reqObj.cascadeConfig.plannerConfig.planModel;
-              if (!pm || !/^MODEL_PLACEHOLDER_M\d+$/.test(pm)) {
-                reqObj.cascadeConfig.plannerConfig.planModel = (pm && typeof pm === 'string' && pm.toLowerCase().includes('flash')) ? 'MODEL_PLACEHOLDER_M16' : 'MODEL_PLACEHOLDER_M54';
-                args[1].body = JSON.stringify(reqObj);
-                if (args[1].headers && typeof args[1].headers === 'object') {
-                  delete args[1].headers['content-length'];
-                  delete args[1].headers['Content-Length'];
+            const skillsUrl = url.replace('GetAllWorkflows', 'GetAllSkills');
+            const skillsRes = await origFetch.apply(this, [skillsUrl, Object.assign({}, args[1], { body: '{}' })]);
+            if (skillsRes.ok) {
+              const skillsData = await skillsRes.json();
+              const rawSkills = skillsData.skills || [];
+              const workflows = rawSkills.map(function(s) {
+                return {
+                  $typeName: 'exa.cortex_pb.WorkflowSpec',
+                  name: s.name,
+                  description: s.description || ('Skill: ' + s.name),
+                  path: s.path || s.name,
+                  content: s.content || ''
+                };
+              });
+              return new Response(JSON.stringify({ workflows: workflows }), {
+                status: 200,
+                headers: {
+                  'content-type': 'application/json',
+                  'connect-protocol-version': '1'
                 }
+              });
+            }
+          } catch (wfErr) {
+            console.warn('[AG] GetAllWorkflows skill conversion error:', wfErr);
+          }
+        }
+
+        // Sanitize outgoing GetSlashCommands request: ensure planModel is a valid ModelPlaceholder enum
+        if (isSlashCommands && args[1]) {
+          try {
+            let reqObj = null;
+            if (typeof args[1].body === 'string') {
+              reqObj = JSON.parse(args[1].body);
+            } else if (args[1].body && (args[1].body instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(args[1].body)))) {
+              reqObj = JSON.parse(new TextDecoder().decode(args[1].body));
+            }
+            if (reqObj) {
+              if (!reqObj.cascadeConfig) reqObj.cascadeConfig = {};
+              if (!reqObj.cascadeConfig.plannerConfig) reqObj.cascadeConfig.plannerConfig = {};
+              const pm = reqObj.cascadeConfig.plannerConfig.planModel;
+              if (!pm || typeof pm !== 'string' || !pm.startsWith('MODEL_PLACEHOLDER_M')) {
+                reqObj.cascadeConfig.plannerConfig.planModel = (pm && typeof pm === 'string' && pm.toLowerCase().includes('flash')) ? 'MODEL_PLACEHOLDER_M16' : 'MODEL_PLACEHOLDER_M54';
+              }
+              const newBody = JSON.stringify(reqObj);
+              args[1].body = (args[1].body instanceof Uint8Array) ? new TextEncoder().encode(newBody) : newBody;
+              if (args[1].headers && typeof args[1].headers === 'object') {
+                delete args[1].headers['content-length'];
+                delete args[1].headers['Content-Length'];
               }
             }
           } catch (_) {}
@@ -301,10 +340,17 @@ try {
                 const text = await response.text();
                 const data = JSON.parse(text);
                 if (data && Array.isArray(data.commands)) {
+                  for (let i = 0; i < data.commands.length; i++) {
+                    const cmd = data.commands[i];
+                    if (cmd && !cmd.$typeName) cmd.$typeName = 'exa.language_server_pb.SlashCommandDefinition';
+                    if (cmd && cmd.info && !cmd.info.$typeName) cmd.info.$typeName = 'exa.codeium_common_pb.SlashCommandInfo';
+                  }
                   const hasPlan = data.commands.some(function(c) { return c && c.info && c.info.name === 'plan'; });
                   if (!hasPlan) {
                     data.commands.unshift({
+                      $typeName: 'exa.language_server_pb.SlashCommandDefinition',
                       info: {
+                        $typeName: 'exa.codeium_common_pb.SlashCommandInfo',
                         name: 'plan',
                         type: 'SLASH_COMMAND_TYPE_SYSTEM',
                         modelFacingText: '<PLAN>The user is requesting that you enter planning mode. Carefully research first, construct an implementation plan artifact, and obtain approval before making changes.</PLAN>'
@@ -312,11 +358,11 @@ try {
                       title: 'plan',
                       description: 'Plan carefully before executing a task.'
                     });
-                    return new Response(JSON.stringify(data), {
-                      status: 200,
-                      headers: { 'content-type': 'application/json' }
-                    });
                   }
+                  return new Response(JSON.stringify(data), {
+                    status: 200,
+                    headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+                  });
                 }
                 return new Response(text, {
                   status: response.status,
@@ -324,39 +370,66 @@ try {
                   headers: response.headers
                 });
               } else {
-                // Fallback slash commands if Language Server encountered an unresolvable planModel error
+                // If language server returned an error, fetch skills dynamically
+                let fallbackSkills = [];
+                try {
+                  const skillsUrl = url.replace('GetSlashCommands', 'GetAllSkills');
+                  const sRes = await origFetch.apply(this, [skillsUrl, Object.assign({}, args[1], { body: '{}' })]);
+                  if (sRes.ok) {
+                    const sData = await sRes.json();
+                    fallbackSkills = (sData.skills || []).map(function(s) {
+                      return {
+                        $typeName: 'exa.language_server_pb.SlashCommandDefinition',
+                        info: {
+                          $typeName: 'exa.codeium_common_pb.SlashCommandInfo',
+                          name: s.name,
+                          type: 'SLASH_COMMAND_TYPE_SKILL',
+                          modelFacingText: '<SKILL>The user requested you read and use the "' + s.name + '" skill. The path to the skill file is:\\n' + s.path + '</SKILL>'
+                        },
+                        title: s.name,
+                        description: s.description || ('Skill: ' + s.name)
+                      };
+                    });
+                  }
+                } catch (_) {}
+
                 const fallbackData = {
                   commands: [
                     {
-                      info: { name: 'plan', type: 'SLASH_COMMAND_TYPE_SYSTEM', modelFacingText: '<PLAN>The user is requesting that you enter planning mode. Carefully research first, construct an implementation plan artifact, and obtain approval before making changes.</PLAN>' },
+                      $typeName: 'exa.language_server_pb.SlashCommandDefinition',
+                      info: { $typeName: 'exa.codeium_common_pb.SlashCommandInfo', name: 'plan', type: 'SLASH_COMMAND_TYPE_SYSTEM', modelFacingText: '<PLAN>The user is requesting that you enter planning mode. Carefully research first, construct an implementation plan artifact, and obtain approval before making changes.</PLAN>' },
                       title: 'plan',
                       description: 'Plan carefully before executing a task.'
                     },
                     {
-                      info: { name: 'goal', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
+                      $typeName: 'exa.language_server_pb.SlashCommandDefinition',
+                      info: { $typeName: 'exa.codeium_common_pb.SlashCommandInfo', name: 'goal', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
                       title: 'goal',
                       description: 'Persist until user goal is achieved.'
                     },
                     {
-                      info: { name: 'schedule', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
+                      $typeName: 'exa.language_server_pb.SlashCommandDefinition',
+                      info: { $typeName: 'exa.codeium_common_pb.SlashCommandInfo', name: 'schedule', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
                       title: 'schedule',
                       description: 'Schedule a task or recurring background cron.'
                     },
                     {
-                      info: { name: 'grill-me', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
+                      $typeName: 'exa.language_server_pb.SlashCommandDefinition',
+                      info: { $typeName: 'exa.codeium_common_pb.SlashCommandInfo', name: 'grill-me', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
                       title: 'grill-me',
                       description: 'Interview me to align on a plan.'
                     },
                     {
-                      info: { name: 'learn', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
+                      $typeName: 'exa.language_server_pb.SlashCommandDefinition',
+                      info: { $typeName: 'exa.codeium_common_pb.SlashCommandInfo', name: 'learn', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
                       title: 'learn',
                       description: 'Reflect on recent successes or corrections to capture reusable skills or rules.'
                     }
-                  ]
+                  ].concat(fallbackSkills)
                 };
                 return new Response(JSON.stringify(fallbackData), {
                   status: 200,
-                  headers: { 'content-type': 'application/json' }
+                  headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
                 });
               }
             } catch (slashErr) {

@@ -14,7 +14,84 @@
       event.preventDefault();
       event.stopImmediatePropagation();
     }
-  }, true);
+  // Intercept GetAllWorkflows & GetSlashCommands to display all 86 skills in the visual / dropdown
+  (() => {
+    if (window.__ag_fetch_skills_hooked) return;
+    window.__ag_fetch_skills_hooked = true;
+    const origFetch = window.fetch;
+
+    let cachedSkillsWorkflows = null;
+    let lastSkillsFetchTime = 0;
+
+    window.fetch = async function(...args) {
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : (args[0] && args[0].href ? args[0].href : ''));
+      const isAllWorkflows = typeof url === 'string' && url.includes('LanguageServerService/GetAllWorkflows');
+      const isSlashCommands = typeof url === 'string' && url.includes('LanguageServerService/GetSlashCommands');
+
+      // 1. Intercept GetAllWorkflows: populate with all skills as WorkflowSpec so all 86 skills appear on /
+      if (isAllWorkflows) {
+        try {
+          if (cachedSkillsWorkflows && (Date.now() - lastSkillsFetchTime < 60000)) {
+            return new Response(JSON.stringify({ workflows: cachedSkillsWorkflows }), {
+              status: 200,
+              headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+            });
+          }
+
+          const skillsUrl = url.replace('GetAllWorkflows', 'GetAllSkills');
+          const skillsRes = await origFetch.apply(this, [skillsUrl, Object.assign({}, args[1], { body: '{}' })]);
+          if (skillsRes.ok) {
+            const skillsData = await skillsRes.json();
+            const rawSkills = skillsData.skills || [];
+            cachedSkillsWorkflows = rawSkills.map(function(s) {
+              return {
+                $typeName: 'exa.cortex_pb.WorkflowSpec',
+                name: s.name,
+                description: s.description || ('Skill: ' + s.name),
+                path: s.path || s.name,
+                content: s.content || ''
+              };
+            });
+            lastSkillsFetchTime = Date.now();
+            return new Response(JSON.stringify({ workflows: cachedSkillsWorkflows }), {
+              status: 200,
+              headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+            });
+          }
+        } catch (wfErr) {
+          console.warn('[AG] GetAllWorkflows skill conversion error in rendererHook:', wfErr);
+        }
+      }
+
+      // 2. Sanitize outgoing GetSlashCommands request: ensure planModel is valid
+      if (isSlashCommands && args[1]) {
+        try {
+          let reqObj = null;
+          if (typeof args[1].body === 'string') {
+            reqObj = JSON.parse(args[1].body);
+          } else if (args[1].body && (args[1].body instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(args[1].body)))) {
+            reqObj = JSON.parse(new TextDecoder().decode(args[1].body));
+          }
+          if (reqObj) {
+            if (!reqObj.cascadeConfig) reqObj.cascadeConfig = {};
+            if (!reqObj.cascadeConfig.plannerConfig) reqObj.cascadeConfig.plannerConfig = {};
+            const pm = reqObj.cascadeConfig.plannerConfig.planModel;
+            if (!pm || typeof pm !== 'string' || !pm.startsWith('MODEL_PLACEHOLDER_M')) {
+              reqObj.cascadeConfig.plannerConfig.planModel = (pm && typeof pm === 'string' && pm.toLowerCase().includes('flash')) ? 'MODEL_PLACEHOLDER_M16' : 'MODEL_PLACEHOLDER_M54';
+            }
+            const newBody = JSON.stringify(reqObj);
+            args[1].body = (args[1].body instanceof Uint8Array) ? new TextEncoder().encode(newBody) : newBody;
+            if (args[1].headers && typeof args[1].headers === 'object') {
+              if ('content-length' in args[1].headers) delete args[1].headers['content-length'];
+              if ('Content-Length' in args[1].headers) delete args[1].headers['Content-Length'];
+            }
+          }
+        } catch (_) {}
+      }
+
+      return origFetch.apply(this, args);
+    };
+  })();
 
   console.log('[Antigravity 2.0] Initializing Remote Environment Hook...');
 

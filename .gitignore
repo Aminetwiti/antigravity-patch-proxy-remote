@@ -85,3 +85,5 @@ providerState.json
 test_marker.txt
 
 ag-doctor-ui/tools/*
+videos/*
+review/*
