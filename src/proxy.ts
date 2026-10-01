@@ -172,6 +172,8 @@ function ensureRemoteExecScriptOnDisk(): void {
   }
 }
 
+let lastRemoteStateSummary = '';
+
 function loadRemoteState(): void {
   try {
     ensureRemoteExecScriptOnDisk();
@@ -188,7 +190,13 @@ function loadRemoteState(): void {
       if (data.remoteSessions && typeof data.remoteSessions === 'object') {
         remoteSessionsMap = data.remoteSessions;
       }
-      log.info(`[Proxy] Loaded Remote VPS state: active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
+      const remoteSummary = `active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`;
+      if (remoteSummary !== lastRemoteStateSummary) {
+        lastRemoteStateSummary = remoteSummary;
+        log.info(`[Proxy] Loaded Remote VPS state: ${remoteSummary}`);
+      } else {
+        log.debug(`[Proxy] Loaded Remote VPS state: ${remoteSummary}`);
+      }
     }
   } catch (e) {
     log.warn('[Proxy] Failed to load remote VPS state from disk:', e);
@@ -250,6 +258,48 @@ function saveCachedCodeAssist(content: string): void {
     fs.writeFileSync(p, content, 'utf-8');
   } catch (e) {
     log.warn('[Proxy] Failed to save cached code assist:', e);
+  }
+}
+
+// ─── listExperiments Cache (Feature Flags & Planning Resilience) ────────────
+
+let memoryListExperimentsCache: string | null = null;
+let memoryListExperimentsTime = 0;
+
+function getListExperimentsCachePath(): string {
+  const home = os.homedir();
+  const dir = path.join(home, '.gemini', 'antigravity');
+  if (!fs.existsSync(dir)) {
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  }
+  return path.join(dir, 'list_experiments_cache.json');
+}
+
+function loadCachedExperiments(): string | null {
+  if (memoryListExperimentsCache) return memoryListExperimentsCache;
+  try {
+    const p = getListExperimentsCachePath();
+    if (fs.existsSync(p)) {
+      const content = fs.readFileSync(p, 'utf-8').trim();
+      if (content.startsWith('{')) {
+        memoryListExperimentsCache = content;
+        return content;
+      }
+    }
+  } catch (e) {
+    log.debug('[Proxy] Failed to load cached experiments:', e);
+  }
+  return null;
+}
+
+function saveCachedExperiments(content: string): void {
+  try {
+    memoryListExperimentsCache = content;
+    memoryListExperimentsTime = Date.now();
+    const p = getListExperimentsCachePath();
+    fs.writeFileSync(p, content, 'utf-8');
+  } catch (e) {
+    log.warn('[Proxy] Failed to save cached experiments:', e);
   }
 }
 
@@ -1219,7 +1269,10 @@ export function executeGoogleCloudCodeRequest(
         }
       });
 
+      let isTimedOut = false;
+
       proxyReq.on('error', (err) => {
+        if (isTimedOut) return;
         if (!hostOverride && isCloudCodeUrl && !res.headersSent && !res.writableEnded) {
           log.warn(`[Proxy] Google Cloud Code network error on ${targetHost} (${err.message}). Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
           executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD)
@@ -1238,6 +1291,7 @@ export function executeGoogleCloudCodeRequest(
       });
 
       proxyReq.setTimeout(GOOGLE_PROXY_TIMEOUT_MS, () => {
+        isTimedOut = true;
         log.error(`[Proxy] Google pool request timed out waiting for response headers after ${GOOGLE_PROXY_TIMEOUT_MS / 1000}s`);
         proxyReq?.destroy();
         finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
@@ -1266,20 +1320,29 @@ export async function executeGoogleCloudCodeWithPool(
   sessId: string | null,
 ): Promise<boolean> {
   const targetRaw = String(reqJson.model || (reqJson.request as any)?.model || '');
-  const isClaude = targetRaw.toLowerCase().includes('claude');
+  const resolvedTarget = normalizeCloudCodeModelId(targetRaw).toLowerCase();
+  const isClaude = resolvedTarget.includes('claude');
   const modelFamily = isClaude ? 'claude' : 'gemini';
 
   // Eco-Routing / Graceful Degradation: If pool is under severe quota stress (<15% average),
-  // downgrade background / auxiliary tasks (summaries, titles) to Flash to preserve Pro quota
+  // downgrade background / auxiliary tasks (summaries, titles) to Flash to preserve Pro quota.
+  // Guard: only redirect if at least one account is still available — redirecting into a fully
+  // exhausted pool just wastes a retry slot on the same drained accounts.
   if (isPoolUnderQuotaStress(accountPool, modelFamily)) {
-    const reqStr = JSON.stringify(reqJson);
-    const isAuxiliary = /summariz|summary|trajectory|title|conversation_title/i.test(reqStr);
-    if (isAuxiliary && !targetRaw.includes('flash')) {
+    const hasAnyAvailable = accountPool.some(
+      (a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && !isTokenRevoked(a.refreshToken),
+    );
+    const reqType = String(reqJson.requestType || (reqJson.request as any)?.requestType || '').toUpperCase();
+    const isAuxiliary = reqType === 'CONVERSATION_TITLE' || reqType === 'TITLE' || reqType === 'SUMMARY' || reqType === 'CONVERSATION_SUMMARY';
+    const isAlreadyFlash = resolvedTarget.includes('flash') || resolvedTarget.includes('lite');
+    if (isAuxiliary && !isAlreadyFlash && hasAnyAvailable) {
       log.info('[Proxy] [Eco-Routing] Pool under quota stress (<15% avg): routing auxiliary request to gemini-3.8-flash-tiered.');
       reqJson.model = 'gemini-3.8-flash-tiered';
       if (reqJson.request && typeof reqJson.request === 'object') {
         (reqJson.request as Record<string, unknown>).model = 'gemini-3.8-flash-tiered';
       }
+    } else if (isAuxiliary && !hasAnyAvailable) {
+      log.debug('[Proxy] [Eco-Routing] Pool fully exhausted — skipping flash redirect, fast-fail will handle it.');
     }
   }
 
@@ -1294,7 +1357,8 @@ export async function executeGoogleCloudCodeWithPool(
   });
 
   let boundAccount: CustomModel | undefined;
-  if (sessId) {
+  const useStickySessions = process.env.AG_STICKY_GOOGLE_ACCOUNTS === '1';
+  if (sessId && useStickySessions) {
     boundAccount = sortedAccounts.find((m) => {
       const affinity = sessionAffinities.get(sessId);
       return affinity && getAccountQuotaKey(m) === affinity.accountKey && !getOpenBreaker(m) && !isAccountInCooldown(m, modelFamily) && getModelQuotaScore(m) > 0;
@@ -1350,7 +1414,7 @@ export async function executeGoogleCloudCodeWithPool(
 
   let lastStatus = 500;
   let lastErrorText = 'All accounts in Google Cloud Code pool exhausted';
-  const totalAttempts = Math.min(sortedAccounts.length, 10);
+  const totalAttempts = sortedAccounts.length;
   let consecutive429Count = 0;
 
   for (let i = 0; i < totalAttempts; i++) {
@@ -1370,6 +1434,16 @@ export async function executeGoogleCloudCodeWithPool(
         break;
       }
       continue;
+    }
+
+    // Fast-skip: if this candidate has 0% quota remaining and reset has not passed
+    const candidateQuotaScore = getModelQuotaScore(candidate, modelFamily);
+    if (candidateQuotaScore <= 0) {
+      const hasPositiveRemaining = sortedAccounts.slice(i + 1).some((c) => getModelQuotaScore(c, modelFamily) > 0 && !isAccountInCooldown(c, modelFamily));
+      if (hasPositiveRemaining) {
+        log.info(`[Proxy] Fast-skipping candidate ${candidateName}: 0% quota remaining for ${modelFamily}`);
+        continue;
+      }
     }
 
     log.info(`[Proxy] Google account pool: trying candidate ${candidateName} (attempt ${i + 1}/${totalAttempts})`);
@@ -1436,7 +1510,7 @@ export async function executeGoogleCloudCodeWithPool(
       recordSuccess(candidate);
       clearAccountCooldown(candidate, modelFamily);
       endAccountProbation(candidate, modelFamily);
-      if (sessId) {
+      if (sessId && useStickySessions) {
         bindSessionToModel(sessId, candidate);
       }
       log.info(`[Proxy] Google Cloud Code request SUCCEEDED on account ${candidateName}`);
@@ -1456,6 +1530,11 @@ export async function executeGoogleCloudCodeWithPool(
 
       if (decision.category === 'quota_exhausted') {
         const liveKey = getAccountQuotaKey(candidate);
+        if (modelFamily) {
+          quotaExhaustedAccountKeys.add(`${liveKey}:${modelFamily}`);
+        } else {
+          quotaExhaustedAccountKeys.add(liveKey);
+        }
         const existingLive = getLiveAccountQuota(liveKey);
         if (existingLive) {
           if (isClaude) {
@@ -1629,7 +1708,7 @@ export async function executeGoogleCloudCodeWithPool(
   if (!res.writableEnded && !res.destroyed) {
     const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
     const allCustomModels = expandModelsWithEffort(loadCustomModels());
-    const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.7-flash-tiered', 'gemini-2.0-flash'];
+    const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.8-pro'];
     const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || '');
     const eligibleFallbacks = fallbackTargets.filter((m) => m !== currentBase);
 
@@ -1718,58 +1797,65 @@ export async function executeGoogleCloudCodeWithPool(
     }
 
     // If all Google accounts and internal Google Cloud Code fallbacks failed,
-    // check for configured third-party models (OpenAI, Anthropic, DeepSeek, Ollama, OpenRouter, etc.)
-    // to provide universal zero-downtime resilience.
+    // try configured Google AI Studio accounts first (independent quota, same Gemini family),
+    // then fall through to OpenAI / Anthropic / DeepSeek / Ollama / OpenRouter / etc.
+    // Note: google-gemini (AI Studio) uses a per-account API key — rotate across all configured accounts.
     const nonGoogleFallbacks = allCustomModels.filter(
       (m) =>
-        m.provider !== 'google' &&
-        m.provider !== 'google-gemini' &&
-        !m._poolOnly &&
+        (m.provider !== 'google' || !isGoogleCloudCodeModel(m)) &&
+        (!m._poolOnly || m.provider === 'google-gemini') &&
         !getOpenBreaker(m),
     );
 
     if (nonGoogleFallbacks.length > 0) {
-      const thirdPartyFallback = nonGoogleFallbacks[0];
+      // Prioritise AI Studio accounts (google-gemini) — same model family, independent quota.
+      // Rotate through all of them before falling to third-party providers.
+      const aiStudioFallbacks = nonGoogleFallbacks.filter((m) => m.provider === 'google-gemini');
+      const otherFallbacks = nonGoogleFallbacks.filter((m) => m.provider !== 'google-gemini');
+      const orderedFallbacks = [...aiStudioFallbacks, ...otherFallbacks];
+
       const sessionKey = convId || sessId;
       const existingFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
       const alreadyNotified = existingFallback?.notified === true;
+      const actualGeminiBody = (reqJson.request as GeminiRequestBody) || (reqJson as unknown as GeminiRequestBody);
 
-      if (sessionKey) {
-        setSessionModelFallback(sessionKey, currentBase, thirdPartyFallback.displayName || thirdPartyFallback.name, true);
-      }
+      for (let fi = 0; fi < orderedFallbacks.length; fi++) {
+        const fallbackModel = orderedFallbacks[fi];
+        const isAiStudio = fallbackModel.provider === 'google-gemini';
 
-      log.warn(
-        `[Proxy] Pool exhaustion: All Google accounts and internal fallbacks failed. Cascading to third-party provider ${thirdPartyFallback.provider} (${thirdPartyFallback.name})...`,
-      );
+        if (sessionKey && fi === 0) {
+          setSessionModelFallback(sessionKey, currentBase, fallbackModel.displayName || fallbackModel.name, true);
+        }
 
-      if (isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
-        if (!res.headersSent) {
-          safeWriteHead(res, 200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
+        log.warn(
+          `[Proxy] Pool exhaustion: Cascading to ${isAiStudio ? 'Google AI Studio' : fallbackModel.provider} account (${fallbackModel.displayName || fallbackModel.name}) [${fi + 1}/${orderedFallbacks.length}]...`,
+        );
+
+        if (fi === 0 && isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
+          if (!res.headersSent) {
+            safeWriteHead(res, 200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+            });
+          }
+          const notice = isAiStudio
+            ? `> 🔄 **Pool Cloud Code saturé** — Poursuite avec **Google AI Studio** (${fallbackModel.displayName || fallbackModel.name}).\n\n`
+            : `> 🌐 **Pool Google saturé** — Poursuite automatique avec **${fallbackModel.displayName || fallbackModel.name}** (${fallbackModel.provider}).\n\n`;
+          writeSafeSseChunk(res, {
+            response: {
+              candidates: [{ content: { parts: [{ text: notice }], role: 'model' }, index: 0 }],
+            },
           });
         }
-        const thirdPartyNotice = `> 🌐 **Pool Google saturé** — Poursuite automatique avec le modèle alternatif **${thirdPartyFallback.displayName || thirdPartyFallback.name}** (${thirdPartyFallback.provider}).\n\n`;
-        const chunk = {
-          response: {
-            candidates: [
-              {
-                content: { parts: [{ text: thirdPartyNotice }], role: 'model' },
-                index: 0,
-              },
-            ],
-          },
-        };
-        writeSafeSseChunk(res, chunk);
-      }
 
-      const actualGeminiBody = (reqJson.request as GeminiRequestBody) || (reqJson as unknown as GeminiRequestBody);
-      try {
-        handleCustomModelRequest(res, thirdPartyFallback, actualGeminiBody, isStream);
-        return true;
-      } catch (tpErr) {
-        log.warn(`[Proxy] Third-party fallback to ${thirdPartyFallback.name} failed:`, (tpErr as Error).message);
+        try {
+          handleCustomModelRequest(res, fallbackModel, actualGeminiBody, isStream);
+          return true;
+        } catch (tpErr) {
+          log.warn(`[Proxy] Fallback to ${fallbackModel.name} (${fallbackModel.provider}) failed: ${(tpErr as Error).message}. Trying next...`);
+          if (res.writableEnded || res.destroyed) return true;
+        }
       }
     }
 
@@ -2397,6 +2483,10 @@ export function getAccountQuotaKey(item: CustomModel): string {
 // ─── Google Account 429 Cooldown & Probation Registry ─────────────────────────
 const googleAccountCooldowns = new Map<string, number>();
 const accountProbationUntil = new Map<string, number>();
+// Tracks accounts that just received a quota_exhausted 429 so concurrent requests
+// already past the cooldown snapshot can fast-skip them without an extra network round-trip.
+// ponytail: global Set, cleared when setAccountCooldown is called — O(1) lookup, zero overhead.
+const quotaExhaustedAccountKeys = new Set<string>();
 
 export function isAccountInProbation(candidate: CustomModel, modelFamily?: string): boolean {
   const baseKey = getAccountQuotaKey(candidate);
@@ -2426,14 +2516,23 @@ export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string
   const baseKey = getAccountQuotaKey(candidate);
   const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
   const until = googleAccountCooldowns.get(key) || (modelFamily ? googleAccountCooldowns.get(baseKey) : undefined);
-  if (!until) return false;
-  if (Date.now() >= until) {
+
+  if (until && Date.now() >= until) {
     googleAccountCooldowns.delete(key);
+    quotaExhaustedAccountKeys.delete(key);
+    if (modelFamily) {
+      googleAccountCooldowns.delete(baseKey);
+      quotaExhaustedAccountKeys.delete(baseKey);
+    }
     // Transition to 15s half-open probation to prevent thundering herd stampede
     accountProbationUntil.set(key, Date.now() + 15_000);
     return false;
   }
-  return true;
+
+  if (quotaExhaustedAccountKeys.has(key) || (!modelFamily && quotaExhaustedAccountKeys.has(baseKey))) {
+    return true;
+  }
+  return Boolean(until);
 }
 
 export function setAccountCooldown(candidate: CustomModel, durationMs = 10 * 60_000, modelFamily?: string): void {
@@ -2459,14 +2558,17 @@ export function clearAccountCooldown(candidate: CustomModel, modelFamily?: strin
   if (modelFamily) {
     googleAccountCooldowns.delete(`${baseKey}:${modelFamily}`);
     accountProbationUntil.delete(`${baseKey}:${modelFamily}`);
+    quotaExhaustedAccountKeys.delete(`${baseKey}:${modelFamily}`);
   }
   googleAccountCooldowns.delete(baseKey);
   accountProbationUntil.delete(baseKey);
+  quotaExhaustedAccountKeys.delete(baseKey);
 }
 
 export function _resetAllAccountCooldowns(): void {
   googleAccountCooldowns.clear();
   accountProbationUntil.clear();
+  quotaExhaustedAccountKeys.clear();
 }
 
 /**
@@ -2476,32 +2578,36 @@ export function _resetAllAccountCooldowns(): void {
 export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: AccountLiveQuota): void {
   if (!quota || !accountKey) return;
 
-  // If Gemini quota recovered above 20%, heal Gemini-specific cooldown
-  if (quota.geminiFiveHourPct > 20) {
+  // Heal once quota recovers to ≥5% — enough to be useful. 20% was too conservative:
+  // accounts at 10% were being skipped despite successfully serving requests in the log.
+  if (quota.geminiFiveHourPct >= 5) {
     const geminiKey = `${accountKey}:gemini`;
-    if (googleAccountCooldowns.has(geminiKey)) {
+    if (googleAccountCooldowns.has(geminiKey) || quotaExhaustedAccountKeys.has(geminiKey)) {
       log.info(`[Proxy] Auto-healing Gemini cooldown for ${accountKey}: quota recovered to ${quota.geminiFiveHourPct}%`);
       googleAccountCooldowns.delete(geminiKey);
       accountProbationUntil.delete(geminiKey);
+      quotaExhaustedAccountKeys.delete(geminiKey);
     }
   }
 
-  // If Claude quota recovered above 20%, heal Claude-specific cooldown
-  if (quota.claudeFiveHourPct > 20) {
+  // If Claude quota recovered to ≥5%, heal Claude-specific cooldown
+  if (quota.claudeFiveHourPct >= 5) {
     const claudeKey = `${accountKey}:claude`;
-    if (googleAccountCooldowns.has(claudeKey)) {
+    if (googleAccountCooldowns.has(claudeKey) || quotaExhaustedAccountKeys.has(claudeKey)) {
       log.info(`[Proxy] Auto-healing Claude cooldown for ${accountKey}: quota recovered to ${quota.claudeFiveHourPct}%`);
       googleAccountCooldowns.delete(claudeKey);
       accountProbationUntil.delete(claudeKey);
+      quotaExhaustedAccountKeys.delete(claudeKey);
     }
   }
 
   // If either major quota recovered, heal general account cooldown
-  if (quota.geminiFiveHourPct > 20 || quota.claudeFiveHourPct > 20) {
-    if (googleAccountCooldowns.has(accountKey)) {
+  if (quota.geminiFiveHourPct >= 5 || quota.claudeFiveHourPct >= 5) {
+    if (googleAccountCooldowns.has(accountKey) || quotaExhaustedAccountKeys.has(accountKey)) {
       log.info(`[Proxy] Auto-healing general cooldown for ${accountKey}`);
       googleAccountCooldowns.delete(accountKey);
       accountProbationUntil.delete(accountKey);
+      quotaExhaustedAccountKeys.delete(accountKey);
     }
   }
 }
@@ -2589,16 +2695,23 @@ export function _resetAccountInFlight(): void {
   accountInFlightRequests.clear();
 }
 
-// ─── Google Account RPM Governor (Sliding Window 60s) ─────────────────────────
+// ─── Google Account RPM Governor (Sliding Window 60s) & LRU Tracker ───────────
 const accountRequestTimestamps = new Map<string, number[]>();
+const accountLastUsedTimestamp = new Map<string, number>();
 
 export function recordAccountRequest(candidate: CustomModel): void {
   const key = getAccountQuotaKey(candidate);
   const now = Date.now();
+  accountLastUsedTimestamp.set(key, now);
   const list = accountRequestTimestamps.get(key) || [];
   const recent = list.filter((t) => now - t < 60_000);
   recent.push(now);
   accountRequestTimestamps.set(key, recent);
+}
+
+export function getAccountLastUsed(candidate: CustomModel): number {
+  const key = getAccountQuotaKey(candidate);
+  return accountLastUsedTimestamp.get(key) || 0;
 }
 
 export function getAccountRpmCount(candidate: CustomModel): number {
@@ -2615,6 +2728,7 @@ export function getAccountRpmCount(candidate: CustomModel): number {
 
 export function _resetAccountRpm(): void {
   accountRequestTimestamps.clear();
+  accountLastUsedTimestamp.clear();
 }
 
 export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number {
@@ -2642,8 +2756,22 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
       ? q.weeklyPercentage
       : 50;
 
-  if (fiveHour === 0) return 0;
-  return (fiveHour * 0.7) + (weekly * 0.3);
+  const modelName = (m.externalModelName || m.name || '').toLowerCase();
+  const isFlash = modelName.includes('flash') || modelName.includes('lite');
+
+  const now = Date.now();
+  const fiveHourResetStr = isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime);
+  const fiveHourResetPassed = fiveHourResetStr ? new Date(fiveHourResetStr).getTime() <= now : false;
+
+  const weeklyResetStr = isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime);
+  const weeklyResetPassed = weeklyResetStr ? new Date(weeklyResetStr).getTime() <= now : false;
+
+  if (fiveHour === 0 && !fiveHourResetPassed) return 0;
+  if (!isFlash && weekly === 0 && !weeklyResetPassed) return 0;
+
+  const effFiveHour = (fiveHour === 0 && fiveHourResetPassed) ? 50 : fiveHour;
+  const effWeekly = (weekly === 0 && weeklyResetPassed) ? 50 : weekly;
+  return (effFiveHour * 0.7) + (effWeekly * 0.3);
 }
 
 // ─── Google Account Latency Tracker (EWMA alpha = 0.2) ────────────────────────
@@ -2742,8 +2870,22 @@ export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): nu
   const rpmCount = getAccountRpmCount(m);
   // Each active request penalizes dynamic score by 20 points;
   // each request served in the last 60 seconds penalizes by 2 points (RPM governor);
-  // elevated EWMA latency penalizes up to 25 points.
-  return Math.max(1, baseScore + priorityBonus - inFlight * 20 - rpmCount * 2 - latencyPenalty);
+  // elevated EWMA latency penalizes up to 25 points;
+  // weekly quota under 15% penalizes progressively to protect near-exhausted accounts.
+  const isClaude = modelFamily
+    ? modelFamily.toLowerCase().includes('claude')
+    : (m.externalModelName || m.name || '').toLowerCase().includes('claude');
+  const q = m.quotas;
+  const weeklyPct = q
+    ? (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
+      ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
+      : typeof q.weeklyPercentage === 'number'
+        ? q.weeklyPercentage
+        : 100)
+    : 100;
+  const weeklyPenalty = (weeklyPct < 15 && weeklyPct > 0) ? Math.floor((15 - weeklyPct) * 1.5) : 0;
+
+  return Math.max(1, baseScore + priorityBonus - inFlight * 20 - rpmCount * 2 - latencyPenalty - weeklyPenalty);
 }
 
 // ─── Intelligent 429 Classification (OmniRoute Parity) ─────────────────────────
@@ -2892,6 +3034,14 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
   const candA = topTier[i];
   const candB = topTier[j];
 
+  const lastA = getAccountLastUsed(candA);
+  const lastB = getAccountLastUsed(candB);
+
+  // If one candidate was used more recently, favor the fresher idle account for intelligent rotation
+  if (lastA !== lastB) {
+    return lastA < lastB ? candA : candB;
+  }
+
   const scoreA = getAccountDynamicScore(candA, modelFamily);
   const scoreB = getAccountDynamicScore(candB, modelFamily);
 
@@ -3033,6 +3183,8 @@ export function clearSessionAffinities(): void {
   sessionModelFallbacks.clear();
 }
 
+export const SESSION_MODEL_FALLBACK_TTL_MS = 3 * 60 * 1000; // 3 minutes auto-recovery back to primary model
+
 export interface SessionModelFallback {
   originalModel: string;
   fallbackModel: string;
@@ -3046,7 +3198,11 @@ export function getSessionModelFallback(sessionKey: string): SessionModelFallbac
   if (!sessionKey) return undefined;
   const fb = sessionModelFallbacks.get(sessionKey);
   if (!fb) return undefined;
-  if (Date.now() - fb.lastUsed > SESSION_AFFINITY_TTL_MS) {
+  if (
+    Date.now() - fb.lastUsed > SESSION_MODEL_FALLBACK_TTL_MS ||
+    /gemini-(?:3\.[0-7]|2\.|1\.)/i.test(fb.fallbackModel) ||
+    /gpt-[34]/i.test(fb.fallbackModel)
+  ) {
     sessionModelFallbacks.delete(sessionKey);
     return undefined;
   }
@@ -3060,6 +3216,9 @@ export function setSessionModelFallback(
   notified = false,
 ): void {
   if (!sessionKey) return;
+  if (/gemini-(?:3\.[0-7]|2\.|1\.)/i.test(fallbackModel) || /gpt-[34]/i.test(fallbackModel)) {
+    return;
+  }
   sessionModelFallbacks.set(sessionKey, {
     originalModel,
     fallbackModel,
@@ -3070,6 +3229,19 @@ export function setSessionModelFallback(
 
 export function clearSessionModelFallbacks(): void {
   sessionModelFallbacks.clear();
+}
+
+export function getActiveSessionModelFallbacks(): Record<string, SessionModelFallback> {
+  const result: Record<string, SessionModelFallback> = {};
+  const now = Date.now();
+  for (const [key, fb] of sessionModelFallbacks.entries()) {
+    if (now - fb.lastUsed <= SESSION_MODEL_FALLBACK_TTL_MS) {
+      result[key] = { ...fb };
+    } else {
+      sessionModelFallbacks.delete(key);
+    }
+  }
+  return result;
 }
 
 
@@ -3167,6 +3339,12 @@ function handleCustomModelRequest(
         }
       } else if (model.fallbackModel) {
         chainItems.push(model.fallbackModel);
+      } else if (model.provider === 'google' && !isGoogleCloudCodeModel(model)) {
+        // Intelligent default fallback cascade for Google AI Studio models (e.g. 503 high demand or 429)
+        const norm = (model.externalModelName || model.name || '').toLowerCase();
+        if (norm.includes('gemini-3.8-flash')) {
+          chainItems.push('gemini-3.8-pro');
+        }
       }
 
       if (poolSiblings.length > 0 || chainItems.length > 0) {
@@ -3188,15 +3366,15 @@ function handleCustomModelRequest(
         orderedModels = [...poolSiblings, ...chainModels, ...rest];
       }
 
-      // ponytail: skip same account on rate_limit — shared quota, fallback is a no-op.
-      // Separate accounts (different API keys) on the same provider have independent quotas.
+      // ponytail: skip same account on rate_limit if it's the exact same base model (shared quota).
+      // Separate accounts (different API keys) or different model tiers on the same provider/key are allowed.
       const failedAccountKey = diagnostic.errorType === 'rate_limit'
         ? getAccountQuotaKey(model)
         : null;
       for (const m of orderedModels) {
         if (m.name !== model.name && m.apiKey && !m.apiKey.startsWith('fallback:')) {
-          if (failedAccountKey && getAccountQuotaKey(m) === failedAccountKey) {
-            log.warn(`[Proxy] Auto-fallback: skipping ${m.displayName || m.name} (same account credentials, shared quota)`);
+          if (failedAccountKey && getAccountQuotaKey(m) === failedAccountKey && getBaseModelId(m.name) === targetBase) {
+            log.warn(`[Proxy] Auto-fallback: skipping ${m.displayName || m.name} (same account credentials, shared quota on ${targetBase})`);
             continue;
           }
           const fromName = model.displayName || model.name;
@@ -3752,6 +3930,82 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     }
   }
 
+  // UI & Chat Enhancements Configuration Bridge (GET/POST /api/ui/config)
+  if (req.url === '/api/ui/config' || req.url?.startsWith('/api/ui/config?')) {
+    const DEFAULT_SUGGESTIONS = [
+      { label: 'Continue', text: 'Continue' },
+      { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
+      { label: 'Keep going', text: 'Keep going' },
+      { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
+      { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' }
+    ];
+    const getConfigPath = () => {
+      const home = process.env.USERPROFILE || process.env.HOME || os.homedir();
+      return path.join(home, '.gemini', 'antigravity', 'config.json');
+    };
+    const readUiConfig = () => {
+      try {
+        const p = getConfigPath();
+        if (fs.existsSync(p)) {
+          const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+          const ui = parsed.ui || {};
+          return {
+            retryButton: ui.retryButton !== undefined ? Boolean(ui.retryButton) : true,
+            suggestionPills: ui.suggestionPills !== undefined ? Boolean(ui.suggestionPills) : true,
+            suggestions: Array.isArray(ui.suggestions) && ui.suggestions.length > 0 ? ui.suggestions : DEFAULT_SUGGESTIONS,
+          };
+        }
+      } catch (err) {
+        log.warn('[Proxy] Failed to read ui config from disk:', err);
+      }
+      return { retryButton: true, suggestionPills: true, suggestions: DEFAULT_SUGGESTIONS };
+    };
+
+    if (req.method === 'GET' || req.method === 'OPTIONS') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      });
+      if (req.method === 'OPTIONS') { res.end(); return; }
+      res.end(JSON.stringify(readUiConfig()));
+      return;
+    }
+
+    if (req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
+            retryButton?: boolean;
+            suggestionPills?: boolean;
+            suggestions?: Array<{ label: string; text: string }>;
+          };
+          const p = getConfigPath();
+          let parsed: Record<string, any> = {};
+          if (fs.existsSync(p)) {
+            parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+          }
+          parsed.ui = { ...(parsed.ui || {}) };
+          if (body.retryButton !== undefined) parsed.ui.retryButton = Boolean(body.retryButton);
+          if (body.suggestionPills !== undefined) parsed.ui.suggestionPills = Boolean(body.suggestionPills);
+          if (Array.isArray(body.suggestions)) parsed.ui.suggestions = body.suggestions;
+          fs.mkdirSync(path.dirname(p), { recursive: true });
+          fs.writeFileSync(p, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+          log.info(`[Proxy] Updated UI configuration: retryButton=${parsed.ui.retryButton}, suggestionPills=${parsed.ui.suggestionPills}`);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ ok: true, ...readUiConfig() }));
+        } catch (e: any) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: e?.message || 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
+  }
+
   // Remote VPS Command Execution Bridge (POST /api/remote/cmd)
   if (req.url === '/api/remote/cmd' || req.url?.startsWith('/api/remote/cmd?')) {
     if (req.method === 'POST') {
@@ -3985,7 +4239,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   req.url = req.url!.replace(/^.*\/dummy_path_padding/, '');
   // Strip binary patch padding (from LS hostname replacement)
-  req.url = req.url!.replace(/\/v1internal\/x{7}/, '');
+  req.url = req.url!.replace(/\/v1internal\/x+/, '');
 
   // P0-4: Enforce maximum request body size to prevent memory exhaustion DoS
   const MAX_BODY_SIZE = DEFAULT_MAX_BODY_SIZE;
@@ -4024,7 +4278,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     let fullBody = Buffer.concat(bodyChunks);
     const bodyStr = fullBody.toString('utf-8');
 
-    log.info(`[Proxy] Request: ${req.method} ${req.url}`);
+    const isRoutineNoise = req.url?.includes('Heartbeat') || req.url?.includes('GetUserStatus') || req.url === '/health';
+    if (isRoutineNoise) {
+      log.debug(`[Proxy] Request: ${req.method} ${req.url}`);
+    } else {
+      log.info(`[Proxy] Request: ${req.method} ${req.url}`);
+    }
 
     // MCP relay: the mobile companion asks the desktop session for the list
     // of configured MCP servers (name + tools + status) because the phone
@@ -4164,11 +4423,176 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       return;
     }
 
-    // 0.5. Intercept /v1internal:listExperiments
+    // 0.5. Intercept /v1internal:listExperiments with caching, enrichment, and fallback
     if (req.url!.includes('/v1internal:listExperiments')) {
-      if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
-        safeEnd(res, JSON.stringify({ experiments: [] }));
+      log.info('[Proxy] Intercepting listExperiments request');
+
+      const buildDefaultExperimentsFallback = () => {
+        const flags = [
+          { name: 'use-slash-plan', boolValue: true },
+          { name: 'customization-token-budget', intValue: 20000 },
+          { name: 'rules-token-budget', intValue: 20000 },
+          { name: 'enable-subagent-hub', boolValue: true },
+          { name: 'enable-skill-search-tool', boolValue: true },
+          { name: 'enable-owl-slash-command', boolValue: true },
+          { name: 'enable-browser-subagent-v2', boolValue: true },
+          { name: 'enable-customization-load-error-notice', boolValue: true },
+          { name: 'send-subagent-initial-prompt-as-message', boolValue: true },
+          { name: 'enable-battle-mode-custom-agents', boolValue: true },
+          { name: 'enable-command-assessor', boolValue: true },
+          { name: 'enable-daemon-commands', boolValue: true },
+          { name: 'enable-hook-status', boolValue: true },
+          { name: 'enable-mcp-non-blocking-turn-load', boolValue: true },
+          { name: 'enable-model-capacity-exhausted-retries', boolValue: true },
+          { name: 'enable-persistent-terminals', boolValue: true },
+          { name: 'enable-pty', boolValue: true },
+          { name: 'enable-sidecars', boolValue: true },
+          { name: 'deprecate-workflows', boolValue: true },
+          { name: 'use-core-direct', boolValue: true },
+          { name: 'tool-output-max-bytes', intValue: 46080 },
+          { name: 'max-tokens-per-step', intValue: 16384 },
+          { name: 'show-model-selection-change', boolValue: true },
+          { name: 'auto-command-config', stringValue: '{"system_allowlist": [], "sandbox_system_allowlist": ["head", "tail", "mkdir", "cd", "cp", "mv", "cat", "find", "grep", "rm", "touch", "less", "clear", "ls"]}' },
+          { name: 'cascade-conversation-history-config', stringValue: '{"enabled": true, "max_conversations": 20}' },
+          { name: 'invoke-subagent-config', stringValue: '{"enabled": true, "always_inherit_model": false}' },
+          { name: 'log-artifacts-config', stringValue: '{"enabled": true, "hideNominalToolSteps": false, "hidePlannerResponseText": false, "maxBytesPerStep": 4096, "maxBytesPerToolArg": 2048, "hideSystemSteps": false, "hideUserImplicitSteps": false}' },
+        ];
+        return JSON.stringify({
+          experimentIds: ['antigravity-2.18-full', 'plan-enabled', 'customizations-unlocked'],
+          flags,
+        });
+      };
+
+      const enrichExperiments = (rawBody: string) => {
+        try {
+          const data = JSON.parse(rawBody);
+          if (!Array.isArray(data.flags)) {
+            data.flags = [];
+          }
+          const requiredFlags = [
+            { name: 'use-slash-plan', boolValue: true },
+            { name: 'customization-token-budget', intValue: 20000 },
+            { name: 'rules-token-budget', intValue: 20000 },
+            { name: 'enable-subagent-hub', boolValue: true },
+            { name: 'enable-skill-search-tool', boolValue: true },
+            { name: 'enable-owl-slash-command', boolValue: true },
+            { name: 'enable-browser-subagent-v2', boolValue: true },
+            { name: 'send-subagent-initial-prompt-as-message', boolValue: true },
+            { name: 'enable-battle-mode-custom-agents', boolValue: true },
+            { name: 'show-model-selection-change', boolValue: true },
+          ];
+          for (const reqFlag of requiredFlags) {
+            const existing = data.flags.find((f: any) => f && f.name === reqFlag.name);
+            if (!existing) {
+              data.flags.push(reqFlag);
+            } else if (reqFlag.boolValue !== undefined && !existing.boolValue) {
+              existing.boolValue = true;
+            }
+          }
+          return JSON.stringify(data);
+        } catch (_) {
+          return rawBody;
+        }
+      };
+
+      // If we have a fresh cache (< 3 minutes), serve it immediately
+      const freshCache = (Date.now() - memoryListExperimentsTime < 180_000) ? loadCachedExperiments() : null;
+      if (freshCache) {
+        log.info('[Proxy] Serving fresh cached listExperiments response');
+        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+          safeEnd(res, freshCache);
+        }
+        return;
       }
+
+      const targetHost = GOOGLE_HOSTS.CLOUD_CODE;
+      const targetUrl = `https://${targetHost}`;
+      let parsedUrl: URL;
+      try {
+        const realIp = await resolveGoogleIp(targetHost);
+        parsedUrl = new URL(req.url!, targetUrl);
+        parsedUrl.hostname = realIp;
+      } catch (e) {
+        log.warn(`[Proxy] DNS resolution failed for ${targetHost} on listExperiments:`, e);
+        const cached = loadCachedExperiments() || buildDefaultExperimentsFallback();
+        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+          safeEnd(res, cached);
+        }
+        return;
+      }
+
+      const fwdHeaders: Record<string, string | string[] | undefined> = {
+        ...(req.headers as Record<string, string | string[] | undefined>),
+      };
+      fwdHeaders['host'] = targetHost;
+      fwdHeaders['user-agent'] = 'antigravity';
+      delete fwdHeaders['connection'];
+      delete fwdHeaders['keep-alive'];
+      delete fwdHeaders['accept-encoding'];
+
+      const fwdOptions: https.RequestOptions = {
+        method: req.method,
+        headers: fwdHeaders as Record<string, string>,
+        servername: targetHost,
+      };
+
+      const fallback = () => {
+        if (res.headersSent || res.writableEnded) return;
+        const cached = loadCachedExperiments() || buildDefaultExperimentsFallback();
+        log.warn('[Proxy] Upstream listExperiments fallback active, serving 2.18 enabled flags');
+        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+          safeEnd(res, cached);
+        }
+      };
+
+      let completed = false;
+      const googleReq = https.request(parsedUrl, fwdOptions, (googleRes) => {
+        if (googleRes.statusCode === 429 || googleRes.statusCode === 503 || googleRes.statusCode === 401) {
+          completed = true;
+          fallback();
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        googleRes.on('data', (c) => chunks.push(c));
+        googleRes.on('end', () => {
+          if (completed || res.headersSent || res.writableEnded) return;
+          completed = true;
+          const body = Buffer.concat(chunks).toString('utf-8');
+          if (googleRes.statusCode === 200 && body.startsWith('{')) {
+            const enriched = enrichExperiments(body);
+            saveCachedExperiments(enriched);
+            if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+              safeEnd(res, enriched);
+            }
+          } else if (googleRes.statusCode && googleRes.statusCode < 500) {
+            fallback();
+          } else {
+            fallback();
+          }
+        });
+      });
+
+      googleReq.setTimeout(8_000, () => {
+        if (!completed) {
+          completed = true;
+          googleReq.destroy();
+          fallback();
+        }
+      });
+
+      googleReq.on('error', (err) => {
+        if (!completed) {
+          completed = true;
+          log.warn('[Proxy] Upstream listExperiments network error:', err.message);
+          fallback();
+        }
+      });
+
+      if (fullBody && fullBody.length > 0) {
+        googleReq.write(fullBody);
+      }
+      googleReq.end();
       return;
     }
 
@@ -4409,6 +4833,23 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               const synth = buildSyntheticModelsResponse(customModels);
               googleJson.models = synth.models;
               if (!googleJson.agentModelSorts) googleJson.agentModelSorts = synth.agentModelSorts;
+            }
+
+            // Sanitize modelExperiments: replace any unresolvable placeholder IDs in experiment strings
+            // (e.g. CASCADE_USE_EXPERIMENT_CHECKPOINTER checkpoint_model: MODEL_PLACEHOLDER_M50) with gemini-2.5-flash
+            if (googleJson.models && typeof googleJson.models === 'object') {
+              for (const mEntry of Object.values(googleJson.models as Record<string, any>)) {
+                if (mEntry?.modelExperiments?.experiments) {
+                  for (const exp of Object.values(mEntry.modelExperiments.experiments as Record<string, any>)) {
+                    if (typeof exp?.stringValue === 'string' && exp.stringValue.includes('MODEL_PLACEHOLDER_')) {
+                      exp.stringValue = exp.stringValue.replace(
+                        /"checkpoint_model":\s*"MODEL_PLACEHOLDER_[^"]+"/g,
+                        '"checkpoint_model": "gemini-2.5-flash"',
+                      );
+                    }
+                  }
+                }
+              }
             }
 
             // 2. Injecter les modèles personnalisés dans agentModelSorts (menu déroulant Antigravity IDE)
@@ -4983,6 +5424,11 @@ export function stopQuotaPollingInterval(): void {
 // ─── Server Start/Stop ────────────────────────────────────────────────────
 
 export function startProxy(): Promise<number> {
+  // Guard: proxy-runner.js and languageServer.ts both call startProxy().
+  // If the server is already listening, return the existing port.
+  if (server?.listening && proxyPort > 0) {
+    return Promise.resolve(proxyPort);
+  }
   return new Promise((resolve, reject) => {
     try {
       server = http.createServer(handleRequest);
@@ -5015,59 +5461,75 @@ export function startProxy(): Promise<number> {
       portCandidates.push(0); // 0 = OS-assigned dynamic port (last resort)
 
       let attemptIdx = 0;
+      let eaddrinuseRetries = 0;
+      const MAX_PORT_RETRIES = 10;
+
+      server.once('listening', () => {
+        proxyPort = (server!.address() as import('net').AddressInfo).port;
+        const requestedPort = portCandidates[attemptIdx];
+        const isFallback = requestedPort !== defaultPort && requestedPort !== 0;
+        const isDynamic = requestedPort === 0;
+        if (isFallback) {
+          log.warn(`[Proxy] Default port ${defaultPort} unavailable. Using fallback port ${proxyPort}.`);
+          log.warn(`[Proxy] Set AG_PROXY_PORT=${proxyPort} in your environment to silence this warning.`);
+        } else if (isDynamic) {
+          log.warn(`[Proxy] All configured ports in use. Using OS-assigned dynamic port ${proxyPort}.`);
+        } else {
+          log.info(`[Proxy] Server listening on http://${primaryHost}:${proxyPort}`);
+        }
+
+        // Persist the active port so other processes (ag-doctor-ui, scripts)
+        // can discover which port the proxy is actually bound to.
+        try {
+          const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+          const portFile = path.join(home, ACTIVE_PORT_FILE);
+          fs.mkdirSync(path.dirname(portFile), { recursive: true });
+          fs.writeFileSync(portFile, String(proxyPort), 'utf-8');
+          log.debug(`[Proxy] Active port persisted to ${portFile}`);
+        } catch (err) {
+          log.warn('[Proxy] Could not persist active port:', (err as Error).message);
+        }
+
+        // Execute cleanup initialization after the server is already listening
+        // so that failures here don't prevent the port from binding.
+        try {
+          loadPersistentQuotaCache().catch(() => {});
+          startCleanupInterval();
+          startQuotaPollingInterval();
+          setupCustomModelsWatcher();
+          const models = loadCustomModels();
+          prewarmGoogleAccounts(models);
+        } catch (err) {
+          log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
+        }
+
+        resolve(proxyPort);
+      });
 
       const tryListen = (port: number, host: string): void => {
-        server!.listen(port, host, () => {
-          proxyPort = (server!.address() as import('net').AddressInfo).port;
-          const isFallback = port !== defaultPort && port !== 0;
-          const isDynamic = port === 0;
-          if (isFallback) {
-            log.warn(`[Proxy] Default port ${defaultPort} unavailable. Using fallback port ${proxyPort}.`);
-            log.warn(`[Proxy] Set AG_PROXY_PORT=${proxyPort} in your environment to silence this warning.`);
-          } else if (isDynamic) {
-            log.warn(`[Proxy] All configured ports in use. Using OS-assigned dynamic port ${proxyPort}.`);
-          } else {
-            log.info(`[Proxy] Server listening on http://${host}:${proxyPort}`);
-          }
-
-          // Persist the active port so other processes (ag-doctor-ui, scripts)
-          // can discover which port the proxy is actually bound to.
-          try {
-            const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
-            const portFile = path.join(home, ACTIVE_PORT_FILE);
-            fs.mkdirSync(path.dirname(portFile), { recursive: true });
-            fs.writeFileSync(portFile, String(proxyPort), 'utf-8');
-            log.debug(`[Proxy] Active port persisted to ${portFile}`);
-          } catch (err) {
-            log.warn('[Proxy] Could not persist active port:', (err as Error).message);
-          }
-
-          // Execute cleanup initialization after the server is already listening
-          // so that failures here don't prevent the port from binding.
-          try {
-            loadPersistentQuotaCache().catch(() => {});
-            startCleanupInterval();
-            startQuotaPollingInterval();
-            setupCustomModelsWatcher();
-            const models = loadCustomModels();
-            prewarmGoogleAccounts(models);
-          } catch (err) {
-            log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
-          }
-
-          resolve(proxyPort);
-        });
+        server!.listen(port, host);
       };
 
       server.on('error', (err: NodeJS.ErrnoException) => {
         // Log full error details for diagnostics on new machines.
         log.error(`[Proxy] Server error: code=${err.code} message=${err.message} syscall=${err.syscall || ''} address=${(err as any).address || ''} port=${(err as any).port || ''}`);
-        if (err.code === 'EADDRINUSE' && attemptIdx + 1 < portCandidates.length) {
-          const triedPort = portCandidates[attemptIdx];
-          const nextPort = portCandidates[attemptIdx + 1];
-          log.warn(`[Proxy] Port ${triedPort} is already in use. Trying ${nextPort === 0 ? 'OS-assigned dynamic port' : 'port ' + nextPort}...`);
-          attemptIdx += 1;
-          tryListen(nextPort, primaryHost);
+        if (err.code === 'EADDRINUSE') {
+          if (attemptIdx === 0 && eaddrinuseRetries < MAX_PORT_RETRIES) {
+            eaddrinuseRetries += 1;
+            log.warn(`[Proxy] Port ${primaryPort} busy (EADDRINUSE), retrying in 350ms (${eaddrinuseRetries}/${MAX_PORT_RETRIES})...`);
+            setTimeout(() => {
+              tryListen(primaryPort, primaryHost);
+            }, 350);
+            return;
+          }
+          if (attemptIdx + 1 < portCandidates.length) {
+            const triedPort = portCandidates[attemptIdx];
+            const nextPort = portCandidates[attemptIdx + 1];
+            log.warn(`[Proxy] Port ${triedPort} is already in use after retries. Trying ${nextPort === 0 ? 'OS-assigned dynamic port' : 'port ' + nextPort}...`);
+            attemptIdx += 1;
+            tryListen(nextPort, primaryHost);
+            return;
+          }
         } else if (err.code === 'EACCES') {
           log.warn(`[Proxy] Permission denied binding to ${primaryHost}:${primaryPort}. Trying fallback ports...`);
           if (attemptIdx + 1 < portCandidates.length) {

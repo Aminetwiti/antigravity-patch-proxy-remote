@@ -15,6 +15,9 @@ set "AG_IDE=%LOCALAPPDATA%\Programs\Antigravity IDE\Antigravity IDE.exe"
 set "AG_CLASSIC=%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe"
 set "PROXY_PORT=51074"
 
+REM Ensure Electron launches as GUI app, not Node CLI
+set "ELECTRON_RUN_AS_NODE="
+
 cd /d "%SCRIPT_DIR%"
 
 echo [1/3] Checking Antigravity Proxy status on port %PROXY_PORT%...
@@ -31,15 +34,22 @@ echo [2/3] Starting background watchdog...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -ArgumentList '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""%SCRIPT_DIR%scripts\supervise-proxy.ps1"" -Loop' -WindowStyle Hidden"
 
 echo [3/3] Launching Antigravity...
-if exist "%AG_IDE%" (
-    start "" "%AG_IDE%"
-) else if exist "%AG_CLASSIC%" (
+if "%~1"=="ide" (
+    if exist "%AG_IDE%" (
+        start "" "%AG_IDE%"
+        goto :done
+    )
+)
+if exist "%AG_CLASSIC%" (
     start "" "%AG_CLASSIC%"
+) else if exist "%AG_IDE%" (
+    start "" "%AG_IDE%"
 ) else (
     echo [ERROR] Antigravity executable not found in %LOCALAPPDATA%\Programs
     pause
     exit /b 1
 )
+:done
 
 echo Done! Antigravity launched safely with active guard.
 endlocal

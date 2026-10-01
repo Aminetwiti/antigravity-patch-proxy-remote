@@ -18,6 +18,8 @@ export default defineConfig({
   resolve: {
     alias: {
       electron: path.resolve(import.meta.dirname, './src/__tests__/electron-stub.ts'),
+      'electron-log/main': path.resolve(import.meta.dirname, './src/__mocks__/electron-log.ts'),
+      'electron-log': path.resolve(import.meta.dirname, './src/__mocks__/electron-log.ts'),
     },
   },
 });

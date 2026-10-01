@@ -279,6 +279,8 @@ export const PROVIDERS = {
   MINIMAX: 'minimax',
   // Native
   GOOGLE: 'google',
+  // Google AI Studio (independent developer API key & quota)
+  GOOGLE_GEMINI: 'google-gemini',
 } as const;
 
 export type ProviderName = (typeof PROVIDERS)[keyof typeof PROVIDERS];
@@ -357,6 +359,7 @@ export const PROVIDER_DEFAULT_URLS: Record<ProviderName, string> = {
       ? `${process.env.OLLAMA_HOST.replace(/\/$/, '')}/v1/chat/completions`
       : 'http://localhost:11434/v1/chat/completions',
   [PROVIDERS.GOOGLE]: process.env.GOOGLE_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/models/',
+  [PROVIDERS.GOOGLE_GEMINI]: process.env.GOOGLE_GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
   [PROVIDERS.CUSTOM]: process.env.CUSTOM_PROVIDER_URL || '',
   [PROVIDERS.DEEPSEEK]: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
   [PROVIDERS.GROQ]: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
@@ -412,6 +415,31 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = CORE_DETAILED
 export const STANDARD_GOOGLE_MODELS = [
   { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
   { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
-  { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
+  { id: 'gemini-3.6-flash-tiered', displayName: 'Gemini 3.6 Flash', enabled: true },
   { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+  { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
 ];
+
+/**
+ * Checks whether a given model identifier or display name corresponds to an obsolete/deprecated model.
+ * Matches deprecated Gemini models (3.1, 3.0, 2.5, 2.0, 1.5, 3.5 Flash, etc.) and legacy GPT models.
+ */
+export function isObsoleteModel(idOrName?: string, displayName?: string): boolean {
+  if (!idOrName && !displayName) return false;
+  const str = `${idOrName || ''} ${displayName || ''}`.toLowerCase();
+
+  // Deprecated Gemini / Google models: 1.5, 2.0, 2.5, 3.0, 3.1, 3.5
+  if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[015])/i.test(str)) return true;
+  if (/\bgemini[-_\s]*(?:3\.1|3\.0|2\.5|2\.0|1\.5|3\.5)[-_\s]*(?:pro|flash|high|low|medium|thinking)?\b/i.test(str)) return true;
+  if (/gemini[-_\s]*3(?:\.0)?(?:-pro|\b)/i.test(str) && !str.includes('3.6') && !str.includes('3.7') && !str.includes('3.8')) return true;
+  if (str.includes('gemini-3.1-pro') || str.includes('gemini-3.0-pro') || str.includes('gemini-2.0-flash') || str.includes('gemini-2.5-pro') || str.includes('gemini-1.5-pro') || str.includes('gemini-1.5-flash')) return true;
+
+  // GPT models (gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5, gpt-oss, etc.)
+  if (/\bgpt[-_\s]*(?:3\.5|4o|4|oss|3)/i.test(str) || str.startsWith('gpt-')) return true;
+
+  // Old Claude 3.5
+  if (/claude[-_\s]*3[-_\s]*5/i.test(str)) return true;
+
+  return false;
+}
+

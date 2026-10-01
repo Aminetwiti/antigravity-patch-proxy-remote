@@ -172,12 +172,12 @@ export async function resolveGoogleIp(hostname: string): Promise<string> {
   const publicResults = await Promise.allSettled(
     PUBLIC_DNS_SERVERS.map((server) => resolveWithServer(hostname, server)),
   );
-  log.info(`[Proxy] [dns-timing] public DNS parallel query took ${Date.now() - tStart}ms (${PUBLIC_DNS_SERVERS.length} servers)`);
+  log.debug(`[Proxy] [dns-timing] public DNS parallel query took ${Date.now() - tStart}ms (${PUBLIC_DNS_SERVERS.length} servers)`);
   for (const result of publicResults) {
     if (result.status === 'fulfilled') {
       const ip = pickBestAddress(result.value);
       if (ip) {
-        log.info(`[Proxy] resolveGoogleIp using public DNS ${ip} for ${hostname}`);
+        log.debug(`[Proxy] resolveGoogleIp using public DNS ${ip} for ${hostname}`);
         cacheDnsResult(hostname, ip);
         return ip;
       }
@@ -187,7 +187,7 @@ export async function resolveGoogleIp(hostname: string): Promise<string> {
   const publicErrors = publicResults
     .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
     .map((r) => r.reason?.message || String(r.reason));
-  log.warn(
+  log.debug(
     `[Proxy] Public DNS failed for ${hostname}:`,
     publicErrors.join('; ') || 'no results',
   );
@@ -197,25 +197,26 @@ export async function resolveGoogleIp(hostname: string): Promise<string> {
     const systemAddresses = await resolveWithSystemDns(hostname);
     const ip = pickBestAddress(systemAddresses);
     if (ip) {
-      log.info(`[Proxy] resolveGoogleIp using system DNS ${ip} for ${hostname}`);
+      log.debug(`[Proxy] resolveGoogleIp using system DNS ${ip} for ${hostname}`);
       cacheDnsResult(hostname, ip);
       return ip;
     }
-    log.warn(`[Proxy] System DNS returned only loopback/private for ${hostname}:`, systemAddresses);
+    log.debug(`[Proxy] System DNS returned only loopback/private for ${hostname}:`, systemAddresses);
   } catch (err) {
-    log.warn(`[Proxy] System DNS fallback failed for ${hostname}:`, (err as Error).message);
+    log.debug(`[Proxy] System DNS fallback failed for ${hostname}:`, (err as Error).message);
   }
 
   // 2.5. Try previously cached DNS result before hardcoded fallback.
   const cachedIp = getCachedDns(hostname);
   if (cachedIp) {
-    log.info(`[Proxy] resolveGoogleIp using cached DNS ${cachedIp} for ${hostname}`);
+    log.debug(`[Proxy] resolveGoogleIp using cached DNS ${cachedIp} for ${hostname}`);
     return cachedIp;
   }
 
   // 3. Last resort: use a cached/predefined fallback IP.
   const fallbackIp = await tryFallbackIp(hostname, deadline - Date.now());
   if (fallbackIp) {
+    cacheDnsResult(hostname, fallbackIp);
     log.warn(`[Proxy] resolveGoogleIp using hardcoded fallback ${fallbackIp} for ${hostname}`);
     return fallbackIp;
   }

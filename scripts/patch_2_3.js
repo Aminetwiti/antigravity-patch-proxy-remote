@@ -143,6 +143,12 @@ const MISSING_JS_MODULES = [
   'preload/doctor-ui',
   'preload/logger',
   'preload/types',
+  'preload/provider-manager',
+  'preload/model-fetcher',
+  'preload/native-quota-card',
+  'preload/index',
+  'ipc/channels',
+  'i18n/messages',
   'gateway/server',
   'gateway/streamBuffer',
   'ipc/index',
@@ -156,9 +162,11 @@ const MISSING_JS_MODULES = [
   'services/cryptoStore',
   'services/googleAuth',
   'services/healthProbe',
+  'services/localAccountDiscovery',
   'services/localCredentialDiscovery',
   'services/localModelDetector',
   'services/modelStore',
+  'services/quotaCacheStore',
   'services/runtimeStateService',
   'services/settingsService',
   'services/telemetryStore',
@@ -257,10 +265,15 @@ function buildPatchManifest(repoDir) {
   const serviceFiles = fs.existsSync(servicesRoot)
     ? discoverJavaScriptFiles(servicesRoot).map((relativePath) => `dist/services/${relativePath}`)
     : [];
+  const preloadRoot = path.join(repoDir, 'dist', 'preload');
+  const preloadFiles = fs.existsSync(preloadRoot)
+    ? discoverJavaScriptFiles(preloadRoot).map((relativePath) => `dist/preload/${relativePath}`)
+    : [];
   return [...new Set([
     'dist/proxy.js',
     ...proxyFiles,
     ...serviceFiles,
+    ...preloadFiles,
     'dist/cryptoStore.js',
     'dist/customModelStore.js',
     'dist/schemaValidator.js',
@@ -269,10 +282,9 @@ function buildPatchManifest(repoDir) {
     'dist/logger.js',
     'dist/configExchange.js',
     'dist/metrics.js',
-    'dist/preload/api.js',
-    'dist/preload/doctor-ui.js',
-    'dist/preload/logger.js',
-    'dist/preload/types.js',
+    'dist/ipc/channels.js',
+    'dist/shared/logger.js',
+    'dist/i18n/messages.js',
     'dist/wellKnown/modelIdUtils.js',
     ...OVERWRITE_FILES,
     ...NEW_ROOT_FILES,

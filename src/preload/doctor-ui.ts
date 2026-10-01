@@ -431,8 +431,18 @@ export function setupDoctorUiInjection(): void {
     }
   });
 
-  _injectionObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+  const startObserving = () => {
+    if (document.body && _injectionObserver) {
+      _injectionObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+      });
+    }
+  };
+
+  if (document.body) {
+    startObserving();
+  } else {
+    document.addEventListener('DOMContentLoaded', startObserving, { once: true });
+  }
 }

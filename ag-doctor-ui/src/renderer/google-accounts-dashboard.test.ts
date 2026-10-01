@@ -13,6 +13,65 @@ function getAccountTier(acc: any): 'PRO' | 'ULTRA' | 'FREE' {
   return 'PRO';
 }
 
+function estimateAccountTokens(acc: any) {
+  const tier = getAccountTier(acc);
+  let cap5h = 1_800_000;
+  let capWeekly = 30_000_000;
+
+  if (tier === 'ULTRA') {
+    cap5h = 4_500_000;
+    capWeekly = 80_000_000;
+  } else if (tier === 'FREE') {
+    cap5h = 400_000;
+    capWeekly = 6_000_000;
+  }
+
+  const q = acc.quotas || {};
+  const pct5h = q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100;
+  const pctWk = q.geminiWeeklyPct ?? q.weeklyPercentage ?? 100;
+
+  const avail5h = Math.round((cap5h * Math.max(0, Math.min(100, pct5h))) / 100);
+  const availWk = Math.round((capWeekly * Math.max(0, Math.min(100, pctWk))) / 100);
+
+  return {
+    accountCapacity5h: cap5h,
+    accountCapacityWeekly: capWeekly,
+    availableTokens5h: avail5h,
+    availableTokensWeekly: availWk,
+  };
+}
+
+function calculatePoolTokenSummary(accounts: any[], isWeekly: boolean = true) {
+  let totalCap = 0;
+  let availableTokens = 0;
+  let activeCount = 0;
+
+  for (const acc of accounts) {
+    if (acc.enabled === false) continue;
+    activeCount++;
+    const est = estimateAccountTokens(acc);
+    if (isWeekly) {
+      totalCap += est.accountCapacityWeekly;
+      availableTokens += est.availableTokensWeekly;
+    } else {
+      totalCap += est.accountCapacity5h;
+      availableTokens += est.availableTokens5h;
+    }
+  }
+
+  const equivDollarValue = (availableTokens / 1_000_000) * 1.25;
+  const maxRpm = activeCount * 60;
+
+  return {
+    totalCapacity: totalCap,
+    availableTokens,
+    equivDollarValue,
+    maxRpm,
+    activeCount,
+    pctAvailable: totalCap > 0 ? Math.round((availableTokens / totalCap) * 100) : 100,
+  };
+}
+
 function formatCompactCountdown(isoDateStr?: string, nowMs = Date.now()): string {
   if (!isoDateStr) return '';
   const target = new Date(isoDateStr).getTime();
@@ -273,6 +332,74 @@ describe('Google Accounts High-Density Dashboard Logic', () => {
       expect(processed[0].id).toBe('google-imported-0');
       expect(processed[0].provider).toBe('google');
       expect(processed[0].enabled).toBe(true);
+    });
+  });
+
+  describe('Token Quota Estimation Logic', () => {
+    it('calculates PRO account token capacity correctly (1.8M 5h, 30M weekly)', () => {
+      const acc = { name: 'pro-user@gmail.com', tier: 'PRO', quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } };
+      const est = estimateAccountTokens(acc);
+      expect(est.accountCapacity5h).toBe(1_800_000);
+      expect(est.accountCapacityWeekly).toBe(30_000_000);
+      expect(est.availableTokens5h).toBe(1_800_000);
+      expect(est.availableTokensWeekly).toBe(30_000_000);
+    });
+
+    it('calculates ULTRA account token capacity correctly (4.5M 5h, 80M weekly)', () => {
+      const acc = { name: 'ultra-user@gmail.com', tier: 'ULTRA', quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } };
+      const est = estimateAccountTokens(acc);
+      expect(est.accountCapacity5h).toBe(4_500_000);
+      expect(est.accountCapacityWeekly).toBe(80_000_000);
+      expect(est.availableTokens5h).toBe(4_500_000);
+      expect(est.availableTokensWeekly).toBe(80_000_000);
+    });
+
+    it('calculates FREE account token capacity correctly (400k 5h, 6M weekly)', () => {
+      const acc = { name: 'free-user@gmail.com', tier: 'FREE', quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } };
+      const est = estimateAccountTokens(acc);
+      expect(est.accountCapacity5h).toBe(400_000);
+      expect(est.accountCapacityWeekly).toBe(6_000_000);
+      expect(est.availableTokens5h).toBe(400_000);
+      expect(est.availableTokensWeekly).toBe(6_000_000);
+    });
+
+    it('weights remaining tokens by quota percentage', () => {
+      const acc = { name: 'pro-user@gmail.com', tier: 'PRO', quotas: { geminiFiveHourPct: 50, geminiWeeklyPct: 20 } };
+      const est = estimateAccountTokens(acc);
+      expect(est.availableTokens5h).toBe(900_000); // 50% of 1.8M
+      expect(est.availableTokensWeekly).toBe(6_000_000); // 20% of 30M
+    });
+
+    it('aggregates multi-account pool token capacity and dollar value correctly', () => {
+      const accounts = [
+        { id: 'acc-1', name: 'acc1', tier: 'PRO', enabled: true, quotas: { geminiWeeklyPct: 100 } },
+        { id: 'acc-2', name: 'acc2', tier: 'PRO', enabled: true, quotas: { geminiWeeklyPct: 100 } },
+        { id: 'acc-3', name: 'acc3', tier: 'ULTRA', enabled: true, quotas: { geminiWeeklyPct: 50 } },
+        { id: 'acc-4', name: 'acc4', tier: 'PRO', enabled: false }, // disabled
+      ];
+
+      const summaryWeekly = calculatePoolTokenSummary(accounts, true);
+      // 2 PRO @ 30M = 60M
+      // 1 ULTRA @ 80M = 80M
+      // Total Cap = 140M
+      expect(summaryWeekly.totalCapacity).toBe(140_000_000);
+      // Available: 30M + 30M + 40M (50% of 80M) = 100M
+      expect(summaryWeekly.availableTokens).toBe(100_000_000);
+      expect(summaryWeekly.activeCount).toBe(3);
+      expect(summaryWeekly.maxRpm).toBe(180); // 3 * 60
+      expect(summaryWeekly.equivDollarValue).toBe(125); // (100M / 1M) * 1.25
+    });
+
+    it('switches pool capacity between 5H and Weekly modes', () => {
+      const accounts = [
+        { id: 'acc-1', name: 'acc1', tier: 'PRO', enabled: true, quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } },
+      ];
+
+      const sum5h = calculatePoolTokenSummary(accounts, false);
+      const sumWk = calculatePoolTokenSummary(accounts, true);
+
+      expect(sum5h.totalCapacity).toBe(1_800_000);
+      expect(sumWk.totalCapacity).toBe(30_000_000);
     });
   });
 });

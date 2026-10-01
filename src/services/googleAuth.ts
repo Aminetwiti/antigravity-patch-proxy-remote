@@ -54,17 +54,31 @@ export function notifyQuotaOrTokenChange(): void {
   }
 }
 
+type TokenRevokedSubscriber = (tokenPrefix: string) => void;
+const tokenRevokedSubscribers = new Set<TokenRevokedSubscriber>();
+
+export function onTokenRevoked(cb: TokenRevokedSubscriber): () => void {
+  tokenRevokedSubscribers.add(cb);
+  return () => tokenRevokedSubscribers.delete(cb);
+}
+
 /**
  * Marks a refresh token as revoked / requiring re-authentication.
  */
 export function markTokenRevoked(refreshToken?: string): void {
   const clean = (refreshToken || '').trim();
   if (!clean) return;
+  const isNew = !revokedRefreshTokens.has(clean);
   revokedRefreshTokens.add(clean);
   tokenCache.delete(clean);
   inFlightRefreshes.delete(clean);
   log.warn(`[GoogleAuth] Refresh token quarantined as REVOKED / REAUTH_REQUIRED: ${clean.substring(0, 10)}...`);
   notifyQuotaOrTokenChange();
+  if (isNew) {
+    for (const sub of tokenRevokedSubscribers) {
+      try { sub(clean.substring(0, 10)); } catch (_) {}
+    }
+  }
 }
 
 /**
@@ -443,15 +457,25 @@ export async function pollAllGoogleQuotas(
       if (!accessToken) continue;
       const quota = await fetchLiveUserQuota(accessToken);
       if (quota) {
+        const prevQuota = accountLiveQuotas.get(accountKey);
+        const quotaChanged = !prevQuota ||
+          prevQuota.geminiFiveHourPct !== quota.geminiFiveHourPct ||
+          prevQuota.claudeFiveHourPct !== quota.claudeFiveHourPct;
         accountLiveQuotas.set(accountKey, quota);
         if (onQuotaSync) {
           try {
             onQuotaSync(accountKey, quota);
           } catch (_) {}
         }
-        log.info(
-          `[GoogleAuth] Live quota synced for ${email || 'account'}: Gemini 5h=${quota.geminiFiveHourPct}%, Claude 5h=${quota.claudeFiveHourPct}%`
-        );
+        if (quotaChanged) {
+          log.info(
+            `[GoogleAuth] Live quota synced for ${email || 'account'}: Gemini 5h=${quota.geminiFiveHourPct}%, Claude 5h=${quota.claudeFiveHourPct}%`
+          );
+        } else {
+          log.debug(
+            `[GoogleAuth] Live quota unchanged for ${email || 'account'}: Gemini 5h=${quota.geminiFiveHourPct}%, Claude 5h=${quota.claudeFiveHourPct}%`
+          );
+        }
       }
     } catch (err: any) {
       log.debug(`[GoogleAuth] Live quota sync skipped for ${email || 'account'}: ${err?.message || err}`);
@@ -496,10 +520,8 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.8-flash-tiered',
     'gemini-3.7-flash-tiered',
     'gemini-3.6-flash-tiered',
-    'gemini-3.1-pro-high',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
-    'gpt-oss-120b-medium',
   ]);
 
   if (validCloudCodeModels.has(clean)) {
@@ -519,10 +541,11 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.6-flash-medium': 'gemini-3.6-flash-tiered',
     'gemini-3.6-flash-high': 'gemini-3.6-flash-tiered',
     'gemini-3.6-flash': 'gemini-3.6-flash-tiered',
-    'gemini-3.1-pro-low': 'gemini-3.1-pro-high',
-    'gemini-3.1-pro': 'gemini-3.1-pro-high',
+    'gemini-3.1-pro-low': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-pro-high': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-pro': 'gemini-3.8-flash-tiered',
     'gemini-flash': 'gemini-3.8-flash-tiered',
-    'gemini-pro': 'gemini-3.1-pro-high',
+    'gemini-pro': 'gemini-3.8-flash-tiered',
     'claude-sonnet': 'claude-sonnet-4-6',
     'claude-opus': 'claude-opus-4-6-thinking',
   };
@@ -531,16 +554,15 @@ export function normalizeCloudCodeModelId(modelId: string): string {
 
   if (clean.includes('opus')) return 'claude-opus-4-6-thinking';
   if (clean.includes('claude') || clean.includes('sonnet')) return 'claude-sonnet-4-6';
-  if (clean.includes('pro')) return 'gemini-3.1-pro-high';
-  if (clean.includes('flash')) return 'gemini-3.8-flash-tiered';
-  if (clean.includes('gpt-oss')) return 'gpt-oss-120b-medium';
+  if (clean.includes('flash') || clean.includes('pro')) return 'gemini-3.8-flash-tiered';
+  if (clean.includes('gpt')) return 'gemini-3.8-flash-tiered';
 
   return 'gemini-3.8-flash-tiered';
 }
 
 /**
  * Normalizes Google AI Studio / Gemini model identifiers, mapping unknown, legacy, or alias
- * model names to canonical Google Cloud Code models (e.g. gemini-3.8-flash-tiered, gemini-3.1-pro-high, claude-sonnet-4-6) without throwing 404.
+ * model names to canonical Google Cloud Code models (e.g. gemini-3.8-flash-tiered, claude-sonnet-4-6) without throwing 404.
  */
 export function normalizeGoogleModelId(modelName: string): string {
   if (!modelName) return 'gemini-3.8-flash-tiered';
@@ -549,8 +571,8 @@ export function normalizeGoogleModelId(modelName: string): string {
   const validModels = new Set([
     'gemini-3.8-flash-tiered',
     'gemini-3.7-flash-tiered',
-    'gemini-3.1-pro-high',
     'claude-sonnet-4-6',
+    'claude-opus-4-6-thinking',
   ]);
 
   if (validModels.has(clean)) {
@@ -561,22 +583,28 @@ export function normalizeGoogleModelId(modelName: string): string {
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
     'gemini-3.7-flash': 'gemini-3.7-flash-tiered',
     'gemini-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.1-pro': 'gemini-3.1-pro-high',
-    'gemini-3.0-pro': 'gemini-3.1-pro-high',
-    'gemini-pro': 'gemini-3.1-pro-high',
+    'gemini-3.1-pro-high': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-pro': 'gemini-3.8-flash-tiered',
+    'gemini-3.0-pro': 'gemini-3.8-flash-tiered',
+    'gemini-pro': 'gemini-3.8-flash-tiered',
     'claude-sonnet': 'claude-sonnet-4-6',
+    'claude-opus': 'claude-opus-4-6-thinking',
   };
 
   if (aliasMap[clean]) {
     return aliasMap[clean];
   }
 
+  if (clean.includes('opus')) {
+    return 'claude-opus-4-6-thinking';
+  }
+
   if (clean.includes('claude') || clean.includes('sonnet')) {
     return 'claude-sonnet-4-6';
   }
 
-  if (clean.includes('pro') || clean.includes('opus')) {
-    return 'gemini-3.1-pro-high';
+  if (clean.includes('pro') || clean.includes('flash') || clean.includes('gpt')) {
+    return 'gemini-3.8-flash-tiered';
   }
 
   return 'gemini-3.8-flash-tiered';
@@ -594,8 +622,8 @@ export function isGoogleCloudCodeModel(m: {
   apiUrl?: string;
 }): boolean {
   if (m.provider !== 'google') return false;
-  // If explicitly using an AI Studio Developer API key (AIzaSy...), treat as AI Studio
-  if (m.apiKey && m.apiKey.startsWith('AIzaSy')) return false;
+  // If explicitly using an AI Studio Developer API key (AIzaSy... or AQ...), treat as AI Studio
+  if (m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ.'))) return false;
 
   return Boolean(
     m.refreshToken ||
@@ -684,7 +712,7 @@ export function sanitizeCloudCodeGenerationConfig(
           }
 
           if (removedThinkingBlocks > 0) {
-            log.info(`[Proxy] Sanitized ${removedThinkingBlocks} historical thinking block(s) for Claude request to avoid invalid signature error`);
+            log.debug(`[Proxy] Sanitized ${removedThinkingBlocks} historical thinking block(s) for Claude request to avoid invalid signature error`);
           }
         }
       }

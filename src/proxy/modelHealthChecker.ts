@@ -199,7 +199,7 @@ export async function checkAllModelsHealth(models: CustomModel[]): Promise<Map<s
     endpointMap.set(key, group);
   }
 
-  log.info(`[HealthChecker] Checking health for ${models.length} models across ${endpointMap.size} unique endpoints...`);
+  log.debug(`[HealthChecker] Checking health for ${models.length} models across ${endpointMap.size} unique endpoints...`);
 
   // Bounded concurrency pool (max 6 parallel pings)
   const uniqueEndpoints = Array.from(endpointMap.values()).map(group => group[0]);

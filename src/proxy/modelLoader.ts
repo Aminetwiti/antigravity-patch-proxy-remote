@@ -5,11 +5,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { app } from 'electron';
 import log from 'electron-log';
 import * as cryptoStore from '../cryptoStore';
 import { validateCustomModel } from '../schemaValidator';
-import { ALL_PROVIDERS, type ProviderName, LOCAL_SERVICES, STANDARD_GOOGLE_MODELS } from '../constants';
+import { ALL_PROVIDERS, type ProviderName, LOCAL_SERVICES, STANDARD_GOOGLE_MODELS, isObsoleteModel } from '../constants';
 import { generateModelPlaceholderId } from './idGenerator';
 import type { CustomModel } from './types';
 import { normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel } from '../services/googleAuth';
@@ -70,7 +71,11 @@ interface CustomModelsFile {
  * Returns the absolute path to the custom_models.json file.
  */
 export function getCustomModelsPath(): string {
-  const geminiDir = path.join(app.getPath('home'), '.gemini', 'antigravity');
+  if (process.env.AG_CUSTOM_MODELS_PATH) {
+    return process.env.AG_CUSTOM_MODELS_PATH;
+  }
+  const homeDir = (app && typeof app.getPath === 'function' && app.getPath('home')) || process.env.USERPROFILE || process.env.HOME || os.homedir();
+  const geminiDir = path.join(homeDir, '.gemini', 'antigravity');
   return path.join(geminiDir, 'custom_models.json');
 }
 
@@ -142,6 +147,10 @@ function migrateToEncrypted(filePath: string, models: CustomModel[]): CustomMode
   }
 }
 
+const loggedObsoleteModels = new Set<string>();
+let lastReportedValidationSummary = '';
+const globalRemappedLogged = new Set<string>();
+
 /**
  * Validates all models and returns only the valid ones.
  */
@@ -149,6 +158,14 @@ function validateModels(decrypted: CustomModel[]): CustomModel[] {
   const validModels: CustomModel[] = [];
   for (let i = 0; i < decrypted.length; i++) {
     const m = decrypted[i];
+    const modelKey = m.name || m.externalModelName || `index-${i}`;
+    if (isObsoleteModel(m.externalModelName || m.name, m.displayName)) {
+      if (!loggedObsoleteModels.has(modelKey)) {
+        loggedObsoleteModels.add(modelKey);
+        log.info(`[Proxy] Skipping obsolete model: ${modelKey}`);
+      }
+      continue;
+    }
     const provider = m.provider as string;
     if (!ALL_PROVIDERS.includes(provider as ProviderName)) {
       log.warn(`[Proxy] Skipping model at index ${i}: Unsupported provider ${provider}. Must be one of: ${ALL_PROVIDERS.join(', ')}`);
@@ -161,7 +178,9 @@ function validateModels(decrypted: CustomModel[]): CustomModel[] {
       log.warn(`[Proxy] Skipping invalid model at index ${i}: ${validation.error}`);
     }
   }
-  if (validModels.length < decrypted.length) {
+  const summaryKey = `${validModels.length}/${decrypted.length}`;
+  if (validModels.length < decrypted.length && summaryKey !== lastReportedValidationSummary) {
+    lastReportedValidationSummary = summaryKey;
     log.info(
       `[Proxy] Loaded ${validModels.length}/${decrypted.length} valid models (${decrypted.length - validModels.length} skipped)`,
     );
@@ -188,36 +207,66 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
 
     for (const acc of accounts) {
       if (acc.enabled === false) continue;
-      for (const m of models) {
-      if (m.enabled === false) continue;
-      const mergedHeaders = { ...p.extraHeaders, ...(m as { extraHeaders?: Record<string, string> }).extraHeaders };
-      const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
+      const targetModels = Array.isArray((acc as any).models) && (acc as any).models.length > 0 ? (acc as any).models : models;
+      for (const rawM of targetModels) {
+        const m = typeof rawM === 'string' ? { id: rawM, displayName: '', enabled: true } : rawM;
+        if (m.enabled === false) continue;
+        const mId = m.id ?? '';
+        if (isObsoleteModel(mId, m.displayName)) continue;
+        const mergedHeaders = { ...p.extraHeaders, ...(m as { extraHeaders?: Record<string, string> }).extraHeaders };
+        const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
-      let displayName = m.displayName ?? m.id ?? '';
+        let displayName = m.displayName ?? '';
+        if (!displayName || displayName === mId || displayName.includes('-tiered')) {
+          const norm = normalizeCloudCodeModelId(mId);
+          if (norm === 'gemini-3.8-flash-tiered') displayName = 'Gemini 3.8 Flash';
+          else if (norm === 'gemini-3.7-flash-tiered') displayName = 'Gemini 3.7 Flash';
+          else if (norm === 'gemini-3.6-flash-tiered') displayName = 'Gemini 3.6 Flash';
+          else if (norm === 'claude-sonnet-4-6') displayName = 'Claude Sonnet 4.6 (Thinking)';
+          else if (norm === 'claude-opus-4-6-thinking') displayName = 'Claude Opus 4.6 (Thinking)';
+          else displayName = mId;
+        }
 
-      const partialModel: CustomModel = {
-        name: m.id ?? '',
-        displayName,
-        description: (m as { description?: string }).description ?? '',
-        provider: (p.provider ?? 'openai') as ProviderName,
-        apiKey: acc.apiKey ?? p.apiKey ?? 'none',
-        apiUrl: p.apiUrl ?? '',
-        externalModelName: m.id ?? '',
-        allowUnauthorized: p.allowUnauthorized,
-        encrypted: p.encrypted,
-        useRawBaseUrl: p.useRawBaseUrl,
-        fallbackModel: m.fallbackModel ?? p.fallbackModel,
-        fallbackChain: m.fallbackChain ?? p.fallbackChain,
-        supportsImages: m.supportsImages ?? p.supportsImages ?? true,
-        supportsVision: m.supportsVision ?? p.supportsVision ?? true,
-        extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
-        extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
-        accountName: acc.name || p.name,
-        accountEmail: acc.email || p.email,
-        refreshToken: acc.refreshToken || p.refreshToken,
-        projectId: acc.projectId || p.projectId,
-        quotas: acc.quotas || p.quotas,
-      };
+        const accProvider = (acc as any).provider || (p.provider ?? 'openai');
+        const accApiUrl = (acc as any).apiUrl || (p.apiUrl ?? '');
+        const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ.')) && !acc.refreshToken);
+
+        // Google AI Studio does not support Claude models
+        const isClaude = mId.includes('claude') || displayName.toLowerCase().includes('claude');
+        if (isAiStudio && isClaude) {
+          continue;
+        }
+
+        const isCloudCode = !isAiStudio && isGoogle;
+        const resolvedProvider = isAiStudio ? 'google-gemini' : accProvider;
+        const resolvedApiUrl = isAiStudio
+          ? (accApiUrl || 'https://generativelanguage.googleapis.com/v1beta')
+          : (isCloudCode ? 'https://daily-cloudcode-pa.googleapis.com' : (accApiUrl || p.apiUrl || ''));
+
+        const partialModel: CustomModel = {
+          name: m.id ?? '',
+          displayName,
+          description: (m as { description?: string }).description ?? '',
+          provider: resolvedProvider as ProviderName,
+          apiKey: acc.apiKey ?? p.apiKey ?? 'none',
+          apiUrl: resolvedApiUrl,
+          externalModelName: m.id ?? '',
+          allowUnauthorized: p.allowUnauthorized,
+          encrypted: p.encrypted,
+          useRawBaseUrl: p.useRawBaseUrl,
+          fallbackModel: m.fallbackModel ?? p.fallbackModel,
+          fallbackChain: m.fallbackChain ?? p.fallbackChain,
+          supportsImages: m.supportsImages ?? p.supportsImages ?? true,
+          supportsVision: m.supportsVision ?? p.supportsVision ?? true,
+          extraHeaders: Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined,
+          extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
+          accountName: acc.name || p.name,
+          accountEmail: acc.email || p.email,
+          refreshToken: acc.refreshToken || p.refreshToken,
+          projectId: acc.projectId || p.projectId,
+          quotas: acc.quotas || p.quotas,
+          _poolOnly: isAiStudio && isGoogle ? true : undefined,
+        };
       const placeholderId = generateModelPlaceholderId(partialModel);
 
       flatModels.push({
@@ -277,6 +326,7 @@ export function loadCustomModels(): CustomModel[] {
       const models = parsed.models || [];
       loadedModels = parseModelsSchema(models, filePath);
     }
+    loadedModels = loadedModels.filter(m => !isObsoleteModel(m.externalModelName || m.name, m.displayName));
 
     // Auto-remap unhosted Google model IDs so stale saved configs on disk are cleaned up in memory and updated
     for (const m of loadedModels) {
@@ -287,7 +337,11 @@ export function loadCustomModels(): CustomModel[] {
             ? normalizeCloudCodeModelId(rawName)
             : normalizeGoogleModelId(rawName);
           if (norm && norm !== rawName) {
-            log.info(`[ModelLoader] Auto-remapped unhosted/alias Google model ID '${rawName}' to '${norm}'`);
+            const remapKey = `${rawName}->${norm}`;
+            if (!globalRemappedLogged.has(remapKey)) {
+              globalRemappedLogged.add(remapKey);
+              log.info(`[ModelLoader] Auto-remapped unhosted/alias Google model ID '${rawName}' to '${norm}'`);
+            }
             m.externalModelName = norm;
             if (m.name && (m.name === rawName || m.name === `models/${rawName}`)) {
               m.name = `models/${norm}`;
@@ -297,15 +351,21 @@ export function loadCustomModels(): CustomModel[] {
       }
     }
 
-    // For Google accounts: collapse to ONE pooled entry per unique model ID.
-    // The proxy routes to the best real account at dispatch time (apiKey === 'auto' path).
-    // Non-Google providers: keep their entries as-is.
-    const googleModels = loadedModels.filter(m => m.provider === 'google' && m.apiKey && !m.apiKey.startsWith('fallback:'));
-    const otherModels = loadedModels.filter(m => m.provider !== 'google' || !m.apiKey || m.apiKey.startsWith('fallback:'));
+    // For all Google family models (both Cloud Code OAuth accounts and Google AI Studio API key accounts):
+    // collapse to ONE unified pooled entry per unique canonical model in the Antigravity dropdown.
+    // The backend proxy dispatches across all accounts and handles fallbacks automatically.
+    const isGoogleFamily = (m: CustomModel) =>
+      (m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini') &&
+      Boolean(m.apiKey) &&
+      !m.apiKey.startsWith('fallback:');
+
+    const googleFamilyModels = loadedModels.filter(isGoogleFamily);
+    const otherModels = loadedModels.filter(m => !isGoogleFamily(m));
 
     const seenBaseIds = new Map<string, CustomModel>();
-    for (const m of googleModels) {
-      const baseId = (m.externalModelName || m.name || '').replace(/^models\//, '');
+    for (const m of googleFamilyModels) {
+      const raw = (m.externalModelName || m.name || '').replace(/^models\//, '');
+      const baseId = normalizeCloudCodeModelId(raw);
       if (!seenBaseIds.has(baseId)) {
         seenBaseIds.set(baseId, m);
       }
@@ -313,14 +373,20 @@ export function loadCustomModels(): CustomModel[] {
 
     const pooledGoogleModels: CustomModel[] = [];
     seenBaseIds.forEach((template, baseId) => {
-      const accountCount = googleModels.filter(m => (m.externalModelName || m.name || '').replace(/^models\//, '') === baseId).length;
+      let displayName = template.displayName || baseId;
+      displayName = displayName.replace(/^\[[^\]]+\]\s*/, '');
+      if (baseId === 'gemini-3.8-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.8 Flash';
+      if (baseId === 'gemini-3.7-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.7 Flash';
+      if (baseId === 'gemini-3.6-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.6 Flash';
+      if (baseId === 'claude-sonnet-4-6' && (displayName === baseId || displayName.includes('-4-6'))) displayName = 'Claude Sonnet 4.6 (Thinking)';
+      if (baseId === 'claude-opus-4-6-thinking' && (displayName === baseId || displayName.includes('-4-6'))) displayName = 'Claude Opus 4.6 (Thinking)';
+
       pooledGoogleModels.push({
         ...template,
-        name: `models/${template.provider}:${baseId}:auto-pool`,
-        displayName: (template.displayName || baseId).replace(/^\[[^\]]+\]\s*/, ''),
+        provider: 'google',
+        name: `models/google:${baseId}:auto-pool`,
+        displayName,
         externalModelName: baseId,
-        // Always use 'auto' dispatch for Google — the proxy picks the best account.
-        // For a single account, 'auto' falls through to that one account.
         apiKey: 'auto',
         accountName: '',
         accountEmail: '',
@@ -328,8 +394,8 @@ export function loadCustomModels(): CustomModel[] {
       });
     });
 
-    // Mark real per-account entries as dispatch-only (hidden from dropdown)
-    const realGoogleModels = googleModels.map(m => ({ ...m, _poolOnly: true as const }));
+    // Mark ALL real per-account entries (both Cloud Code and AI Studio) as dispatch-only (hidden from dropdown)
+    const realGoogleModels = googleFamilyModels.map(m => ({ ...m, _poolOnly: true as const }));
 
     return [...pooledGoogleModels, ...realGoogleModels, ...otherModels];
   } catch (e) {

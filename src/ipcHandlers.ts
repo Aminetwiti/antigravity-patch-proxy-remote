@@ -423,12 +423,9 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
 
   ipcMain.handle(IPC_CHANNELS.PROTO_INJECT_AVAILABLE_MODELS, async (_event, rawBytes: Uint8Array | number[]) => {
     try {
-      const models = loadProxyCustomModels();
-      if (!models || models.length === 0) {
-        return rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(Buffer.from(rawBytes));
-      }
+      const models = loadProxyCustomModels() || [];
       const buf = Buffer.from(rawBytes);
-      const result = injectCustomModelsIntoResponse(buf, models);
+      const result = injectCustomModelsIntoResponse(buf, models, undefined, true);
       return new Uint8Array(result.buffer);
     } catch (err) {
       log.error('[IPC] Failed to inject custom models into AvailableModels:', err);
@@ -964,7 +961,8 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
       let current: Record<string, unknown> = {};
       if (nodeFs.existsSync(p)) {
         try {
-          current = JSON.parse(nodeFs.readFileSync(p, 'utf-8'));
+          const raw = nodeFs.readFileSync(p, 'utf-8').trim();
+          if (raw) current = JSON.parse(raw);
         } catch (err) {
           log.warn('[IPC] Failed to parse remote_vps_state.json:', err);
         }
@@ -997,11 +995,14 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
       const nodeFs = require('fs');
       const p = path.join(os.homedir(), '.gemini', 'antigravity', 'remote_vps_state.json');
       if (nodeFs.existsSync(p)) {
-        const state = JSON.parse(nodeFs.readFileSync(p, 'utf-8'));
-        if (!state.token || state.token === 'null' || state.token === 'undefined') {
-          state.token = DEFAULT_REMOTE_TOKEN;
+        const raw = nodeFs.readFileSync(p, 'utf-8').trim();
+        if (raw) {
+          const state = JSON.parse(raw);
+          if (!state.token || state.token === 'null' || state.token === 'undefined') {
+            state.token = DEFAULT_REMOTE_TOKEN;
+          }
+          return { ok: true, state };
         }
-        return { ok: true, state };
       }
       return { ok: true, state: { active: true, host: DEFAULT_REMOTE_HOST, token: DEFAULT_REMOTE_TOKEN, remoteSessions: {} } };
     } catch (err: any) {

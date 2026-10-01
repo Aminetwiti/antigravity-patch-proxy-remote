@@ -75,24 +75,24 @@ describe('parseGrpcWebHeader', () => {
 
 describe('injectCustomModelsIntoResponse', () => {
   const baseModel: CustomModel = {
-    name: 'models/gpt-4o',
-    displayName: 'GPT-4o (OpenAI)',
-    provider: 'openai',
+    name: 'models/deepseek-chat',
+    displayName: 'DeepSeek-V3',
+    provider: 'deepseek',
     apiKey: 'sk-test',
-    apiUrl: 'https://api.openai.com/v1',
-    externalModelName: 'gpt-4o',
+    apiUrl: 'https://api.deepseek.com/v1',
+    externalModelName: 'deepseek-chat',
   };
 
   // Helper: build a valid gRPC-Web response with a single repeated model entry field
   function buildSampleResponse(): Buffer {
     // Build a message with field 3 (tag=0x1a) repeated 2 times with nested fields
     const entry1 = encodeProtoBuf([
-      { tag: 0x0a, value: Buffer.from('gemini-pro') },
-      { tag: 0x12, value: Buffer.from('Gemini Pro') },
+      { tag: 0x0a, value: Buffer.from('gemini-3.8-flash-tiered') },
+      { tag: 0x12, value: Buffer.from('Gemini 3.8 Flash') },
     ]);
     const entry2 = encodeProtoBuf([
-      { tag: 0x0a, value: Buffer.from('gemini-flash') },
-      { tag: 0x12, value: Buffer.from('Gemini Flash') },
+      { tag: 0x0a, value: Buffer.from('gemini-3.7-flash-tiered') },
+      { tag: 0x12, value: Buffer.from('Gemini 3.7 Flash') },
     ]);
 
     const msgBody = Buffer.concat([
@@ -185,7 +185,7 @@ describe('injectCustomModelsIntoUserStatus', () => {
     provider: 'openai',
     apiUrl: 'https://api.example.com/v1',
     apiKey: 'test-key',
-    externalModelName: 'gpt-4o',
+    externalModelName: 'custom-model-test',
     supportsImages: true,
     thinking: true,
   };

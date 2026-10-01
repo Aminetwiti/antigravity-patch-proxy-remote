@@ -548,6 +548,58 @@ describe('Google Multi-Account Pool & Failover', () => {
       expect(getModelQuotaScore(dualModel2, 'gemini')).toBe(0);
       expect(getModelQuotaScore(dualModel2, 'claude')).toBe(75 * 0.7 + 90 * 0.3);
     });
+
+    it('returns 0 when weekly quota is 0% and reset time is in the future', () => {
+      const futureReset = new Date(Date.now() + 3600_000).toISOString();
+      const exhaustedWeekly: CustomModel = {
+        name: 'exhausted-weekly',
+        provider: 'google',
+        refreshToken: 'mock_token',
+        accountEmail: 'weekly0@gmail.com',
+        quotas: {
+          geminiFiveHourPct: 100,
+          geminiWeeklyPct: 0,
+          geminiWeeklyReset: futureReset,
+        },
+      };
+      expect(getModelQuotaScore(exhaustedWeekly, 'gemini')).toBe(0);
+      expect(getAccountDynamicScore(exhaustedWeekly, 'gemini')).toBe(0);
+    });
+
+    it('recovers score when 0% quota reset timestamp has passed', () => {
+      const pastReset = new Date(Date.now() - 3600_000).toISOString();
+      const recoveredWeekly: CustomModel = {
+        name: 'recovered-weekly',
+        provider: 'google',
+        refreshToken: 'mock_token',
+        accountEmail: 'recovered@gmail.com',
+        quotas: {
+          geminiFiveHourPct: 100,
+          geminiWeeklyPct: 0,
+          geminiWeeklyReset: pastReset,
+        },
+      };
+      expect(getModelQuotaScore(recoveredWeekly, 'gemini')).toBeGreaterThan(0);
+    });
+
+    it('allows Flash models to have positive quota score even when weekly quota is 0%', () => {
+      const futureReset = new Date(Date.now() + 86400_000).toISOString();
+      const flashModel: CustomModel = {
+        name: 'flash-candidate',
+        provider: 'google',
+        externalModelName: 'gemini-3.7-flash-tiered',
+        refreshToken: 'mock_token',
+        accountEmail: 'flash@gmail.com',
+        quotas: {
+          geminiFiveHourPct: 98,
+          geminiWeeklyPct: 0,
+          geminiWeeklyReset: futureReset,
+        },
+      };
+      // Score should reflect 98 * 0.7 = 68.6 > 0
+      expect(getModelQuotaScore(flashModel, 'gemini')).toBeCloseTo(68.6, 1);
+      expect(getAccountDynamicScore(flashModel, 'gemini')).toBeGreaterThan(0);
+    });
   });
 
   describe('Live Quota Cache Overriding', () => {
@@ -642,7 +694,7 @@ describe('Google Multi-Account Pool & Failover', () => {
   });
 
   describe('Auto-Heal on Quota Recovery', () => {
-    it('automatically clears Gemini and Claude cooldowns when quota recovers >20%', () => {
+    it('automatically clears Gemini and Claude cooldowns when quota recovers >=5%', () => {
       const acc = mockGoogleModels[1]; // user2@gmail.com
       const baseKey = 'google:user2@gmail.com';
 
@@ -650,26 +702,26 @@ describe('Google Multi-Account Pool & Failover', () => {
       setAccountCooldown(acc, 60_000, 'gemini');
       expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
 
-      // Low quota doesn't heal
+      // Truly exhausted (0%) doesn't heal
+      autoHealAccountOnQuotaRecovery(baseKey, {
+        fiveHourPercentage: 0,
+        weeklyPercentage: 0,
+        geminiFiveHourPct: 0,
+        geminiWeeklyPct: 0,
+        claudeFiveHourPct: 0,
+        claudeWeeklyPct: 0,
+        updatedAt: Date.now(),
+      });
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      // Partial quota (10%) heals — enough to be useful
       autoHealAccountOnQuotaRecovery(baseKey, {
         fiveHourPercentage: 10,
         weeklyPercentage: 10,
         geminiFiveHourPct: 10,
         geminiWeeklyPct: 10,
-        claudeFiveHourPct: 5,
-        claudeWeeklyPct: 5,
-        updatedAt: Date.now(),
-      });
-      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
-
-      // Quota recovery to 85% heals Gemini cooldown
-      autoHealAccountOnQuotaRecovery(baseKey, {
-        fiveHourPercentage: 85,
-        weeklyPercentage: 85,
-        geminiFiveHourPct: 85,
-        geminiWeeklyPct: 85,
-        claudeFiveHourPct: 5,
-        claudeWeeklyPct: 5,
+        claudeFiveHourPct: 0,
+        claudeWeeklyPct: 0,
         updatedAt: Date.now(),
       });
       expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
@@ -690,6 +742,7 @@ describe('Google Multi-Account Pool & Failover', () => {
       });
       expect(isAccountInCooldown(acc, 'claude')).toBe(false);
     });
+
 
     it('awards priority bonus to isPro, isPaid, and custom priority accounts in dynamic score', () => {
       const freeAccount: CustomModel = {
@@ -819,6 +872,52 @@ describe('Google Multi-Account Pool & Failover', () => {
       expect(p2).toBe('proj-beta');
       expect(p3).toBe('proj-gamma');
       expect(p4).toBe('proj-alpha'); // Round-robin wraps around
+    });
+
+    it('autoHealAccountOnQuotaRecovery lifts cooldown and clears quota exhaustion lock', () => {
+      const acc: CustomModel = {
+        name: 'test-heal',
+        provider: 'google',
+        accountEmail: 'heal-me@example.com',
+        refreshToken: 'heal_token',
+      };
+      const key = getAccountQuotaKey(acc);
+      setAccountCooldown(acc, 3600_000, 'gemini');
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+      expect(isAccountInCooldown(acc, 'claude')).toBe(false);
+
+      // Auto-heal when Gemini quota recovers to 50%
+      autoHealAccountOnQuotaRecovery(key, {
+        geminiFiveHourPct: 50,
+        geminiWeeklyPct: 50,
+        claudeFiveHourPct: 0,
+        claudeWeeklyPct: 0,
+        fiveHourPercentage: 50,
+        weeklyPercentage: 50,
+        updatedAt: Date.now(),
+      });
+
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
+    });
+
+    it('cooldown expires properly after cooldown duration passes', () => {
+      const acc: CustomModel = {
+        name: 'test-expire',
+        provider: 'google',
+        accountEmail: 'expire-me@example.com',
+        refreshToken: 'expire_token',
+      };
+      // Set short cooldown of 10ms
+      setAccountCooldown(acc, 10, 'gemini');
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      const realNow = Date.now;
+      try {
+        Date.now = () => realNow() + 1000;
+        expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
+      } finally {
+        Date.now = realNow;
+      }
     });
   });
 });

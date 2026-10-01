@@ -1,11 +1,12 @@
 import log from 'electron-log';
 import { loadCustomModels } from './modelLoader';
-import { detectModelCapabilities } from './modelUtils';
+import { detectModelCapabilities, getCanonicalModelKey } from './modelUtils';
 import { generateModelPlaceholderId, toSlug } from './idGenerator';
 import { getCachedHealth, ModelHealthResult } from './modelHealthChecker';
 import { isRecentModel } from './recentModelsStore';
 import type { CustomModel } from './types';
 import { expandModelsWithEffort } from './effortExpander';
+import { isObsoleteModel } from '../constants';
 
 function getHealthScore(health: ModelHealthResult | null): number {
   if (!health) return 2; // pending
@@ -43,10 +44,9 @@ export function deduplicateModels(models: CustomModel[]): CustomModel[] {
     // Per-account Google entries are dispatch/quota only — the unified
     // "auto-pool" entry represents them in the model dropdown.
     if (m._poolOnly) return false;
-    const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
-    const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
     const effort = m._effortSuffix || '';
-    const key = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+    const key = `${getCanonicalModelKey(m.externalModelName || m.name, m.displayName)}${effort}`;
+
     if (seenKeys.has(key)) return false;
     seenKeys.add(key);
     return true;
@@ -69,6 +69,13 @@ function formatDisplayName(m: CustomModel): string {
   return `${favTag}🔴 [${err}] • ${dispName}`;
 }
 
+export function resolvePlanModelEnum(modelName?: string): string {
+  if (!modelName) return 'MODEL_PLACEHOLDER_M54';
+  const norm = modelName.toLowerCase();
+  if (norm.includes('flash')) return 'MODEL_PLACEHOLDER_M16';
+  return 'MODEL_PLACEHOLDER_M54';
+}
+
 export function getMappedCustomModels() {
   const customModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(loadCustomModels())));
   const mappedCustom: Record<string, unknown> = {};
@@ -80,7 +87,7 @@ export function getMappedCustomModels() {
       maxTokens: 1048576,
       maxOutputTokens: 4096,
       model: pid,
-      planModel: pid,
+      planModel: resolvePlanModelEnum(m.externalModelName || m.name),
       requestedModel: pid,
       apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
       modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -106,15 +113,23 @@ export function getCustomModelsList() {
 }
 
 export function mergeModels(target: unknown, customModels: CustomModel[]): unknown {
-  const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(customModels)));
+  const filteredCustom = (customModels || []).filter(
+    (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName),
+  );
+  const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(filteredCustom)));
   if (Array.isArray(target)) {
+    const cleanTarget = target.filter((t: any) => {
+      const id = t?.name || t?.model || t?.id || '';
+      const disp = t?.displayName || '';
+      return !isObsoleteModel(id, disp);
+    });
     const mapped = sortedCustomModels.map((m) => {
       const cap = detectModelCapabilities(m, true);
       const pid = generateModelPlaceholderId(m);
       return {
         name: 'models/' + pid,
         model: pid,
-        planModel: pid,
+        planModel: resolvePlanModelEnum(m.externalModelName || m.name),
         requestedModel: pid,
         version: '1.0',
         displayName: formatDisplayName(m),
@@ -122,19 +137,25 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         inputTokenLimit: cap.maxTokens,
         outputTokenLimit: cap.maxOutputTokens,
         supportedGenerationMethods: ['generateContent', 'countTokens'],
-        supportsImages: cap.supportsImages,
-        supportsVision: cap.supportsImages,
-        temperature: cap.isThinking ? undefined : 0.7,
-        topP: cap.isThinking ? undefined : 0.9,
+        temperature: 0.7,
+        topP: 0.9,
         topK: cap.isThinking ? undefined : 40,
         reasoningEffort: m.reasoningEffort || undefined,
         thinkingBudget: m.thinkingBudget || undefined,
         mode: m.mode || undefined,
       };
     });
-    return [...mapped, ...target];
+    return [...mapped, ...cleanTarget];
   } else if (target && typeof target === 'object') {
-    const result = { ...(target as Record<string, unknown>) };
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(target as Record<string, unknown>)) {
+      const disp = (v as any)?.displayName || '';
+      const innerModel = (v as any)?.model;
+      const isNativeModel = typeof innerModel === 'string' && innerModel.startsWith('MODEL_');
+      if (isNativeModel || !isObsoleteModel(k, disp)) {
+        result[k] = v;
+      }
+    }
     sortedCustomModels.forEach((m) => {
       const slug = toSlug(m);
       const cap = detectModelCapabilities(m, true);
@@ -152,7 +173,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         maxOutputTokens: cap.maxOutputTokens,
         tokenizerType: 'LLAMA_WITH_SPECIAL',
         model: pid,
-        planModel: pid,
+        planModel: resolvePlanModelEnum(m.externalModelName || m.name),
         requestedModel: pid,
         apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
         modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -232,7 +253,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
             maxOutputTokens: cap.maxOutputTokens,
             tokenizerType: 'LLAMA_WITH_SPECIAL',
             model: pid,
-            planModel: pid,
+            planModel: resolvePlanModelEnum(m.externalModelName || m.name),
             requestedModel: pid,
             apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
             modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -252,6 +273,24 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       });
     }
 
+    // Register aliases for existing Google models so internal enum keys
+    // (e.g. entry.model === 'MODEL_PLACEHOLDER_M50' for gemini-3.1-flash-lite,
+    //  or 'MODEL_PLACEHOLDER_M71' for gemini-3.6-flash-high)
+    // are directly resolvable by key in Language Server's model table.
+    for (const [k, v] of Object.entries(result)) {
+      if (v && typeof v === 'object') {
+        const innerModel = (v as { model?: unknown }).model;
+        if (typeof innerModel === 'string' && innerModel && innerModel !== k) {
+          if (!result[innerModel]) {
+            result[innerModel] = v;
+          }
+          if (!result[`models/${innerModel}`]) {
+            result[`models/${innerModel}`] = v;
+          }
+        }
+      }
+    }
+
     // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M0..M600)
     // resolve cleanly in Language Server without "unknown model key: model not found"
     const fallbackPid = sortedCustomModels.length > 0 ? generateModelPlaceholderId(sortedCustomModels[0]) : '';
@@ -263,13 +302,20 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       DEFAULT_CANONICAL_GOOGLE_MODELS['gemini-3.6-flash'];
 
     if (fallbackEntry) {
-      for (let i = 0; i <= 600; i++) {
+      for (let i = 0; i <= 650; i++) {
         const legacyKey = `MODEL_PLACEHOLDER_M${i}`;
-        if (!(result as Record<string, unknown>)[legacyKey]) {
-          (result as Record<string, unknown>)[legacyKey] = fallbackEntry;
-        }
-        if (!(result as Record<string, unknown>)[`models/${legacyKey}`]) {
-          (result as Record<string, unknown>)[`models/${legacyKey}`] = fallbackEntry;
+        if (!result[legacyKey]) {
+          const placeholderEntry = {
+            ...(fallbackEntry as Record<string, unknown>),
+            displayName: `Model Placeholder ${i}`,
+            model: legacyKey,
+            planModel: legacyKey,
+            requestedModel: legacyKey,
+          };
+          (result as Record<string, unknown>)[legacyKey] = placeholderEntry;
+          (result as Record<string, unknown>)[`models/${legacyKey}`] = placeholderEntry;
+        } else if (!result[`models/${legacyKey}`]) {
+          (result as Record<string, unknown>)[`models/${legacyKey}`] = result[legacyKey];
         }
       }
     }
@@ -286,7 +332,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.8-flash',
-    planModel: 'gemini-3.8-flash',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.8-flash',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -299,7 +345,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.7-flash',
-    planModel: 'gemini-3.7-flash',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.7-flash',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
@@ -312,21 +358,8 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.6-flash',
-    planModel: 'gemini-3.6-flash',
+    planModel: 'MODEL_PLACEHOLDER_M16',
     requestedModel: 'gemini-3.6-flash',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
-  'gemini-3.1-pro': {
-    displayName: 'Gemini 3.1 Pro Low',
-    maxTokens: 2097152,
-    maxOutputTokens: 65536,
-    model: 'gemini-3.1-pro',
-    planModel: 'gemini-3.1-pro',
-    requestedModel: 'gemini-3.1-pro',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
     supportsImages: true,
@@ -338,7 +371,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 200000,
     maxOutputTokens: 64000,
     model: 'claude-sonnet-4-6',
-    planModel: 'claude-sonnet-4-6',
+    planModel: 'MODEL_PLACEHOLDER_M54',
     requestedModel: 'claude-sonnet-4-6',
     apiProvider: 'API_PROVIDER_ANTHROPIC',
     modelProvider: 'MODEL_PROVIDER_ANTHROPIC',
@@ -351,7 +384,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 200000,
     maxOutputTokens: 64000,
     model: 'claude-opus-4-6',
-    planModel: 'claude-opus-4-6',
+    planModel: 'MODEL_PLACEHOLDER_M54',
     requestedModel: 'claude-opus-4-6',
     apiProvider: 'API_PROVIDER_ANTHROPIC',
     modelProvider: 'MODEL_PROVIDER_ANTHROPIC',
@@ -364,13 +397,104 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 131072,
     maxOutputTokens: 16384,
     model: 'gpt-oss-120b',
-    planModel: 'gpt-oss-120b',
+    planModel: 'MODEL_PLACEHOLDER_M54',
     requestedModel: 'gpt-oss-120b',
     apiProvider: 'API_PROVIDER_OPENAI',
     modelProvider: 'MODEL_PROVIDER_OPENAI',
     supportsImages: false,
     supportsVision: false,
     supportsThinking: false,
+  },
+  'gpt-oss-120b-medium': {
+    displayName: 'GPT-OSS 120B (Medium)',
+    maxTokens: 131072,
+    maxOutputTokens: 16384,
+    model: 'gpt-oss-120b-medium',
+    planModel: 'MODEL_PLACEHOLDER_M54',
+    requestedModel: 'gpt-oss-120b-medium',
+    apiProvider: 'API_PROVIDER_OPENAI',
+    modelProvider: 'MODEL_PROVIDER_OPENAI',
+    supportsImages: false,
+    supportsVision: false,
+    supportsThinking: true,
+  },
+  'gemini-3.6-flash-high': {
+    displayName: 'Gemini 3.6 Flash (High)',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.6-flash-high',
+    planModel: 'MODEL_PLACEHOLDER_M16',
+    requestedModel: 'gemini-3.6-flash-high',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.6-flash-medium': {
+    displayName: 'Gemini 3.6 Flash (Medium)',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.6-flash-medium',
+    planModel: 'MODEL_PLACEHOLDER_M16',
+    requestedModel: 'gemini-3.6-flash-medium',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.6-flash-low': {
+    displayName: 'Gemini 3.6 Flash (Low)',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.6-flash-low',
+    planModel: 'MODEL_PLACEHOLDER_M16',
+    requestedModel: 'gemini-3.6-flash-low',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-pro-agent': {
+    displayName: 'Gemini Pro Agent',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-pro-agent',
+    planModel: 'MODEL_PLACEHOLDER_M54',
+    requestedModel: 'gemini-pro-agent',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.1-pro-low': {
+    displayName: 'Gemini 3.1 Pro (Low)',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.1-pro-low',
+    planModel: 'MODEL_PLACEHOLDER_M54',
+    requestedModel: 'gemini-3.1-pro-low',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+  },
+  'gemini-3.1-flash-lite': {
+    displayName: 'Gemini 3.1 Flash Lite',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-3.1-flash-lite',
+    planModel: 'MODEL_PLACEHOLDER_M16',
+    requestedModel: 'gemini-3.1-flash-lite',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
   },
 };
 

@@ -21,7 +21,8 @@ import type { CustomModel } from './types';
 import { isRecentModel } from './recentModelsStore';
 import { getCachedHealth, type ModelHealthResult } from './modelHealthChecker';
 import { expandModelsWithEffort } from './effortExpander';
-import { detectModelCapabilities } from './modelUtils';
+import { detectModelCapabilities, getCanonicalModelKey } from './modelUtils';
+import { isObsoleteModel } from '../constants';
 
 /**
  * Result of injecting custom models into a GetAvailableModels protobuf response.
@@ -163,20 +164,62 @@ export function injectCustomModelsIntoResponse(
 
     const fieldMapping = extractFieldMapping(sampleEntry.value);
     const existing = extractExistingModelKeys(msgBody, modelTag);
-    const newParts: Buffer[] = [msgBody];
+
+    // Strip any obsolete models already present in msgBody
+    const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
+    const keptBodyParts: Buffer[] = [];
+    let strippedAnyNative = false;
+
+    for (const f of rawFields) {
+      if (f.tag === modelTag && f.raw) {
+        const subFields = parseProtoRaw(f.raw, 0, f.raw.length);
+        let idStr = '';
+        let labelStr = '';
+        for (const sf of subFields) {
+          if (sf.raw) {
+            if (sf.fieldNum === 1) idStr = sf.raw.toString('utf8').trim();
+            else if (sf.fieldNum === 2) labelStr = sf.raw.toString('utf8').trim();
+          }
+        }
+        if (isObsoleteModel(idStr, labelStr)) {
+          strippedAnyNative = true;
+          continue;
+        }
+      }
+      keptBodyParts.push(msgBody.subarray(f.start, f.end));
+    }
+
+    const cleanMsgBody = strippedAnyNative ? Buffer.concat(keptBodyParts) : msgBody;
+    const newParts: Buffer[] = [cleanMsgBody];
 
     let injectedCount = 0;
 
-    const expandedModels = expandModelsWithEffort(customModels);
+    const filteredModels = (customModels || []).filter(
+      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName) && !m._poolOnly,
+    );
+    const expandedModels = expandModelsWithEffort(filteredModels);
     const seenModelKeys = new Set<string>();
 
     for (const m of expandedModels) {
+      if (m._poolOnly) continue;
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini';
+      const canonicalBase = isGoogleFamily
+        ? (rawName.includes('claude') || cleanDisp.includes('claude')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus') ? 'claude-opus-4-6-thinking' : 'claude-sonnet-4-6')
+            : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
+                : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
+        : rawName;
+
+      const modelDedupKey = isGoogleFamily
+        ? `google-unified:${canonicalBase}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
+      seenModelKeys.add(modelDedupKey);
 
       const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
       const placeholderId = generateModelPlaceholderId(m);
@@ -197,7 +240,6 @@ export function injectCustomModelsIntoResponse(
         continue;
       }
 
-      seenModelKeys.add(modelDedupKey);
       existing.modelIds.add(pidKey);
       existing.modelIds.add(`models/${pidKey}`);
       existing.labels.add(formattedName);
@@ -215,13 +257,14 @@ export function injectCustomModelsIntoResponse(
       injectedCount++;
     }
 
-    if (injectedCount === 0) {
+    if (injectedCount === 0 && !strippedAnyNative && !forceCompatibility) {
       return { buffer: responseBuf, injectedCount: 0, modified: false };
     }
 
-    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M577, MODEL_PLACEHOLDER_M0..M600)
+    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M577, MODEL_PLACEHOLDER_M0..M650)
     // resolve cleanly in Language Server without "unknown model key: model not found"
-    for (let i = 0; i <= 600; i++) {
+    let fallbackInjected = 0;
+    for (let i = 0; i <= 650; i++) {
       const legacyPid = `MODEL_PLACEHOLDER_M${i}`;
       const legacyKey = legacyPid.toLowerCase();
       if (existing.modelIds.has(legacyKey) || existing.modelIds.has(`models/${legacyKey}`)) {
@@ -238,6 +281,11 @@ export function injectCustomModelsIntoResponse(
       const tagBuf = encodeVarint(modelTag);
       const lenBuf = encodeVarint(entry.length);
       newParts.push(tagBuf, lenBuf, entry);
+      fallbackInjected++;
+    }
+
+    if (injectedCount === 0 && !strippedAnyNative && fallbackInjected === 0) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
     }
 
     const newMsgBody = Buffer.concat(newParts);
@@ -336,10 +384,22 @@ function injectCustomModelsIntoUserStatusJson(
     let injectedCount = 0;
 
     for (const m of expandedModels) {
+      if (m._poolOnly) continue;
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini';
+      const canonicalBase = isGoogleFamily
+        ? (rawName.includes('claude') || cleanDisp.includes('claude')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus') ? 'claude-opus-4-6-thinking' : 'claude-sonnet-4-6')
+            : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
+                : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
+        : rawName;
+
+      const modelDedupKey = isGoogleFamily
+        ? `google-unified:${canonicalBase}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
@@ -453,7 +513,6 @@ export function injectCustomModelsIntoUserStatus(
 
     const cascadeFields = parseProtoRaw(cascadeField.raw, 0, cascadeField.raw.length);
 
-    const expandedModels = expandModelsWithEffort(customModels);
     const newModels: Array<{
       label: string;
       modelEnum: number;
@@ -461,7 +520,12 @@ export function injectCustomModelsIntoUserStatus(
       supportsImages: boolean;
       supportsThought: boolean;
     }> = [];
+    const filteredCascadeCustom = (customModels || []).filter(
+      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName) && !m._poolOnly,
+    );
+    const expandedModels = expandModelsWithEffort(filteredCascadeCustom);
 
+    // Extract existing model labels and IDs from the Cascade config
     const existingLabels = new Set<string>();
     const existingModelIds = new Set<string>();
     const existingPlaceholderNames = new Set<string>();
@@ -507,10 +571,22 @@ export function injectCustomModelsIntoUserStatus(
 
     const seenModelKeys = new Set<string>();
     for (const m of expandedModels) {
+      if (m._poolOnly) continue;
       const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
-      const modelDedupKey = `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini';
+      const canonicalBase = isGoogleFamily
+        ? (rawName.includes('claude') || cleanDisp.includes('claude')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus') ? 'claude-opus-4-6-thinking' : 'claude-sonnet-4-6')
+            : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
+                : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
+        : rawName;
+
+      const modelDedupKey = isGoogleFamily
+        ? `google-unified:${canonicalBase}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
 
@@ -544,18 +620,32 @@ export function injectCustomModelsIntoUserStatus(
 
     const customInjectedCount = newModels.length;
 
-    if (customInjectedCount === 0) {
-      return { buffer: responseBuf, injectedCount: 0, modified: false };
-    }
-
     // Build new CascadeModelConfigData
     const newCascadeParts: Buffer[] = [];
+    let strippedAnyCascade = false;
 
-    // 1. Keep existing client_model_configs
+    // 1. Keep existing client_model_configs (filtering out obsolete ones)
     for (const f of cascadeFields) {
       if (f.fieldNum === 1 && f.raw) {
+        const sub = parseProtoRaw(f.raw, 0, f.raw.length);
+        let label = '';
+        let modelId = '';
+        for (const sf of sub) {
+          if (sf.raw) {
+            if (sf.fieldNum === 1) label = sf.raw.toString('utf8').trim();
+            else if (sf.fieldNum === 21) modelId = sf.raw.toString('utf8').trim();
+          }
+        }
+        if (isObsoleteModel(modelId, label)) {
+          strippedAnyCascade = true;
+          continue;
+        }
         newCascadeParts.push(encodeMessageField(1, f.raw));
       }
+    }
+
+    if (customInjectedCount === 0 && !strippedAnyCascade) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
     }
 
     // 2. Append new client_model_configs

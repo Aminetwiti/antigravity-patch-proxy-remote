@@ -39,6 +39,7 @@ const KNOWN_PROVIDERS = new Set([
   'codestral',
   'wafer',
   'zai',
+  'google-gemini',
 ]);
 
 // Providers that don't require an API key (local servers, etc.)

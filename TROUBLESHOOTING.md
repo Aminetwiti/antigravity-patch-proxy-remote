@@ -11,10 +11,19 @@ If `ag-doctor doctor` reports that the local proxy on port 51074 (or configured 
 2. **If there are NO `[Proxy]` lines**:
    This means the proxy code is crashing or failing to start during the Language Server initialization.
    - **Fix**: Run a clean repack. Stop all Antigravity processes, run `npm run build` in the root, and execute `repack.ps1`. Then restart Antigravity.
-3. **If `[Proxy] Server listening...` is present but port is still unreachable**:
+3. **If `[Proxy] Server error: code=EACCES ... port=51074` appears in logs**:
+   - Windows NAT / Hyper-V has reserved a dynamic port range overlapping port 51074 (`netsh interface ipv4 show excludedportrange protocol=tcp`).
+   - **Fix**: Run `fix-port-51074.bat` as Administrator, or execute in an elevated PowerShell:
+     ```powershell
+     net stop winnat
+     netsh int ipv4 set dynamicport tcp start=52000 num=13535
+     net start winnat
+     ```
+     Then restart Antigravity.
+4. **If `[Proxy] Server listening...` is present but port is still unreachable**:
    - The port might be bound to the wrong interface (e.g. WSL loopback vs Windows loopback).
    - Ensure you are running Antigravity natively in Windows, not via WSL.
-4. **Emergency Fallback**:
+5. **Emergency Fallback**:
    If the bundled proxy completely fails, you can run `ag-doctor proxy stub` to start a minimal Node HTTP stub on port 51074. This will satisfy the language server's patch checks while you troubleshoot the real proxy.
 
 ## Understanding MITM Check Statuses

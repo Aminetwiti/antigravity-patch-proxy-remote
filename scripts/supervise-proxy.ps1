@@ -39,7 +39,7 @@ function Test-AntigravityRunning {
 function Test-ProxyHealthy {
     try {
         $resp = Invoke-RestMethod -Uri "http://127.0.0.1:$ProxyPort/health" -TimeoutSec 2 -ErrorAction Stop
-        return ($resp.status -eq "ok")
+        return ($resp.status -eq "ok" -and -not $resp.stub)
     } catch {
         return $false
     }
@@ -55,11 +55,11 @@ function Test-DnsHealthy {
 }
 
 function Start-ProxyInstance {
-    Write-Log "Proxy on port $ProxyPort is down. Reviving now..."
+    Write-Log "Proxy on port $ProxyPort is down or stubbed. Reviving now..."
     if (Test-Path $DoctorJs) {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = "node"
-        $psi.Arguments = "`"$DoctorJs`" proxy start --port $ProxyPort"
+        $psi.Arguments = "`"$DoctorJs`" proxy restart --port $ProxyPort --no-stub"
         $psi.WorkingDirectory = $RepoRoot
         $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
         $psi.CreateNoWindow = $true

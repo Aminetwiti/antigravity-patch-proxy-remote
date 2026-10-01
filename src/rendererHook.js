@@ -8,6 +8,93 @@
   }
   window.__ag_remote_hook_installed = true;
 
+  // Intercept benign Antigravity IDE UI errors (e.g. DraftCommentEditor on image/binary assets)
+  window.addEventListener('error', (event) => {
+    if (event && event.message && event.message.includes('DraftCommentEditor: A line number or selection context is required')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+
+  // Intercept GetAllWorkflows & GetSlashCommands to display all 86 skills in the visual / dropdown
+  (() => {
+    if (window.__ag_fetch_skills_hooked) return;
+    window.__ag_fetch_skills_hooked = true;
+    const origFetch = window.fetch;
+
+    let cachedSkillsWorkflows = null;
+    let lastSkillsFetchTime = 0;
+
+    window.fetch = async function(...args) {
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : (args[0] && args[0].href ? args[0].href : ''));
+      const isAllWorkflows = typeof url === 'string' && url.includes('LanguageServerService/GetAllWorkflows');
+      const isSlashCommands = typeof url === 'string' && url.includes('LanguageServerService/GetSlashCommands');
+
+      // 1. Intercept GetAllWorkflows: populate with all skills as WorkflowSpec so all 86 skills appear on /
+      if (isAllWorkflows) {
+        try {
+          if (cachedSkillsWorkflows && (Date.now() - lastSkillsFetchTime < 60000)) {
+            return new Response(JSON.stringify({ workflows: cachedSkillsWorkflows }), {
+              status: 200,
+              headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+            });
+          }
+
+          const skillsUrl = url.replace('GetAllWorkflows', 'GetAllSkills');
+          const skillsRes = await origFetch.apply(this, [skillsUrl, Object.assign({}, args[1], { body: '{}' })]);
+          if (skillsRes.ok) {
+            const skillsData = await skillsRes.json();
+            const rawSkills = skillsData.skills || [];
+            cachedSkillsWorkflows = rawSkills.map(function(s) {
+              return {
+                $typeName: 'exa.cortex_pb.WorkflowSpec',
+                name: s.name,
+                description: s.description || ('Skill: ' + s.name),
+                path: s.path || s.name,
+                content: s.content || ''
+              };
+            });
+            lastSkillsFetchTime = Date.now();
+            return new Response(JSON.stringify({ workflows: cachedSkillsWorkflows }), {
+              status: 200,
+              headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+            });
+          }
+        } catch (wfErr) {
+          console.warn('[AG] GetAllWorkflows skill conversion error in rendererHook:', wfErr);
+        }
+      }
+
+      // 2. Sanitize outgoing GetSlashCommands request: ensure planModel is valid
+      if (isSlashCommands && args[1]) {
+        try {
+          let reqObj = null;
+          if (typeof args[1].body === 'string') {
+            reqObj = JSON.parse(args[1].body);
+          } else if (args[1].body && (args[1].body instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(args[1].body)))) {
+            reqObj = JSON.parse(new TextDecoder().decode(args[1].body));
+          }
+          if (reqObj) {
+            if (!reqObj.cascadeConfig) reqObj.cascadeConfig = {};
+            if (!reqObj.cascadeConfig.plannerConfig) reqObj.cascadeConfig.plannerConfig = {};
+            const pm = reqObj.cascadeConfig.plannerConfig.planModel;
+            if (!pm || typeof pm !== 'string' || !pm.startsWith('MODEL_PLACEHOLDER_M')) {
+              reqObj.cascadeConfig.plannerConfig.planModel = (pm && typeof pm === 'string' && pm.toLowerCase().includes('flash')) ? 'MODEL_PLACEHOLDER_M16' : 'MODEL_PLACEHOLDER_M54';
+            }
+            const newBody = JSON.stringify(reqObj);
+            args[1].body = (args[1].body instanceof Uint8Array) ? new TextEncoder().encode(newBody) : newBody;
+            if (args[1].headers && typeof args[1].headers === 'object') {
+              if ('content-length' in args[1].headers) delete args[1].headers['content-length'];
+              if ('Content-Length' in args[1].headers) delete args[1].headers['Content-Length'];
+            }
+          }
+        } catch (_) {}
+      }
+
+      return origFetch.apply(this, args);
+    };
+  })();
+
   console.log('[Antigravity 2.0] Initializing Remote Environment Hook...');
 
   const DEFAULT_HOST = window.__AG_REMOTE_HOST || 'http://127.0.0.1:8090';
@@ -667,25 +754,35 @@
 
   // --- Permanent Inline Retry Button ---
   function injectRetryButton() {
+    const promptBox = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+    const inputCard = document.querySelector('#antigravity\\.agentSidePanelInputBox') ||
+                      document.querySelector('.relative.flex.flex-col.p-px.rounded-2xl.bg-card-border') ||
+                      (promptBox ? (promptBox.closest('.rounded-2xl') || promptBox.closest('.relative.flex.flex-col.p-px') || promptBox.closest('[class*="rounded"]') || promptBox.parentElement?.parentElement?.parentElement) : null);
+
     const sendBtn = document.querySelector('button[data-testid="send-button"]') ||
                     document.querySelector('[data-tooltip-id="input-send-button-send-tooltip"]') ||
                     document.querySelector('[data-testid="send-button-pending"]') ||
-                    document.querySelector('button[data-tooltip-id="input-send-button-cancel-tooltip"]');
+                    document.querySelector('button[data-tooltip-id="input-send-button-cancel-tooltip"]') ||
+                    document.querySelector('button[aria-label*="Send"]') ||
+                    document.querySelector('button[aria-label*="send"]') ||
+                    (inputCard ? inputCard.querySelector('button:last-of-type') : null);
 
     let container = null;
     if (sendBtn && sendBtn.parentElement) {
       container = sendBtn.parentElement;
-    } else {
-      const inputCard = document.querySelector('#antigravity\\.agentSidePanelInputBox') ||
-                        document.querySelector('.relative.flex.flex-col.p-px.rounded-2xl.bg-card-border');
-      if (inputCard) {
-        container = inputCard.querySelector('.flex.items-center.gap-1');
-      }
+    } else if (inputCard) {
+      container = inputCard.querySelector('.flex.items-center.gap-1') ||
+                  inputCard.querySelector('.flex.items-center:last-child') ||
+                  inputCard.querySelector('div:last-child');
     }
 
     if (!container) return;
 
     let retryBtn = document.getElementById('__ag_inline_retry_btn');
+    if (chatUiConfig.retryButton === false) {
+      if (retryBtn) retryBtn.remove();
+      return;
+    }
     if (!retryBtn) {
       retryBtn = document.createElement('button');
       retryBtn.id = '__ag_inline_retry_btn';
@@ -775,14 +872,61 @@
     }
   }
 
-  // --- Message Suggestion Pills Bar Above Input ---
+  // --- Message Suggestion Pills Bar & Retry Button Configuration ---
   const DEFAULT_SUGGESTIONS = [
+    { label: '/plan', text: '/plan ' },
     { label: 'Continue', text: 'Continue' },
     { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
     { label: 'Keep going', text: 'Keep going' },
     { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
     { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' }
   ];
+
+  let chatUiConfig = {
+    retryButton: true,
+    suggestionPills: true,
+    suggestions: DEFAULT_SUGGESTIONS
+  };
+
+  try {
+    const rawStored = localStorage.getItem('ag_chat_ui_config');
+    if (rawStored) {
+      const parsed = JSON.parse(rawStored);
+      if (parsed && typeof parsed === 'object') {
+        chatUiConfig = {
+          retryButton: parsed.retryButton !== undefined ? Boolean(parsed.retryButton) : true,
+          suggestionPills: parsed.suggestionPills !== undefined ? Boolean(parsed.suggestionPills) : true,
+          suggestions: Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0 ? parsed.suggestions : DEFAULT_SUGGESTIONS
+        };
+      }
+    }
+  } catch (_) {}
+
+  async function fetchChatUiConfig() {
+    try {
+      const res = await fetch(`${LOCAL_PROXY_ORIGIN}/api/ui/config`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') {
+          const next = {
+            retryButton: data.retryButton !== undefined ? Boolean(data.retryButton) : true,
+            suggestionPills: data.suggestionPills !== undefined ? Boolean(data.suggestionPills) : true,
+            suggestions: Array.isArray(data.suggestions) && data.suggestions.length > 0 ? data.suggestions : DEFAULT_SUGGESTIONS
+          };
+          const changed = JSON.stringify(next) !== JSON.stringify(chatUiConfig);
+          chatUiConfig = next;
+          localStorage.setItem('ag_chat_ui_config', JSON.stringify(chatUiConfig));
+          if (changed) {
+            scheduleUpdate();
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  fetchChatUiConfig();
+  window.addEventListener('focus', () => { fetchChatUiConfig(); });
+  setInterval(fetchChatUiConfig, 10000);
 
   function insertTextIntoPrompt(text, autoSubmit = false) {
     const promptBox = document.querySelector('[contenteditable="true"]');
@@ -848,26 +992,41 @@
   }
 
   function injectSuggestionPills() {
+    let bar = document.getElementById('__ag_suggestion_pills_bar');
+    if (chatUiConfig.suggestionPills === false) {
+      if (bar) bar.remove();
+      return;
+    }
+
     let inputCard = document.querySelector('#antigravity\\.agentSidePanelInputBox') ||
                     document.querySelector('.relative.flex.flex-col.p-px.rounded-2xl.bg-card-border');
     if (!inputCard) {
       const promptBox = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
       if (promptBox) {
-        inputCard = promptBox.closest('.relative.flex.flex-col.p-px') || promptBox.closest('.rounded-2xl') || promptBox.parentElement?.parentElement?.parentElement?.parentElement;
+        inputCard = promptBox.closest('.relative.flex.flex-col.p-px') ||
+                    promptBox.closest('.rounded-2xl') ||
+                    promptBox.closest('[class*="rounded"]') ||
+                    promptBox.parentElement?.parentElement?.parentElement?.parentElement ||
+                    promptBox.parentElement?.parentElement;
       }
     }
     if (!inputCard || !inputCard.parentElement) return;
 
-    let bar = document.getElementById('__ag_suggestion_pills_bar');
     if (!bar) {
       bar = document.createElement('div');
       bar.id = '__ag_suggestion_pills_bar';
       bar.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 2px 8px 2px;width:100%;user-select:none;z-index:10;';
     }
 
-    if (bar.children.length !== DEFAULT_SUGGESTIONS.length) {
+    const currentSuggestions = Array.isArray(chatUiConfig.suggestions) && chatUiConfig.suggestions.length > 0
+      ? chatUiConfig.suggestions
+      : DEFAULT_SUGGESTIONS;
+
+    const signature = JSON.stringify(currentSuggestions);
+    if (bar.dataset.suggestionsSignature !== signature) {
+      bar.dataset.suggestionsSignature = signature;
       bar.innerHTML = '';
-      DEFAULT_SUGGESTIONS.forEach((sug) => {
+      currentSuggestions.forEach((sug) => {
         const pill = document.createElement('button');
         pill.type = 'button';
         pill.className = '__ag_suggestion_pill';
@@ -991,7 +1150,16 @@
   };
 
   setInterval(scheduleUpdate, 1500);
-  startObserver();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      startObserver();
+      scheduleUpdate();
+    });
+    window.addEventListener('load', scheduleUpdate);
+  } else {
+    startObserver();
+    scheduleUpdate();
+  }
 
   // Prompt submit interceptor: guarantees active session is registered on proxy before LLM dispatch
   document.addEventListener('keydown', (e) => {

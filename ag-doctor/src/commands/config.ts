@@ -82,6 +82,9 @@ function runList(ctx: CommandContext): number {
     ['history.maxRuns', String(cfg.history.maxRuns)],
     ['snapshot.enabled', cfg.snapshot.enabled ? c.green('yes') : c.yellow('no')],
     ['snapshot.maxSnapshots', String(cfg.snapshot.maxSnapshots)],
+    ['ui.retryButton', cfg.ui.retryButton ? c.green('yes') : c.yellow('no')],
+    ['ui.suggestionPills', cfg.ui.suggestionPills ? c.green('yes') : c.yellow('no')],
+    ['ui.suggestions', `${cfg.ui.suggestions?.length || 0} items`],
   ]);
   return 0;
 }

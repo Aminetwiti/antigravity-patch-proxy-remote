@@ -328,8 +328,11 @@ export async function getAntigravityStatus(proxyPort = DEFAULT_MITM_PORT): Promi
 }
 
 async function requestWindowsGuiLaunch(winExe: string, winDir: string): Promise<void> {
-  await execFileAsync('cmd.exe', ['/c', 'start', '', '/d', winDir, winExe], {
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  await execFileAsync('cmd.exe', ['/c', `set ELECTRON_RUN_AS_NODE=& start "" /d "${winDir}" "${winExe}"`], {
     windowsHide: false,
+    env,
   });
 }
 

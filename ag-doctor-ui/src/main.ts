@@ -878,8 +878,8 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
         googleProviders[0].models = accWithModels?.models?.length ? accWithModels.models : [
           { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
           { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
-          { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
           { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+          { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
         ];
         await atomicWriteCustomModels(p, parsed);
       }
@@ -1116,12 +1116,8 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
         { id: 'gemini-3.7-flash-high', displayName: 'Gemini 3.7 Flash (High)', enabled: true },
         { id: 'gemini-3.6-flash-low', displayName: 'Gemini 3.6 Flash (Low)', enabled: true },
         { id: 'gemini-3.6-flash-medium', displayName: 'Gemini 3.6 Flash (Medium)', enabled: true },
-        { id: 'gemini-3.6-flash-high', displayName: 'Gemini 3.6 Flash (High)', enabled: true },
-        { id: 'gemini-3.1-pro-low', displayName: 'Gemini 3.1 Pro (Low)', enabled: true },
-        { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro (High)', enabled: true },
         { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
         { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
-        { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', enabled: true },
       ];
       return { success: true, models: fallbackModels };
     }
@@ -1711,6 +1707,31 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.CONFIG_SET_NOTIFY, async (_evt, enabled: bool
       cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     }
     cfg.ui = { ...(typeof cfg.ui === 'object' && cfg.ui !== null ? cfg.ui : {}), notifyEnabled: !!enabled };
+    fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n');
+    configCache = cfg;
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.CONFIG_SET_CHAT_ENHANCEMENTS, async (_evt, enhancements: {
+  retryButton?: boolean;
+  suggestionPills?: boolean;
+  suggestions?: Array<{ label: string; text: string }>;
+}) => {
+  try {
+    const cfgPath = getConfigPath();
+    let cfg: Record<string, any> = {};
+    if (fs.existsSync(cfgPath)) {
+      cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    }
+    cfg.ui = { ...(typeof cfg.ui === 'object' && cfg.ui !== null ? cfg.ui : {}) };
+    if (enhancements.retryButton !== undefined) cfg.ui.retryButton = Boolean(enhancements.retryButton);
+    if (enhancements.suggestionPills !== undefined) cfg.ui.suggestionPills = Boolean(enhancements.suggestionPills);
+    if (Array.isArray(enhancements.suggestions)) cfg.ui.suggestions = enhancements.suggestions;
+
     fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
     fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n');
     configCache = cfg;

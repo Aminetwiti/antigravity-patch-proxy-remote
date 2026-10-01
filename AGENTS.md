@@ -122,6 +122,8 @@ npm run patch:2.3               # Apply Antigravity 2.3.x / 2.4.x patch
 npm run patch:2.5               # Apply Antigravity 2.5.x patch
 npm run patch:2.14              # Apply Antigravity 2.14.x patch
 npm run patch:2.15              # Apply Antigravity 2.15.x patch
+npm run patch:2.17              # Apply Antigravity 2.17.x patch
+npm run patch:2.18              # Apply Antigravity 2.18.x patch
 npm run repatch                 # Windows one-click repatch
 npm run mitm:start              # Start MITM HTTPS proxy
 ```

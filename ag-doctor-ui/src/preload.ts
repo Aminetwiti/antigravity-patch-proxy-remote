@@ -93,6 +93,8 @@ const api = {
   config: (): Promise<Record<string, unknown>> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.CONFIG),
   setTheme: (theme: 'dark' | 'light'): Promise<boolean> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.CONFIG_SET_THEME, theme),
   setNotifyEnabled: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.CONFIG_SET_NOTIFY, enabled),
+  setChatEnhancements: (enhancements: { retryButton?: boolean; suggestionPills?: boolean; suggestions?: Array<{ label: string; text: string }> }): Promise<boolean> =>
+    ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.CONFIG_SET_CHAT_ENHANCEMENTS, enhancements),
   restoreBackup: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.CONFIG_RESTORE_BACKUP),
   getProxyErrorHistory: (): Promise<Array<{
     traceId: string;

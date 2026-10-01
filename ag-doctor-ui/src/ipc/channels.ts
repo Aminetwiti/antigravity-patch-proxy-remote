@@ -10,6 +10,7 @@ export const DOCTOR_IPC_CHANNELS = {
   CONFIG: 'ag:config',
   CONFIG_SET_THEME: 'ag:config:set-theme',
   CONFIG_SET_NOTIFY: 'ag:config:set-notify',
+  CONFIG_SET_CHAT_ENHANCEMENTS: 'ag:config:set-chat-enhancements',
   CONFIG_RESTORE_BACKUP: 'ag:config:restore-backup',
   NOTIFY: 'ag:notify',
   TRAY_STATUS: 'ag:tray-status',

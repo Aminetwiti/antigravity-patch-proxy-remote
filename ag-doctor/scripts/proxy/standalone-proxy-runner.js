@@ -85,6 +85,9 @@ if (process.versions.electron) {
   try {
     const electron = require('electron');
     if (electron.app && typeof electron.app.whenReady === 'function') {
+      electron.app.on('window-all-closed', (e) => {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      });
       electron.app.whenReady().then(run).catch((err) => {
         console.error('[StandaloneProxy] app.whenReady failed:', err);
         process.exit(1);

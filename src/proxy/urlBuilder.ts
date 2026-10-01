@@ -10,7 +10,9 @@ import type { CustomModel } from './types';
  * `custom` and `openrouter` are translated as OpenAI-compatible.
  */
 export function resolveProvider(model: CustomModel): string {
-  return model.provider === 'custom' || model.provider === 'openrouter' ? 'openai' : model.provider;
+  if (model.provider === 'custom' || model.provider === 'openrouter') return 'openai';
+  if (model.provider === 'google-gemini') return 'google';
+  return model.provider;
 }
 
 /**

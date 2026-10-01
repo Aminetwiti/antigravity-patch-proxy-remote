@@ -134,8 +134,8 @@ describe('customModelStore', () => {
             apiKey: 'enc:sk-key',
             enabled: true,
             models: [
-              { id: 'gpt-4o', displayName: 'GPT-4o', enabled: true },
-              { id: 'gpt-3.5-turbo', displayName: 'GPT-3.5', enabled: false },
+              { id: 'deepseek-chat', displayName: 'DeepSeek-V3', enabled: true },
+              { id: 'deepseek-reasoner', displayName: 'DeepSeek-R1', enabled: false },
             ],
           },
         ],
@@ -144,8 +144,8 @@ describe('customModelStore', () => {
 
       const models = await loadCustomModels();
       expect(models).toHaveLength(1);
-      expect(models[0].name).toBe('p1-gpt-4o');
-      expect(models[0].externalModelName).toBe('gpt-4o');
+      expect(models[0].name).toBe('p1-deepseek-chat');
+      expect(models[0].externalModelName).toBe('deepseek-chat');
     });
   });
 
