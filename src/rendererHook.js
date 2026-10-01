@@ -14,6 +14,8 @@
       event.preventDefault();
       event.stopImmediatePropagation();
     }
+  }, true);
+
   // Intercept GetAllWorkflows & GetSlashCommands to display all 86 skills in the visual / dropdown
   (() => {
     if (window.__ag_fetch_skills_hooked) return;
