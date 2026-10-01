@@ -87,3 +87,90 @@ test_marker.txt
 ag-doctor-ui/tools/*
 videos/*
 review/*
+# Node dependencies
+node_modules/
+
+# Build and distribution outputs
+dist/
+dist-build/
+vendors/
+certs/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Simulation / test artifacts (not repo content)
+UsersAdminAppDataLocalTemppv-test-*
+
+# Development logs & diagnostic dumps
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+log
+logs/*.log
+logs/*.txt
+build_log.txt
+diag_*.txt
+eslint_out.txt
+git_status.txt
+tsc_*.txt
+
+# Temporary development & extract directories
+scratch/
+test-extract/
+.kimchi/
+
+# Archived artifacts & temporary releases
+archive/
+_archive/
+*.rar
+*.tar.gz
+*.zip
+ag-doctor-ui/dist/
+ag-doctor-ui/release/
+tool/
+/daemon.exe
+/app.asar.new
+/preload.js
+/temp_asar/
+
+# Temporary text outputs from scripts
+scripts/freebuff/extraction-output.txt
+scripts/freebuff/pkce-output.txt
+remote/tools/*
+remote/mobile/.gradle/*
+remote/daemon/*.exe
+remote/daemon/*.exe~
+remote/daemon/*.log
+remote/daemon/*.dll
+remote/daemon/*.txt
+remote/daemon/*.cmd
+remote/daemon/*.vbs
+remote/daemon/*.ps1
+remote/daemon/*.js
+remote/daemon/%TEMP%/
+remote/daemon/bin/
+remote/daemon/scratch/*
+remote/daemon/!scratch/README.md
+remote/daemon/*.crt
+remote/daemon/*.key
+remote/insperer/*
+tools/*
+remote/tools1/*
+remote/tools2/*
+remote/tools3/*
+remote/vendor/*
+
+# Account tokens & secrets
+antigravity_accounts_*.json
+*accounts*.json
+accounts.env
+providerState.json
+test_marker.txt
+
+ag-doctor-ui/tools/*
+config.bat
