@@ -184,11 +184,10 @@ async function main() {
   const mainJsPath = path.join(buildDir, 'dist', 'main.js');
   let mainJs = fs.readFileSync(mainJsPath, 'utf8');
 
-  // Insert TLS bypass & proxy runner at top
+  // Insert proxy runner at top
   if (!mainJs.includes('proxy-runner')) {
     const hook = [
-      '// [v2.17 patch] Local proxy runner + TLS bypass',
-      "process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';",
+      '// [v2.17 patch] Local proxy runner',
       "try { require('../proxy-runner'); } catch (e) { console.error('[v2.17 patch] proxy-runner error:', e); }",
     ].join('\n');
 

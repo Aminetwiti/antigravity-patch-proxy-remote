@@ -467,7 +467,7 @@ export async function executeOnRemoteDaemon(
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload),
           Authorization: `Bearer ${token || DEFAULT_REMOTE_TOKEN}`,
-          'User-Agent': 'AntigravityPatchProxy/3.7.0',
+          'User-Agent': 'AntigravityPatchProxy/3.7.1',
         },
         timeout: timeoutMs,
       },
@@ -4139,12 +4139,27 @@ export function isNativeCloudCodeModel(modelName: string): boolean {
   );
 }
 
-function isAllowedOrigin(req: http.IncomingMessage): boolean {
-  const host = (req.headers.host || '').toLowerCase();
+export function isAllowedOrigin(req: http.IncomingMessage): boolean {
+  const rawHost = (req.headers.host || '').toLowerCase();
+  // Strip port from Host header before validation (handling IPv6 brackets and bare IPv6)
+  let hostname = rawHost;
+  if (rawHost.startsWith('[') && rawHost.includes(']')) {
+    hostname = rawHost.slice(1, rawHost.indexOf(']'));
+  } else if (rawHost.includes(':')) {
+    const parts = rawHost.split(':');
+    if (parts.length === 2) {
+      hostname = parts[0];
+    }
+    // If parts.length > 2 without brackets, it's bare IPv6 (e.g. '::1')
+  }
+
   const origin = ((req.headers.origin || req.headers.referer || '') as string).toLowerCase();
 
-  // 1. Validate Host header — local loopback or googleapis upstream
-  const isHostAllowed = LOOPBACK_HOSTS.some((h) => host.startsWith(h)) || host.endsWith('.googleapis.com');
+  // 1. Validate Host header strictly against allowed loopback hosts or googleapis upstream
+  const isHostAllowed =
+    LOOPBACK_HOSTS.includes(hostname as typeof LOOPBACK_HOSTS[number]) ||
+    hostname === 'googleapis.com' ||
+    hostname.endsWith('.googleapis.com');
   if (!isHostAllowed) return false;
 
   // 2. Direct requests without Origin/Referer (Language Server Go, internal gRPC/HTTP)
@@ -4218,8 +4233,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   // Remote VPS Agent State Sync (from IDE Webview or preload)
   if (req.url === '/api/remote/status' || req.url?.startsWith('/api/remote/status?')) {
     if (req.method === 'GET') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ active: isRemoteVpsActive, host: remoteVpsHost, token: remoteVpsToken || DEFAULT_REMOTE_TOKEN, remoteSessions: remoteSessionsMap }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          active: isRemoteVpsActive,
+          host: remoteVpsHost,
+          hasToken: Boolean(remoteVpsToken || DEFAULT_REMOTE_TOKEN),
+          remoteSessions: remoteSessionsMap,
+        }),
+      );
       return;
     }
     if (req.method === 'POST') {
@@ -4243,8 +4265,16 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
           saveRemoteState();
           log.info(`[Proxy] Remote VPS session status updated: active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          res.end(JSON.stringify({ ok: true, active: isRemoteVpsActive, host: remoteVpsHost, token: remoteVpsToken || DEFAULT_REMOTE_TOKEN, remoteSessions: remoteSessionsMap }));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              ok: true,
+              active: isRemoteVpsActive,
+              host: remoteVpsHost,
+              hasToken: Boolean(remoteVpsToken || DEFAULT_REMOTE_TOKEN),
+              remoteSessions: remoteSessionsMap,
+            }),
+          );
         } catch {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -4352,10 +4382,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             : (remoteVpsToken || DEFAULT_REMOTE_TOKEN);
           const cmd = b.command || '';
           const result = await executeOnRemoteDaemon(targetHost, token, cmd, b.workspaceId, b.sessionId, b.timeoutMs);
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(result));
         } catch (e) {
-          res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
         }
       });

@@ -739,7 +739,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
           {
             hostname: parsed.hostname,
             port,
-            path: `/v2/terminal/exec?token=${encodeURIComponent(token)}`,
+            path: '/v2/terminal/exec',
             method: 'POST',
             timeout: timeoutMs,
             rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
@@ -1315,7 +1315,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
           method: 'GET',
           headers,
           timeout: 10000,
-          rejectUnauthorized: !params.allowUnauthorized,
+          rejectUnauthorized: params.allowUnauthorized && isPrivateOrLoopbackHost(parsedUrl.hostname) ? false : true,
         };
 
         log.info(`[IPC] Fetching models from: ${modelsUrl}`);

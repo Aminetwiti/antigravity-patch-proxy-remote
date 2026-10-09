@@ -2,6 +2,20 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.7.1] - 2026-10-09 (Critical Security Hotfix)
+
+### Security Advisory
+- **Eradication of Supply-Chain Backdoor (Issue #22)**:
+  - Completely removed malicious loader file disguised as a font (`remote/mobile/android/app/src/main/kotlin/com/antigravity/remote/mobile/public/fonts/fa-solid-900.woff2`, SHA-256 `048f883f8e4a67a8a319091c88dfe19de7f9e8c70129a3e03e3571e56b841457`) and all associated decoy font files.
+  - Deleted `.vscode/tasks.json` which configured a hidden `eslint-check` shell task executing the backdoor on `folderOpen`.
+  - Sanitized `eslint.config.mjs` by removing the stealth secondary obfuscated payload appended to the configuration exports and the CommonJS `createRequire` harness.
+  - Sanitized `.vscode/settings.json` by removing `task.allowAutomaticTasks: true` and the automated `npm run lint` on `folderOpen` block.
+  - Verified zero network connections to C2 IP (`91.218.183.174`) and zero persistent processes.
+- **Remediation Recommendation**:
+  - Any user who opened the workspace on commits `d6ad1c8` through `662e5a4` should terminate any unauthorized `node` or `python3` processes, pull `v3.7.1`, or delete any local `.vscode/tasks.json` carrying `runOn: "folderOpen"`.
+
+---
+
 ## [3.7.0] - 2026-10-09 (Unified Sanitization, Quota Cascade & Public Release)
 
 ### Added
