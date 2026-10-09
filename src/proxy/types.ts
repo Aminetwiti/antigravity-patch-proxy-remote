@@ -95,6 +95,9 @@ export interface CustomModel {
   isPro?: boolean;
   isPaid?: boolean;
   tier?: string;
+  isFamily?: boolean;
+  isFamilyShared?: boolean;
+  hasClaude55?: boolean;
   priority?: number;
   /** Internal: marks a real per-account Google entry kept only for dispatch/quota; hidden from dropdown. */
   _poolOnly?: boolean;

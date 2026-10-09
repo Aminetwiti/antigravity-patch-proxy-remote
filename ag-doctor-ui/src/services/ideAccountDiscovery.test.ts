@@ -197,7 +197,7 @@ describe('ideAccountDiscovery', () => {
     });
 
     it('returns false when Google Cloud Code responds with non-200 or network error', async () => {
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
         ok: false,
         status: 503,
       } as any);

@@ -17,6 +17,8 @@ import {
   savePersistentQuotaCache,
   triggerQuotaCachePersist,
   getQuotaCachePath,
+  registerUnlicensedAccountsHandlers,
+  registerAccountCooldownHandlers,
   _clearQuotaPersistTimersForTests,
 } from '../services/quotaCacheStore';
 
@@ -106,5 +108,87 @@ describe('Persistent Quota & Quarantine Cache Store', () => {
     await fs.writeFile(corruptPath, 'INVALID_JSON{{{', 'utf8');
     const res = await loadPersistentQuotaCache(corruptPath);
     expect(res).toBe(false);
+  });
+
+  it('saves and restores unlicensed accounts via registered handlers', async () => {
+    const inMemoryUnlicensed = new Set<string>(['unlicensed1@example.com', 'unlicensed2@example.com']);
+    let restoredKeys: string[] = [];
+
+    registerUnlicensedAccountsHandlers(
+      () => Array.from(inMemoryUnlicensed),
+      (keys) => {
+        restoredKeys = keys;
+      },
+    );
+
+    // Save cache with unlicensed accounts
+    await savePersistentQuotaCache(testFilePath);
+
+    const savedRaw = await fs.readFile(testFilePath, 'utf8');
+    expect(savedRaw).toContain('unlicensed1@example.com');
+    expect(savedRaw).toContain('unlicensed2@example.com');
+
+    // Restore from disk
+    const ok = await loadPersistentQuotaCache(testFilePath);
+    expect(ok).toBe(true);
+    expect(restoredKeys).toContain('unlicensed1@example.com');
+    expect(restoredKeys).toContain('unlicensed2@example.com');
+  });
+
+  it('saves and restores active account cooldowns while skipping expired ones', async () => {
+    const now = Date.now();
+    const mockCooldowns: Record<string, number> = {
+      'google:active@example.com:gemini': now + 3600_000, // 1h in future
+      'google:expired@example.com:gemini': now - 60_000,   // expired
+    };
+    let restoredCooldowns: Record<string, number> = {};
+
+    registerAccountCooldownHandlers(
+      () => mockCooldowns,
+      (cooldowns) => {
+        restoredCooldowns = cooldowns;
+      },
+    );
+
+    await savePersistentQuotaCache(testFilePath);
+
+    const savedRaw = await fs.readFile(testFilePath, 'utf8');
+    expect(savedRaw).toContain('active@example.com');
+    expect(savedRaw).toContain('expired@example.com');
+
+    // Restore from disk
+    const ok = await loadPersistentQuotaCache(testFilePath);
+    expect(ok).toBe(true);
+    expect(restoredCooldowns['google:active@example.com:gemini']).toBe(mockCooldowns['google:active@example.com:gemini']);
+    expect(restoredCooldowns['google:expired@example.com:gemini']).toBeUndefined();
+  });
+
+  it('saves and restores geminiResetTime and claudeResetTime from disk', async () => {
+    const geminiReset = '2026-10-06T17:00:00Z';
+    const claudeReset = '2026-10-07T12:00:00Z';
+    updateLiveAccountQuota('google:resettest@example.com', {
+      fiveHourPercentage: 0,
+      weeklyPercentage: 80,
+      geminiFiveHourPct: 0,
+      geminiWeeklyPct: 80,
+      claudeFiveHourPct: 100,
+      claudeWeeklyPct: 100,
+      updatedAt: Date.now(),
+      geminiResetTime: geminiReset,
+      claudeResetTime: claudeReset,
+    });
+
+    await savePersistentQuotaCache(testFilePath);
+    _clearLiveQuotasForTests();
+    expect(getLiveAccountQuota('google:resettest@example.com')).toBeUndefined();
+
+    const ok = await loadPersistentQuotaCache(testFilePath);
+    expect(ok).toBe(true);
+
+    const restored = getLiveAccountQuota('google:resettest@example.com');
+    expect(restored).toBeDefined();
+    expect(restored!.geminiResetTime).toBe(geminiReset);
+    expect(restored!.claudeResetTime).toBe(claudeReset);
+    expect(restored!.geminiFiveHourPct).toBe(0);
   });
 });

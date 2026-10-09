@@ -1,9 +1,11 @@
 /**
  * `ag-doctor models list` — list configured custom models.
  */
+import fs from 'fs';
+import path from 'path';
 import type { CommandContext } from '../../types';
 import { loadCustomModels, looksEncrypted } from '../../core/custom-models';
-import { getCustomModelsPath } from '../../core/paths';
+import { getCustomModelsPath, getAntigravityDataDir } from '../../core/paths';
 import { c, header, ok, info } from '../../cli/output';
 
 function maskKey(k?: string): string {
@@ -41,6 +43,28 @@ export function runModelsList(ctx: CommandContext): number {
     console.log(`  ${k.padEnd(40)} ${v}`);
   }
   console.log('');
+
+  const quotaCachePath = path.join(getAntigravityDataDir(), 'quota_cache.json');
+  if (fs.existsSync(quotaCachePath)) {
+    try {
+      const qData = JSON.parse(fs.readFileSync(quotaCachePath, 'utf8'));
+      const cds = qData.accountCooldowns || {};
+      const now = Date.now();
+      const activeCds = Object.entries(cds).filter(([_, until]) => typeof until === 'number' && (until as number) > now);
+      if (activeCds.length > 0) {
+        info(`Cooldowns: ${c.yellow(String(activeCds.length))} account cooldown(s) active:`);
+        for (const [k, until] of activeCds) {
+          const remH = Math.round(((until as number) - now) / 3600000);
+          console.log(`  ${c.gray('•')} ${k.padEnd(45)} ${c.yellow(`${remH}h remaining`)}`);
+        }
+        console.log('');
+      } else {
+        info(`Cooldowns: ${c.green('All accounts healthy (0 in cooldown)')}`);
+        console.log('');
+      }
+    } catch (_) {}
+  }
+
   ok(`${file.models.length} model(s)`);
   return 0;
 }

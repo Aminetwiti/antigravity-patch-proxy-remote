@@ -304,7 +304,16 @@ export async function startLanguageServer(port: number, csrf: string, headless?:
     });
     rl.on('line', (line) => {
       if (!logStreamEnded) {
-        logStream.write(line + '\n');
+        // Suppress benign internal declarative warnings and plugin prompt truncation spam
+        if (
+          !line.includes('skipping component during resolution: empty component:') &&
+          !line.includes('Truncating suggested_prompts from') &&
+          !line.includes('unexpected status CORTEX_STEP_STATUS_CANCELED') &&
+          !line.includes('serializer encountered non-tool step') &&
+          !line.includes('request would have ended on a model turn')
+        ) {
+          logStream.write(line + '\n');
+        }
       }
       if (!resolved) {
         const m = PORT_PATTERN.exec(line);

@@ -444,14 +444,14 @@ void main() {
           'type': 'response',
           'requestId': requestId,
           'data': {
-            'user': {'name': 'Amine', 'plan': 'pro'},
+            'user': {'name': 'Developer', 'plan': 'pro'},
             'credits': {'available': 100},
           },
         }),
       );
 
       final res = await future;
-      expect((res['user'] as Map)['name'], 'Amine');
+      expect((res['user'] as Map)['name'], 'Developer');
       expect((res['credits'] as Map)['available'], 100);
       await controller.close();
       api.dispose();

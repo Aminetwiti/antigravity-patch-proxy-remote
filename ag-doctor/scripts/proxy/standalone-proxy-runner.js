@@ -20,6 +20,13 @@ if (!fs.existsSync(proxyPath)) {
 
 console.log(`[StandaloneProxy] Loading proxy from ${proxyPath}`);
 
+try {
+  const log = require('electron-log');
+  const level = process.env.AG_LOG_LEVEL || 'info';
+  if (log.transports?.file) log.transports.file.level = level;
+  if (log.transports?.console) log.transports.console.level = level;
+} catch (_) {}
+
 // Setup minimal Electron app mock if we are running in pure node
 if (!process.versions.electron) {
   const os = require('os');

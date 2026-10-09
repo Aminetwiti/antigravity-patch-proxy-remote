@@ -5,7 +5,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIST="$SCRIPT_DIR/dist"
-ASAR_PATH="/mnt/c/Users/amine/AppData/Local/Programs/Antigravity/resources/app.asar"
+ASAR_PATH="${AG_ASAR_PATH:-/mnt/c/Users/${USER:-Default}/AppData/Local/Programs/Antigravity/resources/app.asar}"
 BACKUP_PATH="${ASAR_PATH}.pre-dnsfix.bak"
 STAGE_DIR="/tmp/antigravity_repack_dnsfix_$$"
 

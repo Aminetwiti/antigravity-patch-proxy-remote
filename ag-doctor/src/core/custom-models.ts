@@ -40,6 +40,10 @@ const KNOWN_PROVIDERS = new Set([
   'wafer',
   'zai',
   'google-gemini',
+  'gemini-cli',
+  'minimax',
+  'xai',
+  'cohere',
 ]);
 
 // Providers that don't require an API key (local servers, etc.)

@@ -17,12 +17,12 @@ func TestParseWorkspaceFromTranscript(t *testing.T) {
 		want    string
 	}{
 		{
-			content: "The mapping is shown as follows in the format [URI] -> [CorpusName]:\nc:\\Users\\amine\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main -> Aminetwiti/antigravity-add-model-main\nCode relating to the user's requests...",
-			want:    "c:\\Users\\amine\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main",
+			content: "The mapping is shown as follows in the format [URI] -> [CorpusName]:\nc:\\Users\\developer\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main -> Aminetwiti/antigravity-add-model-main\nCode relating to the user's requests...",
+			want:    "c:\\Users\\developer\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main",
 		},
 		{
-			content: "The mapping is shown as follows in the format [URI] -> [CorpusName]:\nc:\\Users\\amine\\Downloads\\demo taxi\\www - Copie -> Aminetwiti/www-copie\n",
-			want:    "c:\\Users\\amine\\Downloads\\demo taxi\\www - Copie",
+			content: "The mapping is shown as follows in the format [URI] -> [CorpusName]:\nc:\\Users\\developer\\Downloads\\demo-web-app -> Aminetwiti/demo-web-app\n",
+			want:    "c:\\Users\\developer\\Downloads\\demo-web-app",
 		},
 		{
 			content: "Workspace: /home/user/my-project\nSome other text",
@@ -361,17 +361,17 @@ The current local time is: 2026-08-19T14:46:18+01:00.
 </ADDITIONAL_METADATA>
 
 [ARTIFACT: media_1787150759648]
-Path: file:///C:/Users/amine/.gemini/antigravity/brain/test-cascade/.user_uploaded/media_1787150759648.jpg
+Path: file:///C:/Users/developer/.gemini/antigravity/brain/test-cascade/.user_uploaded/media_1787150759648.jpg
 Last Edited: 2026-08-19T14:46:18Z`
 	gotWithImg := extractUserRequest(userWithImage)
 	if !strings.Contains(gotWithImg, "voici la capture d'ecran") ||
-		!strings.Contains(gotWithImg, "![Image](file:///C:/Users/amine/.gemini/antigravity/brain/test-cascade/.user_uploaded/media_1787150759648.jpg)") {
+		!strings.Contains(gotWithImg, "![Image](file:///C:/Users/developer/.gemini/antigravity/brain/test-cascade/.user_uploaded/media_1787150759648.jpg)") {
 		t.Errorf("extractUserRequest(userWithImage) = %q, attendu text + markdown image", gotWithImg)
 	}
 
 	userWithArtifactInside := `<USER_REQUEST>
 [ARTIFACT: photo_1787324794109.jpg]
-Path: file:///C:/Users/amine/.gemini/antigravity/brain/test-cascade/scratch/upload_1787324800703.jpg
+Path: file:///C:/Users/developer/.gemini/antigravity/brain/test-cascade/scratch/upload_1787324800703.jpg
 
 hi
 </USER_REQUEST>`
@@ -379,19 +379,19 @@ hi
 	if strings.Contains(gotInside, "[ARTIFACT:") || strings.Contains(gotInside, "Path:") {
 		t.Errorf("extractUserRequest(userWithArtifactInside) contains raw artifact tag: %q", gotInside)
 	}
-	if !strings.Contains(gotInside, "hi") || !strings.Contains(gotInside, "![Image](file:///C:/Users/amine/.gemini/antigravity/brain/test-cascade/scratch/upload_1787324800703.jpg)") {
+	if !strings.Contains(gotInside, "hi") || !strings.Contains(gotInside, "![Image](file:///C:/Users/developer/.gemini/antigravity/brain/test-cascade/scratch/upload_1787324800703.jpg)") {
 		t.Errorf("extractUserRequest(userWithArtifactInside) = %q, want hi + markdown image", gotInside)
 	}
 
 	userWithOnlyArtifact := `<USER_REQUEST>
 [ARTIFACT: scaled_10050.jpg]
-Path: file:///C:/Users/amine/.gemini/antigravity/brain/test-cascade/scratch/upload_1787325227558.jpg
+Path: file:///C:/Users/developer/.gemini/antigravity/brain/test-cascade/scratch/upload_1787325227558.jpg
 </USER_REQUEST>`
 	gotOnlyArt := extractUserRequest(userWithOnlyArtifact)
 	if strings.Contains(gotOnlyArt, "[ARTIFACT:") || strings.Contains(gotOnlyArt, "Path:") {
 		t.Errorf("extractUserRequest(userWithOnlyArtifact) contains raw artifact tag: %q", gotOnlyArt)
 	}
-	if gotOnlyArt != "![Image](file:///C:/Users/amine/.gemini/antigravity/brain/test-cascade/scratch/upload_1787325227558.jpg)" {
+	if gotOnlyArt != "![Image](file:///C:/Users/developer/.gemini/antigravity/brain/test-cascade/scratch/upload_1787325227558.jpg)" {
 		t.Errorf("extractUserRequest(userWithOnlyArtifact) = %q", gotOnlyArt)
 	}
 
@@ -424,9 +424,9 @@ func TestListSessionModifiedFiles(t *testing.T) {
 	defer os.RemoveAll(filepath.Join(home, ".gemini", "antigravity", "brain", testCascadeID))
 
 	transcriptContent := `{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","content":"please fix file"}
-{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","content":"","tool_calls":[{"name":"replace_file_content","args":{"TargetFile":"C:\\Users\\amine\\Downloads\\project\\src\\main.ts"}}]}
-{"step_index":2,"source":"MODEL","type":"PLANNER_RESPONSE","content":"","tool_calls":[{"name":"write_to_file","args":{"TargetFile":"/Users/amine/Downloads/project/src/new_file.ts"}}]}
-{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","content":"","tool_calls":[{"name":"write_to_file","args":{"TargetFile":"C:\\Users\\amine\\.gemini\\antigravity\\brain\\test-cascade-modified-files-xyz\\implementation_plan.md"}}]}
+{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","content":"","tool_calls":[{"name":"replace_file_content","args":{"TargetFile":"C:\\Users\\developer\\Downloads\\project\\src\\main.ts"}}]}
+{"step_index":2,"source":"MODEL","type":"PLANNER_RESPONSE","content":"","tool_calls":[{"name":"write_to_file","args":{"TargetFile":"/Users/developer/Downloads/project/src/new_file.ts"}}]}
+{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","content":"","tool_calls":[{"name":"write_to_file","args":{"TargetFile":"C:\\Users\\developer\\.gemini\\antigravity\\brain\\test-cascade-modified-files-xyz\\implementation_plan.md"}}]}
 `
 	if err := os.WriteFile(filepath.Join(brainLogsDir, "transcript.jsonl"), []byte(transcriptContent), 0644); err != nil {
 		t.Fatalf("write transcript failed: %v", err)
@@ -436,11 +436,11 @@ func TestListSessionModifiedFiles(t *testing.T) {
 	if len(files) != 2 {
 		t.Fatalf("ListSessionModifiedFiles: attendu 2 fichiers modifiés (excluant l'artefact plan.md), reçu %d: %v", len(files), files)
 	}
-	if files[0] != "C:/Users/amine/Downloads/project/src/main.ts" {
-		t.Errorf("files[0] = %q, attendu C:/Users/amine/Downloads/project/src/main.ts", files[0])
+	if files[0] != "C:/Users/developer/Downloads/project/src/main.ts" {
+		t.Errorf("files[0] = %q, attendu C:/Users/developer/Downloads/project/src/main.ts", files[0])
 	}
-	if files[1] != "/Users/amine/Downloads/project/src/new_file.ts" {
-		t.Errorf("files[1] = %q, attendu /Users/amine/Downloads/project/src/new_file.ts", files[1])
+	if files[1] != "/Users/developer/Downloads/project/src/new_file.ts" {
+		t.Errorf("files[1] = %q, attendu /Users/developer/Downloads/project/src/new_file.ts", files[1])
 	}
 
 	counts := countTranscriptActivity(testCascadeID)

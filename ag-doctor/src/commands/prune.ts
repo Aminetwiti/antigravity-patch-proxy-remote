@@ -3,6 +3,7 @@
  * Safely prunes orphan trajectory records in Antigravity's conversation_summaries.db.
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import type { CommandContext } from '../types';
 import { getAntigravityDataDir } from '../core/paths';
@@ -12,6 +13,7 @@ export interface PruneResult {
   totalSummaries: number;
   existingConversations: number;
   orphanCount: number;
+  archivedCount?: number;
   prunedCount: number;
   dryRun: boolean;
   bytesBefore: number;
@@ -35,6 +37,7 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
   const dataDir = options.dataDir || getAntigravityDataDir();
   const dbPath = path.join(dataDir, 'conversation_summaries.db');
   const convDir = path.join(dataDir, 'conversations');
+  const annotDir = path.join(dataDir, 'annotations');
 
   if (!fs.existsSync(dbPath)) {
     throw new Error(`Database not found at ${dbPath}`);
@@ -52,6 +55,23 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
     }
   }
 
+  const archivedIds = new Set<string>();
+  if (fs.existsSync(annotDir)) {
+    try {
+      const annotFiles = fs.readdirSync(annotDir);
+      for (const af of annotFiles) {
+        if (!af.endsWith('.pbtxt')) continue;
+        const id = af.replace(/\.pbtxt$/, '');
+        try {
+          const content = fs.readFileSync(path.join(annotDir, af), 'utf8');
+          if (/archived:\s*true/.test(content)) {
+            archivedIds.add(id);
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
   // Open DB read-only first to scan
   const readDb = new DatabaseSync(dbPath, { readOnly: true });
   let rows: Array<{ conversation_id: string }> = [];
@@ -62,20 +82,28 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
   }
 
   const orphanIds: string[] = [];
+  const toDeleteIds = new Set<string>();
+  let archivedCount = 0;
+
   for (const row of rows) {
     if (!filesOnDisk.has(row.conversation_id)) {
       orphanIds.push(row.conversation_id);
+      toDeleteIds.add(row.conversation_id);
+    } else if (archivedIds.has(row.conversation_id)) {
+      toDeleteIds.add(row.conversation_id);
+      archivedCount++;
     }
   }
 
   const dryRun = Boolean(options.dryRun);
   let backupPath: string | undefined;
 
-  if (dryRun || orphanIds.length === 0) {
+  if (dryRun || toDeleteIds.size === 0) {
     return {
       totalSummaries: rows.length,
       existingConversations: filesOnDisk.size,
       orphanCount: orphanIds.length,
+      archivedCount,
       prunedCount: 0,
       dryRun,
       bytesBefore,
@@ -96,13 +124,47 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
     try { fs.copyFileSync(dbPath + '-shm', backupPath + '-shm'); } catch { /* ignore */ }
   }
 
-  // 2. Open read-write and delete orphan records
+  // Backup and clean agyhub_summaries_proto.pb so Language Server reconciler rebuilds from pruned DB
+  const protoPath = path.join(dataDir, 'agyhub_summaries_proto.pb');
+  if (fs.existsSync(protoPath)) {
+    const protoBackup = path.join(dataDir, `agyhub_summaries_proto.pb.bak_${timestamp}`);
+    try { fs.copyFileSync(protoPath, protoBackup); } catch { /* ignore */ }
+    try { fs.unlinkSync(protoPath); } catch { /* ignore */ }
+  }
+
+  // Scrub app_storage.json pinned conversations
+  const appData = process.env.APPDATA || (process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support') : path.join(os.homedir(), '.config'));
+  const appStoragePath = path.join(appData, 'Antigravity', 'app_storage.json');
+  if (fs.existsSync(appStoragePath)) {
+    try {
+      const storageRaw = fs.readFileSync(appStoragePath, 'utf8');
+      const storage = JSON.parse(storageRaw);
+      let storageModified = false;
+      if (typeof storage.pinned_conversations_order === 'string') {
+        try {
+          const pinned = JSON.parse(storage.pinned_conversations_order);
+          if (Array.isArray(pinned)) {
+            const filteredPinned = pinned.filter((id: string) => !toDeleteIds.has(id));
+            if (filteredPinned.length !== pinned.length) {
+              storage.pinned_conversations_order = JSON.stringify(filteredPinned);
+              storageModified = true;
+            }
+          }
+        } catch (_) {}
+      }
+      if (storageModified) {
+        fs.writeFileSync(appStoragePath, JSON.stringify(storage, null, 2), 'utf8');
+      }
+    } catch (_) {}
+  }
+
+  // 2. Open read-write and delete orphan & archived records
   const writeDb = new DatabaseSync(dbPath);
   let prunedCount = 0;
   try {
     const deleteStmt = writeDb.prepare('DELETE FROM conversation_summaries WHERE conversation_id = ?');
     writeDb.exec('BEGIN TRANSACTION;');
-    for (const id of orphanIds) {
+    for (const id of toDeleteIds) {
       deleteStmt.run(id);
       prunedCount++;
     }
@@ -130,6 +192,7 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
     totalSummaries: rows.length,
     existingConversations: filesOnDisk.size,
     orphanCount: orphanIds.length,
+    archivedCount,
     prunedCount,
     dryRun: false,
     bytesBefore,
@@ -155,20 +218,23 @@ export async function runPrune(ctx: CommandContext, sub?: string, rest: string[]
       console.log(`  Total summaries in DB     : ${c.bold(String(res.totalSummaries))}`);
       console.log(`  Active conversation files : ${c.bold(String(res.existingConversations))}`);
       console.log(`  Orphan summaries detected : ${c.yellow(String(res.orphanCount))}`);
-      if (res.orphanCount > 0) {
+      if (res.archivedCount !== undefined && res.archivedCount > 0) {
+        console.log(`  Archived summaries detected: ${c.yellow(String(res.archivedCount))}`);
+      }
+      if (res.orphanCount > 0 || (res.archivedCount && res.archivedCount > 0)) {
         console.log(`\nRun ${c.cyan('ag-doctor db:prune')} without --dry-run to purge orphans and vacuum.`);
       } else {
-        ok('Database is clean. No orphan summaries found.');
+        ok('Database is clean. No orphan or archived summaries found.');
       }
       return 0;
     }
 
-    if (res.orphanCount === 0) {
-      ok('Database is already healthy. 0 orphan summaries found.');
+    if (res.prunedCount === 0) {
+      ok('Database is already healthy. 0 orphan or archived summaries found.');
       return 0;
     }
 
-    ok(`Successfully pruned ${c.bold(String(res.prunedCount))} orphan summaries!`);
+    ok(`Successfully pruned ${c.bold(String(res.prunedCount))} orphan and archived summaries!`);
     console.log(`  Database size before : ${(res.bytesBefore / 1024).toFixed(1)} KB`);
     console.log(`  Database size after  : ${(res.bytesAfter / 1024).toFixed(1)} KB (reclaimed ${(res.bytesReclaimed / 1024).toFixed(1)} KB)`);
     if (res.backupPath) {

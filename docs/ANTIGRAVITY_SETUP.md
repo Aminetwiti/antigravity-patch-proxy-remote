@@ -1,6 +1,6 @@
 # Antigravity v2.2.x — Guide complet : Custom Models + MITM 443
 
-**Projet** : `C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main`
+**Projet** : `antigravity-patch-proxy`
 **Objectif** : ajouter et utiliser des modèles LLM custom (OpenAI/Anthropic/custom) dans l'application desktop **Antigravity** sous Windows 11 + WSL2.
 **Stratégie** : **patch chirurgical** (`scripts/patch_2_2_1.js`) + MITM 443 — fonctionne avec **toutes** les versions v2.2.x publiées via auto-update.
 **Date** : 2026-07-13
@@ -71,8 +71,8 @@
 | Outil | Version / détail |
 |---|---|
 | Windows | 10/11 avec WSL2 activé |
-| Node.js | Installé sur Windows **et** dans WSL (`C:\Program Files\nodejs\node.exe` et `/home/amine/.nvm/...`) |
-| Antigravity | v2.2.x (toute version publiée via auto-update) installé dans `C:\Users\amine\AppData\Local\Programs\antigravity\` |
+| Node.js | Installé sur Windows **et** dans WSL (`C:\Program Files\nodejs\node.exe` et `~/.nvm/...`) |
+| Antigravity | v2.2.x (toute version publiée via auto-update) installé dans `%LOCALAPPDATA%\Programs\antigravity\` |
 | PowerShell | Pour exécuter le script admin |
 | Droits admin | Nécessaires pour lier le port 443 et importer un certificat racine |
 
@@ -84,13 +84,13 @@
 
 ### Étape 1 — Récupérer le projet
 
-Copier le dossier `antigravity-add-model-main` dans `C:\Users\amine\Downloads\`.
+Cloner ou copier le dossier `antigravity-add-model-main` sur votre machine.
 
 ### Étape 2 — Vérifier Antigravity v2.2.x
 
 ```powershell
 # Vérifier la version installée
-Get-Content "C:\Users\amine\AppData\Local\Programs\antigravity\resources\app.asar" | Select-String '"version":'
+Get-Content "$env:LOCALAPPDATA\Programs\antigravity\resources\app.asar" | Select-String '"version":'
 # Doit afficher "version": "2.2.x"
 ```
 
@@ -101,7 +101,7 @@ Toutes les versions **2.2.x** sont supportées. Si une mise à jour sort, il suf
 Dans WSL, depuis le projet :
 
 ```bash
-cd /mnt/c/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/certs
+cd certs
 
 # CA
 openssl genrsa -out ca-key.pem 2048
@@ -124,7 +124,7 @@ Les fichiers `ca.conf` et `server.conf` sont déjà dans `certs/`.
 Dans WSL, depuis la racine du projet :
 
 ```bash
-cd /mnt/c/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main
+cd /chemin/vers/antigravity-add-model-main
 npm install
 npm run build
 node scripts/patch_2_2_1.js
@@ -159,7 +159,7 @@ Le fichier `Start Antigravity MITM.bat` doit exister à la racine du projet (et 
 
 ```bat
 @echo off
-set SCRIPT=C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\start_mitm_443.ps1
+set SCRIPT=%~dp0start_mitm_443.ps1
 powershell -Command "Start-Process PowerShell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File \"%SCRIPT%\"'"
 ```
 
@@ -168,7 +168,7 @@ powershell -Command "Start-Process PowerShell -Verb RunAs -ArgumentList '-Execut
 1. Double-clic sur `Start Antigravity MITM.bat` (accepter l'UAC admin).
 2. Attendre le message `[MITM-443] Listening on https://127.0.0.1:443`.
 3. Lancer Antigravity.
-4. Vérifier dans `C:\Users\amine\AppData\Roaming\Antigravity\logs\main.log` :
+4. Vérifier dans `%APPDATA%\Antigravity\logs\main.log` :
 
 ```
 [Proxy] Server listening on http://127.0.0.1:${AG_PROXY_PORT:-51074}
@@ -370,7 +370,7 @@ text = text.replace(/https:(\/\/)cloudcode-pa\.googleapis\.com/g, `${proxyProto}
 Dans WSL :
 
 ```bash
-cd /mnt/c/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main
+cd /chemin/vers/antigravity-add-model-main
 npm run build
 node scripts/patch_2_2_1.js
 ```
@@ -382,7 +382,7 @@ Puis relancer Antigravity (le MITM peut rester ouvert).
 Tant que la version reste **2.2.x**, il suffit de relancer le patch chirurgical :
 
 ```powershell
-cd C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main
+cd <dossier-du-projet>
 .\repatch.bat
 ```
 
@@ -401,8 +401,8 @@ Revenir à l'asar d'origine (avant le patch chirurgical) :
 
 ```powershell
 Stop-Process -Name Antigravity, language_server -Force
-copy "C:\Users\amine\AppData\Local\Programs\antigravity\resources\app.asar.bak" `
-     "C:\Users\amine\AppData\Local\Programs\antigravity\resources\app.asar"
+copy "$env:LOCALAPPDATA\Programs\antigravity\resources\app.asar.bak" `
+     "$env:LOCALAPPDATA\Programs\antigravity\resources\app.asar"
 ```
 
 ---

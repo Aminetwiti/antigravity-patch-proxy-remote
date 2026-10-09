@@ -149,7 +149,7 @@ func TestLiveE2E_MultiModelCascadeLifecycle(t *testing.T) {
 			createMsg := map[string]interface{}{
 				"type":          "create_cascade",
 				"requestId":     reqID,
-				"workspacePath": "C:\\Users\\amine\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main",
+				"workspacePath": "C:\\Users\\developer\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main",
 				"modelUID":      m.modelUID,
 				"modelEnum":     m.modelEnum,
 			}
@@ -210,7 +210,7 @@ func TestLiveE2E_StreamingAndCancelGeneration(t *testing.T) {
 	createReq, _ := json.Marshal(map[string]interface{}{
 		"type":          "create_cascade",
 		"requestId":     "req-create-cancel",
-		"workspacePath": "C:\\Users\\amine\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main",
+		"workspacePath": "C:\\Users\\developer\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main",
 		"modelUID":      "gemini-3.7-flash",
 		"modelEnum":     312,
 	})
@@ -280,7 +280,7 @@ func TestLiveE2E_FileSystemAndSandboxGuardrails(t *testing.T) {
 	conn := dialWSClient(t, ts.URL+"?token=demo123", nil)
 	defer conn.Close()
 
-	workspaceRoot := "C:\\Users\\amine\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main"
+	workspaceRoot := "C:\\Users\\developer\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main"
 
 	t.Run("List Files dans le workspace", func(t *testing.T) {
 		req, _ := json.Marshal(map[string]interface{}{

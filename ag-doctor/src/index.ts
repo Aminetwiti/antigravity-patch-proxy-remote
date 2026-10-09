@@ -254,6 +254,7 @@ export async function main(argv: string[]): Promise<number> {
           clearAll: Boolean(parsed.options['clear-all']),
           level: String(parsed.options.level || 'all'),
           stats: Boolean(parsed.options.stats),
+          raw: Boolean(parsed.options.raw),
         });
       case 'mitm':
         return await runMitm(ctx, sub);

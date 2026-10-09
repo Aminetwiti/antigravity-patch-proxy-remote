@@ -50,11 +50,21 @@ function labelString(labels: Record<string, string>): string {
 }
 
 /**
+ * Per-account pool health entry for the google_pool_health_score metric.
+ */
+export interface PoolHealthEntry {
+  accountKey: string;
+  modelFamily: string;
+  score: number;
+}
+
+/**
  * Format a snapshot in Prometheus text exposition format (v0.0.4).
  * The shape is intentionally minimal: counters, then gauges, then
  * histogram summaries. No `_bucket` rows (we don't store buckets).
+ * If poolHealth is provided, appends google_pool_health_score gauge entries.
  */
-export function formatPrometheus(snap: MetricsSnapshot): string {
+export function formatPrometheus(snap: MetricsSnapshot, poolHealth?: PoolHealthEntry[]): string {
   const out: string[] = [];
   for (const c of snap.counters) {
     out.push(`# TYPE ${c.name} counter`);
@@ -70,6 +80,14 @@ export function formatPrometheus(snap: MetricsSnapshot): string {
     out.push(`${h.name}_count${labels} ${h.count}`);
     out.push(`${h.name}_sum${labels} ${h.sum}`);
     out.push(`${h.name}${labels} ${h.avg}`);
+  }
+  if (poolHealth && poolHealth.length > 0) {
+    out.push('# HELP google_pool_health_score Dynamic health score per Google Cloud Code account (0-100+)');
+    out.push('# TYPE google_pool_health_score gauge');
+    for (const entry of poolHealth) {
+      const safeKey = (entry.accountKey || '').replace(/[\\"\n]/g, '_');
+      out.push(`google_pool_health_score{account="${safeKey}",family="${entry.modelFamily}"} ${entry.score}`);
+    }
   }
   return out.join('\n') + (out.length > 0 ? '\n' : '');
 }

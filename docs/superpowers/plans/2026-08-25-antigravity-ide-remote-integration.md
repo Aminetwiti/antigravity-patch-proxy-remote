@@ -159,7 +159,7 @@ void main() {
     final raw = {
       'cascadeId': '60527a47-26c6-4872-9414-d16c00994dc1',
       'title': 'Test IDE Session',
-      'workspacePath': 'c:/Users/amine/Downloads',
+      'workspacePath': 'C:/Users/developer/Downloads',
       'stepCount': 12,
       'shellType': 'ide',
     };

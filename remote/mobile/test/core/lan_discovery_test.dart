@@ -6,7 +6,7 @@ void main() {
     test('DiscoveredDaemon getters formatting', () {
       final now = DateTime.now();
       final daemon = DiscoveredDaemon(
-        hostname: 'DESKTOP-AMINE',
+        hostname: 'DESKTOP-DEV',
         host: '192.168.1.50',
         port: 8090,
         authToken: 'secret-123',
@@ -14,7 +14,7 @@ void main() {
         lastSeen: now,
       );
 
-      expect(daemon.displayName, 'DESKTOP-AMINE');
+      expect(daemon.displayName, 'DESKTOP-DEV');
       expect(daemon.formattedAddress, '192.168.1.50:8090');
       expect(daemon.workspaces.length, 2);
     });

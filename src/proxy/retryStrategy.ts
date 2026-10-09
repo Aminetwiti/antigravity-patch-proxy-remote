@@ -27,13 +27,15 @@ export interface RetryDecision {
 
 
 /**
- * Regex for duration strings (e.g. "1.5s", "200ms", "4m 12s", "1h")
+ * Regex for duration strings (e.g. "1.5s", "200ms", "4m 12s", "1h", "6d")
  */
-const DURATION_RE = /([\d.]+)\s*(milliseconds?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)/gi;
+const DURATION_RE = /([\d.]+)\s*(milliseconds?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d)/gi;
 
 const TEXT_DELAY_PATTERNS = [
   /quota will reset after ([^.,;\]\n]+)/i,
   /quota will reset in ([^.,;\]\n]+)/i,
+  /your quota will reset after ([^.,;\]\n]+)/i,
+  /resets in ([^.,;\]\n]+)/i,
   /retry after ([^.,;\]\n]+)/i,
   /reset after ([^.,;\]\n]+)/i,
   /try again in ([^.,;\]\n]+)/i,
@@ -48,12 +50,17 @@ const RETRY_HINT_KEYS = new Set([
   'retry_delay',
   'quotaresetdelay',
   'quota_reset_delay',
+  'quotaresettimestamp',
+  'quota_reset_time_stamp',
+  'quotaresettime',
+  'resettime',
+  'reset_time',
   'backofflimit',
   'backoff_limit',
 ]);
 
 /**
- * Parses duration string into milliseconds (e.g. "1.5s" -> 1500, "2m 10s" -> 130000).
+ * Parses duration string into milliseconds (e.g. "1.5s" -> 1500, "2m 10s" -> 130000, "1d" -> 86400000).
  */
 export function parseDurationMs(durationStr: string): number | null {
   if (!durationStr || typeof durationStr !== 'string') return null;
@@ -76,6 +83,8 @@ export function parseDurationMs(durationStr: string): number | null {
       totalMs += value * 60 * 1000;
     } else if (unit === 'h' || unit.startsWith('hr') || unit.startsWith('hour')) {
       totalMs += value * 60 * 60 * 1000;
+    } else if (unit === 'd' || unit.startsWith('day')) {
+      totalMs += value * 24 * 60 * 60 * 1000;
     }
   }
 
@@ -112,6 +121,14 @@ function extractStructuredDelay(val: unknown, depth = 0): number | null {
       const normKey = k.toLowerCase().replace(/[-_]/g, '');
       if (RETRY_HINT_KEYS.has(normKey)) {
         if (typeof v === 'string') {
+          // Check for absolute ISO timestamp format (e.g. quotaResetTimeStamp: "2026-09-10T01:29:45Z")
+          if (normKey.includes('timestamp') || normKey.includes('resettime')) {
+            const parsedTs = new Date(v).getTime();
+            if (!isNaN(parsedTs)) {
+              const diff = parsedTs - Date.now();
+              return diff > 0 ? diff : 1000;
+            }
+          }
           const parsed = parseDurationMs(v);
           if (parsed !== null) return parsed;
         } else if (typeof v === 'number' && v > 0) {

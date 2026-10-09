@@ -188,7 +188,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
     it('preserves refreshToken and quotas when saving edits', () => {
       const existing = mockAccounts[0];
       const updatedForm = {
-        name: 'Amine Perso Renamed',
+        name: 'Developer Account Renamed',
         apiUrl: existing.apiUrl,
         apiKey: 'ya29.updatedToken',
       };
@@ -201,7 +201,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         picture: existing.picture,
       };
 
-      expect(saved.name).toBe('Amine Perso Renamed');
+      expect(saved.name).toBe('Developer Account Renamed');
       expect(saved.apiKey).toBe('ya29.updatedToken');
       expect(saved.refreshToken).toBe('1//refresh-token-1');
       expect(saved.quotas.weeklyPercentage).toBe(90);
@@ -665,15 +665,15 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         }, 150);
       }
 
-      onSearchInput('a');
+      onSearchInput('d');
       vi.advanceTimersByTime(50);
-      onSearchInput('am');
+      onSearchInput('de');
       vi.advanceTimersByTime(50);
-      onSearchInput('amine');
+      onSearchInput('developer');
       expect(executedQuery).toBe(''); // Not yet executed
 
       vi.advanceTimersByTime(150);
-      expect(executedQuery).toBe('amine'); // Executed only once with final value
+      expect(executedQuery).toBe('developer'); // Executed only once with final value
       vi.useRealTimers();
     });
   });
@@ -706,12 +706,12 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
   describe('Action 24: Grid View & List View Accessibility & SVG Parity', () => {
     it('verifies all action buttons in grid view have descriptive aria-labels and no emojis', () => {
       const actions = [
-        { type: 'details', label: 'Details for Amine Perso' },
-        { type: 'switch', label: 'Switch to Amine Perso' },
-        { type: 'refresh', label: 'Refresh quotas for Amine Perso' },
-        { type: 'warmup', label: 'Warmup Amine Perso' },
-        { type: 'edit', label: 'Edit account Amine Perso' },
-        { type: 'delete', label: 'Delete account Amine Perso' },
+        { type: 'details', label: 'Details for Developer Account' },
+        { type: 'switch', label: 'Switch to Developer Account' },
+        { type: 'refresh', label: 'Refresh quotas for Developer Account' },
+        { type: 'warmup', label: 'Warmup Developer Account' },
+        { type: 'edit', label: 'Edit account Developer Account' },
+        { type: 'delete', label: 'Delete account Developer Account' },
       ];
 
       actions.forEach((act) => {

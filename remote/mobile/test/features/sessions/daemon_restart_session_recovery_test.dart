@@ -24,14 +24,14 @@ void main() {
             'title': 'Active Task After Reboot',
             'status': 'CASCADE_STATUS_RUNNING',
             'updatedAt': DateTime.now().toIso8601String(),
-            'workspace': 'c:/Users/amine/Downloads/antigravity-add-model-main',
+            'workspace': 'c:/Users/developer/Downloads/antigravity-add-model-main',
           },
           {
             'cascadeId': 'session-2',
             'title': 'Second Task Restored',
             'status': 'CASCADE_STATUS_READY',
             'updatedAt': DateTime.now().toIso8601String(),
-            'workspace': 'c:/Users/amine/Downloads/antigravity-add-model-main',
+            'workspace': 'c:/Users/developer/Downloads/antigravity-add-model-main',
           },
         ],
       };
@@ -66,7 +66,7 @@ void main() {
       List<CascadeSession> currentSessions = [
         const CascadeSession(
           id: 'persisted-session',
-          workspacePath: 'c:/Users/amine/proj',
+          workspacePath: 'c:/Users/developer/proj',
           title: 'Existing Work',
           status: 'CASCADE_STATUS_READY',
           time: '1h ago',

@@ -24,6 +24,9 @@ import {
   getActiveSessionModelFallbacks,
   SESSION_MODEL_FALLBACK_TTL_MS,
   selectCandidateP2C,
+  executeGoogleCloudCodeWithPool,
+  setAccountCooldown,
+  isAccountInCooldown,
 } from '../proxy';
 import type { CustomModel } from '../types';
 
@@ -137,5 +140,192 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       expect(getSessionModelFallback('sess-2')).toBeUndefined();
       expect(Object.keys(getActiveSessionModelFallbacks()).length).toBe(0);
     });
+
+    it('does not infinitely recurse or ping-pong when all accounts in pool are in cooldown', async () => {
+      const acc1: CustomModel = {
+        name: 'acc1',
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        refreshToken: 'token-1',
+        accountEmail: 'user1@gmail.com',
+        externalModelName: 'gemini-3.7-flash-tiered',
+      };
+      setAccountCooldown(acc1, 60_000, 'gemini');
+      expect(isAccountInCooldown(acc1, 'gemini')).toBe(true);
+
+      const fakeReq = {
+        url: '/v1internal:generateContent',
+        method: 'POST',
+        headers: {},
+      } as any;
+      const fakeRes = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        writeHead: vi.fn(),
+        write: vi.fn(),
+        end: vi.fn().mockImplementation(function (this: any) {
+          this.writableEnded = true;
+        }),
+      } as any;
+
+      const attempted = new Set<string>();
+      await executeGoogleCloudCodeWithPool(
+        fakeReq,
+        fakeRes,
+        { model: 'gemini-3.7-flash-tiered', request: { contents: [{ parts: [{ text: 'hi' }] }] } },
+        [acc1],
+        false,
+        'test-conv',
+        'test-sess',
+        attempted,
+      );
+
+      // Should terminate cleanly and record attempted models without ping-ponging
+      expect(attempted.has('gemini-3.7-flash-tiered')).toBe(true);
+    });
+
+    it('prevents circular flip-flop in setSessionModelFallback (A -> B then B -> A)', () => {
+      setSessionModelFallback('sess-loop', 'gemini-3.8-flash-tiered', 'claude-sonnet-4-6', true);
+      expect(getSessionModelFallback('sess-loop')?.fallbackModel).toBe('claude-sonnet-4-6');
+
+      // Attempting the inverse (claude-sonnet-4-6 -> gemini-3.8-flash-tiered) must be ignored
+      setSessionModelFallback('sess-loop', 'claude-sonnet-4-6', 'gemini-3.8-flash-tiered', true);
+      expect(getSessionModelFallback('sess-loop')?.fallbackModel).toBe('claude-sonnet-4-6');
+    });
+
+    it('immediately aborts nested cascades when fallbackDepth > 0', async () => {
+      const acc1: CustomModel = {
+        name: 'acc1',
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        refreshToken: 'token-1',
+        accountEmail: 'user1@gmail.com',
+        externalModelName: 'gemini-3.8-flash-tiered',
+      };
+      setAccountCooldown(acc1, 60_000, 'gemini');
+
+      const fakeReq = { url: '/v1internal:generateContent', method: 'POST', headers: {} } as any;
+      const fakeRes = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        writeHead: vi.fn(),
+        write: vi.fn(),
+        end: vi.fn(),
+      } as any;
+
+      const attempted = new Set<string>();
+      const result = await executeGoogleCloudCodeWithPool(
+        fakeReq,
+        fakeRes,
+        { model: 'gemini-3.8-flash-tiered', request: { contents: [{ parts: [{ text: 'hi' }] }] } },
+        [acc1],
+        false,
+        'test-conv',
+        'test-sess',
+        attempted,
+        1, // fallbackDepth = 1 (already inside a fallback attempt)
+      );
+
+      // Must return false immediately without triggering further fallbacks or ending res
+      expect(result).toBe(false);
+      expect(fakeRes.writableEnded).toBe(false);
+    });
+
+    it('resolves MODEL_PLACEHOLDER_ to candidate model and preserves correct model family cooldown isolation', async () => {
+      const claudeAcc: CustomModel = {
+        name: 'claude-opus-account',
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        refreshToken: 'token-claude',
+        accountEmail: 'claude-user@gmail.com',
+        externalModelName: 'claude-opus-4-6-thinking',
+      };
+
+      const fakeReq = { url: '/v1internal:generateContent', method: 'POST', headers: {} } as any;
+      const fakeRes = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        writeHead: vi.fn(),
+        write: vi.fn(),
+        end: vi.fn(),
+      } as any;
+
+      // Call executeGoogleCloudCodeWithPool with a placeholder model ID
+      const reqPayload = {
+        model: 'MODEL_PLACEHOLDER_123456789',
+        request: { contents: [{ parts: [{ text: 'hello' }] }] },
+      };
+
+      await executeGoogleCloudCodeWithPool(
+        fakeReq,
+        fakeRes,
+        reqPayload,
+        [claudeAcc],
+        false,
+        'test-conv',
+        'test-sess',
+      );
+
+      // reqPayload.model must have been resolved to claude-opus-4-6-thinking
+      // Gemini cooldown must NOT have been contaminated
+      expect(isAccountInCooldown(claudeAcc, 'gemini')).toBe(false);
+    });
+
+    it('falls back to standard pool accounts when 5.5 candidate accounts are in cooldown or unavailable', async () => {
+      const partageAccInCd: CustomModel = {
+        name: 'partage-account',
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        refreshToken: 'token-partage',
+        accountEmail: 'partage@gmail.com',
+        externalModelName: 'claude-sonnet-4-6',
+        tier: 'partage',
+      };
+      setAccountCooldown(partageAccInCd, 60_000, 'claude');
+
+      const regularAccHealthy: CustomModel = {
+        name: 'regular-account',
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        refreshToken: 'token-regular',
+        accountEmail: 'regular@gmail.com',
+        externalModelName: 'claude-sonnet-4-6',
+        tier: 'pro',
+      };
+
+      const fakeReq = { url: '/v1internal:generateContent', method: 'POST', headers: {} } as any;
+      const fakeRes = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        writeHead: vi.fn(),
+        write: vi.fn(),
+        end: vi.fn(),
+      } as any;
+
+      const reqPayload = {
+        model: 'claude-sonnet-5-5',
+        request: { contents: [{ parts: [{ text: 'hello' }] }] },
+      };
+
+      await executeGoogleCloudCodeWithPool(
+        fakeReq,
+        fakeRes,
+        reqPayload,
+        [partageAccInCd, regularAccHealthy],
+        false,
+        'test-conv-55',
+        'test-sess-55',
+      );
+
+      // Model must be normalized to canonical cloud code model ID
+      expect(reqPayload.model).toBe('claude-sonnet-5-5');
+      // Regular account must NOT be in cooldown
+      expect(isAccountInCooldown(regularAccHealthy, 'claude')).toBe(false);
+    });
   });
 });
+

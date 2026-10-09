@@ -6,7 +6,7 @@ void main() {
     test('Une nouvelle session locale créée n\'est jamais écrasée par une ancienne session lors du refresh', () {
       final oldSession = const CascadeSession(
         id: 'session-old-1',
-        workspacePath: 'c:/Users/amine/OmniRoute',
+        workspacePath: 'c:/Users/developer/OmniRoute',
         title: 'Ancienne conversation',
         status: 'CASCADE_STATUS_READY',
         time: '1h',
@@ -14,7 +14,7 @@ void main() {
 
       final newSession = const CascadeSession(
         id: 'session-new-2',
-        workspacePath: 'c:/Users/amine/OmniRoute',
+        workspacePath: 'c:/Users/developer/OmniRoute',
         title: 'Nouvelle conversation',
         status: 'CASCADE_STATUS_READY',
         time: 'Maintenant',
@@ -49,7 +49,7 @@ void main() {
     test('Quand l\'utilisateur envoie un premier message "hi", le titre change sans perdre le focus actif', () {
       final newSession = const CascadeSession(
         id: 'session-new-2',
-        workspacePath: 'c:/Users/amine/OmniRoute',
+        workspacePath: 'c:/Users/developer/OmniRoute',
         title: 'hi',
         status: 'CASCADE_STATUS_RUNNING',
         time: 'Maintenant',
@@ -57,7 +57,7 @@ void main() {
 
       final oldSession = const CascadeSession(
         id: 'session-old-1',
-        workspacePath: 'c:/Users/amine/OmniRoute',
+        workspacePath: 'c:/Users/developer/OmniRoute',
         title: 'Ancienne conversation',
         status: 'CASCADE_STATUS_READY',
         time: '1h',
@@ -82,7 +82,7 @@ void main() {
         }
       }
 
-      // Le deuxième message ("amine") sera bien envoyé à session-new-2
+      // Le deuxième message ("developer") sera bien envoyé à session-new-2
       expect(activeSessionId, equals('session-new-2'));
       expect(sessions.first.title, equals('hi'));
     });

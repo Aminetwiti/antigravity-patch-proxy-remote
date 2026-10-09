@@ -30,7 +30,7 @@
       const isAllWorkflows = typeof url === 'string' && url.includes('LanguageServerService/GetAllWorkflows');
       const isSlashCommands = typeof url === 'string' && url.includes('LanguageServerService/GetSlashCommands');
 
-      // 1. Intercept GetAllWorkflows: populate with all skills as WorkflowSpec so all 86 skills appear on /
+      // 1. Intercept GetAllWorkflows: merge official workflows (Automation, templates) with custom skills
       if (isAllWorkflows) {
         try {
           if (cachedSkillsWorkflows && (Date.now() - lastSkillsFetchTime < 60000)) {
@@ -40,12 +40,25 @@
             });
           }
 
+          // Fetch official workflows from Language Server to preserve native features like Automation
+          let officialWorkflows = [];
+          try {
+            const origRes = await origFetch.apply(this, args);
+            if (origRes.ok) {
+              const origData = await origRes.clone().json();
+              if (Array.isArray(origData.workflows)) {
+                officialWorkflows = origData.workflows;
+              }
+            }
+          } catch (_) {}
+
           const skillsUrl = url.replace('GetAllWorkflows', 'GetAllSkills');
           const skillsRes = await origFetch.apply(this, [skillsUrl, Object.assign({}, args[1], { body: '{}' })]);
+          let skillWorkflows = [];
           if (skillsRes.ok) {
             const skillsData = await skillsRes.json();
             const rawSkills = skillsData.skills || [];
-            cachedSkillsWorkflows = rawSkills.map(function(s) {
+            skillWorkflows = rawSkills.map(function(s) {
               return {
                 $typeName: 'exa.cortex_pb.WorkflowSpec',
                 name: s.name,
@@ -54,12 +67,17 @@
                 content: s.content || ''
               };
             });
-            lastSkillsFetchTime = Date.now();
-            return new Response(JSON.stringify({ workflows: cachedSkillsWorkflows }), {
-              status: 200,
-              headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
-            });
           }
+
+          const officialNames = new Set(officialWorkflows.map(function(w) { return w.name; }));
+          cachedSkillsWorkflows = officialWorkflows.concat(
+            skillWorkflows.filter(function(s) { return !officialNames.has(s.name); })
+          );
+          lastSkillsFetchTime = Date.now();
+          return new Response(JSON.stringify({ workflows: cachedSkillsWorkflows }), {
+            status: 200,
+            headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+          });
         } catch (wfErr) {
           console.warn('[AG] GetAllWorkflows skill conversion error in rendererHook:', wfErr);
         }

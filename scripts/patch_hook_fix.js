@@ -1,5 +1,6 @@
-﻿const fs = require('fs');
-const file = 'C:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/src/rendererHook.js';
+const fs = require('fs');
+const path = require('path');
+const file = path.resolve(__dirname, '../src/rendererHook.js');
 let code = fs.readFileSync(file, 'utf-8');
 
 // 1. syncRemoteStateToProxy

@@ -24,7 +24,7 @@ interface GeminiStreamChunk {
 }
 
 // ─── Model Normalization ──────────────────────────────────────────────────
-import { normalizeGoogleModelId } from '../../services/googleAuth';
+import { normalizeGoogleModelId, sanitizeCloudCodeGenerationConfig } from '../../services/googleAuth';
 export { normalizeGoogleModelId };
 
 /**
@@ -42,11 +42,42 @@ export function toAiStudioModelId(modelName: string): string {
  * The caller handles URL routing (streamGenerateContent vs generateContent).
  */
 export function mapGeminiToGoogle(geminiBody: GeminiRequestBody, modelName: string): GeminiRequestBody {
-  // Ensure the external model name is set and normalized for Google AI Studio
-  const body: GeminiRequestBody = { ...geminiBody };
-  const targetModel = toAiStudioModelId(modelName || body.model || '');
-  body.model = targetModel;
-  return body;
+  // If wrapped in a Cloud Code request envelope, unwrap the inner request first
+  let raw: Record<string, unknown>;
+  const input = (geminiBody || {}) as Record<string, unknown>;
+  if (input.request && typeof input.request === 'object') {
+    raw = { ...(input.request as Record<string, unknown>) };
+  } else {
+    raw = { ...input };
+  }
+
+  const effectiveModel = (raw.model as string) || (input.model as string) || modelName || '';
+  const targetModel = toAiStudioModelId(effectiveModel);
+
+  // Only set body.model if body originally specified a model; Google AI Studio passes model in the URL path
+  if (raw.model || input.model) {
+    if (targetModel) {
+      raw.model = targetModel;
+    }
+  }
+
+  // Sanitize generationConfig (e.g. resolve thinkingBudget vs thinkingLevel mutual exclusivity)
+  sanitizeCloudCodeGenerationConfig(raw, targetModel || effectiveModel);
+
+  // Strip Cloud Code internal fields that Google AI Studio rejects with HTTP 400
+  delete raw.project;
+  delete raw.enabledCreditTypes;
+  delete raw.userAgent;
+  delete raw.requestId;
+  delete raw.requestType;
+  delete raw.planModel;
+  delete raw.requestedModel;
+  delete raw.selectedModel;
+  delete raw.modelId;
+  delete raw.agentModel;
+  delete raw.request;
+
+  return raw as unknown as GeminiRequestBody;
 }
 
 // ─── Response Translation (Passthrough) ───────────────────────────────────

@@ -18,6 +18,7 @@ import {
   markTokenRevoked,
   clearRevokedTokens,
   refreshGoogleToken,
+  isAccountEntitledToClaude55,
 } from '../services/googleAuth';
 
 describe('googleAuth service', () => {
@@ -31,12 +32,16 @@ describe('googleAuth service', () => {
 
     it('preserves valid standard model IDs', () => {
       expect(normalizeCloudCodeModelId('gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
-      expect(normalizeCloudCodeModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
+      expect(normalizeCloudCodeModelId('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+      expect(normalizeCloudCodeModelId('claude-opus-5-5')).toBe('claude-opus-5-5');
       expect(normalizeCloudCodeModelId('claude-opus-4-6-thinking')).toBe('claude-opus-4-6-thinking');
     });
 
     it('maps alias models to canonical Cloud Code models', () => {
       expect(normalizeCloudCodeModelId('claude-sonnet')).toBe('claude-sonnet-4-6');
+      expect(normalizeCloudCodeModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
+      expect(normalizeCloudCodeModelId('claude-sonnet-5-5-high')).toBe('claude-sonnet-5-5');
+      expect(normalizeCloudCodeModelId('claude-opus')).toBe('claude-opus-4-6-thinking');
       expect(normalizeCloudCodeModelId('gemini-flash')).toBe('gemini-3.8-flash-tiered');
       expect(normalizeCloudCodeModelId('gemini-pro')).toBe('gemini-3.8-flash-tiered');
       expect(normalizeCloudCodeModelId('gemini-3.1-pro-high')).toBe('gemini-3.8-flash-tiered');
@@ -76,6 +81,30 @@ describe('googleAuth service', () => {
       };
       sanitizeCloudCodeGenerationConfig(payload2, 'gemini-3.8-flash-tiered');
       expect((payload2.generationConfig as any).thinkingConfig).toBeUndefined();
+    });
+
+    it('preserves thinkingLevel and removes thinkingBudget for Gemini 3 models', () => {
+      const payload: Record<string, unknown> = {
+        generationConfig: {
+          thinkingConfig: { thinkingBudget: 1000, thinkingLevel: 'low' },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'gemini-3.7-flash');
+      const tc = (payload.generationConfig as any).thinkingConfig;
+      expect(tc).toBeDefined();
+      expect(tc.thinkingLevel).toBe('low');
+      expect(tc.thinkingBudget).toBeUndefined();
+
+      const payloadOnlyLevel: Record<string, unknown> = {
+        generationConfig: {
+          thinkingConfig: { thinkingLevel: 'medium' },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payloadOnlyLevel, 'gemini-3.8-flash-tiered');
+      const tc2 = (payloadOnlyLevel.generationConfig as any).thinkingConfig;
+      expect(tc2).toBeDefined();
+      expect(tc2.thinkingLevel).toBe('medium');
+      expect(tc2.thinkingBudget).toBeUndefined();
     });
 
     it('clamps thinkingBudget to >= 1024 for Claude models', () => {
@@ -191,14 +220,45 @@ describe('googleAuth service', () => {
       expect(modelTurn.parts[0].thought).toBe(true);
       expect(modelTurn.parts[0].thought_signature).toBe('sig_gemini');
     });
+
+    it('strips bare thinking parts without text for Gemini models to avoid INVALID_ARGUMENT', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          {
+            role: 'model',
+            parts: [
+              { thought: true },
+              { type: 'thinking' },
+              { text: 'Gemini answer' },
+            ],
+          },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'gemini-3.8-flash-tiered');
+      const modelTurn = (payload.contents as any[])[0];
+      expect(modelTurn.parts.length).toBe(1);
+      expect(modelTurn.parts[0].text).toBe('Gemini answer');
+    });
+
+    it('handles snake_case generation_config and thinking_config', () => {
+      const payload: Record<string, unknown> = {
+        generation_config: {
+          thinking_config: { thinkingBudget: 500, thinkingLevel: 'low' },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'gemini-3.8-flash-tiered');
+      const tc = (payload.generation_config as any).thinking_config;
+      expect(tc.thinkingLevel).toBe('low');
+      expect(tc.thinkingBudget).toBeUndefined();
+    });
   });
 
   describe('normalizeGoogleModelId', () => {
-    it('preserves canonical models gemini-3.8-flash-tiered, claude-sonnet-4-6, and claude-opus-4-6-thinking', () => {
+    it('preserves canonical models gemini-3.8-flash-tiered, claude-sonnet-5-5, and claude-opus-5-5', () => {
       expect(normalizeGoogleModelId('gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
-      expect(normalizeGoogleModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
-      expect(normalizeGoogleModelId('claude-opus-4-6-thinking')).toBe('claude-opus-4-6-thinking');
-      expect(normalizeGoogleModelId('models/claude-opus-4-6-thinking')).toBe('claude-opus-4-6-thinking');
+      expect(normalizeGoogleModelId('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+      expect(normalizeGoogleModelId('claude-opus-5-5')).toBe('claude-opus-5-5');
+      expect(normalizeGoogleModelId('models/claude-opus-5-5')).toBe('claude-opus-5-5');
       expect(normalizeGoogleModelId('models/gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
     });
 
@@ -216,12 +276,13 @@ describe('googleAuth service', () => {
 
     it('maps opus aliases to claude-opus-4-6-thinking without degrading to sonnet or pro', () => {
       expect(normalizeGoogleModelId('claude-opus')).toBe('claude-opus-4-6-thinking');
-      expect(normalizeGoogleModelId('claude-opus-4.6')).toBe('claude-opus-4-6-thinking');
+      expect(normalizeGoogleModelId('claude-opus-5-5')).toBe('claude-opus-5-5');
       expect(normalizeGoogleModelId('models/claude-opus')).toBe('claude-opus-4-6-thinking');
     });
 
     it('falls back safely for non-Gemini model names routed to Google', () => {
       expect(normalizeGoogleModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
+      expect(normalizeGoogleModelId('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
       expect(normalizeGoogleModelId('gpt-4o')).toBe('gemini-3.8-flash-tiered');
     });
 
@@ -367,6 +428,52 @@ describe('googleAuth service', () => {
 
       clearRevokedTokens();
       expect(isTokenRevoked(testToken)).toBe(false);
+    });
+  });
+
+  describe('isAccountEntitledToClaude55', () => {
+    it('returns true when account has hasClaude55=true or isFamily=true', () => {
+      expect(isAccountEntitledToClaude55({ hasClaude55: true })).toBe(true);
+      expect(isAccountEntitledToClaude55({ isFamily: true })).toBe(true);
+      expect(isAccountEntitledToClaude55({ isFamilyShared: true })).toBe(true);
+      expect(isAccountEntitledToClaude55({ isFamilyPro: true })).toBe(true);
+    });
+
+    it('returns true when account tier is partage or family', () => {
+      expect(isAccountEntitledToClaude55({ tier: 'partage' })).toBe(true);
+      expect(isAccountEntitledToClaude55({ tier: 'PARTAGE' })).toBe(true);
+      expect(isAccountEntitledToClaude55({ tier: 'family' })).toBe(true);
+    });
+
+    it('returns true when live quota indicates Claude 5.5 access or partage tier', () => {
+      _clearLiveQuotasForTests();
+      updateLiveAccountQuota('google:member@example.com', {
+        fiveHourPercentage: 100,
+        weeklyPercentage: 100,
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 100,
+        claudeFiveHourPct: 100,
+        claudeWeeklyPct: 100,
+        updatedAt: Date.now(),
+        hasClaude55: true,
+        tier: 'partage',
+      });
+
+      expect(isAccountEntitledToClaude55({ accountEmail: 'member@example.com' })).toBe(true);
+      _clearLiveQuotasForTests();
+    });
+
+    it('returns false for standard accounts without 5.5 entitlement even if models list contains 5.5', () => {
+      expect(isAccountEntitledToClaude55({ accountEmail: 'regular@example.com', tier: 'pro', models: [{ id: 'claude-sonnet-5-5' }] })).toBe(false);
+      expect(isAccountEntitledToClaude55({ accountEmail: 'regular@example.com', tier: 'pro' })).toBe(false);
+      expect(isAccountEntitledToClaude55(null)).toBe(false);
+      expect(isAccountEntitledToClaude55(undefined)).toBe(false);
+    });
+
+    it('returns true when type, tierId, or name contains partage', () => {
+      expect(isAccountEntitledToClaude55({ type: 'partage' })).toBe(true);
+      expect(isAccountEntitledToClaude55({ tierId: 'PARTAGE' })).toBe(true);
+      expect(isAccountEntitledToClaude55({ name: 'Compte Partage Famille' })).toBe(true);
     });
   });
 });

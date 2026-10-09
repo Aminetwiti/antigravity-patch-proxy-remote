@@ -97,7 +97,7 @@ Quand vous identifiez la nouvelle URL dans Antigravity 2.2.x:
 
 ```powershell
 # Chercher des patterns d'URL dans le binaire
-$binary = "C:\Users\amine\AppData\Local\Programs\Antigravity\resources\bin\language_server.exe"
+$binary = "$env:LOCALAPPDATA\Programs\Antigravity\resources\bin\language_server.exe"
 $content = [System.IO.File]::ReadAllBytes($binary)
 $text = [System.Text.Encoding]::ASCII.GetString($content)
 

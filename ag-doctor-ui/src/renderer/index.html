@@ -51,17 +51,17 @@
         </button>
       </div>
 
-      <ul class="nav-list">
+      <ul class="nav-list" role="tablist" aria-orientation="vertical" aria-label="Main Navigation">
         <li class="nav-group">
           <ul>
             <li><span class="nav-group-label">Overview</span></li>
-            <li><button class="nav-item active" data-view="dashboard" type="button" title="Dashboard">
+            <li><button class="nav-item active" id="nav-tab-dashboard" data-view="dashboard" type="button" role="tab" aria-selected="true" aria-controls="view-dashboard" title="Dashboard">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
               <span>Dashboard</span>
             </button></li>
-            <li><button class="nav-item" data-view="tokenizer" type="button" title="Tokenizer &amp; Consommation Tokens">
+            <li><button class="nav-item" id="nav-tab-tokenizer" data-view="tokenizer" type="button" role="tab" aria-selected="false" aria-controls="view-tokenizer" title="Vue d'ensemble de la Consommation de Tokens">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
-              <span>Tokenizer &amp; Tokens</span>
+              <span>Stats &amp; Tokens</span>
             </button></li>
           </ul>
         </li>
@@ -69,24 +69,24 @@
         <li class="nav-group">
           <ul>
             <li><span class="nav-group-label">Diagnostics</span></li>
-            <li><button class="nav-item" data-view="doctor" type="button" title="Diagnostic">
+            <li><button class="nav-item" id="nav-tab-doctor" data-view="doctor" type="button" role="tab" aria-selected="false" aria-controls="view-doctor" title="Diagnostic">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
               <span>Diagnostic</span>
             </button></li>
-            <li><button class="nav-item" data-view="logs" type="button" title="Logs">
+            <li><button class="nav-item" id="nav-tab-logs" data-view="logs" type="button" role="tab" aria-selected="false" aria-controls="view-logs" title="Logs">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
               <span>Logs</span>
             </button></li>
-            <li><button class="nav-item" data-view="patch" type="button" title="Patch">
+            <li><button class="nav-item" id="nav-tab-patch" data-view="patch" type="button" role="tab" aria-selected="false" aria-controls="view-patch" title="Patch">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
               <span>Patch</span>
             </button></li>
-            <li><button class="nav-item" data-view="mitm" type="button" title="MITM Proxy">
+            <li><button class="nav-item" id="nav-tab-mitm" data-view="mitm" type="button" role="tab" aria-selected="false" aria-controls="view-mitm" title="MITM Proxy">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
               <span>MITM Proxy</span>
             </button></li>
 
-            <li style="display:none;"><button class="nav-item" data-view="failures" type="button" title="Failure Scenarios" id="openFailureShowcaseBtn">
+            <li style="display:none;"><button class="nav-item" id="nav-tab-failures" data-view="failures" type="button" role="tab" aria-selected="false" aria-controls="view-failures" title="Failure Scenarios" id="openFailureShowcaseBtn">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               <span>Failure Scenarios</span>
             </button></li>
@@ -96,19 +96,19 @@
         <li class="nav-group">
           <ul>
             <li><span class="nav-group-label">Configuration</span></li>
-            <li><button class="nav-item" data-view="google-accounts" type="button" title="Google Accounts">
+            <li><button class="nav-item" id="nav-tab-google-accounts" data-view="google-accounts" type="button" role="tab" aria-selected="false" aria-controls="view-google-accounts" title="Google Accounts">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><circle cx="12" cy="12" r="2"/></svg>
               <span>Google Accounts</span>
             </button></li>
-            <li><button class="nav-item" data-view="models" type="button" title="Models">
+            <li><button class="nav-item" id="nav-tab-models" data-view="models" type="button" role="tab" aria-selected="false" aria-controls="view-models" title="Models">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08l4.24 4.24M1 12h6m10 0h6M4.22 19.78l4.24-4.24m7.08-7.08l4.24-4.24"/></svg>
               <span>Models</span>
             </button></li>
-            <li><button class="nav-item" data-view="antigravity" type="button" title="Antigravity">
+            <li><button class="nav-item" id="nav-tab-antigravity" data-view="antigravity" type="button" role="tab" aria-selected="false" aria-controls="view-antigravity" title="Antigravity">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
               <span>Antigravity</span>
             </button></li>
-            <li><button class="nav-item" data-view="settings" type="button" title="Settings">
+            <li><button class="nav-item" id="nav-tab-settings" data-view="settings" type="button" role="tab" aria-selected="false" aria-controls="view-settings" title="Settings">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               <span>Settings</span>
             </button></li>
@@ -118,7 +118,7 @@
         <li class="nav-group">
           <ul>
             <li><span class="nav-group-label">Remote &amp; Companion</span></li>
-            <li><button class="nav-item" data-view="remote" type="button" title="Remote Server">
+            <li><button class="nav-item" id="nav-tab-remote" data-view="remote" type="button" role="tab" aria-selected="false" aria-controls="view-remote" title="Remote Server">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
               <span>Remote Server</span>
             </button></li>
@@ -137,7 +137,7 @@
     </nav>
 
     <!-- Content -->
-    <section class="content">
+    <main class="content" id="mainContent" role="main" aria-label="Diagnostic Content">
       <!-- Intercepted OAuth Challenge Banner -->
       <div id="oauthInterceptBanner" class="oauth-intercept-banner" style="display: none;">
         <div class="oauth-banner-content">
@@ -146,35 +146,35 @@
           </div>
           <div class="oauth-banner-text">
             <div class="oauth-banner-title">
-              <strong>Demande d'Authentification Google Détectée</strong>
+              <strong>Google Authentication Request Detected</strong>
               <span class="badge badge-accent" id="oauthPortBadge">Port 58475</span>
             </div>
             <div class="oauth-banner-desc">
-              Le Language Server Antigravity attend votre approbation OAuth pour activer les modèles Gemini et l'IDE.
+              Antigravity Language Server is awaiting OAuth approval to activate Gemini models and IDE capabilities.
             </div>
           </div>
         </div>
         <div class="oauth-banner-actions">
           <button class="btn btn-sm btn-primary" id="oauthOpenBrowserBtn" type="button">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Ouvrir dans le navigateur
+            Open in Browser
           </button>
           <button class="btn btn-sm btn-secondary" id="oauthCopyUrlBtn" type="button">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            Copier l'URL
+            Copy URL
           </button>
-          <button class="btn btn-sm btn-ghost" id="oauthQrBtn" type="button" title="Afficher QR Code Mobile">
+          <button class="btn btn-sm btn-ghost" id="oauthQrBtn" type="button" title="Show Mobile QR Code">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            QR Mobile
+            Mobile QR
           </button>
-          <button class="btn btn-sm btn-icon btn-ghost" id="oauthDismissBtn" type="button" title="Masquer">
+          <button class="btn btn-sm btn-icon btn-ghost" id="oauthDismissBtn" type="button" title="Dismiss" aria-label="Dismiss OAuth notification">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
       </div>
 
       <!-- Remote -->
-      <div class="view" id="view-remote">
+      <div class="view" id="view-remote" role="tabpanel" aria-labelledby="nav-tab-remote">
         <div class="view-header">
           <div>
             <div style="display: flex; align-items: center; gap: 12px;">
@@ -202,13 +202,13 @@
               <h3>Daemon Configuration</h3>
               
               <div class="form-group" style="margin-top: 15px;">
-                <label>Listening Port</label>
-                <input type="number" id="remotePort" class="input" value="8090" />
+                <label for="remotePort">Listening Port</label>
+                <input type="number" id="remotePort" class="input" value="8090" aria-label="Listening Port" />
               </div>
 
               <div class="form-group">
-                <label>Tunnel Type</label>
-                <select id="remoteTunnel" class="input">
+                <label for="remoteTunnel">Tunnel Type</label>
+                <select id="remoteTunnel" class="input" aria-label="Tunnel Type">
                   <option value="pinggy">Pinggy (ssh.pinggy.io — Included natively, no setup)</option>
                   <option value="none">None (Local Wi-Fi network only)</option>
                   <option value="cloudflare">Cloudflare (Requires cloudflared.exe)</option>
@@ -218,13 +218,13 @@
 
 
               <div class="form-group">
-                <label style="display: flex; justify-content: space-between; align-items: center;">
+                <label for="remoteAuthToken" style="display: flex; justify-content: space-between; align-items: center;">
                   <span>Auth Token <span style="font-size: 11px; opacity: 0.7; font-weight: normal;">(auto-saved)</span></span>
                   <span id="tokenSavedBadge" style="font-size: 11px; color: var(--ok); display: none;">Saved</span>
                 </label>
                 <div style="display: flex; gap: 8px;">
-                  <input type="text" id="remoteAuthToken" class="input" placeholder="e.g. secret-token" style="flex: 1;" />
-                  <button class="btn btn-ghost" id="regenerateTokenBtn" type="button" title="Generate secure random token" style="padding: 0 10px;">
+                  <input type="text" id="remoteAuthToken" class="input" placeholder="e.g. secret-token" aria-label="Daemon Auth Token" style="flex: 1;" />
+                  <button class="btn btn-ghost" id="regenerateTokenBtn" type="button" title="Generate secure random token" aria-label="Generate secure random token" style="padding: 0 10px;">
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
                   </button>
                 </div>
@@ -233,7 +233,7 @@
               <!-- Admin Mode Option -->
               <div class="form-group" style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--r-md);">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 4px;">
-                  <input type="checkbox" id="remoteAllowFirstAdmin" style="width: 16px; height: 16px; cursor: pointer;" checked />
+                  <input type="checkbox" id="remoteAllowFirstAdmin" aria-label="Admin Privileges (Allow First Admin)" style="width: 16px; height: 16px; cursor: pointer;" checked />
                   <span style="font-weight: 600; font-size: 13px;">Admin Privileges (Allow First Admin)</span>
                 </label>
                 <p style="font-size: 11.5px; color: var(--text-2); margin: 0; margin-left: 26px;">
@@ -291,7 +291,7 @@
             <div class="settings-card" style="display:flex; flex-direction:column; align-items:center; padding: 24px;">
               <h3 style="margin-bottom: 16px;">Pairing QR Code</h3>
               <div id="remoteQrContainer" style="background: white; padding: 16px; border-radius: var(--r-lg); box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none;">
-                  <img id="remoteQrImage" width="220" height="220" />
+                  <img id="remoteQrImage" width="220" height="220" alt="Pairing QR code" />
               </div>
               <div id="remoteQrPlaceholder" style="width: 220px; height: 220px; background: var(--bg-1); border: 2px dashed var(--border); border-radius: var(--r-lg); display: flex; align-items: center; justify-content: center; color: var(--text-2);">
                   Server not running
@@ -314,7 +314,7 @@
       </div>
 
       <!-- Dashboard -->
-      <div class="view active" id="view-dashboard">
+      <div class="view active" id="view-dashboard" role="tabpanel" aria-labelledby="nav-tab-dashboard">
         <div class="view-header">
           <div>
             <h1>Dashboard</h1>
@@ -337,8 +337,8 @@
               Run doctor
             </button>
             <!-- Hidden secondary actions -->
-            <button id="startStubBtn" type="button" style="display:none;"></button>
-            <button id="dashboardAddModelBtn" type="button" style="display:none;"></button>
+            <button id="startStubBtn" type="button" style="display:none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="dashboardAddModelBtn" type="button" style="display:none;" aria-hidden="true" tabindex="-1"></button>
           </div>
         </div>
 
@@ -444,7 +444,7 @@
       </div>
 
       <!-- Antigravity view -->
-      <div class="view" id="view-antigravity">
+      <div class="view" id="view-antigravity" role="tabpanel" aria-labelledby="nav-tab-antigravity">
         <div class="view-header">
           <div>
             <h1>Antigravity</h1>
@@ -557,7 +557,7 @@
       </div>
 
       <!-- MITM Proxy view -->
-      <div class="view" id="view-mitm">
+      <div class="view" id="view-mitm" role="tabpanel" aria-labelledby="nav-tab-mitm">
         <div class="view-header">
           <div>
             <h1>MITM Proxy</h1>
@@ -584,7 +584,7 @@
       </div>
 
       <!-- Diagnostic view -->
-      <div class="view" id="view-doctor">
+      <div class="view" id="view-doctor" role="tabpanel" aria-labelledby="nav-tab-doctor">
         <div class="view-header">
           <div>
             <h1>Diagnostic</h1>
@@ -605,7 +605,7 @@
       </div>
 
       <!-- Google Accounts view -->
-      <div class="view" id="view-google-accounts">
+      <div class="view" id="view-google-accounts" role="tabpanel" aria-labelledby="nav-tab-google-accounts">
         <div class="view-header">
           <div>
             <div style="display: flex; align-items: center; gap: 10px;">
@@ -623,115 +623,157 @@
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
               Sync all models
             </button>
-            <button class="btn btn-secondary" id="gaDiscoverIdeBtn" type="button" aria-label="Import from Antigravity IDE" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Import from IDE
+            <button class="btn btn-ghost" id="gaRepairCooldownsBtn" type="button" aria-label="Corriger les cooldowns et réveiller les comptes" title="Vérifier les quotas, lever les cooldowns et réveiller les comptes Google">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              Corriger
             </button>
-            <button class="btn btn-primary" id="gaOAuthLoginBtn" type="button" aria-label="Se connecter avec Google" style="background: #1a73e8; color: #fff; border: 1px solid rgba(66, 133, 244, 0.5); display: inline-flex; align-items: center; gap: 7px; font-weight: 500;">
-              <svg viewBox="0 0 24 24" width="14" height="14"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg>
-              Se connecter avec Google
-            </button>
-            <button class="btn btn-ghost" id="gaAddAccountBtn" type="button" aria-label="Add a Google Account manually">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Clé manuelle
-            </button>
-          </div>
-        </div>
 
-        <!-- Smart Auto-Pool Banner -->
-        <div class="patch-banner info" style="margin-bottom: 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
-          <div style="display: flex; gap: 12px; align-items: flex-start;">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <div>
-              <div class="patch-banner-title">Seamless Multi-Account Failover &amp; No-Relog Dropdown</div>
-              <div class="patch-banner-text">
-                Every account's models appear directly in Antigravity's model list (e.g. <code>[Perso] Gemini 3.1 Pro High</code>, <code>[Work] Gemini 3.1 Pro High</code>). If an account runs out of quota (HTTP 429), the proxy automatically retries on an alternate active Google account with zero session downtime.
+            <!-- Unified Connect Account Dropdown (Loi de Hick) -->
+            <div class="ga-dropdown-wrap" id="gaAddDropdownWrap">
+              <button class="btn btn-primary" id="gaAddAccountUnifiedBtn" type="button" aria-haspopup="true" aria-expanded="false" style="display: inline-flex; align-items: center; gap: 7px; font-weight: 500;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Connecter un compte
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="ga-dropdown-menu" id="gaAddAccountMenu" hidden>
+                <button type="button" class="ga-dropdown-item" id="gaMenuAntigravityOAuth">
+                  <span class="ga-dropdown-item-badge google">G</span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Antigravity IDE (OAuth)</strong>
+                    <small>Compte Google principal de l'IDE</small>
+                  </div>
+                </button>
+                <button type="button" class="ga-dropdown-item" id="gaMenuGeminiCli">
+                  <span class="ga-dropdown-item-badge cli">CLI</span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Gemini CLI (Code Assist)</strong>
+                    <small>Jeton séparé Google Cloud Code Assist</small>
+                  </div>
+                </button>
+                <button type="button" class="ga-dropdown-item" id="gaMenuDiscoverIde">
+                  <span class="ga-dropdown-item-badge ide">✦</span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Importer depuis IDE actif</strong>
+                    <small>Détection automatique de session IDE</small>
+                  </div>
+                </button>
+                <div class="ga-dropdown-divider"></div>
+                <button type="button" class="ga-dropdown-item" id="gaMenuAiStudio">
+                  <span class="ga-dropdown-item-badge studio">⚡</span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Google AI Studio Key</strong>
+                    <small>Clé d'API gratuite direct Gemini Studio</small>
+                  </div>
+                </button>
               </div>
             </div>
+
+            <!-- Preserved IDs for backward compatibility and automated tests -->
+            <button id="gaOAuthAntigravityBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="gaDiscoverIdeBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="gaAddAiStudioBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="gaOAuthLoginBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="gaAddAccountBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
           </div>
         </div>
-
-        <!-- Stat summary cards -->
-        <div class="stat-grid" style="margin-bottom: 20px;">
-          <div class="stat-card">
-            <div class="stat-icon info">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-            </div>
-            <div class="stat-body">
-              <div class="stat-label">Google Accounts</div>
-              <div class="stat-value" id="gaStatTotalAccounts">0</div>
-            </div>
-          </div>
-          <div class="stat-card">
+        <!-- Antigravity Google Pool 8 KPI Operational Cockpit Grid -->
+        <div class="ga-telemetry-grid" role="region" aria-label="Antigravity pool live quota & operational telemetry">
+          <!-- Card 1: Disponibilité Moyenne du Pool -->
+          <div class="stat-card ga-token-stat-card card-value" role="group" aria-label="Disponibilité moyenne du pool">
             <div class="stat-icon ok">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </div>
-            <div class="stat-body">
-              <div class="stat-label">Healthy &amp; Active</div>
-              <div class="stat-value" id="gaStatActiveAccounts">0</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon models">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>
-            </div>
-            <div class="stat-body">
-              <div class="stat-label">Exposed Models in AGY</div>
-              <div class="stat-value" id="gaStatTotalModels">0</div>
-            </div>
-          </div>
-
-          <!-- Token Estimation Card 1: Available Remaining Tokens -->
-          <div class="stat-card ga-token-stat-card">
-            <div class="stat-icon" style="background: rgba(37, 99, 235, 0.15); color: #60a5fa;">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             </div>
             <div class="stat-body" style="min-width: 0; width: 100%;">
-              <div class="stat-label" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>Tokens Restants</span>
-                <span class="ga-token-pill-mode" id="gaTokenWindowBadge">Hebdo</span>
-              </div>
-              <div class="stat-value" id="gaStatAvailableTokens" style="color: #60a5fa;">0</div>
-              <div class="stat-sub" id="gaStatAvailableTokensSub" style="font-size: 11px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">100% du pool disponible</div>
+              <div class="stat-label">Disponibilité Pool</div>
+              <div class="stat-value" id="gaStatPoolValue" role="status" aria-live="polite">100%</div>
+              <div class="stat-sub" id="gaStatPoolValueSub" title="Comptes actifs en rotation">Calcul de la disponibilité...</div>
             </div>
           </div>
 
-          <!-- Token Estimation Card 2: Total Pool Capacity -->
-          <div class="stat-card ga-token-stat-card">
-            <div class="stat-icon" style="background: rgba(147, 51, 234, 0.15); color: #c084fc;">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          <!-- Card 2: Score de Résilience Pool -->
+          <div class="stat-card ga-token-stat-card card-resilience" role="group" aria-label="Score de résilience du pool">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </div>
             <div class="stat-body" style="min-width: 0; width: 100%;">
-              <div class="stat-label">Capacité Totale Pool</div>
-              <div class="stat-value" id="gaStatTotalCapacity" style="color: #c084fc;">0</div>
-              <div class="stat-sub" id="gaStatTotalCapacitySub" style="font-size: 11px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Cumul brut des quotas</div>
+              <div class="stat-label">Résilience Pool</div>
+              <div class="stat-value" id="gaStatResilienceScore" role="status" aria-live="polite">--</div>
+              <div class="stat-sub" id="gaStatResilienceSub" title="Capacité d'absorption des pannes">Évaluation du pool...</div>
             </div>
           </div>
 
-          <!-- Token Estimation Card 3: Equivalent API Value & Throughput -->
-          <div class="stat-card ga-token-stat-card">
-            <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <!-- Card 3: Flotte Gemini Prête -->
+          <div class="stat-card ga-token-stat-card card-gemini" role="group" aria-label="Comptes Gemini prêts">
+            <div class="stat-icon ok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             </div>
             <div class="stat-body" style="min-width: 0; width: 100%;">
-              <div class="stat-label">Valeur API Équivalente</div>
-              <div class="stat-value" id="gaStatPoolValue" style="color: #34d399;">$0.00</div>
-              <div class="stat-sub" id="gaStatPoolValueSub" style="font-size: 11px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">0 RPM parallèle max</div>
+              <div class="stat-label">Flotte Gemini Prête</div>
+              <div class="stat-value" id="gaStatGeminiReady" role="status" aria-live="polite">--</div>
+              <div class="stat-sub" id="gaStatGeminiReadySub" title="Comptes Gemini opérationnels">Flotte active</div>
             </div>
           </div>
 
-          <!-- Token Estimation Card 4: Next Reset Countdown -->
-          <div class="stat-card ga-token-stat-card">
-            <div class="stat-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
+          <!-- Card 4: Prochain Reset Google -->
+          <div class="stat-card ga-token-stat-card card-reset" role="group" aria-label="Compte à rebours du prochain renouvellement">
+            <div class="stat-icon">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </div>
             <div class="stat-body" style="min-width: 0; width: 100%;">
               <div class="stat-label" style="display: flex; justify-content: space-between; align-items: center;">
                 <span>Prochain Reset</span>
-                <span class="ga-token-pill-mode" id="gaNextResetBadge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24;">Hebdo</span>
+                <span class="ga-token-pill-mode badge-reset" id="gaNextResetBadge">Hebdo</span>
               </div>
-              <div class="stat-value" id="gaStatNextReset" style="color: #fbbf24;">--</div>
-              <div class="stat-sub" id="gaStatNextResetSub" style="font-size: 11px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Calcul du prochain reset...</div>
+              <div class="stat-value" id="gaStatNextReset" role="status" aria-live="polite">--</div>
+              <div class="stat-sub" id="gaStatNextResetSub" title="Calcul du prochain reset...">Calcul du prochain reset...</div>
+            </div>
+          </div>
+
+          <!-- Card 5: Vélocité RPM (Débit) -->
+          <div class="stat-card ga-token-stat-card card-velocity" role="group" aria-label="Vélocité et débit du pool">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Vélocité Pool</div>
+              <div class="stat-value" id="gaStatVelocityRpm" role="status" aria-live="polite">0 RPM</div>
+              <div class="stat-sub" id="gaStatVelocitySub" title="Rythme des requêtes">Charge fluide</div>
+            </div>
+          </div>
+
+          <!-- Card 6: Runway Autonomie -->
+          <div class="stat-card ga-token-stat-card card-runway" role="group" aria-label="Autonomie estimée du pool">
+            <div class="stat-icon ok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Runway Autonomie</div>
+              <div class="stat-value" id="gaStatRunwayHours" role="status" aria-live="polite">> 24h</div>
+              <div class="stat-sub" id="gaStatRunwaySub" title="Autonomie restante">Temps de travail disponible</div>
+            </div>
+          </div>
+
+          <!-- Card 7: Comptes en Cooldown Anti-Burst -->
+          <div class="stat-card ga-token-stat-card card-cooldown" role="group" aria-label="Comptes temporairement en pause ou cooldown">
+            <div class="stat-icon warn">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Comptes en Cooldown</div>
+              <div class="stat-value" id="gaStatCooldownCount" role="status" aria-live="polite">0</div>
+              <div class="stat-sub" id="gaStatCooldownSub" title="Protection anti-burst">Zéro cooldown actif</div>
+            </div>
+          </div>
+
+          <!-- Card 8: Requêtes Traitées (Proxy) -->
+          <div class="stat-card ga-token-stat-card card-capacity" role="group" aria-label="Volume total des requêtes traitées">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Requêtes Traitées</div>
+              <div class="stat-value" id="gaStatTotalCapacity" role="status" aria-live="polite">0 req</div>
+              <div class="stat-sub" id="gaStatTotalCapacitySub" title="Requêtes réussies du proxy">Quotas Antigravity pool</div>
             </div>
           </div>
         </div>
@@ -768,11 +810,21 @@
                   </button>
                 </div>
 
-                <!-- Filter chips: All, PRO, ULTRA, FREE -->
-                <div style="display: inline-flex; gap: 4px;" id="gaFilterGroup">
+                <!-- Filter chips: All, Status, Tiers -->
+                <div style="display: inline-flex; gap: 4px; flex-wrap: wrap;" id="gaFilterGroup">
                   <button type="button" class="ga-chip active" data-filter="all">
                     All <span class="ga-chip-cnt" id="gaCntAll">0</span>
                   </button>
+                  <button type="button" class="ga-chip" data-filter="status:ready" style="border-color: rgba(16, 185, 129, 0.35); color: #10b981;">
+                    🟢 Prêts <span class="ga-chip-cnt" id="gaCntReady">0</span>
+                  </button>
+                  <button type="button" class="ga-chip" data-filter="status:cooldown" style="border-color: rgba(245, 158, 11, 0.35); color: #f59e0b;">
+                    ⏳ Cooldown <span class="ga-chip-cnt" id="gaCntCooldown">0</span>
+                  </button>
+                  <button type="button" class="ga-chip" data-filter="status:paused" style="border-color: rgba(239, 68, 68, 0.35); color: #ef4444;">
+                    ⏸ En Pause <span class="ga-chip-cnt" id="gaCntPaused">0</span>
+                  </button>
+                  <div style="width: 1px; height: 14px; background: var(--border); margin: 3px 1px; align-self: center;"></div>
                   <button type="button" class="ga-chip" data-filter="pro">
                     PRO <span class="ga-chip-cnt" id="gaCntPro">0</span>
                   </button>
@@ -796,6 +848,12 @@
                 <button type="button" class="btn" id="gaToolbarWarmupBtn" style="background: var(--warn-orange, #ea580c); color: #fff; padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; border: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> One-click Warmup
                 </button>
+                <button type="button" class="btn btn-ghost" id="gaToolbarWakeAllBtn" title="Lever tous les cooldowns et réveiller tous les comptes" style="padding: 5px 11px; font-size: 11.5px; font-weight: 600; border-radius: 7px; border: 1px solid rgba(16, 185, 129, 0.35); color: #10b981; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Lever Cooldowns
+                </button>
+                <button type="button" class="btn btn-ghost" id="gaToolbarPurgeCacheBtn" title="Purger le cache disque des quotas et réinitialiser tous les cooldowns" style="padding: 5px 11px; font-size: 11.5px; font-weight: 600; border-radius: 7px; border: 1px solid rgba(239, 68, 68, 0.35); color: #ef4444; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Purger Cache
+                </button>
                 <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-2); cursor: pointer; user-select: none; margin-left: 4px;">
                   <span>Show All Quotas</span>
                   <input type="checkbox" id="gaShowAllQuotasSwitch" aria-label="Show All Quotas (5-Hour & Weekly)" style="cursor: pointer;" />
@@ -807,7 +865,36 @@
                 <button type="button" class="btn btn-ghost btn-sm" id="gaExportJsonBtn" title="Export Accounts JSON" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
                   <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export
                 </button>
-                <input type="file" id="gaImportFileInput" accept=".json" style="display: none;" />
+                <input type="file" id="gaImportFileInput" accept=".json" aria-label="Import accounts JSON file" style="display: none;" />
+              </div>
+            </div>
+
+            <!-- Pool Health & Readiness KPI Banner -->
+            <div id="gaPoolHealthBar" style="margin-bottom: 14px;"></div>
+
+            <!-- Floating / Inline Batch Operations Action Bar -->
+            <div id="gaBatchActionBar" style="display: none; margin-bottom: 12px; padding: 8px 14px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
+                <span style="font-weight: 600; color: #60a5fa;" id="gaBatchSelectedCount">0 sélectionné(s)</span>
+                <span style="color: var(--text-3);">|</span>
+                <span style="color: var(--text-2); font-size: 11px;">Actions groupées sur les comptes cochés :</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm" id="gaBatchLiftCdBtn" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.35); font-size: 11px; padding: 3px 9px;">
+                  ⚡ Lever Cooldowns
+                </button>
+                <button type="button" class="btn btn-sm" id="gaBatchPauseBtn" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 11px; padding: 3px 9px;">
+                  ⏸ Mettre en Pause
+                </button>
+                <button type="button" class="btn btn-sm" id="gaBatchResumeBtn" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); font-size: 11px; padding: 3px 9px;">
+                  ▶ Réactiver
+                </button>
+                <button type="button" class="btn btn-sm" id="gaBatchPingBtn" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); font-size: 11px; padding: 3px 9px;">
+                  📶 Ping Groupé
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="gaBatchDeselectBtn" style="font-size: 11px; padding: 3px 8px; color: var(--text-2);">
+                  ✕ Désélectionner
+                </button>
               </div>
             </div>
 
@@ -819,7 +906,7 @@
       </div>
 
       <!-- Models view -->
-      <div class="view" id="view-models">
+      <div class="view" id="view-models" role="tabpanel" aria-labelledby="nav-tab-models">
         <div class="view-header">
           <div>
             <h1>Custom models</h1>
@@ -839,7 +926,7 @@
               Test & Auto-Disable
             </button>
             <label class="sentinel-toggle" title="Auto-Sentinel: periodically test all providers and auto-disable failing ones">
-              <input type="checkbox" id="autoSentinelToggle" />
+              <input type="checkbox" id="autoSentinelToggle" aria-label="Auto-Sentinel" />
               <span class="sentinel-slider"></span>
               <span class="sentinel-label" id="autoSentinelLabel">Auto-Sentinel</span>
             </label>
@@ -888,7 +975,7 @@
               </div>
               <div class="models-bulk-actions">
                 <label class="models-select-all" title="Select all models on this page" style="display:flex;align-items:center;gap:6px;margin-right:6px;font-size:12px;cursor:pointer;">
-                  <input type="checkbox" id="modelsSelectAllCb" /> Select page
+                  <input type="checkbox" id="modelsSelectAllCb" aria-label="Select all models on current page" /> Select page
                 </label>
                 <span id="modelsSelectedBadge" class="badge badge-primary" style="display: none; font-size: 11px;">0 selected</span>
                 <button type="button" class="btn btn-ghost btn-sm" id="modelsSelectAllMatchesBtn" title="Select all models matching active filter" style="display: none;">Select all (<span id="modelsSelectAllCount">0</span>)</button>
@@ -942,7 +1029,7 @@
       </div>
 
       <!-- Patch view -->
-      <div class="view" id="view-patch">
+      <div class="view" id="view-patch" role="tabpanel" aria-labelledby="nav-tab-patch">
         <div class="view-header">
           <div>
             <h1>Binary Patch</h1>
@@ -1030,20 +1117,26 @@
       </div>
 
       <!-- Logs view -->
-      <div class="view" id="view-logs">
+      <div class="view" id="view-logs" role="tabpanel" aria-labelledby="nav-tab-logs">
         <div class="view-header">
           <div>
             <h1>Logs</h1>
             <p class="subtitle">Live output from <code>language_server</code> and related processes</p>
           </div>
           <div class="header-actions">
-            <button class="btn btn-ghost" id="logsCopyErrorsBtn" type="button" title="Copy only errors and warnings">Copy errors</button>
-            <button class="btn btn-ghost" id="logsClearBtn" type="button" aria-label="Clear logs">Clear</button>
-            <button class="btn btn-ghost" id="logsCopyBtn" type="button" aria-label="Copy logs to clipboard">Copy all</button>
-            <button class="btn btn-primary" id="logsFollowBtn" type="button" aria-label="Follow live logs">
-              <span class="dot-live"></span>
-              Follow live
-            </button>
+            <div class="btn-group" role="group" aria-label="Share and clipboard">
+              <button class="btn btn-ghost" id="logsExportGithubBtn" type="button" title="Export sanitized logs for GitHub issue">Export GitHub</button>
+              <button class="btn btn-ghost" id="logsCopyErrorsBtn" type="button" title="Copy only errors and warnings">Copy errors</button>
+              <button class="btn btn-ghost" id="logsCopyBtn" type="button" aria-label="Copy logs to clipboard">Copy all</button>
+            </div>
+            <button class="btn btn-ghost" id="logsClearBtn" type="button" aria-label="Clear logs" title="Clear logs (Ctrl+K)">Clear</button>
+            <div class="btn-group stream-control-group" role="group" aria-label="Stream controls">
+              <button class="btn btn-ghost" id="logsFreezeBtn" type="button" title="Pause / Resume visual stream (Space)">Freeze</button>
+              <button class="btn btn-primary" id="logsFollowBtn" type="button" aria-label="Follow live logs">
+                <span class="dot-live"></span>
+                Follow live
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1081,10 +1174,11 @@
           </button>
           <div class="logs-search-box">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="logs-search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="search" id="logsSearch" class="logs-search" placeholder="Filter logs by keyword…" />
+            <input type="search" id="logsSearch" class="logs-search" placeholder="Filter logs (e.g. lvl:err, sub:proxy, -noise)…" aria-label="Filter logs by keyword or facet" />
             <span id="logsSearchCount" class="logs-search-count"></span>
           </div>
           <div class="logs-stats">
+            <span id="logsVelocity" class="logs-badge velocity" title="Log stream velocity">0/s</span>
             <span id="logsLineCount" class="logs-badge">0 lines</span>
             <span id="logsDedupCount" class="logs-badge dim">0 deduped</span>
           </div>
@@ -1092,7 +1186,10 @@
 
         <div class="panel">
           <div class="panel-body panel-body-flush logs-panel-body">
-            <pre class="terminal terminal-flush" id="logsOutput" tabindex="0" role="region" aria-label="Log stream output"></pre>
+            <div class="logs-container-wrapper">
+              <pre class="terminal terminal-flush" id="logsOutput" tabindex="0" role="region" aria-label="Log stream output"></pre>
+              <canvas id="logsMinimap" class="logs-minimap" width="14" height="420" title="Click to jump to log position"></canvas>
+            </div>
             <button id="logsScrollBottomBtn" class="logs-scroll-bottom-btn" title="Scroll to bottom" type="button" style="display:none">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
               Bottom
@@ -1106,10 +1203,11 @@
             </div>
           </div>
         </div>
+        <aside id="logsInspectorDrawer" class="logs-inspector-drawer" aria-label="Log Inspector"></aside>
       </div>
 
       <!-- Settings view -->
-      <div class="view" id="view-settings">
+      <div class="view" id="view-settings" role="tabpanel" aria-labelledby="nav-tab-settings">
         <div class="view-header">
           <div>
             <h1>Settings</h1>
@@ -1131,7 +1229,7 @@
                 <span class="toggle-subtitle">Display a quick "Retry" button next to the Send button in the Antigravity chat input bar.</span>
               </span>
               <span class="toggle-control">
-                <input type="checkbox" id="retryBtnToggle" checked />
+                <input type="checkbox" id="retryBtnToggle" aria-label="Enable inline retry button" checked />
                 <span class="toggle-slider" aria-hidden="true"></span>
               </span>
             </label>
@@ -1142,7 +1240,7 @@
                 <span class="toggle-subtitle">Display quick action pills above the prompt box (Continue, Analyser et auditer, Keep going, etc.).</span>
               </span>
               <span class="toggle-control">
-                <input type="checkbox" id="suggestionPillsToggle" checked />
+                <input type="checkbox" id="suggestionPillsToggle" aria-label="Enable suggestion pills bar" checked />
                 <span class="toggle-slider" aria-hidden="true"></span>
               </span>
             </label>
@@ -1176,7 +1274,7 @@
                 <span class="toggle-subtitle">Stop OS notifications when an upstream provider returns 401/403/429/5xx or times out. The tray badge and modal still show the error.</span>
               </span>
               <span class="toggle-control">
-                <input type="checkbox" id="notifyToggle" data-label="notify-toggle" />
+                <input type="checkbox" id="notifyToggle" data-label="notify-toggle" aria-label="Do not notify on provider errors" />
                 <span class="toggle-slider" aria-hidden="true"></span>
               </span>
             </label>
@@ -1220,7 +1318,7 @@
       </div>
 
       <!-- Traffic Inspector view -->
-      <div class="view" id="view-traffic">
+      <div class="view" id="view-traffic" role="tabpanel" aria-labelledby="nav-tab-traffic">
         <div class="view-header">
           <div>
             <h1>Traffic Inspector</h1>
@@ -1235,8 +1333,8 @@
           <div class="panel-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
             <h2>Intercepted Requests (Gemini ↔ Custom Providers)</h2>
             <div style="display:flex; align-items:center; gap:8px;">
-              <input type="text" id="trafficSearchInput" placeholder="Filter path / model..." style="padding:4px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);" data-label="traffic-search-input" />
-              <select id="trafficProviderSelect" style="padding:4px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);" data-label="traffic-provider-select">
+              <input type="text" id="trafficSearchInput" placeholder="Filter path / model..." style="padding:4px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);" data-label="traffic-search-input" aria-label="Filter traffic by path or model" />
+              <select id="trafficProviderSelect" style="padding:4px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);" data-label="traffic-provider-select" aria-label="Filter traffic by provider">
                 <option value="all">All Providers</option>
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic</option>
@@ -1256,7 +1354,7 @@
 
       <!-- Traffic Detail Modal Backdrop -->
       <div class="modal-backdrop" id="trafficDetailBackdrop" hidden>
-        <div class="modal" role="dialog" aria-modal="true" style="max-width:720px; width:90%;">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="trafficDetailTitle" style="max-width:720px; width:90%;">
           <div class="modal-header">
             <h2 id="trafficDetailTitle" style="margin:0; font-size:16px;">Request Payload & Response Diff</h2>
             <button class="btn btn-ghost btn-sm" id="trafficDetailCloseBtn" type="button" aria-label="Close detail modal">✕</button>
@@ -1280,17 +1378,18 @@
       </div>
 
       <!-- Tokenizer & Token Consumption View -->
-      <div class="view" id="view-tokenizer">
+      <div class="view" id="view-tokenizer" role="tabpanel" aria-labelledby="nav-tab-tokenizer">
         <div class="view-header" style="align-items:flex-start;">
           <div>
             <div style="display:flex; align-items:center; gap:10px;">
-              <h1 style="font-size:26px; font-weight:700; margin:0; letter-spacing:-0.02em;">Stats</h1>
-              <span class="badge" style="background:rgba(66, 133, 244, 0.16); color:#60a5fa; border:1px solid rgba(66, 133, 244, 0.35); font-weight:600;">Google Antigravity</span>
+              <h1 style="font-size:26px; font-weight:700; margin:0; letter-spacing:-0.02em;">Vue d'ensemble des Tokens</h1>
+              <span class="badge" style="background:rgba(66, 133, 244, 0.16); color:#60a5fa; border:1px solid rgba(66, 133, 244, 0.35); font-weight:600;">Données Réelles</span>
             </div>
-            <p class="subtitle" style="font-size:13px; color:var(--text-2); margin-top:4px;">An overview of your Antigravity usage and activity.</p>
+            <p class="subtitle" style="font-size:13px; color:var(--text-2); margin-top:4px;">Statistiques d'activité globale, répartition par modèle et consommation réelle.</p>
           </div>
           <div class="view-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <div class="rpm-safety-meter" id="rpmSafetyMeter" title="Santé des quotas requêtes/min">
+              <span class="rpm-live-dot" title="Surveillance RPM en temps réel active"></span>
               <span style="font-weight:600;">RPM</span>
               <div class="rpm-safety-track">
                 <div class="rpm-safety-fill" id="rpmSafetyFill"></div>
@@ -1298,419 +1397,393 @@
               <span id="rpmSafetyVal" style="font-weight:600; font-family:var(--font-mono, monospace); color:var(--text-0);">4%</span>
             </div>
             <select id="statsRangeSelect" style="padding:6px 12px; font-size:12px; font-weight:500; border-radius:8px; border:1px solid var(--border); background:var(--bg-1); color:var(--text-0); cursor:pointer;">
-              <option value="7m" selected>Last 7 months</option>
-              <option value="30d">Last 30 days</option>
-              <option value="7d">Last 7 days</option>
-              <option value="24h">Last 24 hours</option>
-              <option value="all">All time</option>
+              <option value="7m" selected>7 derniers mois</option>
+              <option value="30d">30 derniers jours</option>
+              <option value="7d">7 derniers jours</option>
+              <option value="24h">Dernières 24 heures</option>
+              <option value="all">Tout l'historique</option>
             </select>
-            <button class="btn btn-ghost btn-sm" id="tokenRefreshBtn" type="button" title="Actualiser les métriques">
+            <button class="btn btn-ghost btn-sm" id="tokenRefreshBtn" type="button" title="Actualiser les métriques réelles">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             </button>
-            <button class="btn btn-ghost btn-sm" id="tokenExportCsvBtn" type="button" title="Exporter au format CSV">Export</button>
+            <button class="btn btn-ghost btn-sm" id="tokenExportCsvBtn" type="button" title="Exporter au format CSV">Export CSV</button>
+            <button class="btn btn-ghost btn-sm" id="tokenExportJsonBtn" type="button" title="Exporter au format JSON">Export JSON</button>
+            <button class="btn btn-primary btn-sm" id="tokenShareWrappedBtn" type="button" title="Générer ma carte de statistiques Antigravity">
+              🏆 Partager mes stats
+            </button>
           </div>
         </div>
 
-        <!-- Tab switcher: Stats Overview vs Logs Table vs Tokenizer Tool -->
-        <div class="tabs token-tabs" role="tablist" style="margin-bottom:16px;">
-          <button class="tab active" id="tabTokenDashboardBtn" type="button" role="tab" data-tab="dashboard">
-            <span>📈 Vue d'ensemble (Stats)</span>
-          </button>
-          <button class="tab" id="tabTokenizerToolBtn" type="button" role="tab" data-tab="tool">
-            <span>🧮 Analyseur &amp; Simulateur Tokenizer</span>
-          </button>
-        </div>
-
-        <!-- Tab 1: Dashboard & Stats -->
         <div id="tokenTabDashboardContent">
           <!-- Antigravity Native Stats Shell (Exact Reference Match) -->
           <div class="antigravity-stats-shell">
+            <!-- Top Controls: Quick Model Filters & Pricing Perspective Toggle -->
+            <div class="stats-filter-toolbar">
+              <div class="stats-filter-left-col">
+                <div class="stats-filter-group" id="statsModelFilterGroup">
+                  <span class="stats-filter-group-lbl">Modèle :</span>
+                  <button type="button" class="stats-filter-chip active" data-model-filter="all">
+                    <span>Tous les modèles</span>
+                    <span class="chip-count-badge" id="filterCountAll">100%</span>
+                  </button>
+                  <button type="button" class="stats-filter-chip" data-model-filter="gemini-3.8">
+                    <span>Gemini 3.8 Flash</span>
+                    <span class="chip-count-badge" id="filterCountGemini38">94.5%</span>
+                  </button>
+                  <button type="button" class="stats-filter-chip" data-model-filter="gemini-3.6">
+                    <span>Gemini 3.6 Flash</span>
+                    <span class="chip-count-badge" id="filterCountGemini36">5.3%</span>
+                  </button>
+                  <button type="button" class="stats-filter-chip" data-model-filter="other">
+                    <span>Claude / OpenAI / Autres</span>
+                    <span class="chip-count-badge" id="filterCountOther">0.2%</span>
+                  </button>
+                  <button type="button" class="stats-filter-reset-btn" id="statsFilterResetBtn" title="Réinitialiser tous les filtres" style="display:none;">
+                    ✕ Réinitialiser
+                  </button>
+                </div>
+                <div class="stats-filter-active-summary" id="statsFilterActiveSummary">
+                  <span class="filter-summary-dot"></span>
+                  <span id="statsFilterSummaryText">Affichage : Tous les modèles &bull; 7 derniers mois</span>
+                </div>
+              </div>
+
+              <div class="stats-filter-right-col">
+                <div class="stats-perspective-toggle" id="statsPerspectiveGroup">
+                  <button type="button" class="stats-perspective-btn active" id="btnPerspectivePool" title="Calcul basé sur l'arbitrage gratuit du pool de comptes Google">
+                    ⚡ Économies Pool (0$)
+                  </button>
+                  <button type="button" class="stats-perspective-btn" id="btnPerspectiveApi" title="Évaluation financière au tarif commercial Cloud standard">
+                    💵 Valeur Marchande API
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <!-- 1. Top 5-Metric Unified Strip Card -->
             <div class="stats-strip-card">
               <div class="strip-item">
-                <div class="strip-val" id="statsLifetimeTokens">92.4B</div>
+                <div class="strip-val" id="statsLifetimeTokens">--</div>
                 <div class="strip-lbl">Lifetime tokens</div>
-                <div class="caching-roi-pill" id="cachingRoiPill" title="Économie réalisée grâce au caching de contexte Google">⚡ $14.28 sauvegardés</div>
+                <div class="caching-roi-pill" id="cachingRoiPill" title="Pool Antigravity &amp; Gemini Context Caching">--</div>
               </div>
               <div class="strip-item">
-                <div class="strip-val" id="statsPeakTokens">2.17B</div>
+                <div class="strip-val" id="statsPeakTokens">--</div>
                 <div class="strip-lbl">Peak tokens</div>
               </div>
               <div class="strip-item">
-                <div class="strip-val" id="statsLongestTask">23h 36m</div>
+                <div class="strip-val" id="statsLongestTask">--</div>
                 <div class="strip-lbl">Longest task</div>
               </div>
               <div class="strip-item featured">
-                <div class="strip-val" id="statsCurrentStreak">198 days</div>
+                <div class="strip-val" id="statsCurrentStreak">--</div>
                 <div class="strip-lbl">Current streak</div>
-                <div class="streak-goal-pill" id="streakGoalPill" title="Objectif de streak">🎯 2j avant 200J</div>
+                <div class="streak-goal-pill" id="streakGoalPill" title="Objectif de streak">🎯 En cours</div>
               </div>
               <div class="strip-item">
-                <div class="strip-val" id="statsLongestStreak">231 days</div>
+                <div class="strip-val" id="statsLongestStreak">--</div>
                 <div class="strip-lbl">Longest streak</div>
+              </div>
+            </div>
+
+            <!-- 1b. FinOps & Quota Proactive Runway Strip -->
+            <div class="stats-finops-card">
+              <div class="finops-metric">
+                <div class="finops-head">
+                  <span class="finops-lbl">Valeur Marchande API</span>
+                  <span class="finops-badge" id="finopsModeBadge">Tarif Public Cloud</span>
+                </div>
+                <div class="finops-val" id="finopsMarketVal">$0.00</div>
+                <div class="finops-sub">Équivalent Vertex AI / Cloud</div>
+              </div>
+              <div class="finops-metric featured-savings">
+                <div class="finops-head">
+                  <span class="finops-lbl">Coût Réel Déboursé</span>
+                  <span class="finops-badge badge-green">100% Amorti</span>
+                </div>
+                <div class="finops-val green-val" id="finopsActualCost">$0.00</div>
+                <div class="finops-sub" id="finopsSavingsLbl">+$0.00 économisés (Pool 33 comptes)</div>
+              </div>
+              <div class="finops-metric">
+                <div class="finops-head">
+                  <span class="finops-lbl">Autonomie / Runway</span>
+                  <span class="finops-badge badge-blue" id="finopsRunwayBadge">Optimal</span>
+                </div>
+                <div class="finops-val blue-val" id="finopsRunwayVal">~14h 30m</div>
+                <div class="finops-sub" id="finopsRunwaySub">À cadence 50% RPM · Risque 429: 0%</div>
+              </div>
+              <div class="finops-metric">
+                <div class="finops-head">
+                  <span class="finops-lbl">Efficacité Cache</span>
+                  <span class="finops-badge badge-purple" id="finopsCacheBadge">Context Ready</span>
+                </div>
+                <div class="finops-val purple-val" id="finopsCacheRatio">~68%</div>
+                <div class="finops-sub" id="finopsCacheSavings">Latence TTFT réduite de ~40%</div>
+              </div>
+            </div>
+
+            <!-- 1c. Token Dynamics & Execution Flow Strip -->
+            <div class="stats-finops-card stats-dynamics-card" style="margin-top: 10px;">
+              <div class="finops-metric">
+                <div class="finops-head">
+                  <span class="finops-lbl">Vélocité &amp; Throughput</span>
+                  <span class="finops-badge badge-green" id="dynamicsThroughputBadge">Live Stream</span>
+                </div>
+                <div class="finops-val green-val" id="dynamicsThroughputVal">-- tok/s</div>
+                <div class="finops-sub" id="dynamicsThroughputSub">Latence moy. ~250ms · TTFT optimisé</div>
+              </div>
+              <div class="finops-metric">
+                <div class="finops-head">
+                  <span class="finops-lbl">Ratio In / Out</span>
+                  <span class="finops-badge badge-blue" id="dynamicsRatioBadge">Prompt Inflation</span>
+                </div>
+                <div class="finops-val blue-val" id="dynamicsRatioVal">-- : 1</div>
+                <div class="finops-sub" id="dynamicsRatioSub">--% Contexte · --% Sortie</div>
+              </div>
+              <div class="finops-metric">
+                <div class="finops-head">
+                  <span class="finops-lbl">Poids Moyen / Step</span>
+                  <span class="finops-badge" id="dynamicsStepWeightBadge">Agentic Density</span>
+                </div>
+                <div class="finops-val" id="dynamicsStepWeightVal">-- tok</div>
+                <div class="finops-sub" id="dynamicsStepWeightSub">Tokens consommés par action d'agent</div>
+              </div>
+              <div class="finops-metric">
+                <div class="finops-head">
+                  <span class="finops-lbl">Projection 30 Jours</span>
+                  <span class="finops-badge badge-purple" id="dynamicsProjectionBadge">FinOps Forecast</span>
+                </div>
+                <div class="finops-val purple-val" id="dynamicsProjectionVal">$0.00</div>
+                <div class="finops-sub" id="dynamicsProjectionSub">Équiv. API sans arbitrage pool</div>
               </div>
             </div>
 
             <!-- 2. Token activity Heatmap Card -->
             <div class="stats-activity-card" style="position:relative;">
               <div class="activity-header">
-                <div class="activity-title">Token activity</div>
-                <div class="activity-pills" id="activityPillsGroup">
-                  <button type="button" class="activity-pill active" data-mode="daily">Daily</button>
-                  <button type="button" class="activity-pill" data-mode="weekly">Weekly</button>
-                  <button type="button" class="activity-pill" data-mode="cumulative">Cumulative</button>
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                  <div class="activity-title">Token activity</div>
+                  <div class="activity-pills" id="activityPillsGroup">
+                    <button type="button" class="activity-pill active" data-mode="daily">Daily</button>
+                    <button type="button" class="activity-pill" data-mode="weekly">Weekly</button>
+                    <button type="button" class="activity-pill" data-mode="cumulative">Cumulative</button>
+                  </div>
+                </div>
+                <div class="heatmap-legend-pills">
+                  <span class="heatmap-legend-label">Moins</span>
+                  <span class="heatmap-legend-box level-0" title="0 token"></span>
+                  <span class="heatmap-legend-box level-1" title="Faible volume"></span>
+                  <span class="heatmap-legend-box level-2" title="Moyen volume"></span>
+                  <span class="heatmap-legend-box level-3" title="Fort volume"></span>
+                  <span class="heatmap-legend-box level-4" title="Pic d'activité"></span>
+                  <span class="heatmap-legend-label">Plus</span>
+                  <span class="heatmap-meta-summary" id="heatmapMetaSummary">Pic : --</span>
                 </div>
               </div>
               <div class="heatmap-scroll-wrap">
                 <div class="heatmap-matrix" id="statsHeatmapMatrix">
                   <!-- Populated dynamically via JS -->
                 </div>
-                <div class="heatmap-months-row">
-                  <span>Nov</span>
-                  <span>Dec</span>
-                  <span>Jan</span>
-                  <span>Feb</span>
-                  <span>Mar</span>
-                  <span>Apr</span>
-                  <span>May</span>
-                  <span>Jun</span>
+                <div class="heatmap-months-row" id="statsHeatmapMonthsRow">
+                  <span>-</span>
                 </div>
               </div>
               <!-- Floating Day Inspector Popover -->
               <div class="day-inspector-popover" id="dayInspectorPopover" style="display:none;"></div>
+              <!-- Instant Micro Tooltip on Cell Hover -->
+              <div class="heatmap-floating-tooltip" id="heatmapFloatingTooltip" style="display:none;"></div>
             </div>
 
             <!-- 3. Bottom 2-card Grid -->
             <div class="stats-bottom-grid">
               <!-- Activity insights -->
               <div class="stats-insights-card">
-                <div class="activity-title">Activity insights</div>
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                  <div class="activity-title">Activity insights</div>
+                  <span class="insight-status-chip">⚡ 100% Observé</span>
+                </div>
                 <div class="insights-list">
                   <div class="insight-row">
-                    <span class="insight-key">Fast Mode</span>
-                    <span class="insight-val" id="insightFastMode">3%</span>
+                    <span class="insight-key">Pool de comptes</span>
+                    <span class="insight-val" id="insightFastMode">--</span>
                   </div>
                   <div class="insight-row">
-                    <span class="insight-key">Most used reasoning</span>
-                    <span class="insight-val" id="insightReasoning">Extra High · 94%</span>
+                    <span class="insight-key">Modèle principal</span>
+                    <span class="insight-val" id="insightReasoning">--</span>
                   </div>
                   <div class="insight-row">
-                    <span class="insight-key">Skills explored</span>
-                    <span class="insight-val" id="insightSkillsExplored">38</span>
+                    <span class="insight-key">Tâches totales (Steps)</span>
+                    <span class="insight-val" id="insightSkillsExplored">--</span>
                   </div>
                   <div class="insight-row">
-                    <span class="insight-key">Total skills used</span>
-                    <span class="insight-val" id="insightSkillsUsed">119</span>
+                    <span class="insight-key">Max étapes / session</span>
+                    <span class="insight-val" id="insightSkillsUsed">--</span>
                   </div>
                   <div class="insight-row">
-                    <span class="insight-key">Total threads</span>
-                    <span class="insight-val" id="insightThreads">1,347</span>
+                    <span class="insight-key">Sessions SQLite</span>
+                    <span class="insight-val" id="insightThreads">--</span>
+                  </div>
+                  <div class="insight-row">
+                    <span class="insight-key">Ratio Cache Hit</span>
+                    <span class="insight-val" id="insightCacheHit" style="color:#c084fc;">--</span>
+                  </div>
+                  <div class="insight-row">
+                    <span class="insight-key">Headroom Contexte</span>
+                    <span class="insight-val" id="insightContextHeadroom" style="color:#60a5fa;">--</span>
                   </div>
                 </div>
               </div>
 
               <!-- Usage distribution -->
               <div class="stats-donut-card">
-                <div class="activity-title">Usage distribution</div>
+                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                  <div class="activity-title">Usage distribution</div>
+                  <div class="donut-mode-toggle" id="donutModeToggleGroup">
+                    <button type="button" class="donut-mode-chip active" id="btnDonutModeTokens">Tokens</button>
+                    <button type="button" class="donut-mode-chip" id="btnDonutModeCost">Coût API</button>
+                    <button type="button" class="donut-mode-chip" id="btnDonutModeCalls">Appels</button>
+                  </div>
+                </div>
                 <div class="donut-content-wrap">
-                  <div class="donut-chart-box">
-                    <svg width="130" height="130" viewBox="0 0 130 130">
-                      <circle cx="65" cy="65" r="50" fill="none" stroke="var(--bg-2)" stroke-width="16" />
-                      <circle id="donutSegmentReasoning" cx="65" cy="65" r="50" fill="none" stroke="#4285f4" stroke-width="16" stroke-dasharray="295 314" stroke-dashoffset="0" stroke-linecap="round" />
-                      <circle id="donutSegmentTool" cx="65" cy="65" r="50" fill="none" stroke="#8ab4f8" stroke-width="16" stroke-dasharray="13 314" stroke-dashoffset="-295" stroke-linecap="round" />
-                      <circle id="donutSegmentSystem" cx="65" cy="65" r="50" fill="none" stroke="#c2d7fc" stroke-width="16" stroke-dasharray="6 314" stroke-dashoffset="-308" stroke-linecap="round" />
+                  <div class="donut-chart-box" id="donutChartBox">
+                    <svg width="140" height="140" viewBox="0 0 140 140">
+                      <circle cx="70" cy="70" r="54" fill="none" stroke="var(--bg-2)" stroke-width="16" />
+                      <circle id="donutSegmentReasoning" cx="70" cy="70" r="54" fill="none" stroke="#4285f4" stroke-width="16" stroke-dasharray="320 339" stroke-dashoffset="0" stroke-linecap="round" />
+                      <circle id="donutSegmentTool" cx="70" cy="70" r="54" fill="none" stroke="#8ab4f8" stroke-width="16" stroke-dasharray="18 339" stroke-dashoffset="-320" stroke-linecap="round" />
+                      <circle id="donutSegmentSystem" cx="70" cy="70" r="54" fill="none" stroke="#c2d7fc" stroke-width="16" stroke-dasharray="2 339" stroke-dashoffset="-338" stroke-linecap="round" />
                     </svg>
                     <div class="donut-center-text">
-                      <span class="donut-center-val" id="donutCenterVal">92.4B</span>
-                      <span class="donut-center-sub">tokens</span>
+                      <span class="donut-center-val" id="donutCenterVal">--</span>
+                      <span class="donut-center-sub" id="donutCenterSub">tokens</span>
                     </div>
                   </div>
                   <div class="donut-legend">
-                    <div class="legend-item">
+                    <div class="legend-item" id="legendItemReasoning" data-segment="reasoning">
                       <div class="legend-label-group">
                         <span class="legend-dot dot-reasoning"></span>
-                        <span>Reasoning</span>
+                        <span id="legendLblReasoning">Gemini 3.8 Flash</span>
                       </div>
-                      <span class="legend-pct" id="legendPctReasoning">94%</span>
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="legend-val-secondary" id="legendValReasoning">--</span>
+                        <span class="legend-pct" id="legendPctReasoning">--</span>
+                      </div>
                     </div>
-                    <div class="legend-item">
+                    <div class="legend-item" id="legendItemTool" data-segment="tool">
                       <div class="legend-label-group">
                         <span class="legend-dot dot-tool"></span>
-                        <span>Tool use</span>
+                        <span id="legendLblTool">Gemini 3.6 Flash</span>
                       </div>
-                      <span class="legend-pct" id="legendPctTool">4%</span>
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="legend-val-secondary" id="legendValTool">--</span>
+                        <span class="legend-pct" id="legendPctTool">--</span>
+                      </div>
                     </div>
-                    <div class="legend-item">
+                    <div class="legend-item" id="legendItemSystem" data-segment="system">
                       <div class="legend-label-group">
                         <span class="legend-dot dot-system"></span>
-                        <span>System</span>
+                        <span id="legendLblSystem">Autres</span>
                       </div>
-                      <span class="legend-pct" id="legendPctSystem">2%</span>
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="legend-val-secondary" id="legendValSystem">--</span>
+                        <span class="legend-pct" id="legendPctSystem">--</span>
+                      </div>
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <!-- 3b. Advanced Token Analytics & User-Specific Models Calculation Grid -->
+            <div class="stats-advanced-grid">
+              <!-- Card A: Anatomie du Trafic de Mes Modèles -->
+              <div class="advanced-calc-card">
+                <div class="advisor-header">
+                  <div class="advisor-title-group">
+                    <span class="advisor-icon">🧩</span>
+                    <h3 class="advisor-title">Anatomie du Trafic de Mes Modèles</h3>
+                    <span class="advisor-tag">Mes Modèles</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);" id="compoundSessionCount">-- sessions</span>
+                </div>
+
+                <!-- Dynamic Segmented Multi-Bar based on User's Models -->
+                <div>
+                  <div class="payload-bar-track" id="payloadBarTrack">
+                    <!-- Populated dynamically via JS -->
+                  </div>
+                </div>
+
+                <!-- Dynamic Legend Grid based on User's Models -->
+                <div class="payload-legend-grid" id="payloadLegendGrid">
+                  <!-- Populated dynamically via JS -->
+                </div>
+
+                <!-- Subgrid: Compounding Inflation Slope & Fournisseur Principal -->
+                <div class="compound-stats-subgrid">
+                  <div class="compound-sub-item">
+                    <span class="compound-sub-lbl">Pente d'inflation / step</span>
+                    <span class="compound-sub-val" id="compoundSlopeVal" style="color:#60a5fa;">-- tok</span>
+                  </div>
+                  <div class="compound-sub-item">
+                    <span class="compound-sub-lbl">Fournisseur dominant</span>
+                    <span class="compound-sub-val" id="compoundTopProviderVal" style="color:#34d399;">--</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Card B: Consommation & Calculs Financiers de Mes Modèles -->
+              <div class="advanced-calc-card">
+                <div class="advisor-header">
+                  <div class="advisor-title-group">
+                    <span class="advisor-icon">⚖️</span>
+                    <h3 class="advisor-title">Consommation &amp; Calculs de Mes Modèles</h3>
+                    <span class="advisor-tag">Mes Fournisseurs</span>
+                  </div>
+                  <span style="font-size:11px; color:#34d399; font-weight:600;" id="benchmarkSavingsBadge">100% Amorti</span>
+                </div>
+
+                <!-- Dynamic Model List based on User's Configured Models -->
+                <div class="benchmark-list" id="userModelsBenchmarkList">
+                  <!-- Populated dynamically via JS -->
+                </div>
+
+                <div style="font-size:11px; color:var(--text-2); display:flex; align-items:center; justify-content:space-between; padding-top:6px; border-top:1px dashed var(--border);">
+                  <span id="benchmarkSavingsSummary">Économies Pool : +$0.00</span>
+                  <span style="font-size:10px; opacity:0.8;" id="benchmarkConfiguredCount">-- modèles configurés</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. Antigravity AI Advisor: Actions Préventives & Conseils en Direct -->
+            <div class="stats-advisor-card">
+              <div class="advisor-header">
+                <div class="advisor-title-group">
+                  <span class="advisor-icon">🧠</span>
+                  <h3 class="advisor-title">Recommandations &amp; Optimisation en Direct</h3>
+                  <span class="advisor-tag">Proactif</span>
+                </div>
+                <div class="advisor-health-status" id="advisorHealthStatus">
+                  <span class="advisor-health-dot"></span>
+                  <span id="advisorHealthStatusText">Santé du Pool : 100% Optimale</span>
+                </div>
+              </div>
+              <div class="advisor-grid" id="advisorRecommendationsGrid">
+                <!-- Populated dynamically via JS -->
               </div>
             </div>
           </div>
-
-          <!-- Collapsible Detailed KPI & Real-time Logs -->
-          <details style="margin-top:16px;" open>
-            <summary style="font-size:13px; font-weight:600; color:var(--text-1); cursor:pointer; padding:8px 0; user-select:none;">
-              📋 Historique des Requêtes &amp; Journaux en direct
-            </summary>
-            <!-- 4 Elevated Pro KPI Cards -->
-            <div class="stats-row" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:12px; margin:12px 0 16px 0;">
-              <!-- Card 1: Total Tokens -->
-              <div class="token-card-pro" id="cardProTokens">
-                <div>
-                  <div class="card-pro-head">
-                    <div class="card-pro-icon-title">
-                      <div class="card-pro-icon google">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                      </div>
-                      <span class="card-pro-label">Session Tokens</span>
-                    </div>
-                    <span class="card-pro-tag">Prompt / Out</span>
-                  </div>
-                  <div class="card-pro-value" id="kpiTotalTokens">0</div>
-                </div>
-                <div class="card-pro-footer">
-                  <div class="card-pro-desc">
-                    <span id="kpiTokensRatio">0 in / 0 out</span>
-                    <span class="card-pro-micro-pill" id="kpiCacheBadge">⚡ Cache 0%</span>
-                  </div>
-                  <div class="token-dual-bar" id="kpiDualBar">
-                    <div class="token-dual-prompt" id="kpiDualPrompt" style="width:50%;" title="Prompt In"></div>
-                    <div class="token-dual-completion" id="kpiDualCompletion" style="width:50%;" title="Completion Out"></div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Card 2: Estimated Cost -->
-              <div class="token-card-pro" id="cardProCost">
-                <div>
-                  <div class="card-pro-head">
-                    <div class="card-pro-icon-title">
-                      <div class="card-pro-icon cost">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                      </div>
-                      <span class="card-pro-label">Coût Session</span>
-                    </div>
-                    <span class="card-pro-tag">USD</span>
-                  </div>
-                  <div class="card-pro-value accent-green" id="kpiTotalCost">$0.0000</div>
-                </div>
-                <div class="card-pro-footer">
-                  <div class="card-pro-desc">
-                    <span>Base 1M tokens</span>
-                    <span class="card-pro-micro-pill" id="kpiSavingsBadge" style="background:rgba(52,168,83,0.12); color:#34d399; border-color:rgba(52,168,83,0.25);">Économie: $0.00</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Card 3: Requests & Quotas -->
-              <div class="token-card-pro" id="cardProRequests">
-                <div>
-                  <div class="card-pro-head">
-                    <div class="card-pro-icon-title">
-                      <div class="card-pro-icon quota">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                      </div>
-                      <span class="card-pro-label">Requêtes</span>
-                    </div>
-                    <span class="card-pro-tag">RPM / Quota</span>
-                  </div>
-                  <div class="card-pro-value" id="kpiRequestCount">0</div>
-                </div>
-                <div class="card-pro-footer">
-                  <div class="card-pro-desc">
-                    <span id="kpiAvgTokensPerReq">Moyenne: 0 tok/req</span>
-                    <span class="card-pro-micro-pill" id="kpiQuotaBadge" style="background:rgba(251,188,5,0.12); color:#fbbf24; border-color:rgba(251,188,5,0.25);">Quota OK</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Card 4: Streaming Speed & Latency -->
-              <div class="token-card-pro" id="cardProSpeed">
-                <div>
-                  <div class="card-pro-head">
-                    <div class="card-pro-icon-title">
-                      <div class="card-pro-icon speed">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                      </div>
-                      <span class="card-pro-label">Débit &amp; Latence</span>
-                    </div>
-                    <span class="card-pro-tag">Streaming</span>
-                  </div>
-                  <div class="card-pro-value accent-blue" id="kpiAvgSpeed">0 <span style="font-size:14px; font-weight:normal; color:var(--text-2);">tok/s</span></div>
-                </div>
-                <div class="card-pro-footer">
-                  <div class="card-pro-desc">
-                    <span id="kpiAvgLatency">Latence: 0ms</span>
-                    <span class="card-pro-micro-pill" id="kpiSpeedTierBadge">Tier Rapide</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Logs Table Panel -->
-            <div class="panel">
-              <div class="panel-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
-                <div style="display:flex; align-items:center; gap:10px;">
-                  <h2>Journaux de Consommation</h2>
-                  <div class="token-filter-chips" id="tokenFilterChips">
-                    <button type="button" class="token-filter-chip active" data-filter="all">Tous</button>
-                    <button type="button" class="token-filter-chip" data-filter="google" style="color:#60a5fa; border-color:rgba(66, 133, 244, 0.4);">
-                      <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
-                      Google / Antigravity
-                    </button>
-                    <button type="button" class="token-filter-chip" data-filter="anthropic">Anthropic</button>
-                    <button type="button" class="token-filter-chip" data-filter="openai">OpenAI</button>
-                    <button type="button" class="token-filter-chip" data-filter="deepseek">DeepSeek</button>
-                    <button type="button" class="token-filter-chip" data-filter="ollama">Ollama</button>
-                  </div>
-                </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <input type="text" id="tokenLogsSearchInput" placeholder="Filtrer modèle, endpoint..." style="padding:5px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);" />
-                  <select id="tokenLogsProviderSelect" style="padding:5px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);">
-                    <option value="all">Tous Fournisseurs</option>
-                    <option value="google">Google / Antigravity</option>
-                    <option value="gemini">Gemini</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="deepseek">DeepSeek</option>
-                    <option value="ollama">Ollama</option>
-                  </select>
-                  <select id="tokenLogsModelSelect" style="padding:5px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);">
-                    <option value="all">Tous Modèles</option>
-                  </select>
-                  <button class="btn btn-ghost btn-sm" id="tokenClearBtn" type="button" title="Effacer l'historique">Vider</button>
-                </div>
-              </div>
-              <div class="panel-body" style="padding:0; overflow-x:auto;">
-                <table style="width:100%; border-collapse:collapse; font-size:12px;" id="tokenLogsTable">
-                  <thead>
-                    <tr style="border-bottom:1px solid var(--border); background:var(--bg-1); color:var(--text-2); text-align:left;">
-                      <th class="sortable-th" data-sort="timestamp" style="padding:8px 12px;">Horodatage ↕</th>
-                      <th class="sortable-th" data-sort="provider" style="padding:8px 12px;">Fournisseur ↕</th>
-                      <th class="sortable-th" data-sort="model" style="padding:8px 12px;">Modèle ↕</th>
-                      <th class="sortable-th" data-sort="promptTokens" style="padding:8px 12px; text-align:right;">Prompt In ↕</th>
-                      <th class="sortable-th" data-sort="completionTokens" style="padding:8px 12px; text-align:right;">Completion Out ↕</th>
-                      <th class="sortable-th" data-sort="totalTokens" style="padding:8px 12px; text-align:right;">Total ↕</th>
-                      <th class="sortable-th" data-sort="tokensPerSec" style="padding:8px 12px; text-align:right;">Vitesse ↕</th>
-                      <th class="sortable-th" data-sort="estimatedCost" style="padding:8px 12px; text-align:right;">Coût Est. ↕</th>
-                      <th style="padding:8px 12px; text-align:center;">Statut</th>
-                      <th style="padding:8px 12px; text-align:right;">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tokenLogsTbody">
-                    <!-- Populated dynamically -->
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </details>
         </div>
 
-        <!-- Tab 2: Interactive Tokenizer Tool -->
-        <div id="tokenTabToolContent" style="display:none;">
-          <div class="panel" style="margin-bottom:16px;">
-            <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-              <div>
-                <h2>Calculateur &amp; Simulateur de Tokens</h2>
-                <div style="font-size:11px; color:var(--text-2);">Découpage en direct optimisé pour les modèles Google Gemini et le Language Server</div>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <!-- Quick Model Chips (Fitts / Hick) -->
-                <div class="quick-model-chips" id="tokenizerQuickModelChips">
-                  <button type="button" class="quick-chip active" data-model="gemini-2.5-pro">🧠 Gemini 2.5 Pro</button>
-                  <button type="button" class="quick-chip" data-model="gemini-2.5-flash">⚡ Gemini 2.5 Flash</button>
-                  <button type="button" class="quick-chip" data-model="gemini-2.0-flash-thinking">🔬 Flash Thinking</button>
-                </div>
-                <select id="tokenizerModelSelect" style="padding:5px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);">
-                  <optgroup label="Google Antigravity (Gemini)">
-                    <option value="gemini-2.5-pro" selected>Gemini 2.5 Pro (Antigravity Flagship — $1.25 in / $5.00 out)</option>
-                    <option value="gemini-2.5-flash">Gemini 2.5 Flash (Ultra Rapide — $0.10 in / $0.40 out)</option>
-                    <option value="gemini-2.0-flash-thinking">Gemini 2.0 Flash Thinking (Raisonnement — $0.10 in / $0.40 out)</option>
-                    <option value="gemini-1.5-pro">Gemini 1.5 Pro (2M Long Context — $1.25 in / $5.00 out)</option>
-                    <option value="gemini-1.5-flash">Gemini 1.5 Flash (Agentic — $0.075 in / $0.30 out)</option>
-                  </optgroup>
-                  <optgroup label="Autres Fournisseurs">
-                    <option value="claude-3-5-sonnet">Claude 3.5 Sonnet ($3.00 in / $15.00 out)</option>
-                    <option value="claude-3-7-sonnet">Claude 3.7 Sonnet ($3.00 in / $15.00 out)</option>
-                    <option value="claude-3-5-haiku">Claude 3.5 Haiku ($0.80 in / $4.00 out)</option>
-                    <option value="gpt-4o">GPT-4o ($2.50 in / $10.00 out)</option>
-                    <option value="gpt-4o-mini">GPT-4o mini ($0.15 in / $0.60 out)</option>
-                    <option value="deepseek-r1">DeepSeek R1 ($0.55 in / $2.19 out)</option>
-                    <option value="qwen-2.5-coder">Qwen 2.5 Coder / Local ($0.00)</option>
-                  </optgroup>
-                </select>
-                <button class="btn btn-ghost btn-sm" id="tokenizerCopyTextBtn" type="button" title="Copier le texte analysé">Copier</button>
-                <button class="btn btn-ghost btn-sm" id="tokenizerCopyTokensBtn" type="button" title="Copier le tableau des jetons en JSON">Tokens JSON</button>
-                <button class="btn btn-ghost btn-sm" id="tokenizerClearTextBtn" type="button">Vider</button>
-              </div>
-            </div>
-            <div class="panel-body" style="padding:16px;">
-              <!-- Google Gemini Context Window Capacity Meter -->
-              <div class="context-meter-box">
-                <div class="context-meter-header">
-                  <span style="font-weight:600; color:var(--text-1); display:flex; align-items:center; gap:6px;">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="#4285F4"><circle cx="12" cy="12" r="10"/></svg>
-                    Fenêtre de Contexte Google Gemini (1 000 000 tokens)
-                  </span>
-                  <span id="contextMeterText" style="font-family:var(--font-mono); font-size:11px; color:var(--text-2);">0 / 1 000 000 (0.00%)</span>
-                </div>
-                <div class="context-meter-bar">
-                  <div class="context-meter-fill" id="contextMeterFill" style="width:0%;"></div>
-                </div>
-              </div>
 
-              <!-- Quick Presets -->
-              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:12px;">
-                <span style="font-size:11px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">Exemples Google &amp; Code :</span>
-                <button class="btn btn-ghost btn-sm" id="tokenizerPresetGeminiPro" type="button" style="padding:2px 8px; font-size:11px; border-color:rgba(66, 133, 244, 0.35); color:#60a5fa;">🌟 Gemini 2.5 Pro Agent</button>
-                <button class="btn btn-ghost btn-sm" id="tokenizerPresetThinking" type="button" style="padding:2px 8px; font-size:11px; border-color:rgba(168, 85, 247, 0.35); color:#c084fc;">🧠 Gemini Thinking CoT</button>
-                <button class="btn btn-ghost btn-sm" id="tokenizerPresetTs" type="button" style="padding:2px 8px; font-size:11px;">⚡ TypeScript Client</button>
-                <button class="btn btn-ghost btn-sm" id="tokenizerPresetPrompt" type="button" style="padding:2px 8px; font-size:11px;">🎯 Prompt Système</button>
-                <button class="btn btn-ghost btn-sm" id="tokenizerPresetChat" type="button" style="padding:2px 8px; font-size:11px;">💬 Discussion Chat</button>
-                <button class="btn btn-ghost btn-sm" id="tokenizerPresetJson" type="button" style="padding:2px 8px; font-size:11px;">📦 JSON Payload</button>
-              </div>
-
-              <!-- Live Metrics Strip -->
-              <div class="token-metrics-strip" style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; padding:10px 14px; background:var(--bg-0); border:1px solid var(--border); border-radius:6px;">
-                <div><span style="color:var(--text-2); font-size:11px;">Tokens</span>: <strong id="toolStatTokens" style="color:#60a5fa; font-size:14px;">0</strong></div>
-                <div><span style="color:var(--text-2); font-size:11px;">Caractères</span>: <strong id="toolStatChars" style="font-size:14px;">0</strong></div>
-                <div><span style="color:var(--text-2); font-size:11px;">Mots</span>: <strong id="toolStatWords" style="font-size:14px;">0</strong></div>
-                <div><span style="color:var(--text-2); font-size:11px;">Lignes</span>: <strong id="toolStatLines" style="font-size:14px;">0</strong></div>
-                <div><span style="color:var(--text-2); font-size:11px;">Ratio Car/Tok</span>: <strong id="toolStatRatio" style="font-size:14px;">0.0</strong></div>
-                <div><span style="color:var(--text-2); font-size:11px;">Coût Entrée (Prompt)</span>: <strong id="toolCostInput" style="color:#46a758; font-size:14px;">$0.0000</strong></div>
-                <div><span style="color:var(--text-2); font-size:11px;">Coût Sortie (Génération)</span>: <strong id="toolCostOutput" style="color:#e5484d; font-size:14px;">$0.0000</strong></div>
-              </div>
-
-              <!-- Input Area -->
-              <textarea id="tokenizerInputText" rows="9" placeholder="Collez ici votre texte, code source ou prompt pour analyser instantanément son découpage en tokens..." style="width:100%; box-sizing:border-box; padding:12px; font-family:ui-monospace, monospace; font-size:13px; line-height:1.5; border:1px solid var(--border); border-radius:6px; background:var(--bg-0); color:var(--text-0); resize:vertical;"></textarea>
-
-              <!-- Segmented Chunks Visualizer -->
-              <div style="margin-top:14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                  <h3 style="font-size:12px; color:var(--text-2); margin:0;">Visualisation du découpage BPE (Tokens colorés) :</h3>
-                  <span id="tokenizerChunkCount" style="font-size:11px; color:var(--text-3);">0 tokens</span>
-                </div>
-                <div id="tokenizerChipsContainer" class="token-chips-container" style="min-height:80px; max-height:260px; overflow-y:auto; padding:10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-0); font-family:ui-monospace, monospace; font-size:12px; line-height:1.8; white-space:pre-wrap; word-break:break-all;">
-                  <span style="color:var(--text-3); font-style:italic;">Les jetons découpés apparaîtront ici avec des couleurs alternées...</span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
       <!-- Token Log Detail Modal Backdrop -->
       <div class="modal-backdrop" id="tokenDetailBackdrop" hidden>
-        <div class="modal" role="dialog" aria-modal="true" style="max-width:680px; width:90%;">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tokenDetailTitle" style="max-width:680px; width:90%;">
           <div class="modal-header">
-            <h2 id="tokenDetailTitle" style="margin:0; font-size:16px;">Détails de Consommation</h2>
-            <button class="btn btn-ghost btn-sm" id="tokenDetailCloseBtn" type="button" aria-label="Fermer modal">✕</button>
+            <h2 id="tokenDetailTitle" style="margin:0; font-size:16px;">Consumption Details</h2>
+            <button class="btn btn-ghost btn-sm" id="tokenDetailCloseBtn" type="button" aria-label="Close modal">✕</button>
           </div>
           <div class="modal-body" style="padding:16px; display:flex; flex-direction:column; gap:14px; max-height:70vh; overflow-y:auto;">
             <div id="tokenDetailMeta" style="font-family:ui-monospace,monospace; font-size:12px; color:var(--text-2); padding:10px; background:var(--bg-0); border-radius:6px; border:1px solid var(--border);"></div>
@@ -1728,24 +1801,92 @@
                 <div id="tokenDetailTotal" style="font-size:16px; font-weight:700; color:var(--accent); margin-top:2px;">0</div>
               </div>
               <div style="padding:10px; background:var(--bg-1); border:1px solid var(--border); border-radius:6px;">
-                <div style="font-size:11px; color:var(--text-2);">Coût Estimé ($)</div>
+                <div style="font-size:11px; color:var(--text-2);">Estimated Cost ($)</div>
                 <div id="tokenDetailCost" style="font-size:16px; font-weight:700; color:#10b981; margin-top:2px;">$0.0000</div>
               </div>
             </div>
             <div>
-              <h3 style="margin:0 0 6px 0; font-size:12px; color:var(--text-1);">Spécification de l'Appel</h3>
+              <h3 style="margin:0 0 6px 0; font-size:12px; color:var(--text-1);">Call Specification</h3>
               <pre id="tokenDetailRaw" style="margin:0; padding:12px; background:var(--bg-0); border:1px solid var(--border); border-radius:6px; font-family:ui-monospace,monospace; font-size:11px; white-space:pre-wrap; word-break:break-all; max-height:200px; overflow-y:auto;"></pre>
             </div>
           </div>
           <div class="modal-footer" style="padding:12px 16px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px;">
-            <button class="btn btn-primary btn-sm" id="tokenCopyJsonBtn" type="button">Copier JSON</button>
-            <button class="btn btn-ghost btn-sm" id="tokenDetailFooterCloseBtn" type="button">Fermer</button>
+            <button class="btn btn-primary btn-sm" id="tokenCopyJsonBtn" type="button">Copy JSON</button>
+            <button class="btn btn-ghost btn-sm" id="tokenDetailFooterCloseBtn" type="button">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Antigravity Token Wrapped Share Modal Backdrop -->
+      <div class="modal-backdrop" id="tokenWrappedBackdrop" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tokenWrappedTitle" style="max-width:560px; width:92%;">
+          <div class="modal-header" style="border-bottom:1px solid var(--border);">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:18px;">✨</span>
+              <h2 id="tokenWrappedTitle" style="margin:0; font-size:16px; font-weight:700;">Antigravity Token Wrapped</h2>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="tokenWrappedCloseBtn" type="button" aria-label="Fermer la modale">✕</button>
+          </div>
+          <div class="modal-body" style="padding:20px; display:flex; flex-direction:column; gap:16px;">
+            <!-- Visual Card to Copy or Preview -->
+            <div class="token-wrapped-card" id="tokenWrappedCard">
+              <div class="token-wrapped-header">
+                <div class="token-wrapped-brand">
+                  <span class="token-wrapped-sparkle">✦</span>
+                  <span class="token-wrapped-title">ANTIGRAVITY STATS</span>
+                </div>
+                <div class="token-wrapped-badge" id="wrappedTierBadge">Power User</div>
+              </div>
+              
+              <div class="token-wrapped-hero">
+                <div class="token-wrapped-hero-label">LIFETIME TOKENS</div>
+                <div class="token-wrapped-hero-val" id="wrappedLifetimeTokens">0</div>
+                <div class="token-wrapped-hero-sub" id="wrappedTasksCount">0 étapes &amp; sessions analysées</div>
+              </div>
+
+              <div class="token-wrapped-grid">
+                <div class="token-wrapped-stat">
+                  <div class="stat-lbl">Record Quotidien</div>
+                  <div class="stat-val" id="wrappedPeakDay">0 tok</div>
+                </div>
+                <div class="token-wrapped-stat">
+                  <div class="stat-lbl">Série Record</div>
+                  <div class="stat-val" id="wrappedMaxStreak">0 jours</div>
+                </div>
+                <div class="token-wrapped-stat">
+                  <div class="stat-lbl">Modèle Favori</div>
+                  <div class="stat-val" id="wrappedTopModel">Gemini Flash</div>
+                </div>
+                <div class="token-wrapped-stat">
+                  <div class="stat-lbl">Économie Estimée</div>
+                  <div class="stat-val accent-green" id="wrappedSavings">$0.00</div>
+                </div>
+              </div>
+
+              <div class="token-wrapped-footer">
+                <span style="opacity:0.75;">Propulsé par Google Antigravity IDE</span>
+                <span class="token-wrapped-handle">#AntigravityAI</span>
+              </div>
+            </div>
+
+            <p style="font-size:12px; color:var(--text-2); margin:0; text-align:center;">
+              Copiez le récapitulatif formaté pour le partager directement sur <strong>X / Twitter</strong> ou <strong>Discord</strong>.
+            </p>
+          </div>
+          <div class="modal-footer" style="padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <span id="wrappedCopyFeedback" style="font-size:12px; color:var(--ok); font-weight:600; opacity:0; transition:opacity 0.2s ease;">✓ Copié dans le presse-papier !</span>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-ghost btn-sm" id="tokenWrappedFooterCloseBtn" type="button">Fermer</button>
+              <button class="btn btn-primary btn-sm" id="tokenWrappedCopyBtn" type="button">
+                📋 Copier pour X / Discord
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Failure Scenarios showcase view -->
-      <div class="view" id="view-failures">
+      <div class="view" id="view-failures" role="tabpanel" aria-labelledby="nav-tab-failures">
         <div class="view-header">
           <div>
             <h1>Failure Scenarios</h1>
@@ -1779,7 +1920,7 @@
         <!-- Scenario showcase grid -->
         <div id="failureScenarioShowcase" class="agy-showcase-grid"></div>
       </div>
-    </section>
+    </main>
 
     <!-- Status Bar -->
     <footer class="statusbar" role="contentinfo">
@@ -1812,7 +1953,7 @@
 
   <!-- Command palette -->
   <div class="modal-backdrop" id="paletteBackdrop" hidden>
-    <div class="modal palette-modal" role="dialog" aria-modal="true">
+    <div class="modal palette-modal" role="dialog" aria-modal="true" aria-label="Command Palette">
       <div class="palette-input-wrap">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="paletteInput" class="palette-input" placeholder="Search commands and models…" aria-label="Search commands and models" autocomplete="off" />
@@ -1828,7 +1969,7 @@
 
   <!-- Modal -->
   <div class="modal-backdrop" id="modalBackdrop" hidden>
-    <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <h2 id="modalTitle">Confirm</h2>
         <button class="modal-close" id="modalClose" type="button" aria-label="Close">
@@ -1845,7 +1986,7 @@
 
   <!-- Modal: Google Account Manager -->
   <div class="modal-backdrop" id="googleAccountModalBackdrop" hidden>
-    <div class="modal modal-lg" role="dialog" aria-modal="true">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="gaModalTitle">
       <div class="modal-header">
         <div class="modal-header-title-wrap">
           <div class="modal-header-icon">
@@ -1862,8 +2003,8 @@
           <div id="gaAccountTypeBanner" class="patch-banner info" hidden style="margin-bottom: 14px; font-size: 12px; display: flex; align-items: flex-start; gap: 10px;">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             <div id="gaAccountTypeBannerText">
-              <strong>Compte connecté via Antigravity IDE (OAuth)</strong><br />
-              Ce compte utilise votre session active Antigravity IDE. Les quotas et modèles natifs sont synchronisés automatiquement.
+              <strong>Account connected via Antigravity IDE (OAuth)</strong><br />
+              This account uses your active Antigravity IDE session. Quotas and native models sync automatically.
             </div>
           </div>
 
@@ -1888,7 +2029,7 @@
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </button>
               </div>
-              <small id="gaFormKeyHelper" style="color: var(--text-2); font-size: 11px; margin-top: 4px; display: block;">
+              <small id="gaFormKeyHelper" class="form-hint" style="margin-top: 4px; display: block;">
                 Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" id="gaOpenAiStudioLink" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.
               </small>
             </label>
@@ -1913,8 +2054,8 @@
               <span style="color: var(--text-2); margin-right: 2px;">Presets:</span>
               <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-3.8-flash-tiered" data-name="Gemini 3.8 Flash" style="cursor: pointer;">+ Gemini 3.8 Flash</button>
               <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-3.7-flash-tiered" data-name="Gemini 3.7 Flash" style="cursor: pointer;">+ Gemini 3.7 Flash</button>
-              <button type="button" class="badge badge-muted ga-preset-btn" data-id="claude-sonnet-4-6" data-name="Claude Sonnet 4.6" style="cursor: pointer;">+ Claude Sonnet 4.6</button>
-              <button type="button" class="badge badge-muted ga-preset-btn" data-id="claude-opus-4-6-thinking" data-name="Claude Opus 4.6 (Thinking)" style="cursor: pointer;">+ Claude Opus 4.6</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-2.5-pro" data-name="Gemini 2.5 Pro" style="cursor: pointer;">+ Gemini 2.5 Pro</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-2.5-flash" data-name="Gemini 2.5 Flash" style="cursor: pointer;">+ Gemini 2.5 Flash</button>
             </div>
             <div id="gaFormModelsList" class="pm-models-list" style="max-height: 220px; overflow-y: auto; background: var(--bg-0); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px;">
               <div class="pm-models-hint" style="font-size: 12px; color: var(--text-2); text-align: center; padding: 20px;">
@@ -1936,7 +2077,7 @@
 
   <!-- Modal: Provider Manager -->
   <div class="modal-backdrop" id="providerManagerModalBackdrop" hidden>
-    <div class="modal modal-lg" role="dialog" aria-modal="true">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="pmModalTitle">
       <div class="modal-header">
         <div class="modal-header-title-wrap">
           <button type="button" class="agy-icon-btn" id="pmFormBack" aria-label="Back to providers" title="Back to providers" hidden>
@@ -2006,7 +2147,7 @@
             </label>
 
             <label class="form-field-inline" for="pmFormInsecure">
-              <input type="checkbox" id="pmFormInsecure" />
+              <input type="checkbox" id="pmFormInsecure" aria-label="Allow insecure connections (self-signed certs)" />
               <span>Allow insecure connections (self-signed certs)</span>
             </label>
           </div>
@@ -2036,7 +2177,7 @@
 
             <div class="pm-models-toolbar">
               <div class="pm-models-search-wrap">
-                <input type="text" id="pmModelsSearch" placeholder="Search models…" autocomplete="off" class="input-sm" />
+                <input type="text" id="pmModelsSearch" placeholder="Search models…" autocomplete="off" class="input-sm" aria-label="Search models in provider catalog" />
                 <button type="button" class="pm-search-clear" id="pmModelsSearchClear" aria-label="Clear search" title="Clear search" hidden>&times;</button>
               </div>
               <div class="pm-models-actions-wrap">
@@ -2086,12 +2227,12 @@
 
   <!-- Modal: OAuth QR Code Display -->
   <div class="modal-backdrop" id="oauthQrModalBackdrop" hidden>
-    <div class="modal modal-sm" role="dialog" aria-modal="true" style="text-align: center; max-width: 420px;">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="oauthQrModalTitle" style="text-align: center; max-width: 420px;">
       <div class="modal-header">
         <div class="modal-header-title-wrap">
-          <h2>Scanner avec votre Téléphone</h2>
+          <h2 id="oauthQrModalTitle">Scan with Phone</h2>
         </div>
-        <button class="modal-close" id="oauthQrModalClose" type="button" aria-label="Fermer">
+        <button class="modal-close" id="oauthQrModalClose" type="button" aria-label="Close">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -2100,37 +2241,37 @@
           <!-- QR SVG / Image rendered here -->
         </div>
         <p style="font-size: 12.5px; color: var(--text-2); margin: 0; line-height: 1.4;">
-          Scannez ce QR Code avec l'appareil photo de votre smartphone pour vous connecter à votre compte Google et autoriser Antigravity.
+          Scan this QR Code with your smartphone camera to sign in to your Google account and authorize Antigravity.
         </p>
       </div>
       <div class="modal-footer" style="justify-content: center;">
-        <button class="btn btn-ghost" id="oauthQrCloseBtn" type="button">Fermer</button>
+        <button class="btn btn-ghost" id="oauthQrCloseBtn" type="button">Close</button>
       </div>
     </div>
   </div>
 
   <!-- Modal: Ping-Pong Benchmark & Latency Tester -->
   <div class="modal-backdrop" id="pingPongModalBackdrop" hidden>
-    <div class="modal modal-lg" role="dialog" aria-modal="true" style="max-width: 820px;">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="pingPongModalTitle" style="max-width: 820px;">
       <div class="modal-header">
         <div class="modal-header-title-wrap">
           <div class="modal-header-icon" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; font-size: 16px;">
             🏓
           </div>
           <div>
-            <h2 class="pm-modal-title">Live Model Ping-Pong Tester &amp; Benchmark</h2>
-            <div style="font-size: 12px; color: var(--text-2);">Test direct de connectivité, latence réelle et extraction du Pong textuel</div>
+            <h2 id="pingPongModalTitle" class="pm-modal-title">Live Model Ping-Pong Tester &amp; Benchmark</h2>
+            <div style="font-size: 12px; color: var(--text-2);">Direct connectivity test, real latency measurement, and pong extraction</div>
           </div>
         </div>
-        <button class="modal-close" id="pingPongModalClose" type="button" aria-label="Fermer">
+        <button class="modal-close" id="pingPongModalClose" type="button" aria-label="Close">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
       <div class="modal-body" style="padding: 20px;">
         <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
-          <input type="text" id="pingPongCustomPrompt" class="input input-sm" value="ping" placeholder="Prompt de test (défaut: ping)" style="max-width: 260px;" />
+          <input type="text" id="pingPongCustomPrompt" class="input input-sm" value="ping" placeholder="Test prompt (default: ping)" aria-label="Ping-pong test prompt" style="max-width: 260px;" />
           <button class="btn btn-primary btn-sm" id="pingPongRunBatchBtn" type="button">
-            🚀 Tester tous les modèles
+            🚀 Test All Models
           </button>
           <div id="pingPongBatchProgress" style="font-size: 12px; color: var(--text-2); display: none;"></div>
         </div>
@@ -2138,10 +2279,10 @@
           <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
             <thead>
               <tr style="border-bottom: 1px solid var(--border); background: var(--bg-2); color: var(--text-2); text-align: left;">
-                <th style="padding: 10px 12px;">Modèle</th>
-                <th style="padding: 10px 12px;">Fournisseur</th>
-                <th style="padding: 10px 12px;">Statut &amp; Latence</th>
-                <th style="padding: 10px 12px;">Réponse Pong</th>
+                <th style="padding: 10px 12px;">Model</th>
+                <th style="padding: 10px 12px;">Provider</th>
+                <th style="padding: 10px 12px;">Status &amp; Latency</th>
+                <th style="padding: 10px 12px;">Pong Response</th>
                 <th style="padding: 10px 12px; text-align: right;">Action</th>
               </tr>
             </thead>
@@ -2153,9 +2294,9 @@
       </div>
       <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
         <div style="font-size: 12px; color: var(--text-3);">
-          ⚡ &lt;400ms Rapide &bull; ⏱️ 400-1200ms Normal &bull; 🐢 &gt;1200ms Lent
+          ⚡ &lt;400ms Fast &bull; ⏱️ 400-1200ms Normal &bull; 🐢 &gt;1200ms Slow
         </div>
-        <button class="btn btn-ghost" id="pingPongFooterClose" type="button">Fermer</button>
+        <button class="btn btn-ghost" id="pingPongFooterClose" type="button">Close</button>
       </div>
     </div>
   </div>
@@ -2175,8 +2316,11 @@
   <script src="native-quota-card.js"></script>
   <script src="execution-feed.js"></script>
   <script src="log-viewer.js"></script>
+  <script src="log-minimap.js"></script>
+  <script src="log-inspector.js"></script>
   <script src="ping-pong-tester.js"></script>
   <script src="token-tracker.js"></script>
+  <script src="google-accounts-telemetry.js"></script>
   <script src="app.js"></script>
   <script src="features.js"></script>
 </body>

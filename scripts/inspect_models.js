@@ -55,7 +55,7 @@ async function main() {
 
   // Capture screenshot of model popover
   const shot = await send('Page.captureScreenshot', { format: 'png' }, mainSession);
-  const shotPath = path.join('C:\\Users\\amine\\.gemini\\antigravity-ide\\brain\\3e9f6861-dc8a-41e3-8873-7855a12314e0\\screenshots', '04_model_picker_open.png');
+  const shotPath = path.join('C:\\Users\\developer\\.gemini\\antigravity-ide\\brain\\3e9f6861-dc8a-41e3-8873-7855a12314e0\\screenshots', '04_model_picker_open.png');
   fs.writeFileSync(shotPath, Buffer.from(shot.data, 'base64'));
   console.log('Saved model picker screenshot:', shotPath);
 

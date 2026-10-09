@@ -39,6 +39,11 @@ export const DOCTOR_IPC_CHANNELS = {
   GOOGLE_OAUTH_LOGIN: 'ag:google:oauth-login',
   GOOGLE_SWITCH_IDE_ACCOUNT: 'ag:google:switch-ide-account',
   GOOGLE_OAUTH_INTERCEPTED: 'ag:google:oauth-intercepted',
+  GOOGLE_RECONCILE_COOLDOWNS: 'ag:google:reconcile-cooldowns',
+  GOOGLE_GET_COOLDOWNS: 'ag:google:get-cooldowns',
+  GOOGLE_LIFT_ACCOUNT_COOLDOWN: 'ag:google:lift-account-cooldown',
+  GOOGLE_LIFT_BURST_COOLDOWNS: 'ag:google:lift-burst-cooldowns',
+  GOOGLE_PURGE_QUOTA_CACHE: 'ag:google:purge-quota-cache',
   MODEL_PING_PONG: 'ag:model:ping-pong',
 
   // Proxy & MITM
@@ -54,6 +59,7 @@ export const DOCTOR_IPC_CHANNELS = {
   PROXY_ERROR: 'proxy:error',
   PROXY_ERROR_HISTORY: 'ag:proxy-error-history',
   MITM_TRAFFIC: 'mitm:traffic',
+  TOKEN_REAL_STATS: 'ag:token:real-stats',
 
   // Network & Remote Daemon
   NETWORK_GET_LOCAL_IP: 'ag:network:getLocalIp',

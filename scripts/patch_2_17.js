@@ -216,6 +216,11 @@ async function main() {
       /'https:\/\/generativelanguage\.googleapis\.com'/,
       "process.env.AG_API_SERVER_URL || ('http://' + (process.env.AG_BIND_HOST || '127.0.0.1') + ':' + (process.env.AG_PROXY_PORT || '51074'))"
     );
+    // Suppress benign internal declarative warnings and plugin prompt truncation spam
+    lsJs = lsJs.replace(
+      /if \(!logStreamEnded\) \{\s*logStream\.write\(line \+ '\\n'\);\s*\}/,
+      "if (!logStreamEnded) { if (!line.includes('skipping component during resolution: empty component:') && !line.includes('Truncating suggested_prompts from')) { logStream.write(line + '\\n'); } }"
+    );
     fs.writeFileSync(lsJsPath, lsJs, 'utf8');
   }
 
@@ -275,15 +280,28 @@ try {
           return origFetch.apply(this, args);
         }
 
-        // Intercept GetAllWorkflows: populate with all skills as WorkflowSpec so all 86 skills appear on /
+        // Intercept GetAllWorkflows: merge official workflows (Automation, templates) with custom skills
         if (isAllWorkflows) {
           try {
+            // Fetch official workflows from Language Server to preserve native features like Automation
+            let officialWorkflows = [];
+            try {
+              const origRes = await origFetch.apply(this, args);
+              if (origRes.ok) {
+                const origData = await origRes.clone().json();
+                if (Array.isArray(origData.workflows)) {
+                  officialWorkflows = origData.workflows;
+                }
+              }
+            } catch (_) {}
+
             const skillsUrl = url.replace('GetAllWorkflows', 'GetAllSkills');
             const skillsRes = await origFetch.apply(this, [skillsUrl, Object.assign({}, args[1], { body: '{}' })]);
+            let skillWorkflows = [];
             if (skillsRes.ok) {
               const skillsData = await skillsRes.json();
               const rawSkills = skillsData.skills || [];
-              const workflows = rawSkills.map(function(s) {
+              skillWorkflows = rawSkills.map(function(s) {
                 return {
                   $typeName: 'exa.cortex_pb.WorkflowSpec',
                   name: s.name,
@@ -292,14 +310,20 @@ try {
                   content: s.content || ''
                 };
               });
-              return new Response(JSON.stringify({ workflows: workflows }), {
-                status: 200,
-                headers: {
-                  'content-type': 'application/json',
-                  'connect-protocol-version': '1'
-                }
-              });
             }
+
+            const officialNames = new Set(officialWorkflows.map(function(w) { return w.name; }));
+            const merged = officialWorkflows.concat(
+              skillWorkflows.filter(function(s) { return !officialNames.has(s.name); })
+            );
+
+            return new Response(JSON.stringify({ workflows: merged }), {
+              status: 200,
+              headers: {
+                'content-type': 'application/json',
+                'connect-protocol-version': '1'
+              }
+            });
           } catch (wfErr) {
             console.warn('[AG] GetAllWorkflows skill conversion error:', wfErr);
           }
@@ -424,6 +448,12 @@ try {
                       info: { $typeName: 'exa.codeium_common_pb.SlashCommandInfo', name: 'learn', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
                       title: 'learn',
                       description: 'Reflect on recent successes or corrections to capture reusable skills or rules.'
+                    },
+                    {
+                      $typeName: 'exa.language_server_pb.SlashCommandDefinition',
+                      info: { $typeName: 'exa.codeium_common_pb.SlashCommandInfo', name: 'automation', type: 'SLASH_COMMAND_TYPE_SYSTEM' },
+                      title: 'automation',
+                      description: 'Design and create a scheduled background automation.'
                     }
                   ].concat(fallbackSkills)
                 };

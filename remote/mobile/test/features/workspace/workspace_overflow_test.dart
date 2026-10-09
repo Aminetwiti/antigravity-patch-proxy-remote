@@ -15,7 +15,7 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: WorkspaceScreen(
-          workspacePath: r'c:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\very\long\nested\path\that\would\normally\overflow',
+          workspacePath: r'c:\Users\developer\Downloads\antigravity-add-model-main\antigravity-add-model-main\very\long\nested\path\that\would\normally\overflow',
         ),
       ),
     );

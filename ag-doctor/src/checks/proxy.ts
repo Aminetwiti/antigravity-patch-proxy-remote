@@ -65,7 +65,7 @@ export async function checkProxy(port = DEFAULT_MITM_PORT): Promise<CheckResult>
     // port answers, then re-probe. This keeps the diagnostic green while
     // Antigravity is closed, without requiring the user to run the stub
     // manually (the check itself used to instruct them to do exactly that).
-    if (isRefusedError(result.error)) {
+    if (isRefusedError(result.error) && process.env.AG_AUTO_START_STUB === '1') {
       const started = await startProxyStub(port);
       if (started) {
         return {

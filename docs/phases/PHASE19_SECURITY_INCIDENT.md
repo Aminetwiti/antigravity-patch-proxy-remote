@@ -49,7 +49,7 @@ Generated a new cryptographic 256-bit CSPRNG token:
 The new token was written to `/etc/antigravity/ag-agentd.env` with strict `0600` permissions (`-rw-------`), owned exclusively by `ag-agent:ag-agent`.
 
 ### Step 3: Source Code Remediation (`pkg/auth/token.go`)
-Updated `NewTokenManager` in [`remote/daemon/pkg/auth/token.go`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/daemon/pkg/auth/token.go#L23-L26) to natively read `AG_AUTH_TOKEN` from the process environment:
+Updated `NewTokenManager` in [`remote/daemon/pkg/auth/token.go`](file:///<repo-root>/remote/daemon/pkg/auth/token.go#L23-L26) to natively read `AG_AUTH_TOKEN` from the process environment:
 
 ```go
 func NewTokenManager(flagToken string) (*TokenManager, string, error) {
@@ -64,7 +64,7 @@ func NewTokenManager(flagToken string) (*TokenManager, string, error) {
 ```
 
 ### Step 4: Systemd Service Unit Remediation
-- Removed `--auth-token` argument from `ExecStart` in [`scripts/deploy/install-cloud-agent.sh`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/scripts/deploy/install-cloud-agent.sh#L182-L195).
+- Removed `--auth-token` argument from `ExecStart` in [`scripts/deploy/install-cloud-agent.sh`](file:///<repo-root>/scripts/deploy/install-cloud-agent.sh#L182-L195).
 - Removed `--auth-token` argument from `/etc/systemd/system/ag-agentd.service`.
 - Because `EnvironmentFile=/etc/antigravity/ag-agentd.env` injects `AG_AUTH_TOKEN` directly into the process environment without passing it via CLI flags, credentials remain 100% hidden from `/proc/<PID>/cmdline` and `ps`.
 

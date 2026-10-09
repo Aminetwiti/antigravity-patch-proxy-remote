@@ -100,7 +100,7 @@ void main() {
 ```
 
 [ARTIFACT: screenshot.png]
-Path: file:///C:/Users/amine/screenshot.png
+Path: file:///C:/Users/developer/screenshot.png
 
 Exemple de documentation montrant [ARTIFACT: ...]
 Path: file:///...

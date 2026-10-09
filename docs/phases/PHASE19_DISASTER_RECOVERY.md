@@ -10,7 +10,7 @@
 
 ## 1. Disaster Recovery Methodology
 
-The disaster recovery test verified whether a completely destroyed server state can be reconstructed cleanly using the official recovery procedures outlined in [`docs/release/backup-recovery.md`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/docs/release/backup-recovery.md).
+The disaster recovery test verified whether a completely destroyed server state can be reconstructed cleanly using the official recovery procedures outlined in [`docs/release/backup-recovery.md`](file:///<repo-root>/docs/release/backup-recovery.md).
 
 ```
 [ Active Server (Live State) ]

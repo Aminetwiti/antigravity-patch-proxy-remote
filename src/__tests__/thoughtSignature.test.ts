@@ -6,7 +6,11 @@ import {
   restoreThoughtSignatures,
   sanitizeUnsignedToolCalls,
   flattenAllToolCallsToText,
+  markConvCorruptedSignatures,
+  isConvCorruptedSignatures,
+  clearThoughtSignaturesForConv,
 } from '../proxy/shared';
+import { sanitizeCandidatesInResponse } from '../proxy';
 
 describe('thoughtSignature handling', () => {
   beforeEach(() => {
@@ -305,6 +309,86 @@ describe('thoughtSignature handling', () => {
       expect((contents[0].parts[0] as any).text).toContain('[Executed tool: corrupted_tool');
       expect((contents[1].parts[0] as any).functionResponse).toBeUndefined();
       expect((contents[1].parts[0] as any).text).toContain('[Tool corrupted_tool output: ok]');
+    });
+  });
+
+  describe('recovery of pseudo-tool text to real functionCall', () => {
+    it('converts [Executed tool: run_command with arguments: {...}] to a real functionCall part', () => {
+      const data = {
+        candidates: [
+          {
+            content: {
+              role: 'model',
+              parts: [
+                {
+                  text: '[Executed tool: run_command with arguments: {"CommandLine":"node test.js"}]',
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      const modified = sanitizeCandidatesInResponse(data);
+      expect(modified).toBe(true);
+      const part = (data.candidates[0].content.parts[0] as any);
+      expect(part.functionCall).toBeDefined();
+      expect(part.functionCall.name).toBe('run_command');
+      expect(part.functionCall.args).toEqual({ CommandLine: 'node test.js' });
+    });
+
+    it('converts [Executed tool: view_file with arguments: ...] with unescaped Windows paths and colons', () => {
+      // Simulate raw string with single Windows backslashes
+      const rawText = '[Executed tool: default_api:view_file with arguments: {"AbsolutePath":"c:\\Users\\developer\\Downloads\\sample-project\\src\\Services\\Dispatch\\DriverGeoService.php","EndLine":175,"StartLine":140,"toolAction":"Checking GEORADIUS query results filtering","toolSummary":"Inspect DriverGeoService findNearbyDrivers"}]'
+        .replace(/\\\\/g, '\\');
+
+      const data = {
+        candidates: [
+          {
+            content: {
+              role: 'model',
+              parts: [{ text: rawText }],
+            },
+          },
+        ],
+      };
+
+      const modified = sanitizeCandidatesInResponse(data);
+      expect(modified).toBe(true);
+      const part = (data.candidates[0].content.parts[0] as any);
+      expect(part.functionCall).toBeDefined();
+      expect(part.functionCall.name).toBe('default_api:view_file');
+      expect(part.functionCall.args.EndLine).toBe(175);
+      expect(part.functionCall.args.AbsolutePath).toContain('DriverGeoService.php');
+    });
+  });
+
+  describe('corrupted signature tracking and clearing', () => {
+    it('marks conversation as corrupted and clears scoped signatures', () => {
+      thoughtSignatureCache.set('conv-corrupted:tool1', 'sig1');
+      thoughtSignatureCache.set('conv-corrupted:tool2', 'sig2');
+      thoughtSignatureCache.set('conv-other:tool1', 'sig3');
+
+      expect(isConvCorruptedSignatures('conv-corrupted')).toBe(false);
+
+      markConvCorruptedSignatures('conv-corrupted');
+
+      expect(isConvCorruptedSignatures('conv-corrupted')).toBe(true);
+      expect(thoughtSignatureCache.has('conv-corrupted:tool1')).toBe(false);
+      expect(thoughtSignatureCache.has('conv-corrupted:tool2')).toBe(false);
+      expect(thoughtSignatureCache.get('conv-other:tool1')).toBe('sig3');
+    });
+
+    it('clearThoughtSignaturesForConv removes only matching convId entries', () => {
+      thoughtSignatureCache.set('test-conv:funcA', 'sigA');
+      thoughtSignatureCache.set('test-conv:__last__', 'sigLast');
+      thoughtSignatureCache.set('unrelated:funcA', 'sigKeep');
+
+      clearThoughtSignaturesForConv('test-conv');
+
+      expect(thoughtSignatureCache.has('test-conv:funcA')).toBe(false);
+      expect(thoughtSignatureCache.has('test-conv:__last__')).toBe(false);
+      expect(thoughtSignatureCache.get('unrelated:funcA')).toBe('sigKeep');
     });
   });
 });

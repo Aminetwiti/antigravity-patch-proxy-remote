@@ -14,7 +14,7 @@ Sur Windows, un processus Electron a besoin d'être lancé avec un shell pour ou
 
 ## ✅ Solution Appliquée
 
-J'ai modifié [`ag-doctor/src/core/antigravity.ts`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/ag-doctor/src/core/antigravity.ts) pour:
+J'ai modifié [`ag-doctor/src/core/antigravity.ts`](file:///<repo-root>/ag-doctor/src/core/antigravity.ts) pour:
 
 ### Pour Windows:
 1. **Utiliser `cmd.exe /c start`** — La commande Windows native pour lancer une application GUI
@@ -151,7 +151,7 @@ Si l'interface ne s'ouvre toujours pas:
 
 3. **Test manuel**:
 ```powershell
-cmd /c start "" "C:\Users\amine\AppData\Local\Programs\antigravity\Antigravity.exe"
+cmd /c start "" "%LOCALAPPDATA%\\Programs\\Antigravity\Antigravity.exe"
 ```
 
 Si cette commande fonctionne manuellement mais pas via ag-doctor, c'est un problème de permissions Node.js.

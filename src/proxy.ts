@@ -7,9 +7,16 @@ import * as path from 'path';
 import * as os from 'os';
 import * as zlib from 'zlib';
 import { StringDecoder } from 'string_decoder';
-import { randomBytes, randomInt } from 'crypto';
+import { randomBytes } from 'crypto';
 
 import log from 'electron-log';
+
+if (log.transports?.file && log.transports.file.level === 'silly') {
+  log.transports.file.level = (process.env.AG_LOG_LEVEL as any) || 'info';
+}
+if (log.transports?.console && log.transports.console.level === 'silly') {
+  log.transports.console.level = (process.env.AG_LOG_LEVEL as any) || 'info';
+}
 import { createLogger } from './logger';
 import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from './metrics';
 import {
@@ -20,6 +27,9 @@ import {
   DEFAULT_REMOTE_HOST,
   DEFAULT_REMOTE_TOKEN,
   GOOGLE_PROXY_TIMEOUT_MS,
+  GOOGLE_POOL_HEADER_TIMEOUT_MS,
+  GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS,
+  RATE_LIMIT_RELIEF_WAIT_MS,
   FILE_DOWNLOAD_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
   ACTIVE_PORT_FILE,
@@ -43,6 +53,8 @@ import {
   restoreThoughtSignatures,
   sanitizeUnsignedToolCalls,
   flattenAllToolCallsToText,
+  markConvCorruptedSignatures,
+  isConvCorruptedSignatures,
   touchStateTimestamp,
   getSessionModelKey,
   startCleanupInterval,
@@ -50,7 +62,7 @@ import {
 } from './proxy/shared';
 import * as registry from './proxy/registry';
 import { injectCustomModelsIntoResponse, injectCustomModelsIntoUserStatus } from './proxy/protoInjector';
-import { loadCustomModels, getCustomModelsPath } from './proxy/modelLoader';
+import { loadCustomModels, getCustomModelsPath, loadDisabledModelIds } from './proxy/modelLoader';
 import { invalidateModelStoreCache } from './services/modelStore';
 import { invalidateHealthCache } from './proxy/modelHealthChecker';
 import { recordProviderUsage } from './customModelStore';
@@ -58,7 +70,7 @@ import { classifyError, ErrorDiagnostic, type ErrorType } from './proxy/errorCla
 import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from './proxy/retryStrategy';
 import { getOpenBreaker, recordFailure, recordSuccess, CIRCUIT_BREAKER_RESET_MS } from './proxy/circuitBreaker';
 import { IdleTimeoutGuard } from './proxy/idleTimeout';
-import { resolveClientForUrl, disposeAll as disposeAgentPool } from './proxy/agentPool';
+import { resolveClientForUrl, getHttpsAgent, disposeAll as disposeAgentPool } from './proxy/agentPool';
 import { EmptyStreamGuard } from './proxy/emptyStream';
 import { getRetryBudget, RETRY_BUDGET_BASE } from './proxy/retryBudget';
 import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from './proxy/diagnostics';
@@ -93,6 +105,7 @@ import {
   normalizeCloudCodeModelId,
   normalizeGoogleModelId,
   isGoogleCloudCodeModel,
+  isGeminiCliModel,
   sanitizeCloudCodeGenerationConfig,
   normalizeConversationTurns,
   prewarmGoogleAccounts,
@@ -102,8 +115,55 @@ import {
   updateLiveAccountQuota,
   pollAllGoogleQuotas,
   AccountLiveQuota,
+  isAccountEntitledToClaude55,
+  applyAntiTruncation,
+  extractSyntheticToolContent,
+  SYNTHETIC_TOOL_NAME,
 } from './services/googleAuth';
 import { loadPersistentQuotaCache } from './services/quotaCacheStore';
+import {
+  registerAccountRefreshToken,
+  getAccountQuotaKey,
+  isAccountUnlicensed,
+  markAccountUnlicensed,
+  getUnlicensedAccountKeys,
+  restoreUnlicensedAccountKeys,
+  markAccountQuotaExhausted,
+  isAccountInProbation,
+  endAccountProbation,
+  isAccountInCooldown,
+  setAccountCooldown,
+  getAccountCooldownRemaining,
+  getSoonestAccountCooldownRemaining,
+  clearAccountCooldown,
+  getActiveAccountCooldowns,
+  restoreActiveAccountCooldowns,
+  verifyAndReconcileCooldowns,
+  autoHealAccountOnQuotaRecovery,
+  getAccountInFlight,
+  MAX_CONCURRENT_PER_ACCOUNT,
+  notifySlotAvailable,
+  waitForAccountSlot,
+  incrementAccountInFlight,
+  decrementAccountInFlight,
+  recordAccountRequest,
+  getAccountLastUsed,
+  getAccountRpmCount,
+  getModelQuotaScore,
+  EWMA_DECAY_THRESHOLD_MS,
+  recordAccountLatency,
+  getAccountAvgLatency,
+  isPoolUnderQuotaStress,
+  resolveGoogleProjectId,
+  getAccountDynamicScore,
+  classifyGoogleCloudCode429,
+  selectCandidateP2C,
+  selectBestModelByQuota,
+  getGoogleAccountPool,
+  recordAccountBurst,
+  clearAccountBurst,
+  _resetAccountBurst,
+} from './proxy/googlePool';
 import { safeWriteHead, safeEnd } from './proxy/httpUtils';
 import {
   mergeModels,
@@ -149,6 +209,48 @@ function getRemoteStatePath(): string {
   return path.join(dir, 'remote_vps_state.json');
 }
 
+export interface TokenUsageEvent {
+  id: string;
+  timestamp: number;
+  conversationId?: string;
+  provider: string;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedTokens?: number;
+  latencyMs: number;
+  status: number;
+  endpoint?: string;
+}
+
+let tokenEventsPathCache: string | null = null;
+function getTokenEventsLogPath(): string {
+  if (!tokenEventsPathCache) {
+    const home = process.env.USERPROFILE || process.env.HOME || os.homedir();
+    const dir = path.join(home, '.gemini', 'antigravity');
+    if (!fs.existsSync(dir)) {
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+    }
+    tokenEventsPathCache = path.join(dir, 'token_usage_events.jsonl');
+  }
+  return tokenEventsPathCache;
+}
+
+export function logTokenUsageEvent(event: TokenUsageEvent): void {
+  try {
+    const logPath = getTokenEventsLogPath();
+    const line = JSON.stringify(event) + '\n';
+    fs.appendFile(logPath, line, (err) => {
+      if (err) {
+        log.debug('[Proxy] Could not append to token_usage_events.jsonl:', err.message);
+      }
+    });
+  } catch (_err) {
+    // Non-critical logging failure should never crash the proxy
+  }
+}
+
 function ensureRemoteExecScriptOnDisk(): void {
   try {
     const targetDir = path.join(os.homedir(), '.gemini', 'antigravity', 'scripts');
@@ -174,12 +276,32 @@ function ensureRemoteExecScriptOnDisk(): void {
 
 let lastRemoteStateSummary = '';
 
-function loadRemoteState(): void {
+export function loadRemoteState(): void {
   try {
     ensureRemoteExecScriptOnDisk();
     const p = getRemoteStatePath();
     if (fs.existsSync(p)) {
-      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      const raw = fs.readFileSync(p, 'utf-8').trim();
+      if (!raw) return;
+      let data: any;
+      try {
+        data = JSON.parse(raw);
+      } catch (jsonErr) {
+        // Self-heal: extract outermost JSON object if corrupted trailing characters were present
+        const firstBrace = raw.indexOf('{');
+        const lastBrace = raw.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          try {
+            data = JSON.parse(raw.slice(firstBrace, lastBrace + 1));
+            log.info('[Proxy] Self-healed corrupted remote VPS state file.');
+          } catch {
+            log.warn('[Proxy] Unrecoverable remote VPS state file syntax:', jsonErr);
+            return;
+          }
+        } else {
+          return;
+        }
+      }
       isRemoteVpsActive = !!data.active;
       if (data.host) remoteVpsHost = String(data.host);
       if (data.token && data.token !== 'null' && data.token !== 'undefined' && String(data.token).trim().length > 0) {
@@ -193,7 +315,7 @@ function loadRemoteState(): void {
       const remoteSummary = `active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`;
       if (remoteSummary !== lastRemoteStateSummary) {
         lastRemoteStateSummary = remoteSummary;
-        log.info(`[Proxy] Loaded Remote VPS state: ${remoteSummary}`);
+        log.debug(`[Proxy] Loaded Remote VPS state: ${remoteSummary}`);
       } else {
         log.debug(`[Proxy] Loaded Remote VPS state: ${remoteSummary}`);
       }
@@ -203,15 +325,24 @@ function loadRemoteState(): void {
   }
 }
 
-function saveRemoteState(): void {
+export function saveRemoteState(): void {
   try {
     const p = getRemoteStatePath();
-    fs.writeFileSync(p, JSON.stringify({
+    const tmpPath = `${p}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`;
+    const content = JSON.stringify({
       active: isRemoteVpsActive,
       host: remoteVpsHost,
       token: remoteVpsToken || DEFAULT_REMOTE_TOKEN,
       remoteSessions: remoteSessionsMap,
-    }, null, 2), 'utf-8');
+    }, null, 2);
+    fs.writeFileSync(tmpPath, content, 'utf-8');
+    try {
+      fs.renameSync(tmpPath, p);
+    } catch {
+      // Fallback for Windows cross-device or temporary file-lock edge cases
+      fs.copyFileSync(tmpPath, p);
+      try { fs.unlinkSync(tmpPath); } catch {}
+    }
   } catch (e) {
     log.warn('[Proxy] Failed to save remote VPS state to disk:', e);
   }
@@ -241,6 +372,7 @@ function loadCachedCodeAssist(): string | null {
       const content = fs.readFileSync(p, 'utf-8').trim();
       if (content.startsWith('{')) {
         memoryLoadCodeAssistCache = content;
+        memoryLoadCodeAssistTime = Date.now();
         return content;
       }
     }
@@ -639,6 +771,47 @@ export function sanitizeCandidatesInResponse(data: any): boolean {
             if (!p || typeof p !== 'object') {
               cand.content.parts[pIdx] = { text: '' };
               modified = true;
+            } else if (p.functionCall && p.functionCall.name === SYNTHETIC_TOOL_NAME) {
+              const content = p.functionCall.args?.content;
+              if (typeof content === 'string') {
+                cand.content.parts[pIdx] = { text: content };
+                modified = true;
+              }
+            } else if (typeof p.text === 'string' && p.text.includes('[Executed tool:')) {
+              const toolMatch = p.text.match(/\[Executed tool:\s*([a-zA-Z0-9_\-\.:]+)\s+with arguments:\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*\]/);
+              if (toolMatch) {
+                try {
+                  const fnName = toolMatch[1];
+                  const rawArgs = toolMatch[2];
+                  let parsedArgs: any;
+                  try {
+                    parsedArgs = JSON.parse(rawArgs);
+                  } catch (_) {
+                    // Resilient parse: fix unescaped Windows file paths (e.g. C:\Users\...) and lone backslashes in JSON strings
+                    const normalized = rawArgs.replace(/"((?:[^"\\]|\\.)*)"/g, (_m, inner) => {
+                      const fixed = inner.replace(/\\([^\\])/g, (match: string, char: string) => {
+                        if (['"', '\\', '/'].includes(char)) return match;
+                        return '\\\\' + char;
+                      });
+                      return '"' + fixed + '"';
+                    });
+                    try {
+                      parsedArgs = JSON.parse(normalized);
+                    } catch (_) {
+                      parsedArgs = JSON.parse(rawArgs.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\'));
+                    }
+                  }
+                  const before = p.text.slice(0, toolMatch.index).trim();
+                  const after = p.text.slice(toolMatch.index! + toolMatch[0].length).trim();
+                  const newParts: any[] = [];
+                  if (before) newParts.push({ text: before });
+                  newParts.push({ functionCall: { name: fnName, args: parsedArgs } });
+                  if (after) newParts.push({ text: after });
+                  cand.content.parts.splice(pIdx, 1, ...newParts);
+                  pIdx += newParts.length - 1;
+                  modified = true;
+                } catch (_) {}
+              }
             } else if (
               p.text === undefined &&
               !p.functionCall &&
@@ -697,6 +870,8 @@ export function transformGoogleStreamForRemote(
   clientRes: http.ServerResponse,
   convId = '',
   isRemote = true,
+  modelName = '',
+  startTime = Date.now(),
 ): void {
   const headers = { ...proxyRes.headers };
   delete headers['content-length'];
@@ -717,6 +892,29 @@ export function transformGoogleStreamForRemote(
 
   const decoder = new StringDecoder('utf-8');
   let buffer = '';
+
+  let detectedModel = modelName;
+  const lastUsage = {
+    promptTokenCount: 0,
+    candidatesTokenCount: 0,
+    totalTokenCount: 0,
+    cachedContentTokenCount: 0,
+  };
+
+  const inspectUsage = (item: any): void => {
+    if (!item || typeof item !== 'object') return;
+    const usage = item.usageMetadata || (item.response && item.response.usageMetadata);
+    if (usage && typeof usage === 'object') {
+      if (typeof usage.promptTokenCount === 'number') lastUsage.promptTokenCount = usage.promptTokenCount;
+      if (typeof usage.candidatesTokenCount === 'number') lastUsage.candidatesTokenCount = usage.candidatesTokenCount;
+      if (typeof usage.totalTokenCount === 'number') lastUsage.totalTokenCount = usage.totalTokenCount;
+      if (typeof usage.cachedContentTokenCount === 'number') lastUsage.cachedContentTokenCount = usage.cachedContentTokenCount;
+    }
+    const m = item.modelVersion || (item.response && item.response.modelVersion);
+    if (m && typeof m === 'string') {
+      detectedModel = m;
+    }
+  };
 
   let sawFinishReason = false;
   const inspectFinishReason = (obj: any): void => {
@@ -752,6 +950,7 @@ export function transformGoogleStreamForRemote(
           const eol = line.endsWith('\r') ? '\r\n' : '\n';
           for (const item of data) {
             if (item && typeof item === 'object') {
+              inspectUsage(item);
               inspectFinishReason(item);
               extractAndCacheThoughtSignatures(item, convId);
               sanitizeCandidatesInResponse(item);
@@ -761,6 +960,7 @@ export function transformGoogleStreamForRemote(
           return;
         }
 
+        inspectUsage(data);
         // Cache any thought_signature values from this response chunk
         inspectFinishReason(data);
         extractAndCacheThoughtSignatures(data, convId);
@@ -825,6 +1025,27 @@ export function transformGoogleStreamForRemote(
       writeSafeSseChunk(clientRes, finalChunk);
     }
     safeEnd(clientRes);
+
+    const latencyMs = Math.max(1, Date.now() - startTime);
+    const pTokens = lastUsage.promptTokenCount || 0;
+    const cTokens = lastUsage.candidatesTokenCount || 0;
+    const tTokens = lastUsage.totalTokenCount || (pTokens + cTokens);
+    if (tTokens > 0 || pTokens > 0) {
+      logTokenUsageEvent({
+        id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+        timestamp: Date.now(),
+        conversationId: convId || undefined,
+        provider: 'google',
+        model: detectedModel || modelName || 'gemini-2.5-pro',
+        promptTokens: pTokens,
+        completionTokens: cTokens,
+        totalTokens: tTokens,
+        cachedTokens: lastUsage.cachedContentTokenCount || 0,
+        latencyMs,
+        status: proxyRes.statusCode || 200,
+        endpoint: '/v1internal:streamGenerateContent',
+      });
+    }
   });
 
   stream.on('error', (err) => {
@@ -864,12 +1085,12 @@ async function proxyToGoogle(
   hostOverride?: string,
 ): Promise<void> {
   const traceId = newTraceId();
-  const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode');
+  const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode') || req.url!.includes('cloudcode');
   const targetHost = hostOverride || (isCloudCodeUrl ? GOOGLE_HOSTS.CLOUD_CODE : GOOGLE_HOSTS.GENERATIVE_LANGUAGE);
   const targetUrl = `https://${targetHost}`;
   const parsedUrl = new URL(req.url!, targetUrl);
   const endTimer = metricTimer('proxy_request_ms', { upstream: targetHost });
-  proxyLog.debug('req', traceId, req.method, req.url, '→', targetHost);
+  log.debug('[Proxy] req', traceId, req.method, req.url, '→', targetHost);
 
   try {
     const realIp = await resolveGoogleIp(targetHost);
@@ -921,8 +1142,8 @@ async function proxyToGoogle(
 
   const proxyReq = https.request(parsedUrl, options, (proxyRes) => {
     proxyReq.setTimeout(0);
-    if (!hostOverride && isCloudCodeUrl && (proxyRes.statusCode === 503 || proxyRes.statusCode === 502)) {
-      log.warn(`[Proxy] Google Cloud Code returned ${proxyRes.statusCode} on ${targetHost}. Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
+    if (!hostOverride && isCloudCodeUrl && !isGeneration && (proxyRes.statusCode === 503 || proxyRes.statusCode === 502)) {
+      log.warn(`[Proxy] Google Cloud Code returned ${proxyRes.statusCode} on ${targetHost}. Trying production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD} for non-generation request...`);
       proxyToGoogle(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD);
       return;
     }
@@ -953,7 +1174,7 @@ async function proxyToGoogle(
           text = fullResBody.toString('utf-8');
         }
 
-        log.info(
+        log.debug(
           `[Proxy] Response for ${req.url} (status: ${proxyRes.statusCode}, encoding: ${encoding}, length: ${text.length})`,
         );
         // P0-3: Response body content is NOT logged to disk. Only metadata.
@@ -980,9 +1201,15 @@ async function proxyToGoogle(
         }
       });
     } else if (isGeneration) {
+      let reqModelName = '';
+      try {
+        const parsedReq = JSON.parse(reqBody.toString('utf-8'));
+        reqModelName = parsedReq.model || parsedReq.requestedModel || (parsedReq.request && parsedReq.request.model) || '';
+      } catch {}
+      const reqStart = Date.now();
       const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
       if (isStream) {
-        transformGoogleStreamForRemote(proxyRes, res, convId, isRemoteSession);
+        transformGoogleStreamForRemote(proxyRes, res, convId, isRemoteSession, reqModelName, reqStart);
       } else {
         const responseChunks: Buffer[] = [];
         proxyRes.on('data', (chunk) => responseChunks.push(chunk));
@@ -996,6 +1223,28 @@ async function proxyToGoogle(
             extractAndCacheThoughtSignatures(data, convId);
             if (sanitizeCandidatesInResponse(data)) {
               text = JSON.stringify(data);
+            }
+            const usage = data?.response?.usageMetadata || data?.usageMetadata;
+            if (usage) {
+              const pTokens = usage.promptTokenCount || 0;
+              const cTokens = usage.candidatesTokenCount || 0;
+              const tTokens = usage.totalTokenCount || (pTokens + cTokens);
+              if (tTokens > 0 || pTokens > 0) {
+                logTokenUsageEvent({
+                  id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+                  timestamp: Date.now(),
+                  conversationId: convId || undefined,
+                  provider: 'google',
+                  model: reqModelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-2.5-pro',
+                  promptTokens: pTokens,
+                  completionTokens: cTokens,
+                  totalTokens: tTokens,
+                  cachedTokens: usage.cachedContentTokenCount || 0,
+                  latencyMs: Math.max(1, Date.now() - reqStart),
+                  status: proxyRes.statusCode || 200,
+                  endpoint: '/v1internal:generateContent',
+                });
+              }
             }
           } catch (_) {}
           const modifiedHeaders = { ...proxyRes.headers };
@@ -1016,8 +1265,8 @@ async function proxyToGoogle(
   });
 
   proxyReq.on('error', (err) => {
-    if (!hostOverride && isCloudCodeUrl && !res.headersSent && !res.writableEnded) {
-      log.warn(`[Proxy] Google Cloud Code network error on ${targetHost} (${err.message}). Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
+    if (!hostOverride && isCloudCodeUrl && !isGeneration && !res.headersSent && !res.writableEnded) {
+      log.warn(`[Proxy] Google Cloud Code network error on ${targetHost} (${err.message}). Trying production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD} for non-generation request...`);
       proxyToGoogle(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD);
       return;
     }
@@ -1033,7 +1282,7 @@ async function proxyToGoogle(
   proxyReq.on('close', () => {
     const ms = endTimer();
     metricObserve('proxy_upstream_ms', ms, { upstream: targetHost, trace_id: traceId });
-    proxyLog.debug('Upstream request closed traceId=', traceId, 'after', ms, 'ms');
+    log.debug('[Proxy] Upstream request closed traceId=', traceId, 'after', ms, 'ms');
   });
 
   proxyReq.setTimeout(25_000, () => {
@@ -1065,6 +1314,9 @@ export function executeGoogleCloudCodeRequest(
   customAuthHeader?: string,
   convId = '',
   hostOverride?: string,
+  timeoutMs?: number,
+  modelName = '',
+  startTime = Date.now(),
 ): Promise<GoogleRequestOutcome> {
   return new Promise((resolve) => {
     const traceId = newTraceId();
@@ -1117,6 +1369,7 @@ export function executeGoogleCloudCodeRequest(
         method: req.method,
         headers: headers as Record<string, string>,
         servername: targetHost,
+        agent: getHttpsAgent({ host: targetHost }),
       };
 
       proxyReq = https.request(parsedUrl, options, (proxyRes) => {
@@ -1125,16 +1378,9 @@ export function executeGoogleCloudCodeRequest(
 
         const status = proxyRes.statusCode || 200;
 
-        // If upstream error (429, 400, 401, 403, 404, 500, 503):
+        // If upstream error (429, 400, 401, 403, 404, 500, 502, 503, 504):
         // Intercept BEFORE writing anything to client res!
         if (status >= 400) {
-          if (!hostOverride && isCloudCodeUrl && (status === 503 || status === 502)) {
-            log.warn(`[Proxy] Google Cloud Code returned ${status} on ${targetHost}. Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
-            executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD)
-              .then(finish);
-            return;
-          }
-
           const errChunks: Buffer[] = [];
           proxyRes.on('data', (c: Buffer) => errChunks.push(c));
           proxyRes.on('end', () => {
@@ -1191,7 +1437,7 @@ export function executeGoogleCloudCodeRequest(
           });
         } else if (isGeneration) {
           if (isStream) {
-            transformGoogleStreamForRemote(proxyRes, res, convId, isRemoteSession);
+            transformGoogleStreamForRemote(proxyRes, res, convId, isRemoteSession, modelName, startTime);
             finish({ success: true, statusCode: status });
           } else {
             const responseChunks: Buffer[] = [];
@@ -1226,18 +1472,6 @@ export function executeGoogleCloudCodeRequest(
                               const originalCmd = (args.CommandLine || args.commandLine || args.command || args.cmd) as string | undefined;
                               if (typeof originalCmd === 'string' && originalCmd.trim()) {
                                 const remoteCwd = (args.Cwd || args.cwd) as string | undefined;
-                                // REMOTE EXECUTION DISABLED BY USER REQUEST
-                                // const wrapped = wrapCommandForRemoteExec(originalCmd.trim(), remoteCwd);
-                                // if (wrapped !== originalCmd) {
-                                //   args.CommandLine = wrapped;
-                                //   if (args.commandLine !== undefined) args.commandLine = wrapped;
-                                //   if (args.command !== undefined) args.command = wrapped;
-                                //   if (args.cmd !== undefined) args.cmd = wrapped;
-                                //   if (args.Cwd !== undefined) args.Cwd = '.';
-                                //   if (args.cwd !== undefined) args.cwd = '.';
-                                //   modified = true;
-                                //   log.info(`[Proxy] Google Cloud Code JSON: Bridged run_command "${originalCmd}" (cwd=${remoteCwd || '.'}) -> remote VPS`);
-                                // }
                               }
                             }
                           }
@@ -1248,6 +1482,28 @@ export function executeGoogleCloudCodeRequest(
                 }
                 if (modified) {
                   text = JSON.stringify(data);
+                }
+                const usage = data?.response?.usageMetadata || data?.usageMetadata;
+                if (usage) {
+                  const pTokens = usage.promptTokenCount || 0;
+                  const cTokens = usage.candidatesTokenCount || 0;
+                  const tTokens = usage.totalTokenCount || (pTokens + cTokens);
+                  if (tTokens > 0 || pTokens > 0) {
+                    logTokenUsageEvent({
+                      id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+                      timestamp: Date.now(),
+                      conversationId: convId || undefined,
+                      provider: 'google',
+                      model: modelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-2.5-pro',
+                      promptTokens: pTokens,
+                      completionTokens: cTokens,
+                      totalTokens: tTokens,
+                      cachedTokens: usage.cachedContentTokenCount || 0,
+                      latencyMs: Math.max(1, Date.now() - startTime),
+                      status,
+                      endpoint: '/v1internal:generateContent',
+                    });
+                  }
                 }
               } catch (_) {}
               const modifiedHeaders = { ...proxyRes.headers };
@@ -1273,12 +1529,6 @@ export function executeGoogleCloudCodeRequest(
 
       proxyReq.on('error', (err) => {
         if (isTimedOut) return;
-        if (!hostOverride && isCloudCodeUrl && !res.headersSent && !res.writableEnded) {
-          log.warn(`[Proxy] Google Cloud Code network error on ${targetHost} (${err.message}). Auto-failing over to production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD}...`);
-          executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD)
-            .then(finish);
-          return;
-        }
         metricInc('proxy_errors_total', { upstream: targetHost, stage: 'forward', trace_id: traceId });
         const ms = endTimer();
         proxyLog.error('Google forwarding error traceId=', traceId, 'after', ms, 'ms:', err.message);
@@ -1290,9 +1540,10 @@ export function executeGoogleCloudCodeRequest(
         metricObserve('proxy_upstream_ms', ms, { upstream: targetHost, trace_id: traceId });
       });
 
-      proxyReq.setTimeout(GOOGLE_PROXY_TIMEOUT_MS, () => {
+      const effectiveTimeout = timeoutMs || GOOGLE_PROXY_TIMEOUT_MS;
+      proxyReq.setTimeout(effectiveTimeout, () => {
         isTimedOut = true;
-        log.error(`[Proxy] Google pool request timed out waiting for response headers after ${GOOGLE_PROXY_TIMEOUT_MS / 1000}s`);
+        log.error(`[Proxy] Google pool request timed out waiting for response headers on ${targetHost} after ${effectiveTimeout / 1000}s`);
         proxyReq?.destroy();
         finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
       });
@@ -1318,11 +1569,48 @@ export async function executeGoogleCloudCodeWithPool(
   isSessionRemote: boolean,
   convId: string,
   sessId: string | null,
+  attemptedModels: Set<string> = new Set(),
+  fallbackDepth = 0,
 ): Promise<boolean> {
-  const targetRaw = String(reqJson.model || (reqJson.request as any)?.model || '');
+  // Normalize payload: If caller provided a flat Gemini request (contents at root), wrap it inside reqJson.request
+  if (!reqJson.request && Array.isArray((reqJson as any).contents)) {
+    const { contents, generationConfig, tools, safetySettings, systemInstruction } = reqJson as any;
+    reqJson.request = {
+      contents,
+      ...(generationConfig ? { generationConfig } : {}),
+      ...(tools ? { tools } : {}),
+      ...(safetySettings ? { safetySettings } : {}),
+      ...(systemInstruction ? { systemInstruction } : {}),
+    };
+    delete (reqJson as any).contents;
+    delete (reqJson as any).generationConfig;
+    delete (reqJson as any).tools;
+    delete (reqJson as any).safetySettings;
+    delete (reqJson as any).systemInstruction;
+  }
+
+  let targetRaw = String(reqJson.model || (reqJson.request as any)?.model || '');
+  if (/MODEL_PLACEHOLDER_/i.test(targetRaw) || !targetRaw) {
+    const poolCandidate = accountPool?.[0]?.externalModelName || accountPool?.[0]?.name;
+    if (poolCandidate) {
+      targetRaw = poolCandidate;
+      reqJson.model = targetRaw;
+      if (reqJson.request && typeof reqJson.request === 'object') {
+        (reqJson.request as Record<string, unknown>).model = targetRaw;
+      }
+    }
+  }
   const resolvedTarget = normalizeCloudCodeModelId(targetRaw).toLowerCase();
+  if (resolvedTarget) {
+    reqJson.model = resolvedTarget;
+    if (reqJson.request && typeof reqJson.request === 'object') {
+      (reqJson.request as Record<string, unknown>).model = resolvedTarget;
+    }
+    attemptedModels.add(resolvedTarget);
+  }
   const isClaude = resolvedTarget.includes('claude');
   const modelFamily = isClaude ? 'claude' : 'gemini';
+
 
   // Eco-Routing / Graceful Degradation: If pool is under severe quota stress (<15% average),
   // downgrade background / auxiliary tasks (summaries, titles) to Flash to preserve Pro quota.
@@ -1346,13 +1634,54 @@ export async function executeGoogleCloudCodeWithPool(
     }
   }
 
-  const sortedAccounts = [...accountPool].sort((a, b) => {
+  // Dedicated 5.5 Routing: When requesting Claude 5.5 (Opus 5.5 / Sonnet 5.5),
+  // strictly filter candidate pool to accounts entitled to 5.5 (e.g. family group or direct Pro)
+  // to avoid instant 429 quota exhaustion from standard Jio trial parent accounts.
+  const isClaude55 =
+    targetRaw.includes('5-5') ||
+    targetRaw.includes('5.5') ||
+    resolvedTarget.includes('5-5') ||
+    resolvedTarget.includes('5.5') ||
+    (typeof reqJson.requestedModel === 'string' && (reqJson.requestedModel.includes('5.5') || reqJson.requestedModel.includes('5-5'))) ||
+    (typeof reqJson.model === 'string' && (reqJson.model.includes('5.5') || reqJson.model.includes('5-5')));
+  let eligibleAccounts = accountPool;
+  if (isClaude55) {
+    const candidates55 = accountPool.filter((a) => isAccountEntitledToClaude55(a));
+    const otherCandidates = accountPool.filter((a) => !isAccountEntitledToClaude55(a));
+    const healthy55 = candidates55.filter((a) => !isAccountInCooldown(a, modelFamily) && getModelQuotaScore(a, modelFamily) > 0);
+    if (healthy55.length > 0) {
+      log.info(
+        `[Proxy] [5.5 Routing] Prioritizing ${healthy55.length}/${candidates55.length} healthy 5.5-entitled account(s) (PARTAGE), retaining ${otherCandidates.length} account(s) as pool fallback.`,
+      );
+      eligibleAccounts = [...candidates55, ...otherCandidates];
+    } else if (candidates55.length > 0) {
+      log.warn(
+        `[Proxy] [5.5 Routing] 5.5-entitled account(s) have 0% quota or are in cooldown; falling back to remaining pool (${otherCandidates.length} account(s)).`,
+      );
+      eligibleAccounts = [...otherCandidates, ...candidates55];
+    } else {
+      log.warn(`[Proxy] [5.5 Routing] No accounts auto-detected with 5.5 entitlement; falling back to full pool.`);
+      eligibleAccounts = accountPool;
+    }
+  }
+
+  const sortedAccounts = [...eligibleAccounts].sort((a, b) => {
     const cdA = isAccountInCooldown(a, modelFamily) ? 1 : 0;
     const cdB = isAccountInCooldown(b, modelFamily) ? 1 : 0;
     if (cdA !== cdB) return cdA - cdB;
     const breakerA = getOpenBreaker(a) ? 1 : 0;
     const breakerB = getOpenBreaker(b) ? 1 : 0;
     if (breakerA !== breakerB) return breakerA - breakerB;
+    if (isClaude55) {
+      const entA = isAccountEntitledToClaude55(a) ? 1 : 0;
+      const entB = isAccountEntitledToClaude55(b) ? 1 : 0;
+      if (entA !== entB) {
+        const scoreA = getModelQuotaScore(a, modelFamily);
+        const scoreB = getModelQuotaScore(b, modelFamily);
+        if (entA > entB && scoreA > 0) return -1;
+        if (entB > entA && scoreB > 0) return 1;
+      }
+    }
     return getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily);
   });
 
@@ -1398,7 +1727,7 @@ export async function executeGoogleCloudCodeWithPool(
   });
 
   if (allSaturated) {
-    log.info(`[Proxy] All eligible accounts in Google pool are saturated (${MAX_CONCURRENT_PER_ACCOUNT} in-flight reqs). Waiting up to 1500ms for an available slot...`);
+    log.debug(`[Proxy] All eligible accounts in Google pool are saturated (${MAX_CONCURRENT_PER_ACCOUNT} in-flight reqs). Waiting up to 1500ms for an available slot...`);
     await waitForAccountSlot(sortedAccounts, modelFamily, 1500);
     // Re-sort after waiting so the newly freed account rises to the top
     sortedAccounts.sort((a, b) => {
@@ -1416,6 +1745,16 @@ export async function executeGoogleCloudCodeWithPool(
   let lastErrorText = 'All accounts in Google Cloud Code pool exhausted';
   const totalAttempts = sortedAccounts.length;
   let consecutive429Count = 0;
+  let consecutiveQuotaExhausted = 0;
+
+  const initialHealthyCount = sortedAccounts.filter(
+    (a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && getModelQuotaScore(a, modelFamily) > 0,
+  ).length;
+  if (initialHealthyCount > 0 && initialHealthyCount < 3) {
+    log.warn(
+      `[Proxy] ⚠️ Low pool headroom for ${modelFamily}: only ${initialHealthyCount} healthy account(s) available. Cascade fallback is armed.`,
+    );
+  }
 
   for (let i = 0; i < totalAttempts; i++) {
     const candidate = sortedAccounts[i];
@@ -1430,6 +1769,8 @@ export async function executeGoogleCloudCodeWithPool(
     if (isAccountInCooldown(candidate, modelFamily)) {
       const hasEligibleRemaining = sortedAccounts.slice(i).some((c) => !isAccountInCooldown(c, modelFamily));
       if (!hasEligibleRemaining) {
+        lastStatus = 429;
+        lastErrorText = `All accounts in Google Cloud Code pool are in active cooldown for ${modelFamily}`;
         log.warn(`[Proxy] All remaining accounts in pool are in cooldown for ${modelFamily}. Stopping pool search.`);
         break;
       }
@@ -1446,7 +1787,35 @@ export async function executeGoogleCloudCodeWithPool(
       }
     }
 
-    log.info(`[Proxy] Google account pool: trying candidate ${candidateName} (attempt ${i + 1}/${totalAttempts})`);
+    const targetModel = normalizeCloudCodeModelId(candidate.externalModelName || candidate.name);
+    const quotaScore = getModelQuotaScore(candidate, modelFamily);
+    const formattedQuota = Number(quotaScore.toFixed(1));
+
+    const qKey = getAccountQuotaKey(candidate);
+    const liveQ = (getLiveAccountQuota(qKey) || candidate.quotas) as Record<string, any> | undefined;
+    let quotaRemark = '';
+    if (liveQ) {
+      const isClaude = modelFamily
+        ? modelFamily.toLowerCase().includes('claude')
+        : (candidate.externalModelName || candidate.name || '').toLowerCase().includes('claude');
+      const fiveH = typeof (isClaude ? liveQ.claudeFiveHourPct : liveQ.geminiFiveHourPct) === 'number'
+        ? (isClaude ? liveQ.claudeFiveHourPct : liveQ.geminiFiveHourPct)
+        : liveQ.fiveHourPercentage;
+      const week = typeof (isClaude ? liveQ.claudeWeeklyPct : liveQ.geminiWeeklyPct) === 'number'
+        ? (isClaude ? liveQ.claudeWeeklyPct : liveQ.geminiWeeklyPct)
+        : liveQ.weeklyPercentage;
+      if (typeof fiveH === 'number' || typeof week === 'number') {
+        const parts: string[] = [];
+        if (typeof fiveH === 'number') parts.push(`5h=${fiveH}%`);
+        if (typeof week === 'number') parts.push(`week=${week}%`);
+        quotaRemark = ` [Quota: ${parts.join(', ')}]`;
+      }
+    }
+    if (!quotaRemark && quotaScore > 0) {
+      quotaRemark = ` [Quota: ${formattedQuota}%]`;
+    }
+    const rotationTag = i > 0 ? '🔄 [Account Rotation]' : '➡️ [Request]';
+    log.info(`[Proxy] ${rotationTag} Model: [${targetModel}] | Account: [${candidateName}] (attempt ${i + 1}/${totalAttempts})${quotaRemark}`);
 
     let accessToken: string | null = null;
     try {
@@ -1461,7 +1830,6 @@ export async function executeGoogleCloudCodeWithPool(
       continue;
     }
 
-    const targetModel = normalizeCloudCodeModelId(candidate.externalModelName || candidate.name);
     reqJson.model = targetModel;
     if (typeof reqJson.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqJson.requestedModel)) {
       reqJson.requestedModel = targetModel;
@@ -1479,8 +1847,21 @@ export async function executeGoogleCloudCodeWithPool(
         reqObj.planModel = targetModel;
       }
       sanitizeCloudCodeGenerationConfig(reqObj, targetModel);
+
+      // Support Anti-Truncation if requested via header, model suffix/prefix or env
+      const wantsAntiTrunc =
+        Boolean(req?.headers?.['x-anti-truncation']) ||
+        targetModel.includes('anti-trunc') ||
+        targetModel.includes('抗截断') ||
+        process.env.AG_ENABLE_ANTI_TRUNCATION === '1';
+      if (wantsAntiTrunc) {
+        applyAntiTruncation(reqObj);
+      }
     }
     reqJson.project = resolveGoogleProjectId(candidate);
+    if (!isGeminiCliModel(candidate) && !reqJson.enabledCreditTypes) {
+      reqJson.enabledCreditTypes = ['GOOGLE_ONE_AI'];
+    }
 
     const updatedBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
     const authHeader = `Bearer ${accessToken}`;
@@ -1488,6 +1869,15 @@ export async function executeGoogleCloudCodeWithPool(
     recordAccountRequest(candidate);
     incrementAccountInFlight(candidate);
     const startReqTime = Date.now();
+    const hostOverride = isGeminiCliModel(candidate) ? GOOGLE_HOSTS.CLOUD_CODE_PROD : undefined;
+    const hasOtherCandidates = sortedAccounts.slice(i + 1).some((c) => !isAccountInCooldown(c, modelFamily) && getModelQuotaScore(c, modelFamily) > 0);
+    const isStreamReq = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+    const isLargePayloadOrThinking = updatedBody.length > 15_000 || /thinking|high|medium|tiered/i.test(targetModel);
+    // For streaming requests with healthy sibling accounts in pool, cap header timeout to 25s for fast failover
+    const baseCandidateTimeout = isStreamReq
+      ? (isLargePayloadOrThinking ? Math.min(35_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS) : GOOGLE_POOL_HEADER_TIMEOUT_MS)
+      : (isLargePayloadOrThinking ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : GOOGLE_POOL_HEADER_TIMEOUT_MS);
+    const poolHeaderTimeout = hasOtherCandidates ? baseCandidateTimeout : GOOGLE_PROXY_TIMEOUT_MS;
     let outcome: GoogleRequestOutcome;
     try {
       outcome = await executeGoogleCloudCodeRequest(
@@ -1497,6 +1887,10 @@ export async function executeGoogleCloudCodeWithPool(
         isSessionRemote,
         authHeader,
         convId,
+        hostOverride,
+        poolHeaderTimeout,
+        targetModel,
+        startReqTime,
       );
       const reqDuration = Date.now() - startReqTime;
       if (outcome.success || outcome.statusCode === 200) {
@@ -1506,97 +1900,188 @@ export async function executeGoogleCloudCodeWithPool(
       decrementAccountInFlight(candidate);
     }
 
+    const elapsedMs = Date.now() - startReqTime;
+    const currentFamily = targetModel.toLowerCase().includes('claude') ? 'claude' : (targetModel ? 'gemini' : modelFamily);
     if (outcome.success) {
       recordSuccess(candidate);
-      clearAccountCooldown(candidate, modelFamily);
-      endAccountProbation(candidate, modelFamily);
+      clearAccountCooldown(candidate, currentFamily);
+      endAccountProbation(candidate, currentFamily);
       if (sessId && useStickySessions) {
         bindSessionToModel(sessId, candidate);
       }
-      log.info(`[Proxy] Google Cloud Code request SUCCEEDED on account ${candidateName}`);
+      clearAccountBurst(candidate);
+      log.info(`[Proxy] ✅ [Feedback] Model: [${targetModel}] | Account: [${candidateName}] -> HTTP 200 OK (${elapsedMs}ms)`);
       return true;
     }
 
     if (outcome.statusCode === 429) {
       consecutive429Count++;
       const retryAfterHeader = outcome.headers?.['retry-after'];
-      const decision = classifyGoogleCloudCode429(outcome.error, retryAfterHeader);
+      let decision = classifyGoogleCloudCode429(outcome.error, retryAfterHeader);
+
+      // Strict 429 Isolation: An HTTP 429 is treated as genuine multi-hour quota exhaustion ONLY if
+      // Google explicitly specified a reset duration >= 1h (or credit exhaustion) AND the candidate's
+      // quota is genuinely depleted (currentQuotaScore <= 0).
+      // Otherwise, it is an isolated burst/RPM rate limit: apply a brief pause of a few seconds (5-10s)
+      // ONLY to this candidate, keeping all other pool accounts fully active and unpenalized.
+      const currentQuotaScore = getModelQuotaScore(candidate, currentFamily);
+      const isExplicitMultiHourReset = decision.cooldownMs >= 3600_000;
+      const isGenuineQuotaExhaustion =
+        decision.category === 'quota_exhausted' &&
+        (isExplicitMultiHourReset || currentQuotaScore <= 0);
+
+      if (!isGenuineQuotaExhaustion) {
+        const burstCount = recordAccountBurst(candidate);
+        let burstCooldownMs = 10_000;
+        if (retryAfterHeader && !isNaN(Number(retryAfterHeader))) {
+          const parsedSec = Number(retryAfterHeader);
+          if (parsedSec > 0 && parsedSec <= 15) burstCooldownMs = parsedSec * 1000;
+          else if (parsedSec > 15) burstCooldownMs = Math.min(60_000, parsedSec * 1000);
+        } else if (burstCount === 2) {
+          burstCooldownMs = 25_000;
+        } else if (burstCount === 3) {
+          burstCooldownMs = 50_000;
+        } else if (burstCount >= 4) {
+          burstCooldownMs = 100_000;
+        }
+        decision = {
+          category: 'rate_limited',
+          cooldownMs: burstCooldownMs,
+          reason: `Rate limit 429 (pause isolée ${Math.round(burstCooldownMs / 1000)}s — autres comptes actifs)`,
+        };
+      }
 
       log.warn(
-        `[Proxy] 429 on ${candidateName} (${modelFamily}): ${decision.category} — ${decision.reason} (cooldown: ${Math.round(decision.cooldownMs / 1000)}s)`
+        `[Proxy] ⚠️ [Feedback] Model: [${targetModel}] | Account: [${candidateName}] (${currentFamily}) -> HTTP 429 (${decision.category}: ${decision.reason}, cooldown: ${Math.round(decision.cooldownMs / 1000)}s) (${elapsedMs}ms)`
       );
-      setAccountCooldown(candidate, decision.cooldownMs, modelFamily);
-      recordFailure(candidate, 'rate_limit');
+      const isRateLimit = decision.category === 'rate_limited' || decision.category === 'soft_rate_limit';
+      setAccountCooldown(candidate, decision.cooldownMs, currentFamily, isRateLimit);
 
       if (decision.category === 'quota_exhausted') {
+        recordFailure(candidate, 'rate_limit');
+        consecutiveQuotaExhausted++;
         const liveKey = getAccountQuotaKey(candidate);
-        if (modelFamily) {
-          quotaExhaustedAccountKeys.add(`${liveKey}:${modelFamily}`);
-        } else {
-          quotaExhaustedAccountKeys.add(liveKey);
-        }
-        const existingLive = getLiveAccountQuota(liveKey);
-        if (existingLive) {
-          if (isClaude) {
-            existingLive.claudeFiveHourPct = 0;
-          } else {
-            existingLive.geminiFiveHourPct = 0;
-          }
-          updateLiveAccountQuota(liveKey, existingLive);
-        }
-        if (candidate.quotas) {
-          if (isClaude) {
-            (candidate.quotas as any).claudeFiveHourPct = 0;
-          } else {
-            (candidate.quotas as any).geminiFiveHourPct = 0;
-          }
-        }
+        markAccountQuotaExhausted(liveKey, currentFamily);
         if (sessId) {
           sessionAffinities.delete(sessId);
         }
+
+        const existingQuota = getLiveAccountQuota(liveKey);
+        const isWeekly = decision.cooldownMs > 24 * 3600 * 1000;
+        const nowMs = Date.now();
+        const resetIso = new Date(nowMs + decision.cooldownMs).toISOString();
+        if (currentFamily === 'gemini') {
+          updateLiveAccountQuota(liveKey, {
+            ...existingQuota,
+            geminiFiveHourPct: isWeekly ? existingQuota?.geminiFiveHourPct ?? 0 : 0,
+            geminiWeeklyPct: isWeekly ? 0 : existingQuota?.geminiWeeklyPct ?? 100,
+            geminiFiveHourReset: isWeekly ? existingQuota?.geminiFiveHourReset : resetIso,
+            geminiWeeklyReset: isWeekly ? resetIso : existingQuota?.geminiWeeklyReset,
+            updatedAt: nowMs,
+          } as AccountLiveQuota);
+        } else if (currentFamily === 'claude') {
+          updateLiveAccountQuota(liveKey, {
+            ...existingQuota,
+            claudeFiveHourPct: isWeekly ? existingQuota?.claudeFiveHourPct ?? 0 : 0,
+            claudeWeeklyPct: isWeekly ? 0 : existingQuota?.claudeWeeklyPct ?? 100,
+            claudeFiveHourReset: isWeekly ? existingQuota?.claudeFiveHourReset : resetIso,
+            claudeWeeklyReset: isWeekly ? resetIso : existingQuota?.claudeWeeklyReset,
+            updatedAt: nowMs,
+          } as AccountLiveQuota);
+        }
+
+        // Fast-fail if 3 consecutive accounts hit quota exhaustion for this model in a larger pool
+        if (consecutiveQuotaExhausted >= 3 && sortedAccounts.length > 3) {
+          lastStatus = 429;
+          lastErrorText = outcome.error || `HTTP 429 (${decision.reason})`;
+          log.warn(
+            `[Proxy] Model ${targetModel} hit quota exhaustion across ${consecutiveQuotaExhausted} consecutive accounts. Fast-failing pool to trigger immediate fallback.`,
+          );
+          break;
+        }
+      } else {
+        consecutiveQuotaExhausted = 0;
+      }
+
+      // Circuit breaker: Only stop rotation if there are NO remaining healthy accounts with positive quota (>20%).
+      // Never abort early while healthy accounts with 100% quota are waiting in the pool!
+      const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some(
+        (c) => !isAccountInCooldown(c, currentFamily) && getModelQuotaScore(c, currentFamily) > 20,
+      );
+
+      if (consecutive429Count >= 4 && !remainingHealthyWithQuota && sortedAccounts.length > 4) {
+        lastStatus = 429;
+        lastErrorText = outcome.error || `HTTP 429 (${decision.reason} across ${consecutive429Count} accounts)`;
+        log.warn(
+          `[Proxy] 🛑 429 Circuit Breaker: Model ${targetModel} hit rate limits across ${consecutive429Count} consecutive accounts with no healthy accounts remaining. Stopping rotation to trigger relief queue / fallback.`,
+        );
+        break;
+      }
+
+      if (consecutive429Count >= 8) {
+        log.warn(`[Proxy] ⏳ [IP Throttle Defense] ${consecutive429Count} consecutive burst 429s encountered. Applying 2.5s IP token bucket drain before continuing rotation...`);
+        await new Promise((r) => setTimeout(r, 2500));
+        consecutive429Count = 0;
       }
 
       lastStatus = 429;
       lastErrorText = outcome.error || `HTTP 429 (${decision.reason})`;
 
       // If all remaining candidates are in cooldown, break early to save latency
-      const hasEligibleRemaining = sortedAccounts.slice(i + 1).some((c) => !isAccountInCooldown(c, modelFamily));
+      const hasEligibleRemaining = sortedAccounts.slice(i + 1).some((c) => !isAccountInCooldown(c, currentFamily));
       if (!hasEligibleRemaining) {
-        log.warn(`[Proxy] No remaining healthy accounts left in pool for ${modelFamily}. Fast-failing pool.`);
+        log.warn(`[Proxy] No remaining healthy accounts left in pool for ${currentFamily}. Fast-failing pool.`);
         break;
       }
 
       if (i + 1 < totalAttempts) {
-        await new Promise((r) => setTimeout(r, 50));
+        // Anti-domino pacing: When Google triggers a burst 429 while account quota is positive,
+        // it is an IP / client-level rate limit. Pause 1000-2000ms to allow Google's token bucket
+        // for our IP to drain instead of burning through 33 accounts in 5 seconds.
+        const isBurst429 = decision.category !== 'quota_exhausted';
+        const pacingMs = isBurst429
+          ? (consecutive429Count > 1
+              ? 2200 + Math.floor(Math.random() * 1000) // Multi-compte burst consécutif: 2.2s à 3.2s pour drainer le seau IP
+              : 1200 + Math.floor(Math.random() * 600))  // 1er burst isolé: pause préventive 1.2s à 1.8s pour protéger le compte suivant
+          : (consecutiveQuotaExhausted > 0 ? 300 + Math.floor(Math.random() * 200) : 1000 + Math.floor(Math.random() * 500));
+
+        log.info(
+          `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté (quota positif). Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
+        );
+        await new Promise((r) => setTimeout(r, pacingMs));
       }
       continue;
     } else {
       consecutive429Count = 0;
     }
 
-    if (
+    const isSignatureOrFormat400 =
       outcome.statusCode === 400 &&
-      /thought.*signature|signature.*thought|signature.*thinking|thinking.*signature|corrupted.*signature|invalid.*signature/i.test(
+      (/thought.*signature|signature.*thought|signature.*thinking|thinking.*signature|corrupted.*signature|invalid.*signature/i.test(
         outcome.error || '',
-      )
-    ) {
-      log.warn(`[Proxy] Detected thought signature issue from Vertex AI on ${candidateName} (${(outcome.error || '').slice(0, 100)}). Auto-repairing...`);
+      ) ||
+      /invalid.*argument|INVALID_ARGUMENT/i.test(outcome.error || ''));
+
+    if (isSignatureOrFormat400) {
+      log.warn(`[Proxy] Detected payload validation / thought signature issue from Vertex AI on ${candidateName} (${(outcome.error || '').slice(0, 100)}). Auto-repairing...`);
       const isMissingSig = /missing.*thought_signature|thought_signature.*missing/i.test(outcome.error || '');
       const targetContents = (reqJson.request as any)?.contents || reqJson.contents;
       let repaired = false;
 
+      const activeConvKey = convId || sessId || '';
+
       // 1. If signature was missing on functionCall parts, try restoring from cache / sibling parts first
       if (isMissingSig && Array.isArray(targetContents)) {
-        repaired = restoreThoughtSignatures(targetContents, convId || '', 'gemini');
+        repaired = restoreThoughtSignatures(targetContents, activeConvKey, 'gemini');
         if (repaired) {
           log.info(`[Proxy] Successfully restored missing thought signature(s) from cache/siblings for ${candidateName}`);
         }
       }
 
-      // 2. If restore was not applicable or signature was corrupted, convert unverified tool calls in history
+      // 2. If restore was not applicable, signature corrupted, or INVALID_ARGUMENT returned, convert unverified tool calls in history
       // to plain text and strip thinkingConfig so Vertex AI accepts the request without signature errors
       if (!repaired) {
-        log.warn(`[Proxy] Converting unverified tool calls in history to text to bypass Vertex AI thought signature validation for ${candidateName}`);
+        log.warn(`[Proxy] Converting unverified tool calls in history to text to bypass Vertex AI payload validation for ${candidateName}`);
         const sanitizeObj = (obj: any) => {
           if (!obj || typeof obj !== 'object') return;
           if (obj.generationConfig) {
@@ -1607,11 +2092,32 @@ export async function executeGoogleCloudCodeWithPool(
             delete obj.generation_config.thinkingConfig;
             delete obj.generation_config.thinking_config;
           }
+          if (obj.systemInstruction && typeof obj.systemInstruction === 'object') {
+            const si = obj.systemInstruction as { parts?: Array<Record<string, unknown>> };
+            if (Array.isArray(si.parts)) {
+              for (const p of si.parts) {
+                if (p && typeof p === 'object') {
+                  delete p.thought_signature;
+                  delete p.thoughtSignature;
+                  delete p.signature;
+                  delete p.thought;
+                }
+              }
+            }
+          }
           if (Array.isArray(obj.contents)) {
             for (const c of obj.contents) {
               if (Array.isArray(c.parts)) {
                 c.parts = c.parts.filter((p: any) => !p?.thought && p?.type !== 'thinking');
                 if (c.parts.length === 0) c.parts = [{ text: '.' }];
+                for (const p of c.parts) {
+                  if (p && typeof p === 'object') {
+                    delete p.thought_signature;
+                    delete p.thoughtSignature;
+                    delete p.signature;
+                    delete p.thought;
+                  }
+                }
               }
             }
             flattenAllToolCallsToText(obj.contents);
@@ -1631,16 +2137,29 @@ export async function executeGoogleCloudCodeWithPool(
         retryBody,
         isSessionRemote,
         authHeader,
-        convId,
+        activeConvKey,
+        hostOverride,
+        poolHeaderTimeout,
+        targetModel,
+        startReqTime,
       );
       if (retryOutcome.success) {
         recordSuccess(candidate);
-        clearAccountCooldown(candidate, modelFamily);
+        clearAccountCooldown(candidate, currentFamily);
+        if (activeConvKey) {
+          markConvCorruptedSignatures(activeConvKey);
+        }
         if (sessId) {
           bindSessionToModel(sessId, candidate);
         }
-        log.info(`[Proxy] Self-healing retry after thought signature repair SUCCEEDED on account ${candidateName}`);
+        log.info(`[Proxy] Self-healing retry after payload repair SUCCEEDED on account ${candidateName}`);
         return true;
+      }
+      // If the retry after thought repair failed with another error (e.g. 504/429),
+      // update outcome so pool rotation can handle it appropriately instead of stalling on stale 400
+      outcome = retryOutcome;
+      if (activeConvKey) {
+        markConvCorruptedSignatures(activeConvKey);
       }
     }
 
@@ -1666,10 +2185,14 @@ export async function executeGoogleCloudCodeWithPool(
         isSessionRemote,
         authHeader,
         convId,
+        hostOverride,
+        poolHeaderTimeout,
+        targetModel,
+        startReqTime,
       );
       if (retryOutcome.success) {
         recordSuccess(candidate);
-        clearAccountCooldown(candidate, modelFamily);
+        clearAccountCooldown(candidate, currentFamily);
         if (sessId) {
           bindSessionToModel(sessId, candidate);
         }
@@ -1681,16 +2204,47 @@ export async function executeGoogleCloudCodeWithPool(
     lastStatus = outcome.statusCode || 500;
     lastErrorText = outcome.error || `HTTP ${lastStatus}`;
     log.warn(
-      `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus} (${lastErrorText.slice(0, 150)}). Failing over to next account in pool...`
+      `[Proxy] ⚠️ [Feedback] Model: [${targetModel}] | Account: [${candidateName}] -> HTTP ${lastStatus} (${lastErrorText.slice(0, 150)}) (${elapsedMs}ms). Rotating to next account...`
     );
 
     if (lastStatus !== 429) {
       recordFailure(candidate, 'server');
     }
 
+    // On HTTP 504 (Gateway Timeout / Google API request timed out), apply a short progressive cooldown
+    // rather than a harsh lockout, allowing healthy accounts to re-enter rotation quickly.
+    if (lastStatus === 504 || /timed out/i.test(lastErrorText)) {
+      const burstCount = recordAccountBurst(candidate);
+      const timeoutCooldownMs = burstCount > 1 ? 60_000 : 15_000;
+      log.warn(
+        `[Proxy] Account ${candidateName} timed out (HTTP 504). Placing in ${timeoutCooldownMs / 1000}s cooldown to clear transient hang (burst count: ${burstCount}).`,
+      );
+      setAccountCooldown(candidate, timeoutCooldownMs, currentFamily);
+    }
+
+    // On HTTP 403 licensing/forbidden failure, immediately place the account in a
+    // 7-day quarantine so subsequent requests don't waste round-trip time failing over.
+    if (lastStatus === 403) {
+      const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid/i.test(lastErrorText);
+      const quarantineMs = isLicenseError ? 7 * 24 * 3600 * 1000 : 24 * 3600 * 1000;
+      log.warn(
+        `[Proxy] Account ${candidateName} received HTTP 403 (${isLicenseError ? 'license/permission issue' : 'forbidden'}). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine to eliminate failover latency.`,
+      );
+      if (isLicenseError) {
+        markAccountUnlicensed(candidate);
+      }
+      setAccountCooldown(candidate, quarantineMs);
+      setAccountCooldown(candidate, quarantineMs, 'gemini');
+      setAccountCooldown(candidate, quarantineMs, 'claude');
+      if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+    }
+
     // On HTTP 400 (Bad Request / payload format error), trying other accounts in the pool will produce
     // the exact same 400 error. Abort rotation to fast-trigger fallback model recovery.
-    if (lastStatus === 400) {
+    // Exception: thought signature or invalid argument errors have already mutated reqJson into plain-text format, so the next
+    // account in the pool can succeed without needing an immediate fallback.
+    const isThoughtSignature400 = /thought.*signature|signature.*thought|corrupted.*signature|invalid.*signature|invalid.*argument|INVALID_ARGUMENT/i.test(lastErrorText);
+    if (lastStatus === 400 && !isThoughtSignature400) {
       log.warn(`[Proxy] HTTP 400 indicates a payload format error on ${candidateName}. Aborting account pool rotation to trigger immediate fallback recovery.`);
       break;
     }
@@ -1702,27 +2256,89 @@ export async function executeGoogleCloudCodeWithPool(
   }
 
   // ── Bulletproof Zero-Downtime Agent Resilience ──
+  // If this execution was already a fallback attempt, do NOT recurse or start a nested fallback cascade.
+  // Return false immediately so the parent caller can try the next fallback candidate.
+  if (fallbackDepth > 0 || attemptedModels.size > 1) {
+    return false;
+  }
+
   // If all candidate accounts for the requested model failed (e.g. Claude quota exhausted or Vertex 400/429),
   // do NOT immediately return an error that kills the agent executor!
   // Fall back to healthy Gemini models (Gemini Flash / Pro) which have independent quota.
   if (!res.writableEnded && !res.destroyed) {
     const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
     const allCustomModels = expandModelsWithEffort(loadCustomModels());
-    const fallbackTargets = ['gemini-3.8-flash-tiered', 'gemini-3.8-pro'];
-    const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || '');
-    const eligibleFallbacks = fallbackTargets.filter((m) => m !== currentBase);
+    // Dynamic fallback: discover all available Cloud Code model families,
+    // same family first (Gemini→other Gemini, Claude→other Claude), then cross-family.
+    const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || (reqJson.request as any)?.model || '');
+    if (currentBase) attemptedModels.add(currentBase.toLowerCase());
+
+    // Guard: prevent infinite recursive fallback cascades across models
+    if (attemptedModels.size > 3) {
+      log.warn(`[Proxy] Agent resilience: Max fallback depth reached (${attemptedModels.size} models attempted). Stopping fallback cascade.`);
+      return false;
+    }
+
+    const isClaudeRequest = currentBase.toLowerCase().includes('claude');
+    const allModelBases = [...new Set(
+      allCustomModels
+        .filter(m => isGoogleCloudCodeModel(m) && !getOpenBreaker(m) && m.apiKey !== 'auto' && (m as any).enabled !== false)
+        .map(m => normalizeCloudCodeModelId(m.externalModelName || m.name))
+        .filter(b => b && !b.includes('3.7') && !b.includes('3.6') && !attemptedModels.has(b.toLowerCase()) && !attemptedModels.has(b)),
+    )];
+    const sameFamily = allModelBases.filter(m => m.toLowerCase().includes('claude') === isClaudeRequest);
+    const crossFamily = allModelBases.filter(m => m.toLowerCase().includes('claude') !== isClaudeRequest);
+    // On HTTP 429 quota exhaustion, sibling models in the same family share the exact same exhausted quota pool.
+    // Sibling accounts in Google Cloud Code will just hit the same 429.
+    // Skip same-family to avoid pointless ping-pong retry loops and cascade directly to cross-family (Gemini <-> Claude).
+    const eligibleFallbacks = lastStatus === 429 ? crossFamily : [...sameFamily, ...crossFamily];
 
     if (eligibleFallbacks.length > 0) {
       for (const fallbackModel of eligibleFallbacks) {
-        log.warn(
-          `[Proxy] Agent resilience: Requested model ${currentBase} failed across accounts (${lastErrorText.slice(0, 80)}). Auto-recovering with fallback model ${fallbackModel}...`,
+        const fbFamily = fallbackModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
+        const isFb55 = fallbackModel.includes('5.5') || fallbackModel.includes('5-5');
+        const hasAnyQuotaInFamily = allCustomModels.some(
+          (m) => isGoogleCloudCodeModel(m) && (m as any).enabled !== false && getModelQuotaScore(m, fbFamily) > 0,
         );
-        const fallbackCandidates = allCustomModels.filter(
+        if (!hasAnyQuotaInFamily) {
+          log.info(`[Proxy] Skipping fallback model ${fallbackModel}: 0% quota available for ${fbFamily} across entire pool.`);
+          continue;
+        }
+
+        let fallbackCandidates = allCustomModels.filter(
           (m) =>
             isGoogleCloudCodeModel(m) &&
-            normalizeCloudCodeModelId(m.externalModelName || m.name) === fallbackModel &&
+            (m as any).enabled !== false &&
+            !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
+            !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&
+            normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === fallbackModel.toLowerCase() &&
+            (!isFb55 || isAccountEntitledToClaude55(m)) &&
             !getOpenBreaker(m) &&
-            getModelQuotaScore(m) > 0,
+            !isAccountInCooldown(m, fbFamily) &&
+            getModelQuotaScore(m, fbFamily) > 0,
+        );
+
+        // If no candidate with measured positive quota score, allow candidate accounts not in cooldown
+        if (fallbackCandidates.length === 0) {
+          fallbackCandidates = allCustomModels.filter(
+            (m) =>
+              isGoogleCloudCodeModel(m) &&
+              (m as any).enabled !== false &&
+              !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
+              !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&
+              normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === fallbackModel.toLowerCase() &&
+              !getOpenBreaker(m) &&
+              !isAccountInCooldown(m, fbFamily),
+          );
+        }
+
+        if (fallbackCandidates.length === 0) {
+          log.info(`[Proxy] Skipping fallback model ${fallbackModel}: no available accounts in pool (all in cooldown or quota-exhausted for ${fbFamily})`);
+          continue;
+        }
+
+        log.warn(
+          `[Proxy] 🔀 [Model Fallback] Pool exhausted for [${currentBase}] across candidate accounts (${lastErrorText.slice(0, 80)}). Switching to fallback model: [${fallbackModel}]...`,
         );
 
         if (fallbackCandidates.length > 0) {
@@ -1737,8 +2353,19 @@ export async function executeGoogleCloudCodeWithPool(
           }
           const fbContents = (reqJson.request as any)?.contents || reqJson.contents;
           if (Array.isArray(fbContents)) {
-            restoreThoughtSignatures(fbContents, convId || '', fallbackModel);
-            sanitizeUnsignedToolCalls(fbContents);
+            const isFbClaude = fallbackModel.toLowerCase().includes('claude');
+            if (isFbClaude) {
+              sanitizeCloudCodeGenerationConfig((reqJson.request as Record<string, unknown>) || reqJson, fallbackModel);
+            } else {
+              if (lastStatus === 400) {
+                // If original model failed with HTTP 400, unverified/corrupted tool calls in history
+                // must be flattened to plain text so fallback Gemini does not repeat the same 400 failure
+                flattenAllToolCallsToText(fbContents);
+              } else {
+                restoreThoughtSignatures(fbContents, convId || '', fallbackModel);
+                sanitizeUnsignedToolCalls(fbContents);
+              }
+            }
             normalizeConversationTurns(fbContents);
           }
 
@@ -1746,11 +2373,8 @@ export async function executeGoogleCloudCodeWithPool(
           const existingFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
           const alreadyNotified = existingFallback?.notified === true;
 
-          if (sessionKey) {
-            setSessionModelFallback(sessionKey, currentBase, fallbackModel, true);
-          }
-
-          if (isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
+          const wantsFallbackNotice = process.env.AG_ENABLE_FALLBACK_NOTICE === '1';
+          if (wantsFallbackNotice && isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
             if (!res.headersSent) {
               safeWriteHead(res, 200, {
                 'Content-Type': 'text/event-stream',
@@ -1760,7 +2384,7 @@ export async function executeGoogleCloudCodeWithPool(
             }
             const isClaude = currentBase.toLowerCase().includes('claude');
             const fbNotice = isClaude
-              ? `> 🔄 **Quota Claude atteint** — Poursuite automatique de la conversation avec **Gemini 3.8 Flash**.\n\n`
+              ? `> 🔄 **Quota Claude atteint** — Poursuite automatique de la conversation avec **${fallbackModel}**.\n\n`
               : `> 🔄 **Modèle temporairement indisponible** — Poursuite automatique avec **${fallbackModel}**.\n\n`;
             const chunk = {
               response: {
@@ -1776,6 +2400,9 @@ export async function executeGoogleCloudCodeWithPool(
           }
 
           try {
+            const nextAttempted = new Set(attemptedModels);
+            nextAttempted.add(fallbackModel.toLowerCase());
+            nextAttempted.add(fallbackModel);
             const fallbackOk = await executeGoogleCloudCodeWithPool(
               req,
               res,
@@ -1784,9 +2411,20 @@ export async function executeGoogleCloudCodeWithPool(
               isSessionRemote,
               convId,
               sessId,
+              nextAttempted,
+              fallbackDepth + 1,
             );
-            if (fallbackOk || res.writableEnded) {
-              log.info(`[Proxy] Cross-model fallback to ${fallbackModel} SUCCEEDED! Agent saved from termination.`);
+            if (fallbackOk) {
+              if (sessionKey) {
+                const existing = getSessionModelFallback(sessionKey);
+                if (existing && normalizeCloudCodeModelId(fallbackModel).toLowerCase() === normalizeCloudCodeModelId(existing.originalModel).toLowerCase()) {
+                  log.info(`[Proxy] 🟢 Session ${sessionKey} successfully recovered back to original model [${existing.originalModel}]. Clearing fallback.`);
+                  clearSessionModelFallback(sessionKey);
+                } else {
+                  setSessionModelFallback(sessionKey, currentBase, fallbackModel, true);
+                }
+              }
+              log.info(`[Proxy] ✅ [Model Fallback] Cross-model fallback to ${fallbackModel} SUCCEEDED! Agent saved from termination.`);
               return true;
             }
           } catch (fbErr) {
@@ -1804,7 +2442,8 @@ export async function executeGoogleCloudCodeWithPool(
       (m) =>
         (m.provider !== 'google' || !isGoogleCloudCodeModel(m)) &&
         (!m._poolOnly || m.provider === 'google-gemini') &&
-        !getOpenBreaker(m),
+        !getOpenBreaker(m) &&
+        m.apiKey !== 'auto',
     );
 
     if (nonGoogleFallbacks.length > 0) {
@@ -1823,15 +2462,12 @@ export async function executeGoogleCloudCodeWithPool(
         const fallbackModel = orderedFallbacks[fi];
         const isAiStudio = fallbackModel.provider === 'google-gemini';
 
-        if (sessionKey && fi === 0) {
-          setSessionModelFallback(sessionKey, currentBase, fallbackModel.displayName || fallbackModel.name, true);
-        }
-
         log.warn(
-          `[Proxy] Pool exhaustion: Cascading to ${isAiStudio ? 'Google AI Studio' : fallbackModel.provider} account (${fallbackModel.displayName || fallbackModel.name}) [${fi + 1}/${orderedFallbacks.length}]...`,
+          `[Proxy] 🔀 [Account Cascade] Cascading to ${isAiStudio ? 'Google AI Studio' : fallbackModel.provider} account [${fallbackModel.displayName || fallbackModel.name}] (${fallbackModel.provider}) [${fi + 1}/${orderedFallbacks.length}]...`,
         );
 
-        if (fi === 0 && isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
+        const wantsFallbackNotice = process.env.AG_ENABLE_FALLBACK_NOTICE === '1';
+        if (wantsFallbackNotice && fi === 0 && isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
           if (!res.headersSent) {
             safeWriteHead(res, 200, {
               'Content-Type': 'text/event-stream',
@@ -1851,6 +2487,9 @@ export async function executeGoogleCloudCodeWithPool(
 
         try {
           handleCustomModelRequest(res, fallbackModel, actualGeminiBody, isStream);
+          if (sessionKey && fi === 0) {
+            setSessionModelFallback(sessionKey, currentBase, fallbackModel.displayName || fallbackModel.name, true);
+          }
           return true;
         } catch (tpErr) {
           log.warn(`[Proxy] Fallback to ${fallbackModel.name} (${fallbackModel.provider}) failed: ${(tpErr as Error).message}. Trying next...`);
@@ -1858,57 +2497,134 @@ export async function executeGoogleCloudCodeWithPool(
         }
       }
     }
+  }
 
-    // If this request is a context summarization hook and everything else failed:
-    // Return a synthetic summary SSE stream instead of HTTP 400/500 so the agent pre-invocation hook never crashes!
-    const reqStr = JSON.stringify(reqJson);
-    const isSummarization = /summariz|summary|trajectory/i.test(reqStr);
+  // ── Rate Limit (429) Relief Wait & Automatic Recovery ──
+  // If all candidate accounts and cross-model fallbacks failed due to 429 rate limits,
+  // do NOT crash or terminate the user's ongoing conversation!
+  // If an account in the pool has a short burst cooldown expiring soon (<= 65s),
+  // hold the client socket alive, wait for cooldown relief, and seamlessly retry.
+  if (
+    lastStatus === 429 &&
+    fallbackDepth === 0 &&
+    process.env.AG_DISABLE_RATE_LIMIT_RELIEF !== '1' &&
+    !res.writableEnded &&
+    !res.destroyed &&
+    !req.destroyed
+  ) {
+    const soonest = getSoonestAccountCooldownRemaining(accountPool, modelFamily, RATE_LIMIT_RELIEF_WAIT_MS);
+    if (soonest) {
+      const waitMs = soonest.remainingMs > 0 ? Math.min(soonest.remainingMs + 800, RATE_LIMIT_RELIEF_WAIT_MS) : 15_000;
+      const waitSec = Math.ceil(waitMs / 1000);
+      const accName =
+        soonest.candidate.accountEmail ||
+        soonest.candidate.accountName ||
+        soonest.candidate.displayName ||
+        soonest.candidate.name;
+      log.warn(
+        `[Proxy] ⏳ [Rate Limit Relief] All pool accounts and fallbacks in cooldown. Waiting ${waitSec}s for account [${accName}] cooldown relief to prevent conversation crash...`,
+      );
 
-    if (isSummarization) {
-      log.warn('[Proxy] Context summarization hook failed upstream. Returning synthetic summary to prevent agent termination.');
-      const summaryCand = {
-        content: {
-          parts: [{ text: 'Summary of previous steps: The agent investigated the task, inspected files, executed commands, and continues with the implementation.' }],
-          role: 'model',
-        },
-        finishReason: 'STOP',
-        index: 0,
-      };
-      const syntheticChunk = {
-        response: {
-          candidates: [summaryCand],
-          usageMetadata: {
-            promptTokenCount: 100,
-            candidatesTokenCount: 30,
-            totalTokenCount: 130,
-          },
-        },
-        candidates: [summaryCand],
-        usageMetadata: {
-          promptTokenCount: 100,
-          candidatesTokenCount: 30,
-          totalTokenCount: 130,
-        },
-      };
-      sanitizeCandidatesInResponse(syntheticChunk);
-      if (isStream) {
-        if (!res.headersSent) {
-          safeWriteHead(res, 200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-          });
+      if (req.socket) req.socket.setTimeout(Math.max(120_000, waitMs + 30_000));
+      if (res.socket) res.socket.setTimeout(Math.max(120_000, waitMs + 30_000));
+
+      await new Promise<void>((resolve) => {
+        let timer: NodeJS.Timeout | null = null;
+        const cleanup = () => {
+          if (timer) clearTimeout(timer);
+          req.removeListener('close', onClose);
+          res.removeListener('close', onClose);
+        };
+        const onClose = () => {
+          cleanup();
+          resolve();
+        };
+        timer = setTimeout(() => {
+          cleanup();
+          resolve();
+        }, waitMs);
+        if (timer.unref) timer.unref();
+        req.once('close', onClose);
+        res.once('close', onClose);
+      });
+
+      if (!res.writableEnded && !res.destroyed && !req.destroyed) {
+        log.info(`[Proxy] 🟢 [Rate Limit Relief] Cooldown expired! Retrying request on recovered Google pool...`);
+        // Restore original target model in reqJson if fallback attempts modified it
+        if (targetRaw) {
+          reqJson.model = targetRaw;
+          if (typeof reqJson.requestedModel === 'string') {
+            reqJson.requestedModel = targetRaw;
+          }
+          if (reqJson.request && typeof reqJson.request === 'object') {
+            (reqJson.request as Record<string, unknown>).model = targetRaw;
+            if (typeof (reqJson.request as any).requestedModel === 'string') {
+              (reqJson.request as any).requestedModel = targetRaw;
+            }
+          }
         }
-        writeSafeSseChunk(res, syntheticChunk);
-        safeEnd(res);
-      } else {
-        if (!res.headersSent) {
-          safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
+        const retryOk = await executeGoogleCloudCodeWithPool(
+          req,
+          res,
+          reqJson,
+          accountPool,
+          isSessionRemote,
+          convId,
+          sessId,
+          new Set(),
+          fallbackDepth + 1,
+        );
+        if (retryOk) {
+          log.info(`[Proxy] ✅ [Rate Limit Relief] Request SUCCEEDED after rate limit cooldown relief! Agent saved from crash.`);
+          return true;
         }
-        safeEnd(res, JSON.stringify(syntheticChunk));
       }
-      return true;
     }
+  }
+
+  // If this request is an explicit background summarization task and all accounts/relief failed:
+  // Return a synthetic summary SSE stream so the background summarization hook never crashes the IDE.
+  // Note: Only triggered on explicit background SUMMARY requestTypes, never on regular user chat turns!
+  const reqType = String(reqJson.requestType || (reqJson.request as any)?.requestType || '').toUpperCase();
+  const isExplicitSummary = reqType === 'SUMMARY' || reqType === 'CONVERSATION_SUMMARY';
+
+  if (isExplicitSummary && !res.writableEnded && !res.destroyed) {
+    log.warn('[Proxy] Context summarization hook failed upstream after pool exhaustion. Returning synthetic summary to prevent agent termination.');
+    const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+    const summaryCand = {
+      content: {
+        parts: [{ text: 'Summary of previous steps: The agent investigated the task, inspected files, executed commands, and continues with the implementation.' }],
+        role: 'model',
+      },
+      finishReason: 'STOP',
+      index: 0,
+    };
+    const syntheticChunk = {
+      response: {
+        candidates: [summaryCand],
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 30, totalTokenCount: 130 },
+      },
+      candidates: [summaryCand],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 30, totalTokenCount: 130 },
+    };
+    sanitizeCandidatesInResponse(syntheticChunk);
+    if (isStream) {
+      if (!res.headersSent) {
+        safeWriteHead(res, 200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        });
+      }
+      writeSafeSseChunk(res, syntheticChunk);
+      safeEnd(res);
+    } else {
+      if (!res.headersSent) {
+        safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
+      }
+      safeEnd(res, JSON.stringify(syntheticChunk));
+    }
+    return true;
   }
 
   log.error(`[Proxy] All ${totalAttempts} Google Cloud Code accounts in the pool failed. Returning HTTP ${lastStatus}`);
@@ -2097,13 +2813,20 @@ function handleApiResError(err: Error, apiRes: http.IncomingMessage, ctx: Stream
 /** Stream response branch — SSE translation, idle/empty guards, error envelope. */
 function handleStreamResponse(apiRes: http.IncomingMessage, request: http.ClientRequest, ctx: StreamRequestCtx): void {
   const { model, res, provider, traceId } = ctx;
+  const streamStartTime = Date.now();
+  let streamPromptTokens = 0;
+  let streamCompletionTokens = 0;
+  let streamTotalTokens = 0;
+  let streamCachedTokens = 0;
+  let streamOutputChars = 0;
 
   // Check for API errors BEFORE writing streaming headers
   if (apiRes.statusCode! >= 400) {
     let errorBody = '';
     apiRes.on('data', (chunk: Buffer) => errorBody += chunk.toString());
     apiRes.on('end', () => {
-      log.error(`[Proxy] Stream API error (${apiRes.statusCode}) for ${model.name}: ${errorBody.substring(0, 300)}`);
+      const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
+      log.error(`[Proxy] ⚠️ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP ${apiRes.statusCode}: ${errorBody.substring(0, 150)}`);
       const streamDiagnostic = classifyError(apiRes.statusCode!, null, errorBody, model.provider);
       emitProxyError(buildProxyErrorPayload(traceId, apiRes.statusCode!, errorBody, model.provider));
 
@@ -2113,15 +2836,17 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
         streamDiagnostic.errorType === 'server' ||
         streamDiagnostic.errorType === 'rate_limit' ||
         streamDiagnostic.errorType === 'timeout' ||
-        streamDiagnostic.errorType === 'network'
+        streamDiagnostic.errorType === 'network' ||
+        streamDiagnostic.errorType === 'billing'
       ) {
-        recordModelFailure(model, streamDiagnostic.errorType);
-        if (streamDiagnostic.errorType === 'rate_limit') {
+        recordModelFailure(model, streamDiagnostic.errorType === 'billing' ? 'rate_limit' : streamDiagnostic.errorType);
+        if (streamDiagnostic.errorType === 'rate_limit' || streamDiagnostic.errorType === 'billing') {
           markProviderRateLimited(model.apiUrl);
         }
       }
 
-      if (shouldRetryStatus(apiRes.statusCode!, ctx.retryCount, ctx.maxRetries)) {
+      const isNonRetryable = streamDiagnostic.errorType === 'billing' || streamDiagnostic.retryable === false;
+      if (!isNonRetryable && shouldRetryStatus(apiRes.statusCode!, ctx.retryCount, ctx.maxRetries)) {
         const retryAfterMs = parseRetryAfter(apiRes.headers);
         const delay = computeRetryDelay('rate-limit', ctx.retryCount, retryAfterMs);
         ctx.retry(ctx.retryCount, delay, `Stream error ${apiRes.statusCode} (rate-limit)`);
@@ -2140,6 +2865,8 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     // Any successful response proves the upstream is healthy again;
     // clear the breaker so subsequent requests don't short-circuit.
     recordSuccess(model);
+    const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
+    log.info(`[Proxy] ✅ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP 200 OK (stream started)`);
   }
 
   if (!res.headersSent) {
@@ -2192,9 +2919,28 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
         if (dataStr === '[DONE]') continue;
         try {
           const parsed = JSON.parse(dataStr);
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.usage && typeof parsed.usage === 'object') {
+              if (typeof parsed.usage.prompt_tokens === 'number') streamPromptTokens = parsed.usage.prompt_tokens;
+              if (typeof parsed.usage.completion_tokens === 'number') streamCompletionTokens = parsed.usage.completion_tokens;
+              if (typeof parsed.usage.total_tokens === 'number') streamTotalTokens = parsed.usage.total_tokens;
+            }
+            if (parsed.usageMetadata && typeof parsed.usageMetadata === 'object') {
+              if (typeof parsed.usageMetadata.promptTokenCount === 'number') streamPromptTokens = parsed.usageMetadata.promptTokenCount;
+              if (typeof parsed.usageMetadata.candidatesTokenCount === 'number') streamCompletionTokens = parsed.usageMetadata.candidatesTokenCount;
+              if (typeof parsed.usageMetadata.totalTokenCount === 'number') streamTotalTokens = parsed.usageMetadata.totalTokenCount;
+              if (typeof parsed.usageMetadata.cachedContentTokenCount === 'number') streamCachedTokens = parsed.usageMetadata.cachedContentTokenCount;
+            }
+          }
           const mapped = registry.translateStreamChunk(provider, parsed, model.name);
 
           if (mapped) {
+            const candidateParts = (mapped as any).content?.parts;
+            if (Array.isArray(candidateParts)) {
+              for (const p of candidateParts) {
+                if (p && typeof p.text === 'string') streamOutputChars += p.text.length;
+              }
+            }
             extractAndCacheThoughtSignatures({ candidates: [mapped] }, '');
             const cloudCodeResponse = {
               response: { candidates: [mapped] },
@@ -2288,30 +3034,44 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     writeSafeSseChunk(res, finalChunk);
     res.end();
     safeEnd(res);
+    const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
+    log.info(`[Proxy] ✅ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> Stream completed successfully`);
     const pId = model.name.includes('-') ? model.name.split('-')[0] : model.provider;
     void recordProviderUsage(pId);
+
+    const latencyMs = Math.max(1, Date.now() - streamStartTime);
+    if (streamTotalTokens === 0 && streamCompletionTokens === 0 && streamOutputChars > 0) {
+      streamCompletionTokens = Math.max(1, Math.round(streamOutputChars / 4));
+      streamTotalTokens = streamPromptTokens + streamCompletionTokens;
+    }
+    logTokenUsageEvent({
+      id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+      timestamp: Date.now(),
+      conversationId: (ctx.geminiBody as any)?.conversationId || (ctx.geminiBody as any)?.sessionId || undefined,
+      provider: model.provider,
+      model: model.displayName || model.name,
+      promptTokens: streamPromptTokens,
+      completionTokens: streamCompletionTokens,
+      totalTokens: streamTotalTokens || (streamPromptTokens + streamCompletionTokens),
+      cachedTokens: streamCachedTokens,
+      latencyMs,
+      status: apiRes.statusCode || 200,
+      endpoint: '/v1internal:streamGenerateContent',
+    });
   });
 }
 
 /** Non-stream response branch — JSON translate, retry on error status, graceful envelope. */
 function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamRequestCtx): void {
   const { model, res, provider, traceId } = ctx;
+  const nonStreamStartTime = Date.now();
   let body = '';
   apiRes.on('data', (chunk: Buffer) => (body += chunk));
   apiRes.on('end', () => {
-    // Retry if eligible based on status code
-    if (shouldRetryStatus(apiRes.statusCode!, ctx.retryCount, ctx.maxRetries)) {
-      const retryAfterMs = parseRetryAfter(apiRes.headers);
-      const delay = computeRetryDelay('rate-limit', ctx.retryCount, retryAfterMs);
-      ctx.retry(ctx.retryCount, delay, `Upstream error status ${apiRes.statusCode}`);
-      return;
-    }
-
+    const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
     if (apiRes.statusCode! >= 400) {
-      // P0-3: Only log status code and model name, NOT response body content
-      log.error(`[Proxy] API error (${apiRes.statusCode}) for ${model.name}`);
-
       const diagnostic = classifyError(apiRes.statusCode!, null, body, model.provider);
+      log.error(`[Proxy] ⚠️ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP ${apiRes.statusCode} (${diagnostic.title}: ${diagnostic.message})`);
       emitProxyError(buildProxyErrorPayload(traceId, apiRes.statusCode!, body, model.provider));
 
       // Trip the breaker on hard failures so subsequent requests
@@ -2320,9 +3080,21 @@ function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamReques
         diagnostic.errorType === 'server' ||
         diagnostic.errorType === 'rate_limit' ||
         diagnostic.errorType === 'timeout' ||
-        diagnostic.errorType === 'network'
+        diagnostic.errorType === 'network' ||
+        diagnostic.errorType === 'billing'
       ) {
-        recordModelFailure(model, diagnostic.errorType);
+        recordModelFailure(model, diagnostic.errorType === 'billing' ? 'rate_limit' : diagnostic.errorType);
+        if (diagnostic.errorType === 'rate_limit' || diagnostic.errorType === 'billing') {
+          markProviderRateLimited(model.apiUrl);
+        }
+      }
+
+      // Retry if eligible based on status code and NOT a permanent billing/quota failure
+      if (diagnostic.errorType !== 'billing' && shouldRetryStatus(apiRes.statusCode!, ctx.retryCount, ctx.maxRetries)) {
+        const retryAfterMs = parseRetryAfter(apiRes.headers);
+        const delay = computeRetryDelay('rate-limit', ctx.retryCount, retryAfterMs);
+        ctx.retry(ctx.retryCount, delay, `Upstream error status ${apiRes.statusCode}`);
+        return;
       }
 
       if (ctx.attemptFallback(diagnostic)) return;
@@ -2361,6 +3133,8 @@ function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamReques
 
       // Successful 2xx response — clear breaker for this model.
       recordSuccess(model);
+      const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
+      log.info(`[Proxy] ✅ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP 200 OK`);
       // P5-2: feed the per-model retry budget a success sample so the
       // model's trust score recovers after a hard stretch of failures.
       getRetryBudget().recordSuccess(model);
@@ -2368,6 +3142,25 @@ function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamReques
       if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
         safeEnd(res, JSON.stringify(cloudCodeResponse));
       }
+
+      const usage = (mapped as any)?.usageMetadata;
+      const pTokens = usage?.promptTokenCount || 0;
+      const cTokens = usage?.candidatesTokenCount || 0;
+      const tTokens = usage?.totalTokenCount || (pTokens + cTokens);
+      logTokenUsageEvent({
+        id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+        timestamp: Date.now(),
+        conversationId: (ctx.geminiBody as any)?.conversationId || (ctx.geminiBody as any)?.sessionId || undefined,
+        provider: model.provider,
+        model: model.displayName || model.name,
+        promptTokens: pTokens,
+        completionTokens: cTokens,
+        totalTokens: tTokens,
+        cachedTokens: usage?.cachedContentTokenCount || 0,
+        latencyMs: Math.max(1, Date.now() - nonStreamStartTime),
+        status: 200,
+        endpoint: '/v1internal:generateContent',
+      });
     } catch (e) {
       log.error('[Proxy] Failed to map response:', e);
 
@@ -2467,645 +3260,60 @@ export function parseRetryAfter(headers: Record<string, string | string[] | unde
   return 0;
 }
 
-// ─── Multi-Account Session Affinity (Sticky Sessions) ─────────────────────────
+// ─── Google Account Pool (re-exported from src/proxy/googlePool.ts) ────────────
+export {
+  registerAccountRefreshToken,
+  getAccountQuotaKey,
+  isAccountUnlicensed,
+  markAccountUnlicensed,
+  getUnlicensedAccountKeys,
+  restoreUnlicensedAccountKeys,
+  markAccountQuotaExhausted,
+  _resetUnlicensedAccounts,
+  isAccountInProbation,
+  endAccountProbation,
+  _resetAccountProbation,
+  isAccountInCooldown,
+  setAccountCooldown,
+  getAccountCooldownRemaining,
+  getSoonestAccountCooldownRemaining,
+  clearAccountCooldown,
+  getActiveAccountCooldowns,
+  restoreActiveAccountCooldowns,
+  verifyAndReconcileCooldowns,
+  _resetAllAccountCooldowns,
+  autoHealAccountOnQuotaRecovery,
+  getAccountInFlight,
+  MAX_CONCURRENT_PER_ACCOUNT,
+  notifySlotAvailable,
+  _clearSlotWaitersForTests,
+  waitForAccountSlot,
+  incrementAccountInFlight,
+  decrementAccountInFlight,
+  _resetAccountInFlight,
+  recordAccountRequest,
+  getAccountLastUsed,
+  getAccountRpmCount,
+  _resetAccountRpm,
+  getModelQuotaScore,
+  EWMA_DECAY_THRESHOLD_MS,
+  recordAccountLatency,
+  getAccountAvgLatency,
+  _resetAccountLatencies,
+  isPoolUnderQuotaStress,
+  resolveGoogleProjectId,
+  getAccountDynamicScore,
+  classifyGoogleCloudCode429,
+  selectCandidateP2C,
+  selectBestModelByQuota,
+  getGoogleAccountPool,
+  recordAccountBurst,
+  clearAccountBurst,
+  liftBurstCooldowns,
+  _resetAccountBurst,
+} from './proxy/googlePool';
+export type { Google429Category, Google429Decision } from './proxy/googlePool';
 
-export function getAccountQuotaKey(item: CustomModel): string {
-  if (item.accountEmail) return `google:${item.accountEmail.toLowerCase()}`;
-  if (item.refreshToken) return `google:refresh:${item.refreshToken.slice(-15)}`;
-  try {
-    const host = new URL(item.apiUrl).hostname;
-    return `${host}:${item.apiKey || 'none'}`;
-  } catch {
-    return item.apiUrl || item.name || '';
-  }
-}
-
-// ─── Google Account 429 Cooldown & Probation Registry ─────────────────────────
-const googleAccountCooldowns = new Map<string, number>();
-const accountProbationUntil = new Map<string, number>();
-// Tracks accounts that just received a quota_exhausted 429 so concurrent requests
-// already past the cooldown snapshot can fast-skip them without an extra network round-trip.
-// ponytail: global Set, cleared when setAccountCooldown is called — O(1) lookup, zero overhead.
-const quotaExhaustedAccountKeys = new Set<string>();
-
-export function isAccountInProbation(candidate: CustomModel, modelFamily?: string): boolean {
-  const baseKey = getAccountQuotaKey(candidate);
-  const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
-  const until = accountProbationUntil.get(key) || (modelFamily ? accountProbationUntil.get(baseKey) : undefined);
-  if (!until) return false;
-  if (Date.now() >= until) {
-    accountProbationUntil.delete(key);
-    return false;
-  }
-  return true;
-}
-
-export function endAccountProbation(candidate: CustomModel, modelFamily?: string): void {
-  const baseKey = getAccountQuotaKey(candidate);
-  if (modelFamily) {
-    accountProbationUntil.delete(`${baseKey}:${modelFamily}`);
-  }
-  accountProbationUntil.delete(baseKey);
-}
-
-export function _resetAccountProbation(): void {
-  accountProbationUntil.clear();
-}
-
-export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string): boolean {
-  const baseKey = getAccountQuotaKey(candidate);
-  const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
-  const until = googleAccountCooldowns.get(key) || (modelFamily ? googleAccountCooldowns.get(baseKey) : undefined);
-
-  if (until && Date.now() >= until) {
-    googleAccountCooldowns.delete(key);
-    quotaExhaustedAccountKeys.delete(key);
-    if (modelFamily) {
-      googleAccountCooldowns.delete(baseKey);
-      quotaExhaustedAccountKeys.delete(baseKey);
-    }
-    // Transition to 15s half-open probation to prevent thundering herd stampede
-    accountProbationUntil.set(key, Date.now() + 15_000);
-    return false;
-  }
-
-  if (quotaExhaustedAccountKeys.has(key) || (!modelFamily && quotaExhaustedAccountKeys.has(baseKey))) {
-    return true;
-  }
-  return Boolean(until);
-}
-
-export function setAccountCooldown(candidate: CustomModel, durationMs = 10 * 60_000, modelFamily?: string): void {
-  const baseKey = getAccountQuotaKey(candidate);
-  const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
-  accountProbationUntil.delete(key);
-  // Add 1-5s random jitter to desynchronize account recovery stampedes
-  const jitterMs = durationMs > 5_000 ? randomInt(1_000, 5_000) : 0;
-  googleAccountCooldowns.set(key, Date.now() + durationMs + jitterMs);
-}
-
-export function getAccountCooldownRemaining(candidate: CustomModel, modelFamily?: string): number {
-  const baseKey = getAccountQuotaKey(candidate);
-  const key = modelFamily ? `${baseKey}:${modelFamily}` : baseKey;
-  const until = googleAccountCooldowns.get(key) || (modelFamily ? googleAccountCooldowns.get(baseKey) : undefined);
-  if (!until) return 0;
-  const remaining = until - Date.now();
-  return remaining > 0 ? remaining : 0;
-}
-
-export function clearAccountCooldown(candidate: CustomModel, modelFamily?: string): void {
-  const baseKey = getAccountQuotaKey(candidate);
-  if (modelFamily) {
-    googleAccountCooldowns.delete(`${baseKey}:${modelFamily}`);
-    accountProbationUntil.delete(`${baseKey}:${modelFamily}`);
-    quotaExhaustedAccountKeys.delete(`${baseKey}:${modelFamily}`);
-  }
-  googleAccountCooldowns.delete(baseKey);
-  accountProbationUntil.delete(baseKey);
-  quotaExhaustedAccountKeys.delete(baseKey);
-}
-
-export function _resetAllAccountCooldowns(): void {
-  googleAccountCooldowns.clear();
-  accountProbationUntil.clear();
-  quotaExhaustedAccountKeys.clear();
-}
-
-/**
- * Automatically lifts cooldowns and probation when the Quota Poller detects
- * that an account's quota has replenished (e.g. after 5h or weekly bucket reset).
- */
-export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: AccountLiveQuota): void {
-  if (!quota || !accountKey) return;
-
-  // Heal once quota recovers to ≥5% — enough to be useful. 20% was too conservative:
-  // accounts at 10% were being skipped despite successfully serving requests in the log.
-  if (quota.geminiFiveHourPct >= 5) {
-    const geminiKey = `${accountKey}:gemini`;
-    if (googleAccountCooldowns.has(geminiKey) || quotaExhaustedAccountKeys.has(geminiKey)) {
-      log.info(`[Proxy] Auto-healing Gemini cooldown for ${accountKey}: quota recovered to ${quota.geminiFiveHourPct}%`);
-      googleAccountCooldowns.delete(geminiKey);
-      accountProbationUntil.delete(geminiKey);
-      quotaExhaustedAccountKeys.delete(geminiKey);
-    }
-  }
-
-  // If Claude quota recovered to ≥5%, heal Claude-specific cooldown
-  if (quota.claudeFiveHourPct >= 5) {
-    const claudeKey = `${accountKey}:claude`;
-    if (googleAccountCooldowns.has(claudeKey) || quotaExhaustedAccountKeys.has(claudeKey)) {
-      log.info(`[Proxy] Auto-healing Claude cooldown for ${accountKey}: quota recovered to ${quota.claudeFiveHourPct}%`);
-      googleAccountCooldowns.delete(claudeKey);
-      accountProbationUntil.delete(claudeKey);
-      quotaExhaustedAccountKeys.delete(claudeKey);
-    }
-  }
-
-  // If either major quota recovered, heal general account cooldown
-  if (quota.geminiFiveHourPct >= 5 || quota.claudeFiveHourPct >= 5) {
-    if (googleAccountCooldowns.has(accountKey) || quotaExhaustedAccountKeys.has(accountKey)) {
-      log.info(`[Proxy] Auto-healing general cooldown for ${accountKey}`);
-      googleAccountCooldowns.delete(accountKey);
-      accountProbationUntil.delete(accountKey);
-      quotaExhaustedAccountKeys.delete(accountKey);
-    }
-  }
-}
-
-// ─── Google Account In-Flight Concurrency Tracker ──────────────────────────────
-const accountInFlightRequests = new Map<string, number>();
-
-export function getAccountInFlight(candidate: CustomModel): number {
-  const key = getAccountQuotaKey(candidate);
-  return accountInFlightRequests.get(key) || 0;
-}
-
-export const MAX_CONCURRENT_PER_ACCOUNT = Number(process.env.AG_MAX_CONCURRENT_PER_ACCOUNT) || 2;
-
-interface SlotWaiter {
-  resolve: (hasSlot: boolean) => void;
-  timer: NodeJS.Timeout;
-}
-
-const slotWaiters: SlotWaiter[] = [];
-
-export function notifySlotAvailable(): void {
-  while (slotWaiters.length > 0) {
-    const waiter = slotWaiters.shift();
-    if (waiter) {
-      clearTimeout(waiter.timer);
-      waiter.resolve(true);
-    }
-  }
-}
-
-export function _clearSlotWaitersForTests(): void {
-  for (const w of slotWaiters) {
-    clearTimeout(w.timer);
-  }
-  slotWaiters.length = 0;
-}
-
-export async function waitForAccountSlot(
-  accounts: CustomModel[],
-  modelFamily?: string,
-  maxWaitMs = 1500,
-): Promise<boolean> {
-  const hasAvailableSlot = accounts.some((a) => {
-    if (isAccountInCooldown(a, modelFamily) || getOpenBreaker(a)) return false;
-    if (getModelQuotaScore(a, modelFamily) <= 0) return false;
-    const max = isAccountInProbation(a, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
-    return getAccountInFlight(a) < max;
-  });
-
-  if (hasAvailableSlot) return true;
-  if (maxWaitMs <= 0) return false;
-
-  return new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => {
-      const idx = slotWaiters.findIndex((w) => w.timer === timer);
-      if (idx !== -1) {
-        slotWaiters.splice(idx, 1);
-      }
-      resolve(false);
-    }, maxWaitMs);
-    if (timer.unref) timer.unref();
-
-    slotWaiters.push({ resolve, timer });
-  });
-}
-
-export function incrementAccountInFlight(candidate: CustomModel): void {
-  const key = getAccountQuotaKey(candidate);
-  accountInFlightRequests.set(key, (accountInFlightRequests.get(key) || 0) + 1);
-}
-
-export function decrementAccountInFlight(candidate: CustomModel): void {
-  const key = getAccountQuotaKey(candidate);
-  const current = accountInFlightRequests.get(key) || 0;
-  if (current <= 1) {
-    accountInFlightRequests.delete(key);
-  } else {
-    accountInFlightRequests.set(key, current - 1);
-  }
-  notifySlotAvailable();
-}
-
-export function _resetAccountInFlight(): void {
-  accountInFlightRequests.clear();
-}
-
-// ─── Google Account RPM Governor (Sliding Window 60s) & LRU Tracker ───────────
-const accountRequestTimestamps = new Map<string, number[]>();
-const accountLastUsedTimestamp = new Map<string, number>();
-
-export function recordAccountRequest(candidate: CustomModel): void {
-  const key = getAccountQuotaKey(candidate);
-  const now = Date.now();
-  accountLastUsedTimestamp.set(key, now);
-  const list = accountRequestTimestamps.get(key) || [];
-  const recent = list.filter((t) => now - t < 60_000);
-  recent.push(now);
-  accountRequestTimestamps.set(key, recent);
-}
-
-export function getAccountLastUsed(candidate: CustomModel): number {
-  const key = getAccountQuotaKey(candidate);
-  return accountLastUsedTimestamp.get(key) || 0;
-}
-
-export function getAccountRpmCount(candidate: CustomModel): number {
-  const key = getAccountQuotaKey(candidate);
-  const list = accountRequestTimestamps.get(key);
-  if (!list || list.length === 0) return 0;
-  const now = Date.now();
-  const valid = list.filter((t) => now - t < 60_000);
-  if (valid.length !== list.length) {
-    accountRequestTimestamps.set(key, valid);
-  }
-  return valid.length;
-}
-
-export function _resetAccountRpm(): void {
-  accountRequestTimestamps.clear();
-  accountLastUsedTimestamp.clear();
-}
-
-export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number {
-  if (isGoogleCloudCodeModel(m) && !m.refreshToken && (!m.apiKey || !m.apiKey.startsWith('ya29.'))) {
-    return 0;
-  }
-  const key = getAccountQuotaKey(m);
-  const live = getLiveAccountQuota(key);
-  const q = (live || m.quotas) as Record<string, any> | undefined;
-  if (!q) return 50;
-
-  const isClaude = modelFamily
-    ? modelFamily.toLowerCase().includes('claude')
-    : (m.externalModelName || m.name || '').toLowerCase().includes('claude');
-
-  const fiveHour = typeof (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct) === 'number'
-    ? (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct)
-    : typeof q.fiveHourPercentage === 'number'
-      ? q.fiveHourPercentage
-      : 50;
-
-  const weekly = typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
-    ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
-    : typeof q.weeklyPercentage === 'number'
-      ? q.weeklyPercentage
-      : 50;
-
-  const modelName = (m.externalModelName || m.name || '').toLowerCase();
-  const isFlash = modelName.includes('flash') || modelName.includes('lite');
-
-  const now = Date.now();
-  const fiveHourResetStr = isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime);
-  const fiveHourResetPassed = fiveHourResetStr ? new Date(fiveHourResetStr).getTime() <= now : false;
-
-  const weeklyResetStr = isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime);
-  const weeklyResetPassed = weeklyResetStr ? new Date(weeklyResetStr).getTime() <= now : false;
-
-  if (fiveHour === 0 && !fiveHourResetPassed) return 0;
-  if (!isFlash && weekly === 0 && !weeklyResetPassed) return 0;
-
-  const effFiveHour = (fiveHour === 0 && fiveHourResetPassed) ? 50 : fiveHour;
-  const effWeekly = (weekly === 0 && weeklyResetPassed) ? 50 : weekly;
-  return (effFiveHour * 0.7) + (effWeekly * 0.3);
-}
-
-// ─── Google Account Latency Tracker (EWMA alpha = 0.2) ────────────────────────
-const accountLatencyEwma = new Map<string, number>();
-
-export function recordAccountLatency(candidate: CustomModel, latencyMs: number): void {
-  if (typeof latencyMs !== 'number' || latencyMs <= 0 || !isFinite(latencyMs)) return;
-  const key = getAccountQuotaKey(candidate);
-  const prev = accountLatencyEwma.get(key);
-  if (prev === undefined) {
-    accountLatencyEwma.set(key, latencyMs);
-  } else {
-    // EWMA formula: 0.2 * new + 0.8 * prev
-    const next = Math.round(0.2 * latencyMs + 0.8 * prev);
-    accountLatencyEwma.set(key, next);
-  }
-}
-
-export function getAccountAvgLatency(candidate: CustomModel): number {
-  const key = getAccountQuotaKey(candidate);
-  return accountLatencyEwma.get(key) || 0;
-}
-
-export function _resetAccountLatencies(): void {
-  accountLatencyEwma.clear();
-}
-
-// ─── Quota Stress Detector & Eco-Routing (OmniRoute Parity) ───────────────────
-export function isPoolUnderQuotaStress(accounts: CustomModel[], modelFamily?: string): boolean {
-  if (!accounts || accounts.length === 0) return false;
-  let totalScore = 0;
-  let validCount = 0;
-  for (const acc of accounts) {
-    if (isAccountInCooldown(acc, modelFamily) || getOpenBreaker(acc) || isTokenRevoked(acc.refreshToken)) {
-      continue;
-    }
-    const score = getModelQuotaScore(acc, modelFamily);
-    totalScore += score;
-    validCount++;
-  }
-  if (validCount === 0) return true;
-  const avg = totalScore / validCount;
-  return avg < 15; // Average remaining quota below 15%
-}
-
-// ─── Multi-Project Balancing ──────────────────────────────────────────────────
-let multiProjectIndex = 0;
-
-export function resolveGoogleProjectId(candidate: CustomModel): string {
-  if (candidate.projectIds && candidate.projectIds.length > 0) {
-    const idx = (multiProjectIndex++) % candidate.projectIds.length;
-    return candidate.projectIds[idx];
-  }
-  if (candidate.projectId) {
-    return candidate.projectId;
-  }
-  const envProjects = (process.env.AG_CLOUD_CODE_PROJECT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
-  if (envProjects.length > 0) {
-    const idx = (multiProjectIndex++) % envProjects.length;
-    return envProjects[idx];
-  }
-  return 'bamboo-precept-lgxtn';
-}
-
-// ─── Google Account Dynamic Health Scoring ─────────────────────────────────────
-export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): number {
-  if (isAccountInCooldown(m, modelFamily) || getOpenBreaker(m) || isTokenRevoked(m.refreshToken)) {
-    return 0;
-  }
-  const baseScore = getModelQuotaScore(m, modelFamily);
-  if (baseScore <= 0) return 0;
-  const inFlight = getAccountInFlight(m);
-
-  // Priority/Tier bonus: High-priority, paid or Pro subscription accounts receive +15 priority score
-  const priorityBonus =
-    m.isPro || m.isPaid || m.tier === 'pro' || m.tier === 'paid' || (typeof m.priority === 'number' && m.priority > 0)
-      ? (typeof m.priority === 'number' && m.priority > 0 ? m.priority : 15)
-      : 0;
-
-  // Latency penalty: -1 point per 100ms beyond 500ms baseline (capped at -25 points)
-  const avgLatency = getAccountAvgLatency(m);
-  const latencyPenalty = avgLatency > 500 ? Math.min(25, Math.floor((avgLatency - 500) / 100)) : 0;
-
-  // During Half-Open probation: strictly max 1 probe request allowed; score capped at 60%
-  if (isAccountInProbation(m, modelFamily)) {
-    if (inFlight >= 1) return 0;
-    const probationScore = Math.floor((baseScore + priorityBonus) * 0.6);
-    return Math.max(1, probationScore - inFlight * 20 - latencyPenalty);
-  }
-
-  // Account reached max concurrent requests slot limit: mark score 0 to route to free accounts
-  if (inFlight >= MAX_CONCURRENT_PER_ACCOUNT) {
-    return 0;
-  }
-
-  const rpmCount = getAccountRpmCount(m);
-  // Each active request penalizes dynamic score by 20 points;
-  // each request served in the last 60 seconds penalizes by 2 points (RPM governor);
-  // elevated EWMA latency penalizes up to 25 points;
-  // weekly quota under 15% penalizes progressively to protect near-exhausted accounts.
-  const isClaude = modelFamily
-    ? modelFamily.toLowerCase().includes('claude')
-    : (m.externalModelName || m.name || '').toLowerCase().includes('claude');
-  const q = m.quotas;
-  const weeklyPct = q
-    ? (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
-      ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
-      : typeof q.weeklyPercentage === 'number'
-        ? q.weeklyPercentage
-        : 100)
-    : 100;
-  const weeklyPenalty = (weeklyPct < 15 && weeklyPct > 0) ? Math.floor((15 - weeklyPct) * 1.5) : 0;
-
-  return Math.max(1, baseScore + priorityBonus - inFlight * 20 - rpmCount * 2 - latencyPenalty - weeklyPenalty);
-}
-
-// ─── Intelligent 429 Classification (OmniRoute Parity) ─────────────────────────
-export type Google429Category = 'soft_rate_limit' | 'rate_limited' | 'quota_exhausted' | 'unknown';
-
-export interface Google429Decision {
-  category: Google429Category;
-  cooldownMs: number;
-  reason: string;
-}
-
-export function classifyGoogleCloudCode429(
-  errorMessage?: string,
-  retryAfterHeader?: string | string[] | number | null,
-): Google429Decision {
-  const msg = (errorMessage || '').toLowerCase();
-
-  let retryAfterMs: number | null = null;
-  if (retryAfterHeader !== null && retryAfterHeader !== undefined) {
-    const rawVal = Array.isArray(retryAfterHeader) ? retryAfterHeader[0] : String(retryAfterHeader);
-    const parsedSec = parseFloat(rawVal);
-    if (!isNaN(parsedSec) && parsedSec >= 0) {
-      retryAfterMs = Math.round(parsedSec * 1000);
-    } else {
-      const parsedDate = Date.parse(rawVal);
-      if (!isNaN(parsedDate) && parsedDate > Date.now()) {
-        retryAfterMs = parsedDate - Date.now();
-      }
-    }
-  }
-
-  // Parse "Resets in Xh Ym Zs" from the 429 body when no Retry-After header is present.
-  // Handles: "42h52m9s", "4h7m17s", "52m", "30s", etc.
-  if (retryAfterMs === null) {
-    const resetMatch = msg.match(/resets?\s+in\s+(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
-    if (resetMatch && (resetMatch[1] || resetMatch[2] || resetMatch[3])) {
-      const h = parseInt(resetMatch[1] || '0', 10);
-      const m = parseInt(resetMatch[2] || '0', 10);
-      const s = parseInt(resetMatch[3] || '0', 10);
-      const parsed = (h * 3600 + m * 60 + s) * 1000;
-      if (parsed > 0) retryAfterMs = parsed;
-    }
-  }
-
-  // 1. Soft / burst rate limit (micro-throttle, e.g. reset in 0s, try again, or retryAfter <= 3s)
-  if (
-    /\breset\s+(?:after|in)\s+0s\b/.test(msg) ||
-    msg.includes('try again') ||
-    msg.includes('temporarily') ||
-    (retryAfterMs !== null && retryAfterMs <= 3000)
-  ) {
-    return {
-      category: 'soft_rate_limit',
-      cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 3000,
-      reason: 'Soft burst throttle — momentary pause',
-    };
-  }
-
-  // 2. RPM / Short-term rate limit indicators (e.g. "Requests per minute quota exceeded")
-  if (
-    msg.includes('per minute') ||
-    msg.includes('per_minute') ||
-    msg.includes('rpm') ||
-    msg.includes('rate limit') ||
-    msg.includes('rate_limit') ||
-    msg.includes('too many requests')
-  ) {
-    return {
-      category: 'rate_limited',
-      cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 60_000,
-      reason: 'RPM limit — 60s cooldown',
-    };
-  }
-
-  // 3. Daily or 5-hour quota exhaustion
-  const QUOTA_EXHAUSTED_KEYWORDS = [
-    'quota_exhausted',
-    'quota exhausted',
-    'quota reached',
-    'enable overages',
-    'individual quota',
-    'resource_exhausted',
-    'resource has been exhausted',
-    'quota exceeded',
-    'google_one_ai',
-    'insufficient credit',
-    'insufficient credits',
-    'not enough credit',
-    'not enough credits',
-    'credit exhausted',
-    'credits exhausted',
-    'credit balance',
-    'minimumcreditamountforusage',
-    'minimum credit amount for usage',
-    'minimum credit',
-    'insufficient_g1_credits_balance',
-    'g1_credits',
-    'daily limit',
-    'exhausted your capacity',
-    'free tier',
-  ];
-
-  for (const kw of QUOTA_EXHAUSTED_KEYWORDS) {
-    if (msg.includes(kw)) {
-      // Use the parsed reset time from header or body. Floor at 5h so we never under-cool a quota account.
-      const quotaCooldownMs = retryAfterMs && retryAfterMs > 0
-        ? Math.max(retryAfterMs, 5 * 60 * 60 * 1000)
-        : 5 * 60 * 60 * 1000;
-      return {
-        category: 'quota_exhausted',
-        cooldownMs: quotaCooldownMs,
-        reason: `Quota exhausted — ${Math.round(quotaCooldownMs / 3_600_000)}h cooldown and switch account`,
-      };
-    }
-  }
-
-  // 4. Default / Unknown 429
-  return {
-    category: 'unknown',
-    cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 60_000,
-    reason: 'Generic 429 rate limit',
-  };
-}
-
-// ─── Power of Two Choices (P2C) Candidate Selection ────────────────────────────
-export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gemini'): CustomModel | undefined {
-  if (!candidates || candidates.length === 0) return undefined;
-  if (candidates.length === 1) return candidates[0];
-
-  const available = candidates.filter((m) => !isAccountInCooldown(m, modelFamily) && !getOpenBreaker(m));
-  const pool = available.length > 0 ? available : candidates;
-  if (pool.length === 1) return pool[0];
-
-  const sorted = [...pool].sort((a, b) => getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily));
-  const topScore = getAccountDynamicScore(sorted[0], modelFamily);
-
-  const topTier = sorted.filter((m) => topScore - getAccountDynamicScore(m, modelFamily) <= 15);
-  if (topTier.length <= 1) {
-    return sorted[0];
-  }
-
-  const i = randomInt(topTier.length);
-  let j = randomInt(topTier.length - 1);
-  if (j >= i) j++;
-
-  const candA = topTier[i];
-  const candB = topTier[j];
-
-  const lastA = getAccountLastUsed(candA);
-  const lastB = getAccountLastUsed(candB);
-
-  // If one candidate was used more recently, favor the fresher idle account for intelligent rotation
-  if (lastA !== lastB) {
-    return lastA < lastB ? candA : candB;
-  }
-
-  const scoreA = getAccountDynamicScore(candA, modelFamily);
-  const scoreB = getAccountDynamicScore(candB, modelFamily);
-
-  return scoreA >= scoreB ? candA : candB;
-}
-
-
-let roundRobinCounter = 0;
-
-export function selectBestModelByQuota(candidates: CustomModel[], allModels?: CustomModel[]): CustomModel | undefined {
-  if (!candidates || candidates.length === 0) return undefined;
-  if (candidates.length === 1) return candidates[0];
-
-  const healthy = candidates.filter((m) => !getOpenBreaker(m));
-  const pool = healthy.length > 0 ? healthy : candidates;
-
-  // Prefer candidates with refreshable credentials if Google Cloud Code
-  const withRefresh = pool.filter((m) => !isGoogleCloudCodeModel(m) || Boolean(m.refreshToken));
-  const candidatePool = withRefresh.length > 0 ? withRefresh : pool;
-
-  const withQuota = candidatePool.filter((m) => getModelQuotaScore(m) > 0);
-  const candidatesToSort = withQuota.length > 0 ? withQuota : candidatePool;
-
-  const sorted = [...candidatesToSort].sort((a, b) => getModelQuotaScore(b) - getModelQuotaScore(a));
-  const topScore = getModelQuotaScore(sorted[0]);
-  const topTier = sorted.filter((m) => topScore - getModelQuotaScore(m) <= 5);
-
-  if (topTier.length > 1) {
-    const selected = topTier[Math.abs(roundRobinCounter++) % topTier.length];
-    return selected;
-  }
-
-  return sorted[0];
-}
-
-export function getGoogleAccountPool(
-  matchedModel: CustomModel,
-  allModels: CustomModel[],
-): CustomModel[] {
-  if (!allModels || allModels.length === 0) return [matchedModel];
-  const targetBase = getBaseModelId(matchedModel.externalModelName || matchedModel.name);
-  const targetNorm = normalizeCloudCodeModelId(targetBase);
-
-  // Pool all Google Cloud Code accounts offering this model or compatible
-  const pool = allModels.filter((m) => {
-    if (!isGoogleCloudCodeModel(m)) return false;
-    const mBase = getBaseModelId(m.externalModelName || m.name);
-    const mNorm = normalizeCloudCodeModelId(mBase);
-    return mBase === targetBase || mNorm === targetNorm;
-  });
-
-  // Deduplicate by unique account credentials
-  const seenAccounts = new Set<string>();
-  const distinctPool: CustomModel[] = [];
-  for (const m of pool) {
-    const accKey = getAccountQuotaKey(m);
-    if (!seenAccounts.has(accKey)) {
-      seenAccounts.add(accKey);
-      distinctPool.push(m);
-    }
-  }
-
-  return distinctPool.length > 0 ? distinctPool : [matchedModel];
-}
 
 interface SessionAffinity {
   modelName: string;
@@ -3171,6 +3379,7 @@ export function getSessionBoundModel(
 }
 
 export function bindSessionToModel(sessionId: string, model: CustomModel): void {
+  if (model.name?.includes(':auto-pool') || model.apiKey === 'auto') return;
   sessionAffinities.set(sessionId, {
     modelName: model.name,
     accountKey: getAccountQuotaKey(model),
@@ -3209,16 +3418,39 @@ export function getSessionModelFallback(sessionKey: string): SessionModelFallbac
   return fb;
 }
 
+export function clearSessionModelFallback(sessionKey: string): void {
+  if (sessionKey) {
+    sessionModelFallbacks.delete(sessionKey);
+  }
+}
+
 export function setSessionModelFallback(
   sessionKey: string,
   originalModel: string,
   fallbackModel: string,
   notified = false,
 ): void {
-  if (!sessionKey) return;
+  if (!sessionKey || !originalModel || !fallbackModel) return;
   if (/gemini-(?:3\.[0-7]|2\.|1\.)/i.test(fallbackModel) || /gpt-[34]/i.test(fallbackModel)) {
     return;
   }
+  const cleanOrig = originalModel.trim().toLowerCase();
+  const cleanFb = fallbackModel.trim().toLowerCase();
+  if (cleanOrig === cleanFb && !notified) return;
+
+  const existing = sessionModelFallbacks.get(sessionKey);
+  if (existing) {
+    const existOrig = existing.originalModel.trim().toLowerCase();
+    const existFb = existing.fallbackModel.trim().toLowerCase();
+    // Prevent circular flip-flop (A -> B then B -> A)
+    if (cleanOrig === existFb && cleanFb === existOrig) {
+      log.warn(
+        `[Proxy] Preventing circular session fallback loop for ${sessionKey}: existing (${existing.originalModel} -> ${existing.fallbackModel}) vs new (${originalModel} -> ${fallbackModel})`,
+      );
+      return;
+    }
+  }
+
   sessionModelFallbacks.set(sessionKey, {
     originalModel,
     fallbackModel,
@@ -3253,6 +3485,34 @@ function handleCustomModelRequest(
   retryCount = 0,
   fallbackDepth = 0,
 ): void {
+  // Virtual auto-pool entries have no API key and must be dispatched via executeGoogleCloudCodeWithPool
+  if (model.name?.includes(':auto-pool') || model.apiKey === 'auto' || !model.apiKey || model.apiKey === 'none') {
+    if (isGoogleCloudCodeModel(model) || model.name?.includes(':auto-pool') || model.apiKey === 'auto') {
+      const allCustomModels = expandModelsWithEffort(loadCustomModels());
+      const accountPool = getGoogleAccountPool(model, allCustomModels);
+      const targetModel = normalizeCloudCodeModelId(model.externalModelName || model.name);
+      sanitizeCloudCodeGenerationConfig(rawGeminiBody as Record<string, unknown>, targetModel);
+      const cloudCodePayload = {
+        project: (model as { projectId?: string }).projectId || process.env.AG_CLOUD_CODE_PROJECT_ID || 'bamboo-precept-lgxtn',
+        model: targetModel,
+        request: rawGeminiBody,
+      };
+      const fakeReq = {
+        url: isStream ? '/v1internal:streamGenerateContent?alt=sse' : '/v1internal:generateContent',
+        method: 'POST',
+        headers: {},
+      } as unknown as http.IncomingMessage;
+      void executeGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', null);
+      return;
+    }
+    log.error(`[Proxy] Cannot route virtual auto-pool or keyless model ${model.name} to translator without valid API key.`);
+    if (!res.headersSent && !res.writableEnded) {
+      safeWriteHead(res, 503, { 'Content-Type': 'application/json' });
+      safeEnd(res, JSON.stringify({ error: { message: 'All Google Cloud Code accounts in pool are in cooldown and no valid API key is available.' } }));
+    }
+    return;
+  }
+
   const geminiBody = trimContextPayload(rawGeminiBody);
   const bodyContents = geminiBody.contents || ((geminiBody as Record<string, unknown>).request as Record<string, unknown> | undefined)?.contents;
   if (Array.isArray(bodyContents)) {
@@ -3319,13 +3579,20 @@ function handleCustomModelRequest(
       const allModels = loadCustomModels();
       const currentAccountKey = getAccountQuotaKey(model);
       const targetBase = getBaseModelId(model.externalModelName || model.name);
+      const targetNorm = normalizeCloudCodeModelId(targetBase);
 
-      // Sibling accounts in the pool offering the exact same model, sorted by remaining quota score
+      // Sibling accounts in the pool offering the exact same model, sorted by remaining quota score.
+      // ponytail: match both raw base model ID and canonical Cloud Code model ID (e.g. gemini-3.8-flash == gemini-3.8-flash-tiered)
+      // so if a direct Google AI Studio key fails with 429/503, the proxy falls back immediately to Cloud Code accounts
+      // for the SAME Gemini model instead of needlessly jumping to Claude.
       const poolSiblings = allModels
         .filter((m) => {
           if (m.name === model.name) return false;
+          if (m.name?.includes(':auto-pool') || m.apiKey === 'auto' || !m.apiKey || m.apiKey === 'none') return false;
           const mBase = getBaseModelId(m.externalModelName || m.name);
-          return mBase === targetBase && getAccountQuotaKey(m) !== currentAccountKey && !getOpenBreaker(m);
+          const mNorm = normalizeCloudCodeModelId(mBase);
+          const isSameModel = mBase === targetBase || (targetNorm && mNorm === targetNorm);
+          return isSameModel && getAccountQuotaKey(m) !== currentAccountKey && !getOpenBreaker(m);
         })
         .sort((a, b) => getModelQuotaScore(b) - getModelQuotaScore(a));
 
@@ -3354,6 +3621,10 @@ function handleCustomModelRequest(
             (m) =>
               !chainModels.includes(m) &&
               !poolSiblings.includes(m) &&
+              !m.name?.includes(':auto-pool') &&
+              m.apiKey !== 'auto' &&
+              m.apiKey !== 'none' &&
+              Boolean(m.apiKey) &&
               (m.name === item ||
                 m.displayName === item ||
                 m.externalModelName === item ||
@@ -3362,19 +3633,37 @@ function handleCustomModelRequest(
           );
           chainModels.push(...matches);
         }
-        const rest = allModels.filter((m) => !poolSiblings.includes(m) && !chainModels.includes(m));
+        const rest = allModels.filter((m) => !poolSiblings.includes(m) && !chainModels.includes(m) && !m.name?.includes(':auto-pool') && m.apiKey !== 'auto');
         orderedModels = [...poolSiblings, ...chainModels, ...rest];
       }
 
       // ponytail: skip same account on rate_limit if it's the exact same base model (shared quota).
-      // Separate accounts (different API keys) or different model tiers on the same provider/key are allowed.
-      const failedAccountKey = diagnostic.errorType === 'rate_limit'
-        ? getAccountQuotaKey(model)
-        : null;
+      // On billing/credit exhaustion, skip the ENTIRE account regardless of model tier.
+      const isBillingOrRateLimit = diagnostic.errorType === 'rate_limit' || diagnostic.errorType === 'billing';
+      const failedAccountKey = isBillingOrRateLimit ? getAccountQuotaKey(model) : null;
       for (const m of orderedModels) {
-        if (m.name !== model.name && m.apiKey && !m.apiKey.startsWith('fallback:')) {
-          if (failedAccountKey && getAccountQuotaKey(m) === failedAccountKey && getBaseModelId(m.name) === targetBase) {
-            log.warn(`[Proxy] Auto-fallback: skipping ${m.displayName || m.name} (same account credentials, shared quota on ${targetBase})`);
+        if (
+          m.name !== model.name &&
+          !m.name?.includes(':auto-pool') &&
+          m.apiKey &&
+          m.apiKey !== 'auto' &&
+          m.apiKey !== 'none' &&
+          !m.apiKey.startsWith('fallback:')
+        ) {
+          if (
+            failedAccountKey &&
+            getAccountQuotaKey(m) === failedAccountKey &&
+            (diagnostic.errorType === 'billing' || getBaseModelId(m.name) === targetBase)
+          ) {
+            log.warn(`[Proxy] Auto-fallback: skipping ${m.displayName || m.name} (same account credentials, ${diagnostic.errorType === 'billing' ? 'billing/credits exhausted' : 'shared quota on ' + targetBase})`);
+            continue;
+          }
+          const mFamily = (m.externalModelName || m.name || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
+          if (
+            isAccountInCooldown(m, mFamily) ||
+            getOpenBreaker(m) ||
+            (isGoogleCloudCodeModel(m) && getModelQuotaScore(m, mFamily) <= 0)
+          ) {
             continue;
           }
           const fromName = model.displayName || model.name;
@@ -3395,7 +3684,8 @@ function handleCustomModelRequest(
           // L-1: Notify the user in the stream so the fallback is transparent.
           // We send a brief markdown notice as the first SSE event before
           // delegating to the fallback model handler (only once per session).
-          if (isStream && !res.headersSent && !alreadyNotified) {
+          const wantsFallbackNotice = process.env.AG_ENABLE_FALLBACK_NOTICE === '1';
+          if (wantsFallbackNotice && isStream && !res.headersSent && !alreadyNotified) {
             if (safeWriteHead(res, 200, {
               'Content-Type': 'text/event-stream',
               'Cache-Control': 'no-cache',
@@ -3505,8 +3795,9 @@ function handleCustomModelRequest(
     (options as Record<string, unknown>).rejectUnauthorized = false;
   }
 
+  const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
   log.info(
-    `[Proxy] Routing ${model.name} to ${model.provider} (${model.apiUrl}) (isStream: ${!!isStream})${retryCount > 0 ? ` (retry ${retryCount})` : ''}`,
+    `[Proxy] ➡️ [Request] Model: [${cleanModelName || model.name}] | Account/Provider: [${accountLabel}] (${model.provider}) (stream: ${!!isStream})${retryCount > 0 ? ` (retry ${retryCount})` : ''}`,
   );
   recordRecentModel(model.name);
 
@@ -3617,9 +3908,10 @@ function handleGetAvailableModelsProxy(
       }
       const responseBuf = Buffer.concat(chunks);
       const customModels = loadCustomModels();
+      const disabledModelIds = loadDisabledModelIds();
       // Run concurrent health checks (cached with TTL, max 800ms wait)
       getFastOrCachedHealth(customModels, 800).then((healthMap) => {
-        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, healthMap, true);
+        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, healthMap, true, disabledModelIds);
         if (
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
@@ -3632,7 +3924,7 @@ function handleGetAvailableModelsProxy(
           safeEnd(res, modifiedBuf);
         }
       }).catch(() => {
-        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, undefined, true);
+        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, undefined, true, disabledModelIds);
         if (
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
@@ -3726,9 +4018,10 @@ function handleGetUserStatusProxy(
       }
       const responseBuf = Buffer.concat(chunks);
       const customModels = loadCustomModels();
+      const disabledModelIds = loadDisabledModelIds();
       getFastOrCachedHealth(customModels, 800).then((healthMap) => {
-        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels, healthMap);
-        log.info(`[Proxy] GetUserStatus injected ${injectedCount} custom models`);
+        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels, healthMap, disabledModelIds);
+        log.debug(`[Proxy] GetUserStatus injected ${injectedCount} custom models`);
         if (
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
@@ -3741,8 +4034,8 @@ function handleGetUserStatusProxy(
           safeEnd(res, modifiedBuf);
         }
       }).catch(() => {
-        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels);
-        log.info(`[Proxy] GetUserStatus injected ${injectedCount} custom models (fallback)`);
+        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels, undefined, disabledModelIds);
+        log.debug(`[Proxy] GetUserStatus injected ${injectedCount} custom models (fallback)`);
         if (
           safeWriteHead(res, lsRes.statusCode || 200, {
             'Content-Type': 'application/grpc-web+proto',
@@ -3829,6 +4122,23 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
   );
 }
 
+/**
+ * Checks whether a model ID is a native Google Cloud Code model shipped with Antigravity IDE.
+ * Native models must NOT be hijacked into the custom multi-account pool when selected by the user.
+ */
+export function isNativeCloudCodeModel(modelName: string): boolean {
+  if (!modelName || typeof modelName !== 'string') return false;
+  if (/MODEL_PLACEHOLDER_/i.test(modelName)) return false;
+  const clean = modelName.replace(/^models\//, '').trim().toLowerCase();
+  return (
+    clean.startsWith('gemini-') ||
+    clean.startsWith('claude-sonnet-') ||
+    clean.startsWith('claude-opus-') ||
+    clean.startsWith('claude-3-5-sonnet') ||
+    clean.startsWith('claude-3-7-sonnet')
+  );
+}
+
 function isAllowedOrigin(req: http.IncomingMessage): boolean {
   const host = (req.headers.host || '').toLowerCase();
   const origin = ((req.headers.origin || req.headers.referer || '') as string).toLowerCase();
@@ -3857,7 +4167,20 @@ function isAllowedOrigin(req: http.IncomingMessage): boolean {
 function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
   // CSRF / Origin Guard: Reject unauthorized external origins attempting local proxy abuse
   if (!isAllowedOrigin(req)) {
-    log.warn(`[Proxy] Blocked request with unauthorized Host/Origin: host=${req.headers.host} origin=${req.headers.origin}`);
+    const host = (req.headers.host || '').toLowerCase();
+    const isSystemCertNoise =
+      host.includes('digicert.com') ||
+      host.includes('windowsupdate.com') ||
+      host.includes('symcb.com') ||
+      host.includes('verisign.com') ||
+      host.includes('pki.goog') ||
+      host.includes('globalsign.com') ||
+      host.includes('sectigo.com');
+    if (isSystemCertNoise) {
+      log.debug(`[Proxy] Ignored background OS certificate/CRL check: host=${req.headers.host}`);
+    } else {
+      log.warn(`[Proxy] Blocked request with unauthorized Host/Origin: host=${req.headers.host} origin=${req.headers.origin}`);
+    }
     res.writeHead(403, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: { message: 'Forbidden: Unauthorized origin' } }));
     return;
@@ -3866,7 +4189,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   // Health check — keep this FIRST so the LS sees a live port even if other
   // initialization (padding strip, model loading, etc.) is delayed or fails.
   if (req.method === 'GET' && (req.url === '/health' || req.url === '/healthz')) {
-    log.info(`[Proxy] /health hit from ${req.socket.remoteAddress || 'unknown'}`);
+    log.debug(`[Proxy] /health hit from ${req.socket.remoteAddress || 'unknown'}`);
     const memUsage = process.memoryUsage();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
@@ -3874,6 +4197,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         status: 'ok',
         uptime: process.uptime(),
         port: proxyPort,
+        pid: process.pid,
         memory: {
           rssMB: Math.round(memUsage.rss / 1024 / 1024),
           heapUsedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
@@ -4278,7 +4602,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     let fullBody = Buffer.concat(bodyChunks);
     const bodyStr = fullBody.toString('utf-8');
 
-    const isRoutineNoise = req.url?.includes('Heartbeat') || req.url?.includes('GetUserStatus') || req.url === '/health';
+    const isRoutineNoise =
+      req.url?.includes('Heartbeat') ||
+      req.url?.includes('GetUserStatus') ||
+      req.url?.includes('listExperiments') ||
+      req.url?.includes('loadCodeAssist') ||
+      req.url?.includes('recordTrajectoryAnalytics') ||
+      req.url?.includes('writeTrajectoryAcls') ||
+      req.url?.includes('retrieveUserQuotaSummary') ||
+      req.url?.includes('fetchAvailableModels') ||
+      req.url?.includes('fetchAdminControls') ||
+      req.url?.includes('buildWithGooglePlugins') ||
+      req.url?.includes('cascadeNuxes') ||
+      req.url?.includes('fetchUserInfo') ||
+      req.url === '/health';
     if (isRoutineNoise) {
       log.debug(`[Proxy] Request: ${req.method} ${req.url}`);
     } else {
@@ -4425,7 +4762,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
     // 0.5. Intercept /v1internal:listExperiments with caching, enrichment, and fallback
     if (req.url!.includes('/v1internal:listExperiments')) {
-      log.info('[Proxy] Intercepting listExperiments request');
+      log.debug('[Proxy] Intercepting listExperiments request');
 
       const buildDefaultExperimentsFallback = () => {
         const flags = [
@@ -4447,18 +4784,25 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           { name: 'enable-persistent-terminals', boolValue: true },
           { name: 'enable-pty', boolValue: true },
           { name: 'enable-sidecars', boolValue: true },
+          { name: 'enable-ui-sidecars', boolValue: true },
           { name: 'deprecate-workflows', boolValue: true },
           { name: 'use-core-direct', boolValue: true },
           { name: 'tool-output-max-bytes', intValue: 46080 },
           { name: 'max-tokens-per-step', intValue: 16384 },
           { name: 'show-model-selection-change', boolValue: true },
+          { name: 'scheduled-tasks-v2', boolValue: true },
+          { name: 'enable-tasks', boolValue: true },
+          { name: 'enable-conversation-search-v2', boolValue: true },
+          { name: 'enable-background-task-accumulator', boolValue: true },
+          { name: 'enable-aux-pane-redesign', boolValue: true },
+          { name: 'enable-split-view', boolValue: true },
           { name: 'auto-command-config', stringValue: '{"system_allowlist": [], "sandbox_system_allowlist": ["head", "tail", "mkdir", "cd", "cp", "mv", "cat", "find", "grep", "rm", "touch", "less", "clear", "ls"]}' },
           { name: 'cascade-conversation-history-config', stringValue: '{"enabled": true, "max_conversations": 20}' },
           { name: 'invoke-subagent-config', stringValue: '{"enabled": true, "always_inherit_model": false}' },
           { name: 'log-artifacts-config', stringValue: '{"enabled": true, "hideNominalToolSteps": false, "hidePlannerResponseText": false, "maxBytesPerStep": 4096, "maxBytesPerToolArg": 2048, "hideSystemSteps": false, "hideUserImplicitSteps": false}' },
         ];
         return JSON.stringify({
-          experimentIds: ['antigravity-2.18-full', 'plan-enabled', 'customizations-unlocked'],
+          experimentIds: ['antigravity-2.21-full', 'plan-enabled', 'customizations-unlocked', 'automations-enabled'],
           flags,
         });
       };
@@ -4480,13 +4824,23 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             { name: 'send-subagent-initial-prompt-as-message', boolValue: true },
             { name: 'enable-battle-mode-custom-agents', boolValue: true },
             { name: 'show-model-selection-change', boolValue: true },
+            { name: 'scheduled-tasks-v2', boolValue: true },
+            { name: 'enable-tasks', boolValue: true },
+            { name: 'enable-conversation-search-v2', boolValue: true },
+            { name: 'enable-background-task-accumulator', boolValue: true },
+            { name: 'enable-aux-pane-redesign', boolValue: true },
+            { name: 'enable-ui-sidecars', boolValue: true },
+            { name: 'enable-sidecars', boolValue: true },
+            { name: 'enable-split-view', boolValue: true },
           ];
           for (const reqFlag of requiredFlags) {
             const existing = data.flags.find((f: any) => f && f.name === reqFlag.name);
             if (!existing) {
               data.flags.push(reqFlag);
-            } else if (reqFlag.boolValue !== undefined && !existing.boolValue) {
-              existing.boolValue = true;
+            } else if (reqFlag.boolValue !== undefined) {
+              existing.boolValue = reqFlag.boolValue;
+            } else if (reqFlag.intValue !== undefined) {
+              existing.intValue = reqFlag.intValue;
             }
           }
           return JSON.stringify(data);
@@ -4495,12 +4849,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         }
       };
 
-      // If we have a fresh cache (< 3 minutes), serve it immediately
+      // If we have a fresh cache (< 3 minutes), serve it immediately (ensuring enrichment)
       const freshCache = (Date.now() - memoryListExperimentsTime < 180_000) ? loadCachedExperiments() : null;
       if (freshCache) {
-        log.info('[Proxy] Serving fresh cached listExperiments response');
+        log.debug('[Proxy] Serving fresh cached listExperiments response');
+        const enrichedCache = enrichExperiments(freshCache);
         if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
-          safeEnd(res, freshCache);
+          safeEnd(res, enrichedCache);
         }
         return;
       }
@@ -4515,8 +4870,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       } catch (e) {
         log.warn(`[Proxy] DNS resolution failed for ${targetHost} on listExperiments:`, e);
         const cached = loadCachedExperiments() || buildDefaultExperimentsFallback();
+        const enrichedDns = enrichExperiments(cached);
         if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
-          safeEnd(res, cached);
+          safeEnd(res, enrichedDns);
         }
         return;
       }
@@ -4539,9 +4895,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       const fallback = () => {
         if (res.headersSent || res.writableEnded) return;
         const cached = loadCachedExperiments() || buildDefaultExperimentsFallback();
-        log.warn('[Proxy] Upstream listExperiments fallback active, serving 2.18 enabled flags');
+        log.warn('[Proxy] Upstream listExperiments fallback active, serving 2.21 enabled flags');
+        const enrichedFallback = enrichExperiments(cached);
         if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
-          safeEnd(res, cached);
+          safeEnd(res, enrichedFallback);
         }
       };
 
@@ -4609,7 +4966,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
     // 0.7. Intercept /v1internal:loadCodeAssist with caching and fast fallback
     if (req.url!.includes('/v1internal:loadCodeAssist')) {
-      log.info('[Proxy] Intercepting loadCodeAssist request');
+      log.debug('[Proxy] Intercepting loadCodeAssist request');
 
       const buildDefaultFallback = () => {
         const customModels = loadCustomModels();
@@ -4622,12 +4979,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         });
       };
 
-      // If we have a fresh cache (< 3 minutes), serve it immediately to avoid upstream 429
-      const freshCache = (Date.now() - memoryLoadCodeAssistTime < 180_000) ? loadCachedCodeAssist() : null;
-      if (freshCache) {
-        log.info('[Proxy] Serving fresh cached loadCodeAssist response');
+      // If we have cached code assist (disk or memory), serve it immediately to guarantee zero-latency response (< 2ms)
+      const cached = loadCachedCodeAssist();
+      if (cached) {
+        log.debug('[Proxy] Serving cached loadCodeAssist response instantly (prevents LS deadline exceeded)');
         if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
-          safeEnd(res, freshCache);
+          safeEnd(res, cached);
         }
         return;
       }
@@ -4701,7 +5058,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         });
       });
 
-      googleReq.setTimeout(8_000, () => {
+      googleReq.setTimeout(2_500, () => {
         if (!completed) {
           completed = true;
           googleReq.destroy();
@@ -4726,7 +5083,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
     // 1. Intercept /v1internal:fetchAvailableModels
     if (req.url!.includes('/v1internal:fetchAvailableModels')) {
-      log.info('[Proxy] Intercepting fetchAvailableModels request');
+      log.debug('[Proxy] Intercepting fetchAvailableModels request');
 
       // Fire async health check (non-blocking)
       const customModelsForHealth = loadCustomModels();
@@ -4794,7 +5151,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
           let googleJson: Record<string, unknown> | null = null;
           try {
-            log.info(
+            log.debug(
               `[Proxy] fetchAvailableModels response status: ${googleRes.statusCode}, body length: ${googleBody.length}`,
             );
 
@@ -4812,7 +5169,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               .catch(() => {});
             const customModels = loadCustomModels();
 
-            log.info(`[Proxy] Loaded custom models count: ${customModels.length}`);
+            log.debug(`[Proxy] Loaded custom models count: ${customModels.length}`);
 
 
             let merged = false;
@@ -4931,7 +5288,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
     // 2. Intercept /v1beta/models or /v1/models list request
     if (req.method === 'GET' && (req.url!.endsWith('/models') || req.url!.includes('/models?'))) {
-      log.info('[Proxy] Intercepting models list request');
+      log.debug('[Proxy] Intercepting models list request');
 
       const targetHost = GOOGLE_HOSTS.GENERATIVE_LANGUAGE;
       const targetUrl = `https://${targetHost}`;
@@ -5091,7 +5448,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           targetReq.selectedModel,
         ].filter((x): x is string => typeof x === 'string' && Boolean(x));
 
-        log.info(
+        log.debug(
           `[Proxy] Cloud Code generation request candidates: ${candidateNames.join(', ')}, url: ${req.url}, bodyKeys: ${Object.keys(reqJson).join(',')}`,
         );
 
@@ -5106,39 +5463,104 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           sessionKey = convId || sessId;
 
           if (sessionKey) {
+            const explicitSelected = (targetReq.selectedModel || reqJson.selectedModel || targetReq.requestedModel || reqJson.requestedModel) as string | undefined;
+            if (explicitSelected) {
+              const activeFallback = getSessionModelFallback(sessionKey);
+              const normExplicit = normalizeCloudCodeModelId(explicitSelected);
+              const isDifferentModel = activeFallback &&
+                normExplicit !== normalizeCloudCodeModelId(activeFallback.originalModel) &&
+                normExplicit !== normalizeCloudCodeModelId(activeFallback.fallbackModel);
+              if (activeFallback && isDifferentModel) {
+                log.info(
+                  `[Proxy] 🎯 User explicitly selected different model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}] to honor user selection priority.`,
+                );
+                clearSessionModelFallback(sessionKey);
+              }
+            }
+
             const activeFallback = getSessionModelFallback(sessionKey);
             if (activeFallback) {
               const isOrigClaude = activeFallback.originalModel.toLowerCase().includes('claude');
               const matchesOrig = candidateNames.some((cn) => {
                 const norm = normalizeCloudCodeModelId(cn);
-                return norm === activeFallback.originalModel || (isOrigClaude && cn.toLowerCase().includes('claude'));
+                return norm === normalizeCloudCodeModelId(activeFallback.originalModel) || (isOrigClaude && cn.toLowerCase().includes('claude'));
               });
               if (matchesOrig) {
-                log.info(`[Proxy] Active session fallback for ${sessionKey}: transparently routing ${activeFallback.originalModel} -> ${activeFallback.fallbackModel}`);
-                candidateNames.unshift(activeFallback.fallbackModel);
-                reqJson.model = activeFallback.fallbackModel;
-                if (reqJson.request && typeof reqJson.request === 'object') {
-                  (reqJson.request as Record<string, unknown>).model = activeFallback.fallbackModel;
+                const origFamily = activeFallback.originalModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
+                const fbFamily = activeFallback.fallbackModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
+
+                const hasHealthyOriginal = customModels.some(
+                  (m) =>
+                    isGoogleCloudCodeModel(m) &&
+                    m.apiKey !== 'auto' &&
+                    !m.name?.includes(':auto-pool') &&
+                    normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === normalizeCloudCodeModelId(activeFallback.originalModel).toLowerCase() &&
+                    !getOpenBreaker(m) &&
+                    !isAccountInCooldown(m, origFamily) &&
+                    getModelQuotaScore(m, origFamily) > 0,
+                );
+
+                const hasHealthyFallback = customModels.some(
+                  (m) =>
+                    isGoogleCloudCodeModel(m) &&
+                    m.apiKey !== 'auto' &&
+                    !m.name?.includes(':auto-pool') &&
+                    normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === normalizeCloudCodeModelId(activeFallback.fallbackModel).toLowerCase() &&
+                    !getOpenBreaker(m) &&
+                    !isAccountInCooldown(m, fbFamily) &&
+                    getModelQuotaScore(m, fbFamily) > 0,
+                );
+
+                if (hasHealthyOriginal || !hasHealthyFallback) {
+                  log.info(
+                    `[Proxy] 🟢 [Session Fallback] ${hasHealthyOriginal ? `Primary model [${activeFallback.originalModel}] recovered with healthy accounts` : `Fallback model [${activeFallback.fallbackModel}] exhausted`}. Reverting session ${sessionKey} to primary.`,
+                  );
+                  clearSessionModelFallback(sessionKey);
+                } else {
+                  log.info(`[Proxy] 🔀 [Session Fallback] Active session ${sessionKey}: transparently routing [${activeFallback.originalModel}] -> [${activeFallback.fallbackModel}]`);
+                  candidateNames.unshift(activeFallback.fallbackModel);
+                  reqJson.model = activeFallback.fallbackModel;
+                  if (reqJson.request && typeof reqJson.request === 'object') {
+                    (reqJson.request as Record<string, unknown>).model = activeFallback.fallbackModel;
+                  }
                 }
               }
             }
           }
         }
 
-        let matchingCandidates = customModels.filter((m) =>
-          candidateNames.some((cn) => matchesCustomModel(m, cn)),
-        );
-        if (matchingCandidates.length === 0) {
+        const hasPlaceholder = candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn));
+        const activeFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
+        const requestedRaw = String(
+          reqJson.model ||
+          reqJson.requestedModel ||
+          targetReq.model ||
+          targetReq.requestedModel ||
+          candidateNames[0] ||
+          ''
+        ).toLowerCase();
+        const cleanRequested = requestedRaw.replace(/^models\//, '').trim();
+        const isNativeCloudCode = !hasPlaceholder && !activeFallback && isNativeCloudCodeModel(cleanRequested);
+
+        let matchingCandidates: typeof customModels = [];
+        if (isNativeCloudCode) {
+          log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google.`);
+        } else {
           matchingCandidates = customModels.filter((m) =>
-            candidateNames.some((cn) => {
-              const norm = normalizeGoogleModelId(cn);
-              return norm && (matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`));
-            }),
+            candidateNames.some((cn) => matchesCustomModel(m, cn)),
           );
+          if (matchingCandidates.length === 0) {
+            matchingCandidates = customModels.filter((m) =>
+              candidateNames.some((cn) => {
+                const norm = normalizeGoogleModelId(cn);
+                return norm && (matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`));
+              }),
+            );
+          }
         }
-        let matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
+        let matchedCustomModel = isNativeCloudCode ? undefined : selectBestModelByQuota(matchingCandidates, customModels);
         // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298/M50/M565)
-        if (!matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
+        if (!isNativeCloudCode && !matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
           const activePool = customModels.filter(m => !(m as any)._poolOnly && m.enabled !== false);
           matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
         }
@@ -5158,8 +5580,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           if (isClaudeRequest) {
             sanitizeCloudCodeGenerationConfig(targetReq, effectiveModelName);
             contentsNormalized = true;
+          } else if (sessionKey && isConvCorruptedSignatures(sessionKey)) {
+            // This conversation already experienced rejected/corrupted thought signatures upstream.
+            // Proactively flatten tool calls in past history to plain text to prevent doomed 400 errors and retries.
+            if (flattenAllToolCallsToText(targetReq.contents)) {
+              contentsNormalized = true;
+              normalizeConversationTurns(targetReq.contents);
+            }
           } else {
-            signaturesRestored = restoreThoughtSignatures(targetReq.contents, convId || '', effectiveModelName);
+            signaturesRestored = restoreThoughtSignatures(targetReq.contents, sessionKey, effectiveModelName);
             if (sanitizeUnsignedToolCalls(targetReq.contents)) {
               contentsNormalized = true;
               normalizeConversationTurns(targetReq.contents);
@@ -5169,12 +5598,26 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
         if (signaturesRestored || contentsNormalized) {
           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
-          log.info(`[Proxy] Re-encoded Cloud Code request with normalized turns/signatures (convId=${convId || 'draft'}, model=${effectiveModelName})`);
+          log.debug(`[Proxy] Re-encoded Cloud Code request with normalized turns/signatures (convId=${sessionKey || 'draft'}, model=${effectiveModelName})`);
         }
 
-          if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
-            const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
-            const realSiblings = customModels.filter(m => m.apiKey !== 'auto' && getBaseModelId(m.externalModelName || m.name) === baseName && !getOpenBreaker(m));
+          if (matchedCustomModel && (matchedCustomModel.apiKey === 'auto' || matchedCustomModel.name.includes(':auto-pool'))) {
+            const rawTarget = (matchedCustomModel.externalModelName || matchedCustomModel.name)
+              .replace(/^models\//, '')
+              .replace(/^google:/, '')
+              .replace(/:auto-pool.*$/, '');
+            const baseName = getBaseModelId(rawTarget);
+            const baseNorm = normalizeCloudCodeModelId(baseName);
+            const realSiblings = customModels.filter((m) => {
+              if (m.apiKey === 'auto' || m.name.includes(':auto-pool') || getOpenBreaker(m)) return false;
+              const mRaw = (m.externalModelName || m.name)
+                .replace(/^models\//, '')
+                .replace(/^google:/, '')
+                .replace(/:auto-pool.*$/, '');
+              const mBase = getBaseModelId(mRaw);
+              const mNorm = normalizeCloudCodeModelId(mBase);
+              return mBase === baseName || (baseNorm && mNorm === baseNorm);
+            });
             matchedCustomModel = selectBestModelByQuota(realSiblings, customModels) || matchedCustomModel;
           }
 
@@ -5188,28 +5631,43 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             }
 
             log.info(
-              `[Proxy] Intercepting Cloud Code generation for custom model: ${matchedCustomModel.displayName}${sessId ? ` (session: ${sessId})` : ''}`,
+              `[Proxy] 📥 [Incoming Request] Model requested: [${matchedCustomModel.displayName || matchedCustomModel.name}]${sessId ? ` (session: ${sessId})` : ''}`,
             );
 
             // Resolve fileData URIs then route to translator
             resolveFileData(actualGeminiBody, req.headers as Record<string, string | string[] | undefined>).then(async () => {
-              if (isGoogleCloudCodeModel(matchedCustomModel)) {
+              if (isGoogleCloudCodeModel(matchedCustomModel) || matchedCustomModel.name.includes(':auto-pool') || matchedCustomModel.apiKey === 'auto') {
                 try {
                   const accountPool = getGoogleAccountPool(matchedCustomModel, customModels);
-                  log.info(`[Proxy] Forwarding Cloud Code request via multi-account pool (${accountPool.length} candidate accounts) for model ${matchedCustomModel.externalModelName || matchedCustomModel.name}`);
+                  const resolvedModelName = normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
+                  if (resolvedModelName) {
+                    reqJson.model = resolvedModelName;
+                    if (reqJson.request && typeof reqJson.request === 'object') {
+                      (reqJson.request as Record<string, unknown>).model = resolvedModelName;
+                    }
+                  }
+                  log.debug(`[Proxy] Forwarding Cloud Code request via multi-account pool (${accountPool.length} candidate accounts) for model ${resolvedModelName || matchedCustomModel.name}`);
                   await executeGoogleCloudCodeWithPool(
                     req,
                     res,
                     reqJson,
                     accountPool,
                     isSessionRemote,
-                    convId || '',
+                    sessionKey,
                     sessId,
                   );
                   return;
                 } catch (err) {
                   log.error('[Proxy] Failed to execute Cloud Code request with pool, falling back to translator:', err);
                 }
+              }
+              if (matchedCustomModel.apiKey === 'auto' || matchedCustomModel.name?.includes(':auto-pool')) {
+                log.warn(`[Proxy] Cloud Code pool exhausted and no valid API key on ${matchedCustomModel.name}. Terminating gracefully.`);
+                if (!res.headersSent && !res.writableEnded) {
+                  safeWriteHead(res, 503, { 'Content-Type': 'application/json' });
+                  safeEnd(res, JSON.stringify({ error: { message: 'All Google Cloud Code accounts are currently unavailable or in cooldown.' } }));
+                }
+                return;
               }
 
               handleCustomModelRequest(res, matchedCustomModel, actualGeminiBody, isStream);
@@ -5250,7 +5708,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
       if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
         const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
-        const realSiblings = customModels.filter(m => m.apiKey !== 'auto' && getBaseModelId(m.externalModelName || m.name) === baseName && !getOpenBreaker(m));
+        const baseNorm = normalizeCloudCodeModelId(baseName);
+        const realSiblings = customModels.filter((m) => {
+          if (m.apiKey === 'auto' || getOpenBreaker(m)) return false;
+          const mBase = getBaseModelId(m.externalModelName || m.name);
+          const mNorm = normalizeCloudCodeModelId(mBase);
+          return mBase === baseName || (baseNorm && mNorm === baseNorm);
+        });
         matchedCustomModel = selectBestModelByQuota(realSiblings, customModels) || matchedCustomModel;
       }
 
@@ -5298,6 +5762,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               }
             }
 
+            if (matchedCustomModel.apiKey === 'auto' || matchedCustomModel.name?.includes(':auto-pool')) {
+              log.warn(`[Proxy] Cloud Code pool exhausted and no valid API key on ${matchedCustomModel.name}. Terminating gracefully.`);
+              if (!res.headersSent && !res.writableEnded) {
+                safeWriteHead(res, 503, { 'Content-Type': 'application/json' });
+                safeEnd(res, JSON.stringify({ error: { message: 'All Google Cloud Code accounts are currently unavailable or in cooldown.' } }));
+              }
+              return;
+            }
+
             handleCustomModelRequest(res, matchedCustomModel, geminiBody, isStandardStream);
           });
           return;
@@ -5338,6 +5811,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
 let customModelsWatcher: fs.FSWatcher | null = null;
 let customModelsWatcherDebounce: NodeJS.Timeout | null = null;
+let lastCustomModelsContentOnDisk = '';
 
 export function setupCustomModelsWatcher(): void {
   try {
@@ -5347,29 +5821,56 @@ export function setupCustomModelsWatcher(): void {
       fs.mkdirSync(customModelsDir, { recursive: true });
     }
 
+    try {
+      if (fs.existsSync(customModelsPath)) {
+        lastCustomModelsContentOnDisk = fs.readFileSync(customModelsPath, 'utf-8');
+      }
+    } catch (_) {}
+
     if (customModelsWatcher) {
       customModelsWatcher.close();
       customModelsWatcher = null;
     }
 
     customModelsWatcher = fs.watch(customModelsDir, (_eventType, filename) => {
-      if (filename && filename.includes('custom_models.json')) {
-        if (customModelsWatcherDebounce) clearTimeout(customModelsWatcherDebounce);
-        customModelsWatcherDebounce = setTimeout(() => {
-          log.info('[Proxy] custom_models.json changed on disk. Invalidating model caches...');
-          invalidateModelStoreCache();
-          invalidateHealthCache();
-          try {
-            const models = loadCustomModels();
-            if (models.length > 0) {
-              checkAllModelsHealth(models).catch(() => {});
-              prewarmGoogleAccounts(models);
-              pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery).catch(() => {});
+      if (filename) {
+        const baseName = path.basename(filename);
+        if (baseName.endsWith('.tmp') || baseName.includes('.tmp.')) return;
+        if (baseName === 'custom_models.json') {
+          if (customModelsWatcherDebounce) clearTimeout(customModelsWatcherDebounce);
+          customModelsWatcherDebounce = setTimeout(() => {
+            try {
+              if (fs.existsSync(customModelsPath)) {
+                const current = fs.readFileSync(customModelsPath, 'utf-8');
+                if (current === lastCustomModelsContentOnDisk) return;
+                lastCustomModelsContentOnDisk = current;
+              }
+            } catch (_) {}
+            log.info('[Proxy] custom_models.json changed on disk. Invalidating model caches...');
+            invalidateModelStoreCache();
+            invalidateHealthCache();
+            try {
+              const models = loadCustomModels();
+              if (models.length > 0) {
+                for (const m of models) {
+                  if (m.accountEmail && m.quotas) {
+                    const key = getAccountQuotaKey(m);
+                    updateLiveAccountQuota(key, m.quotas as any);
+                  }
+                }
+                checkAllModelsHealth(models).catch(() => {});
+                prewarmGoogleAccounts(models);
+                pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery)
+                  .then(() => {
+                    verifyAndReconcileCooldowns(Date.now(), models);
+                  })
+                  .catch(() => {});
+              }
+            } catch (err) {
+              log.warn('[Proxy] Failed to reload/health-check models after file change:', err);
             }
-          } catch (err) {
-            log.warn('[Proxy] Failed to reload/health-check models after file change:', err);
-          }
-        }, 200);
+          }, 1000);
+        }
       }
     });
   } catch (err) {
@@ -5397,17 +5898,25 @@ export function startQuotaPollingInterval(intervalMs = 180_000): void {
   stopQuotaPollingInterval();
   try {
     const models = loadCustomModels();
-    pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery).catch((err) => {
-      log.debug('[Proxy] Initial quota polling skipped:', err?.message || err);
-    });
+    pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery)
+      .then(() => {
+        verifyAndReconcileCooldowns(Date.now(), models);
+      })
+      .catch((err) => {
+        log.debug('[Proxy] Initial quota polling skipped:', err?.message || err);
+      });
   } catch (_) {}
 
   quotaPollTimer = setInterval(() => {
     try {
       const models = loadCustomModels();
-      pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery).catch((err) => {
-        log.debug('[Proxy] Quota polling tick skipped:', err?.message || err);
-      });
+      pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery)
+        .then(() => {
+          verifyAndReconcileCooldowns(Date.now(), models);
+        })
+        .catch((err) => {
+          log.debug('[Proxy] Quota polling tick skipped:', err?.message || err);
+        });
     } catch (_) {}
   }, intervalMs);
 
@@ -5493,11 +6002,21 @@ export function startProxy(): Promise<number> {
         // Execute cleanup initialization after the server is already listening
         // so that failures here don't prevent the port from binding.
         try {
-          loadPersistentQuotaCache().catch(() => {});
+          const models = loadCustomModels();
+          loadPersistentQuotaCache()
+            .then(() => {
+              for (const m of models) {
+                if (m.accountEmail && m.quotas) {
+                  const key = getAccountQuotaKey(m);
+                  updateLiveAccountQuota(key, m.quotas as any);
+                }
+              }
+              verifyAndReconcileCooldowns(Date.now(), models);
+            })
+            .catch(() => {});
           startCleanupInterval();
           startQuotaPollingInterval();
           setupCustomModelsWatcher();
-          const models = loadCustomModels();
           prewarmGoogleAccounts(models);
         } catch (err) {
           log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
@@ -5516,10 +6035,42 @@ export function startProxy(): Promise<number> {
         if (err.code === 'EADDRINUSE') {
           if (attemptIdx === 0 && eaddrinuseRetries < MAX_PORT_RETRIES) {
             eaddrinuseRetries += 1;
-            log.warn(`[Proxy] Port ${primaryPort} busy (EADDRINUSE), retrying in 350ms (${eaddrinuseRetries}/${MAX_PORT_RETRIES})...`);
-            setTimeout(() => {
+            log.warn(`[Proxy] Port ${primaryPort} busy (EADDRINUSE), probing port owner (${eaddrinuseRetries}/${MAX_PORT_RETRIES})...`);
+
+            const probeAndEvictStub = (callback: () => void) => {
+              const probeReq = http.get(`http://${primaryHost}:${primaryPort}/health`, { timeout: 300 }, (probeRes) => {
+                let body = '';
+                probeRes.on('data', (chunk) => { body += chunk; });
+                probeRes.on('end', () => {
+                  const isStubHeader = probeRes.headers['x-proxy-stub'] === '1';
+                  let stubPid: number | null = null;
+                  try {
+                    const parsed = JSON.parse(body);
+                    if (parsed.stub || isStubHeader) {
+                      stubPid = typeof parsed.pid === 'number' ? parsed.pid : null;
+                    }
+                  } catch (_) {}
+
+                  if (isStubHeader || stubPid) {
+                    log.warn(`[Proxy] Detected proxy-stub (pid=${stubPid}) occupying primary port ${primaryPort}. Terminating stub to reclaim port...`);
+                    if (stubPid && stubPid !== process.pid) {
+                      try {
+                        process.kill(stubPid, 'SIGKILL');
+                      } catch (_) {
+                        try { process.kill(stubPid); } catch (_) {}
+                      }
+                    }
+                  }
+                  setTimeout(callback, 250);
+                });
+              });
+              probeReq.on('error', () => { setTimeout(callback, 350); });
+              probeReq.on('timeout', () => { probeReq.destroy(); setTimeout(callback, 350); });
+            };
+
+            probeAndEvictStub(() => {
               tryListen(primaryPort, primaryHost);
-            }, 350);
+            });
             return;
           }
           if (attemptIdx + 1 < portCandidates.length) {

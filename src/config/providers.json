@@ -89,7 +89,8 @@
     "docsUrl": "https://aistudio.google.com",
     "suggestedModels": [
       { "id": "gemini-3.8-flash-tiered", "displayName": "Gemini 3.8 Flash" },
-      { "id": "gemini-3.7-flash-tiered", "displayName": "Gemini 3.7 Flash" }
+      { "id": "gemini-3.7-flash-tiered", "displayName": "Gemini 3.7 Flash" },
+      { "id": "gemini-3.6-flash-tiered", "displayName": "Gemini 3.6 Flash" }
     ]
   },
   {

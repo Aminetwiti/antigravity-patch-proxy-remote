@@ -44,7 +44,7 @@ En une ligne (PowerShell **ADMINISTRATEUR**) :
 ```powershell
 Start-Process -FilePath "powershell" -Verb RunAs -ArgumentList @(
   "-NoProfile","-ExecutionPolicy","Bypass","-File",
-  "C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\scripts\mitm\start_mitm_443.ps1"
+  "<repo-root>\scripts\mitm\start_mitm_443.ps1"
 )
 ```
 
@@ -91,14 +91,14 @@ powershell.exe -Command "Stop-Process -Name Antigravity,language_server -Force -
 # ───────────────────────────────────────────────────────────────────
 # Étape 2 — Rebuild + patch chirurgical (Cause #1)
 # ───────────────────────────────────────────────────────────────────
-cd /mnt/c/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main
+cd /mnt/c/Users/developer/Downloads/antigravity-add-model-main/antigravity-add-model-main
 git pull                         # si repo versionné
 npm install --no-save @electron/asar
 npm run build                    # compile dist/
 
 # Snapshot avant patch
 TS=$(date +%Y%m%dT%H%M%S)
-RES="/mnt/c/Users/amine/AppData/Local/Programs/Antigravity/resources"
+RES="/mnt/c/Users/developer/AppData/Local/Programs/Antigravity/resources"
 cp "$RES/app.asar" "$RES/app.asar.pre-update-$TS.bak"
 
 # Patch
@@ -115,7 +115,7 @@ echo "delta: $DELTA B"
 # ───────────────────────────────────────────────────────────────────
 # Étape 3 — Lancer le MITM (Cause #2, depuis PowerShell ADMIN)
 # ───────────────────────────────────────────────────────────────────
-powershell.exe -Command "Start-Process -FilePath 'powershell' -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\scripts\mitm\start_mitm_443.ps1'"
+powershell.exe -Command "Start-Process -FilePath 'powershell' -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','<repo-root>\scripts\mitm\start_mitm_443.ps1'"
 
 # Attendre que le MITM démarre
 sleep 5
@@ -124,7 +124,7 @@ powershell.exe -Command "Get-NetTCPConnection -LocalPort 443 -State Listen | Whe
 # ───────────────────────────────────────────────────────────────────
 # Étape 4 — Lancer Antigravity
 # ───────────────────────────────────────────────────────────────────
-powershell.exe -Command "Start-Process -FilePath 'C:\Users\amine\AppData\Local\Programs\Antigravity\Antigravity.exe'"
+powershell.exe -Command "Start-Process -FilePath '%LOCALAPPDATA%\\Programs\\Antigravity\Antigravity.exe'"
 
 # Attendre la stabilisation
 sleep 20
@@ -132,7 +132,7 @@ sleep 20
 # ───────────────────────────────────────────────────────────────────
 # Étape 5 — Vérifier
 # ───────────────────────────────────────────────────────────────────
-LOG="/mnt/c/Users/amine/AppData/Roaming/Antigravity/logs/main.log"
+LOG="/mnt/c/Users/developer/AppData/Roaming/Antigravity/logs/main.log"
 echo "=== ports ==="
 powershell.exe -Command "Get-NetTCPConnection -LocalPort ${AG_PROXY_PORT:-51074},443 -State Listen | Where-Object { \$_.LocalAddress -match '127.0.0.1' } | Format-Table LocalAddress,LocalPort,OwningProcess,State"
 echo "=== dernier log ==="

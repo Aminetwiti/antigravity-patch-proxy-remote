@@ -13,13 +13,13 @@ function winToWsl(winPath: string): string {
 
 describe('platform winToWsl path conversion', () => {
   it('converts Windows drive paths (C:\\...) to WSL mount paths (/mnt/c/...)', () => {
-    expect(winToWsl('C:\\Users\\amine\\AppData')).toBe('/mnt/c/Users/amine/AppData');
+    expect(winToWsl('C:\\Users\\developer\\AppData')).toBe('/mnt/c/Users/developer/AppData');
     expect(winToWsl('D:\\Projects\\antigravity')).toBe('/mnt/d/Projects/antigravity');
     expect(winToWsl('E:\\test\\file.txt')).toBe('/mnt/e/test/file.txt');
   });
 
   it('handles lower and upper case drive letters identically', () => {
-    expect(winToWsl('c:\\Users\\amine')).toBe('/mnt/c/Users/amine');
+    expect(winToWsl('c:\\Users\\developer')).toBe('/mnt/c/Users/developer');
     expect(winToWsl('Z:\\data')).toBe('/mnt/z/data');
   });
 

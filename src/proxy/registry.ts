@@ -83,16 +83,9 @@ function loadTranslators(): void {
     log.error('[TranslatorRegistry] Failed to scan translators directory:', (err as Error).message);
   }
 
-  if (!hasLoggedTranslators) {
-    hasLoggedTranslators = true;
-    log.info(
-      `[TranslatorRegistry] ${translators.size} provider translator(s) loaded: ${[...translators.keys()].join(', ')}`,
-    );
-  } else {
-    log.debug(
-      `[TranslatorRegistry] ${translators.size} provider translator(s) loaded: ${[...translators.keys()].join(', ')}`,
-    );
-  }
+  log.debug(
+    `[TranslatorRegistry] ${translators.size} provider translator(s) loaded: ${[...translators.keys()].join(', ')}`,
+  );
 }
 
 // Providers grouped by transport compatibility.
@@ -105,7 +98,7 @@ function loadTranslators(): void {
 export function getTranslator(provider: string): TranslatorModule | null {
   if (OPENAI_COMPAT.has(provider)) return translators.get('openai') || null;
   if (ANTHROPIC_COMPAT.has(provider)) return translators.get('anthropic') || null;
-  if (provider === 'google' || provider === 'google-gemini') return translators.get('google') || null;
+  if (provider === 'google' || provider === 'google-gemini' || provider === 'gemini-cli') return translators.get('google') || null;
   return translators.get('openai') || null;
 }
 
@@ -118,8 +111,8 @@ export function translateRequest(
   const t = getTranslator(provider);
   let payload: unknown = geminiBody;
 
-  if (provider === 'google' || provider === 'google-gemini') {
-    payload = geminiBody;
+  if (provider === 'google' || provider === 'google-gemini' || provider === 'gemini-cli') {
+    payload = t?.mapGeminiToGoogle ? t.mapGeminiToGoogle(geminiBody, modelName) : geminiBody;
   } else if (OPENAI_COMPAT.has(provider)) {
     payload = t?.mapGeminiToOpenAI ? t.mapGeminiToOpenAI(geminiBody, modelName) : geminiBody;
   } else if (ANTHROPIC_COMPAT.has(provider)) {
@@ -149,7 +142,7 @@ export function translateRequest(
 export function translateResponse(provider: string, providerRes: unknown, modelName: string): unknown {
   const t = getTranslator(provider);
 
-  if (provider === 'google' || provider === 'google-gemini') return providerRes;
+  if (provider === 'google' || provider === 'google-gemini' || provider === 'gemini-cli') return providerRes;
   if (OPENAI_COMPAT.has(provider)) return t?.mapOpenAIToGemini ? t.mapOpenAIToGemini(providerRes, modelName) : providerRes;
   if (ANTHROPIC_COMPAT.has(provider)) return t?.mapAnthropicToGemini ? t.mapAnthropicToGemini(providerRes, modelName) : providerRes;
 
@@ -165,7 +158,7 @@ export function translateResponse(provider: string, providerRes: unknown, modelN
 export function translateStreamChunk(provider: string, chunk: unknown, modelName: string): unknown {
   const t = getTranslator(provider);
 
-  if (provider === 'google' || provider === 'google-gemini') return t?.mapGoogleChunkToGemini ? t.mapGoogleChunkToGemini(chunk, modelName) : null;
+  if (provider === 'google' || provider === 'google-gemini' || provider === 'gemini-cli') return t?.mapGoogleChunkToGemini ? t.mapGoogleChunkToGemini(chunk, modelName) : null;
   if (OPENAI_COMPAT.has(provider)) return t?.mapOpenAIChunkToGemini ? t.mapOpenAIChunkToGemini(chunk, modelName) : null;
   if (ANTHROPIC_COMPAT.has(provider)) return t?.mapAnthropicChunkToGemini ? t.mapAnthropicChunkToGemini(chunk, modelName) : null;
 
@@ -186,14 +179,14 @@ export function getProviderHeaders(
     'Content-Type': 'application/json',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
   };
-  if (!apiKey || apiKey === 'none') {
+  if (!apiKey || apiKey === 'none' || apiKey === 'auto') {
     return extraHeaders ? { ...headers, ...extraHeaders } : headers;
   }
 
   if (provider === 'anthropic' || ANTHROPIC_COMPAT.has(provider)) {
     headers['x-api-key'] = apiKey;
     headers['anthropic-version'] = '2025-04-01';
-  } else if (provider === 'google' || provider === 'google-gemini') {
+  } else if (provider === 'google' || provider === 'google-gemini' || provider === 'gemini-cli') {
     if (apiKey.startsWith('ya29.')) {
       headers['Authorization'] = `Bearer ${apiKey}`;
     } else {
@@ -216,7 +209,7 @@ export function getProviderHeaders(
 
 
 export function supportsStreaming(provider: string): boolean {
-  return OPENAI_COMPAT.has(provider) || ANTHROPIC_COMPAT.has(provider) || provider === 'google' || provider === 'google-gemini';
+  return OPENAI_COMPAT.has(provider) || ANTHROPIC_COMPAT.has(provider) || provider === 'google' || provider === 'google-gemini' || provider === 'gemini-cli';
 }
 
 // ─── URL Helpers ──────────────────────────────────────────────────────────

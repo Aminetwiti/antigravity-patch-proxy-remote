@@ -3,8 +3,11 @@ import {
   classifyLogLevel,
   isLogNoise,
   parseLogLine,
+  getLogDedupKey,
   highlightText,
   escapeHtml,
+  matchesFacetedQuery,
+  sanitizeLogText,
 } from './log-viewer';
 
 describe('Structured Log Viewer - classifyLogLevel', () => {
@@ -98,7 +101,7 @@ describe('Structured Log Viewer - isLogNoise', () => {
   });
 
   it('detects ripgrep path parse error as noise', () => {
-    expect(isLogNoise('Error parsing grep result: strconv.Atoi: parsing "/Users/amine/file.tsx": invalid syntax')).toBe(true);
+    expect(isLogNoise('Error parsing grep result: strconv.Atoi: parsing "/Users/developer/file.tsx": invalid syntax')).toBe(true);
   });
 
   it('detects test cascade cancellations as noise', () => {
@@ -173,3 +176,108 @@ describe('Structured Log Viewer - highlightText & escapeHtml', () => {
     expect(highlightText('Pure text & more', '')).toBe('Pure text &amp; more');
   });
 });
+
+describe('Structured Log Viewer - Deduplication & Repeat Badging', () => {
+  it('extracts repeatCount from (×N) or (xN) suffixes', () => {
+    const entry1 = parseLogLine('🔄 [FALLBACK]  Bascule automatique vers gemini-3.8-flash-tiered (×5)');
+    expect(entry1.repeatCount).toBe(5);
+    expect(entry1.message).toBe('🔄 [FALLBACK]  Bascule automatique vers gemini-3.8-flash-tiered');
+
+    const entry2 = parseLogLine('Some message (x12)');
+    expect(entry2.repeatCount).toBe(12);
+    expect(entry2.message).toBe('Some message');
+  });
+
+  it('produces identical getLogDedupKey regardless of timestamp variations', () => {
+    const entryA = parseLogLine('[2026-10-03 16:21:24.144] [info] [Proxy] Fallback succeeded');
+    const entryB = parseLogLine('[2026-10-03 16:21:24.148] [info] [Proxy] Fallback succeeded');
+
+    const keyA = getLogDedupKey(entryA);
+    const keyB = getLogDedupKey(entryB);
+
+    expect(keyA).toBe(keyB);
+    expect(keyA).toBe('info::[Proxy] Fallback succeeded');
+  });
+
+  it('distinguishes different log levels or distinct messages', () => {
+    const infoEntry = parseLogLine('[2026-10-03 16:21:24.144] [info] Connection established');
+    const warnEntry = parseLogLine('[2026-10-03 16:21:24.144] [warn] Connection established');
+
+    expect(getLogDedupKey(infoEntry)).not.toBe(getLogDedupKey(warnEntry));
+  });
+});
+
+describe('Structured Log Viewer - Enhanced Subsystems and Resilience', () => {
+  it('parses sliced or partial electron log timestamp cleanly', () => {
+    const raw = '026-10-06 16:15:47.118] [info]  [Proxy] Request: POST /v1internal:streamGenerateContent';
+    const entry = parseLogLine(raw);
+    expect(entry.time).toBe('16:15:47.118');
+    expect(entry.subsystem).toBe('proxy');
+    expect(entry.level).toBe('info');
+    expect(entry.message).toContain('Request: POST /v1internal:streamGenerateContent');
+  });
+
+  it('elevates HTTP 504 server errors to error level', () => {
+    const raw = '[2026-10-06 16:15:50.000] [info] [Proxy] Account received HTTP 504 (server error/timeout)';
+    const entry = parseLogLine(raw);
+    expect(entry.level).toBe('error');
+    expect(entry.subsystem).toBe('proxy');
+  });
+
+  it('identifies cooldown verification subsystem', () => {
+    const raw = '[2026-10-06 16:16:00.819] [info] [Proxy] 🟢 Cooldown Verification / Wake-up: 61 checked';
+    const entry = parseLogLine(raw);
+    expect(entry.subsystem).toBe('cooldown');
+  });
+
+  it('identifies GoogleAuth subsystem', () => {
+    const raw = '[2026-10-06 16:16:05.100] [info] [GoogleAuth] 🟢 Live quota for user@gmail.com: Gemini 5h=38%';
+    const entry = parseLogLine(raw);
+    expect(entry.subsystem).toBe('auth');
+  });
+
+  it('filters engine boilerplate noise lines', () => {
+    expect(isLogNoise('============================================================')).toBe(true);
+    expect(isLogNoise('Power save blocker started: 0')).toBe(true);
+    expect(isLogNoise('[IDE Wizard] Already shown, skipping.')).toBe(true);
+    expect(isLogNoise('persisted state: budget=0 breakers=0')).toBe(true);
+    expect(isLogNoise('Local:       https://127.0.0.1:53631/')).toBe(true);
+    expect(isLogNoise('(Use `Antigravity --trace-warnings ...` to show where the warning was created)')).toBe(true);
+  });
+});
+
+describe('Structured Log Viewer - Faceted Search & Sanitization', () => {
+  it('extracts traceId and jsonPayload when present', () => {
+    const raw = '[2026-10-06 16:15:47.118] [info] [Proxy] Request payload Trace: 0xcdbb2ef6303b6b91 data: {"model":"gemini-2.5-pro","stream":true}';
+    const entry = parseLogLine(raw);
+    expect(entry.traceId).toBe('0xcdbb2ef6303b6b91');
+    expect(entry.hasPayload).toBe(true);
+    expect(entry.jsonPayload).toEqual({ model: 'gemini-2.5-pro', stream: true });
+  });
+
+  it('filters with faceted query syntax', () => {
+    const entry = parseLogLine('[2026-10-06 16:15:50.000] [error] [Proxy] Rotation triggered target:gemini');
+    expect(matchesFacetedQuery(entry, 'lvl:error')).toBe(true);
+    expect(matchesFacetedQuery(entry, 'lvl:info')).toBe(false);
+    expect(matchesFacetedQuery(entry, 'sub:rotation')).toBe(true);
+    expect(matchesFacetedQuery(entry, '-noise')).toBe(true);
+    expect(matchesFacetedQuery(entry, 'Rotation')).toBe(true);
+    expect(matchesFacetedQuery(entry, '-failed')).toBe(true);
+    expect(matchesFacetedQuery(entry, '-gemini')).toBe(false);
+
+    const traceEntry = parseLogLine('[2026-10-06 16:15:50.000] [info] Trace: 0xabc123');
+    expect(matchesFacetedQuery(traceEntry, 'trace:0xabc')).toBe(true);
+  });
+
+  it('sanitizes API keys, tokens, and local usernames in log export', () => {
+    const raw = 'Calling Gemini with key AIzaSyD9876543210123456789012345678901 and path C:\\Users\\johndoe\\AppData\\Local and /home/johndoe/.config';
+    const sanitized = sanitizeLogText(raw);
+    expect(sanitized).not.toContain('AIzaSyD9876543210123456789012345678901');
+    expect(sanitized).toContain('[REDACTED_GEMINI_KEY]');
+    expect(sanitized).not.toContain('johndoe');
+    expect(sanitized).toContain('C:\\Users\\<user>\\AppData\\Local');
+    expect(sanitized).toContain('/home/<user>/.config');
+  });
+});
+
+

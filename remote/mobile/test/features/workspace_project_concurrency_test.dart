@@ -8,38 +8,38 @@ void main() {
       const ProjectItem(
         id: 'p1',
         name: 'antigravity-add-model-main',
-        folderUri: 'file:///c%3A/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main',
-        path: 'c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main',
+        folderUri: 'file:///c%3A/Users/developer/Downloads/antigravity-add-model-main/antigravity-add-model-main',
+        path: 'c:/Users/developer/Downloads/antigravity-add-model-main/antigravity-add-model-main',
       ),
       const ProjectItem(
         id: 'p2',
-        name: 'sols-pro-vision',
-        folderUri: 'file:///c%3A/Users/amine/Downloads/sols-pro-vision',
-        path: 'c:/Users/amine/Downloads/sols-pro-vision',
+        name: 'sample-vision-project',
+        folderUri: 'file:///c%3A/Users/developer/Downloads/sample-vision-project',
+        path: 'c:/Users/developer/Downloads/sample-vision-project',
       ),
       const ProjectItem(
         id: 'p3',
         name: 'www - Copie',
-        folderUri: 'file:///c%3A/Users/amine/Downloads/demo%20taxi/www%20-%20Copie',
-        path: 'c:/Users/amine/Downloads/demo taxi/www - Copie',
+        folderUri: 'file:///c%3A/Users/developer/Downloads/demo-web-app',
+        path: 'c:/Users/developer/Downloads/demo-web-app',
       ),
       const ProjectItem(
         id: 'p4',
-        name: 'c:\\Users\\amine\\OmniRoute',
-        folderUri: 'file:///c%3A%5CUsers%5Camine%5COmniRoute',
-        path: 'c:/Users/amine/OmniRoute',
+        name: 'c:\\Users\\developer\\OmniRoute',
+        folderUri: 'file:///c%3A%5CUsers%5Cdeveloper%5COmniRoute',
+        path: 'c:/Users/developer/OmniRoute',
       ),
       const ProjectItem(
         id: 'p5',
         name: 'mo7i',
-        folderUri: 'file:///c%3A/Users/amine/Desktop/mo7i',
-        path: 'c:/Users/amine/Desktop/mo7i',
+        folderUri: 'file:///c%3A/Users/developer/Desktop/sample-app',
+        path: 'c:/Users/developer/Desktop/sample-app',
       ),
       const ProjectItem(
         id: 'p6',
-        name: 'c:\\Users\\amine\\Desktop\\client-project\\posweb',
-        folderUri: 'file:///c%3A%5CUsers%5Camine%5CDesktop%5Cclient-project%5Cposweb',
-        path: 'c:/Users/amine/Desktop/client-project/posweb',
+        name: 'c:\\Users\\developer\\Desktop\\sample-posweb',
+        folderUri: 'file:///c%3A%5CUsers%5Cdeveloper%5CDesktop%5Cclient-project%5Cposweb',
+        path: 'c:/Users/developer/Desktop/sample-posweb',
       ),
     ];
 
@@ -81,7 +81,7 @@ void main() {
       final mixedSessions = [
         const CascadeSession(
           id: 's-user-1',
-          workspacePath: 'c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main',
+          workspacePath: 'c:/Users/developer/Downloads/antigravity-add-model-main/antigravity-add-model-main',
           title: 'Implémenter le nouveau modèle Claude Sonnet 4.6',
           status: 'CASCADE_STATUS_READY',
           time: 'Maintenant',
@@ -121,21 +121,21 @@ void main() {
       final sessions = [
         const CascadeSession(
           id: 'omni-1',
-          workspacePath: 'C:\\Users\\amine\\OmniRoute',
+          workspacePath: 'C:\\Users\\developer\\OmniRoute',
           title: 'Refonte API OmniRoute',
           status: 'CASCADE_STATUS_READY',
           time: '10m',
         ),
         const CascadeSession(
           id: 'omni-2',
-          workspacePath: 'file:///c%3A%5CUsers%5Camine%5COmniRoute',
+          workspacePath: 'file:///c%3A%5CUsers%5Cdeveloper%5COmniRoute',
           title: 'Fix proxy routing',
           status: 'CASCADE_STATUS_READY',
           time: '5m',
         ),
         const CascadeSession(
           id: 'pos-1',
-          workspacePath: 'c:/Users/amine/Desktop/client-project/posweb',
+          workspacePath: 'c:/Users/developer/Desktop/sample-posweb',
           title: 'Mise à jour caisse',
           status: 'CASCADE_STATUS_READY',
           time: '1h',
@@ -148,8 +148,8 @@ void main() {
         projects: officialProjects,
       );
 
-      expect(grouped['c:\\Users\\amine\\OmniRoute']?.length, equals(2));
-      expect(grouped['c:\\Users\\amine\\Desktop\\client-project\\posweb']?.length, equals(1));
+      expect(grouped['c:\\Users\\developer\\OmniRoute']?.length, equals(2));
+      expect(grouped['c:\\Users\\developer\\Desktop\\sample-posweb']?.length, equals(1));
       expect(grouped.containsKey('Outside of Project'), isFalse);
     });
 

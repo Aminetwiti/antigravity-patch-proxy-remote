@@ -11,7 +11,7 @@ import type { CustomModel } from './types';
  */
 export function resolveProvider(model: CustomModel): string {
   if (model.provider === 'custom' || model.provider === 'openrouter') return 'openai';
-  if (model.provider === 'google-gemini') return 'google';
+  if (model.provider === 'google-gemini' || model.provider === 'gemini-cli') return 'google';
   return model.provider;
 }
 

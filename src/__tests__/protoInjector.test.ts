@@ -400,4 +400,87 @@ describe('injectCustomModelsIntoUserStatus', () => {
     const sortLabels = parsed.userStatus.cascadeModelConfigData.clientModelSorts[0].groups[0].modelLabels;
     expect(sortLabels.length).toBe(2);
   });
+
+  it('strips disabled models (e.g. Claude Sonnet/Opus) from Connect-JSON UserStatus response', () => {
+    const jsonPayload = JSON.stringify({
+      userStatus: {
+        cascadeModelConfigData: {
+          clientModelConfigs: [
+            { label: 'Gemini 3.8 Flash', modelOrAlias: { model: 'gemini-3.8-flash' } },
+            { label: 'Claude 3.5 Sonnet', modelOrAlias: { model: 'claude-3-5-sonnet' } },
+            { label: 'Claude Opus 4.6', modelOrAlias: { model: 'claude-opus-4-6' } },
+          ],
+          clientModelSorts: [
+            {
+              name: 'Recommended',
+              groups: [{ modelLabels: ['Gemini 3.8 Flash', 'Claude 3.5 Sonnet', 'Claude Opus 4.6'] }],
+            },
+          ],
+        },
+      },
+    });
+    const jsonBuf = Buffer.from(jsonPayload, 'utf8');
+    const header = Buffer.alloc(5);
+    header[0] = 0;
+    header.writeUInt32BE(jsonBuf.length, 1);
+    const framedBuf = Buffer.concat([header, jsonBuf]);
+
+    // Suppose user disabled claude-sonnet-4-6 and claude-opus-4-6 in custom_models.json
+    const disabledSet = new Set(['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-3-5-sonnet']);
+    const result = injectCustomModelsIntoUserStatus(framedBuf, [], undefined, disabledSet);
+
+    expect(result.modified).toBe(true);
+    const bodyLen = result.buffer.readUInt32BE(1);
+    const parsed = JSON.parse(result.buffer.subarray(5, 5 + bodyLen).toString('utf8'));
+    const configs = parsed.userStatus.cascadeModelConfigData.clientModelConfigs;
+
+    // Both Claude models should be stripped out!
+    expect(configs.length).toBe(1);
+    expect(configs[0].label).toBe('Gemini 3.8 Flash');
+
+    const sortLabels = parsed.userStatus.cascadeModelConfigData.clientModelSorts[0].groups[0].modelLabels;
+    expect(sortLabels).toEqual(['Gemini 3.8 Flash']);
+  });
+
+  it('strips disabled models from Protobuf GetAvailableModels response', () => {
+    // Build response with Gemini and Claude
+    const entryGemini = encodeProtoBuf([
+      { tag: 0x0a, value: Buffer.from('gemini-3.8-flash-tiered') },
+      { tag: 0x12, value: Buffer.from('Gemini 3.8 Flash') },
+    ]);
+    const entryClaude = encodeProtoBuf([
+      { tag: 0x0a, value: Buffer.from('claude-3-5-sonnet') },
+      { tag: 0x12, value: Buffer.from('Claude 3.5 Sonnet') },
+    ]);
+
+    const msgBody = Buffer.concat([
+      encodeVarint(0x1a),
+      encodeVarint(entryGemini.length),
+      entryGemini,
+      encodeVarint(0x1a),
+      encodeVarint(entryClaude.length),
+      entryClaude,
+    ]);
+    const response = buildGrpcWebFrame(0, msgBody);
+
+    const disabledSet = new Set(['claude-sonnet-4-6', 'claude-3-5-sonnet']);
+    const result = injectCustomModelsIntoResponse(response, [], undefined, false, disabledSet);
+
+    expect(result.modified).toBe(true);
+    // Parse result buffer to verify Claude is gone
+    const bodyLen = result.buffer.readUInt32BE(1);
+    const resultBody = result.buffer.subarray(5, 5 + bodyLen);
+    const fields = parseProtoRaw(resultBody);
+    const modelFields = fields.filter((f) => f.fieldNum === 3);
+
+    // Only Gemini + 651 fallback compatibility placeholders should remain (Claude must be stripped)
+    expect(modelFields.length).toBe(652);
+    const modelIds = modelFields.map((mf) => {
+      const sf = parseProtoRaw(mf.raw!);
+      return sf.find((f) => f.fieldNum === 1)?.raw?.toString('utf8');
+    });
+    expect(modelIds).toContain('gemini-3.8-flash-tiered');
+    expect(modelIds).not.toContain('claude-3-5-sonnet');
+  });
 });
+

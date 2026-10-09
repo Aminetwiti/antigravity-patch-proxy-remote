@@ -57,39 +57,39 @@ func TestOverlappingWorkspacePathMatching(t *testing.T) {
 		{
 			ID:        "proj-root",
 			Name:      "my-monorepo",
-			FolderURI: "file:///c:/users/amine/projects/my-monorepo",
-			Path:      "c:/users/amine/projects/my-monorepo",
+			FolderURI: "file:///c:/Users/developer/projects/my-monorepo",
+			Path:      "c:/Users/developer/projects/my-monorepo",
 		},
 		{
 			ID:        "proj-sub",
 			Name:      "my-subapp",
-			FolderURI: "file:///c:/users/amine/projects/my-monorepo/packages/my-subapp",
-			Path:      "c:/users/amine/projects/my-monorepo/packages/my-subapp",
+			FolderURI: "file:///c:/Users/developer/projects/my-monorepo/packages/my-subapp",
+			Path:      "c:/Users/developer/projects/my-monorepo/packages/my-subapp",
 		},
 		{
 			ID:        "proj-encoded",
-			Name:      "c:\\Users\\amine\\OmniRoute",
-			FolderURI: "file:///c%3A%5CUsers%5Camine%5COmniRoute",
-			Path:      "c:/Users/amine/OmniRoute",
+			Name:      "c:\\Users\\developer\\OmniRoute",
+			FolderURI: "file:///c%3A%5CUsers%5Cdeveloper%5COmniRoute",
+			Path:      "c:/Users/developer/OmniRoute",
 		},
 	}
 	projectsCachedAt = time.Now().Add(10 * time.Hour) // cache chaud
 	defer InvalidateProjectsCache()
 
 	// 1. URI sous le sous-projet -> doit matcher proj-sub
-	id1 := projectIDFromRegistry("file:///c:/users/amine/projects/my-monorepo/packages/my-subapp")
+	id1 := projectIDFromRegistry("file:///c:/Users/developer/projects/my-monorepo/packages/my-subapp")
 	if id1 != "proj-sub" {
 		t.Errorf("Attendu 'proj-sub', reçu '%s'", id1)
 	}
 
 	// 2. URI encodée avec %5C pour OmniRoute -> doit matcher proj-encoded
-	id2 := projectIDFromRegistry("file:///c%3A%5CUsers%5Camine%5COmniRoute")
+	id2 := projectIDFromRegistry("file:///c%3A%5CUsers%5Cdeveloper%5COmniRoute")
 	if id2 != "proj-encoded" {
 		t.Errorf("Attendu 'proj-encoded', reçu '%s'", id2)
 	}
 
 	// 3. Chemin Windows avec antislashs pour OmniRoute
-	id3 := projectIDFromRegistry("c:\\Users\\amine\\OmniRoute")
+	id3 := projectIDFromRegistry("c:\\Users\\developer\\OmniRoute")
 	if id3 != "proj-encoded" {
 		t.Errorf("Attendu 'proj-encoded' via chemin natif, reçu '%s'", id3)
 	}
@@ -108,7 +108,7 @@ func TestSubagentsExclusionFromSessionsAndWorkspaces(t *testing.T) {
 		"user-session-1": {
 			CascadeID: "user-session-1",
 			Title:     "Ajout du mode sombre",
-			Workspace: "file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main",
+			Workspace: "file:///c:/Users/developer/Downloads/antigravity-add-model-main/antigravity-add-model-main",
 			ProjectID: "cd157ca6-2bd3-4557-be26-cf478dfe0e46",
 			Status:    "CASCADE_STATUS_READY",
 			UpdatedAt: time.Now(),
@@ -167,8 +167,8 @@ func TestWindowsUriAndPathNormalizationIdempotence(t *testing.T) {
 	}{
 		{"file:///c%3A/Users/developer/test", "c:/Users/developer/test"},
 		{"file:///c%3A%5CUsers%5Cdeveloper%5COmniRoute", "c:/Users/developer/OmniRoute"},
-		{"C:\\Users\\developer\\Desktop\\client-project\\posweb", "C:/Users/developer/Desktop/client-project/posweb"},
-		{"file:///C:/Users/developer/Downloads/demo%20taxi/www%20-%20Copie/", "C:/Users/developer/Downloads/demo taxi/www - Copie"},
+		{"C:\\Users\\developer\\Desktop\\sample-posweb", "C:/Users/developer/Desktop/sample-posweb"},
+		{"file:///C:/Users/developer/Downloads/demo-web-app/", "C:/Users/developer/Downloads/demo-web-app"},
 		{"c:/Users/developer/repo", "c:/Users/developer/repo"},
 		{"", ""},
 	}
@@ -216,7 +216,7 @@ func TestConcurrentSessionFilteringConsistency(t *testing.T) {
 				cid: {
 					CascadeID: cid,
 					Title:     fmt.Sprintf("User Session %d", idx),
-					Workspace: "file:///c:/Users/amine/OmniRoute",
+					Workspace: "file:///c:/Users/developer/OmniRoute",
 					Status:    "CASCADE_STATUS_READY",
 					UpdatedAt: time.Now(),
 					StepCount: 2,

@@ -23,6 +23,55 @@ import { getCachedHealth, type ModelHealthResult } from './modelHealthChecker';
 import { expandModelsWithEffort } from './effortExpander';
 import { detectModelCapabilities, getCanonicalModelKey } from './modelUtils';
 import { isObsoleteModel } from '../constants';
+import { normalizeCloudCodeModelId } from '../services/googleAuth';
+
+/**
+ * Checks whether an incoming model id or label matches a model explicitly disabled in custom_models.json.
+ */
+export function isModelOrLabelDisabled(idStr?: string, labelStr?: string, disabledSet?: Set<string>): boolean {
+  if (!disabledSet || disabledSet.size === 0) return false;
+  const cleanId = (idStr || '').replace(/^models\//, '').trim().toLowerCase();
+  const rawLabel = (labelStr || '').trim().toLowerCase();
+  const cleanLabel = (labelStr || '')
+    .replace(/^⭐\s*/, '')
+    .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .trim()
+    .toLowerCase();
+
+  const normId = normalizeCloudCodeModelId(cleanId).toLowerCase();
+
+  if (cleanId && (disabledSet.has(cleanId) || disabledSet.has(`models/${cleanId}`))) return true;
+  if (normId && disabledSet.has(normId)) return true;
+  if (rawLabel && disabledSet.has(rawLabel)) return true;
+  if (cleanLabel && disabledSet.has(cleanLabel)) return true;
+
+  for (const disabledItem of disabledSet) {
+    const item = disabledItem.toLowerCase();
+    // Claude Sonnet (e.g. claude-sonnet-4-6, claude-3-5-sonnet, Claude Sonnet 4.6 (Thinking))
+    if ((item.includes('claude') && item.includes('sonnet')) &&
+        ((cleanId.includes('claude') && cleanId.includes('sonnet')) || (cleanLabel.includes('claude') && cleanLabel.includes('sonnet')))) {
+      return true;
+    }
+    // Claude Opus (e.g. claude-opus-4-6-thinking, Claude Opus 4.6 (Thinking))
+    if ((item.includes('claude') && item.includes('opus')) &&
+        ((cleanId.includes('claude') && cleanId.includes('opus')) || (cleanLabel.includes('claude') && cleanLabel.includes('opus')))) {
+      return true;
+    }
+    // Gemini 3.7 (e.g. gemini-3.7-flash, gemini-3.7-flash-tiered, Gemini 3.7 Flash)
+    if ((item.includes('gemini') && item.includes('3.7')) &&
+        ((cleanId.includes('gemini') && cleanId.includes('3.7')) || (cleanLabel.includes('gemini') && cleanLabel.includes('3.7')))) {
+      return true;
+    }
+    // Gemini 3.6
+    if ((item.includes('gemini') && item.includes('3.6')) &&
+        ((cleanId.includes('gemini') && cleanId.includes('3.6')) || (cleanLabel.includes('gemini') && cleanLabel.includes('3.6')))) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /**
  * Result of injecting custom models into a GetAvailableModels protobuf response.
@@ -136,9 +185,10 @@ export function injectCustomModelsIntoResponse(
   customModels: CustomModel[],
   healthMap?: Map<string, ModelHealthResult>,
   forceCompatibility = false,
+  disabledModelIds?: Set<string>,
 ): InjectionResult {
-  // No injection if no custom models (unless forced) or buffer too small to contain header + body
-  if ((customModels.length === 0 && !forceCompatibility) || responseBuf.length <= 6) {
+  // No injection if no custom models (unless forced or disabled models need stripping) or buffer too small to contain header + body
+  if ((customModels.length === 0 && !forceCompatibility && (!disabledModelIds || disabledModelIds.size === 0)) || responseBuf.length <= 6) {
     return { buffer: responseBuf, injectedCount: 0, modified: false };
   }
 
@@ -165,7 +215,7 @@ export function injectCustomModelsIntoResponse(
     const fieldMapping = extractFieldMapping(sampleEntry.value);
     const existing = extractExistingModelKeys(msgBody, modelTag);
 
-    // Strip any obsolete models already present in msgBody
+    // Strip any obsolete or explicitly disabled models already present in msgBody
     const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
     const keptBodyParts: Buffer[] = [];
     let strippedAnyNative = false;
@@ -181,7 +231,9 @@ export function injectCustomModelsIntoResponse(
             else if (sf.fieldNum === 2) labelStr = sf.raw.toString('utf8').trim();
           }
         }
-        if (isObsoleteModel(idStr, labelStr)) {
+        const isObsolete = isObsoleteModel(idStr, labelStr) && !idStr.includes('gemini-2.5-flash');
+        const isDisabled = isModelOrLabelDisabled(idStr, labelStr, disabledModelIds);
+        if (isObsolete || isDisabled) {
           strippedAnyNative = true;
           continue;
         }
@@ -206,10 +258,12 @@ export function injectCustomModelsIntoResponse(
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
-      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini';
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
       const canonicalBase = isGoogleFamily
         ? (rawName.includes('claude') || cleanDisp.includes('claude')
-            ? (rawName.includes('opus') || cleanDisp.includes('opus') ? 'claude-opus-4-6-thinking' : 'claude-sonnet-4-6')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus')
+                ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
+                : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
             : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
                 : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
         : rawName;
@@ -309,6 +363,7 @@ function injectCustomModelsIntoUserStatusJson(
   jsonStart: number,
   customModels: CustomModel[],
   healthMap?: Map<string, ModelHealthResult>,
+  disabledModelIds?: Set<string>,
 ): InjectionResult {
   try {
     let jsonEnd = bodyStr.lastIndexOf('}');
@@ -352,9 +407,25 @@ function injectCustomModelsIntoUserStatusJson(
     const existingModelIds = new Set<string>();
     const existingPlaceholderNames = new Set<string>();
 
+    const keptConfigs: any[] = [];
+    const strippedLabels = new Set<string>();
+    let strippedAnyJson = false;
+
     for (const c of cascade.clientModelConfigs) {
       const label = (c.label || '').trim();
       const modelId = String(c.modelId || c.modelOrAlias?.model || '').trim();
+      const isObsolete = isObsoleteModel(modelId, label) && !modelId.includes('gemini-2.5-flash');
+      const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
+      if (isObsolete || isDisabled) {
+        strippedAnyJson = true;
+        if (label) {
+          strippedLabels.add(label);
+          strippedLabels.add(label.toLowerCase());
+        }
+        continue;
+      }
+      keptConfigs.push(c);
+
       if (label) {
         existingLabels.add(label);
         existingLabels.add(label.toLowerCase());
@@ -378,6 +449,13 @@ function injectCustomModelsIntoUserStatusJson(
         existingModelIds.add(mid.replace(/^models\//, ''));
       }
     }
+    cascade.clientModelConfigs = keptConfigs;
+
+    if (strippedLabels.size > 0) {
+      sortGroup.modelLabels = sortGroup.modelLabels.filter(
+        (l: string) => !strippedLabels.has(l) && !strippedLabels.has(l.toLowerCase())
+      );
+    }
 
     const expandedModels = expandModelsWithEffort(customModels);
     const seenModelKeys = new Set<string>();
@@ -389,10 +467,12 @@ function injectCustomModelsIntoUserStatusJson(
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
-      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini';
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
       const canonicalBase = isGoogleFamily
         ? (rawName.includes('claude') || cleanDisp.includes('claude')
-            ? (rawName.includes('opus') || cleanDisp.includes('opus') ? 'claude-opus-4-6-thinking' : 'claude-sonnet-4-6')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus')
+                ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
+                : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
             : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
                 : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
         : rawName;
@@ -446,7 +526,7 @@ function injectCustomModelsIntoUserStatusJson(
       injectedCount++;
     }
 
-    if (injectedCount === 0) {
+    if (injectedCount === 0 && !strippedAnyJson) {
       return { buffer: responseBuf, injectedCount: 0, modified: false };
     }
 
@@ -456,7 +536,7 @@ function injectCustomModelsIntoUserStatusJson(
     newHeader.writeUInt32BE(newJsonBuf.length, 1);
     const modifiedBuf = Buffer.concat([newHeader, newJsonBuf, trailers]);
 
-    log.info(`[ProtoInjector] Injected ${injectedCount} custom models into UserStatus JSON`);
+    log.debug(`[ProtoInjector] Injected ${injectedCount} custom models into UserStatus JSON`);
     return { buffer: modifiedBuf, injectedCount, modified: true };
   } catch (err) {
     log.warn('[ProtoInjector] JSON injection failed, returning original buffer:', (err as Error).message);
@@ -471,12 +551,14 @@ function injectCustomModelsIntoUserStatusJson(
  * @param responseBuf Raw gRPC-Web response buffer
  * @param customModels Custom models to inject
  * @param healthMap Optional health status map
+ * @param disabledModelIds Optional set of model IDs/labels explicitly disabled
  * @returns Injection result with modified buffer and metadata
  */
 export function injectCustomModelsIntoUserStatus(
   responseBuf: Buffer,
   customModels: CustomModel[],
   healthMap?: Map<string, ModelHealthResult>,
+  disabledModelIds?: Set<string>,
 ): InjectionResult {
   if (responseBuf.length <= 5) {
     return { buffer: responseBuf, injectedCount: 0, modified: false };
@@ -496,7 +578,7 @@ export function injectCustomModelsIntoUserStatus(
     const bodyStr = msgBody.toString('utf8');
     const jsonStart = bodyStr.indexOf('{"userStatus"');
     if (jsonStart !== -1) {
-      return injectCustomModelsIntoUserStatusJson(responseBuf, flags, trailers, bodyStr, jsonStart, customModels, healthMap);
+      return injectCustomModelsIntoUserStatusJson(responseBuf, flags, trailers, bodyStr, jsonStart, customModels, healthMap, disabledModelIds);
     }
 
     const topFields = parseProtoRaw(msgBody, 0, msgBody.length);
@@ -544,6 +626,12 @@ export function injectCustomModelsIntoUserStatus(
             }
           }
         }
+        if (
+          (isObsoleteModel(modelId, label) && !modelId.includes('gemini-2.5-flash')) ||
+          isModelOrLabelDisabled(modelId, label, disabledModelIds)
+        ) {
+          continue;
+        }
         if (label) {
           existingLabels.add(label);
           existingLabels.add(label.toLowerCase());
@@ -576,10 +664,12 @@ export function injectCustomModelsIntoUserStatus(
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
-      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini';
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
       const canonicalBase = isGoogleFamily
         ? (rawName.includes('claude') || cleanDisp.includes('claude')
-            ? (rawName.includes('opus') || cleanDisp.includes('opus') ? 'claude-opus-4-6-thinking' : 'claude-sonnet-4-6')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus')
+                ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
+                : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
             : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
                 : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
         : rawName;
@@ -623,8 +713,9 @@ export function injectCustomModelsIntoUserStatus(
     // Build new CascadeModelConfigData
     const newCascadeParts: Buffer[] = [];
     let strippedAnyCascade = false;
+    const strippedLabels = new Set<string>();
 
-    // 1. Keep existing client_model_configs (filtering out obsolete ones)
+    // 1. Keep existing client_model_configs (filtering out obsolete or disabled ones)
     for (const f of cascadeFields) {
       if (f.fieldNum === 1 && f.raw) {
         const sub = parseProtoRaw(f.raw, 0, f.raw.length);
@@ -636,8 +727,14 @@ export function injectCustomModelsIntoUserStatus(
             else if (sf.fieldNum === 21) modelId = sf.raw.toString('utf8').trim();
           }
         }
-        if (isObsoleteModel(modelId, label)) {
+        const isObsolete = isObsoleteModel(modelId, label) && !modelId.includes('gemini-2.5-flash');
+        const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
+        if (isObsolete || isDisabled) {
           strippedAnyCascade = true;
+          if (label) {
+            strippedLabels.add(label);
+            strippedLabels.add(label.toLowerCase());
+          }
           continue;
         }
         newCascadeParts.push(encodeMessageField(1, f.raw));
@@ -660,7 +757,7 @@ export function injectCustomModelsIntoUserStatus(
       newCascadeParts.push(encodeMessageField(1, cfgBuf));
     }
 
-    // 3. Update client_model_sorts to include the new labels
+    // 3. Update client_model_sorts to include the new labels and strip disabled labels
     let sortsFound = false;
     for (const f of cascadeFields) {
       if (f.fieldNum === 2 && f.raw) {
@@ -677,7 +774,11 @@ export function injectCustomModelsIntoUserStatus(
               if (gf.fieldNum === 1 && gf.raw) {
                 newGroupParts.push(encodeStringField(1, gf.raw.toString('utf8')));
               } else if (gf.fieldNum === 2 && gf.raw) {
-                newGroupParts.push(encodeStringField(2, gf.raw.toString('utf8')));
+                const grpLabel = gf.raw.toString('utf8');
+                if (strippedLabels.has(grpLabel) || strippedLabels.has(grpLabel.toLowerCase())) {
+                  continue;
+                }
+                newGroupParts.push(encodeStringField(2, grpLabel));
               }
             }
             for (const nm of newModels) {

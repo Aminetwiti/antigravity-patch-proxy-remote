@@ -160,6 +160,8 @@ describe('token-tracker', () => {
       expect(stats.totalTokens).toBe(4500);
       expect(stats.avgTokensPerReq).toBe(2250);
       expect(stats.avgLatencyMs).toBe(1500);
+      expect(stats.inOutRatio).toBe(2.0); // 3000 / 1500 = 2.0
+      expect(stats.cacheHitRatioPct).toBe(0);
       expect(stats.byProvider['anthropic'].totalTokens).toBe(4500);
       expect(stats.byModel['claude-3-5-sonnet'].count).toBe(2);
     });
@@ -228,6 +230,33 @@ describe('token-tracker', () => {
       const stats = engine.getStats();
       expect(stats.totalTokens).toBeGreaterThan(1000);
       expect(Object.keys(stats.byProvider).length).toBeGreaterThan(1);
+    });
+
+    it('loads real SQLite sessions and computes metrics', () => {
+      engine.clear();
+      engine.loadRealSessions([
+        {
+          id: 'sess-1',
+          title: 'Refactor Agent',
+          timestamp: 1700000000000,
+          provider: 'google',
+          model: 'Gemini 3.8 Flash',
+          promptTokens: 14500,
+          completionTokens: 4000,
+          totalTokens: 18500,
+          latencyMs: 320,
+          tokensPerSec: 120,
+          estimatedCost: 0.003,
+          status: 200,
+          endpoint: '/v1internal:streamGenerateContent',
+        },
+      ]);
+      expect(engine.getEntries().length).toBe(1);
+      const stats = engine.getStats();
+      expect(stats.totalTokens).toBe(18500);
+      expect(stats.promptTokens).toBe(14500);
+      expect(stats.completionTokens).toBe(4000);
+      expect(stats.byModel['Gemini 3.8 Flash']).toBeDefined();
     });
   });
 });

@@ -13,7 +13,13 @@ import { validateCustomModel } from '../schemaValidator';
 import { ALL_PROVIDERS, type ProviderName, LOCAL_SERVICES, STANDARD_GOOGLE_MODELS, isObsoleteModel } from '../constants';
 import { generateModelPlaceholderId } from './idGenerator';
 import type { CustomModel } from './types';
-import { normalizeCloudCodeModelId, normalizeGoogleModelId, isGoogleCloudCodeModel } from '../services/googleAuth';
+import {
+  normalizeCloudCodeModelId,
+  normalizeGoogleModelId,
+  isGoogleCloudCodeModel,
+  getLiveAccountQuota,
+  updateLiveAccountQuota,
+} from '../services/googleAuth';
 
 /** Shape of a raw entry in the `providers` array of custom_models.json. */
 interface RawProviderEntry {
@@ -167,7 +173,7 @@ function validateModels(decrypted: CustomModel[]): CustomModel[] {
       continue;
     }
     const provider = m.provider as string;
-    if (!ALL_PROVIDERS.includes(provider as ProviderName)) {
+    if (provider !== 'gemini-cli' && !ALL_PROVIDERS.includes(provider as ProviderName)) {
       log.warn(`[Proxy] Skipping model at index ${i}: Unsupported provider ${provider}. Must be one of: ${ALL_PROVIDERS.join(', ')}`);
       continue;
     }
@@ -188,7 +194,7 @@ function validateModels(decrypted: CustomModel[]): CustomModel[] {
   return validModels;
 }
 
-function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
+export function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
   const flatModels: CustomModel[] = [];
   for (const p of providers) {
     const hasEnabledAccounts = Array.isArray((p as any).accounts) && (p as any).accounts.some((a: any) => a && a.enabled !== false);
@@ -198,21 +204,46 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
       ? (p as any).accounts
       : [{ id: p.id, name: p.name, email: p.email, apiKey: p.apiKey, refreshToken: p.refreshToken, quotas: p.quotas, projectId: p.projectId, enabled: p.enabled }];
 
-    const isGoogle = p.provider === 'google' || p.provider === 'gemini' || p.id === 'provider-google';
+    const isGeminiCli = p.provider === 'gemini-cli' || p.id === 'gemini-cli-preset' || p.id === 'gemini-cli';
+    const isGoogle = p.provider === 'google' || p.provider === 'gemini' || p.id === 'provider-google' || isGeminiCli;
     let models = Array.isArray(p.models) && p.models.length > 0 ? p.models : [];
     if (models.length === 0 && isGoogle) {
       const accWithModels = accounts.find((a: any) => Array.isArray(a.models) && a.models.length > 0);
       models = accWithModels ? accWithModels.models : STANDARD_GOOGLE_MODELS;
     }
 
+    const disabledProviderModelIds = new Set<string>();
+    if (isGoogle && Array.isArray(p.models)) {
+      for (const pm of p.models) {
+        if (pm && pm.enabled === false && pm.id) {
+          disabledProviderModelIds.add(pm.id);
+          const norm = normalizeCloudCodeModelId(pm.id);
+          if (norm) disabledProviderModelIds.add(norm);
+        }
+      }
+    }
+
     for (const acc of accounts) {
       if (acc.enabled === false) continue;
+      const accEmail = (acc.email || (acc as any).accountEmail || '').trim().toLowerCase();
+      if (isGoogle && accEmail && (acc as any).quotas) {
+        const prefix = isGeminiCli ? 'gemini-cli' : 'google';
+        const accKey = `${prefix}:${accEmail}`;
+        if (!getLiveAccountQuota(accKey)) {
+          updateLiveAccountQuota(accKey, (acc as any).quotas);
+        }
+      }
       const targetModels = Array.isArray((acc as any).models) && (acc as any).models.length > 0 ? (acc as any).models : models;
       for (const rawM of targetModels) {
         const m = typeof rawM === 'string' ? { id: rawM, displayName: '', enabled: true } : rawM;
         if (m.enabled === false) continue;
         const mId = m.id ?? '';
+        const normMId = isGoogle ? normalizeCloudCodeModelId(mId) : '';
+        if (disabledProviderModelIds.has(mId) || (normMId && disabledProviderModelIds.has(normMId))) continue;
         if (isObsoleteModel(mId, m.displayName)) continue;
+        if (isGeminiCli && (mId.includes('gemini-2') || mId.includes('gemini-3.1') || mId.includes('gemini-3.0') || mId.includes('gemini-1'))) {
+          continue;
+        }
         const mergedHeaders = { ...p.extraHeaders, ...(m as { extraHeaders?: Record<string, string> }).extraHeaders };
         const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
@@ -228,7 +259,8 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
         }
 
         const accProvider = (acc as any).provider || (p.provider ?? 'openai');
-        const accApiUrl = (acc as any).apiUrl || (p.apiUrl ?? '');
+        const isEffectiveGeminiCli = isGeminiCli || accProvider === 'gemini-cli';
+        const accApiUrl = (acc as any).apiUrl as string | undefined;
         const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ.')) && !acc.refreshToken);
 
         // Google AI Studio does not support Claude models
@@ -238,10 +270,12 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
         }
 
         const isCloudCode = !isAiStudio && isGoogle;
-        const resolvedProvider = isAiStudio ? 'google-gemini' : accProvider;
+        const resolvedProvider = isAiStudio ? 'google-gemini' : (isEffectiveGeminiCli ? 'gemini-cli' : accProvider);
         const resolvedApiUrl = isAiStudio
-          ? (accApiUrl || 'https://generativelanguage.googleapis.com/v1beta')
-          : (isCloudCode ? 'https://daily-cloudcode-pa.googleapis.com' : (accApiUrl || p.apiUrl || ''));
+          ? (accApiUrl || (p.apiUrl?.includes('generativelanguage') ? p.apiUrl : 'https://generativelanguage.googleapis.com/v1beta'))
+          : (isEffectiveGeminiCli
+              ? (accApiUrl || (p.apiUrl?.includes('cloudcode') ? p.apiUrl : 'https://cloudcode-pa.googleapis.com/v1internal'))
+              : (isCloudCode ? (accApiUrl || (p.apiUrl?.includes('cloudcode') ? p.apiUrl : 'https://daily-cloudcode-pa.googleapis.com')) : (accApiUrl || p.apiUrl || '')));
 
         const partialModel: CustomModel = {
           name: m.id ?? '',
@@ -263,9 +297,11 @@ function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
           accountName: acc.name || p.name,
           accountEmail: acc.email || p.email,
           refreshToken: acc.refreshToken || p.refreshToken,
-          projectId: acc.projectId || p.projectId,
+          projectId: isEffectiveGeminiCli
+            ? (acc.projectId && acc.projectId !== 'aicode-consumers' ? acc.projectId : 'gemini-cli-users')
+            : (acc.projectId || p.projectId),
           quotas: acc.quotas || p.quotas,
-          _poolOnly: isAiStudio && isGoogle ? true : undefined,
+          _poolOnly: (isAiStudio || isGeminiCli) ? true : undefined,
         };
       const placeholderId = generateModelPlaceholderId(partialModel);
 
@@ -340,7 +376,7 @@ export function loadCustomModels(): CustomModel[] {
             const remapKey = `${rawName}->${norm}`;
             if (!globalRemappedLogged.has(remapKey)) {
               globalRemappedLogged.add(remapKey);
-              log.info(`[ModelLoader] Auto-remapped unhosted/alias Google model ID '${rawName}' to '${norm}'`);
+              log.debug(`[ModelLoader] Auto-remapped unhosted/alias Google model ID '${rawName}' to '${norm}'`);
             }
             m.externalModelName = norm;
             if (m.name && (m.name === rawName || m.name === `models/${rawName}`)) {
@@ -355,8 +391,8 @@ export function loadCustomModels(): CustomModel[] {
     // collapse to ONE unified pooled entry per unique canonical model in the Antigravity dropdown.
     // The backend proxy dispatches across all accounts and handles fallbacks automatically.
     const isGoogleFamily = (m: CustomModel) =>
-      (m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini') &&
-      Boolean(m.apiKey) &&
+      (m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli') &&
+      (Boolean(m.apiKey) || Boolean(m.refreshToken)) &&
       !m.apiKey.startsWith('fallback:');
 
     const googleFamilyModels = loadedModels.filter(isGoogleFamily);
@@ -387,7 +423,9 @@ export function loadCustomModels(): CustomModel[] {
         name: `models/google:${baseId}:auto-pool`,
         displayName,
         externalModelName: baseId,
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
         apiKey: 'auto',
+        refreshToken: undefined,
         accountName: '',
         accountEmail: '',
         _effortSuffix: template._effortSuffix || '',
@@ -402,4 +440,37 @@ export function loadCustomModels(): CustomModel[] {
     log.error('[Proxy] Failed to parse custom_models.json (preserving file on disk):', e);
     return [];
   }
+}
+
+/**
+ * Returns set of IDs and labels for models explicitly marked enabled: false in custom_models.json.
+ */
+export function loadDisabledModelIds(): Set<string> {
+  const disabled = new Set<string>();
+  const fp = getCustomModelsPath();
+  try {
+    if (!fs.existsSync(fp)) return disabled;
+    const content = fs.readFileSync(fp, 'utf8').replace(/^\uFEFF/, '');
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed.providers)) {
+      for (const p of parsed.providers) {
+        if (!p) continue;
+        if (Array.isArray(p.models)) {
+          for (const m of p.models) {
+            if (m && m.enabled === false && m.id) {
+              const id = m.id.trim().toLowerCase();
+              disabled.add(id);
+              disabled.add(id.replace(/^models\//, ''));
+              const norm = normalizeCloudCodeModelId(id);
+              if (norm) disabled.add(norm.toLowerCase());
+              if (m.displayName) {
+                disabled.add(m.displayName.trim().toLowerCase());
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+  return disabled;
 }

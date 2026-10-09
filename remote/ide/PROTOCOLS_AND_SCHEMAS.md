@@ -94,17 +94,17 @@ Emplacement : `%APPDATA%\Antigravity IDE\User\globalStorage\storage.json`
 {
   "backupWorkspaces": {
     "folders": [
-      { "folderUri": "file:///c%3A/Users/amine/Downloads/antigravity-add-model-main" }
+      { "folderUri": "file:///c%3A/Users/developer/Downloads/antigravity-add-model-main" }
     ]
   },
   "profileAssociations": {
     "workspaces": {
-      "file:///c%3A/Users/amine/Downloads/antigravity-add-model-main": "__default__profile__"
+      "file:///c%3A/Users/developer/Downloads/antigravity-add-model-main": "__default__profile__"
     }
   },
   "windowsState": {
     "lastActiveWindow": {
-      "folder": "file:///c%3A/Users/amine/Downloads/antigravity-add-model-main"
+      "folder": "file:///c%3A/Users/developer/Downloads/antigravity-add-model-main"
     }
   }
 }

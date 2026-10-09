@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 const http = require('http');
 const fs = require('fs');
 
-const devToolsPortFile = 'C:\\Users\\amine\\AppData\\Roaming\\Antigravity\\DevToolsActivePort';
+const devToolsPortFile = 'C:\\Users\\developer\\AppData\\Roaming\\Antigravity\\DevToolsActivePort';
 if (!fs.existsSync(devToolsPortFile)) {
   console.error('DevToolsActivePort file not found');
   process.exit(1);

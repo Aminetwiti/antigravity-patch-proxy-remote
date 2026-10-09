@@ -72,7 +72,7 @@ interface AgAPI {
       tierId?: string;
       error?: string;
     }>;
-    startOAuthLogin(): Promise<{
+    startOAuthLogin(providerType?: 'antigravity' | 'gemini-cli'): Promise<{
       success: boolean;
       account?: any;
       error?: string;
@@ -83,6 +83,37 @@ interface AgAPI {
       email?: string;
       picture?: string;
     }): Promise<{ success: boolean; error?: string; dbPath?: string }>;
+    reconcileCooldowns?(): Promise<{
+      success: boolean;
+      cleared?: number;
+      activeRemaining?: number;
+      details?: string[];
+      error?: string;
+    }>;
+    getCooldowns?(): Promise<{
+      success: boolean;
+      cooldowns: Record<string, { until: number; remainingMs: number; remainingMin: number; remainingHours: string }>;
+      error?: string;
+    }>;
+    liftAccountCooldown?(accountIdentifier: string): Promise<{
+      success: boolean;
+      cleared: number;
+      removedKeys?: string[];
+      remainingActive?: number;
+      error?: string;
+    }>;
+    liftBurstCooldowns?(): Promise<{
+      success: boolean;
+      cleared: number;
+      removedKeys?: string[];
+      remainingActive?: number;
+      error?: string;
+    }>;
+    purgeQuotaCache?(): Promise<{
+      success: boolean;
+      cleared: number;
+      error?: string;
+    }>;
   };
 
   // MITM Proxy Server Management
@@ -144,6 +175,37 @@ interface AgAPI {
     status: number;
     latencyMs: number;
     pongText?: string;
+    error?: string;
+  }>;
+  getRealTokenStats(): Promise<{
+    ok: boolean;
+    data?: {
+      totalConversations: number;
+      totalSteps: number;
+      estimatedLifetimeTokens: number;
+      peakTokensDay: { day: string; steps: number; tokens: number };
+      longestTaskSteps: number;
+      currentStreakDays: number;
+      longestStreakDays: number;
+      activityByDay: Array<{ day: string; convs: number; steps: number; estimatedTokens: number }>;
+      accountsInPool: number;
+      modelsDistribution: Array<{ model: string; count: number; pct: number }>;
+      sessions?: Array<{
+        id: string;
+        title: string;
+        timestamp: number;
+        provider: string;
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+        latencyMs: number;
+        tokensPerSec: number;
+        estimatedCost: number;
+        status: number;
+        endpoint: string;
+      }>;
+    };
     error?: string;
   }>;
 }

@@ -338,7 +338,7 @@ function parseDSMLToolCalls(text: string): DSMLParsedResult | null {
       functionCalls.push({ name: funcName, args });
     }
     if (functionCalls.length === 0) return null;
-    log.info(
+    log.debug(
       `[Proxy] Detected ${functionCalls.length} DSML tool call(s): ${functionCalls.map((f) => f.name).join(', ')}`,
     );
     let cleanText = text;

@@ -34,32 +34,52 @@ describe('checkProxy stub self-heal', () => {
     expect(script).toContain('scripts');
   });
 
-  it('automatically starts the stub from the correct location when the port is refused', async () => {
-    mockProbe
-      .mockResolvedValueOnce(refused) // initial probe
-      .mockResolvedValueOnce(healthy); // post-start retry
-
-    const result = await checkProxy(51074);
-
-    expect(result.status).toBe('ok');
-    expect(result.message).toContain('stub auto-started');
-    expect(mockSpawn).toHaveBeenCalledTimes(1);
-    const [bin, args] = mockSpawn.mock.calls[0] as [string, string[]];
-    expect(bin).toBe(process.execPath);
-    expect(args[0]).toMatch(/proxy-stub\.js$/);
-    expect(args[1]).toBe('51074');
-  });
-
-  it('reports the warn fallback when the stub spawn fails', async () => {
-    mockProbe.mockResolvedValue(refused);
-    mockSpawn.mockImplementation(() => {
-      throw new Error('spawn failed');
-    });
+  it('does not auto-start stub by default when port is refused', async () => {
+    mockProbe.mockResolvedValueOnce(refused);
 
     const result = await checkProxy(51074);
 
     expect(result.status).toBe('warn');
     expect(result.message).toContain('Not reachable on port 51074');
-    expect(result.details).toContain('could not be started');
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('automatically starts the stub when AG_AUTO_START_STUB=1 and port is refused', async () => {
+    process.env.AG_AUTO_START_STUB = '1';
+    try {
+      mockProbe
+        .mockResolvedValueOnce(refused) // initial probe
+        .mockResolvedValueOnce(healthy); // post-start retry
+
+      const result = await checkProxy(51074);
+
+      expect(result.status).toBe('ok');
+      expect(result.message).toContain('stub auto-started');
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
+      const [bin, args] = mockSpawn.mock.calls[0] as [string, string[]];
+      expect(bin).toBe(process.execPath);
+      expect(args[0]).toMatch(/proxy-stub\.js$/);
+      expect(args[1]).toBe('51074');
+    } finally {
+      delete process.env.AG_AUTO_START_STUB;
+    }
+  });
+
+  it('reports the warn fallback when the stub spawn fails with AG_AUTO_START_STUB=1', async () => {
+    process.env.AG_AUTO_START_STUB = '1';
+    try {
+      mockProbe.mockResolvedValue(refused);
+      mockSpawn.mockImplementation(() => {
+        throw new Error('spawn failed');
+      });
+
+      const result = await checkProxy(51074);
+
+      expect(result.status).toBe('warn');
+      expect(result.message).toContain('Not reachable on port 51074');
+      expect(result.details).toContain('could not be started');
+    } finally {
+      delete process.env.AG_AUTO_START_STUB;
+    }
   });
 });

@@ -46,7 +46,7 @@ describe('Ultra Suite 1: Provider Presets & Header Matrix', () => {
       if (anthropicCompatList.includes(prov)) {
         expect(headers['x-api-key']).toBe('test-key-123');
         expect(headers['anthropic-version']).toBeDefined();
-      } else if (prov === 'google' || prov === 'google-gemini') {
+      } else if (prov === 'google' || prov === 'google-gemini' || prov === 'gemini-cli') {
         expect(headers['x-goog-api-key']).toBe('test-key-123');
       } else if (prov === 'openrouter') {
         expect(headers['Authorization']).toBe('Bearer test-key-123');

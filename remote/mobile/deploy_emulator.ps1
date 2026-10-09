@@ -1,7 +1,7 @@
 ﻿# One-shot deploy v2: keep adb daemon ALIVE across all steps (single process tree).
 $ErrorActionPreference = "Continue"
 $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-$apk = "C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\remote\mobile\build\app\outputs\flutter-apk\app-debug.apk"
+$apk = "$PSScriptRoot\build\app\outputs\flutter-apk\app-debug.apk"
 $pkg = "com.antigravity.remote.mobile"
 
 function Run-Adb([string[]]$args) {

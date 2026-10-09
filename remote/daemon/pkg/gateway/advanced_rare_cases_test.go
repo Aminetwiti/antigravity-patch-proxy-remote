@@ -21,9 +21,9 @@ func TestRareCase_MonorepoPrefixCollisionsAndSpecialCharacters(t *testing.T) {
 			FolderURI: "file:///c:/demo%20taxi/www",
 		},
 		{
-			ID:        "p-www-copie",
+			ID:        "p-demo-web-app",
 			Name:      "www - Copie",
-			Path:      "c:/demo taxi/www - Copie",
+			Path:      "c:/demo-web-app",
 			FolderURI: "file:///c:/demo%20taxi/www%20-%20Copie",
 		},
 		{
@@ -51,17 +51,17 @@ func TestRareCase_MonorepoPrefixCollisionsAndSpecialCharacters(t *testing.T) {
 	}{
 		{
 			name:         "Exact path match for www - Copie",
-			wsPath:       "C:\\demo taxi\\www - Copie",
+			wsPath:       "C:\\demo-web-app",
 			expectedName: "www - Copie",
-			expectedPath: "c:/demo taxi/www - Copie",
-			expectedID:   "p-www-copie",
+			expectedPath: "c:/demo-web-app",
+			expectedID:   "p-demo-web-app",
 		},
 		{
 			name:         "URL-encoded path match for www - Copie",
 			wsPath:       "file:///c%3A/demo%20taxi/www%20-%20Copie",
 			expectedName: "www - Copie",
-			expectedPath: "c:/demo taxi/www - Copie",
-			expectedID:   "p-www-copie",
+			expectedPath: "c:/demo-web-app",
+			expectedID:   "p-demo-web-app",
 		},
 		{
 			name:         "Subfolder inside www/frontend matches most specific child www-frontend",

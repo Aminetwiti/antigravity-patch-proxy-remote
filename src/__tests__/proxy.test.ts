@@ -13,7 +13,7 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-import { parseRetryAfter, matchesCustomModel, sanitizeCandidatesInResponse, transformGoogleStreamForRemote } from '../proxy';
+import { parseRetryAfter, matchesCustomModel, isNativeCloudCodeModel, sanitizeCandidatesInResponse, transformGoogleStreamForRemote } from '../proxy';
 import * as zlib from 'zlib';
 import { EventEmitter } from 'events';
 import { DEFAULT_MAX_BODY_SIZE } from '../constants';
@@ -141,6 +141,30 @@ describe('matchesCustomModel', () => {
   it('does not match unrelated model names', () => {
     expect(matchesCustomModel(model, 'claude-3-5-sonnet')).toBe(false);
     expect(matchesCustomModel(model, 'gemini-3.8-flash-tiered')).toBe(false);
+  });
+});
+
+describe('isNativeCloudCodeModel', () => {
+  it('correctly identifies native Google Cloud Code models', () => {
+    expect(isNativeCloudCodeModel('gemini-3.8-flash-tiered')).toBe(true);
+    expect(isNativeCloudCodeModel('models/gemini-3.8-flash-tiered')).toBe(true);
+    expect(isNativeCloudCodeModel('gemini-3.7-flash')).toBe(true);
+    expect(isNativeCloudCodeModel('claude-sonnet-4-6')).toBe(true);
+    expect(isNativeCloudCodeModel('models/claude-opus-4-6-thinking')).toBe(true);
+    expect(isNativeCloudCodeModel('claude-3-5-sonnet')).toBe(true);
+  });
+
+  it('rejects custom placeholder models so custom injected models route to the pool', () => {
+    expect(isNativeCloudCodeModel('MODEL_PLACEHOLDER_M525')).toBe(false);
+    expect(isNativeCloudCodeModel('models/MODEL_PLACEHOLDER_M525')).toBe(false);
+    expect(isNativeCloudCodeModel('models/MODEL_PLACEHOLDER_M466')).toBe(false);
+  });
+
+  it('rejects third-party models', () => {
+    expect(isNativeCloudCodeModel('gpt-4o')).toBe(false);
+    expect(isNativeCloudCodeModel('deepseek-chat')).toBe(false);
+    expect(isNativeCloudCodeModel('llama-3')).toBe(false);
+    expect(isNativeCloudCodeModel('')).toBe(false);
   });
 });
 

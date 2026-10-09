@@ -68,4 +68,32 @@ describe('listExperiments Feature Flags & Planning Fallback', () => {
     expect(parsed.flags.some((f: any) => f.name === 'customization-token-budget' && f.intValue === 20000)).toBe(true);
     expect(parsed.flags.some((f: any) => f.name === 'some-other-flag')).toBe(true);
   });
+
+  it('enforces scheduled-tasks-v2 to true even if upstream provides false', () => {
+    const rawUpstream = JSON.stringify({
+      experimentIds: ['exp-upstream'],
+      flags: [
+        { name: 'scheduled-tasks-v2', boolValue: false },
+        { name: 'enable-conversation-search-v2', boolValue: false },
+      ],
+    });
+
+    const parsed = JSON.parse(rawUpstream);
+    const requiredFlags = [
+      { name: 'scheduled-tasks-v2', boolValue: true },
+      { name: 'enable-conversation-search-v2', boolValue: true },
+    ];
+
+    for (const reqFlag of requiredFlags) {
+      const existing = parsed.flags.find((f: any) => f && f.name === reqFlag.name);
+      if (!existing) {
+        parsed.flags.push(reqFlag);
+      } else if (reqFlag.boolValue !== undefined) {
+        existing.boolValue = reqFlag.boolValue;
+      }
+    }
+
+    expect(parsed.flags.find((f: any) => f.name === 'scheduled-tasks-v2')?.boolValue).toBe(true);
+    expect(parsed.flags.find((f: any) => f.name === 'enable-conversation-search-v2')?.boolValue).toBe(true);
+  });
 });

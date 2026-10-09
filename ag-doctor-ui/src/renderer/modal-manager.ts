@@ -20,6 +20,7 @@ interface ConfirmOptions {
   cancelLabel?: string;
   danger?: boolean;
   confirmDisabled?: boolean;
+  hideCancel?: boolean;
   /** Optional hook to wire custom body content after the manager mounts it. */
   onMount?: (handle: ConfirmModalHandle) => void;
 }
@@ -103,6 +104,7 @@ class ModalManager {
       const cleanup = () => {
         this.backdrop.hidden = true;
         this.confirmBtn.disabled = false;
+        this.cancelBtn.style.display = '';
         this.confirmBtn.removeEventListener('click', onConfirm);
         this.cancelBtn.removeEventListener('click', onCancel);
         this.closeBtn.removeEventListener('click', onCancel);
@@ -198,6 +200,7 @@ class ModalManager {
       handle.bodyEl.innerHTML = bodyHtml;
       handle.confirmBtn.textContent = opts?.confirmLabel ?? 'Confirm';
       handle.cancelBtn.textContent = opts?.cancelLabel ?? 'Cancel';
+      handle.cancelBtn.style.display = opts?.hideCancel ? 'none' : '';
       handle.confirmBtn.className = `btn ${opts?.danger ? 'btn-danger' : 'btn-primary'}`;
       handle.setConfirmEnabled(!opts?.confirmDisabled);
       opts?.onMount?.(handle);

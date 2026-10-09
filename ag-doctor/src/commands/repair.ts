@@ -24,6 +24,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { DEFAULT_MITM_PORT } from '../core/config';
+import { getAntigravityDataDir } from '../core/paths';
 
 export async function runRepair(ctx: CommandContext): Promise<number> {
   header('ag-doctor — repair');
@@ -53,6 +54,45 @@ export async function runRepair(ctx: CommandContext): Promise<number> {
   const idePatch = getIdePatchStatus();
   if (idePatch.installDir && !idePatch.applied) {
     actions.push('apply IDE (Antigravity IDE) cloud endpoint patch');
+  }
+  // 4c. Reconcile stale cooldowns in quota_cache.json
+  const qCachePath = path.join(getAntigravityDataDir(), 'quota_cache.json');
+  if (fs.existsSync(qCachePath)) {
+    try {
+      const qData = JSON.parse(fs.readFileSync(qCachePath, 'utf8'));
+      const cds = qData.accountCooldowns || {};
+      const quotas = qData.quotas || {};
+      const now = Date.now();
+      let staleCount = 0;
+      for (const [k, until] of Object.entries(cds)) {
+        if (typeof until !== 'number' || until <= now) {
+          staleCount++;
+          continue;
+        }
+        let acc = k;
+        let fam = '';
+        if (k.endsWith(':gemini')) { acc = k.slice(0, -7); fam = 'gemini'; }
+        else if (k.endsWith(':claude')) { acc = k.slice(0, -7); fam = 'claude'; }
+        const q = quotas[acc] || quotas[acc.startsWith('google:') ? acc : `google:${acc}`];
+        if (q) {
+          const resetStr = fam === 'gemini'
+            ? (q.geminiResetTime || q.geminiFiveHourReset || q.fiveHourResetTime)
+            : (q.claudeResetTime || q.claudeFiveHourReset || q.fiveHourResetTime);
+          const resetPassed = resetStr ? Date.parse(resetStr) <= Date.now() : false;
+          const weeklyDepleted = fam === 'gemini'
+            ? ((typeof q.geminiWeeklyPct === 'number' && q.geminiWeeklyPct < 5) || (typeof q.weeklyPercentage === 'number' && q.weeklyPercentage < 5)) && !resetPassed
+            : ((typeof q.claudeWeeklyPct === 'number' && q.claudeWeeklyPct < 5) || (typeof q.weeklyPercentage === 'number' && q.weeklyPercentage < 5)) && !resetPassed;
+          if (fam === 'gemini' && ((q.geminiFiveHourPct >= 5 && !weeklyDepleted) || resetPassed)) {
+            staleCount++;
+          } else if (fam === 'claude' && ((q.claudeFiveHourPct >= 5 && !weeklyDepleted) || resetPassed)) {
+            staleCount++;
+          }
+        }
+      }
+      if (staleCount > 0) {
+        actions.push(`wake up ${staleCount} account(s) with stale cooldowns`);
+      }
+    } catch (_) {}
   }
   // 5. Data dir
   ensureDataDir();
@@ -114,6 +154,47 @@ export async function runRepair(ctx: CommandContext): Promise<number> {
           return 2;
         }
         sp.succeed(r.message);
+      } else if (a.startsWith('wake up')) {
+        const qPath = path.join(getAntigravityDataDir(), 'quota_cache.json');
+        if (fs.existsSync(qPath)) {
+          const qData = JSON.parse(fs.readFileSync(qPath, 'utf8'));
+          const cds = qData.accountCooldowns || {};
+          const quotas = qData.quotas || {};
+          const now = Date.now();
+          let clearedCount = 0;
+          for (const [k, until] of Object.entries(cds)) {
+            if (typeof until !== 'number' || until <= now) {
+              delete cds[k];
+              clearedCount++;
+              continue;
+            }
+            let acc = k;
+            let fam = '';
+            if (k.endsWith(':gemini')) { acc = k.slice(0, -7); fam = 'gemini'; }
+            else if (k.endsWith(':claude')) { acc = k.slice(0, -7); fam = 'claude'; }
+            const q = quotas[acc] || quotas[acc.startsWith('google:') ? acc : `google:${acc}`];
+            if (q) {
+              const resetStr = fam === 'gemini'
+                ? (q.geminiResetTime || q.geminiFiveHourReset || q.fiveHourResetTime)
+                : (q.claudeResetTime || q.claudeFiveHourReset || q.fiveHourResetTime);
+              const resetPassed = resetStr ? Date.parse(resetStr) <= now : false;
+              const weeklyDepleted = fam === 'gemini'
+                ? ((typeof q.geminiWeeklyPct === 'number' && q.geminiWeeklyPct < 5) || (typeof q.weeklyPercentage === 'number' && q.weeklyPercentage < 5)) && !resetPassed
+                : ((typeof q.claudeWeeklyPct === 'number' && q.claudeWeeklyPct < 5) || (typeof q.weeklyPercentage === 'number' && q.weeklyPercentage < 5)) && !resetPassed;
+              if (fam === 'gemini' && ((q.geminiFiveHourPct >= 5 && !weeklyDepleted) || resetPassed)) {
+                delete cds[k];
+                clearedCount++;
+              } else if (fam === 'claude' && ((q.claudeFiveHourPct >= 5 && !weeklyDepleted) || resetPassed)) {
+                delete cds[k];
+                clearedCount++;
+              }
+            }
+          }
+          fs.writeFileSync(qPath, JSON.stringify(qData, null, 2), 'utf8');
+          sp.succeed(`Woke up and cleared ${clearedCount} account cooldown(s)`);
+        } else {
+          sp.succeed('No cooldown cache found');
+        }
       }
     } catch (e) {
       sp.fail((e as Error).message);

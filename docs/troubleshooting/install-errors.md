@@ -202,8 +202,8 @@ intact le `dist/main.js` du wrapper.
 ### Commandes de fix
 
 ```bash
-REPO=/mnt/c/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main
-RES=/mnt/c/Users/amine/AppData/Local/Programs/Antigravity/resources
+REPO=/mnt/c/Users/developer/Downloads/antigravity-add-model-main/antigravity-add-model-main
+RES=/mnt/c/Users/developer/AppData/Local/Programs/Antigravity/resources
 TS=$(date +%Y%m%dT%H%M%S)
 
 # 0. Stopper Antigravity + language_server

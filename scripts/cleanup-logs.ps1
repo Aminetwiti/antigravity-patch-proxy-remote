@@ -1,4 +1,4 @@
-# c:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\scripts\cleanup-logs.ps1
+# scripts/cleanup-logs.ps1
 # Script de nettoyage et rotation des logs Antigravity
 
 $logPath = "$env:APPDATA\Antigravity\logs"

@@ -90,7 +90,7 @@ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go (:8090 / Cloudf
                                         Mobile Client (Flutter App)
 ```
 
-**Seven core mechanisms:**
+**Nine core mechanisms:**
 1. **Binary Patching** — Go binary string tables: `daily-cloudcode-pa.googleapis.com` → `${AG_BIND_HOST:-127.0.0.1}:${AG_PROXY_PORT:-51074}`
 2. **HTTP Interception** — `session.defaultSession.webRequest.onBeforeRequest` + proxy server
 3. **Protobuf Injection** — Parse gRPC-Web `GetAvailableModels` response → append custom models → re-encode
@@ -98,6 +98,8 @@ Language Server (Hub :55256) ◄── gRPC-Web ── Daemon Go (:8090 / Cloudf
 5. **Quota Push** — Daemon scheduler polls the LS `RetrieveUserQuotaSummary` every 60 s (only when clients are connected) and broadcasts `quota_update` over WebSocket; the mobile consumes it instead of polling
 6. **Auto-heal** — `scripts/auto-heal.ps1` + `register-auto-heal.ps1` (Startup VBS) + `supervise-daemon.ps1` restore the binary patch after an official update overwrites `app.asar`
 7. **Smart Account Pooling (OmniRoute Parity)** — Power of Two Choices (P2C) candidate selection, real-time in-flight concurrency tracking (20-point penalty per active request), 4-tier 429 classification (soft/RPM/quota/unknown), and non-premature pool exhaustion failover
+8. **Dual Summary Store Reconciliation** — Language Server 2.18+ synchronizes `conversation_summaries.db` (SQLite) and `agyhub_summaries_proto.pb` (Protobuf `SummariesState`). Boot repair in `proxy-runner.js` and `ag-doctor db:prune` cleans orphan records (missing `conversations/<id>.db`), syncs `annotations/<id>.pbtxt` archive flags into `raw_summary` (field 15 tag 0x7a), and scrubs `app_storage.json` so archived sessions never reload.
+9. **Cross-Model Billing & Quota Cascade** — When custom Gemini models hit 429 quota exhaustion or billing errors, the proxy cascades to Claude Sonnet 4.6 and Claude Opus 4.6 while skipping shared-quota sibling accounts to avoid ping-pong retry loops.
 
 ---
 
@@ -245,6 +247,9 @@ Determine for each change:
 | Pitfall | Symptom | Fix |
 |---|---|---|
 | Forgetting `ALL_PROVIDERS` in constants.ts | Provider not found by registry | Add to both `PROVIDERS` and `ALL_PROVIDERS` |
+| Pruning `conversation_summaries.db` without `agyhub_summaries_proto.pb` | Deleted/archived sessions resurrect on next IDE launch | Use `ag-doctor db:prune` which rebuilds both stores and cleans `app_storage.json` |
+| Adding provider to presets without `src/constants.ts` | `Unsupported provider <name>` warning, models skipped | Add to `PROVIDERS`, `ALL_PROVIDERS`, and compat sets in `constants.ts` |
+| Force-killing Antigravity during active session | Active sessions missing from sidebar on reopen | Let `proxy-runner.js` run `reconcileSummariesOnBoot()` to sync SQLite into protobuf |
 | Breaking Cloud Code envelope | All providers return errors | Envelope must be `{"request":{...},"model":"..."}` |
 | Missing contextBridge update | Renderer can't call new IPC channel | Add to preload.ts + preload/types.ts |
 | Off-by-one in protobuf varint length | Model list corrupt, IDE crashes | Test protobuf encoding with binary diff |
@@ -304,7 +309,7 @@ What was changed and why.
 - src/proxy/translators/openai.ts — fixed streaming chunk parsing
 
 ## Verification
-- npm run lint  ��� PASS
+- npm run lint  — PASS
 - npm test      — 2565 passed
 - npm run build — PASS
 
@@ -320,11 +325,13 @@ What was changed and why.
 ## 14. Adding a New Provider (Quick Reference)
 
 1. Add name to `PROVIDERS` + `ALL_PROVIDERS` in `src/constants.ts`
-2. Add to compat group in `src/proxy/registry.ts` (`OPENAI_COMPAT` / `ANTHROPIC_COMPAT`)
-3. Add preset to `src/presets.ts` (optional)
-4. Create translator in `src/proxy/translators/` if custom format (auto-discovered)
-5. Add tests in `src/__tests__/`
-6. Verify: `npm run lint && npm run build && npm test`
+2. Add to compat group in `src/constants.ts` (`OPENAI_COMPAT` / `ANTHROPIC_COMPAT`)
+3. Add to `PROVIDERS_REQUIRING_API_KEY` and `PROVIDER_DEFAULT_URLS` in `src/constants.ts`
+4. Add to `getTranslator()` mapping in `src/proxy/registry.ts`
+5. Add preset to `src/config/providers.json` (and `src/presets.ts` if needed)
+6. Create translator in `src/proxy/translators/` if custom format (auto-discovered)
+7. Add tests in `src/__tests__/`
+8. Verify: `npm run lint && npm run build && npm test`
 
 ---
 
@@ -343,8 +350,8 @@ What was changed and why.
 
 | Doc | When to read |
 |---|---|
-| [ARCHITECTURE.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/ARCHITECTURE.md) | Deep architecture, data flow diagrams |
-| [DESIGN.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN.md) | UI design system, component tokens |
-| [TROUBLESHOOTING.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/TROUBLESHOOTING.md) | Common issues, error codes |
-| [CI workflow](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/.github/workflows/ci.yml) | CI pipeline: typecheck → test (3 OS) → build |
-| [package.json](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/package.json) | All available scripts |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Deep architecture, data flow diagrams |
+| [DESIGN.md](DESIGN.md) | UI design system, component tokens |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues, error codes |
+| [CI workflow](.github/workflows/ci.yml) | CI pipeline: typecheck → test (3 OS) → build |
+| [package.json](package.json) | All available scripts |

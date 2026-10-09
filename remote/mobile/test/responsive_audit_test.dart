@@ -174,7 +174,7 @@ void main() {
         await tester.pumpWidget(
           const MaterialApp(
             home: BattleArenaScreen(
-              workspaceUri: 'c:/Users/amine/Downloads/antigravity',
+              workspaceUri: 'c:/Users/developer/Downloads/antigravity',
             ),
           ),
         );
@@ -326,14 +326,14 @@ void main() {
           const CascadeSession(
             id: 'sess-1',
             title: 'Fix Flutter UI Responsiveness & RenderFlex Overflow',
-            workspacePath: 'c:/Users/amine/Downloads/antigravity',
+            workspacePath: 'c:/Users/developer/Downloads/antigravity',
             status: 'CASCADE_STATUS_READY',
             time: '2m',
           ),
           const CascadeSession(
             id: 'sess-2',
             title: 'Architecture & ConnectRPC Wire Protocol Review',
-            workspacePath: 'c:/Users/amine/Downloads/antigravity/remote/daemon',
+            workspacePath: 'c:/Users/developer/Downloads/antigravity/remote/daemon',
             status: 'CASCADE_STATUS_READY',
             time: '1h',
           ),

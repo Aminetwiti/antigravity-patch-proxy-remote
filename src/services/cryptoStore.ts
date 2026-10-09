@@ -60,6 +60,8 @@ export function isEncryptionAvailable(): boolean {
   }
 }
 
+let hasWarnedBase64Fallback = false;
+
 /**
  * Encrypts a plaintext string. Falls back to base64 with a prefix if safeStorage is unavailable.
  */
@@ -75,7 +77,10 @@ export function encryptString(plainText: string): string {
       return 'fallback:' + Buffer.from(plainText, 'utf-8').toString('base64');
     }
   } else {
-    log.warn('[CryptoStore] safeStorage not available. Using base64 fallback format.');
+    if (!hasWarnedBase64Fallback) {
+      hasWarnedBase64Fallback = true;
+      log.warn('[CryptoStore] safeStorage not available. Using base64 fallback format.');
+    }
     return 'fallback:' + Buffer.from(plainText, 'utf-8').toString('base64');
   }
 }

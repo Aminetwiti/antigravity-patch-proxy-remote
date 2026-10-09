@@ -37,7 +37,7 @@ export function generateModelPlaceholderId(model: CustomModel): string {
 export function toSlug(model: CustomModel): string {
   const provider = (model.provider || 'custom').toLowerCase();
   const effortTag = model._effortSuffix || '';
-  const isGoogle = provider === 'google' || provider === 'google-gemini' || provider === 'gemini';
+  const isGoogle = provider === 'google' || provider === 'google-gemini' || provider === 'gemini' || provider === 'gemini-cli';
   // Google models are pooled across accounts in the backend, so they share a unified slug
   const accountTag = isGoogle ? '' : (model.accountName || model.accountEmail || '');
   const urlPart = isGoogle ? 'google' : (model.apiUrl || '');

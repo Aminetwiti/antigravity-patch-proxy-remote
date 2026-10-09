@@ -32,11 +32,11 @@
 
 ## 3. Secret Incident & Credential Containment
 
-- **Incident Reference:** `INC-2026-0909-TOKEN-EXPOSURE-V2` (documented in [PHASE20_SECRET_FINAL.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/docs/phases/PHASE20_SECRET_FINAL.md))
+- **Incident Reference:** `INC-2026-0909-TOKEN-EXPOSURE-V2` (documented in [PHASE20_SECRET_FINAL.md](file:///<repo-root>/docs/phases/PHASE20_SECRET_FINAL.md))
 - **Status:** **FIX BEFORE RELEASE (UNRESOLVED ON REMOTE VPS)**
 - **Audit Findings:**
   1. Revoked token (`80950aff...`) successfully rejected with `HTTP 401 Unauthorized`.
-  2. The Phase 19 token (`4d8b9f1a...`) was discovered hardcoded in client source files ([src/preload.ts](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/src/preload.ts) line 204 and [scripts/patch_ide_remote.py](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/scripts/patch_ide_remote.py) line 30).
+  2. The Phase 19 token (`4d8b9f1a...`) was discovered hardcoded in client source files ([src/preload.ts](file:///<repo-root>/src/preload.ts) line 204 and [scripts/patch_ide_remote.py](file:///<repo-root>/scripts/patch_ide_remote.py) line 30).
   3. The hardcoded fallbacks were eliminated from the local codebase and verified via `npm run lint` and `npm run build`.
   4. However, the token **remains live and active on the remote VPS** (`HTTP 200 OK`) because external automated SSH access to `root@vps.example.com` is denied (`Permission denied (publickey,password)`).
   5. The host administrator must execute token rotation on the remote VPS prior to production signoff.
@@ -181,7 +181,7 @@
 
 ## 18. Evidence Matrix Reference
 
-All raw command outputs and live HTTP traces are compiled in [PHASE20_EVIDENCE.md](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/docs/phases/PHASE20_EVIDENCE.md).
+All raw command outputs and live HTTP traces are compiled in [PHASE20_EVIDENCE.md](file:///<repo-root>/docs/phases/PHASE20_EVIDENCE.md).
 
 ---
 

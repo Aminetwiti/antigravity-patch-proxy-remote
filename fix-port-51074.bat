@@ -38,7 +38,7 @@ echo.
 echo Relaunching Antigravity...
 if exist "%LOCALAPPDATA%\Programs\antigravity\Antigravity.exe" (
     start "" "%LOCALAPPDATA%\Programs\antigravity\Antigravity.exe"
-) else (
-    start "" "C:\Users\amine\AppData\Local\Programs\antigravity\Antigravity.exe"
+) else if exist "%USERPROFILE%\AppData\Local\Programs\antigravity\Antigravity.exe" (
+    start "" "%USERPROFILE%\AppData\Local\Programs\antigravity\Antigravity.exe"
 )
 timeout /t 3 >nul

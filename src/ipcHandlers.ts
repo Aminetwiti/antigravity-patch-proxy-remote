@@ -23,6 +23,7 @@ import { loadCustomModels as loadProxyCustomModels } from './proxy/modelLoader';
 import { discoverLocalAntigravityCredential } from './services/localCredentialDiscovery';
 import { discoverLocalGoogleAccounts } from './services/localAccountDiscovery';
 import { IPC_CHANNELS } from './ipc/channels';
+import { atomicWriteJson, withWriteLock } from './services/modelStore';
 
 
 
@@ -950,42 +951,44 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
 
   // Save / update remote VPS runtime state (active, host, token, remoteSessions)
   ipcMain.handle(IPC_CHANNELS.REMOTE_SET_STATE, async (_event, payload: { active?: boolean; host?: string; token?: string; remoteSessions?: Record<string, boolean> }) => {
-    try {
-      const os = require('os');
-      const nodeFs = require('fs');
-      const dir = path.join(os.homedir(), '.gemini', 'antigravity');
-      if (!nodeFs.existsSync(dir)) {
-        nodeFs.mkdirSync(dir, { recursive: true });
-      }
-      const p = path.join(dir, 'remote_vps_state.json');
-      let current: Record<string, unknown> = {};
-      if (nodeFs.existsSync(p)) {
-        try {
-          const raw = nodeFs.readFileSync(p, 'utf-8').trim();
-          if (raw) current = JSON.parse(raw);
-        } catch (err) {
-          log.warn('[IPC] Failed to parse remote_vps_state.json:', err);
+    return withWriteLock(async () => {
+      try {
+        const os = require('os');
+        const nodeFs = require('fs');
+        const dir = path.join(os.homedir(), '.gemini', 'antigravity');
+        if (!nodeFs.existsSync(dir)) {
+          nodeFs.mkdirSync(dir, { recursive: true });
         }
-      }
-      const rawToken = payload.token ? String(payload.token).trim() : '';
-      const finalToken = (rawToken && rawToken !== 'null' && rawToken !== 'undefined')
-        ? rawToken
-        : (current.token ? String(current.token) : DEFAULT_REMOTE_TOKEN);
+        const p = path.join(dir, 'remote_vps_state.json');
+        let current: Record<string, unknown> = {};
+        if (nodeFs.existsSync(p)) {
+          try {
+            const raw = nodeFs.readFileSync(p, 'utf-8').trim();
+            if (raw) current = JSON.parse(raw);
+          } catch (err) {
+            log.warn('[IPC] Failed to parse remote_vps_state.json:', err);
+          }
+        }
+        const rawToken = payload.token ? String(payload.token).trim() : '';
+        const finalToken = (rawToken && rawToken !== 'null' && rawToken !== 'undefined')
+          ? rawToken
+          : (current.token ? String(current.token) : DEFAULT_REMOTE_TOKEN);
 
-      const updated = {
-        ...current,
-        ...(payload.active !== undefined ? { active: payload.active } : {}),
-        ...(payload.host !== undefined ? { host: payload.host } : {}),
-        token: finalToken,
-        ...(payload.remoteSessions !== undefined ? { remoteSessions: { ...((current.remoteSessions as Record<string, boolean>) || {}), ...payload.remoteSessions } } : {}),
-      };
-      await fs.writeFile(p, JSON.stringify(updated, null, 2), 'utf-8');
-      log.info(`[IPC] remote:set-state updated: active=${updated.active}, host=${updated.host}, tokenSet=${!!updated.token}`);
-      return { ok: true, state: updated };
-    } catch (err: any) {
-      log.warn('[IPC] remote:set-state error:', err);
-      return { ok: false, error: err.message || 'Erreur sauvegarde' };
-    }
+        const updated = {
+          ...current,
+          ...(payload.active !== undefined ? { active: payload.active } : {}),
+          ...(payload.host !== undefined ? { host: payload.host } : {}),
+          token: finalToken,
+          ...(payload.remoteSessions !== undefined ? { remoteSessions: { ...((current.remoteSessions as Record<string, boolean>) || {}), ...payload.remoteSessions } } : {}),
+        };
+        await atomicWriteJson(p, updated);
+        log.info(`[IPC] remote:set-state updated: active=${updated.active}, host=${updated.host}, tokenSet=${!!updated.token}`);
+        return { ok: true, state: updated };
+      } catch (err: any) {
+        log.warn('[IPC] remote:set-state error:', err);
+        return { ok: false, error: err.message || 'Erreur sauvegarde' };
+      }
+    });
   });
 
   // Get current remote VPS runtime state

@@ -32,7 +32,7 @@ func TestApprovalConcurrentMultiClientResolution(t *testing.T) {
 		trajectoryID: "traj-race-1",
 		stepIndex:    0,
 		approvalType: "file_permission",
-		filePath:     `C:\Users\amine\test.txt`,
+		filePath:     `C:\Users\developer\test.txt`,
 	}
 	gwServer.mu.Unlock()
 
@@ -49,7 +49,7 @@ func TestApprovalConcurrentMultiClientResolution(t *testing.T) {
 			"trajectoryId":"traj-race-1",
 			"stepIndex":0,
 			"approvalType":"file_permission",
-			"filePath":"C:\\Users\\amine\\test.txt",
+			"filePath":"C:\\Users\\developer\\test.txt",
 			"decision":"allow",
 			"scope":"workspace"
 		}`))
@@ -76,7 +76,7 @@ func TestApprovalConcurrentMultiClientResolution(t *testing.T) {
 			"trajectoryId":"traj-race-1",
 			"stepIndex":0,
 			"approvalType":"file_permission",
-			"filePath":"C:\\Users\\amine\\test.txt",
+			"filePath":"C:\\Users\\developer\\test.txt",
 			"decision":"deny",
 			"denyReason":"Duplicate submission"
 		}`))

@@ -14,7 +14,7 @@ void main() {
       expect(WorkspacePath.canonicalPath('c:/Repo/Project/'), 'c:/Repo/Project');
       expect(WorkspacePath.canonicalPath('file:///C:/Repo/Project'), 'c:/Repo/Project');
       expect(WorkspacePath.canonicalPath('file:///c%3A/Repo/Project/'), 'c:/Repo/Project');
-      expect(WorkspacePath.canonicalPath('file:///c:/Users/amine/Downloads/my%20app'), 'c:/Users/amine/Downloads/my app');
+      expect(WorkspacePath.canonicalPath('file:///c:/Users/developer/Downloads/my%20app'), 'c:/Users/developer/Downloads/my app');
     });
 
     test('isSameWorkspace compares case-insensitively with canonical form', () {

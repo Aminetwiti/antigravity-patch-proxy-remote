@@ -215,11 +215,11 @@ $$\forall X \neq Y, \quad \text{State}(X)_{t+1} = \text{State}(X)_t$$
 
 **Démonstration** :
 1. Soit la fonction de transition d'état du client $\mathcal{F} : \mathcal{S} \times \mathcal{E} \to \mathcal{S}$.
-2. D'après l'implémentation formelle ([`chat_stream_screen.dart:1734`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/mobile/lib/features/chat_stream/chat_stream_screen.dart#L1734)), la table de hachage est indexée exclusivement par `targetSessionId = e.cascadeId` :
+2. D'après l'implémentation formelle ([`chat_stream_screen.dart:1734`](file:///<repo-root>/remote/mobile/lib/features/chat_stream/chat_stream_screen.dart#L1734)), la table de hachage est indexée exclusivement par `targetSessionId = e.cascadeId` :
    $$\text{buf} = \text{\_sessionMessages}[\mathbf{e}.\text{cascadeId}]$$
 3. Pour toute session $X \neq Y$, la clé $X$ n'est pas accédée en écriture :
    $$\text{\_sessionMessages}[X]_{t+1} = \text{\_sessionMessages}[X]_t$$
-4. De plus, $\text{\_activeSessionId}$ n'apparaît dans aucune branche d'assignation lors de la réception d'un `stream_delta` ([`main.dart:775-785`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/mobile/lib/main.dart#L775-L785)).
+4. De plus, $\text{\_activeSessionId}$ n'apparaît dans aucune branche d'assignation lors de la réception d'un `stream_delta` ([`main.dart:775-785`](file:///<repo-root>/remote/mobile/lib/main.dart#L775-L785)).
 5. Par conséquent, $\text{State}(X)_{t+1} = \text{State}(X)_t$. $\quad \blacksquare$
 
 ---

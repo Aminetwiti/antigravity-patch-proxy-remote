@@ -247,12 +247,12 @@ Trois blocs de styles CSS sont explicitement intégrés dans le code de l'ASAR :
 ---
 
 ## 20. Design Tokens Extraits d'ASAR (`tokens.json`)
-Consolidés dans [`DESIGN_SYSTEM/colors.json`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/DESIGN_SYSTEM/colors.json) avec métadonnées de source.
+Consolidés dans [`DESIGN_SYSTEM/colors.json`](./colors.json) avec métadonnées de source.
 
 ---
 
 ## 21. Code → UI Mapping
-Documenté en détail dans [**`CODE_TO_UI_MAP.md`**](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/CODE_TO_UI_MAP.md).
+Documenté en détail dans [**`CODE_TO_UI_MAP.md`**](./CODE_TO_UI_MAP.md).
 
 ---
 

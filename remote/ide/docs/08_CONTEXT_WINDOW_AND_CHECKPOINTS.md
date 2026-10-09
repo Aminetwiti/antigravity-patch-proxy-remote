@@ -20,7 +20,7 @@ Création d'un serveur d'authentification OAuth
 2. Configurer les routes JWT
 
 # Conversation Logs
-- C:\Users\amine\.gemini\antigravity-ide\brain\<id>\.system_generated\logs\transcript.jsonl
+- C:/Users/developer\.gemini\antigravity-ide\brain\<id>\.system_generated\logs\transcript.jsonl
 ```
 
 ---

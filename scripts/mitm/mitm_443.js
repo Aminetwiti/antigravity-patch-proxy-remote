@@ -14,7 +14,7 @@
 *   - Run with admin rights so Node can bind port 443
 *
 * Usage (PowerShell admin):
-*   node C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\scripts\mitm\mitm_443.js
+*   node scripts\mitm\mitm_443.js
 */
 
 const https = require('https');

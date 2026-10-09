@@ -206,3 +206,57 @@ export function startProxyErrorBridge(): () => void {
     }
   };
 }
+
+export function renderInFlightBadge(inFlightCount: number, maxSlots = 4): string {
+  const count = Math.max(0, Math.min(maxSlots, inFlightCount || 0));
+  const slots: string[] = [];
+  for (let i = 0; i < maxSlots; i++) {
+    const isActive = i < count;
+    slots.push(`<span class="in-flight-slot ${isActive ? 'active' : 'idle'}"></span>`);
+  }
+  return `
+    <div class="in-flight-badge" title="In-flight concurrency: ${count}/${maxSlots} active slots">
+      <span class="in-flight-slots">${slots.join('')}</span>
+      <span class="in-flight-text">${count > 0 ? `${count} in-flight` : 'idle'}</span>
+    </div>
+  `.trim();
+}
+
+export function renderCooldownCountdownBadge(remainingSec: number): string {
+  const sec = Math.max(0, Math.round(remainingSec || 0));
+  if (sec <= 0) {
+    return `<span class="badge badge-success badge-sm">Ready</span>`;
+  }
+  return `
+    <span class="badge badge-danger badge-sm cooldown-badge" title="Cooldown active: ${sec}s remaining">
+      <svg class="cooldown-spinner" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
+        <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+        <path d="M12 2a10 10 0 0 1 10 10" />
+      </svg>
+      ⏱ ${sec}s
+    </span>
+  `.trim();
+}
+
+export function computeAccountHealth(account: any): { score: number; status: 'healthy' | 'warning' | 'critical' } {
+  if (!account || account.enabled === false) {
+    return { score: 0, status: 'critical' };
+  }
+  if (account.cooldownUntil && account.cooldownUntil > Date.now()) {
+    return { score: 10, status: 'critical' };
+  }
+
+  const q = account.quotas || {};
+  const pct5h = q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100;
+  const pctWeek = q.geminiWeeklyPct ?? q.weeklyPercentage ?? 100;
+  const inFlight = account.inFlightRequests || 0;
+
+  // Score starts from 5h percentage, minus in-flight penalty
+  let score = Math.round(pct5h * 0.7 + pctWeek * 0.3) - (inFlight * 15);
+  score = Math.max(0, Math.min(100, score));
+
+  if (score >= 60) return { score, status: 'healthy' };
+  if (score >= 20) return { score, status: 'warning' };
+  return { score, status: 'critical' };
+}
+

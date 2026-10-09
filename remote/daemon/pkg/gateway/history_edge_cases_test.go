@@ -10,11 +10,11 @@ func TestAdvancedEdgeCases_HistoryParsing(t *testing.T) {
 	t.Run("Mixed multi-line artifacts with spaces, parenthesis and Windows paths", func(t *testing.T) {
 		raw := `<USER_REQUEST>
 [ARTIFACT: Capture d'écran (1).PNG]
-Path: file:///C:/Users/Amine Twiti/.gemini/antigravity/brain/session-123/scratch/upload_1787324800703 (1).png
+Path: file:///C:/Users/Developer/.gemini/antigravity/brain/session-123/scratch/upload_1787324800703 (1).png
 Last Edited: 2026-08-21T16:00:00Z
 
 [ARTIFACT: second_diagram.jpg]
-Path: C:\Users\Amine Twiti\.gemini\antigravity\brain\session-123\.user_uploaded\second_diagram.jpg
+Path: C:\Users\Developer\.gemini\antigravity\brain\session-123\.user_uploaded\second_diagram.jpg
 
 Veuillez analyser ces deux captures et corriger l'erreur de layout.
 </USER_REQUEST>
@@ -36,10 +36,10 @@ The current local time is: 2026-08-21T17:00:00+01:00.
 		}
 
 		// 3. Les deux images doivent être transformées en tags markdown standardisés
-		if !strings.Contains(clean, "![Image](file:///C:/Users/Amine Twiti/.gemini/antigravity/brain/session-123/scratch/upload_1787324800703 (1).png)") {
+		if !strings.Contains(clean, "![Image](file:///C:/Users/Developer/.gemini/antigravity/brain/session-123/scratch/upload_1787324800703 (1).png)") {
 			t.Errorf("Première image non trouvée ou mal encodée dans : %s", clean)
 		}
-		if !strings.Contains(clean, "![Image](file:///C:/Users/Amine Twiti/.gemini/antigravity/brain/session-123/.user_uploaded/second_diagram.jpg)") {
+		if !strings.Contains(clean, "![Image](file:///C:/Users/Developer/.gemini/antigravity/brain/session-123/.user_uploaded/second_diagram.jpg)") {
 			t.Errorf("Deuxième image non convertie en URI file:/// dans : %s", clean)
 		}
 	})

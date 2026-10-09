@@ -17,7 +17,7 @@ import {
 } from '../constants';
 
 let _writeLock: Promise<void> = Promise.resolve();
-function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+export function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
   const next = _writeLock.then(() => fn(), () => fn());
   _writeLock = next.then(() => undefined, () => undefined);
   return next;
@@ -178,6 +178,9 @@ export async function loadCustomModels(): Promise<CustomModelFileEntry[]> {
             extraBody: Object.keys(mergedBody).length > 0 ? mergedBody : undefined,
             refreshToken: acc.refreshToken || p.refreshToken,
             projectId: acc.projectId || p.projectId,
+            tier: (acc as any).tier || (p as any).tier,
+            isFamily: Boolean((acc as any).isFamily || (acc as any).isFamilyShared),
+            hasClaude55: Boolean((acc as any).hasClaude55),
           });
         }
       }
@@ -276,7 +279,7 @@ export async function loadProviders(): Promise<ProviderFileEntry[]> {
   }
 }
 
-function atomicWriteJson(filePath: string, payload: unknown): Promise<void> {
+export function atomicWriteJson(filePath: string, payload: unknown): Promise<void> {
   return (async () => {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;

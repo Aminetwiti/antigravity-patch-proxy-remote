@@ -24,7 +24,7 @@
 ## 2. Source de Vérité Protobuf & Référence Officielle
 
 L'ensemble des définitions de services et schémas Protobuf est consigné dans :
-1. **Schémas gRPC & Protobuf canoniques** : [`remote/proto/remote_service.proto`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/remote_service.proto) ainsi que les définitions annexes sous [`remote/proto/exa/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/exa) et [`remote/proto/google/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/google).
+1. **Schémas gRPC & Protobuf canoniques** : [`remote/proto/remote_service.proto`](file:///<repo-root>/remote/proto/remote_service.proto) ainsi que les définitions annexes sous [`remote/proto/exa/`](file:///<repo-root>/remote/proto/exa) et [`remote/proto/google/`](file:///<repo-root>/remote/proto/google).
 2. **Schémas de sessions et planners** :
    - `StartCascadeRequest`, `CascadeConfig`, `CascadePlannerConfig`.
    - `TextOrScopeItem`, `Metadata`, `ModelOrAlias`.
@@ -83,6 +83,6 @@ L'ensemble des définitions de services et schémas Protobuf est consigné dans 
 
 ## 6. Références & Liens Documentaires
 
-- Documentation Protocole : [PROTOCOL.md](file:///C:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/PROTOCOL.md)
-- Guide d'utilisation : [README.md](file:///C:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/README.md)
-- Répertoire d'outils et de schémas : [remote/tools/](file:///C:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/tools/README.md)
+- Documentation Protocole : [PROTOCOL.md](file:///<repo-root>/remote/PROTOCOL.md)
+- Guide d'utilisation : [README.md](file:///<repo-root>/remote/README.md)
+- Répertoire d'outils et de schémas : [remote/tools/](file:///<repo-root>/remote/tools/README.md)

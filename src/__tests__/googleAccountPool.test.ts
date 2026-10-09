@@ -34,6 +34,7 @@ import {
   setAccountCooldown,
   clearAccountCooldown,
   getAccountCooldownRemaining,
+  getSoonestAccountCooldownRemaining,
   isAccountInProbation,
   endAccountProbation,
   _resetAccountProbation,
@@ -57,6 +58,13 @@ import {
   _resetAccountLatencies,
   isPoolUnderQuotaStress,
   resolveGoogleProjectId,
+  markAccountUnlicensed,
+  isAccountUnlicensed,
+  _resetUnlicensedAccounts,
+  getActiveAccountCooldowns,
+  restoreActiveAccountCooldowns,
+  verifyAndReconcileCooldowns,
+  _resetAllAccountCooldowns,
 } from '../proxy';
 import { recordFailure, recordSuccess, getOpenBreaker } from '../proxy/circuitBreaker';
 import {
@@ -172,6 +180,43 @@ describe('Google Multi-Account Pool & Failover', () => {
     ];
     const pool = getGoogleAccountPool(mockGoogleModels[0], duplicateList);
     expect(pool.length).toBe(2);
+  });
+
+  it('excludes virtual auto-pool placeholders from candidate pool', () => {
+    const listWithVirtual: CustomModel[] = [
+      mockGoogleModels[0], // user1
+      mockGoogleModels[1], // user2
+      {
+        name: 'models/google:gemini-3.1-pro-high:auto-pool',
+        displayName: 'Gemini 3.1 Pro (High)',
+        provider: 'google',
+        apiKey: 'auto',
+        externalModelName: 'gemini-3.1-pro-high',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      },
+    ];
+    const pool = getGoogleAccountPool(listWithVirtual[2], listWithVirtual);
+    expect(pool.length).toBe(2);
+    expect(pool.map((m) => m.accountEmail)).toEqual(['user1@gmail.com', 'user2@gmail.com']);
+  });
+
+  it('coalesces missing accountEmail to known email via refreshToken in getAccountQuotaKey', () => {
+    const modelWithEmail: CustomModel = {
+      name: 'models/model-1',
+      displayName: 'Model 1',
+      provider: 'google',
+      accountEmail: 'test-user-a@example.com',
+      refreshToken: 'token_wSqMnk',
+    };
+    const modelWithoutEmail: CustomModel = {
+      name: 'models/model-2',
+      displayName: 'Model 2',
+      provider: 'google',
+      refreshToken: 'token_wSqMnk',
+    };
+
+    expect(getAccountQuotaKey(modelWithEmail)).toBe('google:test-user-a@example.com');
+    expect(getAccountQuotaKey(modelWithoutEmail)).toBe('google:test-user-a@example.com');
   });
 
   it('prioritizes accounts with highest remaining quota', () => {
@@ -582,7 +627,7 @@ describe('Google Multi-Account Pool & Failover', () => {
       expect(getModelQuotaScore(recoveredWeekly, 'gemini')).toBeGreaterThan(0);
     });
 
-    it('allows Flash models to have positive quota score even when weekly quota is 0%', () => {
+    it('returns 0 score when weekly quota is 0% (including for Flash models) to prevent doomed 429 errors', () => {
       const futureReset = new Date(Date.now() + 86400_000).toISOString();
       const flashModel: CustomModel = {
         name: 'flash-candidate',
@@ -596,9 +641,9 @@ describe('Google Multi-Account Pool & Failover', () => {
           geminiWeeklyReset: futureReset,
         },
       };
-      // Score should reflect 98 * 0.7 = 68.6 > 0
-      expect(getModelQuotaScore(flashModel, 'gemini')).toBeCloseTo(68.6, 1);
-      expect(getAccountDynamicScore(flashModel, 'gemini')).toBeGreaterThan(0);
+      // Once weekly quota is 0, Google blocks all requests (including Flash) with 429
+      expect(getModelQuotaScore(flashModel, 'gemini')).toBe(0);
+      expect(getAccountDynamicScore(flashModel, 'gemini')).toBe(0);
     });
   });
 
@@ -900,6 +945,163 @@ describe('Google Multi-Account Pool & Failover', () => {
       expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
     });
 
+    it('autoHealAccountOnQuotaRecovery does NOT lift multi-day cooldown (>5h remaining)', () => {
+      const acc: CustomModel = {
+        name: 'test-multiday-heal',
+        provider: 'google',
+        accountEmail: 'multiday@example.com',
+        refreshToken: 'multiday_token',
+      };
+      const key = getAccountQuotaKey(acc);
+      // Set a 48h cooldown from Google Cloud Code 429 quota exhaustion
+      setAccountCooldown(acc, 48 * 3600_000, 'gemini');
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      // Auto-heal triggered by 5-hour rolling bucket recovering to 100%
+      autoHealAccountOnQuotaRecovery(key, {
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 100,
+        claudeFiveHourPct: 100,
+        claudeWeeklyPct: 100,
+        fiveHourPercentage: 100,
+        weeklyPercentage: 100,
+        updatedAt: Date.now(),
+      });
+
+      // Must remain in cooldown because multi-day tier block is still active
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+    });
+
+    it('autoHealAccountOnQuotaRecovery preserves multi-day cooldown when weekly quota is depleted', () => {
+      const acc: CustomModel = {
+        name: 'Gemini 3.8 Flash (Low)',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        provider: 'google',
+        accountEmail: 'flash-depleted@example.com',
+        refreshToken: 'flash_token',
+      };
+      const key = getAccountQuotaKey(acc);
+      // 68h cooldown from Google Cloud Code 429 quota exhaustion
+      setAccountCooldown(acc, 68 * 3600_000, 'gemini');
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      // Quota poll shows 5h=100% but weekly=0%
+      autoHealAccountOnQuotaRecovery(key, {
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 0,
+        claudeFiveHourPct: 100,
+        claudeWeeklyPct: 0,
+        fiveHourPercentage: 100,
+        weeklyPercentage: 0,
+        updatedAt: Date.now(),
+      });
+
+      // Must remain in cooldown to stop zombie loop
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+      expect(getAccountDynamicScore(acc, 'gemini')).toBe(0);
+    });
+
+    it('autoHealAccountOnQuotaRecovery lifts multi-day cooldown once Google reset timestamp has elapsed', () => {
+      const acc: CustomModel = {
+        name: 'Gemini 3.8 Flash (Low)',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        provider: 'google',
+        accountEmail: 'reset-passed@example.com',
+        refreshToken: 'reset_passed_token',
+      };
+      const key = getAccountQuotaKey(acc);
+      // 48h cooldown
+      setAccountCooldown(acc, 48 * 3600_000, 'gemini');
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      // Reset timestamp is in the past, quota is recovered
+      autoHealAccountOnQuotaRecovery(key, {
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 100,
+        claudeFiveHourPct: 100,
+        claudeWeeklyPct: 100,
+        fiveHourPercentage: 100,
+        weeklyPercentage: 100,
+        geminiResetTime: new Date(Date.now() - 5000).toISOString(),
+        updatedAt: Date.now(),
+      });
+
+      // Account must be woken up because Google reset timestamp has passed
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
+    });
+
+    it('verifyAndReconcileCooldowns cleans expired cooldowns and wakes up healthy accounts', () => {
+      _resetAllAccountCooldowns();
+      const accHealthy: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:healthy',
+        provider: 'google',
+        accountEmail: 'wake-healthy@example.com',
+        refreshToken: 'healthy_token',
+      };
+      const accExpired: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:expired',
+        provider: 'google',
+        accountEmail: 'wake-expired@example.com',
+        refreshToken: 'expired_token',
+      };
+
+      // Set cooldowns
+      setAccountCooldown(accHealthy, 10 * 3600_000, 'gemini');
+      setAccountCooldown(accExpired, -1000, 'gemini'); // Already expired in past
+
+      // Provide live quota showing accHealthy has 100% quota
+      updateLiveAccountQuota('google:wake-healthy@example.com', {
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 100,
+        claudeFiveHourPct: 100,
+        claudeWeeklyPct: 100,
+        fiveHourPercentage: 100,
+        weeklyPercentage: 100,
+        updatedAt: Date.now(),
+      });
+
+      const report = verifyAndReconcileCooldowns();
+      expect(report.checked).toBe(2);
+      expect(report.cleared).toBe(2);
+      expect(report.active).toBe(0);
+      expect(isAccountInCooldown(accHealthy, 'gemini')).toBe(false);
+      expect(isAccountInCooldown(accExpired, 'gemini')).toBe(false);
+
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+    });
+
+    it('verifyAndReconcileCooldowns wakes up accounts via customModels fallback and handles geminiFiveHourReset', () => {
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+
+      const acc: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:fallback-test',
+        provider: 'google',
+        accountEmail: 'fallback-wake@example.com',
+        refreshToken: 'fallback_token',
+        quotas: {
+          geminiFiveHourPct: 100,
+          geminiWeeklyPct: 100,
+          geminiFiveHourReset: new Date(Date.now() + 7 * 86400_000).toISOString(),
+          weeklyPercentage: 100,
+          fiveHourPercentage: 100,
+        },
+      };
+
+      // Set multi-day cooldown
+      setAccountCooldown(acc, 7 * 24 * 3600_000, 'gemini');
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      // Call verifyAndReconcileCooldowns passing customModels array without live quotas registered
+      const report = verifyAndReconcileCooldowns(Date.now(), [acc]);
+      expect(report.cleared).toBe(1);
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
+
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+    });
+
     it('cooldown expires properly after cooldown duration passes', () => {
       const acc: CustomModel = {
         name: 'test-expire',
@@ -919,5 +1121,352 @@ describe('Google Multi-Account Pool & Failover', () => {
         Date.now = realNow;
       }
     });
+
+    it('selectBestModelByQuota prioritizes Google Cloud Code accounts over static AI Studio developer keys when quota is available', () => {
+      const ccAcc: CustomModel = {
+        name: 'models/google:gemini-3.8-flash-tiered:acc1',
+        provider: 'google',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        accountEmail: 'cc-user@example.com',
+        refreshToken: 'refresh_tok_123',
+        quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 80 },
+      };
+
+      const aiStudioAcc: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:aistudio',
+        provider: 'google-gemini',
+        externalModelName: 'gemini-3.8-flash',
+        apiKey: 'AIzaSyA_sample_key_12345',
+      };
+
+      // When both are healthy, Cloud Code must be selected over static AI Studio key
+      const selected = selectBestModelByQuota([aiStudioAcc, ccAcc]);
+      expect(selected?.accountEmail).toBe('cc-user@example.com');
+      expect(selected?.refreshToken).toBe('refresh_tok_123');
+    });
+
+    it('selectBestModelByQuota falls back to static AI Studio developer key when Cloud Code accounts are exhausted', () => {
+      const ccAccExhausted: CustomModel = {
+        name: 'models/google:gemini-3.8-flash-tiered:acc-exhausted',
+        provider: 'google',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        accountEmail: 'exhausted@example.com',
+        refreshToken: 'refresh_tok_exhausted',
+        quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 0 },
+      };
+
+      const aiStudioAcc: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:aistudio',
+        provider: 'google-gemini',
+        externalModelName: 'gemini-3.8-flash',
+        apiKey: 'AIzaSyA_sample_key_12345',
+      };
+
+      // Cloud Code has 0 quota -> fallback to static AI Studio key (which has fallback score 25)
+      const selected = selectBestModelByQuota([ccAccExhausted, aiStudioAcc]);
+      expect(selected?.apiKey).toBe('AIzaSyA_sample_key_12345');
+    });
+
+    it('getModelQuotaScore returns 25 for AI Studio keys without quota and 50 for generic models', () => {
+      const aiStudioAcc: CustomModel = {
+        name: 'ai-studio',
+        provider: 'google-gemini',
+        apiKey: 'AIzaSyA_test_key',
+      };
+      const genericAcc: CustomModel = {
+        name: 'generic-openai',
+        provider: 'openai',
+        apiKey: 'sk-test-key',
+      };
+      expect(getModelQuotaScore(aiStudioAcc)).toBe(25);
+      expect(getModelQuotaScore(genericAcc)).toBe(50);
+    });
+
+    it('unlicensed accounts (HTTP 403) are quarantined and excluded from pool and auto-heal', () => {
+      const unlicensedModel: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:unlicensed',
+        displayName: 'Gemini 3.8 Flash',
+        provider: 'google',
+        accountEmail: 'unlicensed@example.com',
+        refreshToken: 'refresh_unlicensed',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      };
+      const healthyModel: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:healthy',
+        displayName: 'Gemini 3.8 Flash',
+        provider: 'google',
+        accountEmail: 'healthy@gmail.com',
+        refreshToken: 'refresh_healthy',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      };
+
+      expect(isAccountUnlicensed(unlicensedModel)).toBe(false);
+      markAccountUnlicensed(unlicensedModel);
+      expect(isAccountUnlicensed(unlicensedModel)).toBe(true);
+      expect(isAccountInCooldown(unlicensedModel)).toBe(true);
+
+      // Excluded from pool
+      const pool = getGoogleAccountPool(healthyModel, [unlicensedModel, healthyModel]);
+      expect(pool.map((m) => m.accountEmail)).toEqual(['healthy@gmail.com']);
+
+      // Auto-heal must NEVER un-cool an unlicensed account
+      const key = getAccountQuotaKey(unlicensedModel);
+      autoHealAccountOnQuotaRecovery(key, {
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 100,
+        claudeFiveHourPct: 100,
+        claudeWeeklyPct: 100,
+        fiveHourPercentage: 100,
+        weeklyPercentage: 100,
+        updatedAt: Date.now(),
+      });
+
+      expect(isAccountInCooldown(unlicensedModel)).toBe(true);
+      _resetUnlicensedAccounts();
+    });
+
+    it('resolveGoogleProjectId resolves gemini-cli-users for Gemini CLI models and strips aicode-consumers', () => {
+      const cliWithAicodeConsumers: CustomModel = {
+        name: 'models/gemini-cli:gemini-3.8-flash',
+        provider: 'gemini-cli',
+        projectId: 'aicode-consumers',
+      };
+      const cliWithCustomProj: CustomModel = {
+        name: 'models/gemini-cli:gemini-3.8-flash:custom',
+        provider: 'gemini-cli',
+        projectId: 'my-personal-gcp-project',
+      };
+      const standardGoogleModel: CustomModel = {
+        name: 'models/google:gemini-3.8-flash',
+        provider: 'google',
+        projectId: 'aicode-consumers',
+      };
+
+      expect(resolveGoogleProjectId(cliWithAicodeConsumers)).toBe('gemini-cli-users');
+      expect(resolveGoogleProjectId(cliWithCustomProj)).toBe('my-personal-gcp-project');
+      expect(resolveGoogleProjectId(standardGoogleModel)).toBe('aicode-consumers');
+    });
+
+    it('isAccountUnlicensed matches accounts across email and different provider prefixes', () => {
+      const cliModel: CustomModel = {
+        name: 'models/gemini-cli:gemini-3.8-flash',
+        provider: 'gemini-cli',
+        accountEmail: 'test-cross-prefix@example.com',
+      };
+      const googleModel: CustomModel = {
+        name: 'models/google:gemini-3.8-flash',
+        provider: 'google',
+        accountEmail: 'test-cross-prefix@example.com',
+      };
+
+      expect(isAccountUnlicensed(cliModel)).toBe(false);
+      expect(isAccountUnlicensed(googleModel)).toBe(false);
+
+      markAccountUnlicensed(cliModel);
+
+      // Both must be recognized as unlicensed
+      expect(isAccountUnlicensed(cliModel)).toBe(true);
+      expect(isAccountUnlicensed(googleModel)).toBe(true);
+
+      _resetUnlicensedAccounts();
+    });
+
+    it('exports active account cooldowns and restores them across app restarts', () => {
+      _resetAllAccountCooldowns();
+      const testModel: CustomModel = {
+        name: 'models/google:gemini-3.8-flash',
+        provider: 'google',
+        accountEmail: 'test-cooldown-persist@example.com',
+      };
+
+      expect(isAccountInCooldown(testModel, 'gemini')).toBe(false);
+
+      // Set cooldown for 2 hours
+      setAccountCooldown(testModel, 2 * 3600 * 1000, 'gemini');
+      expect(isAccountInCooldown(testModel, 'gemini')).toBe(true);
+
+      // Export active cooldowns
+      const activeCooldowns = getActiveAccountCooldowns();
+      const accKey = getAccountQuotaKey(testModel);
+      expect(activeCooldowns[`${accKey}:gemini`]).toBeGreaterThan(Date.now());
+
+      // Reset in-memory cooldowns (simulating restart)
+      _resetAllAccountCooldowns();
+      expect(isAccountInCooldown(testModel, 'gemini')).toBe(false);
+
+      // Restore active cooldowns
+      restoreActiveAccountCooldowns(activeCooldowns);
+      expect(isAccountInCooldown(testModel, 'gemini')).toBe(true);
+
+      _resetAllAccountCooldowns();
+    });
+
+    it('wakes up accounts with stored healthy quotas after reconciliation', () => {
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+
+      const accStuck: CustomModel = {
+        name: 'models/google:gemini-3.8-flash',
+        provider: 'google',
+        accountEmail: 'stuck-account@example.com',
+        quotas: {
+          geminiFiveHourPct: 100,
+          geminiWeeklyPct: 100,
+          claudeFiveHourPct: 100,
+          claudeWeeklyPct: 100,
+          fiveHourPercentage: 100,
+          weeklyPercentage: 100,
+        },
+      };
+
+      // Set multi-day cooldown
+      setAccountCooldown(accStuck, 7 * 24 * 3600_000, 'gemini');
+      expect(isAccountInCooldown(accStuck, 'gemini')).toBe(true);
+
+      // Seed quota from model
+      const key = getAccountQuotaKey(accStuck);
+      updateLiveAccountQuota(key, accStuck.quotas as any);
+
+      // Reconcile
+      const report = verifyAndReconcileCooldowns();
+      expect(report.cleared).toBeGreaterThanOrEqual(1);
+      expect(isAccountInCooldown(accStuck, 'gemini')).toBe(false);
+
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+    });
+
+    it('verifyAndReconcileCooldowns checks both 5h and weekly quota and formats wake-up reason with both', () => {
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+
+      const acc: CustomModel = {
+        name: 'models/google:gemini-3.8-flash',
+        provider: 'google',
+        accountEmail: 'both-quotas@example.com',
+        quotas: {
+          geminiFiveHourPct: 85,
+          geminiWeeklyPct: 92,
+          claudeFiveHourPct: 80,
+          claudeWeeklyPct: 88,
+          fiveHourPercentage: 85,
+          weeklyPercentage: 92,
+        },
+      };
+
+      setAccountCooldown(acc, 7 * 24 * 3600_000, 'gemini');
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      const report = verifyAndReconcileCooldowns(Date.now(), [acc]);
+      expect(report.cleared).toBe(1);
+      expect(report.details[0]).toContain('5h=85%');
+      expect(report.details[0]).toContain('week=92%');
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
+
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+    });
+
+    it('getSoonestAccountCooldownRemaining identifies earliest cooldown among rate-limited accounts', () => {
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+
+      const acc1: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:1',
+        provider: 'google',
+        accountEmail: 'cd1@example.com',
+        quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 80 },
+      };
+      const acc2: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:2',
+        provider: 'google',
+        accountEmail: 'cd2@example.com',
+        quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 80 },
+      };
+      const acc3: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:3',
+        provider: 'google',
+        accountEmail: 'cd3@example.com',
+        quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 80 },
+      };
+
+      setAccountCooldown(acc1, 50_000, 'gemini');
+      setAccountCooldown(acc2, 15_000, 'gemini');
+      setAccountCooldown(acc3, 40_000, 'gemini');
+
+      const soonest = getSoonestAccountCooldownRemaining([acc1, acc2, acc3], 'gemini', 65_000);
+      expect(soonest).not.toBeNull();
+      expect(soonest?.candidate.accountEmail).toBe('cd2@example.com');
+      expect(soonest?.remainingMs).toBeGreaterThan(0);
+      expect(soonest?.remainingMs).toBeLessThanOrEqual(20_000);
+
+      _resetAllAccountCooldowns();
+    });
+
+    it('getSoonestAccountCooldownRemaining returns remainingMs: 0 immediately if an eligible account is not in cooldown', () => {
+      _resetAllAccountCooldowns();
+
+      const accInCd: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:cd',
+        provider: 'google',
+        accountEmail: 'in-cd@example.com',
+        quotas: { geminiFiveHourPct: 80 },
+      };
+      const accFree: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:free',
+        provider: 'google',
+        accountEmail: 'free@example.com',
+        quotas: { geminiFiveHourPct: 80 },
+      };
+
+      setAccountCooldown(accInCd, 30_000, 'gemini');
+
+      const soonest = getSoonestAccountCooldownRemaining([accInCd, accFree], 'gemini', 65_000);
+      expect(soonest).not.toBeNull();
+      expect(soonest?.candidate.accountEmail).toBe('free@example.com');
+      expect(soonest?.remainingMs).toBe(0);
+
+      _resetAllAccountCooldowns();
+    });
+
+    it('getSoonestAccountCooldownRemaining returns null if all cooldowns exceed maxWaitMs (e.g. daily quota exhausted)', () => {
+      _resetAllAccountCooldowns();
+
+      const accLongCd: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:long',
+        provider: 'google',
+        accountEmail: 'long-cd@example.com',
+        quotas: { geminiFiveHourPct: 80 },
+      };
+
+      // 5 hours cooldown (daily exhaustion)
+      setAccountCooldown(accLongCd, 5 * 3600_000, 'gemini');
+
+      const soonest = getSoonestAccountCooldownRemaining([accLongCd], 'gemini', 65_000);
+      expect(soonest).toBeNull();
+
+      _resetAllAccountCooldowns();
+    });
+
+    it('getSoonestAccountCooldownRemaining ignores accounts with 0% daily quota', () => {
+      _resetAllAccountCooldowns();
+
+      const accZeroQuota: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:zero',
+        provider: 'google',
+        accountEmail: 'zero-quota@example.com',
+        quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 0 },
+      };
+
+      setAccountCooldown(accZeroQuota, 10_000, 'gemini');
+
+      const soonest = getSoonestAccountCooldownRemaining([accZeroQuota], 'gemini', 65_000);
+      expect(soonest).toBeNull();
+
+      _resetAllAccountCooldowns();
+    });
   });
 });
+

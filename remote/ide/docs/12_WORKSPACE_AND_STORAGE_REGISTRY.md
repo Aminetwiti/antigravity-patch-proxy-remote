@@ -15,13 +15,13 @@
 {
   "backupWorkspaces": {
     "folders": [
-      { "folderUri": "file:///c%3A/Users/amine/Downloads/antigravity-add-model-main" },
-      { "folderUri": "file:///c%3A/Users/amine/Desktop/mon-projet" }
+      { "folderUri": "file:///c%3A/Users/developer/Downloads/antigravity-add-model-main" },
+      { "folderUri": "file:///c%3A/Users/developer/Desktop/mon-projet" }
     ]
   },
   "windowsState": {
     "lastActiveWindow": {
-      "folder": "file:///c%3A/Users/amine/Downloads/antigravity-add-model-main"
+      "folder": "file:///c%3A/Users/developer/Downloads/antigravity-add-model-main"
     }
   }
 }

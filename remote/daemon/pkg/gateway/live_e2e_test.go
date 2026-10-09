@@ -193,7 +193,7 @@ func TestLiveAntigravityE2E(t *testing.T) {
 	sendReq(map[string]interface{}{
 		"type":          "list_files",
 		"requestId":     "req-files-1",
-		"workspacePath": "C:\\Users\\amine\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main",
+		"workspacePath": "C:\\Users\\developer\\Downloads\\antigravity-add-model-main\\antigravity-add-model-main",
 	})
 	filesResp := recvMatching("req-files-1", 30*time.Second)
 	if filesResp["type"] != "response" || filesResp["requestId"] != "req-files-1" {

@@ -11,19 +11,19 @@
 
 2. **Vérifier que le CA existe** :
    ```powershell
-   Test-Path "C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\certs\ca-cert.pem"
+   Test-Path "<repo-root>\certs\ca-cert.pem"
    ```
    Si `False`, le générer :
    ```bash
    # Depuis WSL :
-   cd /mnt/c/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/certs
+   cd /mnt/c/Users/developer/Downloads/antigravity-add-model-main/antigravity-add-model-main/certs
    openssl req -x509 -newkey rsa:2048 -nodes -keyout ca-key.pem -out ca-cert.pem -days 3650 -subj "/CN=Antigravity MITM CA"
    ```
 
 3. **Importer le CA dans le store Windows** :
    ```powershell
-   Import-Certificate -FilePath "C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\certs\ca-cert.pem" -CertStoreLocation Cert:\LocalMachine\Root
-   Import-Certificate -FilePath "C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\certs\ca-cert.pem" -CertStoreLocation Cert:\CurrentUser\Root
+   Import-Certificate -FilePath "<repo-root>\certs\ca-cert.pem" -CertStoreLocation Cert:\LocalMachine\Root
+   Import-Certificate -FilePath "<repo-root>\certs\ca-cert.pem" -CertStoreLocation Cert:\CurrentUser\Root
    ```
 
 ### 12.2 Lancement à chaque reboot / update Antigravity
@@ -32,7 +32,7 @@ Option A — Script PowerShell (le plus simple) :
 
 ```powershell
 # PowerShell ADMIN
-& "C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\scripts\mitm\start_mitm_443.ps1"
+& "<repo-root>\scripts\mitm\start_mitm_443.ps1"
 ```
 
 Le script :
@@ -43,10 +43,10 @@ Le script :
 
 Option B — Wrapper VBS (pour lancer sans ouvrir une console admin) :
 
-Créer `C:\Users\amine\StartAntigravityMITM.vbs` :
+Créer `C:/Users/developer\StartAntigravityMITM.vbs` :
 ```vbs
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "powershell -NoProfile -ExecutionPolicy Bypass -File ""C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\scripts\mitm\start_mitm_443.ps1""", 1, False
+WshShell.Run "powershell -NoProfile -ExecutionPolicy Bypass -File ""<repo-root>\scripts\mitm\start_mitm_443.ps1""", 1, False
 Set WshShell = Nothing
 ```
 
@@ -68,7 +68,7 @@ Les logs vont dans la console où le script a été lancé. Pour logger dans un
 fichier :
 
 ```powershell
-& node "C:\Users\amine\Downloads\antigravity-add-model-main\antigravity-add-model-main\scripts\mitm\mitm_443.js" *>&1 \| Tee-Object -FilePath "C:\Users\amine\AppData\Local\Temp\mitm-443.log"
+& node "<repo-root>\scripts\mitm\mitm_443.js" *>&1 \| Tee-Object -FilePath "C:/Users/developer\AppData\Local\Temp\mitm-443.log"
 ```
 
 ---

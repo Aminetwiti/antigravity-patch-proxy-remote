@@ -595,7 +595,7 @@ git commit -m "fix: package complete proxy tree in 2.3 patch"
 
 **Files:**
 - Modify only if a discovered defect requires it: `scripts/patch_2_3.js`
-- Use: `C:/Users/amine/AppData/Local/Programs/Antigravity/resources/app.asar.pre-2.3.1.bak`
+- Use: `%LOCALAPPDATA%\\Programs\\Antigravity/resources/app.asar.pre-2.3.1.bak`
 - Create temporary output outside the installation: `$TEMP/antigravity-2.3.1-patch-validation/`
 
 **Interfaces:**
@@ -673,8 +673,8 @@ git commit -m "fix: harden 2.3 candidate validation"
 ### Task 6: Repair the local Antigravity 2.3.1 installation transactionally
 
 **Files:**
-- Installed archive: `C:/Users/amine/AppData/Local/Programs/Antigravity/resources/app.asar`
-- Original backup: `C:/Users/amine/AppData/Local/Programs/Antigravity/resources/app.asar.pre-2.3.1.bak`
+- Installed archive: `%LOCALAPPDATA%\\Programs\\Antigravity/resources/app.asar`
+- Original backup: `%LOCALAPPDATA%\\Programs\\Antigravity/resources/app.asar.pre-2.3.1.bak`
 - Validated candidate: `$TEMP/antigravity-2.3.1-patch-validation/app.asar`
 - Diagnostic backup to create: `app.asar.black-screen-2026-07-22.bak`
 

@@ -22,6 +22,30 @@ export interface PersistentQuotaCacheData {
   savedAt: number;
   quotas: Record<string, AccountLiveQuota>;
   revokedTokens: string[];
+  unlicensedAccounts?: string[];
+  accountCooldowns?: Record<string, number>;
+}
+
+let getUnlicensedAccountsFn: (() => string[]) | null = null;
+let restoreUnlicensedAccountsFn: ((keys: string[]) => void) | null = null;
+
+export function registerUnlicensedAccountsHandlers(
+  getFn: () => string[],
+  restoreFn: (keys: string[]) => void,
+): void {
+  getUnlicensedAccountsFn = getFn;
+  restoreUnlicensedAccountsFn = restoreFn;
+}
+
+let getAccountCooldownsFn: (() => Record<string, number>) | null = null;
+let restoreAccountCooldownsFn: ((cooldowns: Record<string, number>) => void) | null = null;
+
+export function registerAccountCooldownHandlers(
+  getFn: () => Record<string, number>,
+  restoreFn: (cooldowns: Record<string, number>) => void,
+): void {
+  getAccountCooldownsFn = getFn;
+  restoreAccountCooldownsFn = restoreFn;
 }
 
 let persistTimeout: NodeJS.Timeout | null = null;
@@ -68,6 +92,25 @@ export async function loadPersistentQuotaCache(customPath?: string): Promise<boo
       log.info(`[QuotaCacheStore] Restored ${data.revokedTokens.length} quarantined token(s) from disk cache`);
     }
 
+    // Restore unlicensed accounts (HTTP 403)
+    if (Array.isArray(data.unlicensedAccounts) && restoreUnlicensedAccountsFn) {
+      restoreUnlicensedAccountsFn(data.unlicensedAccounts);
+      log.info(`[QuotaCacheStore] Restored ${data.unlicensedAccounts.length} unlicensed account(s) from disk cache`);
+    }
+
+    // Restore active account cooldowns (HTTP 429)
+    if (data.accountCooldowns && typeof data.accountCooldowns === 'object' && restoreAccountCooldownsFn) {
+      const now = Date.now();
+      const active: Record<string, number> = {};
+      for (const [k, until] of Object.entries(data.accountCooldowns)) {
+        if (typeof until === 'number' && until > now) {
+          active[k] = until;
+        }
+      }
+      restoreAccountCooldownsFn(active);
+      log.info(`[QuotaCacheStore] Restored ${Object.keys(active).length} active account cooldown(s) from disk cache`);
+    }
+
     return true;
   } catch (err: any) {
     if (err?.code !== 'ENOENT') {
@@ -96,11 +139,40 @@ export async function savePersistentQuotaCache(customPath?: string): Promise<voi
       savedAt: Date.now(),
       quotas: quotasRecord,
       revokedTokens: getAllRevokedTokens(),
+      unlicensedAccounts: getUnlicensedAccountsFn ? getUnlicensedAccountsFn() : [],
+      accountCooldowns: getAccountCooldownsFn ? getAccountCooldownsFn() : {},
     };
 
     const tempPath = `${filePath}.tmp.${Date.now()}`;
     await fs.writeFile(tempPath, JSON.stringify(payload, null, 2), 'utf8');
-    await fs.rename(tempPath, filePath);
+    
+    // Windows atomic rename resilience (handles transient EPERM / EBUSY anti-virus locks)
+    let renamed = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await fs.rename(tempPath, filePath);
+        renamed = true;
+        break;
+      } catch (renameErr: any) {
+        if (attempt < 2 && (renameErr?.code === 'EPERM' || renameErr?.code === 'EBUSY')) {
+          await new Promise((r) => setTimeout(r, 60 * (attempt + 1)));
+        } else {
+          // Fallback to copyFile + unlink if rename is persistently locked
+          try {
+            await fs.copyFile(tempPath, filePath);
+            await fs.unlink(tempPath).catch(() => {});
+            renamed = true;
+            break;
+          } catch {
+            throw renameErr;
+          }
+        }
+      }
+    }
+    if (!renamed) {
+      await fs.unlink(tempPath).catch(() => {});
+    }
+
     log.debug(`[QuotaCacheStore] Persisted ${Object.keys(quotasRecord).length} quotas to ${filePath}`);
   } catch (err: any) {
     log.warn(`[QuotaCacheStore] Failed to write persistent quota cache: ${err?.message || err}`);
@@ -122,11 +194,28 @@ export function triggerQuotaCachePersist(delayMs = 500): void {
 }
 
 /**
- * Test helper to cancel timers and clear pending writes.
- */
+  * Test helper to cancel timers and clear pending writes.
+  */
 export function _clearQuotaPersistTimersForTests(): void {
   if (persistTimeout) {
     clearTimeout(persistTimeout);
     persistTimeout = null;
+  }
+}
+
+/**
+ * Completely purges the persistent quota cache file and memory state.
+ */
+export async function purgePersistentQuotaCache(customPath?: string): Promise<boolean> {
+  const filePath = customPath || getQuotaCachePath();
+  try {
+    if (persistTimeout) {
+      clearTimeout(persistTimeout);
+      persistTimeout = null;
+    }
+    await fs.unlink(filePath).catch(() => {});
+    return true;
+  } catch {
+    return false;
   }
 }

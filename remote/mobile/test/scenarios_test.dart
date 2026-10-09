@@ -112,11 +112,11 @@ void _scenario2() {
     test('create_cascade envoie workspacePath et retourne cascadeId', () async {
       final (:api, :ctrl, :out) = _mkApi();
 
-      final future = api.createCascade('file:///C:/Users/amine/proj');
+      final future = api.createCascade('file:///C:/Users/developer/proj');
       await Future<void>.delayed(Duration.zero);
 
       expect(out.first['type'], 'create_cascade');
-      expect(out.first['workspacePath'], 'file:///C:/Users/amine/proj');
+      expect(out.first['workspacePath'], 'file:///C:/Users/developer/proj');
 
       _respond(ctrl, out.first['requestId'] as String, {
         'sessions': [{'cascadeId': 'new-cascade-id'}],

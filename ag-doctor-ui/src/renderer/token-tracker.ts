@@ -31,6 +31,7 @@ export const MODEL_PRICING: Record<string, TokenPrice> = {
 
 export interface TokenUsageEntry {
   id: string;
+  title?: string;
   timestamp: number;
   provider: string;
   model: string;
@@ -43,6 +44,7 @@ export interface TokenUsageEntry {
   estimatedCost: number;
   status: number;
   endpoint?: string;
+  steps?: number;
 }
 
 export interface ProviderBreakdown {
@@ -82,6 +84,8 @@ export interface TokenSummaryStats {
   avgTokensPerReq: number;
   avgLatencyMs: number;
   avgTokensPerSec: number;
+  inOutRatio?: number;
+  cacheHitRatioPct?: number;
   googleStats: GoogleStats;
   byProvider: Record<string, ProviderBreakdown>;
   byModel: Record<string, ModelBreakdown>;
@@ -345,6 +349,7 @@ export class TokenTrackerEngine {
 
     const fullEntry: TokenUsageEntry = {
       id: entry.id || `tok-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      title: entry.title,
       timestamp: entry.timestamp || Date.now(),
       provider: entry.provider || 'unknown',
       model: entry.model || 'unknown',
@@ -368,6 +373,53 @@ export class TokenTrackerEngine {
     return fullEntry;
   }
 
+  public loadRealSessions(sessions: TokenUsageEntry[]): void {
+    if (!Array.isArray(sessions) || sessions.length === 0) return;
+    const existingMap = new Map<string, TokenUsageEntry>();
+    for (const e of this.entries) {
+      existingMap.set(e.id, e);
+    }
+
+    for (const s of sessions) {
+      const existing = existingMap.get(s.id);
+      if (existing) {
+        // Update existing entry with freshest steps, tokens, and timestamp
+        existing.title = s.title || existing.title;
+        existing.timestamp = s.timestamp || existing.timestamp;
+        existing.promptTokens = s.promptTokens || existing.promptTokens;
+        existing.completionTokens = s.completionTokens || existing.completionTokens;
+        existing.totalTokens = s.totalTokens || existing.totalTokens;
+        existing.estimatedCost = s.estimatedCost || existing.estimatedCost;
+        if (s.steps !== undefined) existing.steps = s.steps;
+      } else {
+        const newEntry: TokenUsageEntry = {
+          id: s.id,
+          title: s.title,
+          timestamp: s.timestamp,
+          provider: s.provider || 'google',
+          model: s.model || 'Gemini 3.8 Flash (Tiered)',
+          promptTokens: s.promptTokens || 0,
+          completionTokens: s.completionTokens || 0,
+          totalTokens: s.totalTokens || 0,
+          cachedTokens: s.cachedTokens || 0,
+          latencyMs: s.latencyMs || 250,
+          tokensPerSec: s.tokensPerSec || 90,
+          estimatedCost: s.estimatedCost || 0,
+          status: s.status || 200,
+          endpoint: s.endpoint || '/v1internal:streamGenerateContent',
+          steps: s.steps,
+        };
+        this.entries.push(newEntry);
+        existingMap.set(s.id, newEntry);
+      }
+    }
+    this.entries.sort((a, b) => b.timestamp - a.timestamp);
+    if (this.entries.length > this.maxEntries) {
+      this.entries.length = this.maxEntries;
+    }
+    this.saveToStorage();
+  }
+
   public getEntries(): TokenUsageEntry[] {
     return [...this.entries];
   }
@@ -376,29 +428,53 @@ export class TokenTrackerEngine {
     query = '',
     provider = 'all',
     model = 'all',
-    sortBy: 'timestamp' | 'totalTokens' | 'promptTokens' | 'completionTokens' | 'latencyMs' | 'tokensPerSec' | 'estimatedCost' = 'timestamp',
+    sortBy: 'timestamp' | 'totalTokens' | 'promptTokens' | 'completionTokens' | 'latencyMs' | 'tokensPerSec' | 'estimatedCost' | 'provider' | 'model' = 'timestamp',
     order: 'desc' | 'asc' = 'desc',
+    range = 'all',
   ): TokenUsageEntry[] {
     const q = query.trim().toLowerCase();
     const prov = provider.toLowerCase();
     const mod = model.toLowerCase();
 
+    let minTimestamp = 0;
+    const now = Date.now();
+    if (range === '24h') {
+      minTimestamp = now - 24 * 3600 * 1000;
+    } else if (range === '7d') {
+      minTimestamp = now - 7 * 86400 * 1000;
+    } else if (range === '30d') {
+      minTimestamp = now - 30 * 86400 * 1000;
+    } else if (range === '7m') {
+      minTimestamp = now - 210 * 86400 * 1000;
+    }
+
     const filtered = this.entries.filter((entry) => {
-      const matchProv = prov === 'all' || entry.provider.toLowerCase() === prov;
+      if (minTimestamp > 0 && entry.timestamp < minTimestamp) return false;
+
+      const matchProv =
+        prov === 'all' ||
+        entry.provider.toLowerCase() === prov ||
+        (prov === 'google' && (entry.provider.toLowerCase().includes('google') || entry.provider.toLowerCase().includes('gemini') || entry.model.toLowerCase().includes('gemini')));
+
       const matchMod = mod === 'all' || entry.model.toLowerCase() === mod;
       const matchQuery =
         !q ||
         entry.model.toLowerCase().includes(q) ||
         entry.provider.toLowerCase().includes(q) ||
         (entry.endpoint && entry.endpoint.toLowerCase().includes(q)) ||
-        entry.status.toString().includes(q);
+        (entry.title && entry.title.toLowerCase().includes(q)) ||
+        entry.status.toString().includes(q) ||
+        new Date(entry.timestamp).toLocaleDateString('fr-FR').includes(q);
 
       return matchProv && matchMod && matchQuery;
     });
 
     filtered.sort((a, b) => {
-      const valA = a[sortBy] ?? 0;
-      const valB = b[sortBy] ?? 0;
+      const valA = (a as any)[sortBy] ?? 0;
+      const valB = (b as any)[sortBy] ?? 0;
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return order === 'desc' ? valB.localeCompare(valA) : valA.localeCompare(valB);
+      }
       return order === 'desc' ? (valB > valA ? 1 : valB < valA ? -1 : 0) : (valA > valB ? 1 : valA < valB ? -1 : 0);
     });
 
@@ -476,6 +552,12 @@ export class TokenTrackerEngine {
     }
 
     const count = this.entries.length;
+    const inOutRatio = completionTokens > 0
+      ? Math.round((promptTokens / completionTokens) * 10) / 10
+      : (promptTokens > 0 ? 10 : 0);
+    const overallCacheHitRatioPct = promptTokens > 0
+      ? Math.round((totalCachedTokens / promptTokens) * 100)
+      : 0;
     const cacheHitRatioPct = googlePromptTokens > 0
       ? Math.round((googleCachedTokens / googlePromptTokens) * 100)
       : 0;
@@ -491,6 +573,8 @@ export class TokenTrackerEngine {
       avgTokensPerReq: count > 0 ? Math.round(totalTokens / count) : 0,
       avgLatencyMs: count > 0 ? Math.round(totalLatency / count) : 0,
       avgTokensPerSec: speedSamples > 0 ? Math.round((totalSpeed / speedSamples) * 10) / 10 : 0,
+      inOutRatio,
+      cacheHitRatioPct: overallCacheHitRatioPct,
       googleStats: {
         totalTokens: googleTotalTokens,
         promptTokens: googlePromptTokens,

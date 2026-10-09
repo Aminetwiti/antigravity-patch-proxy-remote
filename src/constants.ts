@@ -35,6 +35,16 @@ export const ENV_ACCOUNTS_FILE = 'AG_ACCOUNTS_FILE';
 export const ENV_ACTIVE_ACCOUNT = 'AG_ACTIVE_ACCOUNT';
 export const ENV_AUTO_ROTATE = 'AG_AUTO_ROTATE';
 
+// ─── Google OAuth Credential Overrides ────────────────────────────────────
+/** Override bundled Google OAuth client ID (fallback to hardcoded when unset). */
+export const ENV_GOOGLE_OAUTH_CLIENT_ID = 'GOOGLE_OAUTH_CLIENT_ID';
+/** Override bundled Google OAuth client secret. */
+export const ENV_GOOGLE_OAUTH_CLIENT_SECRET = 'GOOGLE_OAUTH_CLIENT_SECRET';
+/** Override bundled Gemini CLI OAuth client ID. */
+export const ENV_GEMINI_CLI_OAUTH_CLIENT_ID = 'GEMINI_CLI_OAUTH_CLIENT_ID';
+/** Override bundled Gemini CLI OAuth client secret. */
+export const ENV_GEMINI_CLI_OAUTH_CLIENT_SECRET = 'GEMINI_CLI_OAUTH_CLIENT_SECRET';
+
 /** Origin used by the main BrowserWindow. */
 export const WINDOW_ORIGIN = `https://${DEFAULT_BIND_HOST}`;
 
@@ -93,6 +103,18 @@ export const DEFAULT_MAX_BODY_SIZE = getEnvInt(
 
 /** Timeout for Google proxy requests (60 seconds). */
 export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 60_000);
+
+/** Timeout for waiting for initial response headers in multi-account pools (default: 35 seconds). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 35_000);
+
+/** Timeout for waiting for initial response headers on large payloads or thinking models (default: 50 seconds). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 50_000);
+
+/** P2C score delta for top-tier candidate eligibility in Google account pool (default: 45 points). */
+export const P2C_SCORE_DELTA = getEnvInt('AG_P2C_SCORE_DELTA', 45);
+
+/** Maximum time to wait for a 429 rate-limited account cooldown to expire before failing (default: 65 seconds). */
+export const RATE_LIMIT_RELIEF_WAIT_MS = getEnvInt('AG_RATE_LIMIT_RELIEF_WAIT_MS', 65_000);
 
 
 
@@ -281,6 +303,10 @@ export const PROVIDERS = {
   GOOGLE: 'google',
   // Google AI Studio (independent developer API key & quota)
   GOOGLE_GEMINI: 'google-gemini',
+  // Gemini CLI (production Cloud Code endpoint with separate OAuth client & quota)
+  GEMINI_CLI: 'gemini-cli',
+  XAI: 'xai',
+  COHERE: 'cohere',
 } as const;
 
 export type ProviderName = (typeof PROVIDERS)[keyof typeof PROVIDERS];
@@ -308,6 +334,8 @@ export const OPENAI_COMPAT = new Set<string>([
   PROVIDERS.OPENCODE,
   PROVIDERS.CODESTRAL,
   PROVIDERS.MINIMAX,
+  PROVIDERS.XAI,
+  PROVIDERS.COHERE,
 ]);
 
 /** Providers that use Anthropic-compatible transport. */
@@ -340,6 +368,8 @@ export const PROVIDERS_REQUIRING_API_KEY: readonly ProviderName[] = [
   PROVIDERS.WAFER,
   PROVIDERS.ZAI,
   PROVIDERS.MINIMAX,
+  PROVIDERS.XAI,
+  PROVIDERS.COHERE,
 ];
 
 /** Default API URLs per provider. Override per-model via apiUrl in custom_models.json or environment variables. */
@@ -375,6 +405,9 @@ export const PROVIDER_DEFAULT_URLS: Record<ProviderName, string> = {
   [PROVIDERS.WAFER]: process.env.WAFER_BASE_URL || '',
   [PROVIDERS.ZAI]: process.env.ZAI_BASE_URL || '',
   [PROVIDERS.MINIMAX]: process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.chat/v1/chat/completions',
+  [PROVIDERS.GEMINI_CLI]: 'https://cloudcode-pa.googleapis.com/v1internal',
+  [PROVIDERS.XAI]: process.env.XAI_BASE_URL || 'https://api.x.ai/v1',
+  [PROVIDERS.COHERE]: process.env.COHERE_BASE_URL || 'https://api.cohere.com/v1',
 };
 
 export interface SuggestedModel {
@@ -414,8 +447,10 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = CORE_DETAILED
 
 export const STANDARD_GOOGLE_MODELS = [
   { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-  { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
-  { id: 'gemini-3.6-flash-tiered', displayName: 'Gemini 3.6 Flash', enabled: true },
+  { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: false },
+  { id: 'gemini-3.6-flash-tiered', displayName: 'Gemini 3.6 Flash', enabled: false },
+  { id: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5 (Medium)', enabled: false },
+  { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5 (Low)', enabled: false },
   { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
   { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
 ];

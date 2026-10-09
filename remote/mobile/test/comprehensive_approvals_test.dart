@@ -9,7 +9,7 @@ void main() {
       final req = ToolApprovalRequest.fromJson({
         'callId': 'call-file-123',
         'toolName': 'write_to_file',
-        'filePath': 'C:/Users/amine/sensitive/config.json',
+        'filePath': 'C:/Users/developer/sensitive/config.json',
         'approvalType': 'file_permission',
         'description': 'Write outside workspace boundary',
       });
@@ -30,7 +30,7 @@ void main() {
 
       // Check title and file path
       expect(find.text('Allow file access outside workspace?'), findsOneWidget);
-      expect(find.text('C:/Users/amine/sensitive/config.json'), findsOneWidget);
+      expect(find.text('C:/Users/developer/sensitive/config.json'), findsOneWidget);
 
       // Check all 5 options
       expect(find.byKey(const Key('approval-option-1')), findsOneWidget);

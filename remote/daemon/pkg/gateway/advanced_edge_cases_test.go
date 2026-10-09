@@ -12,11 +12,11 @@ import (
 func TestExtractUserRequest_ComplexMultiArtifacts(t *testing.T) {
 	raw := `<USER_REQUEST>
 [ARTIFACT: screenshot 1 with space.png]
-Path: file:///C:/Users/amine/My%20Documents/screenshot%201%20with%20space.png
+Path: file:///C:/Users/developer/My%20Documents/screenshot%201%20with%20space.png
 Last Edited: 2026-08-21T16:00:00Z
 
 [ARTIFACT: debug_trace.jpg]
-Path: C:\Users\amine\.gemini\antigravity\brain\test\.user_uploaded\debug_trace.jpg
+Path: C:\Users\developer\.gemini\antigravity\brain\test\.user_uploaded\debug_trace.jpg
 
 voici les deux captures d'erreur pour analyse
 </USER_REQUEST>
@@ -37,7 +37,7 @@ The current local time is: 2026-08-21T17:00:00+01:00.
 	}
 
 	// 3. Doit contenir les deux images formatées en markdown
-	if !strings.Contains(got, "![Image](file:///C:/Users/amine/My%20Documents/screenshot%201%20with%20space.png)") {
+	if !strings.Contains(got, "![Image](file:///C:/Users/developer/My%20Documents/screenshot%201%20with%20space.png)") {
 		t.Errorf("Image 1 manquante dans %q", got)
 	}
 	if !strings.Contains(got, "debug_trace.jpg") {
@@ -52,11 +52,11 @@ func TestExtractUserRequest_EdgeCases(t *testing.T) {
 	// Cas 1: Seulement un artifact sans texte
 	onlyArt := `<USER_REQUEST>
 [ARTIFACT: patch_diff.png]
-Path: file:///C:/Users/amine/patch_diff.png
+Path: file:///C:/Users/developer/patch_diff.png
 </USER_REQUEST>`
 	got1 := extractUserRequest(onlyArt)
-	if got1 != "![Image](file:///C:/Users/amine/patch_diff.png)" {
-		t.Errorf("got1 = %q, want ![Image](file:///C:/Users/amine/patch_diff.png)", got1)
+	if got1 != "![Image](file:///C:/Users/developer/patch_diff.png)" {
+		t.Errorf("got1 = %q, want ![Image](file:///C:/Users/developer/patch_diff.png)", got1)
 	}
 
 	// Cas 2: Texte avec caractères spéciaux et emojis

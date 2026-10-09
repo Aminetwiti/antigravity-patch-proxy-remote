@@ -118,3 +118,30 @@ describe('metricsRoute / getMetricsSnapshot', () => {
     expect(snap2.counters[0].value).toBe(1);
   });
 });
+
+describe('formatPrometheus / pool_health metric', () => {
+  const emptySnap = { counters: [], gauges: [], histograms: [] };
+
+  it('includes google_pool_health_score when poolHealth is provided', () => {
+    const poolHealth = [
+      { accountKey: 'google:alice@test.com', modelFamily: 'gemini', score: 72 },
+      { accountKey: 'google:bob@test.com', modelFamily: 'claude', score: 0 },
+    ];
+    const output = formatPrometheus(emptySnap as any, poolHealth);
+    expect(output).toContain('google_pool_health_score');
+    expect(output).toContain('alice@test.com');
+    expect(output).toContain('72');
+    expect(output).toContain('bob@test.com');
+    expect(output).toContain('family="claude"');
+  });
+
+  it('omits pool_health section when poolHealth is undefined', () => {
+    const output = formatPrometheus(emptySnap as any);
+    expect(output).not.toContain('google_pool_health_score');
+  });
+
+  it('omits pool_health section when poolHealth is empty array', () => {
+    const output = formatPrometheus(emptySnap as any, []);
+    expect(output).not.toContain('google_pool_health_score');
+  });
+});

@@ -21,9 +21,9 @@
 
 | Binary | Target Platform | SHA-256 Checksum |
 |:---|:---|:---|
-| `ag-agentd-linux-amd64` | Linux x86_64 | `165db9c3c46d1e2983a0522181892868f267ef5deaa8e1b931ab9e94ea46405c` |
-| `ag-agentd-linux-arm64` | Linux aarch64 | `9aaae47781293dbbca145c29b4669e8d2fcba5fe671ece241e374ffd6365597f` |
-| `ag-agentd-windows-amd64.exe` | Windows x86_64 | `608a661da53e81acd2f54db17a3d4c86a89dcad51a72efea56b65d29fa932fd5` |
+| `ag-agentd-linux-amd64` | Linux x86_64 | `0699ee8252aa4095fb0120205efb7a32ce1923ce61c9dcfe9942700d73a9a7df` |
+| `ag-agentd-linux-arm64` | Linux aarch64 | `1da76f07d412b8901da56806073feca4051fafa450038a018b2be16a12d540ec` |
+| `ag-agentd-windows-amd64.exe` | Windows x86_64 | `93a6c43b78efdf358dbc096388b6a7b6b8f2d4a6eac249a53bcdad6f8c7aadf9` |
 
 Verify with:
 ```bash

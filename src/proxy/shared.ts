@@ -48,6 +48,31 @@ export const translatedToolCalls = new Map<string, TranslatedCallInfo>();
  */
 export const thoughtSignatureCache = new Map<string, string>();
 
+/** Tracks conversations whose turn history contains corrupted or rejected thought signatures */
+const corruptedSignatureConvs = new Set<string>();
+
+export function markConvCorruptedSignatures(convId: string): void {
+  if (convId) {
+    corruptedSignatureConvs.add(convId);
+    clearThoughtSignaturesForConv(convId);
+  }
+}
+
+export function isConvCorruptedSignatures(convId: string): boolean {
+  return Boolean(convId && corruptedSignatureConvs.has(convId));
+}
+
+export function clearThoughtSignaturesForConv(convId: string): void {
+  if (!convId) return;
+  for (const key of Array.from(thoughtSignatureCache.keys())) {
+    if (key.startsWith(`${convId}:`)) {
+      thoughtSignatureCache.delete(key);
+      thoughtSignatureMeta.delete(key);
+      stateTimestamps.thoughtSigs.delete(key);
+    }
+  }
+}
+
 /** State entry timestamps for periodic cleanup */
 export const stateTimestamps: StateTimestamps = {
   streamCtx: new Map(),
@@ -231,6 +256,19 @@ export function restoreThoughtSignatures(
       const fcForName = fcs[0] || fcs[1];
       if (!fcForName || typeof fcForName.name !== 'string' || !fcForName.name) continue;
 
+      // Extract embedded signature from tool call ID if present (e.g. call_123__thought__<sig>)
+      const rawId = typeof fcForName.id === 'string' ? fcForName.id : (typeof (p as any).id === 'string' ? (p as any).id : '');
+      if (rawId && rawId.includes('__thought__')) {
+        const [cleanId, embeddedSig] = rawId.split('__thought__');
+        if (cleanId) {
+          if (fcForName.id) fcForName.id = cleanId;
+          if ((p as any).id) (p as any).id = cleanId;
+        }
+        if (embeddedSig && !fcSig) {
+          fcSig = embeddedSig;
+        }
+      }
+
       if (fcSig && !p.thought_signature && !p.thoughtSignature) {
         p.thought_signature = fcSig;
         p.thoughtSignature = fcSig;
@@ -253,10 +291,12 @@ export function restoreThoughtSignatures(
       }
 
       const scopedKey = convId ? `${convId}:${fcForName.name}` : '';
-      let cached = (scopedKey && thoughtSignatureCache.get(scopedKey)) ||
-                   siblingSig ||
-                   (convId ? thoughtSignatureCache.get(`${convId}:__last__`) : undefined) ||
-                   thoughtSignatureCache.get(fcForName.name as string);
+      let cached = siblingSig ||
+                   (!isConvCorruptedSignatures(convId)
+                     ? ((scopedKey && thoughtSignatureCache.get(scopedKey)) ||
+                        (convId ? thoughtSignatureCache.get(`${convId}:__last__`) : undefined) ||
+                        thoughtSignatureCache.get(fcForName.name as string))
+                     : undefined);
 
       // If cached signature is from an incompatible model family, skip it
       if (cached) {

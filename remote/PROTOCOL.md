@@ -161,7 +161,7 @@ Retourne la télémétrie complète du Daemon et de sa liaison avec le Language 
 {
   "type": "create_cascade",
   "requestId": "req_102",
-  "workspacePath": "C:/Users/amine/projects/myapp"
+  "workspacePath": "C:/Users/developer/projects/myapp"
 }
 ```
 
@@ -353,7 +353,7 @@ Redirige la fenêtre de bureau de l'IDE sur l'URL ou la cascade spécifiée.
 {
   "type": "terminal_create",
   "requestId": "req_115",
-  "data": { "cwd": "C:/Users/amine/projects/myapp" }
+  "data": { "cwd": "C:/Users/developer/projects/myapp" }
 }
 ```
 **Réponse :** `{"type": "response", "requestId": "req_115", "data": {"terminalId": "pty-1"}}`
@@ -527,7 +527,7 @@ Redirige la fenêtre de bureau de l'IDE sur l'URL ou la cascade spécifiée.
 {
   "type": "list_files",
   "requestId": "req_131",
-  "workspacePath": "C:/Users/amine/projects/myapp"
+  "workspacePath": "C:/Users/developer/projects/myapp"
 }
 ```
 
@@ -536,7 +536,7 @@ Redirige la fenêtre de bureau de l'IDE sur l'URL ou la cascade spécifiée.
 {
   "type": "read_file",
   "requestId": "req_132",
-  "filePath": "C:/Users/amine/projects/myapp/main.go"
+  "filePath": "C:/Users/developer/projects/myapp/main.go"
 }
 ```
 
@@ -545,7 +545,7 @@ Redirige la fenêtre de bureau de l'IDE sur l'URL ou la cascade spécifiée.
 {
   "type": "write_file",
   "requestId": "req_133",
-  "filePath": "C:/Users/amine/projects/myapp/main.go",
+  "filePath": "C:/Users/developer/projects/myapp/main.go",
   "content": "cGFja2FnZSBtYWluCg==",
   "overwrite": true
 }
@@ -556,7 +556,7 @@ Redirige la fenêtre de bureau de l'IDE sur l'URL ou la cascade spécifiée.
 {
   "type": "search_files",
   "requestId": "req_134",
-  "workspacePath": "C:/Users/amine/projects/myapp",
+  "workspacePath": "C:/Users/developer/projects/myapp",
   "query": "connectrpc"
 }
 ```
@@ -951,8 +951,8 @@ Copie l'image bitmap directement dans le presse-papiers de la machine hôte via 
 ## 8. Source de Vérité Canonique : `remote/proto/`
 
 Pour toute inspection des schémas RPC Protobuf et des services :
-- Schémas gRPC & Protobuf canoniques : [`remote/proto/remote_service.proto`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/remote_service.proto).
-- Définitions Protobuf du moteur : [`remote/proto/exa/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/exa) et [`remote/proto/google/`](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/remote/proto/google).
+- Schémas gRPC & Protobuf canoniques : [`remote/proto/remote_service.proto`](file:///<repo-root>/remote/proto/remote_service.proto).
+- Définitions Protobuf du moteur : [`remote/proto/exa/`](file:///<repo-root>/remote/proto/exa) et [`remote/proto/google/`](file:///<repo-root>/remote/proto/google).
 
 ---
 

@@ -13,7 +13,7 @@ func TestDecodeURI(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"file:///c%3A/Users/amine/Downloads", filepath.FromSlash("c:/Users/amine/Downloads")},
+		{"file:///c%3A/Users/developer/Downloads", filepath.FromSlash("c:/Users/developer/Downloads")},
 		{"file:///d:/projects/app", filepath.FromSlash("d:/projects/app")},
 		{"", ""},
 	}

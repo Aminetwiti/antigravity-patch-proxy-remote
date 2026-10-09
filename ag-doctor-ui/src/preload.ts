@@ -44,11 +44,11 @@ const api = {
       tierId?: string;
       error?: string;
     }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_REFRESH_TOKEN, refreshToken),
-    startOAuthLogin: (): Promise<{
+    startOAuthLogin: (providerType?: 'antigravity' | 'gemini-cli'): Promise<{
       success: boolean;
       account?: any;
       error?: string;
-    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_LOGIN),
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_LOGIN, providerType),
     switchIdeAccount: (params: {
       accessToken: string;
       refreshToken?: string;
@@ -56,6 +56,37 @@ const api = {
       picture?: string;
     }): Promise<{ success: boolean; error?: string; dbPath?: string }> =>
       ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_SWITCH_IDE_ACCOUNT, params),
+    reconcileCooldowns: (): Promise<{
+      success: boolean;
+      cleared?: number;
+      activeRemaining?: number;
+      details?: string[];
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_RECONCILE_COOLDOWNS),
+    getCooldowns: (): Promise<{
+      success: boolean;
+      cooldowns: Record<string, { until: number; remainingMs: number; remainingMin: number; remainingHours: string }>;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_GET_COOLDOWNS),
+    liftAccountCooldown: (accountIdentifier: string): Promise<{
+      success: boolean;
+      cleared: number;
+      removedKeys?: string[];
+      remainingActive?: number;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_LIFT_ACCOUNT_COOLDOWN, accountIdentifier),
+    liftBurstCooldowns: (): Promise<{
+      success: boolean;
+      cleared: number;
+      removedKeys?: string[];
+      remainingActive?: number;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_LIFT_BURST_COOLDOWNS),
+    purgeQuotaCache: (): Promise<{
+      success: boolean;
+      cleared: number;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_PURGE_QUOTA_CACHE),
     onOAuthIntercepted: (handler: (data: { url: string; port?: number; redirectUri?: string; ts?: number }) => void): (() => void) => {
       const listener = (_: unknown, data: any) => handler(data);
       ipcRenderer.on(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
@@ -165,6 +196,23 @@ const api = {
     };
     error?: string;
   }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.PROXY_STATS),
+
+  getRealTokenStats: (): Promise<{
+    ok: boolean;
+    data?: {
+      totalConversations: number;
+      totalSteps: number;
+      estimatedLifetimeTokens: number;
+      peakTokensDay: { day: string; steps: number; tokens: number };
+      longestTaskSteps: number;
+      currentStreakDays: number;
+      longestStreakDays: number;
+      activityByDay: Array<{ day: string; convs: number; steps: number; estimatedTokens: number }>;
+      accountsInPool: number;
+      modelsDistribution: Array<{ model: string; count: number; pct: number }>;
+    };
+    error?: string;
+  }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.TOKEN_REAL_STATS),
 
   // Installation Detector — scans for Antigravity binaries (v1.x vs v2.0+)
   detectInstallation: (): Promise<{

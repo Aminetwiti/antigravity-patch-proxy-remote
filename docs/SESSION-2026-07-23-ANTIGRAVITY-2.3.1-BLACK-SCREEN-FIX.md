@@ -2,7 +2,7 @@
 
 **Date :** 2026-07-23
 **Projet :** `antigravity-add-model-main`
-**Installation testée :** `C:\Users\amine\AppData\Local\Programs\Antigravity`
+**Installation testée :** `%LOCALAPPDATA%\\Programs\\Antigravity`
 
 ## ✅ État final (2026-07-23 13:17)
 

@@ -337,8 +337,8 @@ describe('cleanFilePath', () => {
 
   it('should sanitize paths in normalizeToolArgs', () => {
     const result = normalizeToolArgs('view_file', {
-      file_path: '/"c:/Users/amine/Downloads/antigravity/main.go"',
+      file_path: '/"c:/Users/developer/Downloads/antigravity/main.go"',
     });
-    expect(result).toEqual({ AbsolutePath: 'c:/Users/amine/Downloads/antigravity/main.go' });
+    expect(result).toEqual({ AbsolutePath: 'c:/Users/developer/Downloads/antigravity/main.go' });
   });
 });

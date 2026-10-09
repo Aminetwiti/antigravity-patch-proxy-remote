@@ -221,7 +221,7 @@ Modèle typé immuable (`L30-66`) encapsulant :
 ---
 
 ## 21. Code Mapping
-Cartographie intégrale consignée dans [**`EXECUTION_FEED_CODE_MAP.md`**](file:///c:/Users/amine/Downloads/antigravity-add-model-main/antigravity-add-model-main/EXECUTION_FEED_CODE_MAP.md).
+Cartographie intégrale consignée dans [**`EXECUTION_FEED_CODE_MAP.md`**](./EXECUTION_FEED_CODE_MAP.md).
 
 ---
 

@@ -312,13 +312,13 @@ Ran git merge-base HEAD origin/main
     testWidgets('Synthesizes Exploring X files, Y folders, Z searches and renders folder icon for directories', (tester) async {
       const explorationThought = '''
 Explored 1 file
-Analyzed c:\\Users\\amine\\.gemini\\config\\skills\\impeccable
-Analyzed c:\\Users\\amine\\.gemini\\config\\skills\\impeccable\\reference
+Analyzed c:\\Users\\developer\\.gemini\\config\\skills\\impeccable
+Analyzed c:\\Users\\developer\\.gemini\\config\\skills\\impeccable\\reference
 Analyzed audit.native.md #L1-100
 Analyzed audit.native.md #L101-140
 Search *course* 2 results
-Analyzed c:\\Users\\developer\\Downloads\\demo taxi\\www - Copie\\resources\\views\\driver
-Analyzed c:\\Users\\developer\\Downloads\\demo taxi\\www - Copie\\resources\\views\\driver\\cou
+Analyzed c:\\Users\\developer\\Downloads\\demo-web-app\\resources\\views\\driver
+Analyzed c:\\Users\\developer\\Downloads\\demo-web-app\\resources\\views\\driver\\cou
 ''';
 
       await tester.pumpWidget(

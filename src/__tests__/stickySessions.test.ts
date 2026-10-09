@@ -21,6 +21,7 @@ import {
   getAccountQuotaKey,
   getSessionModelFallback,
   setSessionModelFallback,
+  clearSessionModelFallback,
   sanitizeCandidatesInResponse,
 } from '../proxy';
 import type { CustomModel } from '../types';
@@ -162,6 +163,17 @@ describe('Sticky Sessions (Multi-Account Session Affinity)', () => {
       setSessionModelFallback('sess-100', 'claude-3-7-sonnet', 'gemini-3.8-flash-tiered', true);
       clearSessionAffinities();
       expect(getSessionModelFallback('sess-100')).toBeUndefined();
+    });
+
+    it('clears individual session fallback with clearSessionModelFallback', () => {
+      setSessionModelFallback('sess-100', 'gemini-3.8-flash-tiered', 'claude-sonnet-4-6', true);
+      setSessionModelFallback('sess-200', 'claude-opus-4-6', 'claude-sonnet-4-6', true);
+      expect(getSessionModelFallback('sess-100')).toBeDefined();
+      expect(getSessionModelFallback('sess-200')).toBeDefined();
+
+      clearSessionModelFallback('sess-100');
+      expect(getSessionModelFallback('sess-100')).toBeUndefined();
+      expect(getSessionModelFallback('sess-200')).toBeDefined();
     });
   });
 

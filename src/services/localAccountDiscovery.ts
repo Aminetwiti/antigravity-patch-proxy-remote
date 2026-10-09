@@ -70,5 +70,31 @@ export async function discoverLocalGoogleAccounts(): Promise<DiscoveredGoogleAcc
     } catch (_) {}
   }
 
+  // 3. Gemini CLI / Tools credentials
+  const geminiCliPaths = [
+    path.join(home, '.gemini', 'oauth_creds.json'),
+    path.join(home, '.config', 'gemini', 'oauth_creds.json'),
+    path.join(home, '.config', 'gemini', 'credentials.json'),
+    path.join(process.cwd(), 'ag-doctor-ui', 'tools', '1', 'geminicli2api-main', 'geminicli2api-main', 'oauth_creds.json'),
+  ];
+
+  for (const cliPath of geminiCliPaths) {
+    try {
+      const content = await fs.readFile(cliPath, 'utf8');
+      const parsed = JSON.parse(content);
+      const token = parsed.refresh_token || parsed.refreshToken || (parsed.token && String(parsed.token).startsWith('1//') ? parsed.token : undefined);
+      if (token && typeof token === 'string' && !discovered.some((d) => d.refreshToken === token)) {
+        discovered.push({
+          source: 'custom_config',
+          accountEmail: parsed.email || parsed.accountEmail || parsed.client_email,
+          refreshToken: token,
+          projectId: parsed.project_id || parsed.projectId,
+          path: cliPath,
+        });
+        log.info(`[LocalDiscovery] Found Gemini CLI refresh token at ${cliPath}`);
+      }
+    } catch (_) {}
+  }
+
   return discovered;
 }

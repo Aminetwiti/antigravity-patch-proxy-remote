@@ -121,7 +121,7 @@ export function validateCustomModel(model: unknown): ValidationResult {
 
   const provider = m.provider as string;
   // Validate provider is one of the supported types
-  if (!ALL_PROVIDERS.includes(provider as ProviderName)) {
+  if (provider !== 'gemini-cli' && !ALL_PROVIDERS.includes(provider as ProviderName)) {
     return {
       valid: false,
       error: `Unsupported provider: ${provider}. Must be one of: ${ALL_PROVIDERS.join(', ')}`,

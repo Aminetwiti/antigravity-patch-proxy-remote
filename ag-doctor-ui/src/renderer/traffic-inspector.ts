@@ -14,10 +14,87 @@ export interface TrafficEntry {
   statusCode: number;
   latencyMs: number;
   timeToFirstTokenMs?: number;
+  dnsLookupMs?: number;
+  tlsHandshakeMs?: number;
+  streamMs?: number;
+  stepId?: string;
+  cascadeInvocationId?: string;
+  headers?: Record<string, string>;
   totalTokens?: number;
   tokensPerSec?: number;
   requestPayload?: string;
   responsePayload?: string;
+}
+
+export interface TimingBreakdown {
+  dns: number;
+  tls: number;
+  ttft: number;
+  stream: number;
+  total: number;
+}
+
+export function computeTimingBreakdown(entry: TrafficEntry): TimingBreakdown {
+  const total = entry.latencyMs || 0;
+  const dns = Math.max(0, entry.dnsLookupMs || 0);
+  const tls = Math.max(0, entry.tlsHandshakeMs || 0);
+  const ttft = Math.max(0, entry.timeToFirstTokenMs || (total > 0 ? Math.min(total, 120) : 0));
+  const stream = Math.max(0, entry.streamMs !== undefined ? entry.streamMs : Math.max(0, total - ttft));
+  return { dns, tls, ttft, stream, total };
+}
+
+export function generateCurlCommand(
+  entry: TrafficEntry,
+  options: { maskToken?: boolean; hostUrl?: string } = {}
+): string {
+  const mask = options.maskToken !== false;
+  const baseUrl = options.hostUrl || 'http://127.0.0.1:51074';
+  const fullUrl = entry.path.startsWith('http') ? entry.path : `${baseUrl}${entry.path.startsWith('/') ? '' : '/'}${entry.path}`;
+  const parts: string[] = [`curl -X ${entry.method || 'POST'} "${fullUrl}"`];
+
+  parts.push(`-H "Content-Type: application/json"`);
+  if (entry.targetModel) {
+    parts.push(`-H "x-antigravity-model: ${entry.targetModel}"`);
+  }
+  if (entry.stepId) {
+    parts.push(`-H "x-cortex-step-id: ${entry.stepId}"`);
+  }
+
+  if (entry.headers) {
+    for (const [k, v] of Object.entries(entry.headers)) {
+      const lower = k.toLowerCase();
+      if (lower === 'content-type' || lower === 'host') continue;
+      let val = v;
+      if (mask && (lower === 'authorization' || lower === 'x-api-key')) {
+        val = lower === 'authorization' ? 'Bearer [REDACTED_TOKEN]' : '[REDACTED_KEY]';
+      }
+      parts.push(`-H "${k}: ${val}"`);
+    }
+  } else {
+    const authVal = mask ? 'Bearer [REDACTED_TOKEN]' : 'Bearer <ACCESS_TOKEN>';
+    parts.push(`-H "Authorization: ${authVal}"`);
+  }
+
+  if (entry.requestPayload && entry.requestPayload !== '{}') {
+    const safePayload = mask ? sanitizePayload(entry.requestPayload) : entry.requestPayload;
+    const escaped = safePayload.replace(/'/g, `'\\''`);
+    parts.push(`--data-raw '${escaped}'`);
+  }
+
+  return parts.join(' \\\n  ');
+}
+
+export function filterByStatusCategory(
+  entries: TrafficEntry[],
+  category: 'all' | '2xx' | '4xx' | '5xx'
+): TrafficEntry[] {
+  if (category === 'all') return [...entries];
+  return entries.filter((e) => {
+    if (category === '2xx') return e.statusCode >= 200 && e.statusCode < 300;
+    if (category === '4xx') return e.statusCode >= 400 && e.statusCode < 500;
+    if (category === '5xx') return e.statusCode >= 500 && e.statusCode < 600;
+    return true;
+  });
 }
 
 export function sanitizePayload(payload?: string): string {
@@ -59,19 +136,34 @@ export class TrafficInspectorEngine {
     return [...this.entries];
   }
 
-  public filterEntries(query: string, providerFilter = 'all'): TrafficEntry[] {
+  public getEntryById(id: string): TrafficEntry | undefined {
+    return this.entries.find((e) => e.id === id);
+  }
+
+  public filterEntries(
+    query: string,
+    providerFilter = 'all',
+    statusCategory: 'all' | '2xx' | '4xx' | '5xx' = 'all'
+  ): TrafficEntry[] {
     const q = query.trim().toLowerCase();
-    return this.entries.filter((entry) => {
+    let result = this.entries.filter((entry) => {
       const matchesProvider = providerFilter === 'all' || entry.translatedProvider.toLowerCase() === providerFilter.toLowerCase();
       const matchesQuery =
         !q ||
         entry.path.toLowerCase().includes(q) ||
         entry.targetModel.toLowerCase().includes(q) ||
         entry.translatedProvider.toLowerCase().includes(q) ||
-        entry.statusCode.toString().includes(q);
+        entry.statusCode.toString().includes(q) ||
+        (entry.stepId && entry.stepId.toLowerCase().includes(q));
 
       return matchesProvider && matchesQuery;
     });
+
+    if (statusCategory !== 'all') {
+      result = filterByStatusCategory(result, statusCategory);
+    }
+
+    return result;
   }
 
   public clear(): void {
@@ -92,6 +184,8 @@ export class TrafficInspectorEngine {
         translatedProvider: original.translatedProvider,
         statusCode: res.statusCode,
         latencyMs: res.latencyMs || (Date.now() - start),
+        timeToFirstTokenMs: original.timeToFirstTokenMs,
+        stepId: original.stepId,
         requestPayload: original.requestPayload,
         responsePayload: 'Replayed response payload',
       });
@@ -104,6 +198,8 @@ export class TrafficInspectorEngine {
         translatedProvider: original.translatedProvider,
         statusCode: 500,
         latencyMs: Date.now() - start,
+        timeToFirstTokenMs: original.timeToFirstTokenMs,
+        stepId: original.stepId,
         requestPayload: original.requestPayload,
         responsePayload: JSON.stringify({ error: err.message }),
       });
@@ -124,5 +220,9 @@ export class TrafficInspectorEngine {
 if (typeof window !== 'undefined') {
   (window as unknown as { AgTraffic?: unknown }).AgTraffic = {
     TrafficInspectorEngine,
+    generateCurlCommand,
+    computeTimingBreakdown,
+    filterByStatusCategory,
+    sanitizePayload,
   };
 }

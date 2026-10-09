@@ -130,6 +130,7 @@ describe('Proxy HTTP Server Real Integration Test', () => {
 
   afterAll(async () => {
     await stopProxy();
+    try { (mockUpstream as any).closeAllConnections?.(); } catch (_) {}
     await new Promise<void>((resolve) => mockUpstream.close(() => resolve()));
     try {
       fs.rmSync(tempHome, { recursive: true, force: true });

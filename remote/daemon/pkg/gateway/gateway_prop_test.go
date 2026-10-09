@@ -442,8 +442,8 @@ func TestToOutgoingNeverPanics(t *testing.T) {
 
 // TestWorkspaceURIRoundTrip — un chemin Windows → URI → même chemin.
 func TestWorkspaceURIRoundTrip(t *testing.T) {
-	uri := toWorkspaceURI(`C:\Users\amine\Downloads\projet`)
-	if uri != "file:///C:/Users/amine/Downloads/projet" {
+	uri := toWorkspaceURI(`C:\Users\developer\Downloads\projet`)
+	if uri != "file:///C:/Users/developer/Downloads/projet" {
 		t.Fatalf("URI inattendue: %s", uri)
 	}
 }
