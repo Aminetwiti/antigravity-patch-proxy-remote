@@ -7,20 +7,20 @@ import 'package:mobile/features/sessions/display_options.dart';
 void main() {
   group('Advanced Rare Cases: Path Normalization & Prefix Collisions', () {
     test('Extreme path normalizations: mixed separators, percent-encoding, long Windows paths', () {
-      const p1 = 'file:///c%3A/Users/developer/Downloads/demo%20taxi/www%20-%20Copie';
-      const p2 = 'C:\\Users\\developer\\Downloads\\demo-web-app';
-      const p3 = 'c:/users/developer/downloads/demo-web-app/';
-      const p4 = '\\\\?\\C:\\Users\\developer\\Downloads\\demo-web-app';
+      const p1 = 'file:///c%3A/Users/developer/Downloads/demo%20project/web%20-%20Copy';
+      const p2 = 'C:\\Users\\developer\\Downloads\\demo project\\web - Copy';
+      const p3 = 'c:/users/developer/downloads/demo project/web - copy/';
+      const p4 = '\\\\?\\C:\\Users\\developer\\Downloads\\demo project\\web - Copy';
 
       final c1 = WorkspacePath.canonicalPath(p1);
       final c2 = WorkspacePath.canonicalPath(p2);
       final c3 = WorkspacePath.canonicalPath(p3);
       final c4 = WorkspacePath.canonicalPath(p4);
 
-      expect(c1, equals('c:/Users/developer/Downloads/demo-web-app'));
-      expect(c2, equals('c:/Users/developer/Downloads/demo-web-app'));
-      expect(c3, equals('c:/users/developer/downloads/demo-web-app'));
-      expect(c4, equals('c:/Users/developer/Downloads/demo-web-app'));
+      expect(c1, equals('c:/Users/developer/Downloads/demo project/web - Copy'));
+      expect(c2, equals('c:/Users/developer/Downloads/demo project/web - Copy'));
+      expect(c3, equals('c:/users/developer/downloads/demo project/web - copy'));
+      expect(c4, equals('c:/Users/developer/Downloads/demo project/web - Copy'));
 
       expect(WorkspacePath.isSameWorkspace(p1, p2), isTrue);
       expect(WorkspacePath.isSameWorkspace(p2, p3), isTrue);

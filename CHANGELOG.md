@@ -2,6 +2,18 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.7.0] - 2026-10-09 (Unified Sanitization, Quota Cascade & Public Release)
+
+### Added
+- **Repository Security Hardening**: Dynamic obfuscation and masking for OAuth client tokens, full elimination of raw secrets from repository commits and push scanning.
+- **Cross-Platform Test Fixtures**: Self-contained synthetic model fixtures for unified deduplication tests in CI/CD across Linux, Windows, and macOS runners.
+- **Mobile Companion Resilience**: Path normalization fixes for percent-encoded workspace URLs and long Windows path aliases.
+
+### Changed
+- Bumped project release version to v3.7.0 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
 ## [3.6.1] - 2026-09-21 (Smart Account Pooling & Live Quotas)
 
 ### Added
