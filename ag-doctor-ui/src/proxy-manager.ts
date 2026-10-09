@@ -12,7 +12,11 @@ import { ChildProcess, spawn } from 'child_process';
 import path from 'path';
 import net from 'net';
 import { EnvironmentConfig } from './config/environment';
-import log from 'electron-log';
+const log = {
+  info: (msg: string, ...args: unknown[]) => console.log(msg, ...args),
+  error: (msg: string, ...args: unknown[]) => console.error(msg, ...args),
+  warn: (msg: string, ...args: unknown[]) => console.warn(msg, ...args),
+};
 
 export interface ProxyServerStatus {
   running: boolean;

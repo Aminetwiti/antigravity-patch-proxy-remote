@@ -2,6 +2,18 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.7.2] - 2026-10-09 (Security Hardening, UI Streamlining & Stability Release)
+
+### Added
+- **Strict Host Header & DNS Rebinding Security Tests**: Added `src/__tests__/securityRemediations.test.ts` verifying protection against DNS rebinding, origin validation, and host spoofing.
+- **ag-doctor-ui Logging Resilience**: Cleaned process logging fallbacks in `proxy-manager.ts` to ensure decoupled execution across portable electron runners.
+
+### Changed
+- Bumped project release version to v3.7.2 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+- Refreshed documentation, badges, and release assets.
+
+---
+
 ## [3.7.1] - 2026-10-09 (Critical Security Hotfix)
 
 ### Security Advisory

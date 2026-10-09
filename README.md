@@ -5,21 +5,25 @@
 </p>
 
 <p align="center">
-  <a href="package.json"><img src="https://img.shields.io/badge/version-3.6.1-blue.svg?style=for-the-badge" alt="Version 3.6.1" /></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/version-3.7.2-blue.svg?style=for-the-badge" alt="Version 3.7.2" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=for-the-badge" alt="License Apache 2.0" /></a>
+  <a href="#google-services--omniroute-quota-pooling-suite"><img src="https://img.shields.io/badge/Google%20Services-Multi--Account%20Pooling-4285F4.svg?style=for-the-badge&logo=google" alt="Google Services Pooling" /></a>
   <a href="remote/mobile"><img src="https://img.shields.io/badge/Flutter-Mobile%20(Android%20%2F%20iOS)-02569B.svg?style=for-the-badge&logo=flutter" alt="Flutter Mobile" /></a>
   <a href="remote/daemon"><img src="https://img.shields.io/badge/Go%20Daemon-gRPC--Web%20%2F%20WS-00ADD8.svg?style=for-the-badge&logo=go" alt="Go Daemon" /></a>
   <a href="src"><img src="https://img.shields.io/badge/Desktop%20Proxy-Electron%20%2F%20TS-3178C6.svg?style=for-the-badge&logo=typescript" alt="Electron Proxy" /></a>
-  <a href="src/__tests__"><img src="https://img.shields.io/badge/Tests-2500%2B%20Passed-brightgreen.svg?style=for-the-badge" alt="Tests Passed" /></a>
+  <a href="src/__tests__"><img src="https://img.shields.io/badge/Tests-2565%2B%20Passed-brightgreen.svg?style=for-the-badge" alt="Tests Passed" /></a>
 </p>
 
 <p align="center">
-  <b>Add custom AI models (Claude 3.5 Sonnet, GPT-4o, DeepSeek R1, Ollama) to Google Antigravity IDE & control everything on your smartphone with Antigravity Remote 2.0.</b>
+  <b>Add custom AI models (Claude 3.5/3.7 Sonnet, GPT-4o, DeepSeek R1, Ollama), pool multiple Google accounts with OmniRoute load balancing, and control everything on mobile with Antigravity Remote 2.0.</b>
 </p>
 
-> **The complete AI development ecosystem for Google Antigravity:**
-> - 🖥️ **Desktop Patch Proxy**: Injects **Anthropic Claude 3.5 Sonnet**, **OpenAI GPT-4o**, **DeepSeek R1 / V3**, **OpenRouter**, **Ollama**, **Google AI Studio**, **Groq**, and **Mistral** directly into the IDE chat and autocomplete dropdowns with AES-256-GCM encryption and bi-directional SSE streaming.
-> - 📱 **Antigravity Remote 2.0 (Mobile Companion)**: Native Flutter application (Android APK & iOS) to supervise agent trajectories, review code diffs, approve terminal commands, inspect MCP servers, manage Git worktrees, and chat with AI from anywhere via **Zero-Config LAN Discovery** or **Cloudflare Quick Tunnels**.
+> **The complete AI development ecosystem for Google Antigravity (v3.7.2):**
+> - 🌐 **Google Services & OmniRoute Pooling Suite**: Multi-account OAuth pooling, Google AI Studio integration, Power of Two Choices (P2C) candidate selection, in-flight concurrency tracking, 4-tier 429 classification, smart weekly quota governor & cross-model cascade (Gemini → Claude Sonnet 4.6 / Opus 4.6).
+> - 🧩 **Antigravity IDE & Extension Engine**: Native support for VS Code-based Antigravity IDE (v1.107.0+) and classic Electron shell with autonomous proxy auto-starter (`out/main.js`), dual summary store reconciliation (SQLite + Protobuf), and injected chat suggestion pills.
+> - 🖥️ **Desktop Patch Proxy**: Injects **Anthropic Claude**, **OpenAI GPT-4o**, **DeepSeek R1 / V3**, **Google Gemini**, **OpenRouter**, **Ollama**, **Groq**, **Mistral**, and **xAI** directly into IDE chat dropdowns with AES-256-GCM encryption and bi-directional SSE streaming.
+> - 📊 **Token Tracker & Tokenizer Engine**: Real-time token consumption metrics (prompt, completion, cached), cache hit ratio %, and financial savings analysis inside `ag-doctor-ui`.
+> - 📱 **Antigravity Remote 2.0 (Mobile Companion)**: Native Flutter application (Android & iOS) to supervise agent trajectories, review code diffs, approve terminal commands, inspect MCP servers, manage Git worktrees, and chat with AI from anywhere via **Zero-Config LAN Discovery** or **Cloudflare Quick Tunnels**.
 
 ---
 
@@ -39,6 +43,20 @@
 ## Table of Contents
 
 - [Overview & Key Capabilities](#overview--key-capabilities)
+- [What's New in v3.7.1](#whats-new-in-v371)
+- [Google Services & OmniRoute Quota Pooling Suite](#google-services--omniroute-quota-pooling-suite)
+  - [Multi-Account OAuth & AI Studio Pooling](#multi-account-oauth--ai-studio-pooling)
+  - [OmniRoute-Parity Load Balancing (P2C & In-Flight Concurrency)](#omniroute-parity-load-balancing-p2c--in-flight-concurrency)
+  - [4-Tier 429 Classification Engine & Quota Governor](#4-tier-429-classification-engine--quota-governor)
+  - [Cross-Model Billing & Quota Cascade](#cross-model-billing--quota-cascade)
+  - [OAuth Lifecycle: Pre-Warming, Quarantine & Health Watchdog](#oauth-lifecycle-pre-warming-quarantine--health-watchdog)
+  - [Thought Signature & Multi-Turn Reasoning Caching](#thought-signature--multi-turn-reasoning-caching)
+- [Antigravity IDE & Extension Architecture](#antigravity-ide-v11070-vs-antigravity-20-classic)
+  - [Autonomous Proxy Auto-Starter (`out/main.js`)](#key-capabilities--architecture)
+  - [Dual Summary Store Reconciliation (SQLite + Protobuf)](#dual-summary-store-reconciliation)
+  - [Chat Workflow Pills & Injected Suggestions](#chat-workflow-pills--injected-suggestions)
+  - [Surgical Version Patchers (v2.2 – v2.18)](#version-aware-patching-engine)
+- [Token Tracker & Tokenizer Engine](#token-tracker--tokenizer-engine)
 - [Antigravity Remote 2.0 (Mobile & Daemon Bridge)](#antigravity-remote-20-mobile--daemon-bridge)
   - [Remote Visual Experience & Screen Gallery](#remote-visual-experience--screen-gallery)
   - [Key Remote Capabilities & Protocols](#key-remote-capabilities--protocols)
@@ -69,8 +87,96 @@
 ## Overview & Key Capabilities
 
 **Google Antigravity Custom Model Enabler & Remote Ecosystem** transforms your development environment:
-1. **Universal LLM Bridge**: Intercepts internal communication between the IDE's Language Server (Go binary) and Google's internal Cloud Code infrastructure (`daily-cloudcode-pa.googleapis.com` → `127.0.0.1:${AG_PROXY_PORT:-51074}`), translating API requests into standard payloads for 19+ LLM providers while preserving tool calls and SSE token streaming.
-2. **Mobile IDE Companion**: Connects securely to your IDE session from your smartphone via WebSocket JSON-RPC over local Wi-Fi or Cloudflare Quick Tunnels, giving you real-time human-in-the-loop controls wherever you are.
+1. **Universal LLM Bridge**: Intercepts internal communication between the IDE's Language Server (Go binary) and Google's internal Cloud Code infrastructure (`daily-cloudcode-pa.googleapis.com` → `127.0.0.1:${AG_PROXY_PORT:-51074}`), translating API requests into standard payloads for 20+ LLM providers while preserving tool calls and SSE token streaming.
+2. **Google Services & Smart Multi-Account Pooling**: Pools multiple Google Cloud Code and AI Studio accounts with OmniRoute-parity load balancing (Power of Two Choices, in-flight concurrency penalty, 4-tier 429 classification, smart weekly quota governor, and cross-model failover cascade).
+3. **Antigravity IDE & Extension Engine**: Seamless integration with VS Code-based Antigravity IDE (v1.107.0+) and Classic Shell (v2.9.1 / v2.18.x) featuring an autonomous proxy auto-starter (`out/main.js`), chat suggestion pills, and Dual Summary Store reconciliation (SQLite + Protobuf).
+4. **Mobile IDE Companion**: Connects securely to your IDE session from your smartphone via WebSocket JSON-RPC over local Wi-Fi or Cloudflare Quick Tunnels, giving you real-time human-in-the-loop controls wherever you are.
+
+---
+
+## 🌟 What's New in v3.7.1
+
+- 🌐 **Google Multi-Account Quota Pooling**: Pool multiple Google accounts (OAuth & Google AI Studio keys) to multiply quotas and bypass single-account rate limits.
+- ⚖️ **OmniRoute-Parity Intelligent Balancing**: Power of Two Choices (P2C) candidate selection and real-time in-flight concurrency tracking (20-point penalty per active request).
+- 🚦 **4-Tier 429 Classification & Quota Governor**: Granular differentiation between soft bursts, RPM throttles, 5-hour quota exhaustion, and unknown errors, paired with a weekly quota reset countdown.
+- 🔀 **Cross-Model Billing & Quota Cascade**: Instant failover from exhausted Google Gemini models to Claude Sonnet 4.6 / Opus 4.6, skipping sibling accounts sharing the same quota.
+- 🧩 **Antigravity IDE (v1.107.0+) Auto-Starter**: `out/main.js` hook starts the proxy daemon automatically before extensions load, preventing `ECONNREFUSED` connection issues on boot.
+- 🗄️ **Dual Summary Store Reconciliation**: Syncs SQLite `conversation_summaries.db` and Protobuf `agyhub_summaries_proto.pb` via `ag-doctor db:prune` to permanently clean orphan and archived sessions.
+- 💬 **Injected Chat Suggestion Pills**: Quick-action pills inside the chat UI for rapid repository review and Git workflows.
+- 📊 **Token Tracker & Cost Optimization Engine**: Live prompt caching ratio and dollar savings tracking inside `ag-doctor-ui`.
+- 🛡️ **Comprehensive Security Sanitization**: Eradicated legacy Trojan backdoor risks (Issue #22) and implemented zero-eval streaming JSON repair.
+
+---
+
+## 🌐 Google Services & OmniRoute Quota Pooling Suite
+
+Antigravity Patch Proxy v3.7.1 introduces enterprise-grade support for **Google Services**, combining Google Cloud Code OAuth, Google AI Studio developer keys, and Gemini CLI endpoints into a unified, high-availability account pool.
+
+```mermaid
+flowchart TD
+    Req["Incoming IDE Gemini Request"] --> Aff{"Session Affinity Check<br/>(Sticky Sessions)"}
+    Aff -->|"Bound & Healthy"| Exec["Dispatch to Assigned Account"]
+    Aff -->|"Unbound or Cooldown"| P2C["Power of Two Choices (P2C) Selection<br/>• Filter cooling & unlicensed accounts<br/>• Penalty: -20 pts per in-flight request<br/>• Random pick between top 2 healthy nodes"]
+    
+    P2C --> CloudCode["Google Cloud Code OAuth<br/>(daily-cloudcode-pa / prod)"]
+    P2C --> AIStudio["Google AI Studio Keys<br/>(generativelanguage.google)"]
+    P2C --> GeminiCli["Gemini CLI OAuth<br/>(Isolated project quota)"]
+    
+    CloudCode --> Resp{"Response Status"}
+    AIStudio --> Resp
+    GeminiCli --> Resp
+    
+    Resp -->|"200 OK"| Success["Stream Tokens to IDE"]
+    Resp -->|"429 Soft Burst"| Backoff["2-3s Exponential Backoff"]
+    Resp -->|"429 RPM Limit"| Cooldown60["60s Cooldown + Alternate Account"]
+    Resp -->|"429 Quota Exhausted"| Cascade["5h Cooldown + Unbind Session<br/>Cascade to Claude Sonnet/Opus 4.6"]
+```
+
+### Multi-Account OAuth & AI Studio Pooling
+
+The proxy supports combining multiple accounts across three distinct Google services flavors:
+1. **`google` (Google Cloud Code OAuth)**: Connects directly to Google's internal Cloud Code APIs (`daily-cloudcode-pa.googleapis.com` or `cloudcode-pa.googleapis.com/v1internal`). Supports 1-click Google Sign-in in `ag-doctor-ui`, automatically retrieving and refreshing OAuth tokens.
+2. **`google-gemini` (Google AI Studio API Keys)**: Connects to `https://generativelanguage.googleapis.com` using developer API keys (`AIza...`). Each key operates with independent rate limits and quotas.
+3. **`gemini-cli` (Gemini CLI OAuth)**: Connects using Gemini CLI OAuth credentials with isolated project quotas.
+
+Accounts can be configured via `ag-doctor-ui` (Accounts tab), loaded via environment variables (`AG_ACCOUNTS_FILE` / `AG_ACCOUNTS_JSON`), or stored in `custom_models.json`.
+
+### OmniRoute-Parity Load Balancing (P2C & In-Flight Concurrency)
+
+To prevent rate limits and eliminate single-account hotspotting:
+- **Power of Two Choices (P2C)**: Instead of naive round-robin that floods accounts sequentially, the scheduler queries health scores across the pool, identifies the top-tier candidates within a 45-point delta (`P2C_SCORE_DELTA = 45`), and picks between two randomly selected candidates using `crypto.randomInt`.
+- **In-Flight Concurrency Tracking**: Each active request subtracts **20 points** from an account's dynamic health score during execution. Simultaneous concurrent prompts automatically fan out across idle accounts.
+- **Weighted Round-Robin**: When accounts have equal quota tiers, requests rotate seamlessly to maximize overall throughput.
+- **Sticky Session Affinity**: Conversation threads maintain affinity to the same account across turns to preserve context and cached prompt prefixes, immediately releasing the binding if the account hits a rate limit.
+
+### 4-Tier 429 Classification Engine & Quota Governor
+
+Upstream HTTP 429 errors are decoded into four distinct operational tiers:
+1. **`soft_rate_limit`**: Short temporary spike. Retried with a 2-3 second backoff without taking the account out of rotation.
+2. **`rate_limited`**: Requests-per-minute (RPM) throttle. Account enters a 60-second cooldown while alternate accounts handle traffic.
+3. **`quota_exhausted`**: Daily/5-hour token quota reached. The account is placed in a 5-hour cooldown, session affinity is unbound, and the pool immediately fails over to the next available account.
+4. **`unknown`**: Conservative 60-second cooldown fallback.
+
+**Smart Weekly Quota Governor**: Live quota monitors track weekly token limits (`gemini-weekly`, `3p-weekly`) and display a live countdown to the next scheduled quota reset.
+
+### Cross-Model Billing & Quota Cascade
+
+When all Google Gemini accounts in the pool are exhausted or encounter billing limits:
+- The proxy automatically cascades to secondary fallback models (e.g. **Claude Sonnet 4.6** and **Claude Opus 4.6**).
+- **Sibling Account Bypass**: Skips sibling accounts linked to the same billing profile or project to eliminate unproductive ping-pong retry loops.
+- Injects a transparent Markdown notice into the chat stream informing you of the failover without breaking code generation.
+
+### OAuth Lifecycle: Pre-Warming, Quarantine & Health Watchdog
+
+- **Background Token Pre-Warming (`schedulePrewarm`)**: Refresh tokens are proactively renewed 60 seconds before expiration in the background, eliminating mid-stream authentication delays.
+- **Token Revocation Quarantine (`markTokenRevoked`)**: Quarantines revoked refresh tokens (`invalid_grant`) to prevent failed requests, emitting visual notification banners in the UI.
+- **Unlicensed Account Isolation**: Accounts lacking active Cloud Code subscriptions (HTTP 403) are quarantined permanently, saving network round-trips.
+
+### Thought Signature & Multi-Turn Reasoning Caching
+
+Gemini 2.0 Thinking models output internal reasoning blocks and encrypted thought signatures. The proxy caches and restores `thought_signature` across multi-turn conversations, preserving reasoning context across tool invocations and user follow-ups.
+
+---
 
 ## Architecture & Reverse Engineering
 
@@ -300,6 +406,17 @@ npm run doctor:models
 # Stream real-time diagnostic logs
 npm run doctor:logs
 
+# Purge orphan trajectories & vacuum database (Dual Summary Store cleanup)
+node ag-doctor/bin/ag-doctor.js db:prune
+node ag-doctor/bin/ag-doctor.js db:prune --dry-run
+
+# Re-key models with proxy-compatible encryption
+node ag-doctor/bin/ag-doctor.js models rekey
+
+# Apply version-specific surgical patches
+npm run patch:2.17              # Antigravity 2.17.x
+npm run patch:2.18              # Antigravity 2.18.x
+
 # Windows one-click repatch & launcher (or double-click repatch.bat in Explorer)
 repatch.bat
 ```
@@ -311,7 +428,7 @@ The ecosystem provides full dual-support for both the classic Electron shell and
 | Dimension | **Antigravity 2.0 (Classic Shell)** | **Antigravity IDE (VS Code)** |
 | :--- | :--- | :--- |
 | **Installation Path** | `%LOCALAPPDATA%\Programs\antigravity` | `%LOCALAPPDATA%\Programs\Antigravity IDE` |
-| **Binary / Core** | v2.9.1 (Proprietary Electron shell) | v1.107.0 (VS Code platform fork) |
+| **Binary / Core** | v2.9.1 / v2.18.x (Electron shell) | v1.107.0 (VS Code platform fork) |
 | **UI Experience** | Lightweight Agent chat & session management | Full IDE (editor, terminals, git, extensions) |
 | **Patch Mechanism** | `app.asar` overlay + `language_server.exe` string table | `jetski.cloudCodeUrl` override + `out/main.js` hook |
 | **Proxy Lifecycle** | Internal Electron main process lifecycle | **Autonomous auto-starter** hook in `main.js` |
@@ -320,6 +437,8 @@ The ecosystem provides full dual-support for both the classic Electron shell and
 #### Key Capabilities & Architecture:
 
 - **Autonomous Proxy Auto-Starter (`out/main.js`)**: Antigravity IDE automatically verifies if port `51074` is active upon launch. If closed (e.g. Antigravity 2.0 is not running), it immediately spawns the detached background proxy runner from `~/.gemini/antigravity/proxy/` before extension activation, eliminating initial authentication errors (`ECONNREFUSED`).
+- **Dual Summary Store Reconciliation**: Language Server 2.18+ synchronizes `conversation_summaries.db` (SQLite) and `agyhub_summaries_proto.pb` (Protobuf `SummariesState`). Boot repair in `proxy-runner.js` and `ag-doctor db:prune` eliminates orphan sessions (missing `conversations/<id>.db`), syncs `annotations/<id>.pbtxt` archive flags into `raw_summary` (field 15 tag `0x7a`), and scrubs `app_storage.json` so archived/deleted sessions never resurrect.
+- **Chat Workflow Pills & Injected Suggestions**: Injected renderer hooks embed interactive workflow action pills (`git status`, `git diff`, `review`, `explain`) directly above the IDE input field, boosting command discovery and productivity.
 - **Unified Model Configuration**: Both flavors read from the centralized `~/.gemini/antigravity/custom_models.json` with live health monitoring and auto-fallback.
 - **1-Click Launchers**:
   - `Start Antigravity IDE.bat`: Launches Antigravity IDE with guaranteed background proxy execution.
