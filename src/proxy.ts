@@ -95,7 +95,7 @@ import {
 import { generateModelPlaceholderId, toSlug } from './proxy/idGenerator';
 import { expandModelsWithEffort } from './proxy/effortExpander';
 import { resolveGoogleIp } from './proxy/dnsResolver';
-import { markProviderRateLimited } from './proxy/modelRouter';
+import { markProviderRateLimited, isProviderRateLimited } from './proxy/modelRouter';
 import { trimContextPayload } from './proxy/contextTrimmer';
 import { checkAllModelsHealth, getFastOrCachedHealth } from './proxy/modelHealthChecker';
 import { recordRecentModel, restoreRecentModels } from './proxy/recentModelsStore';
@@ -2280,9 +2280,11 @@ export async function executeGoogleCloudCodeWithPool(
     }
 
     const isClaudeRequest = currentBase.toLowerCase().includes('claude');
+    // Emergency cross-family fallback: include ALL model IDs, including enabled:false ones.
+    // The enabled flag controls normal routing UI preference; it must not block emergency quota fallback.
     const allModelBases = [...new Set(
       allCustomModels
-        .filter(m => isGoogleCloudCodeModel(m) && !getOpenBreaker(m) && m.apiKey !== 'auto' && (m as any).enabled !== false)
+        .filter(m => isGoogleCloudCodeModel(m) && !getOpenBreaker(m) && m.apiKey !== 'auto')
         .map(m => normalizeCloudCodeModelId(m.externalModelName || m.name))
         .filter(b => b && !b.includes('3.7') && !b.includes('3.6') && !attemptedModels.has(b.toLowerCase()) && !attemptedModels.has(b)),
     )];
@@ -2297,8 +2299,9 @@ export async function executeGoogleCloudCodeWithPool(
       for (const fallbackModel of eligibleFallbacks) {
         const fbFamily = fallbackModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
         const isFb55 = fallbackModel.includes('5.5') || fallbackModel.includes('5-5');
+        // Include disabled models in quota check — same reason as allModelBases above.
         const hasAnyQuotaInFamily = allCustomModels.some(
-          (m) => isGoogleCloudCodeModel(m) && (m as any).enabled !== false && getModelQuotaScore(m, fbFamily) > 0,
+          (m) => isGoogleCloudCodeModel(m) && getModelQuotaScore(m, fbFamily) > 0,
         );
         if (!hasAnyQuotaInFamily) {
           log.info(`[Proxy] Skipping fallback model ${fallbackModel}: 0% quota available for ${fbFamily} across entire pool.`);
@@ -2308,7 +2311,6 @@ export async function executeGoogleCloudCodeWithPool(
         let fallbackCandidates = allCustomModels.filter(
           (m) =>
             isGoogleCloudCodeModel(m) &&
-            (m as any).enabled !== false &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&
             normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === fallbackModel.toLowerCase() &&
@@ -2461,6 +2463,13 @@ export async function executeGoogleCloudCodeWithPool(
       for (let fi = 0; fi < orderedFallbacks.length; fi++) {
         const fallbackModel = orderedFallbacks[fi];
         const isAiStudio = fallbackModel.provider === 'google-gemini';
+
+        // Skip any provider whose host is currently rate-limited — avoids burning
+        // through all AI Studio accounts sequentially when the host is already banned.
+        if (isProviderRateLimited(fallbackModel.apiUrl)) {
+          log.debug(`[Proxy] Cascade skip ${fallbackModel.displayName || fallbackModel.name}: host rate-limited`);
+          continue;
+        }
 
         log.warn(
           `[Proxy] 🔀 [Account Cascade] Cascading to ${isAiStudio ? 'Google AI Studio' : fallbackModel.provider} account [${fallbackModel.displayName || fallbackModel.name}] (${fallbackModel.provider}) [${fi + 1}/${orderedFallbacks.length}]...`,
@@ -3662,7 +3671,8 @@ function handleCustomModelRequest(
           if (
             isAccountInCooldown(m, mFamily) ||
             getOpenBreaker(m) ||
-            (isGoogleCloudCodeModel(m) && getModelQuotaScore(m, mFamily) <= 0)
+            (isGoogleCloudCodeModel(m) && getModelQuotaScore(m, mFamily) <= 0) ||
+            isProviderRateLimited(m.apiUrl)
           ) {
             continue;
           }

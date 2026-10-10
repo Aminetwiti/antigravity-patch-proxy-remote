@@ -8405,7 +8405,7 @@ export function getAccountEffectiveQuotas(acc: any): {
 
   let geminiWkPct = foundGeminiWk ?? q.geminiWeeklyPct ?? q.weeklyPercentage ?? (acc?.status === 'unhealthy' ? 0 : 100);
   let gemini5hPct = foundGemini5h ?? q.geminiFiveHourPct ?? q.fiveHourPercentage ?? (acc?.status === 'unhealthy' ? 0 : 100);
-  let claudeWkPct = foundClaudeWk ?? q.claudeWeeklyPct ?? (q.groups ? 0 : (acc?.status === 'unhealthy' ? 0 : 100));
+  let claudeWkPct = foundClaudeWk ?? q.claudeWeeklyPct ?? (q.groups && foundClaudeWk === undefined && typeof q.claudeWeeklyPct !== 'number' ? 0 : (acc?.status === 'unhealthy' ? 0 : 100));
   let claude5hPct = foundClaude5h ?? q.claudeFiveHourPct ?? (acc?.status === 'unhealthy' ? 0 : 100);
 
   // Reality rule: If weekly quota is 0, Google locks the 5h window completely

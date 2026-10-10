@@ -802,6 +802,40 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
     const c = await fs.promises.readFile(p, 'utf8');
     const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
 
+    // Merge quota_cache.json Claude quotas into accounts when custom_models.json has stale 0s.
+    // The proxy pre-warm writes live Claude quota into quota_cache.json but Doctor UI reads custom_models.json.
+    let quotaCache: Record<string, any> = {};
+    try {
+      const qCachePath = path.join(app.getPath('home'), '.gemini', 'antigravity', 'quota_cache.json');
+      const qRaw = await fs.promises.readFile(qCachePath, 'utf8');
+      quotaCache = JSON.parse(qRaw).quotas || {};
+    } catch { /* quota_cache.json absent or unreadable — skip */ }
+
+    if (parsed.providers && Array.isArray(parsed.providers) && Object.keys(quotaCache).length > 0) {
+      for (const prov of parsed.providers) {
+        if (!Array.isArray(prov.accounts)) continue;
+        for (const acc of prov.accounts) {
+          const email = acc.email || '';
+          const cacheEntry = quotaCache[`google:${email}`] || quotaCache[email];
+          if (!cacheEntry) continue;
+          if (!acc.quotas) acc.quotas = {};
+          // Only overwrite if the stored value is 0 or missing — prefer live test data if it's > 0
+          if ((typeof acc.quotas.claudeFiveHourPct !== 'number' || acc.quotas.claudeFiveHourPct <= 0) && typeof cacheEntry.claudeFiveHourPct === 'number') {
+            acc.quotas.claudeFiveHourPct = cacheEntry.claudeFiveHourPct;
+          }
+          if ((typeof acc.quotas.claudeWeeklyPct !== 'number' || acc.quotas.claudeWeeklyPct <= 0) && typeof cacheEntry.claudeWeeklyPct === 'number') {
+            acc.quotas.claudeWeeklyPct = cacheEntry.claudeWeeklyPct;
+          }
+          if (!acc.quotas.claudeFiveHourReset && cacheEntry.claudeFiveHourReset) {
+            acc.quotas.claudeFiveHourReset = cacheEntry.claudeFiveHourReset;
+          }
+          if (!acc.quotas.claudeWeeklyReset && cacheEntry.claudeWeeklyReset) {
+            acc.quotas.claudeWeeklyReset = cacheEntry.claudeWeeklyReset;
+          }
+        }
+      }
+    }
+
     if (parsed.providers && Array.isArray(parsed.providers)) {
       const googleProviders = parsed.providers.filter(
         (prov: any) => prov && (prov.provider === 'google' || prov.provider === 'gemini')

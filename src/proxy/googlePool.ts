@@ -254,7 +254,16 @@ export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>,
           }
         }
       }
-      googleAccountCooldowns.set(k, until);
+      // Cap restored cooldown at 5h15m: pre-Fix-8 entries may carry weekly-scale durations
+      // (e.g. 92h, 66h) that should never have been stored. A 5h rolling quota window can
+      // never exceed 5h15m, so clamp and let the live quota poller confirm the real state.
+      // ponytail: one guard here eliminates all legacy artifacts across restarts.
+      const FIVE_H_15_MS = 5 * 3600_000 + 15 * 60_000;
+      const clampedUntil = durationMs > FIVE_H_15_MS ? now + 5 * 3600_000 : until;
+      if (clampedUntil !== until) {
+        log.info(`[GooglePool] Clamped over-long cooldown for ${k}: ${Math.round(durationMs / 3600_000)}h → 5h (pre-Fix-8 artifact)`);
+      }
+      googleAccountCooldowns.set(k, clampedUntil);
       if (durationMs > 5 * 3600 * 1000) {
         quotaExhaustedAccountKeys.add(k);
       }
@@ -891,7 +900,19 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   const weeklyResetStr = isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime);
   const weeklyResetPassed = weeklyResetStr ? new Date(weeklyResetStr).getTime() <= now : false;
 
-  if (fiveHour === 0 && !fiveHourResetPassed) return 0;
+  // Staleness escape: if quota data has no resetTime AND is older than one 5h window,
+  // the window has already cycled — return low-priority score (20) instead of blocking forever.
+  // ponytail: ceiling = a fresh live poll will replace this score within 3 min.
+  const quotaAge = now - (typeof q.updatedAt === 'number' ? q.updatedAt : 0);
+  const FIVE_H_WINDOW_MS = 18_900_000; // 5h 15min
+  const quotaIsStaleWindow = quotaAge >= FIVE_H_WINDOW_MS;
+
+  if (fiveHour === 0 && !fiveHourResetPassed) {
+    // Only apply staleness escape for live-polled data (updatedAt > 0).
+    // Static config quotas have updatedAt=0 and must still block.
+    if (!fiveHourResetStr && typeof q.updatedAt === 'number' && q.updatedAt > 0 && quotaIsStaleWindow) return 20;
+    return 0;
+  }
   if (weekly === 0 && !weeklyResetPassed) return 0;
 
   const effFiveHour = (fiveHour === 0 && fiveHourResetPassed) ? 50 : fiveHour;
@@ -1114,6 +1135,10 @@ export function classifyGoogleCloudCode429(
 
   // Parse "Resets in Xh Ym Zs" from the 429 body when no Retry-After header or JSON metadata is present.
   // Handles: "42h52m9s", "4h7m17s", "52m", "30s", etc.
+  // Cap at 5h15m: Google sometimes embeds the *weekly* reset ("Resets in 92h 52m") in quota-exhausted
+  // 429 bodies. A 5h rolling window can never exceed 5h15m, so anything larger is the weekly cycle
+  // marker — discard it and let the quota_exhausted branch apply the standard 5h cooldown.
+  const FIVE_H_15_MS = 5 * 3600_000 + 15 * 60_000; // 5h 15min ceiling
   if (retryAfterMs === null) {
     const resetMatch = msg.match(/resets?\s+in\s+(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
     if (resetMatch && (resetMatch[1] || resetMatch[2] || resetMatch[3])) {
@@ -1121,7 +1146,8 @@ export function classifyGoogleCloudCode429(
       const m = parseInt(resetMatch[2] || '0', 10);
       const s = parseInt(resetMatch[3] || '0', 10);
       const parsed = (h * 3600 + m * 60 + s) * 1000;
-      if (parsed > 0) retryAfterMs = parsed;
+      // Ignore weekly-reset markers embedded in quota-exhausted messages
+      if (parsed > 0 && parsed <= FIVE_H_15_MS) retryAfterMs = parsed;
     }
   }
 
@@ -1185,8 +1211,10 @@ export function classifyGoogleCloudCode429(
 
   for (const kw of QUOTA_EXHAUSTED_KEYWORDS) {
     if (msg.includes(kw)) {
-      // Use the parsed reset time from header or body. Floor at 5h so we never under-cool a quota account.
-      const quotaCooldownMs = retryAfterMs && retryAfterMs > 0
+      // Use parsed reset time, floored at 5h, capped at 5h15m.
+      // Never apply a weekly-scale cooldown (>5h15m) for a 5h-window quota exhaustion.
+      // ponytail: ceiling = a fresh live poll after 5h will restore the account regardless.
+      const quotaCooldownMs = retryAfterMs && retryAfterMs > 0 && retryAfterMs <= FIVE_H_15_MS
         ? Math.max(retryAfterMs, 5 * 60 * 60 * 1000)
         : 5 * 60 * 60 * 1000;
       return {
@@ -1196,6 +1224,7 @@ export function classifyGoogleCloudCode429(
       };
     }
   }
+
 
   // 4. Default / Unknown 429
   return {

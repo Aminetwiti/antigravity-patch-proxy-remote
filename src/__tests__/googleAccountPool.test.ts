@@ -336,8 +336,8 @@ describe('Google Multi-Account Pool & Failover', () => {
         'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 42h52m9s',
       );
       expect(d42h.category).toBe('quota_exhausted');
-      const expected42h = (42 * 3600 + 52 * 60 + 9) * 1000;
-      expect(d42h.cooldownMs).toBe(expected42h); // ~154.3M ms, well above 5h floor
+      // 42h52m9s > 5h15m cap → discarded (weekly-scale reset, not 5h reset)
+      expect(d42h.cooldownMs).toBe(5 * 60 * 60 * 1000); // capped at default 5h
 
       // Production: "Individual quota reached. Resets in 4h7m17s" → 4h7m17s = 14837s → floor to 5h
       const d4h = classifyGoogleCloudCode429(

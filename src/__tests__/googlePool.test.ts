@@ -350,11 +350,26 @@ describe('classifyGoogleCloudCode429', () => {
     expect(r.cooldownMs).toBe(30_000);
   });
 
-  it('parses "resets in Xh Ym Zs" from body', () => {
+  it('parses "resets in Xh Ym Zs" from body — value within 5h window', () => {
     const r = classifyGoogleCloudCode429('quota exceeded. resets in 2h30m0s');
     expect(r.category).toBe('quota_exhausted');
-    // 2h30m = 9000s = 9_000_000ms, floored to max(9_000_000, 5h=18_000_000) = 18_000_000
+    // 2h30m = 9_000_000ms, floored to max(9_000_000, 5h=18_000_000) = 18_000_000
     expect(r.cooldownMs).toBe(Math.max(9_000_000, 5 * 3600 * 1000));
+  });
+
+  it('ignores weekly-scale "Resets in 92h 52m" in quota_exhausted body — caps at 5h default', () => {
+    // Google embeds weekly reset time in quota-exhausted messages for accounts with remaining weekly quota.
+    // The 5h rolling window never exceeds 5h15m, so 92h is the weekly marker — must be discarded.
+    const r = classifyGoogleCloudCode429('quota_exhausted. resets in 92h52m9s');
+    expect(r.category).toBe('quota_exhausted');
+    expect(r.cooldownMs).toBe(5 * 3600 * 1000); // default 5h, not 92h
+  });
+
+  it('ignores weekly-scale "Resets in 93h" from Retry-After header — caps at 5h for quota_exhausted', () => {
+    // retryAfterMs parsed from header = 93h; quota keyword present → must still cap at 5h15m
+    const r = classifyGoogleCloudCode429('quota_exhausted: your quota was exhausted', String(93 * 3600));
+    expect(r.category).toBe('quota_exhausted');
+    expect(r.cooldownMs).toBe(5 * 3600 * 1000); // 93h > 5h15m → discard, use 5h default
   });
 
   it('parses RetryInfo JSON metadata', () => {
