@@ -438,14 +438,15 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const weekStr = geminiWeekVal !== null ? `, week=${geminiWeekVal}%` : '';
         const geminiWeeklyDepleted = geminiWeekVal !== null && geminiWeekVal < 5 && !geminiResetPassed;
 
+        const canWakeQuota = quotaIsFresh || !isQuotaExhausted;
         const isFullyRestored = quota.geminiFiveHourPct === 100 && (geminiWeekVal === null || geminiWeekVal >= 50);
-        if (geminiResetPassed && quota.geminiFiveHourPct >= 5) {
+        if (geminiResetPassed && quota.geminiFiveHourPct >= 5 && canWakeQuota) {
           shouldWakeUp = true;
           reason = `Gemini reset timestamp elapsed (${geminiResetStr}${weekStr})`;
-        } else if (isFullyRestored) {
+        } else if (isFullyRestored && canWakeQuota) {
           shouldWakeUp = true;
           reason = `full quota restored (5h=100%${weekStr})`;
-        } else if (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted && (quotaIsFresh || !isQuotaExhausted)) {
+        } else if (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted && canWakeQuota) {
           shouldWakeUp = true;
           reason = `${quotaIsFresh ? 'fresh live' : 'healthy'} quota (5h=${quota.geminiFiveHourPct}%${weekStr})`;
         }
@@ -456,14 +457,15 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const weekStr = claudeWeekVal !== null ? `, week=${claudeWeekVal}%` : '';
         const claudeWeeklyDepleted = claudeWeekVal !== null && claudeWeekVal < 5 && !claudeResetPassed;
 
+        const canWakeQuota = quotaIsFresh || !isQuotaExhausted;
         const isFullyRestored = quota.claudeFiveHourPct === 100 && (claudeWeekVal === null || claudeWeekVal >= 50);
-        if (claudeResetPassed && quota.claudeFiveHourPct >= 5) {
+        if (claudeResetPassed && quota.claudeFiveHourPct >= 5 && canWakeQuota) {
           shouldWakeUp = true;
           reason = `Claude reset timestamp elapsed (${claudeResetStr}${weekStr})`;
-        } else if (isFullyRestored) {
+        } else if (isFullyRestored && canWakeQuota) {
           shouldWakeUp = true;
           reason = `full quota restored (5h=100%${weekStr})`;
-        } else if (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted && (quotaIsFresh || !isQuotaExhausted)) {
+        } else if (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted && canWakeQuota) {
           shouldWakeUp = true;
           reason = `${quotaIsFresh ? 'fresh live' : 'healthy'} quota (5h=${quota.claudeFiveHourPct}%${weekStr})`;
         }
@@ -480,8 +482,9 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const claudeWeekStr = claudeWeekVal !== null ? `, week=${claudeWeekVal}%` : '';
         const claudeWeeklyDepleted = claudeWeekVal !== null && claudeWeekVal < 5 && !claudeResetPassed;
 
-        const geminiOk = geminiResetPassed || (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted && (quotaIsFresh || !isQuotaExhausted));
-        const claudeOk = claudeResetPassed || (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted && (quotaIsFresh || !isQuotaExhausted));
+        const canWakeQuota = quotaIsFresh || !isQuotaExhausted;
+        const geminiOk = canWakeQuota && (geminiResetPassed || (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted));
+        const claudeOk = canWakeQuota && (claudeResetPassed || (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted));
 
         if (geminiOk && claudeOk) {
           shouldWakeUp = true;
@@ -1009,9 +1012,9 @@ export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): nu
       ? (typeof m.priority === 'number' && m.priority > 0 ? m.priority : 15)
       : 0;
 
-  // Latency penalty: -1 point per 100ms beyond 500ms baseline (capped at -25 points)
+  // Latency penalty: -1 point per 100ms beyond 500ms baseline, up to 70 points for very slow accounts (>7.5s)
   const avgLatency = getAccountAvgLatency(m);
-  const latencyPenalty = avgLatency > 500 ? Math.min(25, Math.floor((avgLatency - 500) / 100)) : 0;
+  const latencyPenalty = avgLatency > 500 ? Math.min(70, Math.floor((avgLatency - 500) / 100)) : 0;
 
   // During Half-Open probation: strictly max 1 probe request allowed; score capped at 60%
   if (isAccountInProbation(m, modelFamily)) {
@@ -1048,7 +1051,10 @@ export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): nu
   // Progressive weekly penalty: accounts below 15% get strong penalty (up to 20 pts);
   // accounts between 15% and 30% get mild penalty (up to 7 pts) to favor accounts with > 30% weekly quota.
   let weeklyPenalty = 0;
-  if (weeklyPct < 15 && weeklyPct > 0) {
+  if (weeklyPct <= 5 && weeklyPct > 0) {
+    // Near-zero weekly quota (<= 5%): heavy penalty to prevent immediate weekly exhaustion
+    weeklyPenalty = 25 + Math.floor((5 - weeklyPct) * 2);
+  } else if (weeklyPct < 15 && weeklyPct > 5) {
     weeklyPenalty = 7 + Math.floor((15 - weeklyPct) * 1.5);
   } else if (weeklyPct < 30 && weeklyPct >= 15) {
     weeklyPenalty = Math.floor((30 - weeklyPct) * 0.5);
@@ -1240,14 +1246,19 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
   if (candidates.length === 1) return candidates[0];
 
   const available = candidates.filter((m) => !isAccountInCooldown(m, modelFamily) && !getOpenBreaker(m));
-  const pool = available.length > 0 ? available : candidates;
+  const availableWithQuota = available.filter((m) => getModelQuotaScore(m, modelFamily) > 0);
+  const pool = availableWithQuota.length > 0 ? availableWithQuota : (available.length > 0 ? available : candidates);
   if (pool.length === 1) return pool[0];
 
   const sorted = [...pool].sort((a, b) => getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily));
   const topScore = getAccountDynamicScore(sorted[0], modelFamily);
 
   const delta = typeof P2C_SCORE_DELTA === 'number' ? P2C_SCORE_DELTA : 45;
-  const topTier = sorted.filter((m) => topScore - getAccountDynamicScore(m, modelFamily) <= delta);
+  const topTier = sorted.filter((m) => {
+    const s = getAccountDynamicScore(m, modelFamily);
+    if (topScore > 0 && s <= 0) return false;
+    return topScore - s <= delta;
+  });
   if (topTier.length <= 1) {
     return sorted[0];
   }

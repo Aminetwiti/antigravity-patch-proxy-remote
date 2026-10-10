@@ -1672,6 +1672,9 @@ export async function executeGoogleCloudCodeWithPool(
     const breakerA = getOpenBreaker(a) ? 1 : 0;
     const breakerB = getOpenBreaker(b) ? 1 : 0;
     if (breakerA !== breakerB) return breakerA - breakerB;
+    const hasQuotaA = getModelQuotaScore(a, modelFamily) > 0 ? 1 : 0;
+    const hasQuotaB = getModelQuotaScore(b, modelFamily) > 0 ? 1 : 0;
+    if (hasQuotaA !== hasQuotaB) return hasQuotaB - hasQuotaA;
     if (isClaude55) {
       const entA = isAccountEntitledToClaude55(a) ? 1 : 0;
       const entB = isAccountEntitledToClaude55(b) ? 1 : 0;
@@ -1737,6 +1740,9 @@ export async function executeGoogleCloudCodeWithPool(
       const breakerA = getOpenBreaker(a) ? 1 : 0;
       const breakerB = getOpenBreaker(b) ? 1 : 0;
       if (breakerA !== breakerB) return breakerA - breakerB;
+      const hasQuotaA = getModelQuotaScore(a, modelFamily) > 0 ? 1 : 0;
+      const hasQuotaB = getModelQuotaScore(b, modelFamily) > 0 ? 1 : 0;
+      if (hasQuotaA !== hasQuotaB) return hasQuotaB - hasQuotaA;
       return getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily);
     });
   }
@@ -1895,6 +1901,8 @@ export async function executeGoogleCloudCodeWithPool(
       const reqDuration = Date.now() - startReqTime;
       if (outcome.success || outcome.statusCode === 200) {
         recordAccountLatency(candidate, reqDuration);
+      } else if (outcome.statusCode === 504 || (outcome.error && /timed out/i.test(outcome.error))) {
+        recordAccountLatency(candidate, Math.max(reqDuration, poolHeaderTimeout));
       }
     } finally {
       decrementAccountInFlight(candidate);
@@ -1991,11 +1999,15 @@ export async function executeGoogleCloudCodeWithPool(
         }
 
         // Fast-fail if 3 consecutive accounts hit quota exhaustion for this model in a larger pool
-        if (consecutiveQuotaExhausted >= 3 && sortedAccounts.length > 3) {
+        // only when no healthy accounts with positive quota remain
+        const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some(
+          (c) => !isAccountInCooldown(c, currentFamily) && getModelQuotaScore(c, currentFamily) > 20,
+        );
+        if (consecutiveQuotaExhausted >= 3 && !remainingHealthyWithQuota && sortedAccounts.length > 3) {
           lastStatus = 429;
           lastErrorText = outcome.error || `HTTP 429 (${decision.reason})`;
           log.warn(
-            `[Proxy] Model ${targetModel} hit quota exhaustion across ${consecutiveQuotaExhausted} consecutive accounts. Fast-failing pool to trigger immediate fallback.`,
+            `[Proxy] Model ${targetModel} hit quota exhaustion across ${consecutiveQuotaExhausted} consecutive accounts with no healthy accounts remaining. Fast-failing pool to trigger immediate fallback.`,
           );
           break;
         }
@@ -2215,7 +2227,7 @@ export async function executeGoogleCloudCodeWithPool(
     // rather than a harsh lockout, allowing healthy accounts to re-enter rotation quickly.
     if (lastStatus === 504 || /timed out/i.test(lastErrorText)) {
       const burstCount = recordAccountBurst(candidate);
-      const timeoutCooldownMs = burstCount > 1 ? 60_000 : 15_000;
+      const timeoutCooldownMs = burstCount > 1 ? 180_000 : 60_000;
       log.warn(
         `[Proxy] Account ${candidateName} timed out (HTTP 504). Placing in ${timeoutCooldownMs / 1000}s cooldown to clear transient hang (burst count: ${burstCount}).`,
       );

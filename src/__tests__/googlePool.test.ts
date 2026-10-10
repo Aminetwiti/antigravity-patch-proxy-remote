@@ -39,7 +39,9 @@ import {
   recordAccountBurst,
   clearAccountBurst,
   _resetAccountBurst,
+  verifyAndReconcileCooldowns,
 } from '../proxy/googlePool';
+import { updateLiveAccountQuota } from '../services/googleAuth';
 import { GOOGLE_POOL_HEADER_TIMEOUT_MS, P2C_SCORE_DELTA } from '../constants';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -600,6 +602,58 @@ describe('Burst Rate Limit Governor & Constants', () => {
     // 45.6 - 11 = 34.6
     expect(getAccountDynamicScore(lowWeeklyAcc, 'gemini')).toBeLessThan(36);
     expect(getAccountDynamicScore(balancedAcc, 'gemini')).toBeGreaterThan(getAccountDynamicScore(lowWeeklyAcc, 'gemini') + 15);
+  });
+
+  it('never includes 0-score accounts in P2C topTier when positive score accounts exist', () => {
+    const accPositive = makeModel({
+      accountEmail: 'positive@test.com',
+      quotas: { geminiFiveHourPct: 40, geminiWeeklyPct: 40 } as any,
+    });
+    const accZero = makeModel({
+      accountEmail: 'zero@test.com',
+      quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 0 } as any,
+    });
+
+    // Positive account has score 40 (<= P2C_SCORE_DELTA 45)
+    // Zero account has score 0. Even though 40 - 0 <= 45, zero account MUST NOT be chosen!
+    expect(getAccountDynamicScore(accPositive, 'gemini')).toBe(40);
+    expect(getAccountDynamicScore(accZero, 'gemini')).toBe(0);
+
+    const chosen = selectCandidateP2C([accPositive, accZero], 'gemini');
+    expect(chosen).toBe(accPositive);
+  });
+
+  it('penalizes very slow accounts (> 7.5s) up to 70 points instead of capping at 25', () => {
+    const slowAcc = makeModel({
+      accountEmail: 'slow@test.com',
+      quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } as any,
+    });
+    // Base score is 100. Record 8500ms latency.
+    recordAccountLatency(slowAcc, 8500);
+    // (8500 - 500) / 100 = 80 points penalty, capped at 70 points!
+    // Dynamic score: 100 - 70 = 30 points
+    expect(getAccountDynamicScore(slowAcc, 'gemini')).toBe(30);
+  });
+
+  it('does not wake up an exhausted account if quota data is stale', () => {
+    const exhaustedAcc = makeModel({
+      accountEmail: 'exhausted@test.com',
+    });
+    const key = getAccountQuotaKey(exhaustedAcc);
+    setAccountCooldown(exhaustedAcc, 18000_000, 'gemini');
+    markAccountQuotaExhausted(key, 'gemini');
+
+    // Simulate stale quota from yesterday (updatedAt = 24 hours ago, with static 100% quota)
+    updateLiveAccountQuota(key, {
+      geminiFiveHourPct: 100,
+      geminiWeeklyPct: 100,
+      updatedAt: Date.now() - 24 * 3600 * 1000,
+    } as any);
+
+    const result = verifyAndReconcileCooldowns(Date.now(), [exhaustedAcc]);
+    // The account MUST NOT wake up based on stale 100% data!
+    expect(isAccountInCooldown(exhaustedAcc, 'gemini')).toBe(true);
+    expect(result.cleared).toBe(0);
   });
 });
 
