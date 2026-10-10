@@ -4481,6 +4481,30 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
 
+  // Force an immediate live quota poll for all Google accounts.
+  // Useful from the doctor page to bypass the 3-minute poll cadence and get fresh data.
+  if (req.method === 'POST' && (req.url === '/force-quota-refresh' || req.url === '/pool/quota-refresh')) {
+    const models = loadCustomModels();
+    const googleModels = models.filter((m) => isGoogleCloudCodeModel(m));
+    const accountList = googleModels
+      .filter((m, i, arr) => arr.findIndex(x => getAccountQuotaKey(x) === getAccountQuotaKey(m)) === i)
+      .map((m) => m.accountEmail || getAccountQuotaKey(m));
+
+    // Fire-and-forget: poll runs in background, cooldowns reconciled after
+    pollAllGoogleQuotas(googleModels, autoHealAccountOnQuotaRecovery)
+      .then(() => { verifyAndReconcileCooldowns(Date.now(), googleModels); })
+      .catch(() => {});
+
+    if (safeWriteHead(res, 202, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })) {
+      safeEnd(res, JSON.stringify({
+        message: 'Quota refresh triggered for all Google accounts. Check /pool-status in ~5s for results.',
+        accounts: accountList,
+        timestamp: Date.now(),
+      }));
+    }
+    return;
+  }
+
   // Multi-account pool live telemetry & health inspection endpoint
   if (req.method === 'GET' && (req.url === '/pool-status' || req.url === '/pool/status')) {
     const customModels = expandModelsWithEffort(loadCustomModels());
@@ -4494,7 +4518,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       baseScore: number;
       geminiQuotaPct: number;
       claudeQuotaPct: number;
+      geminiWeeklyPct: number | null;
+      claudeWeeklyPct: number | null;
       quotaSource: 'LIVE' | 'STATIC';
+      quotaUpdatedAt: number | null;
+      quotaAgeMinutes: number | null;
       inFlight: number;
       inProbation: boolean;
       maxConcurrent: number;
@@ -4529,7 +4557,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           ? q.fiveHourPercentage
           : 50;
       const claudeQuotaPct = typeof q?.claudeFiveHourPct === 'number' ? q.claudeFiveHourPct : 50;
+      const geminiWeeklyPct = typeof q?.geminiWeeklyPct === 'number' ? q.geminiWeeklyPct
+        : typeof q?.weeklyPercentage === 'number' ? q.weeklyPercentage : null;
+      const claudeWeeklyPct = typeof q?.claudeWeeklyPct === 'number' ? q.claudeWeeklyPct : null;
       const quotaSource: 'LIVE' | 'STATIC' = live ? 'LIVE' : 'STATIC';
+      // How old is the quota data? Helps the UI show a "stale" warning.
+      const quotaUpdatedAt = live?.updatedAt || null;
+      const quotaAgeMinutes = quotaUpdatedAt ? Math.floor((Date.now() - quotaUpdatedAt) / 60_000) : null;
 
       const revoked = isTokenRevoked(m.refreshToken);
       let status: 'HEALTHY' | 'PROBATION' | 'COOLDOWN' | 'BREAKER_OPEN' | 'REAUTH_REQUIRED' = 'HEALTHY';
@@ -4551,7 +4585,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         baseScore,
         geminiQuotaPct,
         claudeQuotaPct,
+        geminiWeeklyPct,
+        claudeWeeklyPct,
         quotaSource,
+        quotaUpdatedAt,
+        quotaAgeMinutes,
         inFlight,
         inProbation,
         maxConcurrent: MAX_CONCURRENT_PER_ACCOUNT,

@@ -9006,6 +9006,8 @@ function initGoogleAccountsToolbarOnce(): void {
         })
       );
       toast(`Refreshed quotas for ${updatedCount} accounts`, 'ok');
+      // Also push updated quotas to proxy routing state (bypasses 3-min poll cadence)
+      void forceProxyQuotaRefresh();
       await loadGoogleAccounts();
     } finally {
       refreshAllBtn.removeAttribute('disabled');
@@ -9592,6 +9594,7 @@ function initGoogleAccountsToolbarOnce(): void {
             }
           }
           await window.ag.providers.save(account);
+          void forceProxyQuotaRefresh();
           toast(`Quotas updated for ${account.name}`, 'ok');
         } catch (err) {
           toast(`Quota error: ${(err as Error).message}`, 'err');
@@ -10235,6 +10238,18 @@ async function synchronizeGoogleAccountsModels(accounts?: any[]): Promise<void> 
 let gaLastQuotaRefreshTimestamp = 0;
 let gaIsLoadingAccounts = false;
 
+/** Triggers a live re-poll of all Google account quotas on the proxy side.
+ *  Fire-and-forget: proxy responds 202 immediately, poll runs in background. */
+async function forceProxyQuotaRefresh(): Promise<void> {
+  try {
+    const status = await window.ag.proxyStatus();
+    const port = status?.data?.port || 51074;
+    await fetch(`http://127.0.0.1:${port}/force-quota-refresh`, { method: 'POST' });
+  } catch {
+    // Proxy might not be running — silently ignore
+  }
+}
+
 async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> {
   if (!gaAccountsContainer) return;
 
@@ -10495,9 +10510,13 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
 
   // Antigravity Account
   if (!quotas) {
+    const ageMin = gaLastQuotaRefreshTimestamp > 0 ? Math.floor((Date.now() - gaLastQuotaRefreshTimestamp) / 60_000) : null;
+    const staleHint = ageMin !== null && ageMin > 5
+      ? ` <span style="color: #f59e0b; font-size: 10px;" title="Données de quota potentiellement périmées — cliquez sur Actualiser tout">⚠ il y a ${ageMin} min</span>`
+      : '';
     return isCardView
-      ? '<div style="font-size: 11px; color: var(--text-3); font-style: italic;">No live quotas loaded</div>'
-      : '<span style="color: var(--text-3); font-size: 11px;">No live quota</span>';
+      ? `<div style="font-size: 11px; color: var(--text-3); font-style: italic;">Aucun quota live chargé${staleHint}</div>`
+      : `<span style="color: var(--text-3); font-size: 11px;">Aucun quota live${staleHint}</span>`;
   }
 
   const est = estimateAccountTokens(a);
@@ -10582,6 +10601,11 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
 
   const isCritical5h = !isWeekly && (gemini5hPct > 0 && gemini5hPct <= 3) && (claude5hPct <= 3);
 
+  const quotaAgeMin = gaLastQuotaRefreshTimestamp > 0 ? Math.floor((Date.now() - gaLastQuotaRefreshTimestamp) / 60_000) : null;
+  const staleWarning = quotaAgeMin !== null && quotaAgeMin > 5
+    ? `<div style="font-size: 10px; color: #f59e0b; margin-top: 3px;" title="Données périmées — cliquez sur Actualiser tout pour obtenir les quotas réels">⚠ Quota actualisé il y a ${quotaAgeMin} min</div>`
+    : '';
+
   return `
     <div class="ga-quota-container ga-split-gauge" ${containerStyle ? `style="${containerStyle}"` : ''}>
       <div class="ga-quota-row ga-split-segment">
@@ -10607,6 +10631,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
         <span>⚠️ Réserve &lt;3%</span>
         <button type="button" class="ga-soft-stow-btn" data-account-id="${escapeHtml(a.id)}">Mettre au repos</button>
       </div>` : ''}
+      ${staleWarning}
     </div>
   `;
 }

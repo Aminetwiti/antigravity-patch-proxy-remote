@@ -38,11 +38,11 @@ export function registerUnlicensedAccountsHandlers(
 }
 
 let getAccountCooldownsFn: (() => Record<string, number>) | null = null;
-let restoreAccountCooldownsFn: ((cooldowns: Record<string, number>) => void) | null = null;
+let restoreAccountCooldownsFn: ((cooldowns: Record<string, number>, quotas?: Map<string, AccountLiveQuota>) => void) | null = null;
 
 export function registerAccountCooldownHandlers(
   getFn: () => Record<string, number>,
-  restoreFn: (cooldowns: Record<string, number>) => void,
+  restoreFn: (cooldowns: Record<string, number>, quotas?: Map<string, AccountLiveQuota>) => void,
 ): void {
   getAccountCooldownsFn = getFn;
   restoreAccountCooldownsFn = restoreFn;
@@ -70,16 +70,26 @@ export async function loadPersistentQuotaCache(customPath?: string): Promise<boo
     const data = JSON.parse(raw) as PersistentQuotaCacheData;
     if (!data || typeof data !== 'object') return false;
 
-    // Restore live quotas
+    // Restore live quotas — skip entries older than 6h to avoid stale 0% readings
+    // causing false quota-exhausted cooldowns after a restart.
+    // ponytail: 6h ceiling matches the Gemini 5h rolling window plus a 1h grace period.
+    const QUOTA_STALE_MS = 6 * 3600_000;
     if (data.quotas && typeof data.quotas === 'object') {
       let count = 0;
+      let skipped = 0;
       for (const [key, quota] of Object.entries(data.quotas)) {
         if (quota && typeof quota.geminiFiveHourPct === 'number') {
+          const age = Date.now() - (quota.updatedAt || 0);
+          if (age > QUOTA_STALE_MS) {
+            skipped++;
+            log.debug(`[QuotaCacheStore] Skipping stale quota for ${key} (age=${Math.round(age / 3600_000)}h)`);
+            continue;
+          }
           updateLiveAccountQuota(key, quota);
           count++;
         }
       }
-      log.info(`[QuotaCacheStore] Restored ${count} account quota entries from disk cache`);
+      log.info(`[QuotaCacheStore] Restored ${count} account quota entries from disk cache (${skipped} skipped as stale)`);
     }
 
     // Restore quarantined tokens
@@ -99,6 +109,8 @@ export async function loadPersistentQuotaCache(customPath?: string): Promise<boo
     }
 
     // Restore active account cooldowns (HTTP 429)
+    // Pass the freshly-loaded quota map so the restore fn can skip quota-exhausted
+    // cooldowns for accounts that already have positive remaining quota.
     if (data.accountCooldowns && typeof data.accountCooldowns === 'object' && restoreAccountCooldownsFn) {
       const now = Date.now();
       const active: Record<string, number> = {};
@@ -107,7 +119,8 @@ export async function loadPersistentQuotaCache(customPath?: string): Promise<boo
           active[k] = until;
         }
       }
-      restoreAccountCooldownsFn(active);
+      const freshQuotaMap = getAllLiveAccountQuotas();
+      restoreAccountCooldownsFn(active, freshQuotaMap);
       log.info(`[QuotaCacheStore] Restored ${Object.keys(active).length} active account cooldown(s) from disk cache`);
     }
 

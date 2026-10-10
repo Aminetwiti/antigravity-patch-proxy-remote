@@ -10,15 +10,23 @@ export const GOOGLE_CLIENT_ID =
   _unmaskSecret('GxodGxoaHBocGh8TGwdeR0JZWUNEGEIYG0ZJWE8YGR9cXkVGRUBCHk0eGhlPWgRLWlpZBE1FRU1GT19ZT1hJRUReT0ReBElFRw==');
 export const GOOGLE_CLIENT_SECRET =
   process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
-  _unmaskSecret('bWVpeXpyB2EfEmx9eB4SHGZOZmZgG0dmaBJZcmkeUBxbbmtM');
+  _unmaskSecret('bWVpeXpyB2EfEmx9eB4SHGZOZmAbR2ZoEllyaR5QHFtua0w=');
 export const GEMINI_CLI_CLIENT_ID =
   process.env.GEMINI_CLI_OAUTH_CLIENT_ID ||
   _unmaskSecret('HBIbGB8fEhoTGRMfB0VFEkxeGEVaWE5YRFoTTxlLW0wcS1wZQkdOQ0gbGR9ABEtaWlkETUVFTUZPX1lPWElFRF5PRF4ESUVH');
 export const GEMINI_CLI_CLIENT_SECRET =
   process.env.GEMINI_CLI_OAUTH_CLIENT_SECRET ||
   _unmaskSecret('bWVpeXpyBx5fYk1nZkcHG0UdeUEHTU98HGlfH0lGcmxZUkY=');
+// New Antigravity AuthProvider client — extracted from language_server.exe (current build).
+// Accounts authenticated via the IDE sign-in flow use this client for token refresh.
+export const ANTIGRAVITY_V2_CLIENT_ID =
+  process.env.ANTIGRAVITY_V2_OAUTH_CLIENT_ID ||
+  _unmaskSecret('EhIeGR8eExsTGh8YBxkcXlhJG0BASBleTV9DS0kZGEVcHElFThgcEkkfSEZCBEtaWlkETUVFTUZPX1lPWElFRF5PRF4ESUVH');
+export const ANTIGRAVITY_V2_CLIENT_SECRET =
+  process.env.ANTIGRAVITY_V2_OAUTH_CLIENT_SECRET ||
+  _unmaskSecret('bWVpeXpyBxNze31abB14fW5pGnt+TkAHc1JhZ114GnBeWXI=');
 
-const knownTokenClients = new Map<string, 'antigravity' | 'gemini-cli'>();
+const knownTokenClients = new Map<string, 'antigravity' | 'antigravity-v2' | 'gemini-cli'>();
 
 interface CachedToken {
   accessToken: string;
@@ -179,7 +187,7 @@ function performOAuthTokenRequest(
 export async function refreshGoogleToken(
   refreshToken: string,
   force = false,
-  preferredClient?: 'antigravity' | 'gemini-cli',
+  preferredClient?: 'antigravity' | 'antigravity-v2' | 'gemini-cli',
 ): Promise<string | null> {
   const cleanRefresh = (refreshToken || '').trim();
   if (!cleanRefresh) return null;
@@ -199,31 +207,48 @@ export async function refreshGoogleToken(
 
   const refreshPromise = (async (): Promise<string | null> => {
     const known = knownTokenClients.get(cleanRefresh);
-    const firstClient = known || preferredClient || 'antigravity';
-    const firstCreds = firstClient === 'gemini-cli'
-      ? { id: GEMINI_CLI_CLIENT_ID, secret: GEMINI_CLI_CLIENT_SECRET, name: 'gemini-cli' as const }
-      : { id: GOOGLE_CLIENT_ID, secret: GOOGLE_CLIENT_SECRET, name: 'antigravity' as const };
-    const secondCreds = firstClient === 'gemini-cli'
-      ? { id: GOOGLE_CLIENT_ID, secret: GOOGLE_CLIENT_SECRET, name: 'antigravity' as const }
-      : { id: GEMINI_CLI_CLIENT_ID, secret: GEMINI_CLI_CLIENT_SECRET, name: 'gemini-cli' as const };
+    const firstClientName = known || preferredClient || 'antigravity';
 
-    let result = await performOAuthTokenRequest(firstCreds.id, firstCreds.secret, cleanRefresh);
-    let workingClient: 'antigravity' | 'gemini-cli' = firstCreds.name;
+    const allClients: Array<{ id: string; secret: string; name: 'antigravity' | 'antigravity-v2' | 'gemini-cli' }> = [
+      { id: GOOGLE_CLIENT_ID,        secret: GOOGLE_CLIENT_SECRET,        name: 'antigravity' },
+      { id: ANTIGRAVITY_V2_CLIENT_ID, secret: ANTIGRAVITY_V2_CLIENT_SECRET, name: 'antigravity-v2' },
+      { id: GEMINI_CLI_CLIENT_ID,    secret: GEMINI_CLI_CLIENT_SECRET,    name: 'gemini-cli' },
+    ];
 
-    const isClientMismatchOrRevoked =
-      !result.success &&
-      ((result.statusCode === 400 && (result.rawData.includes('invalid_grant') || result.rawData.includes('revoked'))) ||
-       (result.statusCode === 401 && (result.rawData.includes('unauthorized_client') || result.rawData.includes('Unauthorized'))));
+    // Rotate so the preferred client is tried first.
+    const firstIdx = allClients.findIndex(c => c.name === firstClientName);
+    if (firstIdx > 0) {
+      const [preferred] = allClients.splice(firstIdx, 1);
+      allClients.unshift(preferred);
+    }
 
-    if (isClientMismatchOrRevoked) {
-      const altResult = await performOAuthTokenRequest(secondCreds.id, secondCreds.secret, cleanRefresh);
-      if (altResult.success) {
-        result = altResult;
-        workingClient = secondCreds.name;
-      } else {
-        if (altResult.statusCode === 400 && (altResult.rawData.includes('invalid_grant') || altResult.rawData.includes('revoked'))) {
-          markTokenRevoked(cleanRefresh);
-        }
+    let result: { success: boolean; statusCode?: number; rawData: string; accessToken?: string; expiresIn?: number } = { success: false, rawData: '' };
+    let workingClient: 'antigravity' | 'antigravity-v2' | 'gemini-cli' = allClients[0].name;
+
+    for (const creds of allClients) {
+      result = await performOAuthTokenRequest(creds.id, creds.secret, cleanRefresh);
+      if (result.success) {
+        workingClient = creds.name;
+        break;
+      }
+
+      // Only try next client when the error is a client-credential or client-mismatch issue,
+      // not a quota/network error. invalid_client means wrong secret; invalid_grant/revoked
+      // means the refresh token was issued by a different client.
+      const shouldTryNext =
+        (result.statusCode === 400 && (result.rawData.includes('invalid_grant') || result.rawData.includes('revoked'))) ||
+        (result.statusCode === 401 && (
+          result.rawData.includes('invalid_client') ||
+          result.rawData.includes('unauthorized_client') ||
+          result.rawData.includes('Unauthorized')
+        ));
+
+      if (!shouldTryNext) break;
+    }
+
+    if (!result.success) {
+      if (result.statusCode === 400 && (result.rawData.includes('invalid_grant') || result.rawData.includes('revoked'))) {
+        markTokenRevoked(cleanRefresh);
       }
     }
 

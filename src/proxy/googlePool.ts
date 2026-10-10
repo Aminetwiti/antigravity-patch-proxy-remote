@@ -228,13 +228,34 @@ export function getActiveAccountCooldowns(): Record<string, number> {
   return res;
 }
 
-export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>): void {
+export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>, persistedQuotas?: Map<string, AccountLiveQuota>): void {
   if (!cooldowns || typeof cooldowns !== 'object') return;
   const now = Date.now();
   for (const [k, until] of Object.entries(cooldowns)) {
     if (typeof until === 'number' && until > now) {
+      const durationMs = until - now;
+      // Skip restoring quota-exhausted cooldowns (> 5h) if the persisted quota
+      // for this account is still fresh and shows positive remaining quota.
+      // The quota poller runs within 3 minutes and will confirm the real state.
+      // ponytail: avoids false "all accounts in cooldown" when quota refreshed while proxy was down.
+      if (durationMs > 5 * 3600_000 && persistedQuotas) {
+        const accKey = k.endsWith(':gemini') ? k.slice(0, -7) : k.endsWith(':claude') ? k.slice(0, -7) : k;
+        const normKey = accKey.startsWith('google:') ? accKey : `google:${accKey}`;
+        const rawKey = accKey.replace(/^google:/, '');
+        const q = persistedQuotas.get(normKey) || persistedQuotas.get(rawKey) || persistedQuotas.get(accKey);
+        if (q && typeof q.updatedAt === 'number') {
+          const age = now - q.updatedAt;
+          const family = k.endsWith(':gemini') ? 'gemini' : k.endsWith(':claude') ? 'claude' : null;
+          const fiveHourPct = family === 'claude' ? q.claudeFiveHourPct : q.geminiFiveHourPct;
+          // If quota is fresh (< 6h) and shows >= 5%, don't restore the cooldown
+          if (age < 6 * 3600_000 && typeof fiveHourPct === 'number' && fiveHourPct >= 5) {
+            log.info(`[GooglePool] Skipping stale quota-exhausted cooldown restore for ${k} (live quota: ${fiveHourPct}%, age=${Math.round(age / 60_000)}min)`);
+            continue;
+          }
+        }
+      }
       googleAccountCooldowns.set(k, until);
-      if (until - now > 5 * 3600 * 1000) {
+      if (durationMs > 5 * 3600 * 1000) {
         quotaExhaustedAccountKeys.add(k);
       }
     }
@@ -394,6 +415,13 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         quotaExhaustedAccountKeys.has(accKey) ||
         quotaExhaustedAccountKeys.has(normAcc);
 
+      // If live quota was updated within 10 minutes, it is ground truth.
+      // A fresh poll showing >= 5% means the account recovered — override the
+      // stale quotaExhausted flag so the cooldown is lifted immediately.
+      // ponytail: 10 min matches daemon quota-push cadence (60s) with headroom.
+      const LIVE_QUOTA_FRESH_MS = 10 * 60_000;
+      const quotaIsFresh = typeof quota.updatedAt === 'number' && (now - quota.updatedAt) <= LIVE_QUOTA_FRESH_MS;
+
       if (family === 'gemini') {
         const geminiWeekVal = typeof quota.geminiWeeklyPct === 'number'
           ? quota.geminiWeeklyPct
@@ -408,9 +436,9 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         } else if (isFullyRestored) {
           shouldWakeUp = true;
           reason = `full quota restored (5h=100%${weekStr})`;
-        } else if (!isQuotaExhausted && quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted) {
+        } else if (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted && (quotaIsFresh || !isQuotaExhausted)) {
           shouldWakeUp = true;
-          reason = `healthy quota (5h=${quota.geminiFiveHourPct}%${weekStr})`;
+          reason = `${quotaIsFresh ? 'fresh live' : 'healthy'} quota (5h=${quota.geminiFiveHourPct}%${weekStr})`;
         }
       } else if (family === 'claude') {
         const claudeWeekVal = typeof quota.claudeWeeklyPct === 'number'
@@ -426,9 +454,9 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         } else if (isFullyRestored) {
           shouldWakeUp = true;
           reason = `full quota restored (5h=100%${weekStr})`;
-        } else if (!isQuotaExhausted && quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted) {
+        } else if (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted && (quotaIsFresh || !isQuotaExhausted)) {
           shouldWakeUp = true;
-          reason = `healthy quota (5h=${quota.claudeFiveHourPct}%${weekStr})`;
+          reason = `${quotaIsFresh ? 'fresh live' : 'healthy'} quota (5h=${quota.claudeFiveHourPct}%${weekStr})`;
         }
       } else {
         const geminiWeekVal = typeof quota.geminiWeeklyPct === 'number'
@@ -443,12 +471,12 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const claudeWeekStr = claudeWeekVal !== null ? `, week=${claudeWeekVal}%` : '';
         const claudeWeeklyDepleted = claudeWeekVal !== null && claudeWeekVal < 5 && !claudeResetPassed;
 
-        const geminiOk = geminiResetPassed || (!isQuotaExhausted && quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted);
-        const claudeOk = claudeResetPassed || (!isQuotaExhausted && quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted);
+        const geminiOk = geminiResetPassed || (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted && (quotaIsFresh || !isQuotaExhausted));
+        const claudeOk = claudeResetPassed || (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted && (quotaIsFresh || !isQuotaExhausted));
 
         if (geminiOk && claudeOk) {
           shouldWakeUp = true;
-          reason = `healthy multi-family quota (Gemini 5h=${quota.geminiFiveHourPct}%${geminiWeekStr}, Claude 5h=${quota.claudeFiveHourPct}%${claudeWeekStr})`;
+          reason = `${quotaIsFresh ? 'fresh live' : 'healthy'} multi-family quota (Gemini 5h=${quota.geminiFiveHourPct}%${geminiWeekStr}, Claude 5h=${quota.claudeFiveHourPct}%${claudeWeekStr})`;
         }
       }
 

@@ -43,7 +43,7 @@
 ## Table of Contents
 
 - [Overview & Key Capabilities](#overview--key-capabilities)
-- [What's New in v3.7.1](#whats-new-in-v371)
+- [What's New in v3.7.x](#whats-new-in-v37x)
 - [Google Services & OmniRoute Quota Pooling Suite](#google-services--omniroute-quota-pooling-suite)
   - [Multi-Account OAuth & AI Studio Pooling](#multi-account-oauth--ai-studio-pooling)
   - [OmniRoute-Parity Load Balancing (P2C & In-Flight Concurrency)](#omniroute-parity-load-balancing-p2c--in-flight-concurrency)
@@ -94,7 +94,7 @@
 
 ---
 
-## 🌟 What's New in v3.7.1
+## 🌟 What's New in v3.7.x
 
 - 🌐 **Google Multi-Account Quota Pooling**: Pool multiple Google accounts (OAuth & Google AI Studio keys) to multiply quotas and bypass single-account rate limits.
 - ⚖️ **OmniRoute-Parity Intelligent Balancing**: Power of Two Choices (P2C) candidate selection and real-time in-flight concurrency tracking (20-point penalty per active request).
@@ -471,11 +471,18 @@ In addition to the terminal CLI, this repository includes **`ag-doctor-ui`**, a 
 - **Native Antigravity Banner Rendering**: Renders full-replica native Antigravity error cards complete with category badges, status tags, decoded troubleshooting hints, and primary/secondary action buttons (`ag-btn-primary`, `ag-btn-dismiss`).
 - **Interactive QA Filter Chips**: Filter error cards by scenario category (`Rate Limit`, `Authentication`, `Network`, `Quota`) for visual debugging and QA verification.
 
+### Token Tracker & Tokenizer Engine (`token-tracker.ts`)
+- **Real-Time Token Usage Metrics**: Displays precise breakdown for Prompt Tokens, Completion Tokens, and Total Tokens consumed per request and aggregated across sessions.
+- **Context Cache Hit Ratio**: Measures and displays Google Gemini and Claude prompt caching performance (`cachedTokens` / `promptTokens`), helping you monitor context cache efficiency.
+- **Financial Savings Estimation**: Automatically calculates estimated dollar savings derived from prompt cache hits and reduced cached pricing tiers.
+- **Per-Provider Analytics**: Filter and inspect token consumption, costs, and end-to-end latency metrics across Google Gemini, OpenAI, Claude, DeepSeek, and local models.
+
 ### Version-Aware Patching Engine
 
-- **Multi-Version Binary Patching**: `ag-doctor` automatically detects installed Antigravity releases (v2.0.x through v2.6.x) and performs binary string replacement without corrupting Go executable alignment.
+- **Multi-Version Patching**: `ag-doctor` automatically detects installed Antigravity releases (v2.0.x through v2.18.x) and performs binary string replacement or settings interception without corrupting Go executable alignment.
+- **Surgical Patch Scripts**: Dedicated automated scripts for each major version tier (`npm run patch:2.2`, `patch:2.3`, `patch:2.5`, `patch:2.14`, `patch:2.15`, `patch:2.17`, `patch:2.18`).
 - **Backup & Rollback Safety**: Creates timestamped `.bak` copies of `app.asar` before modifying binary payloads, allowing instant 1-command rollbacks (`npm run doctor:repair`).
-- **Auto-Healing Diagnostics**: the doctor check starts the emergency proxy stub when port ${AG_PROXY_PORT:-51074} is closed (so the patched language server can initialise), and `proxy start` replaces a stub with the real proxy. Provider probes use a 15s timeout with a retry on timeouts to avoid false "down" alarms.
+- **Auto-Healing Diagnostics**: The doctor check starts the emergency proxy stub when port `${AG_PROXY_PORT:-51074}` is closed (so the patched language server can initialise), and `proxy start` replaces a stub with the real proxy. Provider probes use a 15s timeout with a retry on timeouts to avoid false "down" alarms.
 
 
 
@@ -601,16 +608,20 @@ flutter run -d <device-id>
 
 ## Provider Configuration Matrix
 
-| Provider | Provider Slug | Transport / Format | Target Base URL | Key Required | Streaming | Tool Calling |
+| Provider | Provider Slug | Transport / Format | Target Base URL | Key / Auth Required | Streaming | Tool Calling |
 |---|---|---|---|---|---|---|
+| **Google Cloud Code (OAuth Pool)** | `google` | Cloud Code / Gemini | `https://daily-cloudcode-pa.googleapis.com` | OAuth Token | Yes | Yes |
+| **Google AI Studio** | `google-gemini` | Gemini REST | `https://generativelanguage.googleapis.com` | API Key (`AIza...`) | Yes | Yes |
+| **Gemini CLI (OAuth)** | `gemini-cli` | Cloud Code / Gemini | `https://cloudcode-pa.googleapis.com/v1internal` | OAuth Token | Yes | Yes |
 | **OpenAI** | `openai` | OpenAI | `https://api.openai.com/v1` | Yes | Yes | Yes |
 | **Anthropic** | `anthropic` | Anthropic | `https://api.anthropic.com/v1` | Yes | Yes | Yes |
-| **Google AI Studio** | `google` | Gemini / AI Studio | `https://generativelanguage.googleapis.com` | Yes | Yes | Yes |
 | **OpenRouter** | `openrouter` | OpenAI | `https://openrouter.ai/api/v1` | Yes | Yes | Yes |
 | **DeepSeek** | `deepseek` | OpenAI | `https://api.deepseek.com/v1` | Yes | Yes | Yes |
 | **Groq** | `groq` | OpenAI | `https://api.groq.com/openai/v1` | Yes | Yes | Yes |
 | **Mistral AI** | `mistral` | OpenAI | `https://api.mistral.ai/v1` | Yes | Yes | Yes |
 | **Codestral** | `codestral` | OpenAI | `https://codestral.mistral.ai/v1` | Yes | Yes | Yes |
+| **xAI (Grok)** | `xai` | OpenAI | `https://api.x.ai/v1` | Yes | Yes | Yes |
+| **Cohere** | `cohere` | OpenAI | `https://api.cohere.com/v1` | Yes | Yes | Yes |
 | **Cerebras** | `cerebras` | OpenAI | `https://api.cerebras.ai/v1` | Yes | Yes | Yes |
 | **NVIDIA NIM** | `nvidia` | OpenAI | `https://integrate.api.nvidia.com/v1` | Yes | Yes | Yes |
 | **OpenCode** | `opencode` | OpenAI | Custom Endpoint | Yes | Yes | Yes |
@@ -758,6 +769,15 @@ Yes. Set the provider to `ollama` or `openai` with endpoint `http://localhost:11
 
 ### How does auto-fallback and failover work?
 If a primary custom model returns a `429 Rate Limit`, quota overage, or timeout, the proxy automatically retries the prompt with your configured secondary fallback model and renders a native warning banner in the chat stream without breaking conversation history.
+
+### How does Google Multi-Account Quota Pooling work?
+You can connect multiple Google accounts (via 1-click Google Sign-in in `ag-doctor-ui` or Google AI Studio developer API keys). The proxy aggregates their quotas using Power of Two Choices (P2C) load balancing, automatically penalizes accounts handling concurrent active requests, and rotates accounts when rate limits (429) or quotas are reached. If all Google Gemini accounts are exhausted, it cascades to Claude Sonnet/Opus 4.6.
+
+### How does Antigravity IDE (VS Code) auto-start the proxy?
+An autonomous hook embedded in `out/main.js` checks if the local proxy port `51074` is active on boot. If the proxy isn't already running, it immediately spawns the detached background proxy runner from `~/.gemini/antigravity/proxy/` before extensions activate, eliminating initial connection refused (`ECONNREFUSED`) errors.
+
+### Why does `ag-doctor db:prune` reconcile both SQLite and Protobuf summaries?
+Starting in Antigravity v2.18+, the Language Server synchronizes sessions across two stores: `conversation_summaries.db` (SQLite) and `agyhub_summaries_proto.pb` (Protobuf). Cleaning only SQLite causes deleted or archived sessions to resurrect from Protobuf upon IDE reboot. `ag-doctor db:prune` cleans both stores simultaneously, embeds archive flags into protobuf tag `0x7a`, and scrubs `app_storage.json` so archived sessions never reload.
 
 ---
 
