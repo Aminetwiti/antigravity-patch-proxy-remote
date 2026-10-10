@@ -2,6 +2,18 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.7.3] - 2026-10-10 (Smart Pool Scaling, Quota Cache Merging & Health Optimization)
+
+### Added
+- **Google Account Quota Merging & Stale Quota Guard**: Atomic merge for quota caches, stale data protection preventing premature cooldown clearance, and live quota refresh reconciliation.
+- **P2C Selection & Latency Penalty Hardening**: Filter zero-score accounts when positive scoring accounts are available; scaled latency penalties up to 70 points for slow accounts (>7.5s) and applied dynamic cooldowns on gateway timeouts.
+- **Resilient Pool Fast-Fail**: Only fast-fail consecutive quota exhausted accounts when no remaining healthy accounts with positive quota exist.
+
+### Changed
+- Bumped project release version to v3.7.3 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
 ## [3.7.2] - 2026-10-09 (Security Hardening, UI Streamlining & Stability Release)
 
 ### Added

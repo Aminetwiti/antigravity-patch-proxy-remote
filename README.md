@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="package.json"><img src="https://img.shields.io/badge/version-3.7.2-blue.svg?style=for-the-badge" alt="Version 3.7.2" /></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/version-3.7.3-blue.svg?style=for-the-badge" alt="Version 3.7.3" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=for-the-badge" alt="License Apache 2.0" /></a>
   <a href="#google-services--omniroute-quota-pooling-suite"><img src="https://img.shields.io/badge/Google%20Services-Multi--Account%20Pooling-4285F4.svg?style=for-the-badge&logo=google" alt="Google Services Pooling" /></a>
   <a href="remote/mobile"><img src="https://img.shields.io/badge/Flutter-Mobile%20(Android%20%2F%20iOS)-02569B.svg?style=for-the-badge&logo=flutter" alt="Flutter Mobile" /></a>
@@ -18,7 +18,7 @@
   <b>Add custom AI models (Claude 3.5/3.7 Sonnet, GPT-4o, DeepSeek R1, Ollama), pool multiple Google accounts with OmniRoute load balancing, and control everything on mobile with Antigravity Remote 2.0.</b>
 </p>
 
-> **The complete AI development ecosystem for Google Antigravity (v3.7.2):**
+> **The complete AI development ecosystem for Google Antigravity (v3.7.3):**
 > - 🌐 **Google Services & OmniRoute Pooling Suite**: Multi-account OAuth pooling, Google AI Studio integration, Power of Two Choices (P2C) candidate selection, in-flight concurrency tracking, 4-tier 429 classification, smart weekly quota governor & cross-model cascade (Gemini → Claude Sonnet 4.6 / Opus 4.6).
 > - 🧩 **Antigravity IDE & Extension Engine**: Native support for VS Code-based Antigravity IDE (v1.107.0+) and classic Electron shell with autonomous proxy auto-starter (`out/main.js`), dual summary store reconciliation (SQLite + Protobuf), and injected chat suggestion pills.
 > - 🖥️ **Desktop Patch Proxy**: Injects **Anthropic Claude**, **OpenAI GPT-4o**, **DeepSeek R1 / V3**, **Google Gemini**, **OpenRouter**, **Ollama**, **Groq**, **Mistral**, and **xAI** directly into IDE chat dropdowns with AES-256-GCM encryption and bi-directional SSE streaming.
