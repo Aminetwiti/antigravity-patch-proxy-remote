@@ -42,7 +42,7 @@ import {
   verifyAndReconcileCooldowns,
 } from '../proxy/googlePool';
 import { updateLiveAccountQuota } from '../services/googleAuth';
-import { GOOGLE_POOL_HEADER_TIMEOUT_MS, P2C_SCORE_DELTA } from '../constants';
+import { GOOGLE_POOL_HEADER_TIMEOUT_MS, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, P2C_SCORE_DELTA } from '../constants';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -434,6 +434,16 @@ describe('selectCandidateP2C', () => {
     const chosen = selectCandidateP2C(accounts, 'gemini');
     expect(accounts).toContain(chosen);
   });
+
+  it('excludes saturated in-flight accounts when idle candidates exist', () => {
+    const saturated = makeModel({ accountEmail: 'busy@test.com', quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any });
+    const idle = makeModel({ accountEmail: 'idle@test.com', quotas: { geminiFiveHourPct: 70, geminiWeeklyPct: 70 } as any });
+    incrementAccountInFlight(saturated);
+    incrementAccountInFlight(saturated);
+    expect(getAccountInFlight(saturated)).toBe(2);
+    const chosen = selectCandidateP2C([saturated, idle], 'gemini');
+    expect(chosen).toBe(idle);
+  });
 });
 
 describe('selectBestModelByQuota', () => {
@@ -489,6 +499,10 @@ describe('Burst Rate Limit Governor & Constants', () => {
 
   it('verifies GOOGLE_POOL_HEADER_TIMEOUT_MS defaults to 35s', () => {
     expect(GOOGLE_POOL_HEADER_TIMEOUT_MS).toBe(35_000);
+  });
+
+  it('verifies GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS defaults to 25s', () => {
+    expect(GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS).toBe(25_000);
   });
 
   it('verifies P2C_SCORE_DELTA defaults to 45 points', () => {
@@ -654,6 +668,15 @@ describe('Burst Rate Limit Governor & Constants', () => {
     // The account MUST NOT wake up based on stale 100% data!
     expect(isAccountInCooldown(exhaustedAcc, 'gemini')).toBe(true);
     expect(result.cleared).toBe(0);
+  });
+
+  it('caps 504 timeout cooldown so accounts recover quickly without 180s multi-minute lockouts', () => {
+    const acc = makeModel({ accountEmail: 'timeout@test.com' });
+    setAccountCooldown(acc, 45_000, 'gemini');
+    expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+    const rem = getAccountCooldownRemaining(acc, 'gemini');
+    expect(rem).toBeLessThanOrEqual(50_000);
+    expect(rem).toBeGreaterThan(40_000);
   });
 });
 

@@ -366,6 +366,7 @@ export interface AccountLiveQuota {
   creditAmount?: number;
   hasClaude55?: boolean;
   isFamilyShared?: boolean;
+  isUnlicensed?: boolean;
 }
 
 const accountLiveQuotas = new Map<string, AccountLiveQuota>();

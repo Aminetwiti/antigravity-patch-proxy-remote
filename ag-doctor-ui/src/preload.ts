@@ -28,8 +28,8 @@ const api = {
     },
     discoverIdeAccount: (): Promise<{ success: boolean; account?: any; error?: string }> =>
       ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_DISCOVER_IDE_ACCOUNT),
-    fetchAccountQuotas: (accessToken: string): Promise<{ success: boolean; quotas?: any; error?: string }> =>
-      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, accessToken),
+    fetchAccountQuotas: (accessToken: string | any, refreshToken?: string): Promise<{ success: boolean; quotas?: any; accessToken?: string; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, accessToken, refreshToken),
     warmupAccount: (accessToken: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_WARMUP_ACCOUNT, accessToken),
     refreshToken: (refreshToken: string): Promise<{

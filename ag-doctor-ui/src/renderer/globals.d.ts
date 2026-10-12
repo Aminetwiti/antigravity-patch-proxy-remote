@@ -58,7 +58,7 @@ interface AgAPI {
     test(params: { apiUrl: string; apiKey: string; id?: string; modelId?: string; provider?: string }): Promise<{ success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string }>;
     onChanged(handler: () => void): () => void;
     discoverIdeAccount(): Promise<{ success: boolean; account?: any; error?: string }>;
-    fetchAccountQuotas(accessToken: string): Promise<{ success: boolean; quotas?: any; error?: string }>;
+    fetchAccountQuotas(accessToken?: string, refreshToken?: string): Promise<{ success: boolean; quotas?: any; accessToken?: string; error?: string }>;
     warmupAccount(accessToken: string): Promise<{ success: boolean; message?: string; error?: string }>;
     refreshToken(refreshToken: string): Promise<{
       success: boolean;

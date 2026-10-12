@@ -13,6 +13,27 @@ const path = require('path');
 const net = require('net');
 const { spawn } = require('child_process');
 
+// Load .env configuration if present (zero dependencies)
+function loadEnv(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      for (const line of content.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const k = trimmed.slice(0, eqIdx).trim();
+          const v = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+          if (!process.env[k]) process.env[k] = v;
+        }
+      }
+    }
+  } catch (_) {}
+}
+loadEnv(path.join(__dirname, '.env'));
+loadEnv(path.join(os.homedir(), '.gemini', 'antigravity', '.env'));
+
 let constants_1;
 try {
   constants_1 = require('./dist/constants');

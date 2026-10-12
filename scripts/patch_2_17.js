@@ -149,14 +149,10 @@ async function main() {
     }
   }
 
-  // Merge official constants.js with proxy constants.js so both official and custom exports are available
+  // Copy proxy constants.js (superset of official constants containing WINDOW_ORIGIN, DYNAMIC_PORT, LS_LOG_FILE_NAME)
   const officialConstantsPath = path.join(buildDir, 'dist', 'constants.js');
   const repoConstantsPath = path.join(repoDist, 'constants.js');
-  if (fs.existsSync(officialConstantsPath) && fs.existsSync(repoConstantsPath)) {
-    const officialContent = fs.readFileSync(officialConstantsPath, 'utf8');
-    const repoContent = fs.readFileSync(repoConstantsPath, 'utf8');
-    fs.writeFileSync(officialConstantsPath, `${repoContent}\n// [v2.18 patch] Official constants\n${officialContent}\n`, 'utf8');
-  } else if (fs.existsSync(repoConstantsPath)) {
+  if (fs.existsSync(repoConstantsPath)) {
     fs.copyFileSync(repoConstantsPath, officialConstantsPath);
   }
 

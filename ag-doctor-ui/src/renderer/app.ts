@@ -6711,6 +6711,7 @@ interface ProviderEntry {
   updatedAt?: number;
   createdAt?: number;
   label?: string;
+  isUnlicensed?: boolean;
 }
 
 const pmBackdrop = $('#providerManagerModalBackdrop') as HTMLDivElement;
@@ -8198,21 +8199,24 @@ function isGeminiCliAccount(acc: any): boolean {
 function getAccountTier(acc: any): 'PRO' | 'ULTRA' | 'FREE' | 'STUDIO' | 'CLI' | 'PARTAGE' {
   if (isAiStudioAccount(acc)) return 'STUDIO';
   if (isGeminiCliAccount(acc)) return 'CLI';
+  if (acc.isUnlicensed || acc.quotas?.isUnlicensed) return 'FREE';
   const tierSource = acc.quotas?.tier || acc.quotas?.tierId || acc.tierId || acc.tier;
   if (tierSource) {
     const t = String(tierSource).toUpperCase();
+    if (t.includes('FREE')) return 'FREE';
     if (t.includes('PARTAGE') || t.includes('FAMILY') || t.includes('PARTAG')) return 'PARTAGE';
     if (t.includes('ULTRA') || t.includes('PREMIUM') || t.includes('ADVANCED') || t.includes('BUSINESS')) return 'ULTRA';
-    if (t.includes('PRO') || t.includes('STANDARD') || t.includes('HELIUM')) return 'PRO';
-    if (t.includes('FREE')) return 'FREE';
+    if (t.includes('PRO') || t.includes('HELIUM')) return 'PRO';
+    if (t.includes('STANDARD')) return 'FREE';
   }
   if (acc.isFamily || acc.isFamilyShared || acc.isFamilyPro || acc.hasClaude55 || acc.quotas?.hasClaude55 || acc.quotas?.isFamilyShared) {
     return 'PARTAGE';
   }
   const name = (acc.name || '').toUpperCase();
+  if (name.includes('FREE')) return 'FREE';
   if (name.includes('PARTAGE') || name.includes('FAMILY')) return 'PARTAGE';
   if (name.includes('ULTRA') || name.includes('PREMIUM') || name.includes('ADVANCED')) return 'ULTRA';
-  if (name.includes('FREE')) return 'FREE';
+  if (name.includes('PRO')) return 'PRO';
   return 'PRO';
 }
 
@@ -8357,6 +8361,16 @@ export function getAccountEffectiveQuotas(acc: any): {
   claudeWkReset?: string;
 } {
   const q = acc?.quotas || {};
+
+  if (acc?.isUnlicensed || q?.isUnlicensed) {
+    return {
+      gemini5hPct: 0,
+      geminiWkPct: 0,
+      claude5hPct: 0,
+      claudeWkPct: 0,
+    };
+  }
+
   let foundGemini5h: number | undefined;
   let foundGeminiWk: number | undefined;
   let foundClaude5h: number | undefined;
@@ -8403,16 +8417,24 @@ export function getAccountEffectiveQuotas(acc: any): {
     }
   }
 
-  let geminiWkPct = foundGeminiWk ?? q.geminiWeeklyPct ?? q.weeklyPercentage ?? (acc?.status === 'unhealthy' ? 0 : 100);
-  let gemini5hPct = foundGemini5h ?? q.geminiFiveHourPct ?? q.fiveHourPercentage ?? (acc?.status === 'unhealthy' ? 0 : 100);
-  let claudeWkPct = foundClaudeWk ?? q.claudeWeeklyPct ?? (q.groups && foundClaudeWk === undefined && typeof q.claudeWeeklyPct !== 'number' ? 0 : (acc?.status === 'unhealthy' ? 0 : 100));
-  let claude5hPct = foundClaude5h ?? q.claudeFiveHourPct ?? (acc?.status === 'unhealthy' ? 0 : 100);
+  // Explicit direct fields take priority over legacy group bucket parsing if defined
+  let geminiWkPct = (typeof q.geminiWeeklyPct === 'number' ? q.geminiWeeklyPct : foundGeminiWk) ?? q.weeklyPercentage ?? (acc?.status === 'unhealthy' ? 0 : 100);
+  let gemini5hPct = (typeof q.geminiFiveHourPct === 'number' ? q.geminiFiveHourPct : foundGemini5h) ?? q.fiveHourPercentage ?? (acc?.status === 'unhealthy' ? 0 : 100);
+  let claudeWkPct = (typeof q.claudeWeeklyPct === 'number' ? q.claudeWeeklyPct : foundClaudeWk) ?? (q.groups && foundClaudeWk === undefined && typeof q.claudeWeeklyPct !== 'number' ? 0 : (acc?.status === 'unhealthy' ? 0 : 100));
+  let claude5hPct = (typeof q.claudeFiveHourPct === 'number' ? q.claudeFiveHourPct : foundClaude5h) ?? (acc?.status === 'unhealthy' ? 0 : 100);
 
   // Reality rule: If weekly quota is 0, Google locks the 5h window completely
   if (geminiWkPct <= 0) {
     gemini5hPct = 0;
   }
   if (claudeWkPct <= 0) {
+    claude5hPct = 0;
+  }
+
+  // Free accounts do not have access to Claude/GPT models
+  const tier = getAccountTier(acc);
+  if (tier === 'FREE') {
+    claudeWkPct = 0;
     claude5hPct = 0;
   }
 
@@ -8461,7 +8483,7 @@ function estimateAccountTokens(acc: any): {
   claudeAvailableWeekly: number;
 } {
   // Only calculate Antigravity quotas — exclude Google AI Studio & CLI
-  if (isAiStudioAccount(acc) || isGeminiCliAccount(acc)) {
+  if (isAiStudioAccount(acc) || isGeminiCliAccount(acc) || acc.isUnlicensed || acc.quotas?.isUnlicensed) {
     return {
       accountCapacity5h: 0,
       accountCapacityWeekly: 0,
@@ -8736,16 +8758,16 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
   const nowMs = Date.now();
   for (const acc of accounts) {
     if (acc.enabled === false) continue;
+    if (acc.isUnlicensed || acc.quotas?.isUnlicensed) continue;
     const gCd = gaActiveCooldownsCache[`google:${acc.email || acc.name || acc.id}:gemini`];
     const cCd = gaActiveCooldownsCache[`google:${acc.email || acc.name || acc.id}:claude`];
-    const gPct = acc.quotas?.geminiFiveHourPct ?? acc.quotas?.fiveHourPercentage ?? 100;
-    const cPct = acc.quotas?.claudeFiveHourPct ?? 100;
+    const eff = getAccountEffectiveQuotas(acc);
 
     if (gCd && gCd.until > nowMs) cooldownCnt++;
-    else if (gPct > 0) geminiReadyCnt++;
+    else if (eff.gemini5hPct > 0) geminiReadyCnt++;
 
     if (cCd && cCd.until > nowMs) {}
-    else if (cPct > 0) claudeReadyCnt++;
+    else if (eff.claude5hPct > 0) claudeReadyCnt++;
   }
 
   // Card 6: Flotte Gemini Prête
@@ -8866,12 +8888,13 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
     else pro++;
 
     const isEnabled = a.enabled !== false;
+    const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
     const cdGemini = getAccountActiveCooldown(a, 'gemini');
     if (!isEnabled) {
       paused++;
     } else if (cdGemini) {
       cooldown++;
-    } else {
+    } else if (!isUnlicensed) {
       ready++;
     }
   }
@@ -8976,39 +8999,35 @@ function initGoogleAccountsToolbarOnce(): void {
     refreshAllBtn.innerHTML = `<span class="spinner"></span> Refreshing…`;
     try {
       let updatedCount = 0;
-      await Promise.allSettled(
-        googleAccountsCache.map(async (acc) => {
-          let tokenToUse = acc.apiKey;
-          if (acc.refreshToken) {
-            try {
-              const r = await window.ag.providers.refreshToken(acc.refreshToken);
-              if (r.success && r.accessToken) {
-                tokenToUse = r.accessToken;
-                acc.apiKey = r.accessToken;
-                if (r.quotas) acc.quotas = r.quotas;
-                if (r.picture && !acc.picture) acc.picture = r.picture;
-                if (r.name && (!acc.name || acc.name.includes('@'))) acc.name = r.name;
-              }
-            } catch {}
-          }
-          if (tokenToUse) {
-            try {
-              const res = await window.ag.providers.fetchAccountQuotas(tokenToUse);
-              if (res.success && res.quotas) {
-                acc.quotas = res.quotas;
-              }
-            } catch {}
-          }
-          if (acc.apiKey) {
-            await window.ag.providers.save(acc);
-            updatedCount++;
-          }
-        })
-      );
+      // Controlled concurrency (3 workers) to prevent timeouts and 429
+      const pool = [...googleAccountsCache];
+      const concurrency = 3;
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (pool.length > 0) {
+          const acc = pool.shift();
+          if (!acc) break;
+          try {
+            const res = await window.ag.providers.fetchAccountQuotas(acc.apiKey || acc.refreshToken, acc.refreshToken);
+            if (res.success && res.quotas) {
+              acc.quotas = res.quotas;
+              if (res.quotas.isUnlicensed) acc.isUnlicensed = true;
+              updatedCount++;
+            }
+          } catch {}
+        }
+      });
+      await Promise.all(workers);
+      // Batch save once
+      try {
+        const provs = await window.ag.providers.get();
+        const googleProv = provs.find((p: any) => p.provider === 'google');
+        if (googleProv) {
+          await window.ag.providers.save(googleProv);
+        }
+      } catch {}
       toast(`Refreshed quotas for ${updatedCount} accounts`, 'ok');
-      // Also push updated quotas to proxy routing state (bypasses 3-min poll cadence)
       void forceProxyQuotaRefresh();
-      await loadGoogleAccounts();
+      renderGoogleAccountsList(googleAccountsCache);
     } finally {
       refreshAllBtn.removeAttribute('disabled');
       refreshAllBtn.innerHTML = origHtml;
@@ -9565,10 +9584,11 @@ function initGoogleAccountsToolbarOnce(): void {
                 if (rRes.name && (!account.name || account.name.includes('@'))) account.name = rRes.name;
               }
             }
-            if (tokenToUse) {
-              const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+            if (tokenToUse || account.refreshToken) {
+              const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse || account.refreshToken, account.refreshToken);
               if (qRes.success && qRes.quotas) {
                 account.quotas = qRes.quotas;
+                if (qRes.quotas.isUnlicensed) account.isUnlicensed = true;
               }
             }
             await window.ag.providers.save(account);
@@ -9587,10 +9607,11 @@ function initGoogleAccountsToolbarOnce(): void {
               if (rRes.name && (!account.name || account.name.includes('@'))) account.name = rRes.name;
             }
           }
-          if (tokenToUse) {
-            const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
+          if (tokenToUse || account.refreshToken) {
+            const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse || account.refreshToken, account.refreshToken);
             if (qRes.success && qRes.quotas) {
               account.quotas = qRes.quotas;
+              if (qRes.quotas.isUnlicensed) account.isUnlicensed = true;
             }
           }
           await window.ag.providers.save(account);
@@ -9733,6 +9754,23 @@ function initGoogleAccountsToolbarOnce(): void {
           btn.removeAttribute('disabled');
           btn.classList.remove('spinning');
           renderGoogleAccountsList(googleAccountsCache);
+        }
+        return;
+      }
+
+      // Toggle Tier (FREE <-> PRO)
+      if (btn.classList.contains('ga-toggle-tier') || btn.classList.contains('ga-tier-badge')) {
+        if (!account) return;
+        const currentTier = getAccountTier(account);
+        const nextTier = currentTier === 'FREE' ? 'pro' : 'free';
+        account.tier = nextTier;
+        (account as any).tierId = `${nextTier}-tier`;
+        try {
+          await window.ag.providers.save(account);
+          toast(`Compte "${account.name || account.email}" basculé en ${nextTier.toUpperCase()}`, 'ok');
+          await loadGoogleAccounts();
+        } catch (err: any) {
+          toast(`Erreur : ${err?.message || err}`, 'err');
         }
         return;
       }
@@ -10307,42 +10345,32 @@ async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> 
     // Synchronize models across all Google accounts in background
     void synchronizeGoogleAccountsModels(googleAccountsCache);
 
-    // Refresh live quotas in parallel only if forced or cache expired (>60s)
-    const now = Date.now();
-    const shouldFetchQuotas = forceRefresh || (now - gaLastQuotaRefreshTimestamp > 60_000);
+    // Refresh live quotas in background only if forced or if an account has missing quotas
+    const missingQuotas = googleAccountsCache.some((acc) => !acc.quotas || (!acc.quotas.geminiFiveHourPct && !acc.quotas.fiveHourPercentage && !acc.isUnlicensed));
+    const shouldFetchQuotas = forceRefresh || missingQuotas;
     if (shouldFetchQuotas) {
-      gaLastQuotaRefreshTimestamp = now;
-      await Promise.allSettled(
-        googleAccountsCache.map(async (acc) => {
-          let tokenToUse = acc.apiKey;
-          let qRes: { success: boolean; quotas?: any } | null = null;
-          if (tokenToUse && tokenToUse.startsWith('ya29.')) {
-            try {
-              qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
-            } catch {}
-          }
-          // If fetch failed or returned no quotas, and we have a refreshToken, refresh now!
-          if ((!qRes || !qRes.success) && acc.refreshToken) {
-            try {
-              const r = await window.ag.providers.refreshToken(acc.refreshToken);
-              if (r.success && r.accessToken) {
-                acc.apiKey = r.accessToken;
-                tokenToUse = r.accessToken;
-                if (r.quotas) acc.quotas = r.quotas;
-                if (r.picture && !acc.picture) acc.picture = r.picture;
-                if (r.name && (!acc.name || acc.name.includes('@'))) acc.name = r.name;
-                await window.ag.providers.save(acc);
-                if (!acc.quotas) {
-                  qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse);
-                }
-              }
-            } catch {}
-          }
-          if (qRes && qRes.success && qRes.quotas) {
-            acc.quotas = qRes.quotas;
-          }
-        })
-      );
+      gaLastQuotaRefreshTimestamp = Date.now();
+      const accountsToRefresh = forceRefresh ? [...googleAccountsCache] : googleAccountsCache.filter((acc) => !acc.quotas);
+      const concurrency = 3;
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (accountsToRefresh.length > 0) {
+          const acc = accountsToRefresh.shift();
+          if (!acc) break;
+          try {
+            const qRes = await window.ag.providers.fetchAccountQuotas(acc.apiKey || acc.refreshToken, acc.refreshToken);
+            if (qRes && qRes.success && qRes.quotas) {
+              acc.quotas = qRes.quotas;
+              if (qRes.quotas.isUnlicensed) acc.isUnlicensed = true;
+            }
+          } catch {}
+        }
+      });
+      await Promise.all(workers);
+      try {
+        const provs = await window.ag.providers.get();
+        const googleProv = provs.find((p: any) => p.provider === 'google');
+        if (googleProv) await window.ag.providers.save(googleProv);
+      } catch {}
     }
 
     // Auto-clean any bracketed model display names on load
@@ -10706,13 +10734,19 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
 
   for (const a of accounts) {
     const isEnabled = a.enabled !== false;
+    const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
     if (!isEnabled) {
       paused++;
       continue;
     }
+    if (isUnlicensed) {
+      paused++;
+      continue;
+    }
+    const eff = getAccountEffectiveQuotas(a);
     const gCd = getAccountActiveCooldown(a, 'gemini');
     const cCd = getAccountActiveCooldown(a, 'claude');
-    if (gCd) {
+    if (gCd || eff.gemini5hPct <= 0) {
       geminiCooldown++;
     } else {
       geminiReady++;
@@ -10724,7 +10758,7 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
       } else {
         claudeCooldown++;
       }
-    } else {
+    } else if (eff.claude5hPct > 0) {
       claudeReady++;
     }
   }
@@ -10917,11 +10951,12 @@ function renderGoogleAccountsList(accounts: any[]): void {
   // Filter by search query & operational status / tier filter
   const filtered = accounts.filter((a) => {
     const isEnabled = a.enabled !== false;
+    const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
     const cdGemini = getAccountActiveCooldown(a, 'gemini');
     const tier = getAccountTier(a).toLowerCase();
 
     if (gaCurrentFilter === 'status:ready') {
-      if (!isEnabled || cdGemini) return false;
+      if (!isEnabled || cdGemini || isUnlicensed) return false;
     } else if (gaCurrentFilter === 'status:cooldown') {
       if (!isEnabled || !cdGemini) return false;
     } else if (gaCurrentFilter === 'status:paused') {
@@ -10992,8 +11027,11 @@ function renderGoogleAccountsList(accounts: any[]): void {
       const dedupModels = getDeduplicatedAccountModels(a.models);
 
       let statusBadgeHtml = '';
+      const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
       if (!isEnabled) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">⏸ DÉSACTIVÉ</span>`;
+      } else if (isUnlicensed) {
+        statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);" title="Compte sans licence Antigravity active (HTTP 403 Subscription Required)">🚫 SANS LICENCE</span>`;
       } else if (cdGemini) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn ga-live-cd" data-until="${cdGemini.until}" data-account-id="${escapeHtml(a.id)}" style="background: rgba(245, 158, 11, 0.18); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);" title="${escapeHtml(cdGemini.details)}">${escapeHtml(cdGemini.text)}</span>`;
       } else if (cdClaude && cdClaude.isWeeklyCap) {
@@ -11031,7 +11069,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   ${statusBadgeHtml}
                   ${typeof a.lastLatencyMs === 'number' ? `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-family: var(--font-mono); font-size: 10px;" title="Dernière latence mesurée">⚡ ${a.lastLatencyMs}ms</span>` : ''}
                   ${isStudio ? `<span class="pool-role-badge pool-role-badge--studio" title="Google AI Studio Developer API Key">● Active Studio</span>` : (isCli ? `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>` : (isCurrent ? `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">EN LIGNE</span><span class="pool-role-badge pool-role-badge--primary" title="Active account for Antigravity requests">● Active Pool</span>` : `<span class="pool-role-badge pool-role-badge--standby" title="Automatic fallback standby account">○ Standby Pool</span>`))}
-                  <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
+                  <span class="ga-badge ga-badge-${tier.toLowerCase()} ga-tier-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Cliquer pour basculer (FREE ↔ PRO)">${tierIcon} ${tier}</span>
                   ${(a.quotas?.creditAmount || a.creditAmount) ? `<span class="ga-badge ga-badge-credits">🪙 ${a.quotas?.creditAmount || a.creditAmount} credits</span>` : ''}
                 </div>
                 ${a.email && a.name && a.email !== a.name
@@ -11091,6 +11129,10 @@ function renderGoogleAccountsList(accounts: any[]): void {
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     <span>Modifier</span>
                   </button>
+                  <button type="button" class="ga-action-btn ga-more-item ga-toggle-tier" data-id="${escapeHtml(a.id)}" title="Basculer entre FREE et PRO" aria-label="Toggle tier for ${escapeHtml(a.name || a.email)}">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                    <span>${tier === 'FREE' ? 'Passer en PRO' : 'Passer en FREE'}</span>
+                  </button>
                   <div class="ga-action-divider" style="margin: 4px 0; border-top: 1px solid var(--border);"></div>
                   <button type="button" class="ga-action-btn ga-more-item ga-delete" title="Supprimer le compte" aria-label="Delete account ${escapeHtml(a.name || a.email)}" style="color: var(--err, #ef4444);">
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
@@ -11127,8 +11169,11 @@ function renderGoogleAccountsList(accounts: any[]): void {
       const dedupModels = getDeduplicatedAccountModels(a.models);
 
       let statusBadgeHtml = '';
+      const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
       if (!isEnabled) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">⏸ PAUSE</span>`;
+      } else if (isUnlicensed) {
+        statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);" title="Compte sans licence Antigravity active (HTTP 403 Subscription Required)">🚫 SANS LICENCE</span>`;
       } else if (cdGemini) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn ga-live-cd" data-until="${cdGemini.until}" data-account-id="${escapeHtml(a.id)}" style="background: rgba(245, 158, 11, 0.18); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);" title="${escapeHtml(cdGemini.details)}">${escapeHtml(cdGemini.text)}</span>`;
       } else if (cdClaude && cdClaude.isWeeklyCap) {
@@ -11162,7 +11207,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   ${statusBadgeHtml}
                   ${typeof a.lastLatencyMs === 'number' ? `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-family: var(--font-mono); font-size: 10px;" title="Dernière latence mesurée">⚡ ${a.lastLatencyMs}ms</span>` : ''}
                   ${isStudio ? `<span class="pool-role-badge pool-role-badge--studio" title="Google AI Studio Developer API Key">● Active Studio</span>` : (isCli ? `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>` : (isCurrent ? `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">EN LIGNE</span><span class="pool-role-badge pool-role-badge--primary" title="Active account for Antigravity requests">● Active Pool</span>` : `<span class="pool-role-badge pool-role-badge--standby" title="Automatic fallback standby account">○ Standby Pool</span>`))}
-                  <span class="ga-badge ga-badge-${tier.toLowerCase()}">${tierIcon} ${tier}</span>
+                  <span class="ga-badge ga-badge-${tier.toLowerCase()} ga-tier-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Cliquer pour basculer (FREE ↔ PRO)">${tierIcon} ${tier}</span>
                   ${(a.quotas?.creditAmount || a.creditAmount) ? `<span class="ga-badge ga-badge-credits">🪙 ${a.quotas?.creditAmount || a.creditAmount} credits</span>` : ''}
                 </div>
                 <div style="font-size: 11px; color: var(--text-2);">${dedupModels.filter((m) => m.enabled !== false).length} models · ${escapeHtml(maskKeyPreview(a.apiKey))}</div>
@@ -11199,6 +11244,10 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   <button type="button" class="ga-action-btn ga-more-item ga-toggle-enable ${isEnabled ? '' : 'is-disabled-state'}" title="${isEnabled ? 'Mettre en pause ce compte' : 'Réactiver ce compte dans le pool'}" aria-label="Toggle enable for ${escapeHtml(a.name || a.email)}">
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
                     <span>${isEnabled ? 'Mettre en pause' : 'Réactiver'}</span>
+                  </button>
+                  <button type="button" class="ga-action-btn ga-more-item ga-toggle-tier" data-id="${escapeHtml(a.id)}" title="Basculer entre FREE et PRO" aria-label="Toggle tier for ${escapeHtml(a.name || a.email)}">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                    <span>${tier === 'FREE' ? 'Passer en PRO' : 'Passer en FREE'}</span>
                   </button>
                   <button type="button" class="ga-action-btn ga-more-item ga-edit" title="Modifier le compte" aria-label="Edit account ${escapeHtml(a.name || a.email)}">
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>

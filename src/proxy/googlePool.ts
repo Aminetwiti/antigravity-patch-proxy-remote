@@ -1248,9 +1248,15 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
   const available = candidates.filter((m) => !isAccountInCooldown(m, modelFamily) && !getOpenBreaker(m));
   const availableWithQuota = available.filter((m) => getModelQuotaScore(m, modelFamily) > 0);
   const pool = availableWithQuota.length > 0 ? availableWithQuota : (available.length > 0 ? available : candidates);
-  if (pool.length === 1) return pool[0];
+  // Exclude accounts saturated with concurrent in-flight requests (>= MAX_CONCURRENT_PER_ACCOUNT, or 1 in probation)
+  // if other idle/available accounts exist in the pool.
+  const freePool = pool.filter(
+    (m) => getAccountInFlight(m) < (isAccountInProbation(m, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT),
+  );
+  const targetPool = freePool.length > 0 ? freePool : pool;
+  if (targetPool.length === 1) return targetPool[0];
 
-  const sorted = [...pool].sort((a, b) => getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily));
+  const sorted = [...targetPool].sort((a, b) => getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily));
   const topScore = getAccountDynamicScore(sorted[0], modelFamily);
 
   const delta = typeof P2C_SCORE_DELTA === 'number' ? P2C_SCORE_DELTA : 45;

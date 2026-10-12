@@ -28,6 +28,7 @@ import {
   DEFAULT_REMOTE_TOKEN,
   GOOGLE_PROXY_TIMEOUT_MS,
   GOOGLE_POOL_HEADER_TIMEOUT_MS,
+  GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS,
   GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS,
   RATE_LIMIT_RELIEF_WAIT_MS,
   FILE_DOWNLOAD_TIMEOUT_MS,
@@ -1641,13 +1642,17 @@ export async function executeGoogleCloudCodeWithPool(
     targetRaw.includes('5-5') ||
     targetRaw.includes('5.5') ||
     resolvedTarget.includes('5-5') ||
-    resolvedTarget.includes('5.5') ||
     (typeof reqJson.requestedModel === 'string' && (reqJson.requestedModel.includes('5.5') || reqJson.requestedModel.includes('5-5'))) ||
     (typeof reqJson.model === 'string' && (reqJson.model.includes('5.5') || reqJson.model.includes('5-5')));
-  let eligibleAccounts = accountPool;
+  const activePool = accountPool.filter((a) => {
+    const qKey = getAccountQuotaKey(a);
+    const liveQ = (getLiveAccountQuota(qKey) || a.quotas) as Record<string, any> | undefined;
+    return !(a as any).isUnlicensed && !liveQ?.isUnlicensed;
+  });
+  let eligibleAccounts = activePool.length > 0 ? activePool : accountPool;
   if (isClaude55) {
-    const candidates55 = accountPool.filter((a) => isAccountEntitledToClaude55(a));
-    const otherCandidates = accountPool.filter((a) => !isAccountEntitledToClaude55(a));
+    const candidates55 = eligibleAccounts.filter((a) => isAccountEntitledToClaude55(a));
+    const otherCandidates = eligibleAccounts.filter((a) => !isAccountEntitledToClaude55(a));
     const healthy55 = candidates55.filter((a) => !isAccountInCooldown(a, modelFamily) && getModelQuotaScore(a, modelFamily) > 0);
     if (healthy55.length > 0) {
       log.info(
@@ -1675,6 +1680,11 @@ export async function executeGoogleCloudCodeWithPool(
     const hasQuotaA = getModelQuotaScore(a, modelFamily) > 0 ? 1 : 0;
     const hasQuotaB = getModelQuotaScore(b, modelFamily) > 0 ? 1 : 0;
     if (hasQuotaA !== hasQuotaB) return hasQuotaB - hasQuotaA;
+    const maxA = isAccountInProbation(a, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+    const maxB = isAccountInProbation(b, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+    const satA = getAccountInFlight(a) >= maxA ? 1 : 0;
+    const satB = getAccountInFlight(b) >= maxB ? 1 : 0;
+    if (satA !== satB) return satA - satB;
     if (isClaude55) {
       const entA = isAccountEntitledToClaude55(a) ? 1 : 0;
       const entB = isAccountEntitledToClaude55(b) ? 1 : 0;
@@ -1743,6 +1753,11 @@ export async function executeGoogleCloudCodeWithPool(
       const hasQuotaA = getModelQuotaScore(a, modelFamily) > 0 ? 1 : 0;
       const hasQuotaB = getModelQuotaScore(b, modelFamily) > 0 ? 1 : 0;
       if (hasQuotaA !== hasQuotaB) return hasQuotaB - hasQuotaA;
+      const maxA = isAccountInProbation(a, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+      const maxB = isAccountInProbation(b, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+      const satA = getAccountInFlight(a) >= maxA ? 1 : 0;
+      const satB = getAccountInFlight(b) >= maxB ? 1 : 0;
+      if (satA !== satB) return satA - satB;
       return getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily);
     });
   }
@@ -1752,6 +1767,8 @@ export async function executeGoogleCloudCodeWithPool(
   const totalAttempts = sortedAccounts.length;
   let consecutive429Count = 0;
   let consecutiveQuotaExhausted = 0;
+  let consecutiveTimeoutCount = 0;
+  let testedAccountsCount = 0;
 
   const initialHealthyCount = sortedAccounts.filter(
     (a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && getModelQuotaScore(a, modelFamily) > 0,
@@ -1789,6 +1806,25 @@ export async function executeGoogleCloudCodeWithPool(
       const hasPositiveRemaining = sortedAccounts.slice(i + 1).some((c) => getModelQuotaScore(c, modelFamily) > 0 && !isAccountInCooldown(c, modelFamily));
       if (hasPositiveRemaining) {
         log.info(`[Proxy] Fast-skipping candidate ${candidateName}: 0% quota remaining for ${modelFamily}`);
+        continue;
+      }
+    }
+
+    // Fast-skip: if this candidate reached max concurrent in-flight slots (2, or 1 in probation)
+    // and other healthy candidates have free slots available, divert to an idle account to prevent Google 504 overload.
+    const candidateMaxSlots = isAccountInProbation(candidate, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+    if (getAccountInFlight(candidate) >= candidateMaxSlots) {
+      const hasOtherFreeAccount = sortedAccounts.slice(i + 1).some(
+        (c) =>
+          !isAccountInCooldown(c, modelFamily) &&
+          !getOpenBreaker(c) &&
+          getModelQuotaScore(c, modelFamily) > 0 &&
+          getAccountInFlight(c) < (isAccountInProbation(c, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT),
+      );
+      if (hasOtherFreeAccount) {
+        log.info(
+          `[Proxy] Account [${candidateName}] reached max concurrent in-flight limit (${getAccountInFlight(candidate)}/${candidateMaxSlots}). Diverting to available idle account in pool.`,
+        );
         continue;
       }
     }
@@ -1872,18 +1908,35 @@ export async function executeGoogleCloudCodeWithPool(
     const updatedBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
     const authHeader = `Bearer ${accessToken}`;
 
+    testedAccountsCount++;
     recordAccountRequest(candidate);
     incrementAccountInFlight(candidate);
     const startReqTime = Date.now();
     const hostOverride = isGeminiCliModel(candidate) ? GOOGLE_HOSTS.CLOUD_CODE_PROD : undefined;
     const hasOtherCandidates = sortedAccounts.slice(i + 1).some((c) => !isAccountInCooldown(c, modelFamily) && getModelQuotaScore(c, modelFamily) > 0);
+    const healthySiblingAccountsCount = sortedAccounts.slice(i + 1).filter(
+      (c) => !isAccountInCooldown(c, modelFamily) && !getOpenBreaker(c) && getModelQuotaScore(c, modelFamily) >= 50,
+    ).length;
     const isStreamReq = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
-    const isLargePayloadOrThinking = updatedBody.length > 15_000 || /thinking|high|medium|tiered/i.test(targetModel);
-    // For streaming requests with healthy sibling accounts in pool, cap header timeout to 25s for fast failover
+    const isFlashModel = /flash/i.test(targetModel) && !/thinking|thought|-high$|-medium$|tiered/i.test(targetModel);
+    const isLargePayloadOrThinking = updatedBody.length > 15_000 || /thinking|thought|-high$|-medium$|tiered/i.test(targetModel);
+    // For streaming requests with healthy sibling accounts in pool, use fast header timeouts for quick failover:
+    // - Flash models: configurable via AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS (default 25s; or 20s if multiple healthy siblings exist)
+    // - Thinking / large prompts / tiered models: 35s (allows reasoning budget without stalling the IDE)
+    // - Standard models: 30s-35s
+    const flashTimeoutMs = Math.min(
+      GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS,
+      healthySiblingAccountsCount >= 2
+        ? Math.max(18_000, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS - 5_000)
+        : GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS,
+    );
     const baseCandidateTimeout = isStreamReq
-      ? (isLargePayloadOrThinking ? Math.min(35_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS) : GOOGLE_POOL_HEADER_TIMEOUT_MS)
-      : (isLargePayloadOrThinking ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : GOOGLE_POOL_HEADER_TIMEOUT_MS);
-    const poolHeaderTimeout = hasOtherCandidates ? baseCandidateTimeout : GOOGLE_PROXY_TIMEOUT_MS;
+      ? (isFlashModel ? flashTimeoutMs : (isLargePayloadOrThinking ? Math.min(35_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS) : Math.min(30_000, GOOGLE_POOL_HEADER_TIMEOUT_MS)))
+      : (isFlashModel ? GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS : (isLargePayloadOrThinking ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : GOOGLE_POOL_HEADER_TIMEOUT_MS));
+    // When no other candidates exist, cap Flash models to 35s instead of stalling for full 60s.
+    const poolHeaderTimeout = hasOtherCandidates
+      ? baseCandidateTimeout
+      : (isFlashModel ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_PROXY_TIMEOUT_MS);
     let outcome: GoogleRequestOutcome;
     try {
       outcome = await executeGoogleCloudCodeRequest(
@@ -1911,6 +1964,7 @@ export async function executeGoogleCloudCodeWithPool(
     const elapsedMs = Date.now() - startReqTime;
     const currentFamily = targetModel.toLowerCase().includes('claude') ? 'claude' : (targetModel ? 'gemini' : modelFamily);
     if (outcome.success) {
+      consecutiveTimeoutCount = 0;
       recordSuccess(candidate);
       clearAccountCooldown(candidate, currentFamily);
       endAccountProbation(candidate, currentFamily);
@@ -1923,6 +1977,7 @@ export async function executeGoogleCloudCodeWithPool(
     }
 
     if (outcome.statusCode === 429) {
+      consecutiveTimeoutCount = 0;
       consecutive429Count++;
       const retryAfterHeader = outcome.headers?.['retry-after'];
       let decision = classifyGoogleCloudCode429(outcome.error, retryAfterHeader);
@@ -2223,15 +2278,35 @@ export async function executeGoogleCloudCodeWithPool(
       recordFailure(candidate, 'server');
     }
 
-    // On HTTP 504 (Gateway Timeout / Google API request timed out), apply a short progressive cooldown
-    // rather than a harsh lockout, allowing healthy accounts to re-enter rotation quickly.
-    if (lastStatus === 504 || /timed out/i.test(lastErrorText)) {
-      const burstCount = recordAccountBurst(candidate);
-      const timeoutCooldownMs = burstCount > 1 ? 180_000 : 60_000;
+    // On HTTP 502 / 503 / 504 (Gateway Timeout / Service Unavailable / Bad Gateway / Overloaded):
+    const isServerOutage =
+      lastStatus === 502 ||
+      lastStatus === 503 ||
+      lastStatus === 504 ||
+      /timed out|unavailable|overloaded|service unavailable|backend error/i.test(lastErrorText);
+
+    if (isServerOutage) {
+      consecutiveTimeoutCount++;
+      const maxOutageLimit = Math.max(2, Math.min(4, sortedAccounts.length));
+      const upstreamOutageThreshold = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0) || maxOutageLimit;
+      const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
+      // During an upstream service failure across multiple accounts, damp cooldown to 30s so accounts recover quickly once Google recovers.
+      const timeoutCooldownMs = isUpstreamOutage ? 30_000 : 45_000;
       log.warn(
-        `[Proxy] Account ${candidateName} timed out (HTTP 504). Placing in ${timeoutCooldownMs / 1000}s cooldown to clear transient hang (burst count: ${burstCount}).`,
+        `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
       );
-      setAccountCooldown(candidate, timeoutCooldownMs, currentFamily);
+      setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
+
+      if (isUpstreamOutage) {
+        lastStatus = lastStatus;
+        lastErrorText = `Google Cloud Code API upstream service failure (HTTP ${lastStatus}) across ${consecutiveTimeoutCount} consecutive accounts`;
+        log.warn(
+          `[Proxy] 🛑 Upstream Server Failure Circuit Breaker: Model [${targetModel}] failed with HTTP ${lastStatus} across ${consecutiveTimeoutCount} consecutive accounts. Fast-failing pool to trigger immediate fallback cascade / AI Studio recovery.`,
+        );
+        break;
+      }
+    } else {
+      consecutiveTimeoutCount = 0;
     }
 
     // On HTTP 403 licensing/forbidden failure, immediately place the account in a
@@ -2332,12 +2407,13 @@ export async function executeGoogleCloudCodeWithPool(
             getModelQuotaScore(m, fbFamily) > 0,
         );
 
-        // If no candidate with measured positive quota score, allow candidate accounts not in cooldown
+        // If no candidate with measured positive quota score, allow candidate accounts not in cooldown (excluding unlicensed)
         if (fallbackCandidates.length === 0) {
           fallbackCandidates = allCustomModels.filter(
             (m) =>
               isGoogleCloudCodeModel(m) &&
               (m as any).enabled !== false &&
+              !(m as any).isUnlicensed &&
               !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
               !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&
               normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === fallbackModel.toLowerCase() &&
@@ -2648,7 +2724,7 @@ export async function executeGoogleCloudCodeWithPool(
     return true;
   }
 
-  log.error(`[Proxy] All ${totalAttempts} Google Cloud Code accounts in the pool failed. Returning HTTP ${lastStatus}`);
+  log.error(`[Proxy] Google Cloud Code pool exhausted (${testedAccountsCount}/${totalAttempts} tested). Returning HTTP ${lastStatus}`);
   if (!res.writableEnded && !res.destroyed) {
     const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
     const failedModel = sortedAccounts[0] || ({
@@ -2658,8 +2734,13 @@ export async function executeGoogleCloudCodeWithPool(
     } as CustomModel);
     const diagnostic = classifyError(lastStatus, lastErrorText, undefined, 'google');
     if (totalAttempts > 1) {
-      diagnostic.title = `${diagnostic.title} (${totalAttempts}/${totalAttempts} comptes vérifiés)`;
-      diagnostic.message = `L'ensemble des ${totalAttempts} comptes configurés ont été testés automatiquement en arrière-plan, mais aucun n'est actuellement disponible (${diagnostic.errorType}).`;
+      const countLabel = testedAccountsCount > 0 && testedAccountsCount < totalAttempts
+        ? `${testedAccountsCount}/${totalAttempts}`
+        : `${totalAttempts}/${totalAttempts}`;
+      diagnostic.title = `${diagnostic.title} (${countLabel} comptes vérifiés)`;
+      diagnostic.message = testedAccountsCount < totalAttempts && lastStatus === 504
+        ? `Le service Google Cloud Code a expiré sur ${testedAccountsCount} comptes consécutifs (coupure amont détectée). Les ${totalAttempts - testedAccountsCount} comptes restants ont été préservés sans être bloqués.`
+        : `L'ensemble des ${totalAttempts} comptes configurés ont été testés automatiquement en arrière-plan, mais aucun n'est actuellement disponible (${diagnostic.errorType}).`;
     }
     if (!res.headersSent) {
       if (isStream) {

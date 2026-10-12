@@ -43,9 +43,13 @@ export function calculatePoolRunway(
     const isCli = acc.provider === 'gemini-cli' || (typeof acc.id === 'string' && acc.id.startsWith('gemini-cli'));
     if (isStudio || isCli) continue;
 
+    if (acc.isUnlicensed || acc.quotas?.isUnlicensed) continue;
+
     // Estimate based on 5h rolling capacity and percentage
     const q = acc.quotas || {};
-    const pct5h = q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100;
+    const wkPct = q.geminiWeeklyPct ?? q.weeklyPercentage ?? 100;
+    // Reality rule: if weekly <= 0, 5h is locked
+    const pct5h = wkPct <= 0 ? 0 : (q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100);
     const tier = String(acc.tier || '').toUpperCase();
     const cap5h = tier.includes('ULTRA') ? 800_000 : (tier.includes('FREE') ? 120_000 : 350_000);
     const avail = Math.round((cap5h * Math.max(0, Math.min(100, pct5h))) / 100);
@@ -251,12 +255,15 @@ export function getPoolStrategicAdvice(
 
   const readyGeminiAccounts = accounts.filter((a) => {
     if (!a || a.enabled === false) return false;
+    if (a.isUnlicensed || a.quotas?.isUnlicensed) return false;
     const isStudio = a.provider === 'google-gemini' || (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
     const isCli = a.provider === 'gemini-cli' || (typeof a.id === 'string' && a.id.startsWith('gemini-cli'));
     if (isStudio || isCli) return true;
     const cdKey = `google:${a.email || a.name || a.id}:gemini`;
     const cd = activeCooldowns[cdKey];
     if (cd && cd.until > nowMs) return false;
+    const gWk = a.quotas?.geminiWeeklyPct ?? a.quotas?.weeklyPercentage;
+    if (typeof gWk === 'number' && gWk <= 0) return false;
     const gPct = a.quotas?.geminiFiveHourPct ?? a.quotas?.fiveHourPercentage;
     if (typeof gPct === 'number' && gPct <= 0) return false;
     return true;
@@ -264,12 +271,15 @@ export function getPoolStrategicAdvice(
 
   const readyClaudeAccounts = accounts.filter((a) => {
     if (!a || a.enabled === false) return false;
+    if (a.isUnlicensed || a.quotas?.isUnlicensed) return false;
     const isStudio = a.provider === 'google-gemini' || (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
     const isCli = a.provider === 'gemini-cli' || (typeof a.id === 'string' && a.id.startsWith('gemini-cli'));
     if (isStudio || isCli) return false;
     const cdKey = `google:${a.email || a.name || a.id}:claude`;
     const cd = activeCooldowns[cdKey];
     if (cd && cd.until > nowMs) return false;
+    const cWk = a.quotas?.claudeWeeklyPct;
+    if (typeof cWk === 'number' && cWk <= 0) return false;
     const cPct = a.quotas?.claudeFiveHourPct;
     if (typeof cPct === 'number' && cPct <= 0) return false;
     return true;
@@ -374,14 +384,18 @@ export function calculatePoolResilienceScore(
       continue;
     }
 
+    if (a.isUnlicensed || a.quotas?.isUnlicensed) continue;
+
     const gCd = activeCooldowns[`google:${a.email || a.name || a.id}:gemini`];
-    const gPct = a.quotas?.geminiFiveHourPct ?? a.quotas?.fiveHourPercentage ?? 100;
+    const gWk = a.quotas?.geminiWeeklyPct ?? a.quotas?.weeklyPercentage ?? 100;
+    const gPct = gWk <= 0 ? 0 : (a.quotas?.geminiFiveHourPct ?? a.quotas?.fiveHourPercentage ?? 100);
     if ((!gCd || gCd.until <= nowMs) && gPct > 0) {
       readyGemini++;
     }
 
     const cCd = activeCooldowns[`google:${a.email || a.name || a.id}:claude`];
-    const cPct = a.quotas?.claudeFiveHourPct ?? 100;
+    const cWk = a.quotas?.claudeWeeklyPct ?? 100;
+    const cPct = cWk <= 0 ? 0 : (a.quotas?.claudeFiveHourPct ?? 100);
     if ((!cCd || cCd.until <= nowMs) && cPct > 0) {
       readyClaude++;
     }

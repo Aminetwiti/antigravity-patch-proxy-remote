@@ -802,8 +802,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
     const c = await fs.promises.readFile(p, 'utf8');
     const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
 
-    // Merge quota_cache.json Claude quotas into accounts when custom_models.json has stale 0s.
-    // The proxy pre-warm writes live Claude quota into quota_cache.json but Doctor UI reads custom_models.json.
+    // Merge quota_cache.json live quotas into accounts so Doctor UI reflects real, up-to-date quotas.
     let quotaCache: Record<string, any> = {};
     try {
       const qCachePath = path.join(app.getPath('home'), '.gemini', 'antigravity', 'quota_cache.json');
@@ -816,22 +815,90 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
         if (!Array.isArray(prov.accounts)) continue;
         for (const acc of prov.accounts) {
           const email = acc.email || '';
-          const cacheEntry = quotaCache[`google:${email}`] || quotaCache[email];
+          const cacheEntry = quotaCache[`google:${email}`] || quotaCache[email] || quotaCache[acc.id];
           if (!cacheEntry) continue;
           if (!acc.quotas) acc.quotas = {};
-          // Only overwrite if the stored value is 0 or missing — prefer live test data if it's > 0
-          if ((typeof acc.quotas.claudeFiveHourPct !== 'number' || acc.quotas.claudeFiveHourPct <= 0) && typeof cacheEntry.claudeFiveHourPct === 'number') {
+          
+          if (typeof cacheEntry.geminiFiveHourPct === 'number') {
+            acc.quotas.geminiFiveHourPct = cacheEntry.geminiFiveHourPct;
+          }
+          if (typeof cacheEntry.geminiWeeklyPct === 'number') {
+            acc.quotas.geminiWeeklyPct = cacheEntry.geminiWeeklyPct;
+          }
+          if (typeof cacheEntry.fiveHourPercentage === 'number') {
+            acc.quotas.fiveHourPercentage = cacheEntry.fiveHourPercentage;
+          } else if (typeof cacheEntry.geminiFiveHourPct === 'number') {
+            acc.quotas.fiveHourPercentage = cacheEntry.geminiFiveHourPct;
+          }
+          if (typeof cacheEntry.weeklyPercentage === 'number') {
+            acc.quotas.weeklyPercentage = cacheEntry.weeklyPercentage;
+          } else if (typeof cacheEntry.geminiWeeklyPct === 'number') {
+            acc.quotas.weeklyPercentage = cacheEntry.geminiWeeklyPct;
+          }
+          if (cacheEntry.geminiFiveHourReset || cacheEntry.geminiResetTime) {
+            acc.quotas.geminiFiveHourReset = cacheEntry.geminiFiveHourReset || cacheEntry.geminiResetTime;
+            acc.quotas.geminiResetTime = acc.quotas.geminiFiveHourReset;
+          }
+          if (cacheEntry.geminiWeeklyReset) {
+            acc.quotas.geminiWeeklyReset = cacheEntry.geminiWeeklyReset;
+          }
+          if (typeof cacheEntry.claudeFiveHourPct === 'number') {
             acc.quotas.claudeFiveHourPct = cacheEntry.claudeFiveHourPct;
           }
-          if ((typeof acc.quotas.claudeWeeklyPct !== 'number' || acc.quotas.claudeWeeklyPct <= 0) && typeof cacheEntry.claudeWeeklyPct === 'number') {
+          if (typeof cacheEntry.claudeWeeklyPct === 'number') {
             acc.quotas.claudeWeeklyPct = cacheEntry.claudeWeeklyPct;
           }
-          if (!acc.quotas.claudeFiveHourReset && cacheEntry.claudeFiveHourReset) {
-            acc.quotas.claudeFiveHourReset = cacheEntry.claudeFiveHourReset;
+          if (cacheEntry.claudeFiveHourReset || cacheEntry.claudeResetTime) {
+            acc.quotas.claudeFiveHourReset = cacheEntry.claudeFiveHourReset || cacheEntry.claudeResetTime;
+            acc.quotas.claudeResetTime = acc.quotas.claudeFiveHourReset;
           }
-          if (!acc.quotas.claudeWeeklyReset && cacheEntry.claudeWeeklyReset) {
+          if (cacheEntry.claudeWeeklyReset) {
             acc.quotas.claudeWeeklyReset = cacheEntry.claudeWeeklyReset;
           }
+          if (cacheEntry.updatedAt) {
+            acc.quotas.updatedAt = cacheEntry.updatedAt;
+          }
+          if (cacheEntry.tier) acc.tier = cacheEntry.tier;
+          if (cacheEntry.tierId) acc.tierId = cacheEntry.tierId;
+          if (cacheEntry.isUnlicensed) acc.isUnlicensed = true;
+
+          // Rebuild groups with live bucket data so legacy group parser uses the real numbers
+          acc.quotas.groups = [
+            {
+              displayName: 'Gemini Models',
+              buckets: [
+                {
+                  bucketId: 'gemini-weekly',
+                  window: 'weekly',
+                  percentage: acc.quotas.geminiWeeklyPct,
+                  resetTime: acc.quotas.geminiWeeklyReset,
+                },
+                {
+                  bucketId: 'gemini-5h',
+                  window: '5h',
+                  percentage: acc.quotas.geminiFiveHourPct,
+                  resetTime: acc.quotas.geminiFiveHourReset,
+                },
+              ],
+            },
+            {
+              displayName: 'Claude and GPT models',
+              buckets: [
+                {
+                  bucketId: '3p-weekly',
+                  window: 'weekly',
+                  percentage: acc.quotas.claudeWeeklyPct,
+                  resetTime: acc.quotas.claudeWeeklyReset,
+                },
+                {
+                  bucketId: '3p-5h',
+                  window: '5h',
+                  percentage: acc.quotas.claudeFiveHourPct,
+                  resetTime: acc.quotas.claudeFiveHourReset,
+                },
+              ],
+            },
+          ];
         }
       }
     }
@@ -955,11 +1022,27 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
   }
 });
 
+let customModelsWriteLock: Promise<void> = Promise.resolve();
 async function atomicWriteCustomModels(filePath: string, data: unknown): Promise<void> {
-  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
-  await fs.promises.rename(tmp, filePath);
+  const op = async () => {
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    const tmp = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`;
+    await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+    try {
+      await fs.promises.rename(tmp, filePath);
+    } catch (err: any) {
+      if (err?.code === 'EPERM' || err?.code === 'EBUSY') {
+        await new Promise((r) => setTimeout(r, 60));
+        await fs.promises.copyFile(tmp, filePath);
+        await fs.promises.unlink(tmp).catch(() => {});
+      } else {
+        await fs.promises.unlink(tmp).catch(() => {});
+        throw err;
+      }
+    }
+  };
+  customModelsWriteLock = customModelsWriteLock.then(op, op);
+  return customModelsWriteLock;
 }
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
@@ -1090,6 +1173,25 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_SAVE, async (_, p) => {
           parsed.models[mIdx].enabled = pm.enabled !== false && p.enabled !== false;
         }
       }
+    }
+
+    // Also sync updated account quotas to quota_cache.json so proxy & UI remain in sync
+    if (p && p.quotas && (p.email || p.id)) {
+      try {
+        const qCachePath = path.join(app.getPath('home'), '.gemini', 'antigravity', 'quota_cache.json');
+        let qData: any = { version: 1, savedAt: Date.now(), quotas: {}, revokedTokens: [] };
+        if (fs.existsSync(qCachePath)) {
+          try { qData = JSON.parse(fs.readFileSync(qCachePath, 'utf8')); } catch {}
+        }
+        if (!qData.quotas) qData.quotas = {};
+        const qKey = p.email ? `google:${p.email}` : p.id;
+        qData.quotas[qKey] = {
+          ...qData.quotas[qKey],
+          ...p.quotas,
+          updatedAt: Date.now(),
+        };
+        fs.writeFileSync(qCachePath, JSON.stringify(qData, null, 2), 'utf8');
+      } catch {}
     }
 
     await atomicWriteCustomModels(fp, parsed);
@@ -1673,22 +1775,64 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_DISCOVER_IDE_ACCOUNT, async () => {
   }
 });
 
-ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, async (_evt, tokenOrKey: string) => {
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, async (_evt, tokenOrKey: string | any, maybeRefreshToken?: string) => {
   try {
-    if (!tokenOrKey) return { success: false, error: 'Token requis.' };
-    let effectiveToken = tokenOrKey;
+    let rawToken = typeof tokenOrKey === 'string' ? tokenOrKey : (tokenOrKey?.accessToken || tokenOrKey?.apiKey || '');
+    let rToken = maybeRefreshToken || (typeof tokenOrKey === 'object' ? tokenOrKey?.refreshToken : undefined);
+
+    if (!rawToken && !rToken) return { success: false, error: 'Token requis.' };
+
+    let effectiveToken = rawToken;
     let freshAccessToken: string | undefined;
-    if (tokenOrKey.startsWith('1//') || tokenOrKey.startsWith('g1//')) {
-      const refreshed = await refreshGoogleToken(tokenOrKey);
+
+    if (rawToken.startsWith('1//') || rawToken.startsWith('g1//')) {
+      rToken = rawToken;
+      effectiveToken = '';
+    }
+
+    if (!effectiveToken && rToken) {
+      const refreshed = await refreshGoogleToken(rToken);
       if (refreshed) {
         effectiveToken = refreshed.accessToken;
         freshAccessToken = refreshed.accessToken;
       }
     }
-    const quotas = await fetchGoogleAccountQuotas(effectiveToken);
+
+    let quotas = effectiveToken ? await fetchGoogleAccountQuotas(effectiveToken) : null;
+
+    // If fetch failed / expired (401) and we have a refresh token, refresh and retry
+    if (!quotas && rToken && effectiveToken !== freshAccessToken) {
+      const refreshed = await refreshGoogleToken(rToken);
+      if (refreshed) {
+        effectiveToken = refreshed.accessToken;
+        freshAccessToken = refreshed.accessToken;
+        quotas = await fetchGoogleAccountQuotas(effectiveToken);
+      }
+    }
+
     if (!quotas) {
       return { success: false, error: 'Impossible de récupérer les quotas Google.' };
     }
+
+    // Persist fresh quota to quota_cache.json if email is known
+    const emailToCache = typeof tokenOrKey === 'object' ? (tokenOrKey?.email || tokenOrKey?.accountEmail) : undefined;
+    if (emailToCache) {
+      try {
+        const qCachePath = path.join(app.getPath('home'), '.gemini', 'antigravity', 'quota_cache.json');
+        let qData: any = { version: 1, savedAt: Date.now(), quotas: {}, revokedTokens: [] };
+        if (fs.existsSync(qCachePath)) {
+          try { qData = JSON.parse(fs.readFileSync(qCachePath, 'utf8')); } catch {}
+        }
+        if (!qData.quotas) qData.quotas = {};
+        qData.quotas[`google:${emailToCache}`] = {
+          ...qData.quotas[`google:${emailToCache}`],
+          ...quotas,
+          updatedAt: Date.now(),
+        };
+        fs.writeFileSync(qCachePath, JSON.stringify(qData, null, 2), 'utf8');
+      } catch {}
+    }
+
     return { success: true, quotas, accessToken: freshAccessToken };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erreur lors de la récupération des quotas.' };

@@ -14,7 +14,7 @@ function _unmaskSecret(b64: string, key = 42): string {
 }
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || _unmaskSecret('GxodGxoaHBocGh8TGwdeR0JZWUNEGEIYG0ZJWE8YGR9cXkVGRUBCHk0eGhlPWgRLWlpZBE1FRU1GT19ZT1hJRUReT0ReBElFRw==');
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || _unmaskSecret('bWVpeXpyB2EfEmx9eB4SHGZOZmZgG0dmaBJZcmkeUBxbbmtM');
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || _unmaskSecret('bWVpeXpyB2EfEmx9eB4SHGZOZmAbR2ZoEllyaR5QHFtua0w=');
 const GEMINI_CLI_CLIENT_ID = process.env.GEMINI_CLI_OAUTH_CLIENT_ID || _unmaskSecret('HBIbGB8fEhoTGRMfB0VFEkxeGEVaWE5YRFoTTxlLW0wcS1wZQkdOQ0gbGR9ABEtaWlkETUVFTUZPX1lPWElFRF5PRF4ESUVH');
 const GEMINI_CLI_CLIENT_SECRET = process.env.GEMINI_CLI_OAUTH_CLIENT_SECRET || _unmaskSecret('bWVpeXpyBx5fYk1nZkcHG0UdeUEHTU98HGlfH0lGcmxZUkY=');
 const BASE_PORTS = [8086, 8087, 8088, 8089, 8090];
@@ -92,15 +92,20 @@ function exchangeCodeForTokens(
           if (parsed.access_token) {
             resolve(parsed);
           } else {
+            console.error('[GoogleOAuthServer] Token exchange rejected by Google:', parsed);
             resolve(null);
           }
         } catch {
+          console.error('[GoogleOAuthServer] Token exchange non-JSON response:', data);
           resolve(null);
         }
       });
     });
 
-    req.on('error', () => resolve(null));
+    req.on('error', (err) => {
+      console.error('[GoogleOAuthServer] Token exchange request failed:', err.message);
+      resolve(null);
+    });
     req.on('timeout', () => {
       req.destroy();
       resolve(null);
@@ -227,6 +232,7 @@ function saveAccountToCustomModels(accountData: {
   refreshToken: string;
   accessToken: string;
   projectId?: string;
+  tierId?: string;
   quotas?: any;
 }, providerType: 'antigravity' | 'gemini-cli' = 'antigravity'): void {
   const filePath = getCustomModelsPath();
@@ -279,6 +285,7 @@ function saveAccountToCustomModels(accountData: {
       targetProvider.accounts = [];
     }
 
+    const isPro = Boolean(accountData.tierId && accountData.tierId.toLowerCase().includes('pro'));
     const accountEntry = {
       id: isCli
         ? (accountData.id.startsWith('gemini-cli-') ? accountData.id : `gemini-cli-${accountData.email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`)
@@ -290,6 +297,8 @@ function saveAccountToCustomModels(accountData: {
       apiKey: accountData.accessToken,
       refreshToken: accountData.refreshToken,
       projectId: accountData.projectId || (isCli ? 'gemini-cli-users' : 'aicode-consumers'),
+      tierId: accountData.tierId || (isCli ? 'gemini-cli-free' : 'free-tier'),
+      tier: isPro ? 'pro' : 'free',
       quotas: accountData.quotas,
       enabled: true,
       status: 'healthy',
@@ -433,6 +442,7 @@ export async function startGoogleOAuthLogin(providerType: 'antigravity' | 'gemin
         refreshToken,
         accessToken,
         projectId: projectInfo?.projectId,
+        tierId: projectInfo?.tierId,
         quotas,
       }, providerType);
 
