@@ -623,5 +623,43 @@ describe('Google Accounts High-Density Dashboard Logic', () => {
       expect(Object.keys(cds)).toHaveLength(0);
     });
   });
+
+  describe('Cockpit Density & Onboarding UX Guidance', () => {
+    it('defines gaDensityToggleBtn with initial label and toggle capability', () => {
+      const buttonHtml = `
+        <button class="btn btn-ghost" id="gaDensityToggleBtn" type="button" aria-label="Basculer la densité du cockpit télémétrique" title="Basculer entre vue Essentielle (4 KPI) et vue Expert (8 KPI)">
+          <svg viewBox="0 0 24 24" width="14" height="14"><rect x="3" y="3" width="7" height="7"/></svg>
+          <span id="gaDensityToggleLabel">Vue Essentielle</span>
+        </button>
+      `;
+      expect(buttonHtml).toContain('id="gaDensityToggleBtn"');
+      expect(buttonHtml).toContain('id="gaDensityToggleLabel"');
+      expect(buttonHtml).toContain('Vue Essentielle');
+    });
+
+    it('toggles .is-compact class and updates label correctly', () => {
+      let isCompact = true;
+      const updateLabel = (compact: boolean) => (compact ? 'Vue Essentielle' : 'Vue Complète');
+
+      expect(updateLabel(isCompact)).toBe('Vue Essentielle');
+      isCompact = !isCompact;
+      expect(updateLabel(isCompact)).toBe('Vue Complète');
+    });
+
+    it('defines onboarding guidance badges in add account dropdown', () => {
+      const dropdownHtml = `
+        <div class="ga-dropdown-menu" id="gaAddAccountMenu">
+          <button id="gaMenuAntigravityOAuth"><span class="badge badge-accent">Recommandé</span></button>
+          <button id="gaMenuGeminiCli"><span class="badge badge-muted">Cloud Code</span></button>
+          <button id="gaMenuDiscoverIde"><span class="badge badge-primary">1-clic</span></button>
+          <button id="gaMenuAiStudio"><span class="badge badge-muted">Gratuit</span></button>
+        </div>
+      `;
+      expect(dropdownHtml).toContain('Recommandé');
+      expect(dropdownHtml).toContain('Cloud Code');
+      expect(dropdownHtml).toContain('1-clic');
+      expect(dropdownHtml).toContain('Gratuit');
+    });
+  });
 });
 

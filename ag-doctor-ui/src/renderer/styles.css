@@ -3748,6 +3748,12 @@ body {
   color: #60a5fa !important;
   border-color: rgba(59, 130, 246, 0.5) !important;
 }
+.ga-action-btn.ga-refresh:hover {
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #60a5fa !important;
+  border-color: rgba(59, 130, 246, 0.6) !important;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.35) !important;
+}
 .ga-action-btn.ga-warmup:hover {
   background: rgba(249, 115, 22, 0.2) !important;
   color: #fb923c !important;
@@ -3814,6 +3820,33 @@ body {
 /* Smooth progressive transition for quota fill bars */
 .ga-quota-fill {
   transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.4s ease;
+}
+
+/* Interactive Sortable Table Headers */
+.ga-sortable-th {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.ga-sortable-th:hover {
+  color: var(--text-0, #fff);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+.ga-sortable-th .ga-sort-icon {
+  font-size: 11px;
+  opacity: 0.35;
+  transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+}
+.ga-sortable-th:hover .ga-sort-icon {
+  opacity: 0.75;
+}
+.ga-sortable-th.is-sorted {
+  color: var(--accent-blue-bright, #60a5fa);
+}
+.ga-sortable-th.is-sorted .ga-sort-icon {
+  opacity: 1;
+  color: var(--accent-blue-bright, #60a5fa);
+  font-weight: bold;
 }
 
 /* Smooth row hover & pause transitions */
@@ -4399,6 +4432,68 @@ body {
   color: #fff !important;
 }
 
+/* UX Psychology: Miller Chunking & Fitts Isolation in Dropdown */
+.ga-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ga-menu-divider {
+  height: 1px;
+  background: var(--border, rgba(255, 255, 255, 0.08));
+  margin: 5px 4px;
+}
+.ga-menu-section--danger .ga-more-item.ga-delete {
+  color: var(--err, #ef4444) !important;
+  font-weight: 500;
+}
+.ga-menu-section--danger .ga-more-item.ga-delete:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #f87171 !important;
+}
+
+/* UX Psychology: Von Restorff & Desaturation for Secondary Toolbar Actions */
+.ga-toolbar-action {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: var(--text-2) !important;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12)) !important;
+  padding: 5px 11px !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  border-radius: 7px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+.ga-toolbar-action:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-0, #fff) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+.ga-toolbar-action--danger:hover {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #ef4444 !important;
+  border-color: rgba(239, 68, 68, 0.35) !important;
+}
+
+/* UX Psychology: Satisficing Hero KPI Card */
+.stat-card--primary-hero {
+  border-color: rgba(59, 130, 246, 0.35) !important;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* The Quiet Console: Badge de quota épuisé normal (en attente de renouvellement) */
+.ga-badge-dormant {
+  background: rgba(217, 119, 6, 0.09) !important;
+  color: #d97706 !important;
+  border: 1px solid rgba(217, 119, 6, 0.22) !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+}
+
 .ga-radar-dot.studio {
   background: #14b8a6;
 }
@@ -4610,5 +4705,29 @@ body {
   color: #f59e0b !important;
 }
 
+/* Cockpit Density Toggling (Essentiel vs Expert) — Miller's Law (4 chunks max) */
+.ga-telemetry-grid.is-compact .card-velocity,
+.ga-telemetry-grid.is-compact .card-capacity,
+.ga-telemetry-grid.is-compact .card-reset,
+.ga-telemetry-grid.is-compact .card-cooldown:not(.has-cooldown) {
+  display: none !important;
+}
+
+#gaDensityToggleBtn {
+  font-size: 11.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+#gaDensityToggleBtn.is-active {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent-blue-bright, #3b82f6);
+  border-color: rgba(59, 130, 246, 0.3);
+}
 
 

@@ -1918,11 +1918,12 @@ export async function executeGoogleCloudCodeWithPool(
       (c) => !isAccountInCooldown(c, modelFamily) && !getOpenBreaker(c) && getModelQuotaScore(c, modelFamily) >= 50,
     ).length;
     const isStreamReq = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
-    const isFlashModel = /flash/i.test(targetModel) && !/thinking|thought|-high$|-medium$|tiered/i.test(targetModel);
-    const isLargePayloadOrThinking = updatedBody.length > 15_000 || /thinking|thought|-high$|-medium$|tiered/i.test(targetModel);
+    const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel);
+    const isFlashModel = /flash/i.test(targetModel) && !isThinkingModel;
+    const isLargePayloadOrThinking = updatedBody.length > 60_000 || isThinkingModel;
     // For streaming requests with healthy sibling accounts in pool, use fast header timeouts for quick failover:
     // - Flash models: configurable via AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS (default 25s; or 20s if multiple healthy siblings exist)
-    // - Thinking / large prompts / tiered models: 35s (allows reasoning budget without stalling the IDE)
+    // - Thinking / large prompts: 45-50s (allows reasoning budget without stalling the IDE)
     // - Standard models: 30s-35s
     const flashTimeoutMs = Math.min(
       GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS,
@@ -2278,20 +2279,21 @@ export async function executeGoogleCloudCodeWithPool(
       recordFailure(candidate, 'server');
     }
 
-    // On HTTP 502 / 503 / 504 (Gateway Timeout / Service Unavailable / Bad Gateway / Overloaded):
+    // On HTTP 500 / 502 / 503 / 504 (Internal Error / Gateway Timeout / Service Unavailable / Bad Gateway / Overloaded):
     const isServerOutage =
+      lastStatus === 500 ||
       lastStatus === 502 ||
       lastStatus === 503 ||
       lastStatus === 504 ||
-      /timed out|unavailable|overloaded|service unavailable|backend error/i.test(lastErrorText);
+      /timed out|unavailable|overloaded|service unavailable|backend error|internal error/i.test(lastErrorText);
 
     if (isServerOutage) {
       consecutiveTimeoutCount++;
       const maxOutageLimit = Math.max(2, Math.min(4, sortedAccounts.length));
       const upstreamOutageThreshold = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0) || maxOutageLimit;
       const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
-      // During an upstream service failure across multiple accounts, damp cooldown to 30s so accounts recover quickly once Google recovers.
-      const timeoutCooldownMs = isUpstreamOutage ? 30_000 : 45_000;
+      // For HTTP 500 internal errors, use a 20s cooldown so transient hiccups recover quickly; 504/outages use 30s-45s.
+      const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (isUpstreamOutage ? 30_000 : 45_000);
       log.warn(
         `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
       );

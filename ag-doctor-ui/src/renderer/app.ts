@@ -8016,6 +8016,7 @@ const gaAddAccountBtn = $('#gaAddAccountBtn') as HTMLButtonElement | null;
 const gaTestAllBtn = $('#gaTestAllBtn') as HTMLButtonElement | null;
 const gaSyncAllBtn = $('#gaSyncAllBtn') as HTMLButtonElement | null;
 const gaRepairCooldownsBtn = $('#gaRepairCooldownsBtn') as HTMLButtonElement | null;
+const gaDensityToggleBtn = $('#gaDensityToggleBtn') as HTMLButtonElement | null;
 
 const gaModalBackdrop = $('#googleAccountModalBackdrop') as HTMLDivElement | null;
 const gaModalClose = $('#googleAccountModalClose') as HTMLButtonElement | null;
@@ -8044,16 +8045,11 @@ let currentGaFetchedModels: Array<{ id: string; displayName: string; enabled: bo
 let googleAccountsCache: ProviderEntry[] = [];
 let gaCurrentQuotaWindow: '5h' | 'weekly' = 'weekly';
 let gaCurrentViewMode: 'list' | 'grid' = 'list';
-let gaCurrentFilter: 'all' | 'pro' | 'ultra' | 'free' | 'status:ready' | 'status:cooldown' | 'status:paused' = 'all';
+let gaCurrentFilter: 'all' | 'pro' | 'ultra' | 'free' | 'status:ready' | 'status:exhausted' | 'status:cooldown' | 'status:paused' = 'all';
 let gaSearchQuery: string = '';
-let gaShowAllQuotas: boolean = (() => {
-  try {
-    const saved = localStorage.getItem('ag_ga_show_all_quotas');
-    return saved !== null ? saved === 'true' : true;
-  } catch {
-    return true;
-  }
-})();
+let gaShowAllQuotas: boolean = true;
+let gaSortColumn: 'name' | 'quota' | 'lastUsed' | null = null;
+let gaSortDirection: 'asc' | 'desc' = 'asc';
 let gaSelectedIds: Set<string> = new Set();
 let gaToolbarInitialized: boolean = false;
 let gaActiveCooldownsCache: Record<string, { until: number; remainingMs: number; remainingMin: number; remainingHours: string }> = {};
@@ -8165,10 +8161,10 @@ function formatCompactCountdown(isoDateStr?: string): string {
 }
 
 function formatLastUsed(ts?: number | string): string {
-  if (!ts) return '<span style="color: var(--text-3);">Jamais</span>';
+  if (!ts) return '<span style="color: var(--text-3, #71717a); font-style: italic;">Jamais</span>';
   const d = new Date(ts);
   const time = d.getTime();
-  if (isNaN(time)) return '<span style="color: var(--text-3);">Jamais</span>';
+  if (isNaN(time)) return '<span style="color: var(--text-3, #71717a); font-style: italic;">Jamais</span>';
   const full = d.toLocaleString(undefined, {
     month: 'numeric',
     day: 'numeric',
@@ -8191,7 +8187,7 @@ function formatLastUsed(ts?: number | string): string {
     const days = Math.floor(diffSec / 86400);
     rel = `Il y a ${days}j`;
   }
-  return `<span title="${escapeHtml(full)}" style="cursor: help;">${escapeHtml(rel)}</span>`;
+  return `<span title="${escapeHtml(full)}" style="color: var(--text-2, #a1a1aa); font-weight: 500; cursor: help;">${escapeHtml(rel)}</span>`;
 }
 
 function getQuotaColor(pct: number): string {
@@ -8670,13 +8666,13 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
   }
   if (gaStatTotalCapacitySub) {
     const text = liveRequestCount > 0
-      ? `${liveRequestCount} requêtes réelles avec succès`
+      ? `${liveRequestCount.toLocaleString('fr-FR')} succès proxy`
       : 'Requêtes actives du pool';
     gaStatTotalCapacitySub.textContent = text;
     gaStatTotalCapacitySub.title = text;
   }
 
-  // Card 3: Disponibilité Moyenne du Pool
+  // Card 3: Capacité Moyenne du Pool
   let totalActivePct = 0;
   let activeQuotaAccountsCount = 0;
   for (const acc of accounts) {
@@ -8694,7 +8690,7 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
     gaStatPoolValue.style.color = avgPoolPct >= 60 ? 'var(--text-0)' : getQuotaColor(avgPoolPct);
   }
   if (gaStatPoolValueSub) {
-    const text = `${summary.activeCount}/${total} comptes actifs en rotation`;
+    const text = `${summary.activeCount}/${total} actifs en rotation`;
     gaStatPoolValueSub.textContent = text;
     gaStatPoolValueSub.title = text;
   }
@@ -8702,6 +8698,7 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
   // Prochain Reset Countdown computation (uniquement sur les comptes Antigravity)
   let soonestResetMs = Infinity;
   let soonestAccountName = '';
+  let soonestFullName = '';
   const now = Date.now();
 
   for (const acc of accounts) {
@@ -8717,8 +8714,10 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
         const ms = new Date(resetStr).getTime();
         if (ms > now && ms < soonestResetMs) {
           soonestResetMs = ms;
-          const label = acc.name || acc.email || 'Compte';
-          soonestAccountName = `${label.split('@')[0]} (Gemini)`;
+          const label = (acc.name || acc.email || 'Compte').split('@')[0].trim();
+          const short = label.length > 10 ? `${label.slice(0, 9)}…` : label;
+          soonestAccountName = `${short} (Gemini)`;
+          soonestFullName = `${acc.name || acc.email} (Gemini)`;
         }
       }
     }
@@ -8728,8 +8727,10 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
         const ms = new Date(resetStr).getTime();
         if (ms > now && ms < soonestResetMs) {
           soonestResetMs = ms;
-          const label = acc.name || acc.email || 'Compte';
-          soonestAccountName = `${label.split('@')[0]} (Claude)`;
+          const label = (acc.name || acc.email || 'Compte').split('@')[0].trim();
+          const short = label.length > 10 ? `${label.slice(0, 9)}…` : label;
+          soonestAccountName = `${short} (Claude)`;
+          soonestFullName = `${acc.name || acc.email} (Claude)`;
         }
       }
     }
@@ -8748,9 +8749,9 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
       const isToday = targetDate.toDateString() === new Date().toDateString();
       const datePart = isToday ? "Aujourd'hui" : targetDate.toLocaleDateString(undefined, { weekday: 'short' });
       const timePart = targetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const text = `${soonestAccountName} · ${datePart} à ${timePart}`;
+      const text = `${soonestAccountName} · ${datePart} ${timePart}`;
       gaStatNextResetSub.textContent = text;
-      gaStatNextResetSub.title = text;
+      gaStatNextResetSub.title = `${soonestFullName} · ${datePart} à ${timePart}`;
     } else {
       gaStatNextReset.textContent = '100% Plein';
       gaStatNextResetSub.textContent = 'Aucun compte en attente de reset';
@@ -8900,6 +8901,7 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
   let ultra = 0;
   let free = 0;
   let ready = 0;
+  let exhausted = 0;
   let cooldown = 0;
   let paused = 0;
 
@@ -8912,17 +8914,22 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
     const isEnabled = a.enabled !== false;
     const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
     const cdGemini = getAccountActiveCooldown(a, 'gemini');
-    if (!isEnabled) {
+    const eff = getAccountEffectiveQuotas(a);
+
+    if (!isEnabled || isUnlicensed) {
       paused++;
     } else if (cdGemini) {
       cooldown++;
-    } else if (!isUnlicensed) {
+    } else if (eff.gemini5hPct <= 0) {
+      exhausted++;
+    } else {
       ready++;
     }
   }
 
   const elAll = $('#gaCntAll');
   const elReady = $('#gaCntReady');
+  const elExhausted = $('#gaCntExhausted');
   const elCooldown = $('#gaCntCooldown');
   const elPaused = $('#gaCntPaused');
   const elPro = $('#gaCntPro');
@@ -8931,6 +8938,7 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
 
   if (elAll) elAll.textContent = String(total);
   if (elReady) elReady.textContent = String(ready);
+  if (elExhausted) elExhausted.textContent = String(exhausted);
   if (elCooldown) elCooldown.textContent = String(cooldown);
   if (elPaused) elPaused.textContent = String(paused);
   if (elPro) elPro.textContent = String(pro);
@@ -9161,6 +9169,39 @@ function initGoogleAccountsToolbarOnce(): void {
   purgeCacheBtn?.addEventListener('click', () => runPurgeAndRepair(purgeCacheBtn));
   gaRepairCooldownsBtn?.addEventListener('click', () => runPurgeAndRepair(gaRepairCooldownsBtn));
 
+  // Cockpit Density Mode (Vue Essentielle vs Vue Complète - Miller's law chunking)
+  const densityLabel = $('#gaDensityToggleLabel') as HTMLSpanElement | null;
+  const telemetryGrid = document.querySelector('.ga-telemetry-grid') as HTMLElement | null;
+  const updateDensityUI = (isCompact: boolean) => {
+    if (telemetryGrid) {
+      telemetryGrid.classList.toggle('is-compact', isCompact);
+    }
+    if (gaDensityToggleBtn) {
+      gaDensityToggleBtn.classList.toggle('is-active', isCompact);
+      gaDensityToggleBtn.title = isCompact
+        ? 'Actuellement en vue Essentielle (4 KPI) — Cliquez pour afficher les 8 KPI complets'
+        : 'Actuellement en vue Expert (8 KPI) — Cliquez pour masquer les métriques secondaires';
+    }
+    if (densityLabel) {
+      densityLabel.textContent = isCompact ? 'Vue Essentielle' : 'Vue Complète';
+    }
+  };
+
+  let savedCompact = true;
+  try {
+    const pref = localStorage.getItem('ag_ga_cockpit_density');
+    if (pref === 'full') savedCompact = false;
+  } catch {}
+  updateDensityUI(savedCompact);
+
+  gaDensityToggleBtn?.addEventListener('click', () => {
+    const isNowCompact = !telemetryGrid?.classList.contains('is-compact');
+    updateDensityUI(isNowCompact);
+    try {
+      localStorage.setItem('ag_ga_cockpit_density', isNowCompact ? 'compact' : 'full');
+    } catch {}
+  });
+
   const showAllSwitch = $('#gaShowAllQuotasSwitch') as HTMLInputElement | null;
   if (showAllSwitch) {
     showAllSwitch.checked = gaShowAllQuotas;
@@ -9275,6 +9316,20 @@ function initGoogleAccountsToolbarOnce(): void {
   if (gaAccountsContainer) {
     gaAccountsContainer.addEventListener('click', async (e) => {
       const target = e.target as HTMLElement;
+
+      // Sortable table headers
+      const sortTh = target.closest('.ga-sortable-th') as HTMLElement | null;
+      if (sortTh && sortTh.dataset.sort) {
+        const col = sortTh.dataset.sort as 'name' | 'quota' | 'lastUsed';
+        if (gaSortColumn === col) {
+          gaSortDirection = gaSortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          gaSortColumn = col;
+          gaSortDirection = col === 'name' ? 'asc' : 'desc';
+        }
+        renderGoogleAccountsList(googleAccountsCache);
+        return;
+      }
 
       // Empty state buttons
       if (target.closest('#gaEmptyAddBtn')) {
@@ -11002,12 +11057,16 @@ function renderGoogleAccountsList(accounts: any[]): void {
     const cdGemini = getAccountActiveCooldown(a, 'gemini');
     const tier = getAccountTier(a).toLowerCase();
 
+    const eff = getAccountEffectiveQuotas(a);
+
     if (gaCurrentFilter === 'status:ready') {
-      if (!isEnabled || cdGemini || isUnlicensed) return false;
+      if (!isEnabled || cdGemini || isUnlicensed || eff.gemini5hPct <= 0) return false;
+    } else if (gaCurrentFilter === 'status:exhausted') {
+      if (!isEnabled || cdGemini || isUnlicensed || eff.gemini5hPct > 0) return false;
     } else if (gaCurrentFilter === 'status:cooldown') {
       if (!isEnabled || !cdGemini) return false;
     } else if (gaCurrentFilter === 'status:paused') {
-      if (isEnabled) return false;
+      if (isEnabled && !isUnlicensed) return false;
     } else if (gaCurrentFilter !== 'all' && tier !== gaCurrentFilter) {
       return false;
     }
@@ -11026,10 +11085,33 @@ function renderGoogleAccountsList(accounts: any[]): void {
   if (filtered.length === 0) {
     gaAccountsContainer.innerHTML = `
       <div style="padding: 32px 16px; text-align: center; color: var(--text-2); font-size: 13px;">
-        No Google accounts match the current filter or search criteria.
+        Aucun compte Google ne correspond aux filtres ou aux critères de recherche actuels.
       </div>
     `;
     return;
+  }
+
+  // Column sorting
+  if (gaSortColumn) {
+    filtered.sort((a, b) => {
+      let cmp = 0;
+      if (gaSortColumn === 'name') {
+        const nameA = (a.email || a.name || a.id || '').toLowerCase();
+        const nameB = (b.email || b.name || b.id || '').toLowerCase();
+        cmp = nameA.localeCompare(nameB);
+      } else if (gaSortColumn === 'quota') {
+        const effA = getAccountEffectiveQuotas(a);
+        const effB = getAccountEffectiveQuotas(b);
+        const qA = effA.gemini5hPct * 10 + effA.claude5hPct;
+        const qB = effB.gemini5hPct * 10 + effB.claude5hPct;
+        cmp = qA - qB;
+      } else if (gaSortColumn === 'lastUsed') {
+        const timeA = a.lastUsed || a.updatedAt ? new Date(a.lastUsed || a.updatedAt).getTime() : 0;
+        const timeB = b.lastUsed || b.updatedAt ? new Date(b.lastUsed || b.updatedAt).getTime() : 0;
+        cmp = (isNaN(timeA) ? 0 : timeA) - (isNaN(timeB) ? 0 : timeB);
+      }
+      return gaSortDirection === 'desc' ? -cmp : cmp;
+    });
   }
 
   const isWeekly = gaCurrentQuotaWindow === 'weekly';
@@ -11046,9 +11128,24 @@ function renderGoogleAccountsList(accounts: any[]): void {
               <th style="width: 32px; text-align: center;">
                 <input type="checkbox" id="gaMasterCheckbox" aria-label="Select all accounts" ${filtered.length > 0 && filtered.every((a) => gaSelectedIds.has(a.id)) ? 'checked' : ''} style="cursor: pointer;" />
               </th>
-              <th style="min-width: 220px;">EMAIL / ACCOUNT</th>
-              <th style="min-width: 280px;">${quotaHeaderLabel}</th>
-              <th style="width: 170px;">LAST USED</th>
+              <th class="ga-sortable-th ${gaSortColumn === 'name' ? `is-sorted ${gaSortDirection}` : ''}" data-sort="name" style="min-width: 220px;" title="Cliquer pour trier par Compte / Email">
+                <div style="display: inline-flex; align-items: center; gap: 6px;">
+                  <span>EMAIL / ACCOUNT</span>
+                  <span class="ga-sort-icon">${gaSortColumn === 'name' ? (gaSortDirection === 'asc' ? '▲' : '▼') : '↕'}</span>
+                </div>
+              </th>
+              <th class="ga-sortable-th ${gaSortColumn === 'quota' ? `is-sorted ${gaSortDirection}` : ''}" data-sort="quota" style="min-width: 280px;" title="Cliquer pour trier par Quota restant">
+                <div style="display: inline-flex; align-items: center; gap: 6px;">
+                  <span>${quotaHeaderLabel}</span>
+                  <span class="ga-sort-icon">${gaSortColumn === 'quota' ? (gaSortDirection === 'asc' ? '▲' : '▼') : '↕'}</span>
+                </div>
+              </th>
+              <th class="ga-sortable-th ${gaSortColumn === 'lastUsed' ? `is-sorted ${gaSortDirection}` : ''}" data-sort="lastUsed" style="width: 170px;" title="Cliquer pour trier par Dernière utilisation">
+                <div style="display: inline-flex; align-items: center; gap: 6px;">
+                  <span>LAST USED</span>
+                  <span class="ga-sort-icon">${gaSortColumn === 'lastUsed' ? (gaSortDirection === 'asc' ? '▲' : '▼') : '↕'}</span>
+                </div>
+              </th>
               <th style="width: 170px; text-align: right;">ACTIONS</th>
             </tr>
           </thead>
@@ -11081,16 +11178,23 @@ function renderGoogleAccountsList(accounts: any[]): void {
       } else if (cdGemini) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn ga-live-cd" data-until="${cdGemini.until}" data-account-id="${escapeHtml(a.id)}" style="background: rgba(245, 158, 11, 0.18); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);" title="${escapeHtml(cdGemini.details)}">${escapeHtml(cdGemini.text)}</span>`;
       } else if (cdClaude && cdClaude.isWeeklyCap) {
-        statusBadgeHtml = `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge || '⚡ Gemini 100% Prêt')}</span>`;
+        if (!isTarget) {
+          statusBadgeHtml = `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge || '⚡ Gemini 100% Prêt')}</span>`;
+        }
       } else if (cdClaude) {
-        statusBadgeHtml = `<span class="ga-badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge || '⚠️ Plafond Claude')}</span>`;
+        statusBadgeHtml = `<span class="ga-badge ga-badge-dormant" style="font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge || '⚠️ Plafond Claude')}</span>`;
       } else if (recom && recom.badge && recom.badge !== '⏳ Cooldown 429') {
-        const badgeColor = recom.type === 'warn'
-          ? 'background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);'
-          : (recom.type === 'info'
-            ? 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);'
-            : '');
-        statusBadgeHtml = `<span class="ga-badge" style="font-size: 10px; opacity: 0.9; ${badgeColor}" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge)}</span>`;
+        const isQuotaExhausted = recom.badge.includes('Quota Épuisé') || recom.badge.includes('Hebdo 0%');
+        if (isQuotaExhausted) {
+          statusBadgeHtml = `<span class="ga-badge ga-badge-dormant" style="font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge)}</span>`;
+        } else if (!isTarget || !recom.badge.includes('100%')) {
+          const badgeColor = recom.type === 'warn'
+            ? 'background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.25);'
+            : (recom.type === 'info'
+              ? 'background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25);'
+              : '');
+          statusBadgeHtml = `<span class="ga-badge" style="font-size: 10px; opacity: 0.9; ${badgeColor}" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge)}</span>`;
+        }
       }
 
       let unifiedRoleBadgeHtml = '';
@@ -11104,8 +11208,6 @@ function renderGoogleAccountsList(accounts: any[]): void {
         unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">● EN LIGNE</span>`;
       } else if (isTarget) {
         unifiedRoleBadgeHtml = `<span class="ga-badge ga-target-badge" title="Compte actuellement classé #1 en rotation pour la prochaine requête entrante">🎯 PROCHAIN P2C</span>`;
-      } else {
-        unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--standby" title="Automatic fallback standby account">○ Standby Pool</span>`;
       }
 
       html += `
@@ -11154,6 +11256,9 @@ function renderGoogleAccountsList(accounts: any[]): void {
               <button type="button" class="ga-action-btn ga-switch ${isCurrent ? 'active-switch' : ''}" title="${isCurrent ? 'Compte actif principal' : 'Activer ce compte (1-clic)'}" aria-label="Switch to ${escapeHtml(a.name || a.email)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
               </button>
+              <button type="button" class="ga-action-btn ga-refresh" title="Rafraîchir les quotas de ce compte" aria-label="Refresh quotas for ${escapeHtml(a.name || a.email)}">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
               <button type="button" class="ga-action-btn ga-details" title="Détails du compte" aria-label="Details for ${escapeHtml(a.name || a.email)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
               </button>
@@ -11166,35 +11271,42 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="12" r="2"/></svg>
                 </button>
                 <div class="ga-more-dropdown-menu">
-                  <button type="button" class="ga-action-btn ga-more-item ga-ping" title="Tester la latence (Ping direct)" aria-label="Ping ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                    <span>Ping Latence</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-refresh" title="Rafraîchir les quotas" aria-label="Refresh quotas for ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                    <span>Rafraîchir Quotas</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-warmup" title="One-click Warmup" aria-label="Warmup ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    <span>Cycle Warmup</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-toggle-enable ${isEnabled ? '' : 'is-disabled-state'}" title="${isEnabled ? 'Mettre en pause ce compte' : 'Réactiver ce compte dans le pool'}" aria-label="Toggle enable for ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-                    <span>${isEnabled ? 'Mettre en pause' : 'Réactiver'}</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-edit" title="Modifier le compte" aria-label="Edit account ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    <span>Modifier</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-toggle-tier" data-id="${escapeHtml(a.id)}" title="Basculer entre FREE et PRO" aria-label="Toggle tier for ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                    <span>${tier === 'FREE' ? 'Passer en PRO' : 'Passer en FREE'}</span>
-                  </button>
-                  <div class="ga-action-divider" style="margin: 4px 0; border-top: 1px solid var(--border);"></div>
-                  <button type="button" class="ga-action-btn ga-more-item ga-delete" title="Supprimer le compte" aria-label="Delete account ${escapeHtml(a.name || a.email)}" style="color: var(--err, #ef4444);">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-                    <span>Supprimer</span>
-                  </button>
+                  <div class="ga-menu-section">
+                    <button type="button" class="ga-action-btn ga-more-item ga-ping" title="Tester la latence (Ping direct)" aria-label="Ping ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                      <span>Ping Latence</span>
+                    </button>
+                    <button type="button" class="ga-action-btn ga-more-item ga-refresh" title="Rafraîchir les quotas" aria-label="Refresh quotas for ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                      <span>Rafraîchir Quotas</span>
+                    </button>
+                    <button type="button" class="ga-action-btn ga-more-item ga-warmup" title="One-click Warmup" aria-label="Warmup ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      <span>Cycle Warmup</span>
+                    </button>
+                  </div>
+                  <div class="ga-menu-divider"></div>
+                  <div class="ga-menu-section">
+                    <button type="button" class="ga-action-btn ga-more-item ga-toggle-enable ${isEnabled ? '' : 'is-disabled-state'}" title="${isEnabled ? 'Mettre en pause ce compte' : 'Réactiver ce compte dans le pool'}" aria-label="Toggle enable for ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                      <span>${isEnabled ? 'Mettre en pause' : 'Réactiver'}</span>
+                    </button>
+                    <button type="button" class="ga-action-btn ga-more-item ga-edit" title="Modifier le compte" aria-label="Edit account ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      <span>Modifier</span>
+                    </button>
+                    <button type="button" class="ga-action-btn ga-more-item ga-toggle-tier" data-id="${escapeHtml(a.id)}" title="Basculer entre FREE et PRO" aria-label="Toggle tier for ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                      <span>${tier === 'FREE' ? 'Passer en PRO' : 'Passer en FREE'}</span>
+                    </button>
+                  </div>
+                  <div class="ga-menu-divider"></div>
+                  <div class="ga-menu-section ga-menu-section--danger">
+                    <button type="button" class="ga-action-btn ga-more-item ga-delete" title="Supprimer le compte" aria-label="Delete account ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                      <span>Supprimer</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -11235,16 +11347,23 @@ function renderGoogleAccountsList(accounts: any[]): void {
       } else if (cdGemini) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn ga-live-cd" data-until="${cdGemini.until}" data-account-id="${escapeHtml(a.id)}" style="background: rgba(245, 158, 11, 0.18); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);" title="${escapeHtml(cdGemini.details)}">${escapeHtml(cdGemini.text)}</span>`;
       } else if (cdClaude && cdClaude.isWeeklyCap) {
-        statusBadgeHtml = `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge || '⚡ Gemini 100% Prêt')}</span>`;
+        if (!isTarget) {
+          statusBadgeHtml = `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge || '⚡ Gemini 100% Prêt')}</span>`;
+        }
       } else if (cdClaude) {
-        statusBadgeHtml = `<span class="ga-badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge || '⚠️ Plafond Claude')}</span>`;
+        statusBadgeHtml = `<span class="ga-badge ga-badge-dormant" style="font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge || '⚠️ Plafond Claude')}</span>`;
       } else if (recom && recom.badge && recom.badge !== '⏳ Cooldown 429') {
-        const badgeColor = recom.type === 'warn'
-          ? 'background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);'
-          : (recom.type === 'info'
-            ? 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);'
-            : '');
-        statusBadgeHtml = `<span class="ga-badge" style="font-size: 10px; opacity: 0.9; ${badgeColor}" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge)}</span>`;
+        const isQuotaExhausted = recom.badge.includes('Quota Épuisé') || recom.badge.includes('Hebdo 0%');
+        if (isQuotaExhausted) {
+          statusBadgeHtml = `<span class="ga-badge ga-badge-dormant" style="font-size: 10px;" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge)}</span>`;
+        } else if (!isTarget || !recom.badge.includes('100%')) {
+          const badgeColor = recom.type === 'warn'
+            ? 'background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.25);'
+            : (recom.type === 'info'
+              ? 'background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25);'
+              : '');
+          statusBadgeHtml = `<span class="ga-badge" style="font-size: 10px; opacity: 0.9; ${badgeColor}" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge)}</span>`;
+        }
       }
 
       let unifiedRoleBadgeHtml = '';
@@ -11258,8 +11377,6 @@ function renderGoogleAccountsList(accounts: any[]): void {
         unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">● EN LIGNE</span>`;
       } else if (isTarget) {
         unifiedRoleBadgeHtml = `<span class="ga-badge ga-target-badge" title="Compte actuellement classé #1 en rotation pour la prochaine requête entrante">🎯 PROCHAIN P2C</span>`;
-      } else {
-        unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--standby" title="Automatic fallback standby account">○ Standby Pool</span>`;
       }
 
       html += `
@@ -11302,35 +11419,42 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="12" r="2"/></svg>
                 </button>
                 <div class="ga-more-dropdown-menu">
-                  <button type="button" class="ga-action-btn ga-more-item ga-ping" title="Tester la latence (Ping direct)" aria-label="Ping ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                    <span>Ping Latence</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-refresh" title="Rafraîchir les quotas" aria-label="Refresh quotas for ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                    <span>Rafraîchir Quotas</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-warmup" title="One-click Warmup" aria-label="Warmup ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    <span>Cycle Warmup</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-toggle-enable ${isEnabled ? '' : 'is-disabled-state'}" title="${isEnabled ? 'Mettre en pause ce compte' : 'Réactiver ce compte dans le pool'}" aria-label="Toggle enable for ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-                    <span>${isEnabled ? 'Mettre en pause' : 'Réactiver'}</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-toggle-tier" data-id="${escapeHtml(a.id)}" title="Basculer entre FREE et PRO" aria-label="Toggle tier for ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                    <span>${tier === 'FREE' ? 'Passer en PRO' : 'Passer en FREE'}</span>
-                  </button>
-                  <button type="button" class="ga-action-btn ga-more-item ga-edit" title="Modifier le compte" aria-label="Edit account ${escapeHtml(a.name || a.email)}">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    <span>Modifier</span>
-                  </button>
-                  <div class="ga-action-divider" style="margin: 4px 0; border-top: 1px solid var(--border);"></div>
-                  <button type="button" class="ga-action-btn ga-more-item ga-delete" title="Supprimer le compte" aria-label="Delete account ${escapeHtml(a.name || a.email)}" style="color: var(--err, #ef4444);">
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-                    <span>Supprimer</span>
-                  </button>
+                  <div class="ga-menu-section">
+                    <button type="button" class="ga-action-btn ga-more-item ga-ping" title="Tester la latence (Ping direct)" aria-label="Ping ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                      <span>Ping Latence</span>
+                    </button>
+                    <button type="button" class="ga-action-btn ga-more-item ga-refresh" title="Rafraîchir les quotas" aria-label="Refresh quotas for ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                      <span>Rafraîchir Quotas</span>
+                    </button>
+                    <button type="button" class="ga-action-btn ga-more-item ga-warmup" title="One-click Warmup" aria-label="Warmup ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      <span>Cycle Warmup</span>
+                    </button>
+                  </div>
+                  <div class="ga-menu-divider"></div>
+                  <div class="ga-menu-section">
+                    <button type="button" class="ga-action-btn ga-more-item ga-toggle-enable ${isEnabled ? '' : 'is-disabled-state'}" title="${isEnabled ? 'Mettre en pause ce compte' : 'Réactiver ce compte dans le pool'}" aria-label="Toggle enable for ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                      <span>${isEnabled ? 'Mettre en pause' : 'Réactiver'}</span>
+                    </button>
+                    <button type="button" class="ga-action-btn ga-more-item ga-edit" title="Modifier le compte" aria-label="Edit account ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      <span>Modifier</span>
+                    </button>
+                    <button type="button" class="ga-action-btn ga-more-item ga-toggle-tier" data-id="${escapeHtml(a.id)}" title="Basculer entre FREE et PRO" aria-label="Toggle tier for ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                      <span>${tier === 'FREE' ? 'Passer en PRO' : 'Passer en FREE'}</span>
+                    </button>
+                  </div>
+                  <div class="ga-menu-divider"></div>
+                  <div class="ga-menu-section ga-menu-section--danger">
+                    <button type="button" class="ga-action-btn ga-more-item ga-delete" title="Supprimer le compte" aria-label="Delete account ${escapeHtml(a.name || a.email)}">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                      <span>Supprimer</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

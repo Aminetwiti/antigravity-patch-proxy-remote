@@ -615,20 +615,7 @@
             <p class="subtitle">Add multiple Google accounts, fetch models per account, and use them in Antigravity without relogging.</p>
           </div>
           <div class="header-actions">
-            <button class="btn btn-ghost" id="gaTestAllBtn" type="button" aria-label="Test all Google accounts">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-              Test all
-            </button>
-            <button class="btn btn-ghost" id="gaSyncAllBtn" type="button" aria-label="Sync models for all Google accounts">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              Sync all models
-            </button>
-            <button class="btn btn-ghost" id="gaRepairCooldownsBtn" type="button" aria-label="Corriger les cooldowns et réveiller les comptes" title="Vérifier les quotas, lever les cooldowns et réveiller les comptes Google">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-              Corriger
-            </button>
-
-            <!-- Unified Connect Account Dropdown (Loi de Hick) -->
+            <!-- Unified Connect Account Dropdown (Primary CTA) -->
             <div class="ga-dropdown-wrap" id="gaAddDropdownWrap">
               <button class="btn btn-primary" id="gaAddAccountUnifiedBtn" type="button" aria-haspopup="true" aria-expanded="false" style="display: inline-flex; align-items: center; gap: 7px; font-weight: 500;">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -642,6 +629,7 @@
                     <strong>Antigravity IDE (OAuth)</strong>
                     <small>Compte Google principal de l'IDE</small>
                   </div>
+                  <span class="badge badge-accent" style="font-size: 10px; margin-left: auto;">Recommandé</span>
                 </button>
                 <button type="button" class="ga-dropdown-item" id="gaMenuGeminiCli">
                   <span class="ga-dropdown-item-badge cli">CLI</span>
@@ -649,6 +637,7 @@
                     <strong>Gemini CLI (Code Assist)</strong>
                     <small>Jeton séparé Google Cloud Code Assist</small>
                   </div>
+                  <span class="badge badge-muted" style="font-size: 10px; margin-left: auto;">Cloud Code</span>
                 </button>
                 <button type="button" class="ga-dropdown-item" id="gaMenuDiscoverIde">
                   <span class="ga-dropdown-item-badge ide">✦</span>
@@ -656,6 +645,7 @@
                     <strong>Importer depuis IDE actif</strong>
                     <small>Détection automatique de session IDE</small>
                   </div>
+                  <span class="badge badge-primary" style="font-size: 10px; margin-left: auto;">1-clic</span>
                 </button>
                 <div class="ga-dropdown-divider"></div>
                 <button type="button" class="ga-dropdown-item" id="gaMenuAiStudio">
@@ -664,10 +654,27 @@
                     <strong>Google AI Studio Key</strong>
                     <small>Clé d'API gratuite direct Gemini Studio</small>
                   </div>
+                  <span class="badge badge-muted" style="font-size: 10px; margin-left: auto;">Gratuit</span>
                 </button>
               </div>
             </div>
 
+            <button class="btn btn-ghost" id="gaTestAllBtn" type="button" aria-label="Test all Google accounts">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              Test all
+            </button>
+            <button class="btn btn-ghost" id="gaSyncAllBtn" type="button" aria-label="Sync models for all Google accounts">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Sync all models
+            </button>
+            <button class="btn btn-ghost" id="gaRepairCooldownsBtn" type="button" aria-label="Corriger les cooldowns et réveiller les comptes" title="Vérifier les quotas, lever les cooldowns et réveiller les comptes Google">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              Corriger
+            </button>
+            <button class="btn btn-ghost" id="gaDensityToggleBtn" type="button" aria-label="Basculer la densité du cockpit télémétrique" title="Basculer entre vue Essentielle (4 KPI) et vue Expert (8 KPI)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <span id="gaDensityToggleLabel">Vue Essentielle</span>
+            </button>
             <!-- Preserved IDs for backward compatibility and automated tests -->
             <button id="gaOAuthAntigravityBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
             <button id="gaDiscoverIdeBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
@@ -678,13 +685,13 @@
         </div>
         <!-- Antigravity Google Pool 8 KPI Operational Cockpit Grid -->
         <div class="ga-telemetry-grid" role="region" aria-label="Antigravity pool live quota & operational telemetry">
-          <!-- Card 1: Disponibilité Moyenne du Pool -->
-          <div class="stat-card ga-token-stat-card card-value" role="group" aria-label="Disponibilité moyenne du pool">
+          <!-- Card 1: Capacité Moyenne du Pool -->
+          <div class="stat-card ga-token-stat-card card-value stat-card--primary-hero" role="group" aria-label="Capacité moyenne du pool">
             <div class="stat-icon ok">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             </div>
             <div class="stat-body" style="min-width: 0; width: 100%;">
-              <div class="stat-label">Disponibilité Pool</div>
+              <div class="stat-label">Capacité Moyenne</div>
               <div class="stat-value" id="gaStatPoolValue" role="status" aria-live="polite">100%</div>
               <div class="stat-sub" id="gaStatPoolValueSub" title="Comptes actifs en rotation">Calcul de la disponibilité...</div>
             </div>
@@ -787,7 +794,7 @@
                 <!-- Search email... -->
                 <div class="ga-search-box">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                  <input type="text" id="gaSearchInput" placeholder="Search email..." aria-label="Search accounts">
+                  <input type="text" id="gaSearchInput" placeholder="Rechercher compte / email..." aria-label="Rechercher un compte Google">
                 </div>
 
                 <!-- 5H / Weekly toggle -->
@@ -813,15 +820,18 @@
                 <!-- Filter chips: All, Status, Tiers -->
                 <div style="display: inline-flex; gap: 4px; flex-wrap: wrap;" id="gaFilterGroup">
                   <button type="button" class="ga-chip active" data-filter="all">
-                    All <span class="ga-chip-cnt" id="gaCntAll">0</span>
+                    Tous <span class="ga-chip-cnt" id="gaCntAll">0</span>
                   </button>
                   <button type="button" class="ga-chip" data-filter="status:ready" style="border-color: rgba(16, 185, 129, 0.35); color: #10b981;">
                     🟢 Prêts <span class="ga-chip-cnt" id="gaCntReady">0</span>
                   </button>
-                  <button type="button" class="ga-chip" data-filter="status:cooldown" style="border-color: rgba(245, 158, 11, 0.35); color: #f59e0b;">
+                  <button type="button" class="ga-chip" data-filter="status:exhausted" style="border-color: rgba(245, 158, 11, 0.35); color: #f59e0b;">
+                    ⚠️ Cap Épuisé <span class="ga-chip-cnt" id="gaCntExhausted">0</span>
+                  </button>
+                  <button type="button" class="ga-chip" data-filter="status:cooldown" style="border-color: rgba(239, 68, 68, 0.35); color: #ef4444;">
                     ⏳ Cooldown <span class="ga-chip-cnt" id="gaCntCooldown">0</span>
                   </button>
-                  <button type="button" class="ga-chip" data-filter="status:paused" style="border-color: rgba(239, 68, 68, 0.35); color: #ef4444;">
+                  <button type="button" class="ga-chip" data-filter="status:paused" style="border-color: rgba(100, 116, 139, 0.35); color: #94a3b8;">
                     ⏸ En Pause <span class="ga-chip-cnt" id="gaCntPaused">0</span>
                   </button>
                   <div style="width: 1px; height: 14px; background: var(--border); margin: 3px 1px; align-self: center;"></div>
@@ -843,28 +853,24 @@
                   +
                 </button>
                 <button type="button" class="btn btn-primary" id="gaToolbarRefreshAllBtn" style="background: var(--accent-blue, #2563eb); color: #fff; padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px;">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Refresh All
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Actualiser tout
                 </button>
-                <button type="button" class="btn" id="gaToolbarWarmupBtn" title="Préchauffer un compte avec une requête minimale" style="background: rgba(234, 88, 12, 0.12); color: #f97316; border: 1px solid rgba(234, 88, 12, 0.3); padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarWarmupBtn" title="Préchauffer un compte avec une requête minimale">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> One-click Warmup
                 </button>
-                <button type="button" class="btn btn-ghost" id="gaToolbarWakeAllBtn" title="Lever tous les cooldowns et réveiller tous les comptes" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 5px 11px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarWakeAllBtn" title="Lever tous les cooldowns et réveiller tous les comptes">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Lever Cooldowns
                 </button>
                 <div style="width: 1px; height: 18px; background: var(--border); margin: 0 4px;"></div>
-                <button type="button" class="btn btn-ghost" id="gaToolbarPurgeCacheBtn" title="Purger le cache disque des quotas et réinitialiser tous les cooldowns" style="background: rgba(239, 68, 68, 0.08); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); padding: 5px 11px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                <button type="button" class="btn btn-secondary ga-toolbar-action ga-toolbar-action--danger" id="gaToolbarPurgeCacheBtn" title="Purger le cache disque des quotas et réinitialiser tous les cooldowns">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Purger Cache
                 </button>
-                <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-2); cursor: pointer; user-select: none; margin-left: 4px;">
-                  <span>Show All Quotas</span>
-                  <input type="checkbox" id="gaShowAllQuotasSwitch" aria-label="Show All Quotas (5-Hour & Weekly)" style="cursor: pointer;" checked />
-                </label>
                 <div style="width: 1px; height: 16px; background: var(--border); margin: 0 2px;"></div>
                 <button type="button" class="btn btn-ghost btn-sm" id="gaImportJsonBtn" title="Import Accounts JSON" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
-                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Importer
                 </button>
                 <button type="button" class="btn btn-ghost btn-sm" id="gaExportJsonBtn" title="Export Accounts JSON" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
-                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporter
                 </button>
                 <input type="file" id="gaImportFileInput" accept=".json" aria-label="Import accounts JSON file" style="display: none;" />
               </div>
@@ -2033,6 +2039,7 @@
               <small id="gaFormKeyHelper" class="form-hint" style="margin-top: 4px; display: block;">
                 Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" id="gaOpenAiStudioLink" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.
               </small>
+              <div id="gaKeyValidationBadge" style="margin-top: 6px; font-size: 11px; display: none;"></div>
             </label>
           </div>
 
