@@ -845,18 +845,19 @@
                 <button type="button" class="btn btn-primary" id="gaToolbarRefreshAllBtn" style="background: var(--accent-blue, #2563eb); color: #fff; padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px;">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Refresh All
                 </button>
-                <button type="button" class="btn" id="gaToolbarWarmupBtn" style="background: var(--warn-orange, #ea580c); color: #fff; padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; border: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                <button type="button" class="btn" id="gaToolbarWarmupBtn" title="Préchauffer un compte avec une requête minimale" style="background: rgba(234, 88, 12, 0.12); color: #f97316; border: 1px solid rgba(234, 88, 12, 0.3); padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> One-click Warmup
                 </button>
-                <button type="button" class="btn btn-ghost" id="gaToolbarWakeAllBtn" title="Lever tous les cooldowns et réveiller tous les comptes" style="padding: 5px 11px; font-size: 11.5px; font-weight: 600; border-radius: 7px; border: 1px solid rgba(16, 185, 129, 0.35); color: #10b981; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                <button type="button" class="btn btn-ghost" id="gaToolbarWakeAllBtn" title="Lever tous les cooldowns et réveiller tous les comptes" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 5px 11px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Lever Cooldowns
                 </button>
-                <button type="button" class="btn btn-ghost" id="gaToolbarPurgeCacheBtn" title="Purger le cache disque des quotas et réinitialiser tous les cooldowns" style="padding: 5px 11px; font-size: 11.5px; font-weight: 600; border-radius: 7px; border: 1px solid rgba(239, 68, 68, 0.35); color: #ef4444; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                <div style="width: 1px; height: 18px; background: var(--border); margin: 0 4px;"></div>
+                <button type="button" class="btn btn-ghost" id="gaToolbarPurgeCacheBtn" title="Purger le cache disque des quotas et réinitialiser tous les cooldowns" style="background: rgba(239, 68, 68, 0.08); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); padding: 5px 11px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Purger Cache
                 </button>
                 <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-2); cursor: pointer; user-select: none; margin-left: 4px;">
                   <span>Show All Quotas</span>
-                  <input type="checkbox" id="gaShowAllQuotasSwitch" aria-label="Show All Quotas (5-Hour & Weekly)" style="cursor: pointer;" />
+                  <input type="checkbox" id="gaShowAllQuotasSwitch" aria-label="Show All Quotas (5-Hour & Weekly)" style="cursor: pointer;" checked />
                 </label>
                 <div style="width: 1px; height: 16px; background: var(--border); margin: 0 2px;"></div>
                 <button type="button" class="btn btn-ghost btn-sm" id="gaImportJsonBtn" title="Import Accounts JSON" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">

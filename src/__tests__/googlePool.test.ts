@@ -498,11 +498,17 @@ describe('Burst Rate Limit Governor & Constants', () => {
   });
 
   it('verifies GOOGLE_POOL_HEADER_TIMEOUT_MS defaults to 35s', () => {
-    expect(GOOGLE_POOL_HEADER_TIMEOUT_MS).toBe(35_000);
+    const expected = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_MS
+      ? parseInt(process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_MS, 10)
+      : 35_000;
+    expect(GOOGLE_POOL_HEADER_TIMEOUT_MS).toBe(expected);
   });
 
   it('verifies GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS defaults to 25s', () => {
-    expect(GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS).toBe(25_000);
+    const expected = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS
+      ? parseInt(process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, 10)
+      : 25_000;
+    expect(GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS).toBe(expected);
   });
 
   it('verifies P2C_SCORE_DELTA defaults to 45 points', () => {

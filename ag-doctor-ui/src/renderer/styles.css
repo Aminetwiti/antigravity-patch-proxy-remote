@@ -3841,10 +3841,11 @@ body {
   cursor: pointer;
   user-select: none;
   transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
 }
 .ga-tier-badge:hover {
   transform: translateY(-1px) scale(1.05);
-  border-color: rgba(56, 189, 248, 0.6) !important;
+  border: 1px dashed var(--accent-blue-bright, #38bdf8) !important;
   box-shadow: 0 2px 8px rgba(56, 189, 248, 0.25);
   filter: brightness(1.15);
 }
@@ -3856,6 +3857,8 @@ body {
 .ga-row-actions-group .ga-action-btn {
   min-width: 28px;
   min-height: 28px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3939,11 +3942,14 @@ body {
 .ga-health-seg.ready {
   background: #10b981;
 }
-.ga-health-seg.cooldown {
+.ga-health-seg.exhausted {
   background: #f59e0b;
 }
-.ga-health-seg.paused {
+.ga-health-seg.cooldown {
   background: #ef4444;
+}
+.ga-health-seg.paused {
+  background: #64748b;
 }
 .ga-health-legend {
   display: flex;
@@ -3966,7 +3972,15 @@ body {
   display: inline-block;
 }
 
-/* 🎯 Next-in-Line Target Radar Badge */
+/* 🎯 Next-in-Line Target Radar Visual Anchor & Badge */
+.ga-table tbody tr.is-target {
+  border-left: 3px solid #38bdf8 !important;
+  background: rgba(14, 165, 233, 0.04) !important;
+}
+.agy-provider-row.is-target {
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.5) !important;
+}
 .ga-target-badge {
   background: rgba(14, 165, 233, 0.18) !important;
   color: #38bdf8 !important;
@@ -4314,7 +4328,7 @@ body {
 .ga-row-actions-group {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
 }
 .ga-more-dropdown-wrap {
   position: relative;
@@ -4342,6 +4356,13 @@ body {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(12px);
   animation: ga-menu-pop 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ga-more-dropdown-menu.drop-up {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 4px;
+  transform-origin: bottom right;
 }
 .ga-more-dropdown-wrap.open .ga-more-dropdown-menu {
   display: block;

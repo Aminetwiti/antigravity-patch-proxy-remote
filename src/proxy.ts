@@ -1931,12 +1931,12 @@ export async function executeGoogleCloudCodeWithPool(
         : GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS,
     );
     const baseCandidateTimeout = isStreamReq
-      ? (isFlashModel ? flashTimeoutMs : (isLargePayloadOrThinking ? Math.min(35_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS) : Math.min(30_000, GOOGLE_POOL_HEADER_TIMEOUT_MS)))
+      ? (isFlashModel ? flashTimeoutMs : (isLargePayloadOrThinking ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : GOOGLE_POOL_HEADER_TIMEOUT_MS))
       : (isFlashModel ? GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS : (isLargePayloadOrThinking ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : GOOGLE_POOL_HEADER_TIMEOUT_MS));
-    // When no other candidates exist, cap Flash models to 35s instead of stalling for full 60s.
+    // When no other candidates exist, fallback to the full proxy timeout.
     const poolHeaderTimeout = hasOtherCandidates
       ? baseCandidateTimeout
-      : (isFlashModel ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_PROXY_TIMEOUT_MS);
+      : GOOGLE_PROXY_TIMEOUT_MS;
     let outcome: GoogleRequestOutcome;
     try {
       outcome = await executeGoogleCloudCodeRequest(

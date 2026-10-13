@@ -1,5 +1,27 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+
+// Load environment configuration from .env files
+function loadEnv(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      for (const line of content.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const k = trimmed.slice(0, eqIdx).trim();
+          const v = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+          if (!process.env[k]) process.env[k] = v;
+        }
+      }
+    }
+  } catch (_) {}
+}
+loadEnv(path.join(__dirname, '..', '..', '..', '.env'));
+loadEnv(path.join(os.homedir(), '.gemini', 'antigravity', '.env'));
 
 // Prefer the freshly built proxy in this repo's dist/ — the copy bundled
 // inside a (possibly stale/legacy) app.asar is only a fallback.

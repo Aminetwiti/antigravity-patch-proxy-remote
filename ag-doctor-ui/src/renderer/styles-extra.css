@@ -400,6 +400,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-lg, 10px);
   background: var(--bg-0);
+  min-height: 120px;
 }
 .ga-table {
   width: 100%;

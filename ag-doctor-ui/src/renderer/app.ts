@@ -8046,7 +8046,14 @@ let gaCurrentQuotaWindow: '5h' | 'weekly' = 'weekly';
 let gaCurrentViewMode: 'list' | 'grid' = 'list';
 let gaCurrentFilter: 'all' | 'pro' | 'ultra' | 'free' | 'status:ready' | 'status:cooldown' | 'status:paused' = 'all';
 let gaSearchQuery: string = '';
-let gaShowAllQuotas: boolean = false;
+let gaShowAllQuotas: boolean = (() => {
+  try {
+    const saved = localStorage.getItem('ag_ga_show_all_quotas');
+    return saved !== null ? saved === 'true' : true;
+  } catch {
+    return true;
+  }
+})();
 let gaSelectedIds: Set<string> = new Set();
 let gaToolbarInitialized: boolean = false;
 let gaActiveCooldownsCache: Record<string, { until: number; remainingMs: number; remainingMin: number; remainingHours: string }> = {};
@@ -8158,18 +8165,33 @@ function formatCompactCountdown(isoDateStr?: string): string {
 }
 
 function formatLastUsed(ts?: number | string): string {
-  if (!ts) return 'Never';
+  if (!ts) return '<span style="color: var(--text-3);">Jamais</span>';
   const d = new Date(ts);
-  if (isNaN(d.getTime())) return 'Never';
-  return d.toLocaleString(undefined, {
+  const time = d.getTime();
+  if (isNaN(time)) return '<span style="color: var(--text-3);">Jamais</span>';
+  const full = d.toLocaleString(undefined, {
     month: 'numeric',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
-    hour12: true,
   });
+  const diffSec = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  let rel = '';
+  if (diffSec < 60) {
+    rel = "À l'instant";
+  } else if (diffSec < 3600) {
+    const mins = Math.floor(diffSec / 60);
+    rel = `Il y a ${mins}m`;
+  } else if (diffSec < 86400) {
+    const hrs = Math.floor(diffSec / 3600);
+    rel = `Il y a ${hrs}h`;
+  } else {
+    const days = Math.floor(diffSec / 86400);
+    rel = `Il y a ${days}j`;
+  }
+  return `<span title="${escapeHtml(full)}" style="cursor: help;">${escapeHtml(rel)}</span>`;
 }
 
 function getQuotaColor(pct: number): string {
@@ -9141,8 +9163,12 @@ function initGoogleAccountsToolbarOnce(): void {
 
   const showAllSwitch = $('#gaShowAllQuotasSwitch') as HTMLInputElement | null;
   if (showAllSwitch) {
+    showAllSwitch.checked = gaShowAllQuotas;
     showAllSwitch.addEventListener('change', () => {
       gaShowAllQuotas = showAllSwitch.checked;
+      try {
+        localStorage.setItem('ag_ga_show_all_quotas', gaShowAllQuotas ? 'true' : 'false');
+      } catch {}
       renderGoogleAccountsList(googleAccountsCache);
     });
   }
@@ -9283,6 +9309,15 @@ function initGoogleAccountsToolbarOnce(): void {
         document.querySelectorAll('.ga-more-dropdown-wrap.open').forEach((w) => w.classList.remove('open'));
         if (!isOpen && wrap) {
           wrap.classList.add('open');
+          const menu = wrap.querySelector('.ga-more-dropdown-menu') as HTMLElement | null;
+          if (menu) {
+            const rect = menu.getBoundingClientRect();
+            if (rect.bottom > window.innerHeight - 24) {
+              menu.classList.add('drop-up');
+            } else {
+              menu.classList.remove('drop-up');
+            }
+          }
         }
         return;
       }
@@ -10565,10 +10600,16 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
     return diff > 0 && diff <= 5.5 * 3600 * 1000;
   };
 
-  const gemini5hReset = (gemini5hPct < 100 && is5hWindowReset(rawGemini5hReset)) ? formatCompactCountdown(rawGemini5hReset) : '';
-  const geminiWkReset = formatCompactCountdown(rawGeminiWkReset);
-  const claude5hReset = (claude5hPct < 100 && is5hWindowReset(rawClaude5hReset)) ? formatCompactCountdown(rawClaude5hReset) : '';
-  const claudeWkReset = formatCompactCountdown(rawClaudeWkReset);
+  const formatCd = (raw?: string, cond = true) => {
+    if (!cond || !raw) return '';
+    const s = formatCompactCountdown(raw);
+    return s ? `⏳ ${s}` : '';
+  };
+
+  const gemini5hReset = formatCd(rawGemini5hReset, gemini5hPct < 100 && is5hWindowReset(rawGemini5hReset));
+  const geminiWkReset = formatCd(rawGeminiWkReset);
+  const claude5hReset = formatCd(rawClaude5hReset, claude5hPct < 100 && is5hWindowReset(rawClaude5hReset));
+  const claudeWkReset = formatCd(rawClaudeWkReset);
 
   if (showAll) {
     const gemini5hToks = est.geminiAvailable5h;
@@ -10728,6 +10769,7 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
   let geminiReady = 0;
   let claudeReady = 0;
   let geminiCooldown = 0;
+  let geminiExhausted = 0;
   let claudeWeeklyCap = 0;
   let claudeCooldown = 0;
   let paused = 0;
@@ -10746,8 +10788,10 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
     const eff = getAccountEffectiveQuotas(a);
     const gCd = getAccountActiveCooldown(a, 'gemini');
     const cCd = getAccountActiveCooldown(a, 'claude');
-    if (gCd || eff.gemini5hPct <= 0) {
+    if (gCd) {
       geminiCooldown++;
+    } else if (eff.gemini5hPct <= 0) {
+      geminiExhausted++;
     } else {
       geminiReady++;
     }
@@ -10796,8 +10840,9 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
     : { icon: '🟢', text: 'Pool opérationnel.' };
 
   const readyPct = total > 0 ? Math.round((geminiReady / total) * 100) : 0;
+  const exhPct = total > 0 ? Math.round((geminiExhausted / total) * 100) : 0;
   const cdPct = total > 0 ? Math.round((geminiCooldown / total) * 100) : 0;
-  const pausedPct = total > 0 ? Math.max(0, 100 - readyPct - cdPct) : 0;
+  const pausedPct = total > 0 ? Math.max(0, 100 - readyPct - exhPct - cdPct) : 0;
 
   container.innerHTML = `
     <div class="ga-pool-kpi-bar">
@@ -10832,15 +10877,17 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
 
       <!-- Fleet Proportion Bar (Miller's Law Chunking) -->
       <div class="ga-health-bar-section">
-        <div class="ga-health-proportion-bar" title="${geminiReady} prêts (${readyPct}%), ${geminiCooldown} cooldown (${cdPct}%), ${paused} en pause (${pausedPct}%)">
+        <div class="ga-health-proportion-bar" title="${geminiReady} prêts (${readyPct}%), ${geminiExhausted} quota épuisé (${exhPct}%), ${geminiCooldown} cooldown (${cdPct}%), ${paused} en pause (${pausedPct}%)">
           <div class="ga-health-seg ready" style="width: ${readyPct}%;"></div>
+          <div class="ga-health-seg exhausted" style="width: ${exhPct}%;"></div>
           <div class="ga-health-seg cooldown" style="width: ${cdPct}%;"></div>
           <div class="ga-health-seg paused" style="width: ${pausedPct}%;"></div>
         </div>
         <div class="ga-health-legend">
           <span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #10b981;"></span> <strong>${geminiReady}</strong> Prêts (${readyPct}%)</span>
-          <span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #f59e0b;"></span> <strong>${geminiCooldown}</strong> Cooldown (${cdPct}%)</span>
-          ${paused > 0 ? `<span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #ef4444;"></span> <strong>${paused}</strong> En Pause (${pausedPct}%)</span>` : ''}
+          ${geminiExhausted > 0 ? `<span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #f59e0b;"></span> <strong>${geminiExhausted}</strong> Cap Épuisé (${exhPct}%)</span>` : ''}
+          ${geminiCooldown > 0 ? `<span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #ef4444;"></span> <strong>${geminiCooldown}</strong> Cooldown 429 (${cdPct}%)</span>` : ''}
+          ${paused > 0 ? `<span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #64748b;"></span> <strong>${paused}</strong> En Pause (${pausedPct}%)</span>` : ''}
           ${claudeWeeklyCap > 0 ? `<span class="ga-health-legend-item" style="color: var(--text-3); font-size: 11px;">(${claudeWeeklyCap} comptes avec plafond Claude redirigés sur Gemini)</span>` : ''}
         </div>
       </div>
@@ -10987,6 +11034,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
 
   const isWeekly = gaCurrentQuotaWindow === 'weekly';
   const quotaHeaderLabel = gaShowAllQuotas ? 'ALL QUOTAS (5H & WEEKLY)' : (isWeekly ? 'WEEKLY QUOTA' : '5H QUOTA');
+  const topCandidate = getTopRotationCandidate(accounts);
 
   let html = '';
   if (gaCurrentViewMode === 'list') {
@@ -11006,8 +11054,6 @@ function renderGoogleAccountsList(accounts: any[]): void {
           </thead>
           <tbody>
     `;
-
-    const topCandidate = getTopRotationCandidate(accounts);
 
     for (const a of filtered) {
       const isStudio = isAiStudioAccount(a);
@@ -11029,7 +11075,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
       let statusBadgeHtml = '';
       const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
       if (!isEnabled) {
-        statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">⏸ DÉSACTIVÉ</span>`;
+        statusBadgeHtml = `<span class="ga-badge ga-badge-paused" style="background: rgba(148, 163, 184, 0.14); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25);" title="Compte mis en pause (temporairement exclu de la rotation)">⏸ PAUSE</span>`;
       } else if (isUnlicensed) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);" title="Compte sans licence Antigravity active (HTTP 403 Subscription Required)">🚫 SANS LICENCE</span>`;
       } else if (cdGemini) {
@@ -11047,8 +11093,23 @@ function renderGoogleAccountsList(accounts: any[]): void {
         statusBadgeHtml = `<span class="ga-badge" style="font-size: 10px; opacity: 0.9; ${badgeColor}" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge)}</span>`;
       }
 
-        html += `
-        <tr class="${isCurrent ? 'is-current' : ''} ${!isEnabled ? 'is-disabled' : ''}" data-id="${escapeHtml(a.id)}" style="${!isEnabled ? 'opacity: 0.65; background: rgba(0,0,0,0.15);' : ''}">
+      let unifiedRoleBadgeHtml = '';
+      if (isStudio) {
+        unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--studio" title="Google AI Studio Developer API Key">● Active Studio</span>`;
+      } else if (isCli) {
+        unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>`;
+      } else if (isCurrent && isTarget) {
+        unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif & classé #1 en rotation P2C">● EN LIGNE (P2C #1)</span>`;
+      } else if (isCurrent) {
+        unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">● EN LIGNE</span>`;
+      } else if (isTarget) {
+        unifiedRoleBadgeHtml = `<span class="ga-badge ga-target-badge" title="Compte actuellement classé #1 en rotation pour la prochaine requête entrante">🎯 PROCHAIN P2C</span>`;
+      } else {
+        unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--standby" title="Automatic fallback standby account">○ Standby Pool</span>`;
+      }
+
+      html += `
+        <tr class="${isCurrent ? 'is-current' : ''} ${isTarget ? 'is-target' : ''} ${!isEnabled ? 'is-disabled' : ''}" data-id="${escapeHtml(a.id)}" style="${!isEnabled ? 'opacity: 0.65; background: rgba(0,0,0,0.15);' : ''}">
           <td style="text-align: center;">
             <input type="checkbox" class="ga-row-cb" data-id="${escapeHtml(a.id)}" aria-label="Select account ${escapeHtml(a.name || a.email)}" ${isSelected ? 'checked' : ''} style="cursor: pointer;" />
           </td>
@@ -11065,23 +11126,19 @@ function renderGoogleAccountsList(accounts: any[]): void {
               <div style="min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                   <span style="font-weight: 600; font-size: 12.5px; color: var(--text-0);">${escapeHtml(a.email || (isStudio ? (a.name || 'Google AI Studio Key') : (a.name === 'google' ? 'Google API Key (Default)' : (a.name || a.id))))}</span>
-                  ${isTarget ? `<span class="ga-badge ga-target-badge" title="Compte actuellement classé #1 en rotation pour la prochaine requête entrante">🎯 PROCHAIN P2C</span>` : ''}
+                  ${unifiedRoleBadgeHtml}
                   ${statusBadgeHtml}
                   ${typeof a.lastLatencyMs === 'number' ? `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-family: var(--font-mono); font-size: 10px;" title="Dernière latence mesurée">⚡ ${a.lastLatencyMs}ms</span>` : ''}
-                  ${isStudio ? `<span class="pool-role-badge pool-role-badge--studio" title="Google AI Studio Developer API Key">● Active Studio</span>` : (isCli ? `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>` : (isCurrent ? `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">EN LIGNE</span><span class="pool-role-badge pool-role-badge--primary" title="Active account for Antigravity requests">● Active Pool</span>` : `<span class="pool-role-badge pool-role-badge--standby" title="Automatic fallback standby account">○ Standby Pool</span>`))}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()} ga-tier-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Cliquer pour basculer (FREE ↔ PRO)">${tierIcon} ${tier}</span>
                   ${(a.quotas?.creditAmount || a.creditAmount) ? `<span class="ga-badge ga-badge-credits">🪙 ${a.quotas?.creditAmount || a.creditAmount} credits</span>` : ''}
                 </div>
                 ${a.email && a.name && a.email !== a.name
-                  ? `<div style="font-size: 11px; color: var(--text-2);">${escapeHtml(a.name)}</div>`
+                  ? `<div style="font-size: 11px; color: var(--text-4);">${escapeHtml(a.name)}</div>`
                   : (isStudio
                     ? `<div style="font-size: 11px; color: #10b981;">Google AI Studio · API Key (${escapeHtml(maskKeyPreview(a.apiKey))})</div>`
-                    : (!a.email ? `<div style="font-size: 11px; color: var(--text-2); font-style: italic;">Provider Configuration</div>` : ''))}
-                <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px;">
-                  ${dedupModels.slice(0, 5).map((m) => {
-                    const isEn = m.enabled !== false;
-                    return `<span style="font-size: 9.5px; padding: 1px 5px; border-radius: 3px; background: ${isEn ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.05)'}; color: ${isEn ? '#60a5fa' : 'var(--text-3)'}; border: 1px solid ${isEn ? 'rgba(59,130,246,0.2)' : 'transparent'}; font-family: var(--font-mono);">${escapeHtml(m.displayName)}</span>`;
-                  }).join('') + (dedupModels.length > 5 ? `<span style="font-size: 9.5px; color: var(--text-3); padding: 1px 4px;">+${dedupModels.length - 5} more</span>` : '')}
+                    : (!a.email ? `<div style="font-size: 11px; color: var(--text-4); font-style: italic;">Provider Configuration</div>` : ''))}
+                <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                  <span class="ga-models-pill" style="font-size: 9.5px; padding: 1.5px 6px; border-radius: 4px; background: rgba(59, 130, 246, 0.08); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); font-family: var(--font-mono);" title="${dedupModels.map((m) => m.displayName).join(', ')}">🤖 ${dedupModels.length} modèle${dedupModels.length > 1 ? 's' : ''}</span>
                 </div>
               </div>
             </div>
@@ -11160,6 +11217,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
       const tierIcon = isStudio ? '⚡' : (isCli ? '🖥️' : (tier === 'PARTAGE' ? '👥' : (tier === 'ULTRA' ? '💎' : (tier === 'PRO' ? '◆' : '⬡'))));
       const quotas = a.quotas;
       const isCurrent = Boolean(a.isCurrent);
+      const isTarget = Boolean(topCandidate && topCandidate.id === a.id);
 
       const cdGemini = getAccountActiveCooldown(a, 'gemini');
       const cdClaude = getAccountActiveCooldown(a, 'claude');
@@ -11171,7 +11229,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
       let statusBadgeHtml = '';
       const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
       if (!isEnabled) {
-        statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">⏸ PAUSE</span>`;
+        statusBadgeHtml = `<span class="ga-badge ga-badge-paused" style="background: rgba(148, 163, 184, 0.14); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25);" title="Compte mis en pause (temporairement exclu de la rotation)">⏸ PAUSE</span>`;
       } else if (isUnlicensed) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);" title="Compte sans licence Antigravity active (HTTP 403 Subscription Required)">🚫 SANS LICENCE</span>`;
       } else if (cdGemini) {
@@ -11189,8 +11247,23 @@ function renderGoogleAccountsList(accounts: any[]): void {
         statusBadgeHtml = `<span class="ga-badge" style="font-size: 10px; opacity: 0.9; ${badgeColor}" title="${escapeHtml(recom.text)}">${escapeHtml(recom.badge)}</span>`;
       }
 
+      let unifiedRoleBadgeHtml = '';
+      if (isStudio) {
+        unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--studio" title="Google AI Studio Developer API Key">● Active Studio</span>`;
+      } else if (isCli) {
+        unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>`;
+      } else if (isCurrent && isTarget) {
+        unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif & classé #1 en rotation P2C">● EN LIGNE (P2C #1)</span>`;
+      } else if (isCurrent) {
+        unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">● EN LIGNE</span>`;
+      } else if (isTarget) {
+        unifiedRoleBadgeHtml = `<span class="ga-badge ga-target-badge" title="Compte actuellement classé #1 en rotation pour la prochaine requête entrante">🎯 PROCHAIN P2C</span>`;
+      } else {
+        unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--standby" title="Automatic fallback standby account">○ Standby Pool</span>`;
+      }
+
       html += `
-        <div class="agy-provider-row ${isCurrent ? 'is-current' : ''} ${!isEnabled ? 'is-disabled' : ''}" data-id="${escapeHtml(a.id)}" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; border-radius: var(--r-card, 10px); border: 1px solid ${isCurrent ? 'rgba(59, 130, 246, 0.4)' : (!isEnabled ? 'rgba(239, 68, 68, 0.25)' : 'var(--border)')}; background: ${!isEnabled ? 'rgba(0,0,0,0.2)' : 'var(--bg-1)'}; ${!isEnabled ? 'opacity: 0.75;' : ''}">
+        <div class="agy-provider-row ${isCurrent ? 'is-current' : ''} ${isTarget ? 'is-target' : ''} ${!isEnabled ? 'is-disabled' : ''}" data-id="${escapeHtml(a.id)}" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; border-radius: var(--r-card, 10px); border: 1px solid ${isCurrent ? 'rgba(59, 130, 246, 0.4)' : (isTarget ? 'rgba(56, 189, 248, 0.45)' : (!isEnabled ? 'rgba(148, 163, 184, 0.25)' : 'var(--border)'))}; background: ${!isEnabled ? 'rgba(0,0,0,0.2)' : 'var(--bg-1)'}; ${!isEnabled ? 'opacity: 0.75;' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
               ${a.picture
@@ -11203,14 +11276,14 @@ function renderGoogleAccountsList(accounts: any[]): void {
               }
               <div style="min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                  <strong style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(a.name)}</strong>
+                  <strong style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-0);">${escapeHtml(a.name)}</strong>
+                  ${unifiedRoleBadgeHtml}
                   ${statusBadgeHtml}
                   ${typeof a.lastLatencyMs === 'number' ? `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-family: var(--font-mono); font-size: 10px;" title="Dernière latence mesurée">⚡ ${a.lastLatencyMs}ms</span>` : ''}
-                  ${isStudio ? `<span class="pool-role-badge pool-role-badge--studio" title="Google AI Studio Developer API Key">● Active Studio</span>` : (isCli ? `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>` : (isCurrent ? `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">EN LIGNE</span><span class="pool-role-badge pool-role-badge--primary" title="Active account for Antigravity requests">● Active Pool</span>` : `<span class="pool-role-badge pool-role-badge--standby" title="Automatic fallback standby account">○ Standby Pool</span>`))}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()} ga-tier-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Cliquer pour basculer (FREE ↔ PRO)">${tierIcon} ${tier}</span>
                   ${(a.quotas?.creditAmount || a.creditAmount) ? `<span class="ga-badge ga-badge-credits">🪙 ${a.quotas?.creditAmount || a.creditAmount} credits</span>` : ''}
                 </div>
-                <div style="font-size: 11px; color: var(--text-2);">${dedupModels.filter((m) => m.enabled !== false).length} models · ${escapeHtml(maskKeyPreview(a.apiKey))}</div>
+                <div style="font-size: 11px; color: var(--text-4); margin-top: 2px;">${dedupModels.filter((m) => m.enabled !== false).length} models · ${escapeHtml(maskKeyPreview(a.apiKey))}</div>
               </div>
             </div>
             <div class="ga-row-actions-group">
