@@ -369,6 +369,30 @@ describe('Strict Zero Fallback on Native Models', () => {
       expect(record?.originalModel).toBe('gemini-4-argon');
       expect(record?.lastError?.statusCode).toBe(404);
     });
+
+    it('protects Claude Sonnet 4.6 and other native models from automated fallback', () => {
+      const sessKey = 'sess-claude-fallback-test';
+      markNativeSession(sessKey, 'claude-sonnet-4-6');
+
+      const upstream429 = Buffer.from(JSON.stringify({
+        error: { code: 429, message: 'Resource has been exhausted (e.g. check quota).', status: 'RESOURCE_EXHAUSTED' }
+      }));
+      recordNativeSessionError(sessKey, 429, { 'content-type': 'application/json' }, upstream429, 'claude-sonnet-4-6');
+
+      const activeNative = getNativeSession(sessKey);
+      expect(activeNative).toBeDefined();
+      expect(activeNative?.originalModel).toBe('claude-sonnet-4-6');
+      expect(activeNative?.lastError?.statusCode).toBe(429);
+      expect(activeNative?.lastError?.body.toString()).toContain('RESOURCE_EXHAUSTED');
+
+      // Also records even if called without prior markNativeSession
+      const sessKey2 = 'sess-claude-no-mark';
+      recordNativeSessionError(sessKey2, 429, { 'content-type': 'application/json' }, upstream429, 'claude-sonnet-4-6');
+      const activeNative2 = getNativeSession(sessKey2);
+      expect(activeNative2).toBeDefined();
+      expect(activeNative2?.originalModel).toBe('claude-sonnet-4-6');
+      expect(activeNative2?.lastError?.statusCode).toBe(429);
+    });
   });
 
   describe('isModelOrLabelDisabled - Native Model Immunity', () => {

@@ -273,7 +273,11 @@ export function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel
           ? (accApiUrl || (p.apiUrl?.includes('generativelanguage') ? p.apiUrl : 'https://generativelanguage.googleapis.com/v1beta'))
           : (isEffectiveGeminiCli
               ? (accApiUrl || (p.apiUrl?.includes('cloudcode') ? p.apiUrl : 'https://cloudcode-pa.googleapis.com/v1internal'))
-              : (isCloudCode ? (accApiUrl || (p.apiUrl?.includes('cloudcode') ? p.apiUrl : 'https://daily-cloudcode-pa.googleapis.com')) : (accApiUrl || p.apiUrl || '')));
+              : (isCloudCode
+                  ? ((accApiUrl && !accApiUrl.includes('generativelanguage') && !accApiUrl.includes('cloudcode-pa.googleapis.com'))
+                      ? accApiUrl
+                      : (p.apiUrl?.includes('cloudcode') && !p.apiUrl.includes('cloudcode-pa.googleapis.com') ? p.apiUrl : 'https://daily-cloudcode-pa.googleapis.com'))
+                  : (accApiUrl || p.apiUrl || '')));
 
         const partialModel: CustomModel = {
           name: m.id ?? '',

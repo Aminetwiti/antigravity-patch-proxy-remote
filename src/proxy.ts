@@ -1997,7 +1997,10 @@ export async function executeGoogleCloudCodeWithPool(
     const candidateHost = candidate.apiUrl ? (() => {
       try {
         const u = new URL(candidate.apiUrl);
-        return u.hostname.includes('cloudcode') ? u.hostname : undefined;
+        const host = u.hostname;
+        if (!host || host.includes('generativelanguage')) return undefined;
+        if (!isGeminiCliModel(candidate) && host === 'cloudcode-pa.googleapis.com') return undefined;
+        return host.includes('cloudcode') ? host : undefined;
       } catch { return undefined; }
     })() : undefined;
     const hostOverride = isGeminiCliModel(candidate)
@@ -4386,7 +4389,7 @@ export function recordNativeSessionError(
     if (modelName && !rec.originalModel) {
       rec.originalModel = modelName;
     }
-  } else if (modelName && (modelName.includes('argon') || modelName.includes('gemini-4'))) {
+  } else if (modelName && isNativeCloudCodeModel(modelName)) {
     nativeSessions.set(sessionKey, {
       originalModel: modelName,
       lastSeen: Date.now(),
@@ -5846,27 +5849,33 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           );
 
           if (isNativeCloudCode) {
-            // Check if this request is an automated Language Server fallback on an Argon-failed session
+            // Check if this request is an automated Language Server fallback on a failed native session
             const activeNative = (sessionKey ? getNativeSession(sessionKey) : undefined) ||
                                  (convId ? getNativeSession(convId) : undefined) ||
                                  (sessId ? getNativeSession(sessId) : undefined);
-            const isArgonProtected = Boolean(
+            const isNativeProtected = Boolean(
               activeNative &&
               activeNative.lastError &&
               activeNative.originalModel &&
-              (activeNative.originalModel.includes('argon') || activeNative.originalModel.includes('gemini-4'))
+              isNativeCloudCodeModel(activeNative.originalModel)
             );
-            const isFallbackToDifferentModel = Boolean(
-              isArgonProtected &&
-              !cleanRequested.includes('argon') &&
-              !cleanRequested.includes('gemini-4')
+            const normOrig = isNativeProtected ? (normalizeCloudCodeModelId(activeNative!.originalModel) || activeNative!.originalModel.toLowerCase()) : '';
+            const normCurrent = normalizeCloudCodeModelId(cleanRequested) || cleanRequested.toLowerCase();
+            const isSameModel = isNativeProtected && (
+              normOrig === normCurrent ||
+              (normOrig.includes('argon') && normCurrent.includes('argon')) ||
+              (normOrig.includes('sonnet') && normCurrent.includes('sonnet')) ||
+              (normOrig.includes('opus') && normCurrent.includes('opus')) ||
+              (normOrig.includes('flash') && normCurrent.includes('flash') && !normOrig.includes('pro'))
             );
+            const isFallbackToDifferentModel = isNativeProtected && !isSameModel;
+
             if (isFallbackToDifferentModel) {
               const timeSinceNative = Date.now() - activeNative!.lastSeen;
               if (timeSinceNative < NATIVE_CASCADE_BLOCK_WINDOW_MS) {
                 activeNative!.lastSeen = Date.now();
                 log.warn(
-                  `[Proxy] ⛔ Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey}] (original model: [${activeNative!.originalModel}], within cascade window). Strict ZERO fallback rule on Argon: rejecting fallback to report original error directly.`
+                  `[Proxy] ⛔ Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey}] (original model: [${activeNative!.originalModel}], within cascade window). Strict ZERO fallback rule: rejecting fallback to report original error directly.`
                 );
                 const err = activeNative!.lastError;
                 if (err && err.body && err.body.length > 0) {
@@ -5878,17 +5887,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                   }
                   return;
                 } else {
+                  const errCode = err?.statusCode || 429;
                   const fallbackPayload = Buffer.from(
                     JSON.stringify({
                       error: {
-                        code: 429,
-                        message: `Resource has been exhausted (e.g. check quota) for model ${activeNative!.originalModel || cleanRequested}.`,
-                        status: 'RESOURCE_EXHAUSTED',
+                        code: errCode,
+                        message: errCode === 404
+                          ? `Model ${activeNative!.originalModel || cleanRequested} is not available.`
+                          : `Resource has been exhausted (e.g. check quota) for model ${activeNative!.originalModel || cleanRequested}.`,
+                        status: errCode === 404 ? 'NOT_FOUND' : 'RESOURCE_EXHAUSTED',
                       },
                     }),
                     'utf-8',
                   );
-                  if (safeWriteHead(res, 429, { 'Content-Type': 'application/json; charset=UTF-8', 'Content-Length': String(fallbackPayload.length) })) {
+                  if (safeWriteHead(res, errCode, { 'Content-Type': 'application/json; charset=UTF-8', 'Content-Length': String(fallbackPayload.length) })) {
                     safeEnd(res, fallbackPayload);
                   }
                   return;
@@ -5896,11 +5908,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               }
             }
 
-            if (cleanRequested.includes('argon') || cleanRequested.includes('gemini-4')) {
-              if (sessionKey) markNativeSession(sessionKey, cleanRequested);
-              if (convId && convId !== sessionKey) markNativeSession(convId, cleanRequested);
-              if (sessId && sessId !== sessionKey) markNativeSession(sessId, cleanRequested);
-            }
+            // Fresh native turn: mark native session
+            if (sessionKey) markNativeSession(sessionKey, cleanRequested);
+            if (convId && convId !== sessionKey) markNativeSession(convId, cleanRequested);
+            if (sessId && sessId !== sessionKey) markNativeSession(sessId, cleanRequested);
+
             if (sessionKey) clearSessionModelFallback(sessionKey);
             if (convId) clearSessionModelFallback(convId);
             if (sessId) clearSessionModelFallback(sessId);
