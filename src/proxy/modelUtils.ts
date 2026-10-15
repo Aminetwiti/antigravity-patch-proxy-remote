@@ -397,8 +397,47 @@ export function isNativeCloudCodeModel(modelName: string): boolean {
     slug.startsWith('gemini-') ||
     slug.startsWith('claude-') ||
     slug.startsWith('gpt-oss-') ||
-    slug.startsWith('gemma-')
+    slug.startsWith('gemma-') ||
+    slug.startsWith('model-tier-') ||
+    slug.startsWith('modeltier-')
   );
 }
+
+/**
+ * Safely extracts the requested model name from any payload (Buffer, string, or object),
+ * inspecting all known top-level and nested `request.*` model fields.
+ */
+export function extractModelNameFromPayload(body: unknown): string {
+  if (!body) return '';
+  let obj: Record<string, unknown> | null = null;
+  if (typeof body === 'string') {
+    try { obj = JSON.parse(body); } catch { return ''; }
+  } else if (Buffer.isBuffer(body)) {
+    try { obj = JSON.parse(body.toString('utf-8')); } catch { return ''; }
+  } else if (typeof body === 'object') {
+    obj = body as Record<string, unknown>;
+  }
+  if (!obj) return '';
+  const req = (obj.request && typeof obj.request === 'object' ? obj.request : {}) as Record<string, unknown>;
+  const candidates = [
+    obj.model,
+    obj.selectedModel,
+    obj.requestedModel,
+    obj.modelId,
+    obj.model_id,
+    obj.agentModel,
+    req.model,
+    req.selectedModel,
+    req.requestedModel,
+    req.modelId,
+    req.model_id,
+    req.agentModel,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return '';
+}
+
 
 

@@ -95,8 +95,8 @@ import {
 } from './proxy/urlBuilder';
 import { generateModelPlaceholderId, toSlug } from './proxy/idGenerator';
 import { expandModelsWithEffort } from './proxy/effortExpander';
-import { isNativeCloudCodeModel } from './proxy/modelUtils';
-export { isNativeCloudCodeModel };
+import { isNativeCloudCodeModel, extractModelNameFromPayload } from './proxy/modelUtils';
+export { isNativeCloudCodeModel, extractModelNameFromPayload };
 import { resolveGoogleIp } from './proxy/dnsResolver';
 import { markProviderRateLimited, isProviderRateLimited } from './proxy/modelRouter';
 import { trimContextPayload } from './proxy/contextTrimmer';
@@ -1265,26 +1265,42 @@ export async function proxyToGoogle(
         }
       });
     } else if (isGeneration) {
-      let reqModelName = '';
-      try {
-        const parsedReq = JSON.parse(reqBody.toString('utf-8'));
-        reqModelName = parsedReq.model || parsedReq.requestedModel || (parsedReq.request && parsedReq.request.model) || '';
-      } catch {}
+      const reqModelName = extractModelNameFromPayload(reqBody);
+      const effectiveModel = reqModelName || originalModel || '';
       const reqStart = Date.now();
       const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
       if (proxyRes.statusCode && proxyRes.statusCode >= 400) {
-        log.warn(`[Proxy] Google returned upstream error status ${proxyRes.statusCode}. Forwarding official error directly to client.`);
+        log.warn(
+          `[Proxy] Google returned upstream error status ${proxyRes.statusCode} for model [${effectiveModel || 'unknown'}] (${req.url}). Forwarding official error directly to client.`
+        );
+        // Synchronously record immediately so any racing fallback from the Language Server is blocked!
+        if (convId) {
+          recordNativeSessionError(convId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, Buffer.alloc(0), effectiveModel);
+        }
+        if (sessId && sessId !== convId) {
+          recordNativeSessionError(sessId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, Buffer.alloc(0), effectiveModel);
+        }
+        recordLatestNativeError(proxyRes.statusCode!, proxyRes.headers as Record<string, string>, Buffer.alloc(0), effectiveModel);
+
         const errChunks: Buffer[] = [];
         proxyRes.on('data', (chunk) => errChunks.push(chunk));
         proxyRes.on('end', () => {
           const fullErr = Buffer.concat(errChunks);
-          const effectiveModel = reqModelName || originalModel || '';
+          let errDetail = '';
+          try {
+            const parsed = JSON.parse(fullErr.toString('utf-8'));
+            errDetail = parsed?.error?.message || parsed?.message || (typeof parsed?.error === 'string' ? parsed.error : '');
+          } catch {}
+          if (errDetail) {
+            log.warn(`[Proxy] Upstream Google error details for [${effectiveModel || 'unknown'}]: ${errDetail}`);
+          }
           if (convId) {
             recordNativeSessionError(convId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr, effectiveModel);
           }
           if (sessId && sessId !== convId) {
             recordNativeSessionError(sessId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr, effectiveModel);
           }
+          updateLatestNativeErrorBody(fullErr);
         });
         if (safeHead(proxyRes.statusCode, proxyRes.headers as Record<string, string>)) {
           proxyRes.pipe(res);
@@ -1350,13 +1366,21 @@ export async function proxyToGoogle(
   proxyReq.on('error', (err) => {
     if (!hostOverride && isCloudCodeUrl && !isGeneration && !res.headersSent && !res.writableEnded) {
       log.warn(`[Proxy] Google Cloud Code network error on ${targetHost} (${err.message}). Trying production endpoint ${GOOGLE_HOSTS.CLOUD_CODE_PROD} for non-generation request...`);
-      proxyToGoogle(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD);
+      proxyToGoogle(req, res, reqBody, isRemoteSession, customAuthHeader, convId, GOOGLE_HOSTS.CLOUD_CODE_PROD, sessId, originalModel);
       return;
     }
     metricInc('proxy_errors_total', { upstream: targetHost, stage: 'forward', trace_id: traceId });
     const ms = endTimer();
     proxyLog.error('Google forwarding error traceId=', traceId, 'after', ms, 'ms:', err.message);
     log.error('[Proxy] Google Forwarding Error:', err);
+    const effectiveModel = originalModel || '';
+    if (convId) {
+      recordNativeSessionError(convId, 502, {}, Buffer.from(err.message), effectiveModel);
+    }
+    if (sessId && sessId !== convId) {
+      recordNativeSessionError(sessId, 502, {}, Buffer.from(err.message), effectiveModel);
+    }
+    recordLatestNativeError(502, {}, Buffer.from(err.message), effectiveModel);
     if (safeWriteHead(res, 500, { 'Content-Type': 'application/json' })) {
       safeEnd(res, JSON.stringify({ error: { message: 'Proxy forwarding failed: ' + err.message, traceId } }));
     }
@@ -1368,9 +1392,17 @@ export async function proxyToGoogle(
     log.debug('[Proxy] Upstream request closed traceId=', traceId, 'after', ms, 'ms');
   });
 
-  proxyReq.setTimeout(60_000, () => {
-    log.error(`[Proxy] Google proxy request timed out after 60s (${req.method} ${req.url})`);
+  proxyReq.setTimeout(GOOGLE_PROXY_TIMEOUT_MS, () => {
+    log.error(`[Proxy] Google proxy request timed out after ${GOOGLE_PROXY_TIMEOUT_MS / 1000}s (${req.method} ${req.url})`);
     proxyReq.destroy();
+    const effectiveModel = originalModel || '';
+    if (convId) {
+      recordNativeSessionError(convId, 504, {}, Buffer.from('Google API request timed out'), effectiveModel);
+    }
+    if (sessId && sessId !== convId) {
+      recordNativeSessionError(sessId, 504, {}, Buffer.from('Google API request timed out'), effectiveModel);
+    }
+    recordLatestNativeError(504, {}, Buffer.from('Google API request timed out'), effectiveModel);
     if (safeHead(504, { 'Content-Type': 'application/json' })) {
       safeEnd(res, JSON.stringify({ error: { message: 'Google API request timed out' } }));
     }
@@ -1671,6 +1703,9 @@ export async function executeGoogleCloudCodeWithPool(
     delete (reqJson as any).safetySettings;
     delete (reqJson as any).systemInstruction;
   }
+
+  // Optimize prompt payload by removing redundant duplicate file injections
+  reqJson = trimContextPayload(reqJson as unknown as GeminiRequestBody) as unknown as Record<string, unknown>;
 
   let targetRaw = String(reqJson.model || (reqJson.request as any)?.model || '');
   if (/MODEL_PLACEHOLDER_/i.test(targetRaw) || !targetRaw) {
@@ -3528,14 +3563,25 @@ const SESSION_AFFINITY_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 export function extractSessionId(body: Record<string, unknown>, headers?: Record<string, unknown>): string | null {
   if (body?.sessionId && typeof body.sessionId === 'string') return body.sessionId;
+  if (body?.conversationId && typeof body.conversationId === 'string') return body.conversationId;
+  if (body?.conversation_id && typeof body.conversation_id === 'string') return body.conversation_id;
   if ((body?.context as any)?.sessionId && typeof (body.context as any).sessionId === 'string') {
     return (body.context as any).sessionId;
   }
+  if ((body?.context as any)?.conversationId && typeof (body.context as any).conversationId === 'string') {
+    return (body.context as any).conversationId;
+  }
+  if ((body?.request as any)?.sessionId && typeof (body.request as any).sessionId === 'string') {
+    return (body.request as any).sessionId;
+  }
+  if ((body?.request as any)?.conversationId && typeof (body.request as any).conversationId === 'string') {
+    return (body.request as any).conversationId;
+  }
   if (headers) {
-    const h = headers['x-session-id'] || headers['x-request-session-id'];
+    const h = headers['x-session-id'] || headers['x-request-session-id'] || headers['x-conversation-id'];
     if (typeof h === 'string' && h) return h;
   }
-  const contents = body?.contents as Array<any> | undefined;
+  const contents = (body?.contents || (body?.request as any)?.contents) as Array<any> | undefined;
   if (Array.isArray(contents) && contents.length > 0) {
     const firstUser = contents.find((c) => c && c.role === 'user');
     if (firstUser && Array.isArray(firstUser.parts) && firstUser.parts[0]?.text) {
@@ -4378,6 +4424,53 @@ export function getNativeSession(sessionKey: string): NativeSessionRecord | unde
   return rec;
 }
 
+let latestNativeGlobalError: {
+  originalModel: string;
+  statusCode: number;
+  headers: Record<string, string>;
+  body: Buffer;
+  timestamp: number;
+} | null = null;
+
+export function recordLatestNativeError(
+  statusCode: number,
+  headers: Record<string, string>,
+  body: Buffer,
+  modelName: string,
+): void {
+  if (!modelName || !isNativeCloudCodeModel(modelName)) return;
+  latestNativeGlobalError = {
+    originalModel: modelName,
+    statusCode,
+    headers,
+    body: body || Buffer.alloc(0),
+    timestamp: Date.now(),
+  };
+}
+
+export function updateLatestNativeErrorBody(body: Buffer): void {
+  if (latestNativeGlobalError) {
+    latestNativeGlobalError.body = body;
+  }
+}
+
+export function getLatestNativeErrorAsSession(): NativeSessionRecord | undefined {
+  if (!latestNativeGlobalError) return undefined;
+  if (Date.now() - latestNativeGlobalError.timestamp > NATIVE_CASCADE_BLOCK_WINDOW_MS) {
+    latestNativeGlobalError = null;
+    return undefined;
+  }
+  return {
+    originalModel: latestNativeGlobalError.originalModel,
+    lastSeen: latestNativeGlobalError.timestamp,
+    lastError: {
+      statusCode: latestNativeGlobalError.statusCode,
+      headers: latestNativeGlobalError.headers,
+      body: latestNativeGlobalError.body,
+    },
+  };
+}
+
 export function recordNativeSessionError(
   sessionKey: string,
   statusCode: number,
@@ -4385,6 +4478,10 @@ export function recordNativeSessionError(
   body: Buffer,
   modelName?: string,
 ): void {
+  const effectiveModel = modelName || (sessionKey ? nativeSessions.get(sessionKey)?.originalModel : '') || '';
+  if (effectiveModel) {
+    recordLatestNativeError(statusCode, headers, body, effectiveModel);
+  }
   if (!sessionKey) return;
   const rec = nativeSessions.get(sessionKey);
   if (rec) {
@@ -4404,6 +4501,7 @@ export function recordNativeSessionError(
 
 export function clearNativeSessions(): void {
   nativeSessions.clear();
+  latestNativeGlobalError = null;
 }
 
 export function isAllowedOrigin(req: http.IncomingMessage): boolean {
@@ -5856,7 +5954,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             // Check if this request is an automated Language Server fallback on a failed native session
             const activeNative = (sessionKey ? getNativeSession(sessionKey) : undefined) ||
                                  (convId ? getNativeSession(convId) : undefined) ||
-                                 (sessId ? getNativeSession(sessId) : undefined);
+                                 (sessId ? getNativeSession(sessId) : undefined) ||
+                                 getLatestNativeErrorAsSession();
             const isNativeProtected = Boolean(
               activeNative &&
               activeNative.lastError &&
@@ -6282,13 +6381,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     try {
       const fallbackJson = JSON.parse(bodyStr) as Record<string, unknown>;
       const fallbackReq = (fallbackJson.request || fallbackJson) as Record<string, unknown>;
-      rawModelName = String(
-        fallbackJson.model ||
-        fallbackJson.requestedModel ||
-        fallbackReq.model ||
-        fallbackReq.requestedModel ||
-        ''
-      ).toLowerCase();
+      rawModelName = extractModelNameFromPayload(fallbackJson).toLowerCase();
       if (typeof fallbackJson.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(fallbackJson.planModel)) {
         delete fallbackJson.planModel;
         fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');

@@ -32,6 +32,9 @@ import {
   getNativeSession,
   recordNativeSessionError,
   clearNativeSessions,
+  recordLatestNativeError,
+  getLatestNativeErrorAsSession,
+  updateLatestNativeErrorBody,
 } from '../proxy';
 import { isModelOrLabelDisabled } from '../proxy/protoInjector';
 import { expandModelsWithEffort } from '../proxy/effortExpander';
@@ -508,6 +511,31 @@ describe('Strict Zero Fallback on Native Models', () => {
       expect(isNativeCloudCodeModel('model_placeholder_m319')).toBe(false);
       expect(isNativeCloudCodeModel('models/model_placeholder_m319')).toBe(false);
       expect(isNativeCloudCodeModel('models/model_placeholder_m50')).toBe(false);
+    });
+
+    it('classifies Go Language Server internal MODEL_TIER enums as native cloud code', () => {
+      expect(isNativeCloudCodeModel('MODEL_TIER_FLASH_LITE')).toBe(true);
+      expect(isNativeCloudCodeModel('model_tier_flash_lite')).toBe(true);
+      expect(isNativeCloudCodeModel('model-tier-flash-lite')).toBe(true);
+      expect(isNativeCloudCodeModel('MODEL_TIER_PRO')).toBe(true);
+    });
+
+    it('records latest native error globally and returns it as session record', () => {
+      clearNativeSessions();
+      expect(getLatestNativeErrorAsSession()).toBeUndefined();
+
+      recordLatestNativeError(404, { 'content-type': 'application/json' }, Buffer.from('{"error":"not found"}'), 'gemini-4-argon');
+      const latest = getLatestNativeErrorAsSession();
+      expect(latest).toBeDefined();
+      expect(latest!.originalModel).toBe('gemini-4-argon');
+      expect(latest!.lastError?.statusCode).toBe(404);
+
+      updateLatestNativeErrorBody(Buffer.from('{"error":"updated body"}'));
+      const updated = getLatestNativeErrorAsSession();
+      expect(updated!.lastError?.body.toString('utf-8')).toBe('{"error":"updated body"}');
+
+      clearNativeSessions();
+      expect(getLatestNativeErrorAsSession()).toBeUndefined();
     });
   });
 });

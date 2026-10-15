@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { detectModelCapabilities, detectModelCapabilitiesByName, detectModelUXBadges } from '../proxy/modelUtils';
+import {
+  detectModelCapabilities,
+  detectModelCapabilitiesByName,
+  detectModelUXBadges,
+  extractModelNameFromPayload,
+} from '../proxy/modelUtils';
 
 
 describe('detectModelCapabilities', () => {
@@ -160,4 +165,39 @@ describe('detectModelUXBadges', () => {
     expect(badges.contextWindowLabel).toBe('1M');
   });
 });
+
+describe('extractModelNameFromPayload', () => {
+  it('returns empty string for null, undefined, or empty payload', () => {
+    expect(extractModelNameFromPayload(null)).toBe('');
+    expect(extractModelNameFromPayload(undefined)).toBe('');
+    expect(extractModelNameFromPayload('')).toBe('');
+    expect(extractModelNameFromPayload({})).toBe('');
+  });
+
+  it('extracts top-level model field from object or json string/buffer', () => {
+    expect(extractModelNameFromPayload({ model: 'gemini-3.8-flash' })).toBe('gemini-3.8-flash');
+    expect(extractModelNameFromPayload(JSON.stringify({ model: 'gemini-3.8-flash' }))).toBe('gemini-3.8-flash');
+    expect(extractModelNameFromPayload(Buffer.from(JSON.stringify({ model: 'gemini-3.8-flash' })))).toBe('gemini-3.8-flash');
+  });
+
+  it('extracts nested request.model field', () => {
+    const payload = { project: 'aicode', request: { model: 'gemini-4-argon' } };
+    expect(extractModelNameFromPayload(payload)).toBe('gemini-4-argon');
+    expect(extractModelNameFromPayload(Buffer.from(JSON.stringify(payload)))).toBe('gemini-4-argon');
+  });
+
+  it('extracts selectedModel or requestedModel or modelId', () => {
+    expect(extractModelNameFromPayload({ selectedModel: 'claude-3-7-sonnet' })).toBe('claude-3-7-sonnet');
+    expect(extractModelNameFromPayload({ requestedModel: 'model_placeholder_m50' })).toBe('model_placeholder_m50');
+    expect(extractModelNameFromPayload({ modelId: 'gemini-2.5-pro' })).toBe('gemini-2.5-pro');
+    expect(extractModelNameFromPayload({ request: { requestedModel: 'gemini-3.8-flash-high' } })).toBe('gemini-3.8-flash-high');
+    expect(extractModelNameFromPayload({ request: { selectedModel: 'gemini-3.8-flash-tiered' } })).toBe('gemini-3.8-flash-tiered');
+  });
+
+  it('handles invalid json strings gracefully', () => {
+    expect(extractModelNameFromPayload('not a json string')).toBe('');
+    expect(extractModelNameFromPayload(Buffer.from('{ broken json'))).toBe('');
+  });
+});
+
 
