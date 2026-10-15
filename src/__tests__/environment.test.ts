@@ -33,7 +33,7 @@ describe('loadEnvironmentConfig', () => {
     expect(cfg.proxyPort).toBe(51074);
     expect(cfg.daemonPort).toBe(8090);
     expect(cfg.lsHubPort).toBe(55256);
-    expect(cfg.upstreamHost).toBe('cloudcode-pa.googleapis.com');
+    expect(cfg.upstreamHost).toBe('daily-cloudcode-pa.googleapis.com');
     expect(cfg.logLevel).toBe('info');
     expect(cfg.isDev).toBe(false);
   });

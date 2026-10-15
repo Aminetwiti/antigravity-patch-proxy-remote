@@ -1988,7 +1988,15 @@ export async function executeGoogleCloudCodeWithPool(
     recordAccountRequest(candidate);
     incrementAccountInFlight(candidate);
     const startReqTime = Date.now();
-    const hostOverride = isGeminiCliModel(candidate) ? GOOGLE_HOSTS.CLOUD_CODE_PROD : undefined;
+    const candidateHost = candidate.apiUrl ? (() => {
+      try {
+        const u = new URL(candidate.apiUrl);
+        return u.hostname;
+      } catch { return undefined; }
+    })() : undefined;
+    const hostOverride = isGeminiCliModel(candidate)
+      ? GOOGLE_HOSTS.CLOUD_CODE_PROD
+      : (candidateHost || GOOGLE_HOSTS.CLOUD_CODE);
     const hasOtherCandidates = sortedAccounts.slice(i + 1).some((c) => !isAccountInCooldown(c, modelFamily) && getModelQuotaScore(c, modelFamily) > 0);
     const healthySiblingAccountsCount = sortedAccounts.slice(i + 1).filter(
       (c) => !isAccountInCooldown(c, modelFamily) && !getOpenBreaker(c) && getModelQuotaScore(c, modelFamily) >= 50,
@@ -2090,7 +2098,7 @@ export async function executeGoogleCloudCodeWithPool(
       }
 
       log.warn(
-        `[Proxy] ⚠️ [Feedback] Model: [${targetModel}] | Account: [${candidateName}] (${currentFamily}) -> HTTP 429 (${decision.category}: ${decision.reason}, cooldown: ${Math.round(decision.cooldownMs / 1000)}s) (${elapsedMs}ms)`
+        `[Proxy] ⚠️ [Feedback] Model: [${targetModel}] | Account: [${candidateName}] (${currentFamily}) -> HTTP 429 (${decision.category}: ${decision.reason}, cooldown: ${Math.round(decision.cooldownMs / 1000)}s) (${elapsedMs}ms)${outcome.error ? ` | Upstream: ${outcome.error.replace(/\s+/g, ' ').slice(0, 160)}` : ''}`
       );
       const isRateLimit = decision.category === 'rate_limited' || decision.category === 'soft_rate_limit';
       setAccountCooldown(candidate, decision.cooldownMs, currentFamily, isRateLimit);

@@ -122,7 +122,7 @@ describe('Strict Zero Fallback on Native Models', () => {
   describe('Session Fallback Purge on Original Models', () => {
     it('strictly refuses to assign a fallback to any native model', () => {
       const convId = 'session-test-purge-123';
-      
+
       // Attempting to assign a fallback to a native model is strictly rejected
       setSessionModelFallback(convId, 'gemini-4-argon', 'gemini-3.8-flash-tiered', true);
       expect(getSessionModelFallback(convId)).toBeUndefined();
@@ -130,7 +130,7 @@ describe('Strict Zero Fallback on Native Models', () => {
 
     it('immediately purges any legacy session fallback when clearSessionModelFallback is called', () => {
       const convId = 'session-test-purge-456';
-      
+
       // If a non-native model had an active fallback in an earlier session
       clearSessionModelFallback(convId);
       expect(getSessionModelFallback(convId)).toBeUndefined();
@@ -318,7 +318,7 @@ describe('Strict Zero Fallback on Native Models', () => {
     it('identifies and blocks automated fallback within turn window on native sessions', () => {
       const sessKey = 'sess-argon-fallback-test';
       markNativeSession(sessKey, 'gemini-4-argon-high');
-      
+
       const upstream429 = Buffer.from(JSON.stringify({
         error: { code: 429, message: 'Resource has been exhausted (e.g. check quota).', status: 'RESOURCE_EXHAUSTED' }
       }));
