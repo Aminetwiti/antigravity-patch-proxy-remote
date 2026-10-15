@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { loadEnvironmentConfig } from '../config/environment';
+import { GOOGLE_HOSTS } from '../constants';
 
 describe('loadEnvironmentConfig', () => {
   const origEnv = process.env;
+  const origCloudCode = GOOGLE_HOSTS.CLOUD_CODE;
 
   beforeEach(() => {
     process.env = { ...origEnv };
@@ -11,9 +13,16 @@ describe('loadEnvironmentConfig', () => {
     delete process.env.AG_DAEMON_PORT;
     delete process.env.AG_LS_HUB_PORT;
     delete process.env.AG_UPSTREAM_HOST;
+    delete process.env.AG_GOOGLE_CLOUDCODE_HOST;
+    delete process.env.AG_GOOGLE_CLOUDCODE_PROD_HOST;
     delete process.env.AG_LOG_LEVEL;
     delete process.env.NODE_ENV;
     delete process.env.AG_DEBUG;
+    (GOOGLE_HOSTS as any).CLOUD_CODE = 'daily-cloudcode-pa.googleapis.com';
+  });
+
+  afterEach(() => {
+    (GOOGLE_HOSTS as any).CLOUD_CODE = origCloudCode;
   });
 
   it('uses DEFAULT_BIND_HOST when AG_BIND_HOST is unset', () => {

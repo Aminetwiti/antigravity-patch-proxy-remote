@@ -368,9 +368,8 @@ export function getCanonicalModelKey(idOrName?: string, displayName?: string): s
   const dispNorm = norm(displayName || '');
   const combined = `${idNorm} ${dispNorm}`;
 
+  if (combined.includes('gemini-4-argon') || combined.includes('gemini-40-argon')) return 'gemini-4-argon-medium';
   if (combined.includes('gemini-3-8-flash') || combined.includes('gemini-38-flash')) return 'gemini-3.8-flash';
-  if (combined.includes('gemini-2-5-pro') || combined.includes('gemini-25-pro')) return 'gemini-2.5-pro';
-  if (combined.includes('gemini-2-5-flash') || combined.includes('gemini-25-flash')) return 'gemini-2.5-flash';
   if (combined.includes('claude-sonnet-4-6') || combined.includes('claude-4-6-sonnet')) return 'claude-sonnet-4-6';
   if (combined.includes('claude-opus-4-6') || combined.includes('claude-4-6-opus')) return 'claude-opus-4-6';
   if (combined.includes('claude-3-7-sonnet') || combined.includes('claude-37-sonnet')) return 'claude-3.7-sonnet';

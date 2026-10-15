@@ -413,32 +413,6 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     supportsVision: false,
     supportsThinking: false,
   },
-  'gpt-oss-120b-medium': {
-    displayName: 'GPT-OSS 120B (Medium)',
-    maxTokens: 131072,
-    maxOutputTokens: 16384,
-    model: 'gpt-oss-120b-medium',
-    planModel: 'gpt-oss-120b-medium',
-    requestedModel: 'gpt-oss-120b-medium',
-    apiProvider: 'API_PROVIDER_OPENAI',
-    modelProvider: 'MODEL_PROVIDER_OPENAI',
-    supportsImages: false,
-    supportsVision: false,
-    supportsThinking: true,
-  },
-  'gemini-pro-agent': {
-    displayName: 'Gemini Pro Agent',
-    maxTokens: 1048576,
-    maxOutputTokens: 65536,
-    model: 'gemini-pro-agent',
-    planModel: 'gemini-pro-agent',
-    requestedModel: 'gemini-pro-agent',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
 };
 
 export const DEFAULT_CANONICAL_MODEL_IDS: string[] = Object.keys(DEFAULT_CANONICAL_GOOGLE_MODELS);

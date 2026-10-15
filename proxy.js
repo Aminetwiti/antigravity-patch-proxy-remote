@@ -993,7 +993,7 @@ function transformGoogleStreamForRemote(proxyRes, clientRes, convId = '', isRemo
                 timestamp: Date.now(),
                 conversationId: convId || undefined,
                 provider: 'google',
-                model: detectedModel || modelName || 'gemini-2.5-pro',
+                model: detectedModel || modelName || 'gemini-3.8-flash',
                 promptTokens: pTokens,
                 completionTokens: cTokens,
                 totalTokens: tTokens,
@@ -1192,7 +1192,7 @@ async function proxyToGoogle(req, res, reqBody, isRemoteSession = false, customA
                                     timestamp: Date.now(),
                                     conversationId: convId || undefined,
                                     provider: 'google',
-                                    model: reqModelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-2.5-pro',
+                                    model: reqModelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-3.8-flash',
                                     promptTokens: pTokens,
                                     completionTokens: cTokens,
                                     totalTokens: tTokens,
@@ -1423,7 +1423,7 @@ function executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession = fals
                                             timestamp: Date.now(),
                                             conversationId: convId || undefined,
                                             provider: 'google',
-                                            model: modelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-2.5-pro',
+                                            model: modelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-3.8-flash',
                                             promptTokens: pTokens,
                                             completionTokens: cTokens,
                                             totalTokens: tTokens,
@@ -4906,13 +4906,13 @@ function handleRequest(req, res) {
                                 googleJson.agentModelSorts = synth.agentModelSorts;
                         }
                         // Sanitize modelExperiments: replace any unresolvable placeholder IDs in experiment strings
-                        // (e.g. CASCADE_USE_EXPERIMENT_CHECKPOINTER checkpoint_model: MODEL_PLACEHOLDER_M50) with gemini-2.5-flash
+                        // (e.g. CASCADE_USE_EXPERIMENT_CHECKPOINTER checkpoint_model: MODEL_PLACEHOLDER_M50) with gemini-3.8-flash
                         if (googleJson.models && typeof googleJson.models === 'object') {
                             for (const mEntry of Object.values(googleJson.models)) {
                                 if (mEntry?.modelExperiments?.experiments) {
                                     for (const exp of Object.values(mEntry.modelExperiments.experiments)) {
                                         if (typeof exp?.stringValue === 'string' && exp.stringValue.includes('MODEL_PLACEHOLDER_')) {
-                                            exp.stringValue = exp.stringValue.replace(/"checkpoint_model":\s*"MODEL_PLACEHOLDER_[^"]+"/g, '"checkpoint_model": "gemini-2.5-flash"');
+                                            exp.stringValue = exp.stringValue.replace(/"checkpoint_model":\s*"MODEL_PLACEHOLDER_[^"]+"/g, '"checkpoint_model": "gemini-3.8-flash"');
                                         }
                                     }
                                 }

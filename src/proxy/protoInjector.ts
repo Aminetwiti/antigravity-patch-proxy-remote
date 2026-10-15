@@ -233,7 +233,7 @@ export function injectCustomModelsIntoResponse(
             else if (sf.fieldNum === 2) labelStr = sf.raw.toString('utf8').trim();
           }
         }
-        const isObsolete = isObsoleteModel(idStr, labelStr) && !idStr.includes('gemini-2.5-flash');
+        const isObsolete = isObsoleteModel(idStr, labelStr);
         const isDisabled = isModelOrLabelDisabled(idStr, labelStr, disabledModelIds);
         if (isObsolete || isDisabled) {
           strippedAnyNative = true;
@@ -417,7 +417,7 @@ function injectCustomModelsIntoUserStatusJson(
     for (const c of cascade.clientModelConfigs) {
       const label = (c.label || '').trim();
       const modelId = String(c.modelId || c.modelOrAlias?.model || '').trim();
-      const isObsolete = isObsoleteModel(modelId, label) && !modelId.includes('gemini-2.5-flash');
+      const isObsolete = isObsoleteModel(modelId, label);
       const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
       if (isObsolete || isDisabled) {
         strippedAnyJson = true;
@@ -663,7 +663,7 @@ export function injectCustomModelsIntoUserStatus(
           }
         }
         if (
-          (isObsoleteModel(modelId, label) && !modelId.includes('gemini-2.5-flash')) ||
+          isObsoleteModel(modelId, label) ||
           isModelOrLabelDisabled(modelId, label, disabledModelIds)
         ) {
           continue;
@@ -764,7 +764,7 @@ export function injectCustomModelsIntoUserStatus(
             else if (sf.fieldNum === 21) modelId = sf.raw.toString('utf8').trim();
           }
         }
-        const isObsolete = isObsoleteModel(modelId, label) && !modelId.includes('gemini-2.5-flash');
+        const isObsolete = isObsoleteModel(modelId, label);
         const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
         if (isObsolete || isDisabled) {
           strippedAnyCascade = true;

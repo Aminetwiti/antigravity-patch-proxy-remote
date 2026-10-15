@@ -969,8 +969,8 @@ export const GEMINI_CLI_SUPPORTED_MODELS = new Set<string>([
   'gemini-3.8-flash-low',
   'gemini-3.8-flash-medium',
   'gemini-3.8-flash-high',
-  'gemini-3-flash-preview',
-  'gemini-2.5-pro',
+  'gemini-4-argon',
+  'gemini-4-argon-medium',
   'gemma-4-31b-it',
   'gemma-4-26b-a4b-it',
 ]);
@@ -983,7 +983,7 @@ export function isGeminiCliSupportedModel(modelId: string): boolean {
   const clean = modelId.replace(/^models\//, '').trim().toLowerCase();
   if (GEMINI_CLI_SUPPORTED_MODELS.has(clean)) return true;
   if (clean.includes('3.8-flash')) return true;
-  if (clean === 'gemini-2.5-pro') return true;
+  if (clean.includes('argon')) return true;
   if (clean.startsWith('gemma-4-')) return true;
   return false;
 }
@@ -995,8 +995,7 @@ export function mapToGeminiCliModel(modelId: string): string {
   if (!modelId) return 'gemini-3.8-flash';
   const clean = modelId.replace(/^models\//, '').trim().toLowerCase();
   if (clean.includes('3.8-flash')) return 'gemini-3.8-flash';
-  if (clean.includes('3-flash')) return 'gemini-3-flash-preview';
-  if (clean.includes('2.5-pro')) return 'gemini-2.5-pro';
+  if (clean.includes('argon')) return 'gemini-4-argon-medium';
   if (clean.startsWith('gemma-4-31b')) return 'gemma-4-31b-it';
   if (clean.startsWith('gemma-4-26b')) return 'gemma-4-26b-a4b-it';
   return clean;

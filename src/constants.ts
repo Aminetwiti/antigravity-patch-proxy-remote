@@ -498,8 +498,8 @@ export function isObsoleteModel(idOrName?: string, displayName?: string): boolea
   // Deprecated Gemini / Google models: 1.5, 2.0, 2.5, 3.0, 3.1, 3.5, 3.6, 3.7
   if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[01567])/i.test(str)) return true;
   if (/\bgemini[-_\s]*(?:3\.7|3\.6|3\.5|3\.1|3\.0|2\.5|2\.0|1\.5)[-_\s]*(?:pro|flash|high|low|medium|thinking)?\b/i.test(str)) return true;
-  if (/gemini[-_\s]*3(?:\.0)?(?:-pro|\b)/i.test(str) && !str.includes('3.8')) return true;
-  if (str.includes('gemini-3.7-flash') || str.includes('gemini-3.6-flash') || str.includes('gemini-3.5-flash') || str.includes('gemini-3.1-pro') || str.includes('gemini-3.0-pro') || str.includes('gemini-2.0-flash') || str.includes('gemini-2.5-pro') || str.includes('gemini-1.5-pro') || str.includes('gemini-1.5-flash')) return true;
+  if (str.includes('gemini-pro-agent') || str.includes('gemini-3-flash-agent') || str.includes('gemini-3-flash') || str.includes('gemini-3-pro')) return true;
+  if (str.includes('gemini-3.7-flash') || str.includes('gemini-3.6-flash') || str.includes('gemini-3.5-flash') || str.includes('gemini-3.1-pro') || str.includes('gemini-3.0-pro') || str.includes('gemini-2.0-flash') || str.includes('gemini-2.5-pro') || str.includes('gemini-2.5-flash') || str.includes('gemini-1.5-pro') || str.includes('gemini-1.5-flash')) return true;
 
   // GPT models (gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5, gpt-oss, etc.)
   if (/\bgpt[-_\s]*(?:3\.5|4o|4|oss|3)/i.test(str) || str.startsWith('gpt-')) return true;

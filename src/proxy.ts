@@ -1097,7 +1097,7 @@ export function transformGoogleStreamForRemote(
         timestamp: Date.now(),
         conversationId: convId || undefined,
         provider: 'google',
-        model: detectedModel || modelName || 'gemini-2.5-pro',
+        model: detectedModel || modelName || 'gemini-3.8-flash',
         promptTokens: pTokens,
         completionTokens: cTokens,
         totalTokens: tTokens,
@@ -1334,7 +1334,7 @@ export async function proxyToGoogle(
                   timestamp: Date.now(),
                   conversationId: convId || undefined,
                   provider: 'google',
-                  model: reqModelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-2.5-pro',
+                  model: reqModelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-3.8-flash',
                   promptTokens: pTokens,
                   completionTokens: cTokens,
                   totalTokens: tTokens,
@@ -1609,7 +1609,7 @@ export function executeGoogleCloudCodeRequest(
                       timestamp: Date.now(),
                       conversationId: convId || undefined,
                       provider: 'google',
-                      model: modelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-2.5-pro',
+                      model: modelName || data?.response?.modelVersion || data?.modelVersion || 'gemini-3.8-flash',
                       promptTokens: pTokens,
                       completionTokens: cTokens,
                       totalTokens: tTokens,
@@ -5634,7 +5634,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             }
 
             // Sanitize modelExperiments: replace any unresolvable placeholder IDs in experiment strings
-            // (e.g. CASCADE_USE_EXPERIMENT_CHECKPOINTER checkpoint_model: MODEL_PLACEHOLDER_M50) with gemini-2.5-flash
+            // (e.g. CASCADE_USE_EXPERIMENT_CHECKPOINTER checkpoint_model: MODEL_PLACEHOLDER_M50) with gemini-3.8-flash
             if (googleJson.models && typeof googleJson.models === 'object') {
               for (const mEntry of Object.values(googleJson.models as Record<string, any>)) {
                 if (mEntry?.modelExperiments?.experiments) {
@@ -5642,7 +5642,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                     if (typeof exp?.stringValue === 'string' && exp.stringValue.includes('MODEL_PLACEHOLDER_')) {
                       exp.stringValue = exp.stringValue.replace(
                         /"checkpoint_model":\s*"MODEL_PLACEHOLDER_[^"]+"/g,
-                        '"checkpoint_model": "gemini-2.5-flash"',
+                        '"checkpoint_model": "gemini-3.8-flash"',
                       );
                     }
                   }
