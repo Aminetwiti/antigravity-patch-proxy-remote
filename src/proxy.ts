@@ -1997,7 +1997,7 @@ export async function executeGoogleCloudCodeWithPool(
     const candidateHost = candidate.apiUrl ? (() => {
       try {
         const u = new URL(candidate.apiUrl);
-        return u.hostname;
+        return u.hostname.includes('cloudcode') ? u.hostname : undefined;
       } catch { return undefined; }
     })() : undefined;
     const hostOverride = isGeminiCliModel(candidate)
