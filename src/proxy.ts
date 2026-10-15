@@ -2823,11 +2823,15 @@ export async function executeGoogleCloudCodeWithPool(
   log.error(`[Proxy] Google Cloud Code pool exhausted (${testedAccountsCount}/${totalAttempts} tested). Returning HTTP ${lastStatus}`);
   if (!res.writableEnded && !res.destroyed) {
     const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
-    const failedModel = sortedAccounts[0] || ({
-      name: (reqJson.model as string) || 'google-model',
-      displayName: (reqJson.model as string) || 'Google Model',
+    const requestedName = (typeof reqJson.requestedModel === 'string' && reqJson.requestedModel)
+      ? reqJson.requestedModel
+      : (typeof reqJson.model === 'string' ? reqJson.model : '');
+    const failedModel: CustomModel = {
+      ...(sortedAccounts[0] || {}),
+      name: requestedName || sortedAccounts[0]?.name || 'gemini-3.8-flash-tiered',
+      displayName: requestedName || sortedAccounts[0]?.displayName || 'Gemini 3.8 Flash',
       provider: 'google',
-    } as CustomModel);
+    } as CustomModel;
     const diagnostic = classifyError(lastStatus, lastErrorText, undefined, 'google');
     if (totalAttempts > 1) {
       const countLabel = testedAccountsCount > 0 && testedAccountsCount < totalAttempts
