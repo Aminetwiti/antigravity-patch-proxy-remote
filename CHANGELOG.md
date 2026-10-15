@@ -2,6 +2,22 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.7.4] - 2026-10-15 (Gemini Next-Gen Models, Native Zero-Fallback & Quota Token Engine)
+
+### Added
+- **Next-Gen Gemini Model Support**: Added dynamic support and full test suite validation for `gemini-4-argon-medium` and `gemini-3.8-flash`.
+- **Zero-Fallback Native Model Protection**: Hardened native model error interception across all native Gemini models, preventing accidental fallback cascades when native models are explicitly targeted.
+- **Accurate Token Quota Calculations**: Calibrated 5-hour rolling window and weekly token capacities (Gemini: 250M 5h / ~1.92B weekly; Claude: 10M 5h / 20M weekly) with real-time available and consumed token tracking in `ag-doctor-ui`.
+- **Subword BPE-like Tokenizer**: Multi-vocabulary tokenizer modeling 256k Gemini vocabulary, Claude 65k-100k, operators, contractions, whitespace, and camelCase splits with zero external dependencies.
+- **Enhanced Log Filtering**: Faceted search with level normalization (`lvl:err`, `lvl:warning`) and subsystem tag matching in `log-viewer`.
+
+### Changed
+- **Proxy Resilience**: Extended pool response header timeout to 120s and normalized Cloud Code upstream host routing (`daily-cloudcode-pa.googleapis.com`).
+- **WSL Resilience**: Silenced command timeouts and log spam when WSL is uninstalled on Windows hosts.
+- Bumped project release version to v3.7.4 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
 ## [3.7.3] - 2026-10-10 (Smart Pool Scaling, Quota Cache Merging & Health Optimization)
 
 ### Added
