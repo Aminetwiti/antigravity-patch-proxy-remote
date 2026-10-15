@@ -357,6 +357,8 @@ describe('classifyGoogleCloudCode429', () => {
     expect(r.category).toBe('quota_exhausted');
     // 2h30m = 9_000_000ms, floored to max(9_000_000, 5h=18_000_000) = 18_000_000
     expect(r.cooldownMs).toBe(Math.max(9_000_000, 5 * 3600 * 1000));
+    expect(r.isExplicitReset).toBe(true);
+    expect(r.rawRetryAfterMs).toBe(9_000_000);
   });
 
   it('ignores weekly-scale "Resets in 92h 52m" in quota_exhausted body — caps at 5h default', () => {

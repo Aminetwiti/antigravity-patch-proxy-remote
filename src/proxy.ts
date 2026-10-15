@@ -2050,10 +2050,11 @@ export async function executeGoogleCloudCodeWithPool(
       // Otherwise, it is an isolated burst/RPM rate limit: apply a brief pause of a few seconds (5-10s)
       // ONLY to this candidate, keeping all other pool accounts fully active and unpenalized.
       const currentQuotaScore = getModelQuotaScore(candidate, currentFamily);
-      const isExplicitMultiHourReset = decision.cooldownMs >= 3600_000;
+      const isExplicitMultiHourReset = Boolean(decision.isExplicitReset) && (decision.rawRetryAfterMs ?? 0) >= 3600_000;
+      const isCreditExhausted = /insufficient.*credit|credit.*exhausted|g1_credits|minimum.*credit|not enough credit/i.test(outcome.error || '');
       const isGenuineQuotaExhaustion =
         decision.category === 'quota_exhausted' &&
-        (isExplicitMultiHourReset || currentQuotaScore <= 0);
+        (isExplicitMultiHourReset || isCreditExhausted || currentQuotaScore <= 0);
 
       if (!isGenuineQuotaExhaustion) {
         const burstCount = recordAccountBurst(candidate);
@@ -2073,6 +2074,8 @@ export async function executeGoogleCloudCodeWithPool(
           category: 'rate_limited',
           cooldownMs: burstCooldownMs,
           reason: `Rate limit 429 (pause isolée ${Math.round(burstCooldownMs / 1000)}s — autres comptes actifs)`,
+          isExplicitReset: decision.isExplicitReset,
+          rawRetryAfterMs: decision.rawRetryAfterMs,
         };
       }
 
@@ -2147,7 +2150,7 @@ export async function executeGoogleCloudCodeWithPool(
         break;
       }
 
-      if (consecutive429Count >= 8) {
+      if (consecutive429Count >= 3) {
         log.warn(`[Proxy] ⏳ [IP Throttle Defense] ${consecutive429Count} consecutive burst 429s encountered. Applying 2.5s IP token bucket drain before continuing rotation...`);
         await new Promise((r) => setTimeout(r, 2500));
         consecutive429Count = 0;
@@ -2167,16 +2170,22 @@ export async function executeGoogleCloudCodeWithPool(
         // Anti-domino pacing: When Google triggers a burst 429 while account quota is positive,
         // it is an IP / client-level rate limit. Pause 1000-2000ms to allow Google's token bucket
         // for our IP to drain instead of burning through 33 accounts in 5 seconds.
-        const isBurst429 = decision.category !== 'quota_exhausted';
+        const isBurst429 = decision.category !== 'quota_exhausted' || currentQuotaScore > 0;
         const pacingMs = isBurst429
           ? (consecutive429Count > 1
               ? 2200 + Math.floor(Math.random() * 1000) // Multi-compte burst consécutif: 2.2s à 3.2s pour drainer le seau IP
               : 1200 + Math.floor(Math.random() * 600))  // 1er burst isolé: pause préventive 1.2s à 1.8s pour protéger le compte suivant
           : (consecutiveQuotaExhausted > 0 ? 300 + Math.floor(Math.random() * 200) : 1000 + Math.floor(Math.random() * 500));
 
-        log.info(
-          `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté (quota positif). Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
-        );
+        if (isBurst429) {
+          log.info(
+            `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté (quota positif). Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
+          );
+        } else {
+          log.info(
+            `[Proxy] Rotation après épuisement de quota. Pause de ${pacingMs}ms avant le compte suivant.`
+          );
+        }
         await new Promise((r) => setTimeout(r, pacingMs));
       }
       continue;

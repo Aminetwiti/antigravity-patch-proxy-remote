@@ -238,7 +238,7 @@ export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>,
       // for this account is still fresh and shows positive remaining quota.
       // The quota poller runs within 3 minutes and will confirm the real state.
       // ponytail: avoids false "all accounts in cooldown" when quota refreshed while proxy was down.
-      if (durationMs > 5 * 3600_000 && persistedQuotas) {
+      if (durationMs >= 60_000 && persistedQuotas) {
         const accKey = k.endsWith(':gemini') ? k.slice(0, -7) : k.endsWith(':claude') ? k.slice(0, -7) : k;
         const normKey = accKey.startsWith('google:') ? accKey : `google:${accKey}`;
         const rawKey = accKey.replace(/^google:/, '');
@@ -264,7 +264,7 @@ export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>,
         log.info(`[GooglePool] Clamped over-long cooldown for ${k}: ${Math.round(durationMs / 3600_000)}h → 5h (pre-Fix-8 artifact)`);
       }
       googleAccountCooldowns.set(k, clampedUntil);
-      if (durationMs > 5 * 3600 * 1000) {
+      if (durationMs >= 5 * 3600 * 1000) {
         quotaExhaustedAccountKeys.add(k);
       }
     }
@@ -1072,6 +1072,8 @@ export interface Google429Decision {
   category: Google429Category;
   cooldownMs: number;
   reason: string;
+  isExplicitReset?: boolean;
+  rawRetryAfterMs?: number | null;
 }
 
 export function classifyGoogleCloudCode429(
@@ -1168,6 +1170,8 @@ export function classifyGoogleCloudCode429(
       category: 'soft_rate_limit',
       cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 3000,
       reason: 'Soft burst throttle — momentary pause',
+      isExplicitReset: retryAfterMs !== null,
+      rawRetryAfterMs: retryAfterMs,
     };
   }
 
@@ -1184,6 +1188,8 @@ export function classifyGoogleCloudCode429(
       category: 'rate_limited',
       cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 60_000,
       reason: 'RPM limit — 60s cooldown',
+      isExplicitReset: retryAfterMs !== null,
+      rawRetryAfterMs: retryAfterMs,
     };
   }
 
@@ -1227,6 +1233,8 @@ export function classifyGoogleCloudCode429(
         category: 'quota_exhausted',
         cooldownMs: quotaCooldownMs,
         reason: `Quota exhausted — ${Math.round(quotaCooldownMs / 3_600_000)}h cooldown and switch account`,
+        isExplicitReset: retryAfterMs !== null,
+        rawRetryAfterMs: retryAfterMs,
       };
     }
   }
@@ -1237,6 +1245,8 @@ export function classifyGoogleCloudCode429(
     category: 'unknown',
     cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 60_000,
     reason: 'Generic 429 rate limit',
+    isExplicitReset: retryAfterMs !== null,
+    rawRetryAfterMs: retryAfterMs,
   };
 }
 
