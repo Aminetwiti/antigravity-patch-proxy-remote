@@ -4321,6 +4321,10 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
     enumName === clean ||
     `models/${enumName}` === candidate ||
     candidate.endsWith(enumName) ||
+    enumName.toLowerCase() === candLower ||
+    enumName.toLowerCase() === cleanLower ||
+    `models/${enumName.toLowerCase()}` === candLower ||
+    candLower.endsWith(enumName.toLowerCase()) ||
     (Boolean(extLower) && (candLower === extLower || cleanLower === extLower || candLower === `models/${extLower}`)) ||
     (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
     (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower)) ||
@@ -5830,41 +5834,41 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             ''
           ).toLowerCase();
           const cleanRequested = requestedRaw.replace(/^models\//, '').trim();
-          const hasExplicitCustomSlug = candidateNames.some((cn) => cn.startsWith('custom-'));
-          const isNativeCloudCode = !hasExplicitCustomSlug && (
+          const isExplicitCustom = candidateNames.some(
+            (cn) =>
+              /MODEL_PLACEHOLDER_/i.test(cn) ||
+              cn.startsWith('custom-') ||
+              customModels.some((m) => matchesCustomModel(m, cn))
+          );
+          const isNativeCloudCode = !isExplicitCustom && (
             isNativeCloudCodeModel(cleanRequested) ||
-            candidateNames.some((cn) => !cn.startsWith('custom-') && !/MODEL_PLACEHOLDER_/i.test(cn) && isNativeCloudCodeModel(cn.replace(/^models\//, '').trim()))
+            candidateNames.some((cn) => isNativeCloudCodeModel(cn.replace(/^models\//, '').trim()))
           );
 
           if (isNativeCloudCode) {
-            if (cleanRequested.includes('argon') || cleanRequested.includes('gemini-4')) {
-              if (sessionKey) markNativeSession(sessionKey, cleanRequested);
-              if (convId && convId !== sessionKey) markNativeSession(convId, cleanRequested);
-              if (sessId && sessId !== sessionKey) markNativeSession(sessId, cleanRequested);
-            }
-            if (sessionKey) clearSessionModelFallback(sessionKey);
-            if (convId) clearSessionModelFallback(convId);
-            if (sessId) clearSessionModelFallback(sessId);
-            if (sessId) sessionAffinities.delete(sessId);
-            if (convId) sessionAffinities.delete(convId);
-          } else {
-            // Check if this request is arriving on a session established with an original native model
+            // Check if this request is an automated Language Server fallback on an Argon-failed session
             const activeNative = (sessionKey ? getNativeSession(sessionKey) : undefined) ||
                                  (convId ? getNativeSession(convId) : undefined) ||
                                  (sessId ? getNativeSession(sessId) : undefined);
             const isArgonProtected = Boolean(
               activeNative &&
+              activeNative.lastError &&
               activeNative.originalModel &&
               (activeNative.originalModel.includes('argon') || activeNative.originalModel.includes('gemini-4'))
             );
-            if (isArgonProtected && !hasExplicitCustomSlug) {
+            const isFallbackToDifferentModel = Boolean(
+              isArgonProtected &&
+              !cleanRequested.includes('argon') &&
+              !cleanRequested.includes('gemini-4')
+            );
+            if (isFallbackToDifferentModel) {
               const timeSinceNative = Date.now() - activeNative!.lastSeen;
               if (timeSinceNative < NATIVE_CASCADE_BLOCK_WINDOW_MS) {
                 activeNative!.lastSeen = Date.now();
                 log.warn(
                   `[Proxy] ⛔ Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey}] (original model: [${activeNative!.originalModel}], within cascade window). Strict ZERO fallback rule on Argon: rejecting fallback to report original error directly.`
                 );
-                const err = activeNative.lastError;
+                const err = activeNative!.lastError;
                 if (err && err.body && err.body.length > 0) {
                   const respHeaders = { ...err.headers };
                   delete respHeaders['transfer-encoding'];
@@ -5878,7 +5882,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                     JSON.stringify({
                       error: {
                         code: 429,
-                        message: `Resource has been exhausted (e.g. check quota) for model ${activeNative.originalModel || cleanRequested}.`,
+                        message: `Resource has been exhausted (e.g. check quota) for model ${activeNative!.originalModel || cleanRequested}.`,
                         status: 'RESOURCE_EXHAUSTED',
                       },
                     }),
@@ -5889,13 +5893,24 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                   }
                   return;
                 }
-              } else {
-                // Expired native session: user has explicitly switched model after the turn completed
-                if (sessionKey) nativeSessions.delete(sessionKey);
-                if (convId) nativeSessions.delete(convId);
-                if (sessId) nativeSessions.delete(sessId);
               }
             }
+
+            if (cleanRequested.includes('argon') || cleanRequested.includes('gemini-4')) {
+              if (sessionKey) markNativeSession(sessionKey, cleanRequested);
+              if (convId && convId !== sessionKey) markNativeSession(convId, cleanRequested);
+              if (sessId && sessId !== sessionKey) markNativeSession(sessId, cleanRequested);
+            }
+            if (sessionKey) clearSessionModelFallback(sessionKey);
+            if (convId) clearSessionModelFallback(convId);
+            if (sessId) clearSessionModelFallback(sessId);
+            if (sessId) sessionAffinities.delete(sessId);
+            if (convId) sessionAffinities.delete(convId);
+          } else {
+            // User explicitly requested a custom model: clear any native session lock
+            if (sessionKey) nativeSessions.delete(sessionKey);
+            if (convId) nativeSessions.delete(convId);
+            if (sessId) nativeSessions.delete(sessId);
           }
 
           if (sessionKey && !isNativeCloudCode) {
@@ -5979,10 +5994,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           ''
         ).toLowerCase();
         const cleanRequested = requestedRaw.replace(/^models\//, '').trim();
-        const hasExplicitCustomSlug = candidateNames.some((cn) => cn.startsWith('custom-'));
-        const isNativeCloudCode = !hasExplicitCustomSlug && (
+        const isExplicitCustom = candidateNames.some(
+          (cn) =>
+            /MODEL_PLACEHOLDER_/i.test(cn) ||
+            cn.startsWith('custom-') ||
+            customModels.some((m) => matchesCustomModel(m, cn))
+        );
+        const isNativeCloudCode = !isExplicitCustom && (
           isNativeCloudCodeModel(cleanRequested) ||
-          candidateNames.some((cn) => !cn.startsWith('custom-') && !/MODEL_PLACEHOLDER_/i.test(cn) && isNativeCloudCodeModel(cn.replace(/^models\//, '').trim()))
+          candidateNames.some((cn) => isNativeCloudCodeModel(cn.replace(/^models\//, '').trim()))
         );
 
         let matchingCandidates: typeof customModels = [];

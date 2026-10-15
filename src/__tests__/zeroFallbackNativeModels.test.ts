@@ -456,5 +456,35 @@ describe('Strict Zero Fallback on Native Models', () => {
       }
     });
   });
+
+  describe('Placeholder Case Insensitivity & Custom Immunity', () => {
+    it('matches placeholder IDs regardless of case and models/ prefix', () => {
+      const mockModel: CustomModel = {
+        name: 'models/custom-test',
+        displayName: 'Gemini 3.8 Flash (Medium)',
+        provider: 'google',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        _effortSuffix: '-medium',
+      };
+      const placeholder = generateModelPlaceholderId(mockModel);
+      expect(placeholder).toMatch(/^MODEL_PLACEHOLDER_/);
+
+      // Exact match
+      expect(matchesCustomModel(mockModel, placeholder)).toBe(true);
+      expect(matchesCustomModel(mockModel, `models/${placeholder}`)).toBe(true);
+
+      // Lowercase match
+      const lowerPlaceholder = placeholder.toLowerCase();
+      expect(matchesCustomModel(mockModel, lowerPlaceholder)).toBe(true);
+      expect(matchesCustomModel(mockModel, `models/${lowerPlaceholder}`)).toBe(true);
+    });
+
+    it('ensures custom placeholder models are NEVER classified as native cloud code', () => {
+      expect(isNativeCloudCodeModel('MODEL_PLACEHOLDER_M319')).toBe(false);
+      expect(isNativeCloudCodeModel('model_placeholder_m319')).toBe(false);
+      expect(isNativeCloudCodeModel('models/model_placeholder_m319')).toBe(false);
+      expect(isNativeCloudCodeModel('models/model_placeholder_m50')).toBe(false);
+    });
+  });
 });
 
