@@ -444,6 +444,18 @@ try {
   preloadJs += `\n${fetchInterceptorScript}\n${enhancerInjection}\n`;
   fs.writeFileSync(preloadJsPath, preloadJs, 'utf8');
 
+  // Surgical patch of dist/wsl.js (prevent hangs and error logs if WSL is uninstalled/unresponsive)
+  const wslJsPath = path.join(buildDir, 'dist', 'wsl.js');
+  if (fs.existsSync(wslJsPath)) {
+    let wslJs = fs.readFileSync(wslJsPath, 'utf8');
+    wslJs = wslJs.replace(/timeout:\s*30000/g, 'timeout: 2500');
+    wslJs = wslJs.replace(
+      /async function listWslDistros\(\)\s*\{[\s\S]*?return parseWslListOutput\(output\)\.filter\(isSupportedDevDistro\);\s*\}/,
+      `let _cachedWslDistros = null;\nasync function listWslDistros() {\n    if (_cachedWslDistros !== null) return _cachedWslDistros;\n    try {\n        const output = await execWsl(['--list', '--verbose']);\n        const res = parseWslListOutput(output).filter(isSupportedDevDistro);\n        _cachedWslDistros = res;\n        return res;\n    } catch {\n        _cachedWslDistros = [];\n        return [];\n    }\n}`
+    );
+    fs.writeFileSync(wslJsPath, wslJs, 'utf8');
+  }
+
   // 10. Handle unpacked dependencies
   const unpackedIn = `${asarIn}.unpacked`;
   const unpackedOut = `${asarOut}.unpacked`;
