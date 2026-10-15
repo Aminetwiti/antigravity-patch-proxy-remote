@@ -28,12 +28,18 @@ import {
   clearSessionModelFallbacks,
   matchesCustomModel,
   proxyToGoogle,
+  markNativeSession,
+  getNativeSession,
+  recordNativeSessionError,
+  clearNativeSessions,
 } from '../proxy';
+import { isModelOrLabelDisabled } from '../proxy/protoInjector';
 import type { CustomModel } from '../proxy/types';
 
 describe('Strict Zero Fallback on Native Models', () => {
   beforeEach(() => {
     clearSessionModelFallbacks();
+    clearNativeSessions();
   });
 
   afterEach(() => {
@@ -284,6 +290,73 @@ describe('Strict Zero Fallback on Native Models', () => {
       expect(writtenData).toContain('NOT_FOUND');
       expect(writtenData).toContain('models/gemini-4-argon is not found');
       expect(writtenData).not.toContain('gemini-3.8-flash-tiered');
+    });
+  });
+
+  describe('Native Session Registry & Error Preservation', () => {
+    it('records native session models and manages TTL properly', () => {
+      const sessKey = 'sess-test-native-1';
+      markNativeSession(sessKey, 'gemini-4-argon-high');
+
+      const record = getNativeSession(sessKey);
+      expect(record).toBeDefined();
+      expect(record?.originalModel).toBe('gemini-4-argon-high');
+
+      // Records error correctly
+      const errBuffer = Buffer.from(JSON.stringify({ error: { code: 429, message: 'Resource exhausted' } }));
+      recordNativeSessionError(sessKey, 429, { 'content-type': 'application/json' }, errBuffer);
+
+      const updated = getNativeSession(sessKey);
+      expect(updated?.lastError?.statusCode).toBe(429);
+      expect(updated?.lastError?.body.toString()).toContain('Resource exhausted');
+
+      // Clear sessions
+      clearNativeSessions();
+      expect(getNativeSession(sessKey)).toBeUndefined();
+    });
+
+    it('identifies and blocks automated fallback within turn window on native sessions', () => {
+      const sessKey = 'sess-argon-fallback-test';
+      markNativeSession(sessKey, 'gemini-4-argon-high');
+      
+      const upstream429 = Buffer.from(JSON.stringify({
+        error: { code: 429, message: 'Resource has been exhausted (e.g. check quota).', status: 'RESOURCE_EXHAUSTED' }
+      }));
+      recordNativeSessionError(sessKey, 429, { 'content-type': 'application/json' }, upstream429);
+
+      // 100ms later: Language Server sends automated fallback request for Flash
+      const activeNative = getNativeSession(sessKey);
+      expect(activeNative).toBeDefined();
+      expect(activeNative?.originalModel).toBe('gemini-4-argon-high');
+      expect(activeNative?.lastError?.statusCode).toBe(429);
+      expect(activeNative?.lastError?.body.toString()).toContain('RESOURCE_EXHAUSTED');
+
+      // Turn window is active (< 15 seconds)
+      const timeSince = Date.now() - activeNative!.lastSeen;
+      expect(timeSince).toBeLessThan(15000);
+    });
+  });
+
+  describe('isModelOrLabelDisabled - Native Model Immunity', () => {
+    it('refuses to disable or strip official native Gemini models even if present in disabledSet', () => {
+      const disabledSet = new Set<string>([
+        'gemini-4-argon-medium',
+        'gemini-4-argon',
+        'gemini-3.8-flash',
+      ]);
+
+      // Native Gemini models must NEVER be disabled by custom provider toggles
+      expect(isModelOrLabelDisabled('gemini-4-argon-medium', 'Gemini 4 Argon (Medium)', disabledSet)).toBe(false);
+      expect(isModelOrLabelDisabled('gemini-4-argon-high', 'Gemini 4 Argon (High)', disabledSet)).toBe(false);
+      expect(isModelOrLabelDisabled('gemini-3.8-flash', 'Gemini 3.8 Flash', disabledSet)).toBe(false);
+      expect(isModelOrLabelDisabled('gemini-3.8-flash-low', 'Gemini 3.8 Flash (Low)', disabledSet)).toBe(false);
+
+      // Custom models or third-party models CAN be disabled
+      expect(isModelOrLabelDisabled('custom-gemini-argon', 'Custom Argon', new Set(['custom-gemini-argon']))).toBe(true);
+      expect(isModelOrLabelDisabled('deepseek-chat', 'DeepSeek-V3', new Set(['deepseek-chat']))).toBe(true);
+
+      // Claude models can be explicitly toggled off by users
+      expect(isModelOrLabelDisabled('claude-sonnet-4-6', 'Claude Sonnet 4.6 (Thinking)', new Set(['claude-sonnet-4-6']))).toBe(true);
     });
   });
 });

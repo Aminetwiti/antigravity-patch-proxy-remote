@@ -21,7 +21,7 @@ import type { CustomModel } from './types';
 import { isRecentModel } from './recentModelsStore';
 import { getCachedHealth, type ModelHealthResult } from './modelHealthChecker';
 import { expandModelsWithEffort } from './effortExpander';
-import { detectModelCapabilities, getCanonicalModelKey } from './modelUtils';
+import { detectModelCapabilities, getCanonicalModelKey, isNativeCloudCodeModel } from './modelUtils';
 import { isObsoleteModel } from '../constants';
 import { normalizeCloudCodeModelId } from '../services/googleAuth';
 
@@ -40,6 +40,18 @@ export function isModelOrLabelDisabled(idStr?: string, labelStr?: string, disabl
     .toLowerCase();
 
   const normId = normalizeCloudCodeModelId(cleanId).toLowerCase();
+
+  // Strict protection: NEVER strip or disable native official Cloud Code models!
+  // Provider-level disabled models in custom_models.json only apply to custom injected models.
+  if (
+    !cleanId.startsWith('custom-') &&
+    !/MODEL_PLACEHOLDER_/i.test(cleanId) &&
+    !cleanId.includes('claude') &&
+    !cleanLabel.includes('claude') &&
+    isNativeCloudCodeModel(cleanId)
+  ) {
+    return false;
+  }
 
   if (cleanId && (disabledSet.has(cleanId) || disabledSet.has(`models/${cleanId}`))) return true;
   if (normId && disabledSet.has(normId)) return true;
@@ -254,7 +266,9 @@ export function injectCustomModelsIntoResponse(
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
                 ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
-            : 'gemini-3.8-flash-tiered')
+            : (rawName.includes('argon') || cleanDisp.includes('argon')
+                ? 'gemini-4-argon-medium'
+                : (rawName || 'gemini-3.8-flash-tiered')))
         : rawName;
 
       const modelDedupKey = isGoogleFamily

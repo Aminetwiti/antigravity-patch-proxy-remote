@@ -382,4 +382,20 @@ export function getCanonicalModelKey(idOrName?: string, displayName?: string): s
   return dispNorm || idNorm;
 }
 
+/**
+ * Determines whether a model name refers to an original native Antigravity Cloud Code model
+ * (provided directly by Google / IDE account, NOT injected as a custom model).
+ */
+export function isNativeCloudCodeModel(modelName: string): boolean {
+  if (!modelName || typeof modelName !== 'string') return false;
+  if (modelName.startsWith('custom-') || /MODEL_PLACEHOLDER_/i.test(modelName)) return false;
+  const clean = modelName.replace(/^models\//, '').trim().toLowerCase();
+  return (
+    clean.startsWith('gemini-') ||
+    clean.startsWith('claude-') ||
+    clean.startsWith('gpt-oss-') ||
+    clean.startsWith('gemma-')
+  );
+}
+
 

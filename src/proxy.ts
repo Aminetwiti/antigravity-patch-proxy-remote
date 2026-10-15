@@ -95,6 +95,8 @@ import {
 } from './proxy/urlBuilder';
 import { generateModelPlaceholderId, toSlug } from './proxy/idGenerator';
 import { expandModelsWithEffort } from './proxy/effortExpander';
+import { isNativeCloudCodeModel } from './proxy/modelUtils';
+export { isNativeCloudCodeModel };
 import { resolveGoogleIp } from './proxy/dnsResolver';
 import { markProviderRateLimited, isProviderRateLimited } from './proxy/modelRouter';
 import { trimContextPayload } from './proxy/contextTrimmer';
@@ -1270,6 +1272,14 @@ export async function proxyToGoogle(
       const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
       if (proxyRes.statusCode && proxyRes.statusCode >= 400) {
         log.warn(`[Proxy] Google returned upstream error status ${proxyRes.statusCode}. Forwarding official error directly to client.`);
+        const errChunks: Buffer[] = [];
+        proxyRes.on('data', (chunk) => errChunks.push(chunk));
+        proxyRes.on('end', () => {
+          const fullErr = Buffer.concat(errChunks);
+          if (convId) {
+            recordNativeSessionError(convId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr);
+          }
+        });
         if (safeHead(proxyRes.statusCode, proxyRes.headers as Record<string, string>)) {
           proxyRes.pipe(res);
         }
@@ -4307,20 +4317,63 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
   );
 }
 
-/**
- * Checks whether a model ID is a native Google Cloud Code model shipped with Antigravity IDE.
- * Native models must NOT be hijacked into the custom multi-account pool when selected by the user.
- */
-export function isNativeCloudCodeModel(modelName: string): boolean {
-  if (!modelName || typeof modelName !== 'string') return false;
-  if (modelName.startsWith('custom-') || /MODEL_PLACEHOLDER_/i.test(modelName)) return false;
-  const clean = modelName.replace(/^models\//, '').trim().toLowerCase();
-  return (
-    clean.startsWith('gemini-') ||
-    clean.startsWith('claude-') ||
-    clean.startsWith('gpt-oss-') ||
-    clean.startsWith('gemma-')
-  );
+export interface NativeSessionRecord {
+  originalModel: string;
+  lastSeen: number;
+  lastError?: {
+    statusCode: number;
+    headers: Record<string, string>;
+    body: Buffer;
+  };
+}
+
+const nativeSessions = new Map<string, NativeSessionRecord>();
+export const NATIVE_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+export function markNativeSession(sessionKey: string, model: string): void {
+  if (!sessionKey) return;
+  const now = Date.now();
+  const existing = nativeSessions.get(sessionKey);
+  nativeSessions.set(sessionKey, {
+    originalModel: model || existing?.originalModel || '',
+    lastSeen: now,
+    lastError: existing?.lastError,
+  });
+}
+
+export function getNativeSession(sessionKey: string): NativeSessionRecord | undefined {
+  if (!sessionKey) return undefined;
+  const rec = nativeSessions.get(sessionKey);
+  if (!rec) return undefined;
+  if (Date.now() - rec.lastSeen > NATIVE_SESSION_TTL_MS) {
+    nativeSessions.delete(sessionKey);
+    return undefined;
+  }
+  return rec;
+}
+
+export function recordNativeSessionError(
+  sessionKey: string,
+  statusCode: number,
+  headers: Record<string, string>,
+  body: Buffer,
+): void {
+  if (!sessionKey) return;
+  const rec = nativeSessions.get(sessionKey);
+  if (rec) {
+    rec.lastError = { statusCode, headers, body };
+    rec.lastSeen = Date.now();
+  } else {
+    nativeSessions.set(sessionKey, {
+      originalModel: '',
+      lastSeen: Date.now(),
+      lastError: { statusCode, headers, body },
+    });
+  }
+}
+
+export function clearNativeSessions(): void {
+  nativeSessions.clear();
 }
 
 export function isAllowedOrigin(req: http.IncomingMessage): boolean {
@@ -5705,6 +5758,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     // 3. Intercept Cloud Code generation stream or non-stream requests
     let isSessionRemote = false;
     let convId: string | null = null;
+    let sessId = '';
     const isCloudCodeStream =
       (req.url!.includes('v1internal') || req.url!.includes('cloudcode')) &&
       (req.url!.includes('streamGenerateContent') || req.url!.includes('generateContent'));
@@ -5741,12 +5795,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
         const customModels = expandModelsWithEffort(loadCustomModels());
         let actualGeminiBody: GeminiRequestBody | undefined;
-        let sessId = '';
         let sessionKey = '';
 
         if (candidateNames.length > 0) {
           actualGeminiBody = (reqJson.request || reqJson) as GeminiRequestBody;
-          sessId = extractSessionId(actualGeminiBody as Record<string, unknown>, req.headers as Record<string, unknown>);
+          sessId = extractSessionId(actualGeminiBody as Record<string, unknown>, req.headers as Record<string, unknown>) || '';
           sessionKey = convId || sessId;
 
           const requestedRaw = String(
@@ -5765,11 +5818,57 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           );
 
           if (isNativeCloudCode) {
+            if (sessionKey) markNativeSession(sessionKey, cleanRequested);
+            if (convId && convId !== sessionKey) markNativeSession(convId, cleanRequested);
+            if (sessId && sessId !== sessionKey) markNativeSession(sessId, cleanRequested);
             if (sessionKey) clearSessionModelFallback(sessionKey);
             if (convId) clearSessionModelFallback(convId);
             if (sessId) clearSessionModelFallback(sessId);
             if (sessId) sessionAffinities.delete(sessId);
             if (convId) sessionAffinities.delete(convId);
+          } else {
+            // Check if this request is arriving on a session established with an original native model
+            const activeNative = (sessionKey ? getNativeSession(sessionKey) : undefined) ||
+                                 (convId ? getNativeSession(convId) : undefined) ||
+                                 (sessId ? getNativeSession(sessId) : undefined);
+            if (activeNative && !hasExplicitCustomSlug) {
+              const timeSinceNative = Date.now() - activeNative.lastSeen;
+              if (timeSinceNative < 15000) {
+                log.warn(
+                  `[Proxy] ⛔ Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey}] (original model: [${activeNative.originalModel}], ${timeSinceNative}ms ago). Strict ZERO fallback rule: rejecting fallback to report original error directly.`
+                );
+                const err = activeNative.lastError;
+                if (err && err.body && err.body.length > 0) {
+                  const respHeaders = { ...err.headers };
+                  delete respHeaders['transfer-encoding'];
+                  respHeaders['content-length'] = String(err.body.length);
+                  if (safeWriteHead(res, err.statusCode, respHeaders)) {
+                    safeEnd(res, err.body);
+                  }
+                  return;
+                } else {
+                  const fallbackPayload = Buffer.from(
+                    JSON.stringify({
+                      error: {
+                        code: 429,
+                        message: `Resource has been exhausted (e.g. check quota) for model ${activeNative.originalModel || cleanRequested}.`,
+                        status: 'RESOURCE_EXHAUSTED',
+                      },
+                    }),
+                    'utf-8',
+                  );
+                  if (safeWriteHead(res, 429, { 'Content-Type': 'application/json; charset=UTF-8', 'Content-Length': String(fallbackPayload.length) })) {
+                    safeEnd(res, fallbackPayload);
+                  }
+                  return;
+                }
+              } else {
+                // Expired native session: user has explicitly switched model after the turn completed
+                if (sessionKey) nativeSessions.delete(sessionKey);
+                if (convId) nativeSessions.delete(convId);
+                if (sessId) nativeSessions.delete(sessId);
+              }
+            }
           }
 
           if (sessionKey && !isNativeCloudCode) {
@@ -6129,7 +6228,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
       }
     } catch { /* not JSON — continue as-is */ }
-    await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || '');
+    await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || sessId || '');
 
   });
 }
