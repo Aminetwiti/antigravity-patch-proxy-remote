@@ -149,9 +149,13 @@ describe('isNativeCloudCodeModel', () => {
     expect(isNativeCloudCodeModel('gemini-3.8-flash-tiered')).toBe(true);
     expect(isNativeCloudCodeModel('models/gemini-3.8-flash-tiered')).toBe(true);
     expect(isNativeCloudCodeModel('gemini-3.7-flash')).toBe(true);
+    expect(isNativeCloudCodeModel('gemini-4-argon')).toBe(true);
     expect(isNativeCloudCodeModel('claude-sonnet-4-6')).toBe(true);
     expect(isNativeCloudCodeModel('models/claude-opus-4-6-thinking')).toBe(true);
     expect(isNativeCloudCodeModel('claude-3-5-sonnet')).toBe(true);
+    expect(isNativeCloudCodeModel('gpt-oss-120b')).toBe(true);
+    expect(isNativeCloudCodeModel('models/gpt-oss-120b')).toBe(true);
+    expect(isNativeCloudCodeModel('gemma-2-9b')).toBe(true);
   });
 
   it('rejects custom placeholder models so custom injected models route to the pool', () => {

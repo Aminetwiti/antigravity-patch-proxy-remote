@@ -58,14 +58,14 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late SettingsCategory _selectedCategory;
-  String _selectedDefaultModel = 'Gemini 3.7 Flash Medium';
+  String _selectedDefaultModel = 'Gemini 3.8 Flash Medium';
 
   @override
   void initState() {
     super.initState();
     _selectedCategory = widget.initialCategory;
     _selectedDefaultModel =
-        (widget.initialSettings['defaultModel'] as String?) ?? 'Gemini 3.7 Flash Medium';
+        (widget.initialSettings['defaultModel'] as String?) ?? 'Gemini 3.8 Flash Medium';
   }
 
   Widget _buildCategoryContent(SettingsCategory category) {

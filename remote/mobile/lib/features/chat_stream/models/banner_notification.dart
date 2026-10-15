@@ -165,7 +165,7 @@ class BannerClassifier {
         type: BannerType.modelCapacity,
         severity: BannerSeverity.warning,
         title: 'Capacité du modèle saturée',
-        message: 'Les serveurs sont saturés. Basculez vers Gemini 3.7 Flash, Claude ou un modèle custom.',
+        message: 'Les serveurs sont saturés. Basculez vers Gemini 3.8 Flash, Claude ou un modèle custom.',
         actions: actions,
       );
     }

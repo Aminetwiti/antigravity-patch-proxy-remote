@@ -148,7 +148,7 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
         apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
         refreshToken: 'token-1',
         accountEmail: 'user1@gmail.com',
-        externalModelName: 'gemini-3.7-flash-tiered',
+        externalModelName: 'gemini-3.8-flash-tiered',
       };
       setAccountCooldown(acc1, 60_000, 'gemini');
       expect(isAccountInCooldown(acc1, 'gemini')).toBe(true);
@@ -173,7 +173,7 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       await executeGoogleCloudCodeWithPool(
         fakeReq,
         fakeRes,
-        { model: 'gemini-3.7-flash-tiered', request: { contents: [{ parts: [{ text: 'hi' }] }] } },
+        { model: 'gemini-3.8-flash-tiered', request: { contents: [{ parts: [{ text: 'hi' }] }] } },
         [acc1],
         false,
         'test-conv',
@@ -182,7 +182,7 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       );
 
       // Should terminate cleanly and record attempted models without ping-ponging
-      expect(attempted.has('gemini-3.7-flash-tiered')).toBe(true);
+      expect(attempted.has('gemini-3.8-flash-tiered')).toBe(true);
     });
 
     it('prevents circular flip-flop in setSessionModelFallback (A -> B then B -> A)', () => {

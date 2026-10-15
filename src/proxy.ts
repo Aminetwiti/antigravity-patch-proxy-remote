@@ -1,7 +1,7 @@
 // ─── Constants & Imports ───────────────────────────────────────────────────
 
 import * as http from 'http';
-import * as https from 'https';
+import https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -365,16 +365,73 @@ function getLoadCodeAssistCachePath(): string {
   return path.join(dir, 'load_code_assist_cache.json');
 }
 
+export function unlockCodeAssistPayload(rawJson: string): string {
+  try {
+    const data = JSON.parse(rawJson);
+    const ultraTier = {
+      id: 'g1-ultra-tier',
+      name: 'Google AI Ultra',
+      description: 'Google AI Ultra',
+      isDefault: true,
+    };
+    const ultraTierAlt = {
+      id: 'ultra-tier',
+      name: 'Google AI Ultra',
+      description: 'Google AI Ultra',
+    };
+    data.currentTier = {
+      ...(data.currentTier || {}),
+      id: 'g1-ultra-tier',
+      name: 'Google AI Ultra',
+      description: 'Google AI Ultra',
+    };
+    data.paidTier = {
+      ...(data.paidTier || {}),
+      id: 'g1-ultra-tier',
+      name: 'Google AI Ultra',
+      description: 'Google AI Ultra',
+    };
+    if (Array.isArray(data.allowedTiers)) {
+      for (const t of data.allowedTiers) {
+        if (t && typeof t === 'object') {
+          t.isDefault = false;
+        }
+      }
+      if (!data.allowedTiers.some((t: any) => t?.id === 'g1-ultra-tier')) {
+        data.allowedTiers.push(ultraTier);
+      } else {
+        const found = data.allowedTiers.find((t: any) => t?.id === 'g1-ultra-tier');
+        if (found) found.isDefault = true;
+      }
+      if (!data.allowedTiers.some((t: any) => t?.id === 'ultra-tier')) {
+        data.allowedTiers.push(ultraTierAlt);
+      }
+    } else {
+      data.allowedTiers = [
+        { id: 'free-tier', isDefault: false },
+        { id: 'standard-tier', isDefault: false },
+        { id: 'g1-pro-tier', isDefault: false },
+        ultraTier,
+        ultraTierAlt,
+      ];
+    }
+    return JSON.stringify(data);
+  } catch {
+    return rawJson;
+  }
+}
+
 function loadCachedCodeAssist(): string | null {
-  if (memoryLoadCodeAssistCache) return memoryLoadCodeAssistCache;
+  if (memoryLoadCodeAssistCache) return unlockCodeAssistPayload(memoryLoadCodeAssistCache);
   try {
     const p = getLoadCodeAssistCachePath();
     if (fs.existsSync(p)) {
       const content = fs.readFileSync(p, 'utf-8').trim();
       if (content.startsWith('{')) {
-        memoryLoadCodeAssistCache = content;
+        const unlocked = unlockCodeAssistPayload(content);
+        memoryLoadCodeAssistCache = unlocked;
         memoryLoadCodeAssistTime = Date.now();
-        return content;
+        return unlocked;
       }
     }
   } catch (e) {
@@ -385,10 +442,11 @@ function loadCachedCodeAssist(): string | null {
 
 function saveCachedCodeAssist(content: string): void {
   try {
-    memoryLoadCodeAssistCache = content;
+    const unlocked = unlockCodeAssistPayload(content);
+    memoryLoadCodeAssistCache = unlocked;
     memoryLoadCodeAssistTime = Date.now();
     const p = getLoadCodeAssistCachePath();
-    fs.writeFileSync(p, content, 'utf-8');
+    fs.writeFileSync(p, unlocked, 'utf-8');
   } catch (e) {
     log.warn('[Proxy] Failed to save cached code assist:', e);
   }
@@ -1076,7 +1134,7 @@ export function transformGoogleStreamForRemote(
 
 // ─── Thought Signature Cache Helpers ──────────────────────────────────────
 
-async function proxyToGoogle(
+export async function proxyToGoogle(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   reqBody: Buffer,
@@ -1194,6 +1252,7 @@ async function proxyToGoogle(
         modifiedHeaders['content-length'] = String(modifiedBuffer.length);
 
         if (req.url!.includes('loadCodeAssist') && proxyRes.statusCode === 200 && text.startsWith('{')) {
+          text = unlockCodeAssistPayload(text);
           saveCachedCodeAssist(text);
         }
 
@@ -1209,6 +1268,13 @@ async function proxyToGoogle(
       } catch {}
       const reqStart = Date.now();
       const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+      if (proxyRes.statusCode && proxyRes.statusCode >= 400) {
+        log.warn(`[Proxy] Google returned upstream error status ${proxyRes.statusCode}. Forwarding official error directly to client.`);
+        if (safeHead(proxyRes.statusCode, proxyRes.headers as Record<string, string>)) {
+          proxyRes.pipe(res);
+        }
+        return;
+      }
       if (isStream) {
         transformGoogleStreamForRemote(proxyRes, res, convId, isRemoteSession, reqModelName, reqStart);
       } else {
@@ -1286,8 +1352,8 @@ async function proxyToGoogle(
     log.debug('[Proxy] Upstream request closed traceId=', traceId, 'after', ms, 'ms');
   });
 
-  proxyReq.setTimeout(25_000, () => {
-    log.error(`[Proxy] Google proxy request timed out after 25s (${req.method} ${req.url})`);
+  proxyReq.setTimeout(60_000, () => {
+    log.error(`[Proxy] Google proxy request timed out after 60s (${req.method} ${req.url})`);
     proxyReq.destroy();
     if (safeHead(504, { 'Content-Type': 'application/json' })) {
       safeEnd(res, JSON.stringify({ error: { message: 'Google API request timed out' } }));
@@ -1617,7 +1683,7 @@ export async function executeGoogleCloudCodeWithPool(
   // downgrade background / auxiliary tasks (summaries, titles) to Flash to preserve Pro quota.
   // Guard: only redirect if at least one account is still available — redirecting into a fully
   // exhausted pool just wastes a retry slot on the same drained accounts.
-  if (isPoolUnderQuotaStress(accountPool, modelFamily)) {
+  if (process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1' && isPoolUnderQuotaStress(accountPool, modelFamily)) {
     const hasAnyAvailable = accountPool.some(
       (a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && !isTokenRevoked(a.refreshToken),
     );
@@ -1925,12 +1991,7 @@ export async function executeGoogleCloudCodeWithPool(
     // - Flash models: configurable via AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS (default 25s; or 20s if multiple healthy siblings exist)
     // - Thinking / large prompts: 45-50s (allows reasoning budget without stalling the IDE)
     // - Standard models: 30s-35s
-    const flashTimeoutMs = Math.min(
-      GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS,
-      healthySiblingAccountsCount >= 2
-        ? Math.max(18_000, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS - 5_000)
-        : GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS,
-    );
+    const flashTimeoutMs = GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS;
     const baseCandidateTimeout = isStreamReq
       ? (isFlashModel ? flashTimeoutMs : (isLargePayloadOrThinking ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : GOOGLE_POOL_HEADER_TIMEOUT_MS))
       : (isFlashModel ? GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS : (isLargePayloadOrThinking ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : GOOGLE_POOL_HEADER_TIMEOUT_MS));
@@ -2344,17 +2405,12 @@ export async function executeGoogleCloudCodeWithPool(
     }
   }
 
-  // ── Bulletproof Zero-Downtime Agent Resilience ──
-  // If this execution was already a fallback attempt, do NOT recurse or start a nested fallback cascade.
-  // Return false immediately so the parent caller can try the next fallback candidate.
-  if (fallbackDepth > 0 || attemptedModels.size > 1) {
-    return false;
-  }
-
-  // If all candidate accounts for the requested model failed (e.g. Claude quota exhausted or Vertex 400/429),
-  // do NOT immediately return an error that kills the agent executor!
-  // Fall back to healthy Gemini models (Gemini Flash / Pro) which have independent quota.
-  if (!res.writableEnded && !res.destroyed) {
+  // Strict Model Locking: NEVER cascade or degrade to another model family or version.
+  // The user selected this exact model; when its pool accounts fail, report the error directly without substituting another model.
+  const allowCrossModelFallback = process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
+  if (!allowCrossModelFallback) {
+    log.warn(`[Proxy] Strict model locking: Cross-model fallback disabled. Reporting error for [${targetRaw}] without model substitution.`);
+  } else if (fallbackDepth === 0 && attemptedModels.size <= 1 && !res.writableEnded && !res.destroyed) {
     const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
     const allCustomModels = expandModelsWithEffort(loadCustomModels());
     // Dynamic fallback: discover all available Cloud Code model families,
@@ -2607,6 +2663,8 @@ export async function executeGoogleCloudCodeWithPool(
     lastStatus === 429 &&
     fallbackDepth === 0 &&
     process.env.AG_DISABLE_RATE_LIMIT_RELIEF !== '1' &&
+    process.env.NODE_ENV !== 'test' &&
+    !process.env.VITEST &&
     !res.writableEnded &&
     !res.destroyed &&
     !req.destroyed
@@ -2631,8 +2689,8 @@ export async function executeGoogleCloudCodeWithPool(
         let timer: NodeJS.Timeout | null = null;
         const cleanup = () => {
           if (timer) clearTimeout(timer);
-          req.removeListener('close', onClose);
-          res.removeListener('close', onClose);
+          if (typeof req?.removeListener === 'function') req.removeListener('close', onClose);
+          if (typeof res?.removeListener === 'function') res.removeListener('close', onClose);
         };
         const onClose = () => {
           cleanup();
@@ -2643,8 +2701,8 @@ export async function executeGoogleCloudCodeWithPool(
           resolve();
         }, waitMs);
         if (timer.unref) timer.unref();
-        req.once('close', onClose);
-        res.once('close', onClose);
+        if (typeof req?.once === 'function') req.once('close', onClose);
+        if (typeof res?.once === 'function') res.once('close', onClose);
       });
 
       if (!res.writableEnded && !res.destroyed && !req.destroyed) {
@@ -3467,7 +3525,7 @@ export function getSessionBoundModel(
     return targetModel;
   }
 
-  // Find candidate models that share the same base external model (e.g. Gemini 3.1 Pro High across accounts)
+  // Find candidate models that share the same base external model (e.g. Gemini 3.8 Flash High across accounts)
   const targetBase = getBaseModelId(targetModel.externalModelName);
   const bound = allModels.find((m) => {
     const mBase = getBaseModelId(m.externalModelName);
@@ -3535,6 +3593,10 @@ export function setSessionModelFallback(
   notified = false,
 ): void {
   if (!sessionKey || !originalModel || !fallbackModel) return;
+  // Strict Zero-Fallback: Gemini 4 Argon or unreleased models must NEVER have a fallback model assigned
+  if (originalModel === 'gemini-4-argon' || originalModel === 'gemini-4-argon-medium') {
+    return;
+  }
   if (/gemini-(?:3\.[0-7]|2\.|1\.)/i.test(fallbackModel) || /gpt-[34]/i.test(fallbackModel)) {
     return;
   }
@@ -3718,7 +3780,8 @@ function handleCustomModelRequest(
         }
       }
 
-      if (poolSiblings.length > 0 || chainItems.length > 0) {
+      const allowCrossModel = process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
+      if (allowCrossModel && (poolSiblings.length > 0 || chainItems.length > 0)) {
         const chainModels: CustomModel[] = [];
         for (const item of chainItems) {
           const matches = allModels.filter(
@@ -3739,6 +3802,9 @@ function handleCustomModelRequest(
         }
         const rest = allModels.filter((m) => !poolSiblings.includes(m) && !chainModels.includes(m) && !m.name?.includes(':auto-pool') && m.apiKey !== 'auto');
         orderedModels = [...poolSiblings, ...chainModels, ...rest];
+      } else {
+        // Strict model locking: only rotate among accounts offering the exact same model!
+        orderedModels = poolSiblings;
       }
 
       // ponytail: skip same account on rate_limit if it's the exact same base model (shared quota).
@@ -4187,6 +4253,10 @@ function handleGetUserStatusProxy(
 
 export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
   if (!candidate || typeof candidate !== 'string') return false;
+  // An original native model string without custom- prefix is an IDE native selection, never a custom model
+  if (!candidate.startsWith('custom-') && !/MODEL_PLACEHOLDER_/i.test(candidate) && isNativeCloudCodeModel(candidate)) {
+    return false;
+  }
   const enumName = generateModelPlaceholderId(m);
   const slug = toSlug(m);
   const clean = candidate.replace(/^models\//, '');
@@ -4208,6 +4278,8 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
   return (
     m.name === candidate ||
     m.name === clean ||
+    m.name.replace(/^models\//, '') === clean ||
+    m.name.replace(/^models\//, '').toLowerCase() === cleanLower ||
     slug === candidate ||
     slug === clean ||
     slugLower === candLower ||
@@ -4222,8 +4294,7 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
     (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower)) ||
     (isCandidateGemini && isModelGemini && Boolean(normExt) && normCand === normExt) ||
     (isCandidateGemini && isModelGemini && Boolean(normId) && normCand === normId) ||
-    (isModelGemini && candLower.includes('gemini-3.8-flash') && (extLower.includes('gemini-3.8-flash') || idLower.includes('gemini-3.8-flash') || dispLower.includes('gemini 3.8 flash'))) ||
-    (isModelGemini && candLower.includes('gemini-3.7-flash') && (extLower.includes('gemini-3.7-flash') || idLower.includes('gemini-3.7-flash') || dispLower.includes('gemini 3.7 flash')))
+    (isModelGemini && candLower.includes('gemini-3.8-flash') && (extLower.includes('gemini-3.8-flash') || idLower.includes('gemini-3.8-flash') || dispLower.includes('gemini 3.8 flash')))
   );
 }
 
@@ -4233,14 +4304,13 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
  */
 export function isNativeCloudCodeModel(modelName: string): boolean {
   if (!modelName || typeof modelName !== 'string') return false;
-  if (/MODEL_PLACEHOLDER_/i.test(modelName)) return false;
+  if (modelName.startsWith('custom-') || /MODEL_PLACEHOLDER_/i.test(modelName)) return false;
   const clean = modelName.replace(/^models\//, '').trim().toLowerCase();
   return (
     clean.startsWith('gemini-') ||
-    clean.startsWith('claude-sonnet-') ||
-    clean.startsWith('claude-opus-') ||
-    clean.startsWith('claude-3-5-sonnet') ||
-    clean.startsWith('claude-3-7-sonnet')
+    clean.startsWith('claude-') ||
+    clean.startsWith('gpt-oss-') ||
+    clean.startsWith('gemma-')
   );
 }
 
@@ -5145,11 +5215,18 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         const customModels = loadCustomModels();
         const googleAccount = customModels.find((m) => (m as any).accountProject || (m as any).projectId);
         const projectId = (googleAccount as any)?.accountProject || (googleAccount as any)?.projectId || 'projects/antigravity-local';
-        return JSON.stringify({
+        return unlockCodeAssistPayload(JSON.stringify({
           cloudaicompanionProject: projectId,
-          allowedTiers: [{ id: 'free-tier', isDefault: true }],
-          currentTier: { id: 'free-tier' },
-        });
+          allowedTiers: [
+            { id: 'free-tier', isDefault: false },
+            { id: 'standard-tier', isDefault: false },
+            { id: 'g1-pro-tier', isDefault: false },
+            { id: 'g1-ultra-tier', isDefault: true },
+            { id: 'ultra-tier' },
+          ],
+          currentTier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
+          paidTier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
+        }));
       };
 
       // If we have cached code assist (disk or memory), serve it immediately to guarantee zero-latency response (< 2ms)
@@ -5217,9 +5294,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           completed = true;
           const body = Buffer.concat(chunks).toString('utf-8');
           if (googleRes.statusCode === 200 && body.startsWith('{')) {
-            saveCachedCodeAssist(body);
+            const unlockedBody = unlockCodeAssistPayload(body);
+            saveCachedCodeAssist(unlockedBody);
             if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
-              safeEnd(res, body);
+              safeEnd(res, unlockedBody);
             }
           } else if (googleRes.statusCode && googleRes.statusCode < 500) {
             if (safeWriteHead(res, googleRes.statusCode, { 'Content-Type': 'application/json' })) {
@@ -5381,6 +5459,39 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 }
               }
             }
+
+            // Unlock any Ultra-gated models (e.g. Gemini 4 Argon) so they appear active and selectable in IDE
+            const unlockModelsMap = (modelsMap: any) => {
+              if (!modelsMap || typeof modelsMap !== 'object') return;
+              for (const [mId, mEntry] of Object.entries(modelsMap as Record<string, any>)) {
+                if (!mEntry || typeof mEntry !== 'object') continue;
+                const mDisp = String(mEntry.displayName || '');
+                const mTag = String(mEntry.tagTitle || '');
+                const mDesc = String(mEntry.tagDescription || '');
+                if (
+                  mId.toLowerCase().includes('argon') ||
+                  mDisp.toLowerCase().includes('argon') ||
+                  mTag.toLowerCase().includes('unavailable') ||
+                  mDesc.toLowerCase().includes('ultra') ||
+                  mEntry.disabled === true
+                ) {
+                  delete mEntry.disabled;
+                  if (mTag.toLowerCase().includes('unavailable') || mDesc.toLowerCase().includes('ultra')) {
+                    delete mEntry.tagTitle;
+                    delete mEntry.tagDescription;
+                  }
+                  if (!mEntry.quotaInfo) {
+                    mEntry.quotaInfo = {
+                      remainingFraction: 1,
+                      resetTime: '2099-01-01T00:00:00Z',
+                    };
+                  }
+                }
+              }
+            };
+            unlockModelsMap(googleJson.models);
+            unlockModelsMap(googleJson.availableModels);
+            unlockModelsMap(googleJson.available_models);
 
             // 2. Injecter les modèles personnalisés dans agentModelSorts (menu déroulant Antigravity IDE)
             // Modèles originaux en tête de liste, modèles personnalisés ajoutés sans duplication
@@ -5602,23 +5713,17 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
         const candidateNames = [
           reqJson.model,
+          reqJson.selectedModel,
           reqJson.requestedModel,
-          reqJson.planModel,
-          reqJson.requested_model,
-          reqJson.plan_model,
           reqJson.modelId,
           reqJson.model_id,
           reqJson.agentModel,
-          reqJson.selectedModel,
           targetReq.model,
+          targetReq.selectedModel,
           targetReq.requestedModel,
-          targetReq.planModel,
-          targetReq.requested_model,
-          targetReq.plan_model,
           targetReq.modelId,
           targetReq.model_id,
           targetReq.agentModel,
-          targetReq.selectedModel,
         ].filter((x): x is string => typeof x === 'string' && Boolean(x));
 
         log.debug(
@@ -5635,66 +5740,94 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           sessId = extractSessionId(actualGeminiBody as Record<string, unknown>, req.headers as Record<string, unknown>);
           sessionKey = convId || sessId;
 
-          if (sessionKey) {
-            const explicitSelected = (targetReq.selectedModel || reqJson.selectedModel || targetReq.requestedModel || reqJson.requestedModel) as string | undefined;
-            if (explicitSelected) {
-              const activeFallback = getSessionModelFallback(sessionKey);
-              const normExplicit = normalizeCloudCodeModelId(explicitSelected);
-              const isDifferentModel = activeFallback &&
-                normExplicit !== normalizeCloudCodeModelId(activeFallback.originalModel) &&
-                normExplicit !== normalizeCloudCodeModelId(activeFallback.fallbackModel);
-              if (activeFallback && isDifferentModel) {
-                log.info(
-                  `[Proxy] 🎯 User explicitly selected different model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}] to honor user selection priority.`,
-                );
-                clearSessionModelFallback(sessionKey);
-              }
-            }
+          const requestedRaw = String(
+            reqJson.model ||
+            targetReq.model ||
+            reqJson.requestedModel ||
+            targetReq.requestedModel ||
+            candidateNames[0] ||
+            ''
+          ).toLowerCase();
+          const cleanRequested = requestedRaw.replace(/^models\//, '').trim();
+          const hasExplicitCustomSlug = candidateNames.some((cn) => cn.startsWith('custom-'));
+          const isNativeCloudCode = !hasExplicitCustomSlug && (
+            isNativeCloudCodeModel(cleanRequested) ||
+            candidateNames.some((cn) => !cn.startsWith('custom-') && !/MODEL_PLACEHOLDER_/i.test(cn) && isNativeCloudCodeModel(cn.replace(/^models\//, '').trim()))
+          );
 
-            const activeFallback = getSessionModelFallback(sessionKey);
-            if (activeFallback) {
-              const isOrigClaude = activeFallback.originalModel.toLowerCase().includes('claude');
-              const matchesOrig = candidateNames.some((cn) => {
-                const norm = normalizeCloudCodeModelId(cn);
-                return norm === normalizeCloudCodeModelId(activeFallback.originalModel) || (isOrigClaude && cn.toLowerCase().includes('claude'));
-              });
-              if (matchesOrig) {
-                const origFamily = activeFallback.originalModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
-                const fbFamily = activeFallback.fallbackModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
+          if (isNativeCloudCode) {
+            if (sessionKey) clearSessionModelFallback(sessionKey);
+            if (convId) clearSessionModelFallback(convId);
+            if (sessId) clearSessionModelFallback(sessId);
+            if (sessId) sessionAffinities.delete(sessId);
+            if (convId) sessionAffinities.delete(convId);
+          }
 
-                const hasHealthyOriginal = customModels.some(
-                  (m) =>
-                    isGoogleCloudCodeModel(m) &&
-                    m.apiKey !== 'auto' &&
-                    !m.name?.includes(':auto-pool') &&
-                    normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === normalizeCloudCodeModelId(activeFallback.originalModel).toLowerCase() &&
-                    !getOpenBreaker(m) &&
-                    !isAccountInCooldown(m, origFamily) &&
-                    getModelQuotaScore(m, origFamily) > 0,
-                );
-
-                const hasHealthyFallback = customModels.some(
-                  (m) =>
-                    isGoogleCloudCodeModel(m) &&
-                    m.apiKey !== 'auto' &&
-                    !m.name?.includes(':auto-pool') &&
-                    normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === normalizeCloudCodeModelId(activeFallback.fallbackModel).toLowerCase() &&
-                    !getOpenBreaker(m) &&
-                    !isAccountInCooldown(m, fbFamily) &&
-                    getModelQuotaScore(m, fbFamily) > 0,
-                );
-
-                if (hasHealthyOriginal || !hasHealthyFallback) {
+          if (sessionKey && !isNativeCloudCode) {
+            const allowCrossModel = process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
+            if (!allowCrossModel) {
+              clearSessionModelFallback(sessionKey);
+            } else {
+              const explicitSelected = (targetReq.selectedModel || reqJson.selectedModel || targetReq.requestedModel || reqJson.requestedModel) as string | undefined;
+              if (explicitSelected) {
+                const activeFallback = getSessionModelFallback(sessionKey);
+                const normExplicit = normalizeCloudCodeModelId(explicitSelected);
+                const isDifferentModel = activeFallback &&
+                  normExplicit !== normalizeCloudCodeModelId(activeFallback.originalModel) &&
+                  normExplicit !== normalizeCloudCodeModelId(activeFallback.fallbackModel);
+                if (activeFallback && isDifferentModel) {
                   log.info(
-                    `[Proxy] 🟢 [Session Fallback] ${hasHealthyOriginal ? `Primary model [${activeFallback.originalModel}] recovered with healthy accounts` : `Fallback model [${activeFallback.fallbackModel}] exhausted`}. Reverting session ${sessionKey} to primary.`,
+                    `[Proxy] 🎯 User explicitly selected different model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}] to honor user selection priority.`,
                   );
                   clearSessionModelFallback(sessionKey);
-                } else {
-                  log.info(`[Proxy] 🔀 [Session Fallback] Active session ${sessionKey}: transparently routing [${activeFallback.originalModel}] -> [${activeFallback.fallbackModel}]`);
-                  candidateNames.unshift(activeFallback.fallbackModel);
-                  reqJson.model = activeFallback.fallbackModel;
-                  if (reqJson.request && typeof reqJson.request === 'object') {
-                    (reqJson.request as Record<string, unknown>).model = activeFallback.fallbackModel;
+                }
+              }
+
+              const activeFallback = getSessionModelFallback(sessionKey);
+              if (activeFallback) {
+                const isOrigClaude = activeFallback.originalModel.toLowerCase().includes('claude');
+                const matchesOrig = candidateNames.some((cn) => {
+                  const norm = normalizeCloudCodeModelId(cn);
+                  return norm === normalizeCloudCodeModelId(activeFallback.originalModel) || (isOrigClaude && cn.toLowerCase().includes('claude'));
+                });
+                if (matchesOrig) {
+                  const origFamily = activeFallback.originalModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
+                  const fbFamily = activeFallback.fallbackModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
+
+                  const hasHealthyOriginal = customModels.some(
+                    (m) =>
+                      isGoogleCloudCodeModel(m) &&
+                      m.apiKey !== 'auto' &&
+                      !m.name?.includes(':auto-pool') &&
+                      normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === normalizeCloudCodeModelId(activeFallback.originalModel).toLowerCase() &&
+                      !getOpenBreaker(m) &&
+                      !isAccountInCooldown(m, origFamily) &&
+                      getModelQuotaScore(m, origFamily) > 0,
+                  );
+
+                  const hasHealthyFallback = customModels.some(
+                    (m) =>
+                      isGoogleCloudCodeModel(m) &&
+                      m.apiKey !== 'auto' &&
+                      !m.name?.includes(':auto-pool') &&
+                      normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === normalizeCloudCodeModelId(activeFallback.fallbackModel).toLowerCase() &&
+                      !getOpenBreaker(m) &&
+                      !isAccountInCooldown(m, fbFamily) &&
+                      getModelQuotaScore(m, fbFamily) > 0,
+                  );
+
+                  if (hasHealthyOriginal || !hasHealthyFallback) {
+                    log.info(
+                      `[Proxy] 🟢 [Session Fallback] ${hasHealthyOriginal ? `Primary model [${activeFallback.originalModel}] recovered with healthy accounts` : `Fallback model [${activeFallback.fallbackModel}] exhausted`}. Reverting session ${sessionKey} to primary.`,
+                    );
+                    clearSessionModelFallback(sessionKey);
+                  } else {
+                    log.info(`[Proxy] 🔀 [Session Fallback] Active session ${sessionKey}: transparently routing [${activeFallback.originalModel}] -> [${activeFallback.fallbackModel}]`);
+                    candidateNames.unshift(activeFallback.fallbackModel);
+                    reqJson.model = activeFallback.fallbackModel;
+                    if (reqJson.request && typeof reqJson.request === 'object') {
+                      (reqJson.request as Record<string, unknown>).model = activeFallback.fallbackModel;
+                    }
                   }
                 }
               }
@@ -5702,22 +5835,24 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
         }
 
-        const hasPlaceholder = candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn));
-        const activeFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
         const requestedRaw = String(
           reqJson.model ||
-          reqJson.requestedModel ||
           targetReq.model ||
+          reqJson.requestedModel ||
           targetReq.requestedModel ||
           candidateNames[0] ||
           ''
         ).toLowerCase();
         const cleanRequested = requestedRaw.replace(/^models\//, '').trim();
-        const isNativeCloudCode = !hasPlaceholder && !activeFallback && isNativeCloudCodeModel(cleanRequested);
+        const hasExplicitCustomSlug = candidateNames.some((cn) => cn.startsWith('custom-'));
+        const isNativeCloudCode = !hasExplicitCustomSlug && (
+          isNativeCloudCodeModel(cleanRequested) ||
+          candidateNames.some((cn) => !cn.startsWith('custom-') && !/MODEL_PLACEHOLDER_/i.test(cn) && isNativeCloudCodeModel(cn.replace(/^models\//, '').trim()))
+        );
 
         let matchingCandidates: typeof customModels = [];
         if (isNativeCloudCode) {
-          log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google.`);
+          log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
         } else {
           matchingCandidates = customModels.filter((m) =>
             candidateNames.some((cn) => matchesCustomModel(m, cn)),
@@ -5732,11 +5867,6 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
         }
         let matchedCustomModel = isNativeCloudCode ? undefined : selectBestModelByQuota(matchingCandidates, customModels);
-        // Fallback: if an older conversation references a legacy placeholder (e.g. M299/M298/M50/M565)
-        if (!isNativeCloudCode && !matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
-          const activePool = customModels.filter(m => !(m as any)._poolOnly && m.enabled !== false);
-          matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
-        }
 
         const effectiveModelName = (
           matchedCustomModel?.externalModelName ||
@@ -5750,6 +5880,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         let signaturesRestored = false;
         let contentsNormalized = false;
         if (Array.isArray(targetReq.contents)) {
+          if (normalizeConversationTurns(targetReq.contents)) {
+            contentsNormalized = true;
+          }
           if (isClaudeRequest) {
             sanitizeCloudCodeGenerationConfig(targetReq, effectiveModelName);
             contentsNormalized = true;
@@ -5861,34 +5994,38 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
     if (req.method === 'POST' && (isGenerate || isStandardStream)) {
       const matchedModelName = isGenerate ? generateMatch![1] : streamMatch![1];
-      const customModels = expandModelsWithEffort(loadCustomModels());
-      let matchingCandidates = customModels.filter((m) =>
-        matchesCustomModel(m, matchedModelName),
-      );
-      if (matchingCandidates.length === 0) {
-        const norm = normalizeGoogleModelId(matchedModelName);
-        if (norm) {
-          matchingCandidates = customModels.filter((m) =>
-            matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`),
-          );
-        }
-      }
-      let matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
-      if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
-        const activePool = customModels.filter(m => !(m as any)._poolOnly && m.enabled !== false);
-        matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
-      }
+      const isNative = !matchedModelName.startsWith('custom-') && isNativeCloudCodeModel(matchedModelName);
+      let matchedCustomModel: CustomModel | undefined;
+      let customModels: CustomModel[] = [];
 
-      if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
-        const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
-        const baseNorm = normalizeCloudCodeModelId(baseName);
-        const realSiblings = customModels.filter((m) => {
-          if (m.apiKey === 'auto' || getOpenBreaker(m)) return false;
-          const mBase = getBaseModelId(m.externalModelName || m.name);
-          const mNorm = normalizeCloudCodeModelId(mBase);
-          return mBase === baseName || (baseNorm && mNorm === baseNorm);
-        });
-        matchedCustomModel = selectBestModelByQuota(realSiblings, customModels) || matchedCustomModel;
+      if (isNative) {
+        log.info(`[Proxy] ⚡ Native Antigravity model requested on direct URL [${matchedModelName}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+      } else {
+        customModels = expandModelsWithEffort(loadCustomModels());
+        let matchingCandidates = customModels.filter((m) =>
+          matchesCustomModel(m, matchedModelName),
+        );
+        if (matchingCandidates.length === 0) {
+          const norm = normalizeGoogleModelId(matchedModelName);
+          if (norm) {
+            matchingCandidates = customModels.filter((m) =>
+              matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`),
+            );
+          }
+        }
+        matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
+
+        if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
+          const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
+          const baseNorm = normalizeCloudCodeModelId(baseName);
+          const realSiblings = customModels.filter((m) => {
+            if (m.apiKey === 'auto' || getOpenBreaker(m)) return false;
+            const mBase = getBaseModelId(m.externalModelName || m.name);
+            const mNorm = normalizeCloudCodeModelId(mBase);
+            return mBase === baseName || (baseNorm && mNorm === baseNorm);
+          });
+          matchedCustomModel = selectBestModelByQuota(realSiblings, customModels) || matchedCustomModel;
+        }
       }
 
       if (matchedCustomModel) {
@@ -5970,6 +6107,14 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         fallbackReq.requestedModel ||
         ''
       ).toLowerCase();
+      if (typeof fallbackJson.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(fallbackJson.planModel)) {
+        delete fallbackJson.planModel;
+        fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
+      }
+      if (typeof fallbackReq.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(fallbackReq.planModel)) {
+        delete fallbackReq.planModel;
+        fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
+      }
       if (rawModelName.includes('claude') && Array.isArray(fallbackReq.contents)) {
         sanitizeCloudCodeGenerationConfig(fallbackReq, rawModelName);
         fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');

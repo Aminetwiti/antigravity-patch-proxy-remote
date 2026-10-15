@@ -497,17 +497,17 @@ describe('Burst Rate Limit Governor & Constants', () => {
     _resetAllAccountCooldowns();
   });
 
-  it('verifies GOOGLE_POOL_HEADER_TIMEOUT_MS defaults to 35s', () => {
+  it('verifies GOOGLE_POOL_HEADER_TIMEOUT_MS defaults to 60s', () => {
     const expected = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_MS
       ? parseInt(process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_MS, 10)
-      : 35_000;
+      : 60_000;
     expect(GOOGLE_POOL_HEADER_TIMEOUT_MS).toBe(expected);
   });
 
-  it('verifies GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS defaults to 25s', () => {
+  it('verifies GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS defaults to 60s', () => {
     const expected = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS
       ? parseInt(process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, 10)
-      : 25_000;
+      : 60_000;
     expect(GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS).toBe(expected);
   });
 

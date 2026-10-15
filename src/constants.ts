@@ -130,17 +130,17 @@ export const DEFAULT_MAX_BODY_SIZE = getEnvInt(
 
 
 
-/** Timeout for Google proxy requests (60 seconds). */
-export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 60_000);
+/** Timeout for Google proxy requests (120 seconds). */
+export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 120_000);
 
-/** Timeout for waiting for initial response headers in multi-account pools (default: 35 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 35_000);
+/** Timeout for waiting for initial response headers in multi-account pools (default: 90 seconds). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 90_000);
 
-/** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 25 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 25_000);
+/** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 90 seconds). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 90_000);
 
-/** Timeout for waiting for initial response headers on large payloads or thinking models (default: 50 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 50_000);
+/** Timeout for waiting for initial response headers on large payloads or thinking models (default: 120 seconds). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 120_000);
 
 /** P2C score delta for top-tier candidate eligibility in Google account pool (default: 45 points). */
 export const P2C_SCORE_DELTA = getEnvInt('AG_P2C_SCORE_DELTA', 45);
@@ -282,7 +282,7 @@ export const PUBLIC_DNS_SERVERS = ['8.8.8.8', '1.1.1.1', '8.8.4.4'];
 // ─── Google API Hosts ─────────────────────────────────────────────────────
 
 export const GOOGLE_HOSTS = {
-  CLOUD_CODE: getEnvString('AG_GOOGLE_CLOUDCODE_HOST', 'daily-cloudcode-pa.googleapis.com'),
+  CLOUD_CODE: getEnvString('AG_GOOGLE_CLOUDCODE_HOST', 'cloudcode-pa.googleapis.com'),
   CLOUD_CODE_PROD: getEnvString('AG_GOOGLE_CLOUDCODE_PROD_HOST', 'cloudcode-pa.googleapis.com'),
   GENERATIVE_LANGUAGE: getEnvString('AG_GOOGLE_GENLANG_HOST', 'generativelanguage.googleapis.com'),
 } as const;
@@ -478,9 +478,8 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = CORE_DETAILED
 });
 
 export const STANDARD_GOOGLE_MODELS = [
+  { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
   { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-  { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: false },
-  { id: 'gemini-3.6-flash-tiered', displayName: 'Gemini 3.6 Flash', enabled: false },
   { id: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5 (Medium)', enabled: false },
   { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5 (Low)', enabled: false },
   { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
@@ -489,17 +488,18 @@ export const STANDARD_GOOGLE_MODELS = [
 
 /**
  * Checks whether a given model identifier or display name corresponds to an obsolete/deprecated model.
- * Matches deprecated Gemini models (3.1, 3.0, 2.5, 2.0, 1.5, 3.5 Flash, etc.) and legacy GPT models.
+ * Matches deprecated Gemini models (1.5, 2.0, 2.5, 3.0, 3.1, 3.5, 3.6, 3.7 Flash, etc.) and legacy GPT models.
  */
 export function isObsoleteModel(idOrName?: string, displayName?: string): boolean {
   if (!idOrName && !displayName) return false;
   const str = `${idOrName || ''} ${displayName || ''}`.toLowerCase();
+  if (str.includes('argon')) return false;
 
-  // Deprecated Gemini / Google models: 1.5, 2.0, 2.5, 3.0, 3.1, 3.5
-  if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[015])/i.test(str)) return true;
-  if (/\bgemini[-_\s]*(?:3\.1|3\.0|2\.5|2\.0|1\.5|3\.5)[-_\s]*(?:pro|flash|high|low|medium|thinking)?\b/i.test(str)) return true;
-  if (/gemini[-_\s]*3(?:\.0)?(?:-pro|\b)/i.test(str) && !str.includes('3.6') && !str.includes('3.7') && !str.includes('3.8')) return true;
-  if (str.includes('gemini-3.1-pro') || str.includes('gemini-3.0-pro') || str.includes('gemini-2.0-flash') || str.includes('gemini-2.5-pro') || str.includes('gemini-1.5-pro') || str.includes('gemini-1.5-flash')) return true;
+  // Deprecated Gemini / Google models: 1.5, 2.0, 2.5, 3.0, 3.1, 3.5, 3.6, 3.7
+  if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[01567])/i.test(str)) return true;
+  if (/\bgemini[-_\s]*(?:3\.7|3\.6|3\.5|3\.1|3\.0|2\.5|2\.0|1\.5)[-_\s]*(?:pro|flash|high|low|medium|thinking)?\b/i.test(str)) return true;
+  if (/gemini[-_\s]*3(?:\.0)?(?:-pro|\b)/i.test(str) && !str.includes('3.8')) return true;
+  if (str.includes('gemini-3.7-flash') || str.includes('gemini-3.6-flash') || str.includes('gemini-3.5-flash') || str.includes('gemini-3.1-pro') || str.includes('gemini-3.0-pro') || str.includes('gemini-2.0-flash') || str.includes('gemini-2.5-pro') || str.includes('gemini-1.5-pro') || str.includes('gemini-1.5-flash')) return true;
 
   // GPT models (gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5, gpt-oss, etc.)
   if (/\bgpt[-_\s]*(?:3\.5|4o|4|oss|3)/i.test(str) || str.startsWith('gpt-')) return true;

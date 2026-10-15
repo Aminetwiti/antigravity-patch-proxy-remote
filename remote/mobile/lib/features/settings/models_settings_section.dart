@@ -16,7 +16,7 @@ class ModelsSettingsSection extends StatefulWidget {
   const ModelsSettingsSection({
     super.key,
     this.api,
-    this.currentDefaultModel = 'Gemini 3.7 Flash Medium',
+    this.currentDefaultModel = 'Gemini 3.8 Flash Medium',
     this.onDefaultModelChanged,
   });
 
@@ -46,9 +46,6 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
 
   final List<String> _models = [
     'Gemini 3.8 Flash Medium',
-    'Gemini 3.7 Flash Medium',
-    'Gemini 3.6 Flash Medium',
-    'Gemini 3.1 Pro Low',
     'Claude Sonnet 4.6 (Thinking)',
     'Claude Opus 4.6 (Thinking)',
     'Claude Sonnet 4.6',

@@ -251,8 +251,6 @@ export function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel
         if (!displayName || displayName === mId || displayName.includes('-tiered')) {
           const norm = normalizeCloudCodeModelId(mId);
           if (norm === 'gemini-3.8-flash-tiered') displayName = 'Gemini 3.8 Flash';
-          else if (norm === 'gemini-3.7-flash-tiered') displayName = 'Gemini 3.7 Flash';
-          else if (norm === 'gemini-3.6-flash-tiered') displayName = 'Gemini 3.6 Flash';
           else if (norm === 'claude-sonnet-4-6') displayName = 'Claude Sonnet 4.6 (Thinking)';
           else if (norm === 'claude-opus-4-6-thinking') displayName = 'Claude Opus 4.6 (Thinking)';
           else displayName = mId;
@@ -412,8 +410,6 @@ export function loadCustomModels(): CustomModel[] {
       let displayName = template.displayName || baseId;
       displayName = displayName.replace(/^\[[^\]]+\]\s*/, '');
       if (baseId === 'gemini-3.8-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.8 Flash';
-      if (baseId === 'gemini-3.7-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.7 Flash';
-      if (baseId === 'gemini-3.6-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.6 Flash';
       if (baseId === 'claude-sonnet-4-6' && (displayName === baseId || displayName.includes('-4-6'))) displayName = 'Claude Sonnet 4.6 (Thinking)';
       if (baseId === 'claude-opus-4-6-thinking' && (displayName === baseId || displayName.includes('-4-6'))) displayName = 'Claude Opus 4.6 (Thinking)';
 

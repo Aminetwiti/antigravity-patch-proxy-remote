@@ -153,7 +153,31 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       const innerModel = (v as any)?.model;
       const isNativeModel = typeof innerModel === 'string' && innerModel.startsWith('MODEL_');
       if (isNativeModel || !isObsoleteModel(k, disp)) {
-        result[k] = v;
+        if (v && typeof v === 'object') {
+          const entry = { ...(v as Record<string, unknown>) };
+          const entryDisp = String(entry.displayName || '');
+          const entryTag = String(entry.tagTitle || '');
+          const entryDesc = String(entry.tagDescription || '');
+          const isArgon = k.toLowerCase().includes('argon') || entryDisp.toLowerCase().includes('argon');
+          const isUnavailable = entryTag.toLowerCase().includes('unavailable') || entryDesc.toLowerCase().includes('ultra') || entry.disabled === true;
+
+          if (isArgon || isUnavailable) {
+            delete entry.disabled;
+            if (entryTag.toLowerCase().includes('unavailable') || entryDesc.toLowerCase().includes('ultra')) {
+              delete entry.tagTitle;
+              delete entry.tagDescription;
+            }
+            if (!entry.quotaInfo) {
+              entry.quotaInfo = {
+                remainingFraction: 1,
+                resetTime: '2099-01-01T00:00:00Z',
+              };
+            }
+          }
+          result[k] = entry;
+        } else {
+          result[k] = v;
+        }
       }
     }
     sortedCustomModels.forEach((m) => {
@@ -274,8 +298,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
     }
 
     // Register aliases for existing Google models so internal enum keys
-    // (e.g. entry.model === 'MODEL_PLACEHOLDER_M50' for gemini-3.1-flash-lite,
-    //  or 'MODEL_PLACEHOLDER_M71' for gemini-3.6-flash-high)
+    // (e.g. entry.model === 'MODEL_PLACEHOLDER_M50' for gemini-3.8-flash)
     // are directly resolvable by key in Language Server's model table.
     for (const [k, v] of Object.entries(result)) {
       if (v && typeof v === 'object') {
@@ -296,10 +319,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
     const fallbackPid = sortedCustomModels.length > 0 ? generateModelPlaceholderId(sortedCustomModels[0]) : '';
     const fallbackEntry = (fallbackPid && (result as Record<string, unknown>)[fallbackPid]) ||
       (result as Record<string, unknown>)['gemini-3.8-flash'] ||
-      (result as Record<string, unknown>)['gemini-3.7-flash'] ||
-      (result as Record<string, unknown>)['gemini-3.6-flash'] ||
-      DEFAULT_CANONICAL_GOOGLE_MODELS['gemini-3.8-flash'] ||
-      DEFAULT_CANONICAL_GOOGLE_MODELS['gemini-3.6-flash'];
+      DEFAULT_CANONICAL_GOOGLE_MODELS['gemini-3.8-flash'];
 
     if (fallbackEntry) {
       for (let i = 0; i <= 650; i++) {
@@ -327,39 +347,27 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
 }
 
 export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unknown>> = {
+  'gemini-4-argon-medium': {
+    displayName: 'Gemini 4 Argon (Medium)',
+    maxTokens: 1048576,
+    maxOutputTokens: 65536,
+    model: 'gemini-4-argon-medium',
+    planModel: 'gemini-4-argon-medium',
+    requestedModel: 'gemini-4-argon-medium',
+    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+    supportsImages: true,
+    supportsVision: true,
+    supportsThinking: true,
+    supportsVideo: true,
+  },
   'gemini-3.8-flash': {
     displayName: 'Gemini 3.8 Flash High Fast',
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-3.8-flash',
-    planModel: 'MODEL_PLACEHOLDER_M16',
+    planModel: 'gemini-3.8-flash',
     requestedModel: 'gemini-3.8-flash',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
-  'gemini-3.7-flash': {
-    displayName: 'Gemini 3.7 Flash Medium',
-    maxTokens: 1048576,
-    maxOutputTokens: 65536,
-    model: 'gemini-3.7-flash',
-    planModel: 'MODEL_PLACEHOLDER_M16',
-    requestedModel: 'gemini-3.7-flash',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
-  'gemini-3.6-flash': {
-    displayName: 'Gemini 3.6 Flash Medium Fast',
-    maxTokens: 1048576,
-    maxOutputTokens: 65536,
-    model: 'gemini-3.6-flash',
-    planModel: 'MODEL_PLACEHOLDER_M16',
-    requestedModel: 'gemini-3.6-flash',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
     supportsImages: true,
@@ -371,7 +379,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 200000,
     maxOutputTokens: 64000,
     model: 'claude-sonnet-4-6',
-    planModel: 'MODEL_PLACEHOLDER_M54',
+    planModel: 'claude-sonnet-4-6',
     requestedModel: 'claude-sonnet-4-6',
     apiProvider: 'API_PROVIDER_ANTHROPIC',
     modelProvider: 'MODEL_PROVIDER_ANTHROPIC',
@@ -384,7 +392,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 200000,
     maxOutputTokens: 64000,
     model: 'claude-opus-4-6',
-    planModel: 'MODEL_PLACEHOLDER_M54',
+    planModel: 'claude-opus-4-6',
     requestedModel: 'claude-opus-4-6',
     apiProvider: 'API_PROVIDER_ANTHROPIC',
     modelProvider: 'MODEL_PROVIDER_ANTHROPIC',
@@ -397,7 +405,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 131072,
     maxOutputTokens: 16384,
     model: 'gpt-oss-120b',
-    planModel: 'MODEL_PLACEHOLDER_M54',
+    planModel: 'gpt-oss-120b',
     requestedModel: 'gpt-oss-120b',
     apiProvider: 'API_PROVIDER_OPENAI',
     modelProvider: 'MODEL_PROVIDER_OPENAI',
@@ -410,7 +418,7 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     maxTokens: 131072,
     maxOutputTokens: 16384,
     model: 'gpt-oss-120b-medium',
-    planModel: 'MODEL_PLACEHOLDER_M54',
+    planModel: 'gpt-oss-120b-medium',
     requestedModel: 'gpt-oss-120b-medium',
     apiProvider: 'API_PROVIDER_OPENAI',
     modelProvider: 'MODEL_PROVIDER_OPENAI',
@@ -418,78 +426,13 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     supportsVision: false,
     supportsThinking: true,
   },
-  'gemini-3.6-flash-high': {
-    displayName: 'Gemini 3.6 Flash (High)',
-    maxTokens: 1048576,
-    maxOutputTokens: 65536,
-    model: 'gemini-3.6-flash-high',
-    planModel: 'MODEL_PLACEHOLDER_M16',
-    requestedModel: 'gemini-3.6-flash-high',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
-  'gemini-3.6-flash-medium': {
-    displayName: 'Gemini 3.6 Flash (Medium)',
-    maxTokens: 1048576,
-    maxOutputTokens: 65536,
-    model: 'gemini-3.6-flash-medium',
-    planModel: 'MODEL_PLACEHOLDER_M16',
-    requestedModel: 'gemini-3.6-flash-medium',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
-  'gemini-3.6-flash-low': {
-    displayName: 'Gemini 3.6 Flash (Low)',
-    maxTokens: 1048576,
-    maxOutputTokens: 65536,
-    model: 'gemini-3.6-flash-low',
-    planModel: 'MODEL_PLACEHOLDER_M16',
-    requestedModel: 'gemini-3.6-flash-low',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
   'gemini-pro-agent': {
     displayName: 'Gemini Pro Agent',
     maxTokens: 1048576,
     maxOutputTokens: 65536,
     model: 'gemini-pro-agent',
-    planModel: 'MODEL_PLACEHOLDER_M54',
+    planModel: 'gemini-pro-agent',
     requestedModel: 'gemini-pro-agent',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
-  'gemini-3.1-pro-low': {
-    displayName: 'Gemini 3.1 Pro (Low)',
-    maxTokens: 1048576,
-    maxOutputTokens: 65536,
-    model: 'gemini-3.1-pro-low',
-    planModel: 'MODEL_PLACEHOLDER_M54',
-    requestedModel: 'gemini-3.1-pro-low',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-  },
-  'gemini-3.1-flash-lite': {
-    displayName: 'Gemini 3.1 Flash Lite',
-    maxTokens: 1048576,
-    maxOutputTokens: 65536,
-    model: 'gemini-3.1-flash-lite',
-    planModel: 'MODEL_PLACEHOLDER_M16',
-    requestedModel: 'gemini-3.1-flash-lite',
     apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
     modelProvider: 'MODEL_PROVIDER_GOOGLE',
     supportsImages: true,

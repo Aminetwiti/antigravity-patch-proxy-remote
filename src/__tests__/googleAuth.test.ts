@@ -26,7 +26,7 @@ describe('googleAuth service', () => {
     it('normalizes legacy flash high alias to tiered', () => {
       expect(normalizeCloudCodeModelId('gemini-3.8-flash-high')).toBe('gemini-3.8-flash-tiered');
       expect(normalizeCloudCodeModelId('models/gemini-3.8-flash-high')).toBe('gemini-3.8-flash-tiered');
-      expect(normalizeCloudCodeModelId('gemini-3.7-flash-high')).toBe('gemini-3.7-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-3.7-flash-high')).toBe('gemini-3.8-flash-tiered');
       expect(normalizeCloudCodeModelId('gemini-3.8-flash')).toBe('gemini-3.8-flash-tiered');
     });
 
@@ -349,10 +349,23 @@ describe('googleAuth service', () => {
       expect(contents[0].role).toBe('user');
     });
 
-    it('handles empty contents by creating an initial user turn', () => {
-      const contents: any[] = [];
+    it('strips previous synthetic proxy error cards from history on retry', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Please write a script' }] },
+        {
+          role: 'model',
+          parts: [{ text: '> **WARNING**\n> **Model unavailable: Request Timeout (5/36 comptes vérifiés)**\nLe service Google Cloud Code a expiré sur 5 comptes consécutifs (coupure amont détectée).' }],
+        },
+        { role: 'user', parts: [{ text: 'retry' }] },
+      ];
       const modified = normalizeConversationTurns(contents);
-      expect(modified).toBe(false);
+      expect(modified).toBe(true);
+      // The error card model turn should be removed and user turns merged into 1
+      expect(contents.length).toBe(1);
+      expect(contents[0].role).toBe('user');
+      expect(contents[0].parts.length).toBe(2);
+      expect(contents[0].parts[0].text).toBe('Please write a script');
+      expect(contents[0].parts[1].text).toBe('retry');
     });
   });
 

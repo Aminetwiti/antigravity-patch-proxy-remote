@@ -110,9 +110,7 @@ async function main() {
     const src = path.join(repoDist, dir);
     const dst = path.join(buildDir, 'dist', dir);
     if (fs.existsSync(src)) {
-      // For services, never overwrite existing official service files
-      const overwrite = dir !== 'services';
-      copyRecursive(src, dst, overwrite);
+      copyRecursive(src, dst, true);
     }
   }
 

@@ -27,7 +27,7 @@ class AntigravityModel {
     this.modelEnum,
   });
 
-  /// Base model name without effort suffix (e.g. "Gemini 3.7 Flash")
+  /// Base model name without effort suffix (e.g. "Gemini 3.8 Flash")
   String get baseName {
     if (isCustom) return displayName;
     if (displayName.startsWith('Gemini')) {
@@ -101,26 +101,6 @@ class ModelCatalog {
       modelEnum: 312,
     ),
     AntigravityModel(
-      id: 'gemini-3.7-flash',
-      displayName: 'Gemini 3.7 Flash Medium',
-      tag: 'Fast',
-      effort: 'Medium',
-      modelEnum: 312,
-    ),
-    AntigravityModel(
-      id: 'gemini-3.6-flash',
-      displayName: 'Gemini 3.6 Flash Medium',
-      tag: 'Fast',
-      effort: 'Medium',
-      modelEnum: 312,
-    ),
-    AntigravityModel(
-      id: 'gemini-3.1-pro',
-      displayName: 'Gemini 3.1 Pro Low',
-      effort: 'Low',
-      modelEnum: 246,
-    ),
-    AntigravityModel(
       id: 'claude-sonnet-4.6-thinking',
       displayName: 'Claude Sonnet 4.6 (Thinking)',
       isThinking: true,
@@ -144,8 +124,8 @@ class ModelCatalog {
 
   /// Default model when opening a fresh session.
   static const AntigravityModel defaultModel = AntigravityModel(
-    id: 'gemini-3.7-flash',
-    displayName: 'Gemini 3.7 Flash Medium',
+    id: 'gemini-3.8-flash',
+    displayName: 'Gemini 3.8 Flash Medium',
     tag: 'Fast',
     effort: 'Medium',
     modelEnum: 312,

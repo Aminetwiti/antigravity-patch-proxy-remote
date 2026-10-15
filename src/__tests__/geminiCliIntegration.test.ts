@@ -48,7 +48,7 @@ describe('Gemini CLI Integration & Auto-Pool Fusion', () => {
   });
 
   describe('Model Loader & Obsolete Version Filtering', () => {
-    it('enforces minimum model >= 3.6 Flash and strips 2.x and 3.1 models for Gemini CLI', () => {
+    it('enforces modern model (Gemini 3.8 Flash) and strips obsolete models (3.7, 3.6, 3.1, 2.x, 1.5) for Gemini CLI', () => {
       const parsed = parseProvidersSchema([
         {
           id: 'gemini-cli-preset',
@@ -69,11 +69,12 @@ describe('Gemini CLI Integration & Auto-Pool Fusion', () => {
 
       const modelNames = parsed.map((m) => m.externalModelName || m.displayName);
       expect(modelNames).toContain('gemini-3.8-flash-tiered');
-      expect(modelNames).toContain('gemini-3.7-flash-tiered');
-      expect(modelNames).toContain('gemini-3.6-flash-tiered');
+      expect(modelNames).not.toContain('gemini-3.7-flash-tiered');
+      expect(modelNames).not.toContain('gemini-3.6-flash-tiered');
 
-      // Crucial: no 2.x, 3.1, or 1.5 models allowed
+      // Crucial: no 3.7, 3.6, 3.1, 2.x, or 1.5 models allowed
       for (const name of modelNames) {
+        expect(name).not.toMatch(/gemini-3\.[67]/);
         expect(name).not.toMatch(/gemini-2/);
         expect(name).not.toMatch(/gemini-3\.1/);
         expect(name).not.toMatch(/gemini-1/);

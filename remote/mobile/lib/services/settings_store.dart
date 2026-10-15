@@ -97,7 +97,7 @@ class SettingsStore {
       'csrf': await SecureCredentials.read(_kSecCsrf) ?? '',
       'pin': await SecureCredentials.read(_kSecPin) ?? '',
       'themeMode': prefs.getInt(_kThemeMode) ?? 0,
-      'defaultModel': prefs.getString(_kDefaultModel) ?? 'Gemini 3.6 Flash Medium',
+      'defaultModel': prefs.getString(_kDefaultModel) ?? 'Gemini 3.8 Flash Medium',
       'displayName': prefs.getString(_kDisplayName) ?? 'Developer',
       'role': prefs.getString(_kRole) ?? 'Remote Host Controller',
       'status': prefs.getString(_kStatus) ?? 'Online',

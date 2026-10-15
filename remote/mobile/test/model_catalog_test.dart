@@ -18,10 +18,7 @@ void main() {
   group('ModelCatalog Unit Tests', () {
     test('Standard models include Antigravity 2.0 native catalog', () {
       final models = ModelCatalog.standardModels;
-      expect(models.any((m) => m.displayName.contains('Gemini 3.7 Flash')), isTrue);
-      expect(models.any((m) => m.displayName.contains('Gemini 3.6 Flash')), isTrue);
       expect(models.any((m) => m.displayName.contains('Gemini 3.8 Flash')), isTrue);
-      expect(models.any((m) => m.displayName.contains('Gemini 3.1 Pro')), isTrue);
       expect(models.any((m) => m.displayName.contains('Claude Sonnet 4.6')), isTrue);
       expect(models.any((m) => m.displayName.contains('Claude Opus 4.6')), isTrue);
       expect(models.any((m) => m.displayName.contains('GPT-OSS 120B')), isTrue);
@@ -130,15 +127,15 @@ void main() {
       );
 
       // Verify default model display
-      expect(find.textContaining('Gemini 3.7 Flash'), findsOneWidget);
+      expect(find.textContaining('Gemini 3.8 Flash'), findsOneWidget);
 
       // Tap model button to open dropdown
-      await tester.tap(find.textContaining('Gemini 3.7 Flash'));
+      await tester.tap(find.textContaining('Gemini 3.8 Flash'));
       await tester.pumpAndSettle();
 
       // Dropdown should show Antigravity 2.0 models & View Usage
       expect(find.text('Model'), findsOneWidget);
-      expect(find.text('Gemini 3.7 Flash'), findsWidgets);
+      expect(find.text('Gemini 3.8 Flash'), findsWidgets);
       expect(find.text('Claude Sonnet 4.6 (Thinking)'), findsOneWidget);
       expect(find.text('View Usage'), findsOneWidget);
 
@@ -182,12 +179,12 @@ void main() {
       );
 
       // Open model dropdown
-      await tester.tap(find.textContaining('Gemini 3.7 Flash'));
+      await tester.tap(find.textContaining('Gemini 3.8 Flash'));
       await tester.pumpAndSettle();
 
-      // Tap on Gemini 3.6 Flash to expand degree tiers
-      expect(find.text('Gemini 3.6 Flash'), findsOneWidget);
-      await tester.tap(find.text('Gemini 3.6 Flash'));
+      // Tap on Gemini 3.8 Flash to expand degree tiers
+      expect(find.text('Gemini 3.8 Flash'), findsOneWidget);
+      await tester.tap(find.text('Gemini 3.8 Flash'));
       await tester.pumpAndSettle();
 
       // Verify degree options are shown
@@ -195,13 +192,13 @@ void main() {
       expect(find.text('Medium'), findsWidgets);
       expect(find.text('High'), findsWidgets);
 
-      // Select High effort for Gemini 3.6 Flash
+      // Select High effort for Gemini 3.8 Flash
       await tester.tap(find.text('High').last);
       await tester.pumpAndSettle();
 
-      // Verify model updated to Gemini 3.6 Flash High
-      expect(selectedModelFromCallback, 'Gemini 3.6 Flash High');
-      expect(find.textContaining('Gemini 3.6 Flash High'), findsOneWidget);
+      // Verify model updated to Gemini 3.8 Flash High
+      expect(selectedModelFromCallback, 'Gemini 3.8 Flash High');
+      expect(find.textContaining('Gemini 3.8 Flash High'), findsOneWidget);
     });
 
     testWidgets('View Usage opens Quota Limits modal without overflow on small screens', (tester) async {
@@ -222,7 +219,7 @@ void main() {
       );
 
       // Tap model button
-      await tester.tap(find.textContaining('Gemini 3.7 Flash'));
+      await tester.tap(find.textContaining('Gemini 3.8 Flash'));
       await tester.pumpAndSettle();
 
       // Tap View Usage
@@ -292,7 +289,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.textContaining('Gemini 3.7 Flash'));
+      await tester.tap(find.textContaining('Gemini 3.8 Flash'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('View Usage'));
       await tester.pumpAndSettle();
@@ -334,7 +331,7 @@ void main() {
       );
 
       // Select Claude Opus 4.6 (Thinking)
-      await tester.tap(find.textContaining('Gemini 3.7 Flash'));
+      await tester.tap(find.textContaining('Gemini 3.8 Flash'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Claude Opus 4.6 (Thinking)'));
       await tester.pumpAndSettle();

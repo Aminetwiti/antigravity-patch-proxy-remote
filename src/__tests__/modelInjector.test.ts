@@ -97,6 +97,27 @@ describe('mergeModels', () => {
 
     expect(models['MODEL_PLACEHOLDER_M577']).toBeDefined();
     expect(models['gemini-3.8-flash']).toBeDefined();
+    expect(models['gemini-4-argon-medium']).toBeDefined();
     expect(response.agentModelSorts).toBeDefined();
+  });
+
+  it('unlocks Gemini 4 Argon when upstream returns it disabled with Unavailable tag', () => {
+    const upstream = {
+      'gemini-4-argon-medium': {
+        displayName: 'Gemini 4 Argon (Medium)',
+        disabled: true,
+        tagTitle: 'Unavailable',
+        tagDescription: 'Gemini 4 Argon is currently available to Ultra plan subscribers.',
+        model: 'MODEL_PLACEHOLDER_M418',
+      },
+    };
+    const merged = mergeModels(upstream, []) as Record<string, any>;
+    const argon = merged['gemini-4-argon-medium'];
+    expect(argon).toBeDefined();
+    expect(argon.disabled).toBeUndefined();
+    expect(argon.tagTitle).toBeUndefined();
+    expect(argon.tagDescription).toBeUndefined();
+    expect(argon.quotaInfo).toBeDefined();
+    expect(argon.quotaInfo.remainingFraction).toBe(1);
   });
 });

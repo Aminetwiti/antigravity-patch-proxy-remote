@@ -23,11 +23,13 @@ if (!fs.existsSync(asarPath)) {
   process.exit(1);
 }
 
-// 1. Create backup if not already present
+// 1. Resolve pristine source asar
+const origPath = path.join(classicDir, 'resources', 'app.asar.original-2.23.0');
 const bakPath = asarPath + '.bak';
-if (!fs.existsSync(bakPath)) {
+const sourceAsar = fs.existsSync(origPath) ? origPath : (fs.existsSync(bakPath) ? bakPath : asarPath);
+if (!fs.existsSync(bakPath) && fs.existsSync(sourceAsar)) {
   console.log('[repack-installed] Creating backup:', bakPath);
-  fs.copyFileSync(asarPath, bakPath);
+  fs.copyFileSync(sourceAsar, bakPath);
 }
 
 // 2. Prepare staging directory
@@ -37,12 +39,13 @@ if (fs.existsSync(stageDir)) {
 }
 fs.mkdirSync(stageDir, { recursive: true });
 
+console.log('[repack-installed] Source asar:', sourceAsar);
 console.log('[repack-installed] Target asar:', asarPath);
 console.log('[repack-installed] Staging dir:', stageDir);
 
 try {
   // 3. Execute patch-version.js
-  execFileSync(process.execPath, [patchScript, asarPath, stageDir, asarPath], {
+  execFileSync(process.execPath, [patchScript, sourceAsar, stageDir, asarPath], {
     cwd: repoRoot,
     stdio: 'inherit',
   });

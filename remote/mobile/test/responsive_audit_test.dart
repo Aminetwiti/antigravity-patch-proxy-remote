@@ -61,7 +61,7 @@ void main() {
             home: SettingsScreen(
               initialSettings: {
                 'themeIndex': 2,
-                'defaultModel': 'Gemini 3.7 Flash Medium',
+                'defaultModel': 'Gemini 3.8 Flash Medium',
               },
             ),
           ),

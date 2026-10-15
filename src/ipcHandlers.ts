@@ -515,9 +515,15 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
               'anthropic-version': '2025-04-01',
             };
           } else if (model.provider === 'google') {
-            options.headers = {
-              'x-goog-api-key': key,
-            };
+            if (key.startsWith('ya29')) {
+              options.headers = {
+                Authorization: `Bearer ${key}`,
+              };
+            } else {
+              options.headers = {
+                'x-goog-api-key': key,
+              };
+            }
           } else {
             options.headers = {
               Authorization: `Bearer ${key}`,

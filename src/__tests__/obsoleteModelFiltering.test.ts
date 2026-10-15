@@ -48,13 +48,18 @@ describe('Obsolete and Deprecated Model Masking & Filtering', () => {
       expect(isObsoleteModel('custom', 'GPT-4o Mini')).toBe(true);
     });
 
+    it('correctly flags obsolete Gemini 3.6 and 3.7 flash models', () => {
+      expect(isObsoleteModel('gemini-3.7-flash-tiered')).toBe(true);
+      expect(isObsoleteModel('gemini-3.7-flash')).toBe(true);
+      expect(isObsoleteModel('gemini-3.6-flash-tiered')).toBe(true);
+      expect(isObsoleteModel('gemini-3.6-flash')).toBe(true);
+      expect(isObsoleteModel('custom', 'Gemini 3.7 Flash')).toBe(true);
+      expect(isObsoleteModel('custom', 'Gemini 3.6 Flash')).toBe(true);
+    });
+
     it('preserves modern allowed flagship models', () => {
       expect(isObsoleteModel('gemini-3.8-flash-tiered')).toBe(false);
       expect(isObsoleteModel('gemini-3.8-flash')).toBe(false);
-      expect(isObsoleteModel('gemini-3.7-flash-tiered')).toBe(false);
-      expect(isObsoleteModel('gemini-3.7-flash')).toBe(false);
-      expect(isObsoleteModel('gemini-3.6-flash-tiered')).toBe(false);
-      expect(isObsoleteModel('gemini-3.6-flash')).toBe(false);
       expect(isObsoleteModel('claude-sonnet-4-6')).toBe(false);
       expect(isObsoleteModel('claude-opus-4-6-thinking')).toBe(false);
       expect(isObsoleteModel('deepseek-chat')).toBe(false);
@@ -66,13 +71,14 @@ describe('Obsolete and Deprecated Model Masking & Filtering', () => {
   });
 
   describe('STANDARD_GOOGLE_MODELS configuration', () => {
-    it('does not contain any obsolete Gemini 3.1 or GPT models', () => {
+    it('does not contain any obsolete Gemini 3.1, 3.6, 3.7 or GPT models', () => {
       for (const m of STANDARD_GOOGLE_MODELS) {
         expect(isObsoleteModel(m.id, m.displayName)).toBe(false);
       }
       const modelIds = STANDARD_GOOGLE_MODELS.map((m) => m.id);
       expect(modelIds).toContain('gemini-3.8-flash-tiered');
-      expect(modelIds).toContain('gemini-3.7-flash-tiered');
+      expect(modelIds).not.toContain('gemini-3.7-flash-tiered');
+      expect(modelIds).not.toContain('gemini-3.6-flash-tiered');
       expect(modelIds).toContain('claude-sonnet-4-6');
       expect(modelIds).not.toContain('gemini-3.1-pro-high');
       expect(modelIds).not.toContain('gpt-oss-120b-medium');

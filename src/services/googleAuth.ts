@@ -826,8 +826,8 @@ export function normalizeCloudCodeModelId(modelId: string): string {
 
   const validCloudCodeModels = new Set([
     'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash-tiered',
-    'gemini-3.6-flash-tiered',
+    'gemini-4-argon-medium',
+    'gemini-4-argon',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
     'claude-sonnet-5-5',
@@ -839,18 +839,22 @@ export function normalizeCloudCodeModelId(modelId: string): string {
   }
 
   const map: Record<string, string> = {
+    'gemini-4-argon': 'gemini-4-argon-medium',
+    'gemini-4-argon-medium': 'gemini-4-argon-medium',
     'gemini-3.8-flash-low': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash-medium': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash-high': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash-low': 'gemini-3.7-flash-tiered',
-    'gemini-3.7-flash-medium': 'gemini-3.7-flash-tiered',
-    'gemini-3.7-flash-high': 'gemini-3.7-flash-tiered',
-    'gemini-3.7-flash': 'gemini-3.7-flash-tiered',
-    'gemini-3.6-flash-low': 'gemini-3.6-flash-tiered',
-    'gemini-3.6-flash-medium': 'gemini-3.6-flash-tiered',
-    'gemini-3.6-flash-high': 'gemini-3.6-flash-tiered',
-    'gemini-3.6-flash': 'gemini-3.6-flash-tiered',
+    'gemini-3.7-flash-low': 'gemini-3.8-flash-tiered',
+    'gemini-3.7-flash-medium': 'gemini-3.8-flash-tiered',
+    'gemini-3.7-flash-high': 'gemini-3.8-flash-tiered',
+    'gemini-3.7-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.7-flash-tiered': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash-low': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash-medium': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash-high': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash-tiered': 'gemini-3.8-flash-tiered',
     'gemini-3.1-pro-low': 'gemini-3.8-flash-tiered',
     'gemini-3.1-pro-high': 'gemini-3.8-flash-tiered',
     'gemini-3.1-pro': 'gemini-3.8-flash-tiered',
@@ -874,6 +878,7 @@ export function normalizeCloudCodeModelId(modelId: string): string {
 
   if (clean.includes('opus')) return clean.includes('5-5') || clean.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking';
   if (clean.includes('claude') || clean.includes('sonnet')) return clean.includes('5-5') || clean.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6';
+  if (clean.includes('argon')) return 'gemini-4-argon-medium';
   if (clean.includes('flash') || clean.includes('pro')) return 'gemini-3.8-flash-tiered';
   if (clean.includes('gpt')) return 'gemini-3.8-flash-tiered';
 
@@ -890,8 +895,8 @@ export function normalizeGoogleModelId(modelName: string): string {
 
   const validModels = new Set([
     'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash-tiered',
-    'gemini-3.6-flash-tiered',
+    'gemini-4-argon-medium',
+    'gemini-4-argon',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
     'claude-sonnet-5-5',
@@ -903,8 +908,13 @@ export function normalizeGoogleModelId(modelName: string): string {
   }
 
   const aliasMap: Record<string, string> = {
+    'gemini-4-argon': 'gemini-4-argon-medium',
+    'gemini-4-argon-medium': 'gemini-4-argon-medium',
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash': 'gemini-3.7-flash-tiered',
+    'gemini-3.7-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.7-flash-tiered': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash-tiered': 'gemini-3.8-flash-tiered',
     'gemini-flash': 'gemini-3.8-flash-tiered',
     'gemini-3.1-pro-high': 'gemini-3.8-flash-tiered',
     'gemini-3.1-pro': 'gemini-3.8-flash-tiered',
@@ -931,6 +941,9 @@ export function normalizeGoogleModelId(modelName: string): string {
     return clean.includes('5-5') || clean.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6';
   }
 
+  if (clean.includes('argon')) {
+    return 'gemini-4-argon-medium';
+  }
 
   if (clean.includes('pro') || clean.includes('flash') || clean.includes('gpt')) {
     return 'gemini-3.8-flash-tiered';
@@ -942,15 +955,13 @@ export function normalizeGoogleModelId(modelName: string): string {
 /**
  * Official models supported by Google Gemini CLI (Production Cloud Code).
  * Sourced directly from official Google Gemini CLI (/model manage):
- * 1. gemini-3.1-pro-preview
- * 2. gemini-3-flash-preview
- * 3. gemini-2.5-pro
- * 4. gemini-3.5-flash-lite
- * 5. gemini-3.8-flash (and tiered variants)
- * 6. gemma-4-31b-it
- * 7. gemma-4-26b-a4b-it
+ * 1. gemini-3-flash-preview
+ * 2. gemini-2.5-pro
+ * 3. gemini-3.8-flash (and tiered variants)
+ * 4. gemma-4-31b-it
+ * 5. gemma-4-26b-a4b-it
  *
- * NOTE: gemini-3.7-flash, gemini-3.6-flash, and Claude models are NOT supported by Gemini CLI.
+ * NOTE: gemini-3.7-flash, gemini-3.6-flash, gemini-3.5, gemini-3.1, and Claude models are NOT supported by Gemini CLI.
  */
 export const GEMINI_CLI_SUPPORTED_MODELS = new Set<string>([
   'gemini-3.8-flash',
@@ -958,10 +969,8 @@ export const GEMINI_CLI_SUPPORTED_MODELS = new Set<string>([
   'gemini-3.8-flash-low',
   'gemini-3.8-flash-medium',
   'gemini-3.8-flash-high',
-  'gemini-3.1-pro-preview',
   'gemini-3-flash-preview',
   'gemini-2.5-pro',
-  'gemini-3.5-flash-lite',
   'gemma-4-31b-it',
   'gemma-4-26b-a4b-it',
 ]);
@@ -974,7 +983,7 @@ export function isGeminiCliSupportedModel(modelId: string): boolean {
   const clean = modelId.replace(/^models\//, '').trim().toLowerCase();
   if (GEMINI_CLI_SUPPORTED_MODELS.has(clean)) return true;
   if (clean.includes('3.8-flash')) return true;
-  if (clean.includes('3.1-pro') || clean.includes('3.5-flash-lite') || clean === 'gemini-2.5-pro') return true;
+  if (clean === 'gemini-2.5-pro') return true;
   if (clean.startsWith('gemma-4-')) return true;
   return false;
 }
@@ -986,9 +995,7 @@ export function mapToGeminiCliModel(modelId: string): string {
   if (!modelId) return 'gemini-3.8-flash';
   const clean = modelId.replace(/^models\//, '').trim().toLowerCase();
   if (clean.includes('3.8-flash')) return 'gemini-3.8-flash';
-  if (clean.includes('3.1-pro')) return 'gemini-3.1-pro-preview';
   if (clean.includes('3-flash')) return 'gemini-3-flash-preview';
-  if (clean.includes('3.5-flash-lite')) return 'gemini-3.5-flash-lite';
   if (clean.includes('2.5-pro')) return 'gemini-2.5-pro';
   if (clean.startsWith('gemma-4-31b')) return 'gemma-4-31b-it';
   if (clean.startsWith('gemma-4-26b')) return 'gemma-4-26b-a4b-it';
@@ -1095,7 +1102,7 @@ export function sanitizeCloudCodeGenerationConfig(
         delete genCfg.thinkingConfig;
         delete genCfg.thinking_config;
       } else if (targetModel.includes('gemini-3')) {
-        // Gemini 3 / 3.7 / 3.8 strictly rejects payloads if both thinkingBudget and thinkingLevel are present (HTTP 400)
+        // Gemini 3 / 3.8 strictly rejects payloads if both thinkingBudget and thinkingLevel are present (HTTP 400)
         delete tc.thinkingBudget;
         if (genCfg.thinkingConfig) delete genCfg.thinkingConfig.thinkingBudget;
         if (genCfg.thinking_config) delete genCfg.thinking_config.thinkingBudget;
@@ -1196,17 +1203,62 @@ export function sanitizeCloudCodeGenerationConfig(
 }
 
 /**
+ * Strips synthetic proxy warning and error cards from conversation history.
+ * When the proxy aborts a request (e.g. on timeout), it sends a synthetic model turn
+ * with a warning card. On subsequent retries, this card would pollute the history
+ * and confuse Google's upstream models.
+ */
+export function stripSyntheticErrorTurns(contents: any[]): boolean {
+  if (!Array.isArray(contents)) return false;
+  let modified = false;
+
+  for (let i = 0; i < contents.length; i++) {
+    const item = contents[i];
+    if (item?.role === 'model' && Array.isArray(item.parts)) {
+      const originalLen = item.parts.length;
+      item.parts = item.parts.filter((p: any) => {
+        if (!p || typeof p !== 'object') return true;
+        const text = p.text;
+        if (typeof text !== 'string') return true;
+        const isSyntheticError =
+          text.includes('Model unavailable:') ||
+          text.includes('coupure amont') ||
+          text.includes('Suggested Actions:') ||
+          text.includes('Le service Google Cloud Code a expiré') ||
+          text.includes('All Google Cloud Code accounts are currently unavailable');
+        return !isSyntheticError;
+      });
+
+      if (item.parts.length < originalLen) {
+        modified = true;
+      }
+
+      if (item.parts.length === 0) {
+        contents.splice(i, 1);
+        i--;
+        modified = true;
+      }
+    }
+  }
+
+  return modified;
+}
+
+/**
  * Normalizes multi-turn conversation history for Google Cloud Code / Gemini:
- * 1. Ensures turns containing functionResponse have role: 'user' (Gemini requirement).
- * 2. Prunes only truly empty dummy turns from the end of the history.
- * 3. Merges consecutive turns with the same role to enforce strict turn alternation.
- * 4. If history ends on a model turn, closes it with a continuation user turn instead of popping it,
+ * 1. Purges previous synthetic proxy error and timeout warning cards.
+ * 2. Ensures turns containing functionResponse have role: 'user' (Gemini requirement).
+ * 3. Prunes only truly empty dummy turns from the end of the history.
+ * 4. Merges consecutive turns with the same role to enforce strict turn alternation.
+ * 5. If history ends on a model turn, closes it with a continuation user turn instead of popping it,
  *    preserving the model's tool calls and previous work to prevent infinite loops.
- * 5. Ensures history has at least one turn.
+ * 6. Ensures history has at least one turn.
  */
 export function normalizeConversationTurns(contents: any[]): boolean {
   if (!Array.isArray(contents) || contents.length === 0) return false;
   let modified = false;
+
+  if (stripSyntheticErrorTurns(contents)) modified = true;
 
   // 1. Ensure turns containing functionResponse have role: 'user' (Gemini requirement)
   for (const item of contents) {

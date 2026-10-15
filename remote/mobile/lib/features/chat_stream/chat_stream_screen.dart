@@ -589,14 +589,14 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
 
   String _resolveModelLabel(dynamic rawModel) {
     final str = rawModel != null ? rawModel.toString().trim() : '';
-    if (str.isNotEmpty && str != 'Gemini 3.7 Flash') {
+    if (str.isNotEmpty && str != 'Gemini 3.8 Flash') {
       return str;
     }
     final currentSelected = _chatInputKey.currentState?.selectedModel;
     if (currentSelected != null && currentSelected.isNotEmpty) {
       return currentSelected;
     }
-    return str.isNotEmpty ? str : 'Gemini 3.7 Flash';
+    return str.isNotEmpty ? str : 'Gemini 3.8 Flash';
   }
 
   void _showModelSelector() {
@@ -2777,7 +2777,7 @@ class _ChatStreamScreenState extends State<ChatStreamScreen>
             }
             final isQuotaErr = candidateError != null && candidateError.toLowerCase().contains('quota');
             if (error != null && (error.contains('MODEL_CAPACITY_EXHAUSTED') || error.contains('No capacity available') || error.contains('503'))) {
-              error = '⚠️ Capacité du modèle saturée sur les serveurs (HTTP 503 / MODEL_CAPACITY_EXHAUSTED).\nVeuillez basculer vers Gemini 3.7 Flash, Claude ou un modèle custom via le sélecteur ci-dessous.';
+              error = '⚠️ Capacité du modèle saturée sur les serveurs (HTTP 503 / MODEL_CAPACITY_EXHAUSTED).\nVeuillez basculer vers Gemini 3.8 Flash, Claude ou un modèle custom via le sélecteur ci-dessous.';
             }
             buf[idx] = buf[idx].copyWith(
               isStreaming: false,

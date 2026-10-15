@@ -58,16 +58,6 @@ export function isModelOrLabelDisabled(idStr?: string, labelStr?: string, disabl
         ((cleanId.includes('claude') && cleanId.includes('opus')) || (cleanLabel.includes('claude') && cleanLabel.includes('opus')))) {
       return true;
     }
-    // Gemini 3.7 (e.g. gemini-3.7-flash, gemini-3.7-flash-tiered, Gemini 3.7 Flash)
-    if ((item.includes('gemini') && item.includes('3.7')) &&
-        ((cleanId.includes('gemini') && cleanId.includes('3.7')) || (cleanLabel.includes('gemini') && cleanLabel.includes('3.7')))) {
-      return true;
-    }
-    // Gemini 3.6
-    if ((item.includes('gemini') && item.includes('3.6')) &&
-        ((cleanId.includes('gemini') && cleanId.includes('3.6')) || (cleanLabel.includes('gemini') && cleanLabel.includes('3.6')))) {
-      return true;
-    }
   }
 
   return false;
@@ -264,8 +254,7 @@ export function injectCustomModelsIntoResponse(
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
                 ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
-            : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
-                : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
+            : 'gemini-3.8-flash-tiered')
         : rawName;
 
       const modelDedupKey = isGoogleFamily
@@ -424,6 +413,35 @@ function injectCustomModelsIntoUserStatusJson(
         }
         continue;
       }
+
+      // Unlock Argon or Ultra-gated models in clientModelConfigs
+      const tagTitle = String(c.tagTitle || '');
+      const tagDesc = String(c.tagDescription || '');
+      if (
+        label.toLowerCase().includes('argon') ||
+        modelId.toLowerCase().includes('argon') ||
+        tagTitle.toLowerCase().includes('unavailable') ||
+        tagDesc.toLowerCase().includes('ultra') ||
+        c.disabled === true
+      ) {
+        delete c.disabled;
+        if (tagTitle.toLowerCase().includes('unavailable') || tagDesc.toLowerCase().includes('ultra')) {
+          delete c.tagTitle;
+          delete c.tagDescription;
+        }
+        if (!c.quotaInfo) {
+          c.quotaInfo = {
+            remainingFraction: 1,
+            resetTime: '2099-01-01T00:00:00Z',
+          };
+        }
+        if (Array.isArray(c.allowedTiers)) {
+          if (!c.allowedTiers.includes('g1-ultra-tier')) c.allowedTiers.push('g1-ultra-tier');
+          if (!c.allowedTiers.includes('ultra-tier')) c.allowedTiers.push('ultra-tier');
+          if (!c.allowedTiers.includes('TEAMS_TIER_ULTRA')) c.allowedTiers.push('TEAMS_TIER_ULTRA');
+        }
+      }
+
       keptConfigs.push(c);
 
       if (label) {
@@ -473,8 +491,9 @@ function injectCustomModelsIntoUserStatusJson(
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
                 ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
-            : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
-                : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
+            : (rawName.includes('argon') || cleanDisp.includes('argon')
+                ? 'gemini-4-argon-medium'
+                : (rawName || 'gemini-3.8-flash-tiered')))
         : rawName;
 
       const modelDedupKey = isGoogleFamily
@@ -513,6 +532,9 @@ function injectCustomModelsIntoUserStatusJson(
           'TEAMS_TIER_ENTERPRISE_SAAS',
           'TEAMS_TIER_HYBRID',
           'TEAMS_TIER_PRO_ULTIMATE',
+          'TEAMS_TIER_ULTRA',
+          'g1-ultra-tier',
+          'ultra-tier',
         ],
         tagTitle: m.provider ? m.provider.charAt(0).toUpperCase() + m.provider.slice(1) : 'Custom',
         quotaInfo: {
@@ -670,8 +692,9 @@ export function injectCustomModelsIntoUserStatus(
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
                 ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
-            : (rawName.includes('3.7') || cleanDisp.includes('3.7') ? 'gemini-3.7-flash-tiered'
-                : (rawName.includes('3.6') || cleanDisp.includes('3.6') ? 'gemini-3.6-flash-tiered' : 'gemini-3.8-flash-tiered')))
+            : (rawName.includes('argon') || cleanDisp.includes('argon')
+                ? 'gemini-4-argon-medium'
+                : (rawName || 'gemini-3.8-flash-tiered')))
         : rawName;
 
       const modelDedupKey = isGoogleFamily

@@ -54,6 +54,8 @@ const KEYLESS_PROVIDERS = new Set(['ollama', 'lmstudio', 'llamacpp']);
 const KNOWN_KEY_PREFIXES = [
   'sk-',         // OpenAI, OpenRouter, DeepSeek, Groq, Mistral, Cerebras, Fireworks, Kimi, Z.ai
   'AIza',        // Google AI Studio
+  'ya29',        // Google OAuth access token
+  '1//',         // Google OAuth refresh token
   'gsk_',        // Groq (newer)
   'nvapi-',      // NVIDIA NIM
   'fk-',         // Fireworks (alt)

@@ -225,8 +225,8 @@ class ChatInputBarState extends State<ChatInputBar> with WidgetsBindingObserver 
 
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  String _selectedModel = 'Gemini 3.7 Flash';
-  String? _selectedModelId = 'gemini-3.7-flash';
+  String _selectedModel = 'Gemini 3.8 Flash';
+  String? _selectedModelId = 'gemini-3.8-flash';
   int? _selectedModelEnum = 312;
   List<AntigravityModel> _availableModels = ModelCatalog.standardModels;
 

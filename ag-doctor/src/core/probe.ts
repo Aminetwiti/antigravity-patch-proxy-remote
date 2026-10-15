@@ -100,6 +100,9 @@ export function authHeaders(provider: string | undefined, apiKey: string | undef
     return { 'x-api-key': apiKey, 'anthropic-version': '2025-04-01' };
   }
   if (provider === 'google') {
+    if (apiKey.startsWith('ya29')) {
+      return { Authorization: `Bearer ${apiKey}` };
+    }
     return { 'x-goog-api-key': apiKey };
   }
   return { Authorization: `Bearer ${apiKey}` };
