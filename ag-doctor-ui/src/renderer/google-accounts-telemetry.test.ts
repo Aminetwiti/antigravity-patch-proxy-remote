@@ -9,6 +9,11 @@ import {
   calculatePoolResilienceScore,
   getPoolFallbackChain,
   calculateBurnProjection,
+  calculateAccountTokens,
+  calculatePoolConsumedTokens,
+  GEMINI_5H_QUOTA_TOKENS,
+  GEMINI_WEEKLY_RATIO,
+  CLAUDE_5H_TO_WEEKLY_RATIO,
 } from './google-accounts-telemetry';
 
 describe('google-accounts-telemetry', () => {
@@ -24,29 +29,31 @@ describe('google-accounts-telemetry', () => {
       expect(res2.burnState).toBe('critical');
     });
 
-    it('estimates runway accurately for standard PRO accounts at 120k tokens/hour', () => {
-      // 1 PRO account with 100% quota = 350,000 tokens
-      // 350,000 / 120,000 = 2.91 hours -> 2h 55m -> 'moderate'
+    it('estimates runway accurately for standard Gemini accounts with 250M quota at 50M tokens/hour', () => {
+      // 1 account with 100% quota = 250,000,000 tokens
+      // 250,000,000 / 50,000,000 = 5 hours -> 'healthy'
       const accounts = [
-        { id: 'acc1', tier: 'PRO', enabled: true, quotas: { fiveHourPercentage: 100 } },
+        { id: 'acc1', tier: 'PRO', enabled: true, quotas: { fiveHourPercentage: 100, weeklyPercentage: 100 } },
       ];
-      const res = calculatePoolRunway(accounts, 120_000);
-      expect(res.totalAvailableTokens).toBe(350_000);
-      expect(res.runwayHours).toBe(2);
-      expect(res.runwayMinutes).toBe(55);
-      expect(res.formattedRunway).toBe('2h 55m');
-      expect(res.burnState).toBe('moderate');
+      const res = calculatePoolRunway(accounts, 50_000_000);
+      expect(res.totalAvailableTokens).toBe(250_000_000);
+      expect(res.totalConsumedTokens5h).toBe(0);
+      expect(res.totalConsumedTokensWeekly).toBe(0);
+      expect(res.runwayHours).toBe(5);
+      expect(res.runwayMinutes).toBe(0);
+      expect(res.formattedRunway).toBe('5h 00m');
+      expect(res.burnState).toBe('healthy');
     });
 
     it('identifies healthy runway when multiple accounts yield > 3h', () => {
-      // 2 PRO accounts at 100% = 700,000 tokens. 700,000 / 120,000 = 5h 50m
+      // 2 accounts at 100% = 500,000,000 tokens. 500M / 50M = 10h
       const accounts = [
         { id: 'acc1', tier: 'PRO', enabled: true, quotas: { fiveHourPercentage: 100 } },
         { id: 'acc2', tier: 'PRO', enabled: true, quotas: { fiveHourPercentage: 100 } },
       ];
-      const res = calculatePoolRunway(accounts, 120_000);
-      expect(res.totalAvailableTokens).toBe(700_000);
-      expect(res.runwayHours).toBe(5);
+      const res = calculatePoolRunway(accounts, 50_000_000);
+      expect(res.totalAvailableTokens).toBe(500_000_000);
+      expect(res.runwayHours).toBe(10);
       expect(res.burnState).toBe('healthy');
     });
 
@@ -54,13 +61,15 @@ describe('google-accounts-telemetry', () => {
       const accounts = [
         { id: 'studio-key', provider: 'google-gemini', apiKey: 'AQ.xyz', enabled: true },
         { id: 'gemini-cli-1', provider: 'gemini-cli', enabled: true },
-        { id: 'real-pro', provider: 'google', tier: 'PRO', enabled: true, quotas: { fiveHourPercentage: 50 } },
+        { id: 'real-pro', provider: 'google', tier: 'PRO', enabled: true, quotas: { fiveHourPercentage: 50, weeklyPercentage: 80 } },
       ];
-      // 50% of 350k = 175k tokens. 175,000 / 120,000 = 1h 27m
-      const res = calculatePoolRunway(accounts, 120_000);
-      expect(res.totalAvailableTokens).toBe(175_000);
-      expect(res.runwayHours).toBe(1);
-      expect(res.runwayMinutes).toBe(27);
+      // 50% of 250M = 125M tokens. 125,000,000 / 50,000,000 = 2h 30m -> 'moderate'
+      const res = calculatePoolRunway(accounts, 50_000_000);
+      expect(res.totalAvailableTokens).toBe(125_000_000);
+      expect(res.totalConsumedTokens5h).toBe(125_000_000);
+      expect(res.runwayHours).toBe(2);
+      expect(res.runwayMinutes).toBe(30);
+      expect(res.burnState).toBe('moderate');
     });
   });
 
@@ -291,16 +300,52 @@ describe('google-accounts-telemetry', () => {
   describe('calculateBurnProjection', () => {
     it('scales runway accurately between eco, normal, and burst profiles', () => {
       const accounts = [
-        { id: 'a1', enabled: true, tier: 'PRO', quotas: { fiveHourPercentage: 100 } }, // 350k
+        { id: 'a1', enabled: true, tier: 'PRO', quotas: { fiveHourPercentage: 100 } }, // 250M
       ];
-      const eco = calculateBurnProjection(accounts, 'eco'); // 60k/h -> 5h 50m
-      const normal = calculateBurnProjection(accounts, 'normal'); // 120k/h -> 2h 55m
-      const burst = calculateBurnProjection(accounts, 'burst'); // 250k/h -> 1h 24m
+      const eco = calculateBurnProjection(accounts, 'eco'); // 25M/h -> 10h 00m
+      const normal = calculateBurnProjection(accounts, 'normal'); // 50M/h -> 5h 00m
+      const burst = calculateBurnProjection(accounts, 'burst'); // 100M/h -> 2h 30m
 
       expect(eco.runwayHours).toBeGreaterThan(normal.runwayHours);
       expect(normal.runwayHours).toBeGreaterThan(burst.runwayHours);
-      expect(eco.formattedRunway).toBe('5h 50m');
-      expect(burst.formattedRunway).toBe('1h 24m');
+      expect(eco.formattedRunway).toBe('10h 00m');
+      expect(burst.formattedRunway).toBe('2h 30m');
+    });
+  });
+
+  describe('Real Quota & Token Model (Gemini 250M 5h / 13% weekly, Claude 50%)', () => {
+    it('accurately calculates tokens consumed and available for Gemini accounts', () => {
+      const acc = {
+        id: 'gemini-acc-1',
+        enabled: true,
+        quotas: {
+          geminiFiveHourPct: 70, // 30% consumed in 5h
+          geminiWeeklyPct: 76,   // 24% consumed in weekly
+        },
+      };
+
+      const metrics = calculateAccountTokens(acc);
+      // 5H: 250M * 70% = 175M available, 250M * 30% = 75M consumed
+      expect(metrics.availableTokens5h).toBe(175_000_000);
+      expect(metrics.consumedTokens5h).toBe(75_000_000);
+
+      // Weekly: ~1,923,076,923 total -> 76% available, 24% consumed (~461.5M)
+      expect(metrics.availableTokensWeekly).toBeGreaterThan(1_400_000_000);
+      expect(metrics.consumedTokensWeekly).toBeGreaterThan(450_000_000);
+    });
+
+    it('aggregates total pool consumed and available tokens correctly', () => {
+      const accounts = [
+        { id: 'a1', enabled: true, quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 90 } },
+        { id: 'a2', enabled: true, quotas: { geminiFiveHourPct: 60, geminiWeeklyPct: 80 } },
+      ];
+      const pool = calculatePoolConsumedTokens(accounts);
+      // a1 consumed 5h: 20% of 250M = 50M. a2 consumed 5h: 40% of 250M = 100M. Total 5h consumed = 150M
+      expect(pool.totalConsumed5h).toBe(150_000_000);
+      // a1 available 5h: 200M. a2 available 5h: 150M. Total = 350M
+      expect(pool.totalAvailable5h).toBe(350_000_000);
+      expect(pool.totalConsumedWeekly).toBeGreaterThan(0);
+      expect(pool.totalAvailableWeekly).toBeGreaterThan(0);
     });
   });
 });

@@ -1,10 +1,90 @@
 export interface PoolRunwayResult {
   totalAvailableTokens: number;
+  totalConsumedTokens5h: number;
+  totalConsumedTokensWeekly: number;
   hourlyBurnRate: number;
   runwayHours: number;
   runwayMinutes: number;
   formattedRunway: string;
   burnState: 'healthy' | 'moderate' | 'critical';
+}
+
+/**
+ * Real Quota & Token Constants
+ * - Gemini: 5h quota (100%) = 13% weekly = 250 M tokens (250,000,000)
+ * - Claude: 5h quota (100%) = 50% weekly
+ */
+export const GEMINI_5H_QUOTA_TOKENS = 250_000_000;
+export const GEMINI_WEEKLY_RATIO = 0.13;
+export const GEMINI_WEEKLY_QUOTA_TOKENS = Math.round(GEMINI_5H_QUOTA_TOKENS / GEMINI_WEEKLY_RATIO); // ~1,923,076,923 tokens
+export const CLAUDE_5H_TO_WEEKLY_RATIO = 0.50;
+
+export const GEMINI_TOKENS_PER_5H_PCT = GEMINI_5H_QUOTA_TOKENS / 100; // 2,500,000 tokens per 1% 5h
+export const GEMINI_TOKENS_PER_WEEKLY_PCT = GEMINI_WEEKLY_QUOTA_TOKENS / 100; // ~19,230,769 tokens per 1% weekly
+
+export interface AccountTokenMetrics {
+  availableTokens5h: number;
+  consumedTokens5h: number;
+  availableTokensWeekly: number;
+  consumedTokensWeekly: number;
+  pct5h: number;
+  pctWeekly: number;
+}
+
+/**
+ * Calculates consumed and available tokens for an individual account from its quotas.
+ */
+export function calculateAccountTokens(acc: any): AccountTokenMetrics {
+  const q = acc?.quotas || {};
+  const wkPct = q.geminiWeeklyPct ?? q.weeklyPercentage ?? 100;
+  const pct5h = wkPct <= 0 ? 0 : (q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100);
+  const tier = String(acc?.tier || '').toUpperCase();
+  const cap5h = tier.includes('FREE') ? Math.round(GEMINI_5H_QUOTA_TOKENS * 0.4) : GEMINI_5H_QUOTA_TOKENS;
+  const weeklyTotal = Math.round(cap5h / GEMINI_WEEKLY_RATIO);
+
+  return {
+    availableTokens5h: Math.round((cap5h * Math.max(0, Math.min(100, pct5h))) / 100),
+    consumedTokens5h: Math.round((cap5h * Math.max(0, 100 - pct5h)) / 100),
+    availableTokensWeekly: Math.round((weeklyTotal * Math.max(0, Math.min(100, wkPct))) / 100),
+    consumedTokensWeekly: Math.round((weeklyTotal * Math.max(0, 100 - wkPct)) / 100),
+    pct5h,
+    pctWeekly: wkPct,
+  };
+}
+
+/**
+ * Aggregates consumed and remaining tokens across all active pooled accounts.
+ */
+export function calculatePoolConsumedTokens(accounts: any[]): {
+  totalConsumed5h: number;
+  totalConsumedWeekly: number;
+  totalAvailable5h: number;
+  totalAvailableWeekly: number;
+} {
+  let totalConsumed5h = 0;
+  let totalConsumedWeekly = 0;
+  let totalAvailable5h = 0;
+  let totalAvailableWeekly = 0;
+
+  if (!Array.isArray(accounts)) {
+    return { totalConsumed5h: 0, totalConsumedWeekly: 0, totalAvailable5h: 0, totalAvailableWeekly: 0 };
+  }
+
+  for (const acc of accounts) {
+    if (!acc || acc.enabled === false) continue;
+    const isStudio = acc.provider === 'google-gemini' || (typeof acc.apiKey === 'string' && (acc.apiKey.startsWith('AQ.') || acc.apiKey.startsWith('AIzaSy')));
+    const isCli = acc.provider === 'gemini-cli' || (typeof acc.id === 'string' && acc.id.startsWith('gemini-cli'));
+    if (isStudio || isCli) continue;
+    if (acc.isUnlicensed || acc.quotas?.isUnlicensed) continue;
+
+    const m = calculateAccountTokens(acc);
+    totalConsumed5h += m.consumedTokens5h;
+    totalConsumedWeekly += m.consumedTokensWeekly;
+    totalAvailable5h += m.availableTokens5h;
+    totalAvailableWeekly += m.availableTokensWeekly;
+  }
+
+  return { totalConsumed5h, totalConsumedWeekly, totalAvailable5h, totalAvailableWeekly };
 }
 
 export interface UpcomingResetItem {
@@ -18,15 +98,17 @@ export interface UpcomingResetItem {
 
 /**
  * Calculates estimated flight runway (hours/minutes of coding) based on remaining pool tokens.
- * Default hourly burn rate is 120,000 tokens/hr (active AI pair programming).
+ * Default hourly burn rate is 50,000,000 tokens/hr (active AI pair programming against 250M 5h window).
  */
 export function calculatePoolRunway(
   accounts: any[],
-  hourlyBurnRate = 120_000
+  hourlyBurnRate = 50_000_000
 ): PoolRunwayResult {
   if (!Array.isArray(accounts) || accounts.length === 0 || hourlyBurnRate <= 0) {
     return {
       totalAvailableTokens: 0,
+      totalConsumedTokens5h: 0,
+      totalConsumedTokensWeekly: 0,
       hourlyBurnRate,
       runwayHours: 0,
       runwayMinutes: 0,
@@ -36,6 +118,9 @@ export function calculatePoolRunway(
   }
 
   let totalAvailableTokens = 0;
+  let totalConsumedTokens5h = 0;
+  let totalConsumedTokensWeekly = 0;
+
   for (const acc of accounts) {
     if (!acc || acc.enabled === false) continue;
     // Skip AI Studio or CLI if they don't share Antigravity pool tokens
@@ -45,15 +130,10 @@ export function calculatePoolRunway(
 
     if (acc.isUnlicensed || acc.quotas?.isUnlicensed) continue;
 
-    // Estimate based on 5h rolling capacity and percentage
-    const q = acc.quotas || {};
-    const wkPct = q.geminiWeeklyPct ?? q.weeklyPercentage ?? 100;
-    // Reality rule: if weekly <= 0, 5h is locked
-    const pct5h = wkPct <= 0 ? 0 : (q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100);
-    const tier = String(acc.tier || '').toUpperCase();
-    const cap5h = tier.includes('ULTRA') ? 800_000 : (tier.includes('FREE') ? 120_000 : 350_000);
-    const avail = Math.round((cap5h * Math.max(0, Math.min(100, pct5h))) / 100);
-    totalAvailableTokens += avail;
+    const metrics = calculateAccountTokens(acc);
+    totalAvailableTokens += metrics.availableTokens5h;
+    totalConsumedTokens5h += metrics.consumedTokens5h;
+    totalConsumedTokensWeekly += metrics.consumedTokensWeekly;
   }
 
   const totalMinutes = Math.floor((totalAvailableTokens / hourlyBurnRate) * 60);
@@ -73,6 +153,8 @@ export function calculatePoolRunway(
 
   return {
     totalAvailableTokens,
+    totalConsumedTokens5h,
+    totalConsumedTokensWeekly,
     hourlyBurnRate,
     runwayHours,
     runwayMinutes,
@@ -546,10 +628,10 @@ export function calculateBurnProjection(
   profile: BurnProfile = 'normal'
 ): PoolRunwayResult {
   const rates: Record<BurnProfile, number> = {
-    eco: 60_000,
-    normal: 120_000,
-    burst: 250_000,
+    eco: 25_000_000,
+    normal: 50_000_000,
+    burst: 100_000_000,
   };
-  return calculatePoolRunway(accounts, rates[profile] || 120_000);
+  return calculatePoolRunway(accounts, rates[profile] || 50_000_000);
 }
 

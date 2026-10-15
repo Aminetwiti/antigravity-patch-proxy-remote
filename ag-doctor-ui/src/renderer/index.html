@@ -688,7 +688,7 @@
           <!-- Card 1: Capacité Moyenne du Pool -->
           <div class="stat-card ga-token-stat-card card-value stat-card--primary-hero" role="group" aria-label="Capacité moyenne du pool">
             <div class="stat-icon ok">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"/><line x1="22" y1="11" x2="22" y2="13"/><line x1="6" y1="10" x2="6" y2="14"/><line x1="10" y1="10" x2="10" y2="14"/><line x1="14" y1="10" x2="14" y2="14"/></svg>
             </div>
             <div class="stat-body" style="min-width: 0; width: 100%;">
               <div class="stat-label">Capacité Moyenne</div>
@@ -1421,6 +1421,16 @@
           </div>
         </div>
 
+        <!-- Token Navigation Tabs (Dashboard & Activité vs Tokenizer Interactif BPE) -->
+        <div class="stats-tabs-bar" style="display:flex; gap:10px; margin:10px 0 16px 0; border-bottom:1px solid var(--border); padding-bottom:8px;">
+          <button type="button" class="btn btn-sm btn-ghost active" id="tabTokenDashboardBtn" style="font-weight:600; display:flex; align-items:center; gap:6px;">
+            <span>📊</span> <span>Dashboard &amp; Activité</span>
+          </button>
+          <button type="button" class="btn btn-sm btn-ghost" id="tabTokenizerToolBtn" style="font-weight:600; display:flex; align-items:center; gap:6px;">
+            <span>🔤</span> <span>Tokenizer Interactif BPE</span>
+          </button>
+        </div>
+
         <div id="tokenTabDashboardContent">
           <!-- Antigravity Native Stats Shell (Exact Reference Match) -->
           <div class="antigravity-stats-shell">
@@ -1471,7 +1481,7 @@
             <div class="stats-strip-card">
               <div class="strip-item">
                 <div class="strip-val" id="statsLifetimeTokens">--</div>
-                <div class="strip-lbl">Lifetime tokens</div>
+                <div class="strip-lbl" id="statsLifetimeTokensLbl">Lifetime tokens</div>
                 <div class="caching-roi-pill" id="cachingRoiPill" title="Pool Antigravity &amp; Gemini Context Caching">--</div>
               </div>
               <div class="strip-item">
@@ -1782,6 +1792,113 @@
         </div>
 
 
+        </div>
+
+        <!-- Tokenizer Tool Content Tab -->
+        <div id="tokenTabToolContent" style="display:none; padding:8px 0 24px 0;">
+          <div class="stats-activity-card" style="margin-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <label for="tokenizerModelSelect" style="font-weight:600; font-size:13px; color:var(--text-1);">Modèle BPE :</label>
+                <select id="tokenizerModelSelect" style="padding:6px 12px; font-weight:600; font-size:12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-1); color:var(--text-0); cursor:pointer;">
+                  <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (Vocabulaire 256k)</option>
+                  <option value="gemini-4-argon-medium">Gemini 4 Argon (Medium)</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                  <option value="gemini-2.0-flash-thinking">Gemini 2.0 Flash Thinking</option>
+                  <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                  <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+                  <option value="gpt-4o">GPT-4o (o200k)</option>
+                  <option value="deepseek-r1">DeepSeek R1</option>
+                </select>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span style="font-size:12px; color:var(--text-2); font-weight:500;">Exemples prédéfinis :</span>
+                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetGeminiPro">Gemini Agent</button>
+                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetThinking">Thinking CoT</button>
+                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetTs">TypeScript</button>
+                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetPrompt">System Prompt</button>
+                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetChat">Chat</button>
+                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetJson">JSON Payload</button>
+              </div>
+            </div>
+
+            <!-- Tokenizer 7-Metric Strip -->
+            <div class="stats-top-strip" style="margin-bottom:14px;">
+              <div class="stats-strip-metric">
+                <span class="strip-metric-lbl">Jetons (Tokens)</span>
+                <span class="strip-metric-val" id="toolStatTokens" style="color:#60a5fa;">0</span>
+                <span class="strip-metric-sub">Unités lexicales BPE</span>
+              </div>
+              <div class="stats-strip-metric">
+                <span class="strip-metric-lbl">Caractères</span>
+                <span class="strip-metric-val" id="toolStatChars">0</span>
+                <span class="strip-metric-sub">Longueur brute UTF-8</span>
+              </div>
+              <div class="stats-strip-metric">
+                <span class="strip-metric-lbl">Mots</span>
+                <span class="strip-metric-val" id="toolStatWords">0</span>
+                <span class="strip-metric-sub">Séquences séparées</span>
+              </div>
+              <div class="stats-strip-metric">
+                <span class="strip-metric-lbl">Lignes</span>
+                <span class="strip-metric-val" id="toolStatLines">0</span>
+                <span class="strip-metric-sub">Sauts de ligne</span>
+              </div>
+              <div class="stats-strip-metric">
+                <span class="strip-metric-lbl">Densité</span>
+                <span class="strip-metric-val" id="toolStatRatio">0 car/tok</span>
+                <span class="strip-metric-sub">Compaction moyenne</span>
+              </div>
+              <div class="stats-strip-metric">
+                <span class="strip-metric-lbl">Coût In (Prompt)</span>
+                <span class="strip-metric-val" id="toolCostInput" style="color:#34d399;">$0.0000</span>
+                <span class="strip-metric-sub">Tarif API officiel</span>
+              </div>
+              <div class="stats-strip-metric">
+                <span class="strip-metric-lbl">Coût Out (Gén.)</span>
+                <span class="strip-metric-val" id="toolCostOutput" style="color:#f59e0b;">$0.0000</span>
+                <span class="strip-metric-sub">Tarif sortie estimé</span>
+              </div>
+            </div>
+
+            <!-- Gemini Context Window Capacity Meter -->
+            <div style="background:var(--bg-1); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; margin-bottom:6px;">
+                <span style="font-weight:600; color:var(--text-1);">Capacité Fenêtre de Contexte Gemini (1 000 000 tokens)</span>
+                <span id="contextMeterText" style="font-family:var(--font-mono, monospace); font-size:11.5px; color:var(--text-2);">0 / 1 000 000 (0.00%)</span>
+              </div>
+              <div class="token-progress-bar" style="height:7px; background:var(--bg-2); border-radius:4px; overflow:hidden;">
+                <div class="token-progress-fill" id="contextMeterFill" style="width:0.2%; background:#3b82f6; height:100%; transition:width 0.2s ease;"></div>
+              </div>
+            </div>
+
+            <!-- Text Input Area & Action Buttons -->
+            <div style="margin-bottom:14px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label for="tokenizerInputText" style="font-size:12.5px; font-weight:600; color:var(--text-1);">Saisie de texte &amp; Code source :</label>
+                <div style="display:flex; gap:6px;">
+                  <button type="button" class="btn btn-ghost btn-xs" id="tokenizerClearTextBtn">✕ Effacer</button>
+                  <button type="button" class="btn btn-ghost btn-xs" id="tokenizerCopyTextBtn">📋 Copier Texte</button>
+                  <button type="button" class="btn btn-primary btn-xs" id="tokenizerCopyTokensBtn">📦 Copier Tokens (JSON)</button>
+                </div>
+              </div>
+              <textarea id="tokenizerInputText" rows="8" style="width:100%; box-sizing:border-box; font-family:var(--font-mono, ui-monospace, monospace); font-size:12.5px; line-height:1.6; padding:12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-1); color:var(--text-0); resize:vertical;" placeholder="Entrez ou collez votre texte, code ou prompt ici pour analyser son découpage en tokens BPE en temps réel..."></textarea>
+            </div>
+
+            <!-- Interactive Token Chips Visualization -->
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-size:13px; font-weight:600; color:var(--text-0); display:flex; align-items:center; gap:8px;">
+                  <span>Visualisation des Jetons BPE</span>
+                  <span class="badge" id="tokenizerChunkCount" style="background:rgba(59, 130, 246, 0.15); color:#60a5fa; border:1px solid rgba(59, 130, 246, 0.3);">0 jetons</span>
+                </div>
+                <span style="font-size:11px; color:var(--text-2);">Cliquez sur un jeton pour le copier</span>
+              </div>
+              <div id="tokenizerChipsContainer" style="padding:14px; background:var(--bg-0); border-radius:8px; border:1px solid var(--border); min-height:100px; line-height:2.0; font-family:var(--font-mono, ui-monospace, monospace); font-size:12.5px; word-break:break-word;">
+                <span style="color:var(--text-3); font-style:italic;">Les jetons découpés apparaîtront ici avec des couleurs alternées...</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

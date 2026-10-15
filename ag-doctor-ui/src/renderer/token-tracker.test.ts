@@ -4,6 +4,13 @@ import {
   tokenizeText,
   estimateTokenCost,
   MODEL_PRICING,
+  calculateQuotaTokens,
+  GEMINI_5H_TOKEN_CAPACITY,
+  GEMINI_5H_TO_WEEKLY_RATIO,
+  GEMINI_WEEKLY_TOKEN_CAPACITY,
+  CLAUDE_5H_TOKEN_CAPACITY,
+  CLAUDE_5H_TO_WEEKLY_RATIO,
+  CLAUDE_WEEKLY_TOKEN_CAPACITY,
 } from './token-tracker';
 
 describe('token-tracker', () => {
@@ -257,6 +264,47 @@ describe('token-tracker', () => {
       expect(stats.promptTokens).toBe(14500);
       expect(stats.completionTokens).toBe(4000);
       expect(stats.byModel['Gemini 3.8 Flash']).toBeDefined();
+    });
+  });
+
+  describe('calculateQuotaTokens & Calibrated Capacities', () => {
+    it('verifies Gemini 5h = 13% weekly = 250M tokens formula', () => {
+      expect(GEMINI_5H_TOKEN_CAPACITY).toBe(250_000_000);
+      expect(GEMINI_5H_TO_WEEKLY_RATIO).toBe(0.13);
+      expect(GEMINI_WEEKLY_TOKEN_CAPACITY).toBe(1_923_076_923);
+      expect(Math.round(GEMINI_WEEKLY_TOKEN_CAPACITY * 0.13)).toBe(250_000_000);
+    });
+
+    it('verifies Claude 5h = 50% weekly formula', () => {
+      expect(CLAUDE_5H_TOKEN_CAPACITY).toBe(10_000_000);
+      expect(CLAUDE_5H_TO_WEEKLY_RATIO).toBe(0.50);
+      expect(CLAUDE_WEEKLY_TOKEN_CAPACITY).toBe(20_000_000);
+    });
+
+    it('calculates consumed and remaining tokens accurately for Gemini 5h', () => {
+      // 80% remaining -> 20% consumed
+      const res = calculateQuotaTokens(80, GEMINI_5H_TOKEN_CAPACITY);
+      expect(res.availableTokens).toBe(200_000_000); // 200M restants
+      expect(res.consumedTokens).toBe(50_000_000);   // 50M consommés
+      expect(res.percentageRemaining).toBe(80);
+      expect(res.percentageConsumed).toBe(20);
+    });
+
+    it('calculates consumed and remaining tokens accurately for Gemini Weekly', () => {
+      // 90% remaining -> 10% consumed on ~1.923B capacity
+      const res = calculateQuotaTokens(90, GEMINI_WEEKLY_TOKEN_CAPACITY);
+      expect(res.availableTokens).toBe(1_730_769_231);
+      expect(res.consumedTokens).toBe(192_307_692);
+      expect(res.percentageRemaining).toBe(90);
+      expect(res.percentageConsumed).toBe(10);
+    });
+
+    it('preserves all characters during tokenization (lossless reconstruction)', () => {
+      const complexText = `function calculatePool(a: number, b: number) {\n  if (a === 250_000_000) return "d'ingénierie";\n  return a * 0.13;\n}`;
+      const res = tokenizeText(complexText, 'gemini-3.8-flash');
+      const reconstructed = res.tokens.map((t) => t.text).join('');
+      expect(reconstructed).toBe(complexText);
+      expect(res.tokenCount).toBeGreaterThan(15);
     });
   });
 });

@@ -13,8 +13,17 @@ export const MODEL_PRICING: Record<string, TokenPrice> = {
   'gemini-3.8-pro': { inputPerMillion: 1.25, outputPerMillion: 5.0 },
   'gemini-3.8-flash': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
   'gemini-3.8-flash-tiered': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
+  'gemini-2.5-pro': { inputPerMillion: 1.25, outputPerMillion: 5.0 },
+  'gemini-2.5-flash': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
+  'gemini-2.0-flash': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
+  'gemini-1.5-pro': { inputPerMillion: 1.25, outputPerMillion: 5.0 },
+  'gemini-1.5-flash': { inputPerMillion: 0.075, outputPerMillion: 0.3 },
   'claude-sonnet-4-6': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
   'claude-opus-4-6': { inputPerMillion: 15.0, outputPerMillion: 75.0 },
+  'claude-3-5-sonnet': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
+  'claude-3.5-sonnet': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
+  'claude-3-opus': { inputPerMillion: 15.0, outputPerMillion: 75.0 },
+  'claude-3-haiku': { inputPerMillion: 0.25, outputPerMillion: 1.25 },
   'gpt-4o': { inputPerMillion: 2.5, outputPerMillion: 10.0 },
   'gpt-4o-mini': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
   'deepseek-chat': { inputPerMillion: 0.14, outputPerMillion: 0.28 },
@@ -22,6 +31,41 @@ export const MODEL_PRICING: Record<string, TokenPrice> = {
   'deepseek-r1': { inputPerMillion: 0.55, outputPerMillion: 2.19 },
   'qwen-2.5-coder': { inputPerMillion: 0.2, outputPerMillion: 0.6 },
 };
+
+// ─── Real Quota & Token Capacity Calibration ──────────────────────────────
+// User calibrated formula: Gemini 5h (100%) = 13% weekly = 250M tokens; Claude 5h = 50% weekly
+export const GEMINI_5H_TOKEN_CAPACITY = 250_000_000; // 250M tokens (100% 5h window)
+export const GEMINI_5H_TO_WEEKLY_RATIO = 0.13; // 5h window = 13% of weekly quota
+export const GEMINI_WEEKLY_TOKEN_CAPACITY = Math.round(GEMINI_5H_TOKEN_CAPACITY / GEMINI_5H_TO_WEEKLY_RATIO); // ~1_923_076_923 tokens
+
+export const CLAUDE_5H_TOKEN_CAPACITY = 10_000_000; // 10M tokens
+export const CLAUDE_5H_TO_WEEKLY_RATIO = 0.50; // Claude 5h window = 50% of weekly quota
+export const CLAUDE_WEEKLY_TOKEN_CAPACITY = Math.round(CLAUDE_5H_TOKEN_CAPACITY / CLAUDE_5H_TO_WEEKLY_RATIO); // 20_000_000 tokens
+
+export interface QuotaTokenCalculation {
+  capacity: number;
+  availableTokens: number;
+  consumedTokens: number;
+  percentageRemaining: number;
+  percentageConsumed: number;
+}
+
+export function calculateQuotaTokens(
+  percentageRemaining: number,
+  capacity: number
+): QuotaTokenCalculation {
+  const pctRem = Math.max(0, Math.min(100, Math.round(percentageRemaining ?? 100)));
+  const pctCons = 100 - pctRem;
+  const availableTokens = Math.round((capacity * pctRem) / 100);
+  const consumedTokens = Math.round((capacity * pctCons) / 100);
+  return {
+    capacity,
+    availableTokens,
+    consumedTokens,
+    percentageRemaining: pctRem,
+    percentageConsumed: pctCons,
+  };
+}
 
 export interface TokenUsageEntry {
   id: string;
@@ -205,9 +249,10 @@ export function estimateTokenCost(modelName: string, promptTokens: number, compl
 
 /**
  * Zero-dependency BPE-like heuristic tokenizer and segmenter.
- * Accurately models byte-pair and subword splits across code, prose, and multilingual text.
+ * Accurately models byte-pair and subword splits across Gemini (256k vocab),
+ * Claude (65k-100k vocab), OpenAI (cl100k/o200k), and multilingual code/prose.
  */
-export function tokenizeText(text: string, modelName = 'claude-3-5-sonnet'): TokenizeResult {
+export function tokenizeText(text: string, modelName = 'gemini-3.8-flash'): TokenizeResult {
   if (!text) {
     return {
       tokens: [],
@@ -226,12 +271,10 @@ export function tokenizeText(text: string, modelName = 'claude-3-5-sonnet'): Tok
   const words = text.trim() ? text.trim().split(/\s+/) : [];
   const wordCount = words.length;
 
-  // Regex pattern matching BPE lexical tokens (handles contractions, numbers, words, spaces, punctuation)
-  const pattern = /'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+/gu;
-  const matches = text.match(pattern) || [];
-
-  const chunks: TokenizedChunk[] = [];
-  let colorCounter = 0;
+  const isGemini = /gemini|gemma/i.test(modelName);
+  // Gemini's 256k vocabulary keeps longer common words intact (~6-8 chars before subword split)
+  // Claude / GPT have smaller vocabularies and split subwords slightly earlier (~4-5 chars)
+  const maxSubwordLen = isGemini ? 7 : 5;
 
   const getBytes = (s: string) => {
     try {
@@ -241,29 +284,96 @@ export function tokenizeText(text: string, modelName = 'claude-3-5-sonnet'): Tok
     }
   };
 
-  for (const raw of matches) {
-    // If chunk is long (subword splitting), split into ~4-character fragments
-    if (raw.length > 5 && !/^\s+$/.test(raw)) {
-      const step = 4;
-      for (let i = 0; i < raw.length; i += step) {
-        const slice = raw.slice(i, i + step);
-        chunks.push({
-          index: chunks.length,
-          text: slice,
-          byteLength: getBytes(slice),
-          colorIndex: colorCounter % 6,
-        });
-        colorCounter++;
-      }
-    } else {
-      chunks.push({
-        index: chunks.length,
-        text: raw,
-        byteLength: getBytes(raw),
-        colorIndex: colorCounter % 6,
-      });
-      colorCounter++;
+  // 1. Multi-character programming symbols & operators
+  const symbolRegex = /^(===|!==|<=|>=|==|!=|=>|->|\+\+|--|\+=|-=|\*=|\/=|&&|\|\||\?\?|\.\.\.|::|\/\*|\*\/|\/\/|<!--|-->|<\/|\/>|<<|>>)/;
+  // 2. French & English contractions and prefixes
+  const contractionRegex = /^(?:[dDlLjJmMtTsScCnN]|qu|QU|Qu)'|^'[sStTmMdD]|^'(?:re|RE|ve|VE|ll|LL|d|D)/;
+  // 3. Indentation whitespace runs (2, 4, 8 spaces) or newlines
+  const whitespaceRegex = /^(\r\n|\n|\r|[ ]{4}|[ ]{2}|\t|[ ])/;
+  // 4. Letter / word run
+  const wordRunRegex = /^[\p{L}]+/u;
+  // 5. Digit run
+  const digitRegex = /^\d+/;
+
+  const chunks: TokenizedChunk[] = [];
+  let colorCounter = 0;
+
+  const pushToken = (rawPiece: string) => {
+    if (!rawPiece) return;
+    chunks.push({
+      index: chunks.length,
+      text: rawPiece,
+      byteLength: getBytes(rawPiece),
+      colorIndex: colorCounter % 6,
+    });
+    colorCounter++;
+  };
+
+  let pos = 0;
+  while (pos < text.length) {
+    const remainder = text.slice(pos);
+
+    // 1. Check multi-char programming symbol
+    const symMatch = remainder.match(symbolRegex);
+    if (symMatch) {
+      pushToken(symMatch[0]);
+      pos += symMatch[0].length;
+      continue;
     }
+
+    // 2. Check contraction
+    const contMatch = remainder.match(contractionRegex);
+    if (contMatch) {
+      pushToken(contMatch[0]);
+      pos += contMatch[0].length;
+      continue;
+    }
+
+    // 3. Check whitespace (spaces, tabs, newlines)
+    const wsMatch = remainder.match(whitespaceRegex);
+    if (wsMatch) {
+      pushToken(wsMatch[0]);
+      pos += wsMatch[0].length;
+      continue;
+    }
+
+    // 4. Check word (letters) with CamelCase / PascalCase sub-splitting
+    const wordMatch = remainder.match(wordRunRegex);
+    if (wordMatch) {
+      const fullWord = wordMatch[0];
+      // Split CamelCase: e.g. "calculatePoolRunway" -> ["calculate", "Pool", "Runway"]
+      const subwords = fullWord.match(/\p{Lu}?\p{Ll}+|\p{Lu}+(?!\p{Ll})|\p{L}+/gu) || [fullWord];
+
+      for (const sw of subwords) {
+        if (sw.length > maxSubwordLen) {
+          const step = Math.max(3, Math.ceil(sw.length / 2));
+          for (let i = 0; i < sw.length; i += step) {
+            pushToken(sw.slice(i, i + step));
+          }
+        } else {
+          pushToken(sw);
+        }
+      }
+      pos += fullWord.length;
+      continue;
+    }
+
+    // 5. Check numbers (chunk in 1-3 digits like BPE byte-fallback)
+    const digMatch = remainder.match(digitRegex);
+    if (digMatch) {
+      const fullNum = digMatch[0];
+      const step = 3;
+      for (let i = 0; i < fullNum.length; i += step) {
+        pushToken(fullNum.slice(i, i + step));
+      }
+      pos += fullNum.length;
+      continue;
+    }
+
+    // 6. Any other single punctuation or unicode character
+    const single = remainder[0];
+    pushToken(single);
+    pos += 1;
   }
 
   const tokenCount = chunks.length;
@@ -445,20 +555,56 @@ export class TokenTrackerEngine {
     const filtered = this.entries.filter((entry) => {
       if (minTimestamp > 0 && entry.timestamp < minTimestamp) return false;
 
-      const matchProv =
-        prov === 'all' ||
-        entry.provider.toLowerCase() === prov ||
-        (prov === 'google' && (entry.provider.toLowerCase().includes('google') || entry.provider.toLowerCase().includes('gemini') || entry.model.toLowerCase().includes('gemini')));
+      // Smart Provider Matching
+      let matchProv = false;
+      if (prov === 'all') {
+        matchProv = true;
+      } else if (prov === 'google') {
+        matchProv = entry.provider.toLowerCase().includes('google') || entry.model.toLowerCase().includes('gemini');
+      } else if (prov === 'anthropic' || prov === 'claude') {
+        matchProv = entry.provider.toLowerCase().includes('anthropic') || entry.model.toLowerCase().includes('claude');
+      } else if (prov === 'openai') {
+        matchProv = entry.provider.toLowerCase().includes('openai') || entry.model.toLowerCase().includes('gpt');
+      } else {
+        matchProv = entry.provider.toLowerCase().includes(prov);
+      }
 
-      const matchMod = mod === 'all' || entry.model.toLowerCase() === mod;
-      const matchQuery =
-        !q ||
-        entry.model.toLowerCase().includes(q) ||
-        entry.provider.toLowerCase().includes(q) ||
-        (entry.endpoint && entry.endpoint.toLowerCase().includes(q)) ||
-        (entry.title && entry.title.toLowerCase().includes(q)) ||
-        entry.status.toString().includes(q) ||
-        new Date(entry.timestamp).toLocaleDateString('fr-FR').includes(q);
+      // Smart Model Matching (supporting aliases like gemini-3.8, gemini-3.6, other, etc.)
+      const modLower = entry.model.toLowerCase();
+      let matchMod = false;
+      if (mod === 'all') {
+        matchMod = true;
+      } else if (mod === 'gemini-3.8' || mod === '3.8' || mod.includes('3.8')) {
+        matchMod = modLower.includes('3.8');
+      } else if (mod === 'gemini-3.6' || mod === '3.6' || mod.includes('3.6')) {
+        matchMod = modLower.includes('3.6');
+      } else if (mod === 'other') {
+        matchMod = !modLower.includes('3.8') && !modLower.includes('3.6') && !modLower.includes('gemini');
+      } else {
+        matchMod = modLower === mod || modLower.includes(mod) || mod.includes(modLower);
+      }
+
+      // Flexible Query Search (ID, model, provider, endpoint, status, and multiple date formats)
+      let matchQuery = true;
+      if (q) {
+        const idLower = (entry.id || '').toLowerCase();
+        const endpointLower = (entry.endpoint || '').toLowerCase();
+        const titleLower = (entry.title || '').toLowerCase();
+        const statusStr = (entry.status || 200).toString();
+        const entryDate = new Date(entry.timestamp);
+        const frDate = entryDate.toLocaleDateString('fr-FR'); // e.g. 15/10/2026
+        const isoDate = `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}-${String(entryDate.getDate()).padStart(2, '0')}`; // e.g. 2026-10-15
+
+        matchQuery =
+          idLower.includes(q) ||
+          modLower.includes(q) ||
+          entry.provider.toLowerCase().includes(q) ||
+          endpointLower.includes(q) ||
+          titleLower.includes(q) ||
+          statusStr.includes(q) ||
+          frDate.includes(q) ||
+          isoDate.includes(q);
+      }
 
       return matchProv && matchMod && matchQuery;
     });
@@ -673,11 +819,33 @@ export class TokenTrackerEngine {
 
 // Global attachment for plain browser scripts without module loader
 if (typeof window !== 'undefined') {
-  (window as unknown as { AgTokenTracker: { TokenTrackerEngine: typeof TokenTrackerEngine; tokenizeText: typeof tokenizeText; estimateTokenCost: typeof estimateTokenCost; MODEL_PRICING: typeof MODEL_PRICING; TOKENIZER_PRESETS: typeof TOKENIZER_PRESETS } }).AgTokenTracker = {
+  (window as unknown as {
+    AgTokenTracker: {
+      TokenTrackerEngine: typeof TokenTrackerEngine;
+      tokenizeText: typeof tokenizeText;
+      estimateTokenCost: typeof estimateTokenCost;
+      MODEL_PRICING: typeof MODEL_PRICING;
+      TOKENIZER_PRESETS: typeof TOKENIZER_PRESETS;
+      calculateQuotaTokens: typeof calculateQuotaTokens;
+      GEMINI_5H_TOKEN_CAPACITY: typeof GEMINI_5H_TOKEN_CAPACITY;
+      GEMINI_5H_TO_WEEKLY_RATIO: typeof GEMINI_5H_TO_WEEKLY_RATIO;
+      GEMINI_WEEKLY_TOKEN_CAPACITY: typeof GEMINI_WEEKLY_TOKEN_CAPACITY;
+      CLAUDE_5H_TOKEN_CAPACITY: typeof CLAUDE_5H_TOKEN_CAPACITY;
+      CLAUDE_5H_TO_WEEKLY_RATIO: typeof CLAUDE_5H_TO_WEEKLY_RATIO;
+      CLAUDE_WEEKLY_TOKEN_CAPACITY: typeof CLAUDE_WEEKLY_TOKEN_CAPACITY;
+    };
+  }).AgTokenTracker = {
     TokenTrackerEngine,
     tokenizeText,
     estimateTokenCost,
     MODEL_PRICING,
     TOKENIZER_PRESETS,
+    calculateQuotaTokens,
+    GEMINI_5H_TOKEN_CAPACITY,
+    GEMINI_5H_TO_WEEKLY_RATIO,
+    GEMINI_WEEKLY_TOKEN_CAPACITY,
+    CLAUDE_5H_TOKEN_CAPACITY,
+    CLAUDE_5H_TO_WEEKLY_RATIO,
+    CLAUDE_WEEKLY_TOKEN_CAPACITY,
   };
 }

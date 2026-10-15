@@ -296,11 +296,17 @@ export function matchesFacetedQuery(entry: ParsedLogEntry, query: string): boole
     if (!term) continue;
     const lower = term.toLowerCase();
     if (lower.startsWith('lvl:') || lower.startsWith('level:')) {
-      const targetLvl = lower.includes(':') ? lower.split(':')[1] : '';
+      let targetLvl = lower.includes(':') ? lower.split(':')[1] : '';
+      if (targetLvl === 'err') targetLvl = 'error';
+      if (targetLvl === 'warning') targetLvl = 'warn';
       if (entry.level !== targetLvl) return false;
     } else if (lower.startsWith('sub:')) {
       const targetSub = lower.split(':')[1];
-      if (entry.subsystem !== targetSub) return false;
+      const matchSub =
+        entry.subsystem === targetSub ||
+        entry.raw.toLowerCase().includes(`[${targetSub}]`) ||
+        entry.raw.toLowerCase().includes(targetSub);
+      if (!matchSub) return false;
     } else if (lower.startsWith('trace:')) {
       const targetTrace = lower.split(':')[1];
       if (!entry.traceId || !entry.traceId.toLowerCase().includes(targetTrace)) return false;

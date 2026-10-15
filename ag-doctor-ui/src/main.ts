@@ -2523,6 +2523,19 @@ try {
 }
 
 // Real Token History & Activity from conversation_summaries.db and proxy logs
+interface TokenEventsCache {
+  mtimeMs: number;
+  size: number;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+  requestsCount: number;
+  dailyEventsMap: Map<string, { requests: number; promptTokens: number; completionTokens: number; totalTokens: number; cachedTokens: number }>;
+  recentEvents: any[];
+}
+let tokenEventsCache: TokenEventsCache | null = null;
+
 ipcMain.handle(DOCTOR_IPC_CHANNELS.TOKEN_REAL_STATS, async () => {
   try {
     const dataDir = path.join(app.getPath('home'), '.gemini', 'antigravity');
@@ -2536,6 +2549,122 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.TOKEN_REAL_STATS, async () => {
     let longestStreakDays = 0;
     let sessions: any[] = [];
 
+    // Real Quota Model: Gemini 5h (100%) = 13% weekly = 250 M tokens
+    const GEMINI_5H = 250_000_000;
+    const GEMINI_WK_RATIO = 0.13;
+    const GEMINI_WK = Math.round(GEMINI_5H / GEMINI_WK_RATIO); // ~1,923,076,923 tokens
+    let poolConsumedWeekly = 0;
+    let poolConsumed5h = 0;
+    let poolAvailable5h = 0;
+    let poolAvailableWeekly = 0;
+    let accountsInPool = 0;
+
+    try {
+      const cmPath = getCustomModelsPath();
+      if (fs.existsSync(cmPath)) {
+        const cm = JSON.parse(fs.readFileSync(cmPath, 'utf8'));
+        const googleProv = cm.providers?.find((p: any) => p.id === 'provider-google');
+        if (googleProv && Array.isArray(googleProv.accounts)) {
+          accountsInPool = googleProv.accounts.length;
+          for (const acc of googleProv.accounts) {
+            if (!acc || acc.enabled === false) continue;
+            const q = acc.quotas || {};
+            const wkPct = q.geminiWeeklyPct ?? q.weeklyPercentage ?? 100;
+            const pct5h = wkPct <= 0 ? 0 : (q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100);
+            poolConsumed5h += Math.round((GEMINI_5H * Math.max(0, 100 - pct5h)) / 100);
+            poolAvailable5h += Math.round((GEMINI_5H * Math.max(0, Math.min(100, pct5h))) / 100);
+            poolConsumedWeekly += Math.round((GEMINI_WK * Math.max(0, 100 - wkPct)) / 100);
+            poolAvailableWeekly += Math.round((GEMINI_WK * Math.max(0, Math.min(100, wkPct))) / 100);
+          }
+        }
+      }
+    } catch {}
+
+    // 1. Ingest real token events from token_usage_events.jsonl (with fast stat-based memory caching)
+    const eventsPath = path.join(dataDir, 'token_usage_events.jsonl');
+    let realTotalTokens = 0;
+    let realPromptTokens = 0;
+    let realCompletionTokens = 0;
+    let realCachedTokens = 0;
+    let realTotalRequests = 0;
+    let liveEvents: any[] = [];
+    let dailyEventsMap = new Map<string, { requests: number; promptTokens: number; completionTokens: number; totalTokens: number; cachedTokens: number }>();
+
+    if (fs.existsSync(eventsPath)) {
+      try {
+        const stat = fs.statSync(eventsPath);
+        if (tokenEventsCache && tokenEventsCache.mtimeMs === stat.mtimeMs && tokenEventsCache.size === stat.size) {
+          realTotalTokens = tokenEventsCache.totalTokens;
+          realPromptTokens = tokenEventsCache.promptTokens;
+          realCompletionTokens = tokenEventsCache.completionTokens;
+          realCachedTokens = tokenEventsCache.cachedTokens;
+          realTotalRequests = tokenEventsCache.requestsCount;
+          dailyEventsMap = tokenEventsCache.dailyEventsMap;
+          liveEvents = tokenEventsCache.recentEvents;
+        } else {
+          const eventsContent = fs.readFileSync(eventsPath, 'utf8');
+          const lines = eventsContent.split('\n');
+          const recent: any[] = [];
+          const dMap = new Map<string, { requests: number; promptTokens: number; completionTokens: number; totalTokens: number; cachedTokens: number }>();
+
+          for (let i = lines.length - 1; i >= 0; i--) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            try {
+              const ev = JSON.parse(line);
+              if (ev && ev.timestamp) {
+                realTotalRequests++;
+                const pTok = Number(ev.promptTokens) || 0;
+                const cTok = Number(ev.completionTokens) || 0;
+                const tTok = Number(ev.totalTokens) || (pTok + cTok);
+                const caTok = Number(ev.cachedTokens) || 0;
+
+                realTotalTokens += tTok;
+                realPromptTokens += pTok;
+                realCompletionTokens += cTok;
+                realCachedTokens += caTok;
+
+                const evDate = new Date(ev.timestamp);
+                const dayStr = `${evDate.getFullYear()}-${String(evDate.getMonth() + 1).padStart(2, '0')}-${String(evDate.getDate()).padStart(2, '0')}`;
+                let dayAgg = dMap.get(dayStr);
+                if (!dayAgg) {
+                  dayAgg = { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 };
+                  dMap.set(dayStr, dayAgg);
+                }
+                dayAgg.requests += 1;
+                dayAgg.promptTokens += pTok;
+                dayAgg.completionTokens += cTok;
+                dayAgg.totalTokens += tTok;
+                dayAgg.cachedTokens += caTok;
+
+                if (recent.length < 1000) {
+                  recent.push(ev);
+                }
+              }
+            } catch {}
+          }
+
+          dailyEventsMap = dMap;
+          liveEvents = recent;
+          tokenEventsCache = {
+            mtimeMs: stat.mtimeMs,
+            size: stat.size,
+            totalTokens: realTotalTokens,
+            promptTokens: realPromptTokens,
+            completionTokens: realCompletionTokens,
+            cachedTokens: realCachedTokens,
+            requestsCount: realTotalRequests,
+            dailyEventsMap: dMap,
+            recentEvents: recent,
+          };
+        }
+      } catch (evErr) {
+        console.warn('[Doctor-UI] Error reading token_usage_events.jsonl:', evErr);
+      }
+    }
+
+    // 2. Query conversation_summaries.db
+    let dbDaily: any[] = [];
     if (fs.existsSync(dbPath)) {
       try {
         const dbData = queryConversationSummariesDb(dbPath);
@@ -2545,63 +2674,23 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.TOKEN_REAL_STATS, async () => {
           totalSteps = Number(dbData.agg.s) || 0;
           longestTaskSteps = Number(dbData.agg.max_s) || 0;
         }
+        dbDaily = Array.isArray(dbData.daily) ? dbData.daily : [];
 
-        if (Array.isArray(dbData.daily) && dbData.daily.length > 0) {
-          activityByDay = dbData.daily.map((r: any) => {
-            const steps = Number(r.steps) || 0;
-            return {
-              day: String(r.day || ''),
-              convs: Number(r.convs) || 0,
-              steps,
-              estimatedTokens: steps * 1850,
-            };
-          });
-
-          // Calculate real consecutive active days streak
-          const activeDateSet = new Set(activityByDay.map(d => d.day).filter(Boolean));
-          const now = new Date();
-          const toYmd = (d: Date) => {
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${y}-${m}-${day}`;
-          };
-
-          // Current streak: check backwards starting from today (or yesterday if today not ended)
-          let checkDate = new Date(now);
-          let streak = 0;
-          if (!activeDateSet.has(toYmd(checkDate))) {
-            checkDate.setDate(checkDate.getDate() - 1);
-          }
-          while (activeDateSet.has(toYmd(checkDate))) {
-            streak++;
-            checkDate.setDate(checkDate.getDate() - 1);
-          }
-          currentStreakDays = streak;
-
-          // Longest streak calculation
-          const sortedDays = Array.from(activeDateSet).sort();
-          let maxStreak = 0;
-          let tempStreak = 0;
-          let prevTime = 0;
-          for (const dayStr of sortedDays) {
-            const curTime = new Date(dayStr).getTime();
-            if (prevTime === 0 || Math.round((curTime - prevTime) / 86400000) === 1) {
-              tempStreak++;
-            } else {
-              tempStreak = 1;
-            }
-            if (tempStreak > maxStreak) maxStreak = tempStreak;
-            prevTime = curTime;
-          }
-          longestStreakDays = Math.max(maxStreak, currentStreakDays, 1);
-        }
+        // Realistic Step Weight: calibrated from real events or quota consumption
+        const avgReqWeight = realTotalRequests > 0
+          ? Math.round(realTotalTokens / realTotalRequests)
+          : (poolConsumedWeekly > 0 && totalSteps > 0 ? Math.round(poolConsumedWeekly / totalSteps) : 115_000);
+        const stepTokWeight = (totalSteps > 0 && realTotalTokens > 0)
+          ? Math.round(realTotalTokens / totalSteps)
+          : avgReqWeight;
+        const promptTokWeight = Math.round(stepTokWeight * 0.92);
+        const completionTokWeight = Math.max(1, Math.round(stepTokWeight * 0.08));
 
         if (Array.isArray(dbData.sessions) && dbData.sessions.length > 0) {
           sessions = dbData.sessions.map((r: any) => {
             const steps = Number(r.step_count) || 0;
-            const promptTok = Math.round(steps * 1450);
-            const completionTok = Math.round(steps * 400);
+            const promptTok = Math.round(steps * promptTokWeight);
+            const completionTok = Math.round(steps * completionTokWeight);
             const totalTok = promptTok + completionTok;
             return {
               id: String(r.conversation_id || ''),
@@ -2626,41 +2715,32 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.TOKEN_REAL_STATS, async () => {
       }
     }
 
-    const eventsPath = path.join(dataDir, 'token_usage_events.jsonl');
-    const liveEvents: any[] = [];
-    const dailyEventsMap = new Map<string, { requests: number; promptTokens: number; completionTokens: number; totalTokens: number; cachedTokens: number }>();
+    // 3. Realistic interaction & step weights
+    const avgInteractionWeight = realTotalRequests > 0
+      ? Math.round(realTotalTokens / realTotalRequests)
+      : (poolConsumedWeekly > 0 && totalSteps > 0 ? Math.round(poolConsumedWeekly / totalSteps) : 115_000);
+    const stepWeight = (totalSteps > 0 && realTotalTokens > 0)
+      ? Math.round(realTotalTokens / totalSteps)
+      : avgInteractionWeight;
 
-    if (fs.existsSync(eventsPath)) {
-      try {
-        const eventsContent = fs.readFileSync(eventsPath, 'utf8');
-        const lines = eventsContent.split('\n');
-        for (let i = lines.length - 1; i >= 0; i--) {
-          const line = lines[i].trim();
-          if (!line) continue;
-          try {
-            const ev = JSON.parse(line);
-            if (ev && ev.id && ev.timestamp) {
-              liveEvents.push(ev);
-
-              const evDate = new Date(ev.timestamp);
-              const dayStr = `${evDate.getFullYear()}-${String(evDate.getMonth() + 1).padStart(2, '0')}-${String(evDate.getDate()).padStart(2, '0')}`;
-              let dayAgg = dailyEventsMap.get(dayStr);
-              if (!dayAgg) {
-                dayAgg = { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 };
-                dailyEventsMap.set(dayStr, dayAgg);
-              }
-              dayAgg.requests += 1;
-              dayAgg.promptTokens += (ev.promptTokens || 0);
-              dayAgg.completionTokens += (ev.completionTokens || 0);
-              dayAgg.totalTokens += (ev.totalTokens || ((ev.promptTokens || 0) + (ev.completionTokens || 0)));
-              dayAgg.cachedTokens += (ev.cachedTokens || 0);
-            }
-          } catch {}
-          if (liveEvents.length >= 2000) break;
-        }
-      } catch (evErr) {
-        console.warn('[Doctor-UI] Error reading token_usage_events.jsonl:', evErr);
-      }
+    // 4. Merge daily activity from SQLite + token_usage_events.jsonl
+    if (dbDaily.length > 0) {
+      activityByDay = dbDaily.map((r: any) => {
+        const dayStr = String(r.day || '');
+        const steps = Number(r.steps) || 0;
+        const dayAgg = dailyEventsMap.get(dayStr);
+        const estimatedTokens = dayAgg ? dayAgg.totalTokens : (steps * stepWeight);
+        return {
+          day: dayStr,
+          convs: Number(r.convs) || 0,
+          steps: Math.max(steps, dayAgg?.requests || 0),
+          estimatedTokens,
+          requests: dayAgg?.requests || steps,
+          promptTokens: dayAgg?.promptTokens || Math.round(estimatedTokens * 0.92),
+          completionTokens: dayAgg?.completionTokens || Math.round(estimatedTokens * 0.08),
+          cachedTokens: dayAgg?.cachedTokens || 0,
+        };
+      });
     }
 
     if (dailyEventsMap.size > 0) {
@@ -2687,6 +2767,45 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.TOKEN_REAL_STATS, async () => {
         }
       }
       activityByDay.sort((a, b) => a.day.localeCompare(b.day));
+    }
+
+    // Calculate real consecutive active days streak
+    if (activityByDay.length > 0) {
+      const activeDateSet = new Set(activityByDay.map(d => d.day).filter(Boolean));
+      const now = new Date();
+      const toYmd = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+
+      let checkDate = new Date(now);
+      let streak = 0;
+      if (!activeDateSet.has(toYmd(checkDate))) {
+        checkDate.setDate(checkDate.getDate() - 1);
+      }
+      while (activeDateSet.has(toYmd(checkDate))) {
+        streak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      }
+      currentStreakDays = streak;
+
+      const sortedDays = Array.from(activeDateSet).sort();
+      let maxStreak = 0;
+      let tempStreak = 0;
+      let prevTime = 0;
+      for (const dayStr of sortedDays) {
+        const curTime = new Date(dayStr).getTime();
+        if (prevTime === 0 || Math.round((curTime - prevTime) / 86400000) === 1) {
+          tempStreak++;
+        } else {
+          tempStreak = 1;
+        }
+        if (tempStreak > maxStreak) maxStreak = tempStreak;
+        prevTime = curTime;
+      }
+      longestStreakDays = Math.max(maxStreak, currentStreakDays, 1);
     }
 
     if (liveEvents.length > 0) {
@@ -2717,29 +2836,20 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.TOKEN_REAL_STATS, async () => {
       sessions = [...liveSessionEntries, ...sessions];
     }
 
-    // Lifetime tokens estimate from total conversation steps
-    const estimatedLifetimeTokens = totalSteps * 1850;
+    // Realistic lifetime tokens: actual accumulated tokens from events or pool consumption
+    const estimatedLifetimeTokens = Math.max(
+      realTotalTokens,
+      poolConsumedWeekly,
+      totalSteps * stepWeight
+    );
 
-    // Peak tokens day
+    // Peak tokens day (by maximum tokens)
     let peakDay = { day: '', steps: 0, tokens: 0 };
     for (const d of activityByDay) {
-      if (d.steps > peakDay.steps) {
+      if (d.estimatedTokens > peakDay.tokens) {
         peakDay = { day: d.day, steps: d.steps, tokens: d.estimatedTokens };
       }
     }
-
-    // Active accounts count in pool from custom_models.json
-    let accountsInPool = 25;
-    try {
-      const cmPath = getCustomModelsPath();
-      if (fs.existsSync(cmPath)) {
-        const cm = JSON.parse(fs.readFileSync(cmPath, 'utf8'));
-        const googleProv = cm.providers?.find((p: any) => p.id === 'provider-google');
-        if (googleProv && Array.isArray(googleProv.accounts)) {
-          accountsInPool = googleProv.accounts.length;
-        }
-      }
-    } catch {}
 
     // Models distribution from proxy log
     let modelsDistribution: Array<{ model: string; count: number; pct: number }> = [];
@@ -2800,6 +2910,17 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.TOKEN_REAL_STATS, async () => {
         accountsInPool,
         modelsDistribution,
         sessions,
+        quotaMetrics: {
+          gemini5hQuotaTokens: GEMINI_5H,
+          geminiWeeklyQuotaTokens: GEMINI_WK,
+          geminiWeeklyRatio: GEMINI_WK_RATIO,
+          claudeWeeklyRatio: 0.50,
+          totalConsumed5h: poolConsumed5h,
+          totalConsumedWeekly: poolConsumedWeekly,
+          totalAvailable5h: poolAvailable5h,
+          totalAvailableWeekly: poolAvailableWeekly,
+          avgTokensPerStep: avgInteractionWeight,
+        },
       },
     };
   } catch (err) {

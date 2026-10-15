@@ -869,7 +869,8 @@ interface TokenTrackerEngineInstance {
     provider?: string,
     model?: string,
     sortBy?: 'timestamp' | 'totalTokens' | 'promptTokens' | 'completionTokens' | 'latencyMs' | 'tokensPerSec' | 'estimatedCost' | 'provider' | 'model',
-    sortOrder?: 'desc' | 'asc'
+    sortOrder?: 'desc' | 'asc',
+    range?: string,
   ): TokenUsageEntryItem[];
   getStats(): {
     totalTokens: number;
@@ -935,6 +936,7 @@ const tokenClearBtn = $('#tokenClearBtn') as HTMLButtonElement | null;
 // Antigravity Native Stats Board DOM References
 const statsRangeSelect = $('#statsRangeSelect') as HTMLSelectElement | null;
 const statsLifetimeTokens = $('#statsLifetimeTokens') as HTMLElement | null;
+const statsLifetimeTokensLbl = $('#statsLifetimeTokensLbl') as HTMLElement | null;
 const statsPeakTokens = $('#statsPeakTokens') as HTMLElement | null;
 const statsLongestTask = $('#statsLongestTask') as HTMLElement | null;
 const statsCurrentStreak = $('#statsCurrentStreak') as HTMLElement | null;
@@ -1035,6 +1037,17 @@ interface RealStatsPayload {
   accountsInPool: number;
   modelsDistribution: Array<{ model: string; count: number; pct: number }>;
   sessions?: any[];
+  quotaMetrics?: {
+    gemini5hQuotaTokens: number;
+    geminiWeeklyQuotaTokens: number;
+    geminiWeeklyRatio: number;
+    claudeWeeklyRatio: number;
+    totalConsumed5h: number;
+    totalConsumedWeekly: number;
+    totalAvailable5h: number;
+    totalAvailableWeekly: number;
+    avgTokensPerStep: number;
+  };
 }
 
 let cachedRealStats: RealStatsPayload | null = null;
@@ -1150,6 +1163,7 @@ function showDayInspector(
     dayInspectorPopover.style.display = 'none';
     if (tokenLogsSearchInput) {
       tokenLogsSearchInput.value = dateShort;
+      currentTokenLogsPage = 1;
       renderTokenDashboard();
       const logsTable = document.getElementById('tokenLogsTable');
       logsTable?.scrollIntoView({ behavior: 'smooth' });
@@ -1336,10 +1350,10 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
 
   const real = cachedRealStats;
 
-  // Real model distribution percentages
+  // Real model distribution percentages (cleanly normalized)
   const m38Pct = real?.modelsDistribution?.[0]?.pct ?? 94.5;
-  const m36Pct = real?.modelsDistribution?.[1]?.pct ?? 5.3;
-  const mOtherPct = real?.modelsDistribution?.[2]?.pct ?? Math.max(0, +(100 - m38Pct - m36Pct).toFixed(1));
+  const m36Pct = real?.modelsDistribution?.[1]?.pct ?? (real?.modelsDistribution ? 0 : 5.3);
+  const mOtherPct = real?.modelsDistribution?.[2]?.pct ?? (real?.modelsDistribution ? Math.max(0, +(100 - m38Pct - m36Pct).toFixed(1)) : 0.2);
 
   // Update filter chip count badges dynamically
   if (filterCountAll) filterCountAll.textContent = '100%';
@@ -1376,10 +1390,64 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
     statsFilterSummaryText.innerHTML = `Affichage : <strong>${modelLabels[currentModelFilter] || currentModelFilter}</strong> &bull; <span>${rangeLabels[range] || range}</span>`;
   }
 
-  // 1. Top 5-Metric Unified Strip Card
+  // 1. Time-Range Filtering calculation
+  const now = new Date();
+  const toYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const todayYmd = toYmd(now);
+
+  let rangeFilteredActivity = cachedRealStats?.activityByDay || [];
+  if (range === '24h') {
+    const yesterday = new Date(now.getTime() - 24 * 3600 * 1000);
+    const yesterdayYmd = toYmd(yesterday);
+    rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day === todayYmd || d.day === yesterdayYmd);
+  } else if (range === '7d') {
+    const cutoff = new Date(now.getTime() - 7 * 86400 * 1000);
+    const cutoffYmd = toYmd(cutoff);
+    rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= cutoffYmd);
+  } else if (range === '30d') {
+    const cutoff = new Date(now.getTime() - 30 * 86400 * 1000);
+    const cutoffYmd = toYmd(cutoff);
+    rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= cutoffYmd);
+  } else if (range === '7m') {
+    const cutoff = new Date(now.getTime() - 210 * 86400 * 1000);
+    const cutoffYmd = toYmd(cutoff);
+    rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= cutoffYmd);
+  }
+
   const liveTokens = stats?.totalTokens || 0;
   const lifetimeTotal = Math.max(real?.estimatedLifetimeTokens || 0, liveTokens);
-  const displayedTokens = Math.round(lifetimeTotal * filterMultiplier);
+  let baseRangeTokens = lifetimeTotal;
+  let rangePeakTok = real?.peakTokensDay?.tokens || 0;
+  let rangePeakDay = real?.peakTokensDay?.day || '';
+  let rangePeakSteps = real?.peakTokensDay?.steps || 0;
+
+  if (range !== 'all' && range !== '7m' && rangeFilteredActivity.length > 0) {
+    baseRangeTokens = rangeFilteredActivity.reduce((acc, d) => acc + (d.estimatedTokens || 0), 0);
+    let curMax = 0;
+    for (const d of rangeFilteredActivity) {
+      if ((d.estimatedTokens || 0) > curMax) {
+        curMax = d.estimatedTokens;
+        rangePeakTok = d.estimatedTokens;
+        rangePeakDay = d.day;
+        rangePeakSteps = d.steps || (d as any).requests || 0;
+      }
+    }
+  }
+
+  if (range === '24h' && stats?.totalTokens && stats.totalTokens > baseRangeTokens) {
+    baseRangeTokens = stats.totalTokens;
+  }
+
+  const displayedTokens = Math.round(baseRangeTokens * filterMultiplier);
+
+  // Update dynamic card label based on selected range
+  if (statsLifetimeTokensLbl) {
+    statsLifetimeTokensLbl.textContent =
+      range === '24h' ? 'Tokens (24h)' :
+      range === '7d' ? 'Tokens (7 jours)' :
+      range === '30d' ? 'Tokens (30 jours)' :
+      range === '7m' ? 'Tokens (7 mois)' : 'Lifetime tokens';
+  }
 
   const pulseEl = (el: HTMLElement | null) => {
     el?.animate([
@@ -1391,16 +1459,17 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
   if (statsLifetimeTokens) {
     statsLifetimeTokens.textContent = real ? formatCompactTokens(displayedTokens) : '--';
     if (real) {
-      statsLifetimeTokens.title = `${displayedTokens.toLocaleString()} tokens (${currentModelFilter !== 'all' ? currentModelFilter : 'tous modèles'}) calculés sur ${real.totalSteps.toLocaleString()} étapes réelles`;
+      const scopeLabel = rangeLabels[range] || range;
+      statsLifetimeTokens.title = `${displayedTokens.toLocaleString()} tokens (${currentModelFilter !== 'all' ? currentModelFilter : 'tous modèles'}) sur ${scopeLabel}`;
     }
     pulseEl(statsLifetimeTokens);
   }
 
   if (statsPeakTokens) {
-    const peakTok = Math.round((real?.peakTokensDay?.tokens || 0) * filterMultiplier);
+    const peakTok = Math.round(rangePeakTok * filterMultiplier);
     statsPeakTokens.textContent = real ? formatCompactTokens(peakTok) : '--';
-    if (real?.peakTokensDay?.day) {
-      statsPeakTokens.title = `Pic le ${real.peakTokensDay.day} : ${peakTok.toLocaleString()} tokens (${real.peakTokensDay.steps.toLocaleString()} étapes)`;
+    if (rangePeakDay) {
+      statsPeakTokens.title = `Pic le ${rangePeakDay} : ${peakTok.toLocaleString()} tokens (${rangePeakSteps.toLocaleString()} étapes/requêtes)`;
     }
   }
 
@@ -1408,7 +1477,8 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
     const maxSteps = real?.longestTaskSteps || 0;
     statsLongestTask.textContent = real ? `${maxSteps.toLocaleString()} steps` : '--';
     if (real) {
-      statsLongestTask.title = `Session la plus longue : ${maxSteps.toLocaleString()} étapes (~${formatCompactTokens(maxSteps * 1850)} tokens)`;
+      const stepTokWeight = real.quotaMetrics?.avgTokensPerStep || (real.totalSteps > 0 ? Math.round(displayedTokens / real.totalSteps) : 125_000);
+      statsLongestTask.title = `Session la plus longue : ${maxSteps.toLocaleString()} étapes (~${formatCompactTokens(maxSteps * stepTokWeight)} tokens)`;
     }
   }
 
@@ -1505,9 +1575,9 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
   }
 
   const totalSteps = real?.totalSteps || (stats?.requestCount ? stats.requestCount * 2 : 0);
-  const avgTokPerStep = totalSteps > 0 ? Math.round(displayedTokens / totalSteps) : 1840;
+  const avgTokPerStep = real?.quotaMetrics?.avgTokensPerStep || (totalSteps > 0 ? Math.round(displayedTokens / totalSteps) : 115_000);
   if (dynamicsStepWeightVal) {
-    dynamicsStepWeightVal.textContent = totalSteps > 0 ? `~${avgTokPerStep.toLocaleString()} tok` : '-- tok';
+    dynamicsStepWeightVal.textContent = totalSteps > 0 || avgTokPerStep > 0 ? `~${avgTokPerStep.toLocaleString()} tok` : '-- tok';
   }
   if (dynamicsStepWeightSub) {
     dynamicsStepWeightSub.textContent = `Tokens moyens consommés par interaction`;
@@ -2211,13 +2281,14 @@ function renderTokenDashboard(): void {
   }
 
   // 4. Update Model Select Filter
-  if (tokenLogsModelSelect && !tokenLogsModelSelect.dataset.populated) {
+  if (tokenLogsModelSelect && (!tokenLogsModelSelect.dataset.populated || tokenLogsModelSelect.options.length <= 1)) {
     const currentVal = tokenLogsModelSelect.value;
     const allModels = Array.from(new Set(tokenTracker.getEntries().map((e) => e.model)));
     if (allModels.length > 0) {
       tokenLogsModelSelect.innerHTML = '<option value="all">Tous Modèles</option>' +
         allModels.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
       tokenLogsModelSelect.value = currentVal || 'all';
+      tokenLogsModelSelect.dataset.populated = '1';
     }
   }
 
@@ -2225,9 +2296,14 @@ function renderTokenDashboard(): void {
   if (tokenLogsTbody) {
     const query = tokenLogsSearchInput?.value || '';
     const provFilter = tokenLogsProviderSelect?.value || 'all';
-    const modFilter = tokenLogsModelSelect?.value || 'all';
+    // If table model select is at 'all' but user selected a top model chip, honor the top chip
+    let modFilter = tokenLogsModelSelect?.value || 'all';
+    if (modFilter === 'all' && currentModelFilter !== 'all') {
+      modFilter = currentModelFilter;
+    }
+    const rangeFilter = statsRangeSelect?.value || 'all';
 
-    const entries = tokenTracker.filterEntries(query, provFilter, modFilter, currentTokenSortField, currentTokenSortOrder);
+    const entries = tokenTracker.filterEntries(query, provFilter, modFilter, currentTokenSortField, currentTokenSortOrder, rangeFilter);
     const totalEntries = entries.length;
 
     if (totalEntries === 0) {
@@ -2278,7 +2354,8 @@ function renderTokenDashboard(): void {
       const statusColor = e.status >= 500 ? '#e5484d' : e.status >= 400 ? '#f5a524' : '#46a758';
       const provClass = `prov-badge prov-badge-${escapeHtml(e.provider.toLowerCase())}`;
       const isRealReq = e.id.startsWith('req-');
-      const stepsCount = e.steps || Math.round(e.totalTokens / 1850) || 1;
+      const fallbackStepWeight = cachedRealStats?.quotaMetrics?.avgTokensPerStep || 125_000;
+      const stepsCount = e.steps || Math.round(e.totalTokens / fallbackStepWeight) || 1;
       const titleStr = isRealReq
         ? escapeHtml(e.model)
         : (e.title && e.title !== 'Session Antigravity' ? escapeHtml(e.title) : `Session #${e.id.substring(0, 8)}`);
@@ -2441,7 +2518,8 @@ async function loadTokenizer(): Promise<void> {
   if (statsRangeSelect && !statsRangeSelect.dataset.bound) {
     statsRangeSelect.dataset.bound = '1';
     statsRangeSelect.addEventListener('change', () => {
-      if (tokenTracker) renderStatsBoard(tokenTracker.getStats());
+      currentTokenLogsPage = 1;
+      renderTokenDashboard();
     });
   }
 
@@ -2453,7 +2531,8 @@ async function loadTokenizer(): Promise<void> {
         $$('#statsModelFilterGroup .stats-filter-chip').forEach((c) => c.classList.remove('active'));
         chip.classList.add('active');
         currentModelFilter = (chip.getAttribute('data-model-filter') || 'all') as any;
-        if (tokenTracker) renderStatsBoard(tokenTracker.getStats());
+        currentTokenLogsPage = 1;
+        renderTokenDashboard();
       });
     }
   });
@@ -2464,10 +2543,14 @@ async function loadTokenizer(): Promise<void> {
     statsFilterResetBtn.addEventListener('click', () => {
       currentModelFilter = 'all';
       if (statsRangeSelect) statsRangeSelect.value = '7m';
+      if (tokenLogsSearchInput) tokenLogsSearchInput.value = '';
+      if (tokenLogsProviderSelect) tokenLogsProviderSelect.value = 'all';
+      if (tokenLogsModelSelect) tokenLogsModelSelect.value = 'all';
+      currentTokenLogsPage = 1;
       $$('#statsModelFilterGroup .stats-filter-chip').forEach((c) => {
         c.classList.toggle('active', c.getAttribute('data-model-filter') === 'all');
       });
-      if (tokenTracker) renderStatsBoard(tokenTracker.getStats());
+      renderTokenDashboard();
       toast('Filtres réinitialisés à la vue complète', 'info', 1400);
     });
   }
@@ -8494,11 +8577,15 @@ function estimateAccountTokens(acc: any): {
   geminiCapacity5h: number;
   geminiCapacityWeekly: number;
   geminiAvailable5h: number;
+  geminiConsumed5h: number;
   geminiAvailableWeekly: number;
+  geminiConsumedWeekly: number;
   claudeCapacity5h: number;
   claudeCapacityWeekly: number;
   claudeAvailable5h: number;
+  claudeConsumed5h: number;
   claudeAvailableWeekly: number;
+  claudeConsumedWeekly: number;
 } {
   // Only calculate Antigravity quotas — exclude Google AI Studio & CLI
   if (isAiStudioAccount(acc) || isGeminiCliAccount(acc) || acc.isUnlicensed || acc.quotas?.isUnlicensed) {
@@ -8510,28 +8597,35 @@ function estimateAccountTokens(acc: any): {
       geminiCapacity5h: 0,
       geminiCapacityWeekly: 0,
       geminiAvailable5h: 0,
+      geminiConsumed5h: 0,
       geminiAvailableWeekly: 0,
+      geminiConsumedWeekly: 0,
       claudeCapacity5h: 0,
       claudeCapacityWeekly: 0,
       claudeAvailable5h: 0,
+      claudeConsumed5h: 0,
       claudeAvailableWeekly: 0,
+      claudeConsumedWeekly: 0,
     };
   }
 
   const tier = getAccountTier(acc);
-  let geminiCap5h = 350_000;
-  let geminiCapWeekly = 2_500_000;
-  let claudeCap5h = 140_000;
-  let claudeCapWeekly = 1_000_000;
+  // Real calibrated Antigravity capacity:
+  // Gemini 5h (100%) = 13% weekly = 250M tokens
+  // Claude 5h (100%) = 50% weekly
+  let geminiCap5h = 250_000_000;
+  let geminiCapWeekly = Math.round(geminiCap5h / 0.13); // ~1_923_076_923 tokens
+  let claudeCap5h = 10_000_000;
+  let claudeCapWeekly = Math.round(claudeCap5h / 0.50); // 20_000_000 tokens
 
   if (tier === 'ULTRA') {
-    geminiCap5h = 800_000;
-    geminiCapWeekly = 5_000_000;
-    claudeCap5h = 320_000;
-    claudeCapWeekly = 2_000_000;
+    geminiCap5h = 500_000_000;
+    geminiCapWeekly = Math.round(geminiCap5h / 0.13);
+    claudeCap5h = 25_000_000;
+    claudeCapWeekly = 50_000_000;
   } else if (tier === 'FREE') {
-    geminiCap5h = 120_000;
-    geminiCapWeekly = 800_000;
+    geminiCap5h = 50_000_000;
+    geminiCapWeekly = Math.round(geminiCap5h / 0.13);
     claudeCap5h = 0;
     claudeCapWeekly = 0;
   }
@@ -8539,10 +8633,14 @@ function estimateAccountTokens(acc: any): {
   const { gemini5hPct, geminiWkPct, claude5hPct, claudeWkPct } = getAccountEffectiveQuotas(acc);
 
   const geminiAvailable5h = Math.round((geminiCap5h * gemini5hPct) / 100);
+  const geminiConsumed5h = Math.round((geminiCap5h * (100 - gemini5hPct)) / 100);
   const geminiAvailableWeekly = Math.round((geminiCapWeekly * geminiWkPct) / 100);
+  const geminiConsumedWeekly = Math.round((geminiCapWeekly * (100 - geminiWkPct)) / 100);
 
   const claudeAvailable5h = Math.round((claudeCap5h * claude5hPct) / 100);
+  const claudeConsumed5h = Math.round((claudeCap5h * (100 - claude5hPct)) / 100);
   const claudeAvailableWeekly = Math.round((claudeCapWeekly * claudeWkPct) / 100);
+  const claudeConsumedWeekly = Math.round((claudeCapWeekly * (100 - claudeWkPct)) / 100);
 
   return {
     accountCapacity5h: geminiCap5h,
@@ -8552,17 +8650,22 @@ function estimateAccountTokens(acc: any): {
     geminiCapacity5h: geminiCap5h,
     geminiCapacityWeekly: geminiCapWeekly,
     geminiAvailable5h,
+    geminiConsumed5h,
     geminiAvailableWeekly,
+    geminiConsumedWeekly,
     claudeCapacity5h: claudeCap5h,
     claudeCapacityWeekly: claudeCapWeekly,
     claudeAvailable5h,
+    claudeConsumed5h,
     claudeAvailableWeekly,
+    claudeConsumedWeekly,
   };
 }
 
 function calculatePoolTokenSummary(accounts: any[], isWeekly: boolean = true) {
   let totalCap = 0;
   let availableTokens = 0;
+  let consumedTokens = 0;
   let activeCount = 0;
   let antigravityTotal = 0;
 
@@ -8574,24 +8677,28 @@ function calculatePoolTokenSummary(accounts: any[], isWeekly: boolean = true) {
     activeCount++;
     const est = estimateAccountTokens(acc);
     if (isWeekly) {
-      totalCap += est.accountCapacityWeekly;
-      availableTokens += est.availableTokensWeekly;
+      totalCap += est.geminiCapacityWeekly;
+      availableTokens += est.geminiAvailableWeekly;
+      consumedTokens += est.geminiConsumedWeekly;
     } else {
-      totalCap += est.accountCapacity5h;
-      availableTokens += est.availableTokens5h;
+      totalCap += est.geminiCapacity5h;
+      availableTokens += est.geminiAvailable5h;
+      consumedTokens += est.geminiConsumed5h;
     }
   }
 
-  // Équivalence tarifaire réaliste API Gemini Pro / Flash ($1.50 pour 1M tokens)
-  const equivDollarValue = (availableTokens / 1_000_000) * 1.50;
+  // Équivalence tarifaire réaliste API Gemini Pro / Flash ($0.25 pour 1M tokens)
+  const equivDollarValue = (availableTokens / 1_000_000) * 0.25;
 
   return {
     totalCapacity: totalCap,
     availableTokens,
+    consumedTokens,
     equivDollarValue,
     activeCount,
     antigravityTotal,
     pctAvailable: totalCap > 0 ? Math.round((availableTokens / totalCap) * 100) : 100,
+    pctConsumed: totalCap > 0 ? Math.round((consumedTokens / totalCap) * 100) : 0,
   };
 }
 
@@ -8690,9 +8797,9 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
     gaStatPoolValue.style.color = avgPoolPct >= 60 ? 'var(--text-0)' : getQuotaColor(avgPoolPct);
   }
   if (gaStatPoolValueSub) {
-    const text = `${summary.activeCount}/${total} actifs en rotation`;
+    const text = `${summary.activeCount}/${total} actifs · ${formatCompactTokens(summary.availableTokens)} dispo`;
     gaStatPoolValueSub.textContent = text;
-    gaStatPoolValueSub.title = text;
+    gaStatPoolValueSub.title = `${summary.activeCount} comptes actifs en rotation sur ${total} · ${summary.availableTokens.toLocaleString()} tokens disponibles (${isWeekly ? 'Hebdo' : '5H'})`;
   }
 
   // Prochain Reset Countdown computation (uniquement sur les comptes Antigravity)
@@ -8700,14 +8807,12 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
   let soonestAccountName = '';
   let soonestFullName = '';
   const now = Date.now();
-
   for (const acc of accounts) {
     if (acc.enabled === false) continue;
     if (isAiStudioAccount(acc) || isGeminiCliAccount(acc)) continue;
     const eff = getAccountEffectiveQuotas(acc);
     const geminiPct = isWeekly ? eff.geminiWkPct : eff.gemini5hPct;
     const claudePct = isWeekly ? eff.claudeWkPct : eff.claude5hPct;
-
     if (geminiPct < 100) {
       const resetStr = isWeekly ? eff.geminiWkReset : eff.gemini5hReset;
       if (resetStr) {
@@ -8837,16 +8942,18 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
   // Card 9: Runway Restant
   const runway = (typeof calculatePoolRunway === 'function')
     ? calculatePoolRunway(accounts)
-    : { formattedRunway: '> 24h', burnState: 'healthy' as const, totalAvailableTokens: 0, hourlyBurnRate: 120000, runwayHours: 24, runwayMinutes: 0 };
+    : { formattedRunway: '> 24h', burnState: 'healthy' as const, totalAvailableTokens: 0, totalConsumedTokens5h: 0, totalConsumedTokensWeekly: 0, hourlyBurnRate: 50000000, runwayHours: 24, runwayMinutes: 0 };
   const gaStatRunwayHours = $('#gaStatRunwayHours');
   const gaStatRunwaySub = $('#gaStatRunwaySub');
   if (gaStatRunwayHours) {
     gaStatRunwayHours.textContent = runway.formattedRunway;
   }
   if (gaStatRunwaySub) {
-    const text = `${formatCompactTokens(runway.totalAvailableTokens)} disponibles`;
+    const availToks = summary.availableTokens > 0 ? summary.availableTokens : runway.totalAvailableTokens;
+    const consToks = summary.consumedTokens > 0 ? summary.consumedTokens : (isWeekly ? (runway.totalConsumedTokensWeekly || 0) : (runway.totalConsumedTokens5h || 0));
+    const text = `${formatCompactTokens(availToks)} dispo · ${formatCompactTokens(consToks)} cons.`;
     gaStatRunwaySub.textContent = text;
-    gaStatRunwaySub.title = text;
+    gaStatRunwaySub.title = `Tokens Gemini (250M 5h / 13% hebdo) : ${availToks.toLocaleString()} disponibles (${isWeekly ? 'Hebdo' : '5H'}) · ${consToks.toLocaleString()} consommés`;
   }
 
   // Card 10: Tokens en Réserve (Disponibles)
@@ -10673,30 +10780,30 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
     return `
       <div class="ga-quota-container" ${containerStyle ? `style="${containerStyle}"` : ''}>
         <div class="ga-quota-row">
-          <span class="ga-quota-name" title="Gemini 5h rolling window">Gemini 5h</span>
+          <span class="ga-quota-name" title="Gemini 5h rolling window (100% = 13% hebdo = 250M tokens)">Gemini 5h</span>
           <div class="ga-quota-bar">
             <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, gemini5hPct))}%; background: ${getQuotaColor(gemini5hPct)};"></div>
           </div>
           <span class="ga-quota-pct" style="color: ${getQuotaColor(gemini5hPct)};">${gemini5hPct}%</span>
-          <span class="ga-quota-tokens" title="Tokens restants estimés (5h)">(~${formatCompactTokens(gemini5hToks)})</span>
+          <span class="ga-quota-tokens" title="Gemini 5h : ~${formatCompactTokens(gemini5hToks)} disponibles (${gemini5hPct}%) · ~${formatCompactTokens(est.geminiConsumed5h)} consommés (${100 - gemini5hPct}%) sur 250M max (13% hebdo)">(~${formatCompactTokens(gemini5hToks)} dispo · ${formatCompactTokens(est.geminiConsumed5h)} cons.)</span>
           <span class="ga-quota-reset" title="Réinitialisation 5h">${gemini5hReset}</span>
         </div>
         <div class="ga-quota-row">
-          <span class="ga-quota-name" title="Gemini Weekly quota">Gemini Wk</span>
+          <span class="ga-quota-name" title="Gemini Weekly quota (~1.92B tokens max)">Gemini Wk</span>
           <div class="ga-quota-bar">
             <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, geminiWkPct))}%; background: ${getQuotaColor(geminiWkPct)};"></div>
           </div>
           <span class="ga-quota-pct" style="color: ${getQuotaColor(geminiWkPct)};">${geminiWkPct}%</span>
-          <span class="ga-quota-tokens" title="Tokens restants estimés (hebdomadaire)">(~${formatCompactTokens(geminiWkToks)})</span>
+          <span class="ga-quota-tokens" title="Gemini Hebdo : ~${formatCompactTokens(geminiWkToks)} disponibles (${geminiWkPct}%) · ~${formatCompactTokens(est.geminiConsumedWeekly)} consommés (${100 - geminiWkPct}%) sur ~1.92B max">(~${formatCompactTokens(geminiWkToks)} dispo · ${formatCompactTokens(est.geminiConsumedWeekly)} cons.)</span>
           <span class="ga-quota-reset" title="Réinitialisation hebdomadaire">${geminiWkReset}</span>
         </div>
         <div class="ga-quota-row">
-          <span class="ga-quota-name" title="Claude/GPT 5h rolling window">Claude 5h</span>
+          <span class="ga-quota-name" title="Claude/GPT 5h rolling window (100% = 50% hebdo)">Claude 5h</span>
           <div class="ga-quota-bar">
             <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claude5hPct))}%; background: ${getQuotaColor(claude5hPct)};"></div>
           </div>
           <span class="ga-quota-pct" style="color: ${getQuotaColor(claude5hPct)};">${claude5hPct}%</span>
-          <span class="ga-quota-tokens" title="Tokens restants estimés Claude/GPT (5h)">(~${formatCompactTokens(claude5hToks)})</span>
+          <span class="ga-quota-tokens" title="Claude 5h : ~${formatCompactTokens(claude5hToks)} disponibles (${claude5hPct}%) · ~${formatCompactTokens(est.claudeConsumed5h)} consommés (${100 - claude5hPct}%) sur 10M max (50% hebdo)">(~${formatCompactTokens(claude5hToks)} dispo · ${formatCompactTokens(est.claudeConsumed5h)} cons.)</span>
           <span class="ga-quota-reset" title="Réinitialisation Claude 5h">${claude5hReset}</span>
         </div>
         <div class="ga-quota-row">
@@ -10705,7 +10812,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
             <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claudeWkPct))}%; background: ${getQuotaColor(claudeWkPct)};"></div>
           </div>
           <span class="ga-quota-pct" style="color: ${getQuotaColor(claudeWkPct)};">${claudeWkPct}%</span>
-          <span class="ga-quota-tokens" title="Tokens restants estimés Claude/GPT (hebdomadaire)">(~${formatCompactTokens(claudeWkToks)})</span>
+          <span class="ga-quota-tokens" title="Claude Hebdo : ~${formatCompactTokens(claudeWkToks)} disponibles (${claudeWkPct}%) · ~${formatCompactTokens(est.claudeConsumedWeekly)} consommés (${100 - claudeWkPct}%) sur 20M max">(~${formatCompactTokens(claudeWkToks)} dispo · ${formatCompactTokens(est.claudeConsumedWeekly)} cons.)</span>
           <span class="ga-quota-reset" title="Réinitialisation Claude hebdomadaire">${claudeWkReset}</span>
         </div>
       </div>
@@ -10715,11 +10822,15 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
   // Single window (5h or weekly)
   const geminiPct = isWeekly ? geminiWkPct : gemini5hPct;
   const geminiReset = isWeekly ? geminiWkReset : gemini5hReset;
-  const geminiToks = isWeekly ? est.availableTokensWeekly : est.availableTokens5h;
+  const geminiToks = isWeekly ? est.geminiAvailableWeekly : est.geminiAvailable5h;
+  const geminiConsumed = isWeekly ? est.geminiConsumedWeekly : est.geminiConsumed5h;
+  const geminiCap = isWeekly ? est.geminiCapacityWeekly : est.geminiCapacity5h;
 
   const claudePct = isWeekly ? claudeWkPct : claude5hPct;
   const claudeReset = isWeekly ? claudeWkReset : claude5hReset;
   const claudeToks = isWeekly ? est.claudeAvailableWeekly : est.claudeAvailable5h;
+  const claudeConsumed = isWeekly ? est.claudeConsumedWeekly : est.claudeConsumed5h;
+  const claudeCap = isWeekly ? est.claudeCapacityWeekly : est.claudeCapacity5h;
 
   const isCritical5h = !isWeekly && (gemini5hPct > 0 && gemini5hPct <= 3) && (claude5hPct <= 3);
 
@@ -10736,7 +10847,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
           <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, geminiPct))}%; background: ${getQuotaColor(geminiPct)};"></div>
         </div>
         <span class="ga-quota-pct" style="color: ${getQuotaColor(geminiPct)};">${geminiPct}%</span>
-        <span class="ga-quota-tokens" title="Tokens restants estimés pour ce compte">(~${formatCompactTokens(geminiToks)})</span>
+        <span class="ga-quota-tokens" title="${isWeekly ? 'Gemini Hebdo' : 'Gemini 5h'} : ~${formatCompactTokens(geminiToks)} disponibles (${geminiPct}%) · ~${formatCompactTokens(geminiConsumed)} consommés (${100 - geminiPct}%) sur ${formatCompactTokens(geminiCap)} max">(~${formatCompactTokens(geminiToks)} dispo · ${formatCompactTokens(geminiConsumed)} cons.)</span>
         <span class="ga-quota-reset">${geminiReset}</span>
       </div>
       <div class="ga-quota-row ga-split-segment">
@@ -10745,7 +10856,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
           <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claudePct))}%; background: ${getQuotaColor(claudePct)};"></div>
         </div>
         <span class="ga-quota-pct" style="color: ${getQuotaColor(claudePct)};">${claudePct}%</span>
-        <span class="ga-quota-tokens" title="Tokens restants estimés Claude/GPT">(~${formatCompactTokens(claudeToks)})</span>
+        <span class="ga-quota-tokens" title="${isWeekly ? 'Claude/GPT Hebdo' : 'Claude/GPT 5h'} : ~${formatCompactTokens(claudeToks)} disponibles (${claudePct}%) · ~${formatCompactTokens(claudeConsumed)} consommés (${100 - claudePct}%) sur ${formatCompactTokens(claudeCap)} max">(~${formatCompactTokens(claudeToks)} dispo · ${formatCompactTokens(claudeConsumed)} cons.)</span>
         <span class="ga-quota-reset">${claudeReset}</span>
       </div>
       ${isCritical5h ? `
@@ -11132,7 +11243,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   <span class="ga-sort-icon">${gaSortColumn === 'name' ? (gaSortDirection === 'asc' ? '▲' : '▼') : '↕'}</span>
                 </div>
               </th>
-              <th class="ga-sortable-th ${gaSortColumn === 'quota' ? `is-sorted ${gaSortDirection}` : ''}" data-sort="quota" style="min-width: 280px;" title="Cliquer pour trier par Quota restant">
+              <th class="ga-sortable-th ${gaSortColumn === 'quota' ? `is-sorted ${gaSortDirection}` : ''}" data-sort="quota" style="min-width: 420px;" title="Cliquer pour trier par Quota restant">
                 <div style="display: inline-flex; align-items: center; gap: 6px;">
                   <span>${quotaHeaderLabel}</span>
                   <span class="ga-sort-icon">${gaSortColumn === 'quota' ? (gaSortDirection === 'asc' ? '▲' : '▼') : '↕'}</span>

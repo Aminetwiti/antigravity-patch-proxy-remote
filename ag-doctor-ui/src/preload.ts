@@ -210,6 +210,18 @@ const api = {
       activityByDay: Array<{ day: string; convs: number; steps: number; estimatedTokens: number }>;
       accountsInPool: number;
       modelsDistribution: Array<{ model: string; count: number; pct: number }>;
+      sessions?: any[];
+      quotaMetrics?: {
+        gemini5hQuotaTokens: number;
+        geminiWeeklyQuotaTokens: number;
+        geminiWeeklyRatio: number;
+        claudeWeeklyRatio: number;
+        totalConsumed5h: number;
+        totalConsumedWeekly: number;
+        totalAvailable5h: number;
+        totalAvailableWeekly: number;
+        avgTokensPerStep: number;
+      };
     };
     error?: string;
   }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.TOKEN_REAL_STATS),

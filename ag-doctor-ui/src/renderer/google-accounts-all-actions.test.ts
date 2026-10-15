@@ -182,7 +182,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
       });
 
       expect(cleanedModels[0].displayName).toBe('Gemini 3.8 Flash');
-      expect(cleanedModels[1].displayName).toBe('Gemini 3.1 Pro');
+      expect(cleanedModels[1].displayName).toBe('Gemini 4 Argon');
     });
 
     it('preserves refreshToken and quotas when saving edits', () => {
