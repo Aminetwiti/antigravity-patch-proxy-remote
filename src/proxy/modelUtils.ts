@@ -389,12 +389,15 @@ export function getCanonicalModelKey(idOrName?: string, displayName?: string): s
 export function isNativeCloudCodeModel(modelName: string): boolean {
   if (!modelName || typeof modelName !== 'string') return false;
   if (modelName.startsWith('custom-') || /MODEL_PLACEHOLDER_/i.test(modelName)) return false;
+  if (/[🟢🟡🔴•]/.test(modelName)) return false;
+
   const clean = modelName.replace(/^models\//, '').trim().toLowerCase();
+  const slug = clean.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return (
-    clean.startsWith('gemini-') ||
-    clean.startsWith('claude-') ||
-    clean.startsWith('gpt-oss-') ||
-    clean.startsWith('gemma-')
+    slug.startsWith('gemini-') ||
+    slug.startsWith('claude-') ||
+    slug.startsWith('gpt-oss-') ||
+    slug.startsWith('gemma-')
   );
 }
 

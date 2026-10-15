@@ -34,6 +34,8 @@ import {
   clearNativeSessions,
 } from '../proxy';
 import { isModelOrLabelDisabled } from '../proxy/protoInjector';
+import { expandModelsWithEffort } from '../proxy/effortExpander';
+import { generateModelPlaceholderId } from '../proxy/idGenerator';
 import type { CustomModel } from '../proxy/types';
 
 describe('Strict Zero Fallback on Native Models', () => {
@@ -74,9 +76,27 @@ describe('Strict Zero Fallback on Native Models', () => {
       expect(isNativeCloudCodeModel('gemma-3-27b')).toBe(true);
     });
 
+    it('classifies Antigravity UI display names as native models', () => {
+      expect(isNativeCloudCodeModel('Gemini 4 Argon (Medium)')).toBe(true);
+      expect(isNativeCloudCodeModel('Gemini 4 Argon (High)')).toBe(true);
+      expect(isNativeCloudCodeModel('Gemini 3.8 Flash (Low)')).toBe(true);
+      expect(isNativeCloudCodeModel('Gemini 3.8 Flash (Medium)')).toBe(true);
+      expect(isNativeCloudCodeModel('Claude Sonnet 4.6 (Thinking)')).toBe(true);
+      expect(isNativeCloudCodeModel('Claude Opus 4.6 (Thinking)')).toBe(true);
+      expect(isNativeCloudCodeModel('GPT-OSS 120B (Medium)')).toBe(true);
+    });
+
+    it('rejects custom models with status dots or pills', () => {
+      expect(isNativeCloudCodeModel('🟢 • Gemini 3.8 Flash')).toBe(false);
+      expect(isNativeCloudCodeModel('⭐ 🟢 • Claude 3.7 Sonnet')).toBe(false);
+      expect(isNativeCloudCodeModel('🔴 [Offline] • Gemini 4 Argon')).toBe(false);
+      expect(isNativeCloudCodeModel('🟢 • [Default] Gemini 3.8 Flash')).toBe(false);
+    });
+
     it('handles models/ prefix gracefully', () => {
       expect(isNativeCloudCodeModel('models/gemini-4-argon')).toBe(true);
       expect(isNativeCloudCodeModel('models/claude-sonnet-4-6')).toBe(true);
+      expect(isNativeCloudCodeModel('models/Gemini 4 Argon (Medium)')).toBe(true);
     });
 
     it('NEVER classifies any model with MODEL_PLACEHOLDER_ or custom- prefix as native', () => {
@@ -113,6 +133,9 @@ describe('Strict Zero Fallback on Native Models', () => {
       expect(matchesCustomModel(mockCustomModel, 'models/gemini-4-argon-medium')).toBe(false);
       expect(matchesCustomModel(mockCustomModel, 'gemini-3.8-flash')).toBe(false);
       expect(matchesCustomModel(mockCustomModel, 'claude-sonnet-4-6')).toBe(false);
+      expect(matchesCustomModel(mockCustomModel, 'Gemini 4 Argon (Medium)')).toBe(false);
+      expect(matchesCustomModel(mockCustomModel, 'Gemini 3.8 Flash (Low)')).toBe(false);
+      expect(matchesCustomModel(mockCustomModel, 'Claude Sonnet 4.6 (Thinking)')).toBe(false);
 
       // Explicit custom slug or placeholder DOES match
       expect(matchesCustomModel(mockCustomModel, 'custom-argon')).toBe(true);
@@ -322,7 +345,7 @@ describe('Strict Zero Fallback on Native Models', () => {
       const upstream429 = Buffer.from(JSON.stringify({
         error: { code: 429, message: 'Resource has been exhausted (e.g. check quota).', status: 'RESOURCE_EXHAUSTED' }
       }));
-      recordNativeSessionError(sessKey, 429, { 'content-type': 'application/json' }, upstream429);
+      recordNativeSessionError(sessKey, 429, { 'content-type': 'application/json' }, upstream429, 'gemini-4-argon-high');
 
       // 100ms later: Language Server sends automated fallback request for Flash
       const activeNative = getNativeSession(sessKey);
@@ -331,9 +354,20 @@ describe('Strict Zero Fallback on Native Models', () => {
       expect(activeNative?.lastError?.statusCode).toBe(429);
       expect(activeNative?.lastError?.body.toString()).toContain('RESOURCE_EXHAUSTED');
 
-      // Turn window is active (< 15 seconds)
+      // Turn window is active (< 2 minutes)
       const timeSince = Date.now() - activeNative!.lastSeen;
-      expect(timeSince).toBeLessThan(15000);
+      expect(timeSince).toBeLessThan(120000);
+    });
+
+    it('preserves original model even if recordNativeSessionError is called before markNativeSession', () => {
+      const sessKey = 'sess-sessid-before-mark';
+      const upstream404 = Buffer.from(JSON.stringify({ error: { code: 404, message: 'Model not found' } }));
+      recordNativeSessionError(sessKey, 404, { 'content-type': 'application/json' }, upstream404, 'gemini-4-argon');
+
+      const record = getNativeSession(sessKey);
+      expect(record).toBeDefined();
+      expect(record?.originalModel).toBe('gemini-4-argon');
+      expect(record?.lastError?.statusCode).toBe(404);
     });
   });
 
@@ -357,6 +391,69 @@ describe('Strict Zero Fallback on Native Models', () => {
 
       // Claude models can be explicitly toggled off by users
       expect(isModelOrLabelDisabled('claude-sonnet-4-6', 'Claude Sonnet 4.6 (Thinking)', new Set(['claude-sonnet-4-6']))).toBe(true);
+    });
+  });
+
+  describe('Candidate Names Matching Audit', () => {
+    it('tests which candidate names match models from custom_models.json', () => {
+      const customModelsPath = 'C:/Users/amine/.gemini/antigravity/custom_models.json';
+      const fs = require('fs');
+      if (!fs.existsSync(customModelsPath)) return;
+
+      const raw = JSON.parse(fs.readFileSync(customModelsPath, 'utf-8'));
+      const candidates = [
+        'models/model_placeholder_m50',
+        'models/model_placeholder_m563',
+        'model_placeholder_m50',
+        'model_placeholder_m563',
+        'gemini-3.8-flash-tiered',
+        'models/gemini-3.8-flash-tiered',
+        'gemini-3.8-flash',
+        'models/gemini-3.8-flash',
+        'Gemini 3.8 Flash (Low)',
+        'gemini-3.8-flash-low',
+        'gemini-4-argon-medium',
+        'gemini-4-argon-high',
+        'gemini-4-argon',
+      ];
+
+      const allModels: CustomModel[] = [];
+      for (const p of raw.providers || []) {
+        for (const m of (p.models || [])) {
+          allModels.push({
+            provider: p.provider,
+            apiUrl: p.apiUrl,
+            externalModelName: m.id,
+            displayName: m.displayName,
+            name: m.id,
+          });
+        }
+        for (const a of (p.accounts || [])) {
+          for (const m of (a.models || [])) {
+            allModels.push({
+              provider: p.provider,
+              apiUrl: p.apiUrl,
+              externalModelName: m.id,
+              displayName: m.displayName,
+              name: m.id,
+              accountEmail: a.email,
+              accountName: a.name,
+            });
+          }
+        }
+      }
+
+      const expanded = expandModelsWithEffort(allModels);
+      console.log('Total expanded models:', expanded.length);
+
+      for (const cand of candidates) {
+        const isNative = isNativeCloudCodeModel(cand.replace(/^models\//, ''));
+        const matches = expanded.filter((m: any) => matchesCustomModel(m, cand));
+        if (isNative) {
+          // Strict Zero Fallback: Native models must NEVER match custom pool entries!
+          expect(matches.length).toBe(0);
+        }
+      }
     });
   });
 });

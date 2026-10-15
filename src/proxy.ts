@@ -1144,6 +1144,8 @@ export async function proxyToGoogle(
   customAuthHeader?: string,
   convId = '',
   hostOverride?: string,
+  sessId = '',
+  originalModel = '',
 ): Promise<void> {
   const traceId = newTraceId();
   const isCloudCodeUrl = req.url!.includes('v1internal') || req.url!.includes('daily-cloudcode') || req.url!.includes('cloudcode');
@@ -1276,8 +1278,12 @@ export async function proxyToGoogle(
         proxyRes.on('data', (chunk) => errChunks.push(chunk));
         proxyRes.on('end', () => {
           const fullErr = Buffer.concat(errChunks);
+          const effectiveModel = reqModelName || originalModel || '';
           if (convId) {
-            recordNativeSessionError(convId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr);
+            recordNativeSessionError(convId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr, effectiveModel);
+          }
+          if (sessId && sessId !== convId) {
+            recordNativeSessionError(sessId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr, effectiveModel);
           }
         });
         if (safeHead(proxyRes.statusCode, proxyRes.headers as Record<string, string>)) {
@@ -4337,6 +4343,7 @@ export interface NativeSessionRecord {
 
 const nativeSessions = new Map<string, NativeSessionRecord>();
 export const NATIVE_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+export const NATIVE_CASCADE_BLOCK_WINDOW_MS = 2 * 60 * 1000; // 2 minutes (covers Go LS exponential backoff cascade cycle)
 
 export function markNativeSession(sessionKey: string, model: string): void {
   if (!sessionKey) return;
@@ -4365,15 +4372,19 @@ export function recordNativeSessionError(
   statusCode: number,
   headers: Record<string, string>,
   body: Buffer,
+  modelName?: string,
 ): void {
   if (!sessionKey) return;
   const rec = nativeSessions.get(sessionKey);
   if (rec) {
     rec.lastError = { statusCode, headers, body };
     rec.lastSeen = Date.now();
-  } else {
+    if (modelName && !rec.originalModel) {
+      rec.originalModel = modelName;
+    }
+  } else if (modelName && (modelName.includes('argon') || modelName.includes('gemini-4'))) {
     nativeSessions.set(sessionKey, {
-      originalModel: '',
+      originalModel: modelName,
       lastSeen: Date.now(),
       lastError: { statusCode, headers, body },
     });
@@ -5826,9 +5837,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           );
 
           if (isNativeCloudCode) {
-            if (sessionKey) markNativeSession(sessionKey, cleanRequested);
-            if (convId && convId !== sessionKey) markNativeSession(convId, cleanRequested);
-            if (sessId && sessId !== sessionKey) markNativeSession(sessId, cleanRequested);
+            if (cleanRequested.includes('argon') || cleanRequested.includes('gemini-4')) {
+              if (sessionKey) markNativeSession(sessionKey, cleanRequested);
+              if (convId && convId !== sessionKey) markNativeSession(convId, cleanRequested);
+              if (sessId && sessId !== sessionKey) markNativeSession(sessId, cleanRequested);
+            }
             if (sessionKey) clearSessionModelFallback(sessionKey);
             if (convId) clearSessionModelFallback(convId);
             if (sessId) clearSessionModelFallback(sessId);
@@ -5839,11 +5852,17 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             const activeNative = (sessionKey ? getNativeSession(sessionKey) : undefined) ||
                                  (convId ? getNativeSession(convId) : undefined) ||
                                  (sessId ? getNativeSession(sessId) : undefined);
-            if (activeNative && !hasExplicitCustomSlug) {
-              const timeSinceNative = Date.now() - activeNative.lastSeen;
-              if (timeSinceNative < 15000) {
+            const isArgonProtected = Boolean(
+              activeNative &&
+              activeNative.originalModel &&
+              (activeNative.originalModel.includes('argon') || activeNative.originalModel.includes('gemini-4'))
+            );
+            if (isArgonProtected && !hasExplicitCustomSlug) {
+              const timeSinceNative = Date.now() - activeNative!.lastSeen;
+              if (timeSinceNative < NATIVE_CASCADE_BLOCK_WINDOW_MS) {
+                activeNative!.lastSeen = Date.now();
                 log.warn(
-                  `[Proxy] ⛔ Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey}] (original model: [${activeNative.originalModel}], ${timeSinceNative}ms ago). Strict ZERO fallback rule: rejecting fallback to report original error directly.`
+                  `[Proxy] ⛔ Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey}] (original model: [${activeNative!.originalModel}], within cascade window). Strict ZERO fallback rule on Argon: rejecting fallback to report original error directly.`
                 );
                 const err = activeNative.lastError;
                 if (err && err.body && err.body.length > 0) {
@@ -5976,6 +5995,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           if (matchingCandidates.length === 0) {
             matchingCandidates = customModels.filter((m) =>
               candidateNames.some((cn) => {
+                if (/MODEL_PLACEHOLDER_/i.test(cn) || cn.startsWith('custom-')) return false;
                 const norm = normalizeGoogleModelId(cn);
                 return norm && (matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`));
               }),
@@ -5983,6 +6003,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
         }
         let matchedCustomModel = isNativeCloudCode ? undefined : selectBestModelByQuota(matchingCandidates, customModels);
+        // Fallback: if a conversation references a placeholder (e.g. M299/M298/M50/M319/M565)
+        if (!isNativeCloudCode && !matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
+          const activePool = customModels.filter((m) => !(m as any)._poolOnly && m.enabled !== false);
+          matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
+        }
 
         const effectiveModelName = (
           matchedCustomModel?.externalModelName ||
@@ -6130,6 +6155,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
         }
         matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
+        if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
+          const activePool = customModels.filter((m) => !(m as any)._poolOnly && m.enabled !== false);
+          matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
+        }
 
         if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
           const baseName = getBaseModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
@@ -6213,10 +6242,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     // 5. Fallback: transparent proxy to Google
     // Strip any Claude thinking blocks before forwarding — they carry account-specific HMAC
     // signatures that become invalid if the account differs from the one that generated them.
+    let rawModelName = '';
     try {
       const fallbackJson = JSON.parse(bodyStr) as Record<string, unknown>;
       const fallbackReq = (fallbackJson.request || fallbackJson) as Record<string, unknown>;
-      const rawModelName = String(
+      rawModelName = String(
         fallbackJson.model ||
         fallbackJson.requestedModel ||
         fallbackReq.model ||
@@ -6236,7 +6266,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
       }
     } catch { /* not JSON — continue as-is */ }
-    await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || sessId || '');
+    await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || '', undefined, sessId || '', rawModelName);
 
   });
 }
