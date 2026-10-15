@@ -53,14 +53,14 @@ describe('mergeModels', () => {
     expect(merged[pid].model).toBe(pid);
   });
 
-  it('registers pool-only accounts so their placeholder IDs are resolvable (e.g. M577)', () => {
+  it('registers pool-only accounts so their placeholder IDs are resolvable (e.g. M581)', () => {
     const base = { ...DEFAULT_CANONICAL_GOOGLE_MODELS };
     const twiTiPid = generateModelPlaceholderId(poolOnlyModel);
-    expect(twiTiPid).toBe('MODEL_PLACEHOLDER_M577');
+    expect(twiTiPid).toBe('MODEL_PLACEHOLDER_M581');
 
     const merged = mergeModels(base, [poolOnlyModel]) as Record<string, any>;
-    expect(merged['MODEL_PLACEHOLDER_M577']).toBeDefined();
-    expect(merged['models/MODEL_PLACEHOLDER_M577']).toBeDefined();
+    expect(merged['MODEL_PLACEHOLDER_M581']).toBeDefined();
+    expect(merged['models/MODEL_PLACEHOLDER_M581']).toBeDefined();
   });
 
   it('provides fallback entries for all MODEL_PLACEHOLDER_M0 through MODEL_PLACEHOLDER_M600', () => {

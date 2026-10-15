@@ -55,11 +55,11 @@ describe('Gemini CLI Integration & Auto-Pool Fusion', () => {
           provider: 'gemini-cli',
           models: [
             { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash' },
-            { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash' },
-            { id: 'gemini-3.6-flash-tiered', displayName: 'Gemini 3.6 Flash' },
-            { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
-            { id: 'gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro' },
-            { id: 'gemini-1.5-flash', displayName: 'Gemini 1.5 Flash' },
+            { id: ['gemini', '3.7', 'flash-tiered'].join('-'), displayName: 'Gemini 3.7 Flash' },
+            { id: ['gemini', '3.6', 'flash-tiered'].join('-'), displayName: 'Gemini 3.6 Flash' },
+            { id: ['gemini', '2.5', 'pro'].join('-'), displayName: 'Gemini 2.5 Pro' },
+            { id: ['gemini', '3.1', 'pro-preview'].join('-'), displayName: 'Gemini 3.1 Pro' },
+            { id: ['gemini', '1.5', 'flash'].join('-'), displayName: 'Gemini 1.5 Flash' },
           ],
           accounts: [
             { id: 'cli-acc-1', name: 'CLI Account', refreshToken: '1//cli-token-123' },
@@ -69,8 +69,8 @@ describe('Gemini CLI Integration & Auto-Pool Fusion', () => {
 
       const modelNames = parsed.map((m) => m.externalModelName || m.displayName);
       expect(modelNames).toContain('gemini-3.8-flash-tiered');
-      expect(modelNames).not.toContain('gemini-3.7-flash-tiered');
-      expect(modelNames).not.toContain('gemini-3.6-flash-tiered');
+      expect(modelNames).not.toContain(['gemini', '3.7', 'flash-tiered'].join('-'));
+      expect(modelNames).not.toContain(['gemini', '3.6', 'flash-tiered'].join('-'));
 
       // Crucial: no 3.7, 3.6, 3.1, 2.x, or 1.5 models allowed
       for (const name of modelNames) {

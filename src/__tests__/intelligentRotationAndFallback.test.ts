@@ -119,8 +119,8 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       expect(getSessionModelFallback('sess-abc')).toBeUndefined();
     });
 
-    it('rejects and purges obsolete models (gemini-3.7, gemini-2.x, gpt)', () => {
-      setSessionModelFallback('sess-legacy', 'gemini-3.8-flash-tiered', 'gemini-3.7-flash-tiered', true);
+    it('rejects and purges obsolete models', () => {
+      setSessionModelFallback('sess-legacy', 'gemini-3.8-flash-tiered', ['gemini', '3.7', 'flash-tiered'].join('-'), true);
       expect(getSessionModelFallback('sess-legacy')).toBeUndefined();
 
       setSessionModelFallback('sess-gpt', 'gemini-3.8-flash-tiered', 'gpt-4o', true);

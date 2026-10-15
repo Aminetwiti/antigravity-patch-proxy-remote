@@ -143,8 +143,8 @@ interface CompletionPayload {
 
 export async function dispatchInference(payload: CompletionPayload): Promise<string> {
   const start = performance.now();
-  console.log(`[GoogleAntigravity] Dispatching to ${payload.model} via LS proxy port 51074`);
-  return `Token execution completed in ${Math.round(performance.now() - start)}ms`;
+  console.log(\`[GoogleAntigravity] Dispatching to \${payload.model} via LS proxy port 51074\`);
+  return \`Token execution completed in \${Math.round(performance.now() - start)}ms\`;
 }`,
 
   systemPrompt: `Tu es Antigravity, un assistant principal d'ingénierie logicielle conçu par l'équipe Google DeepMind.
