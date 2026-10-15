@@ -234,9 +234,9 @@ func ResolveStandardModelEnum(nameOrID string) uint64 {
 		return 0
 	}
 	switch {
-	case strings.Contains(lower, "3.7-flash") || strings.Contains(lower, "3.6-flash") || strings.Contains(lower, "3.5-flash") || strings.Contains(lower, "gemini-flash"):
+	case strings.Contains(lower, "3.8-flash") || strings.Contains(lower, "3.7-flash") || strings.Contains(lower, "3.6-flash") || strings.Contains(lower, "3.5-flash") || strings.Contains(lower, "gemini-flash"):
 		return 312
-	case strings.Contains(lower, "3.1-pro") || strings.Contains(lower, "gemini-pro"):
+	case strings.Contains(lower, "argon") || strings.Contains(lower, "3.1-pro") || strings.Contains(lower, "gemini-pro"):
 		return 246
 	case strings.Contains(lower, "sonnet") || strings.Contains(lower, "claude-3-5") || strings.Contains(lower, "claude-4"):
 		return 384

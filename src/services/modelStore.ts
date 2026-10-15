@@ -231,6 +231,19 @@ export async function loadProviders(): Promise<ProviderFileEntry[]> {
     const parsed = JSON.parse(stripBom(content)) as { models?: CustomModelFileEntry[], providers?: ProviderFileEntry[] };
 
     if (parsed.providers) {
+      for (const p of parsed.providers) {
+        const isGoogle = p.provider === 'google' || p.provider === 'gemini' || p.id === 'provider-google';
+        if (isGoogle && Array.isArray(p.models)) {
+          p.models = p.models.filter((m: any) => m && !isObsoleteModel(m.id || m.name, m.displayName));
+        }
+        if (isGoogle && Array.isArray(p.accounts)) {
+          for (const acc of p.accounts) {
+            if (Array.isArray((acc as any).models)) {
+              (acc as any).models = (acc as any).models.filter((m: any) => m && !isObsoleteModel(m.id || m.name, m.displayName));
+            }
+          }
+        }
+      }
       _providersCache = parsed.providers;
       _providersCacheTime = now;
       try {

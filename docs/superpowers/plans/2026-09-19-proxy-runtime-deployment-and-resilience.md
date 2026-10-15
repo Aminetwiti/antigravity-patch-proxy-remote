@@ -81,7 +81,7 @@ node ag-doctor/bin/ag-doctor.js models list
 Expected: List showing `free/deepseek-v4-pro-0813` with its provider, API URL, and status.
 
 - [ ] **Step 2: Update model configuration or fallback chain**
-If the Apinex free tier is permanently exhausted (500M tokens consumed), configure its `fallbackModel` / `fallbackChain` to directly route to a working model (e.g. `gemini-2.5-pro` or another active OpenAI-compatible endpoint) so requests do not waste time on repeated 402 rejects.
+If the Apinex free tier is permanently exhausted (500M tokens consumed), configure its `fallbackModel` / `fallbackChain` to directly route to a working model (e.g. `gemini-4-argon-medium` or another active OpenAI-compatible endpoint) so requests do not waste time on repeated 402 rejects.
 Run:
 ```powershell
 node ag-doctor/bin/ag-doctor.js doctor

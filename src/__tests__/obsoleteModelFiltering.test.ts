@@ -57,6 +57,21 @@ describe('Obsolete and Deprecated Model Masking & Filtering', () => {
       expect(isObsoleteModel('custom', 'Gemini 3.6 Flash')).toBe(true);
     });
 
+    it('correctly flags obsolete agent and tiered models', () => {
+      expect(isObsoleteModel('gemini-pro-agent')).toBe(true);
+      expect(isObsoleteModel('gemini-3-flash-agent')).toBe(true);
+      expect(isObsoleteModel('gemini-3.5-flash-lite')).toBe(true);
+      expect(isObsoleteModel('gemini-2.5-flash-lite')).toBe(true);
+      expect(isObsoleteModel('gemini-2.5-flash-thinking')).toBe(true);
+      expect(isObsoleteModel('gemini-3.1-flash-image')).toBe(true);
+      expect(isObsoleteModel('gemini-3.5-flash-extra-low')).toBe(true);
+      expect(isObsoleteModel('gemini-3.6-flash-high')).toBe(true);
+      expect(isObsoleteModel('gemini-3.6-flash-medium')).toBe(true);
+      expect(isObsoleteModel('gemini-3.6-flash-low')).toBe(true);
+      expect(isObsoleteModel('gemini-3.1-flash-lite')).toBe(true);
+      expect(isObsoleteModel('gemini-3.5-flash-low')).toBe(true);
+    });
+
     it('preserves modern allowed flagship models', () => {
       expect(isObsoleteModel('gemini-3.8-flash-tiered')).toBe(false);
       expect(isObsoleteModel('gemini-3.8-flash')).toBe(false);

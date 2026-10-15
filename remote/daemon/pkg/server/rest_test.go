@@ -531,7 +531,7 @@ func TestREST_AccountsEndpoints(t *testing.T) {
 	}
 
 	// 7. POST /v2/accounts/select-best
-	bestReq := httptest.NewRequest("POST", "/v2/accounts/select-best?token=token-acc", bytes.NewReader([]byte(`{"model":"gemini-3.1-pro-high"}`)))
+	bestReq := httptest.NewRequest("POST", "/v2/accounts/select-best?token=token-acc", bytes.NewReader([]byte(`{"model":"gemini-4-argon-medium"}`)))
 	bestW := httptest.NewRecorder()
 	mux.ServeHTTP(bestW, bestReq)
 	if bestW.Code != http.StatusOK {

@@ -48,11 +48,11 @@ import { GOOGLE_POOL_HEADER_TIMEOUT_MS, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, P2C
 
 function makeModel(overrides: Partial<CustomModel> = {}): CustomModel {
   return {
-    name: 'gemini-2.5-pro',
+    name: 'gemini-4-argon-medium',
     provider: 'google',
     apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
     apiKey: 'ya29.fake',
-    externalModelName: 'gemini-2.5-pro',
+    externalModelName: 'gemini-4-argon-medium',
     accountEmail: 'test@example.com',
     refreshToken: 'refresh_abc',
     ...overrides,
@@ -68,7 +68,7 @@ describe('getAccountQuotaKey', () => {
   });
 
   it('uses gemini-cli prefix for gemini-cli models', () => {
-    const m = makeModel({ accountEmail: 'cli@gmail.com', apiUrl: 'https://generativelanguage.googleapis.com', name: 'gemini-cli:gemini-2.5-pro' });
+    const m = makeModel({ accountEmail: 'cli@gmail.com', apiUrl: 'https://generativelanguage.googleapis.com', name: 'gemini-cli:gemini-4-argon-medium' });
     // isGeminiCliModel checks name prefix
     const key = getAccountQuotaKey(m);
     expect(key).toMatch(/gemini-cli:|google:/);
@@ -477,16 +477,16 @@ describe('getGoogleAccountPool', () => {
   });
 
   it('deduplicates by account key', () => {
-    const base = makeModel({ accountEmail: 'dup@test.com', externalModelName: 'gemini-2.5-pro' });
-    const dup  = makeModel({ accountEmail: 'dup@test.com', externalModelName: 'gemini-2.5-pro' });
+    const base = makeModel({ accountEmail: 'dup@test.com', externalModelName: 'gemini-4-argon-medium' });
+    const dup  = makeModel({ accountEmail: 'dup@test.com', externalModelName: 'gemini-4-argon-medium' });
     const pool = getGoogleAccountPool(base, [base, dup]);
     expect(pool.length).toBe(1);
   });
 
   it('excludes unlicensed accounts', () => {
     beforeEach(() => _resetUnlicensedAccounts());
-    const matched = makeModel({ accountEmail: 'ok@test.com',     externalModelName: 'gemini-2.5-pro' });
-    const bad     = makeModel({ accountEmail: 'locked@test.com', externalModelName: 'gemini-2.5-pro' });
+    const matched = makeModel({ accountEmail: 'ok@test.com',     externalModelName: 'gemini-4-argon-medium' });
+    const bad     = makeModel({ accountEmail: 'locked@test.com', externalModelName: 'gemini-4-argon-medium' });
     markAccountUnlicensed(bad);
     const pool = getGoogleAccountPool(matched, [matched, bad]);
     expect(pool).not.toContain(bad);

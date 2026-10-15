@@ -60,8 +60,8 @@ describe('Strict Zero Fallback on Native Models', () => {
       expect(isNativeCloudCodeModel('gemini-3.8-flash')).toBe(true);
       expect(isNativeCloudCodeModel('gemini-3.8-flash-tiered')).toBe(true);
       expect(isNativeCloudCodeModel('gemini-3.8-pro')).toBe(true);
-      expect(isNativeCloudCodeModel('gemini-2.5-pro')).toBe(true);
-      expect(isNativeCloudCodeModel('gemini-2.5-flash')).toBe(true);
+      expect(isNativeCloudCodeModel('gemini-4-argon-low')).toBe(true);
+      expect(isNativeCloudCodeModel('gemini-3.8-flash-lite')).toBe(true);
 
       // Claude originals
       expect(isNativeCloudCodeModel('claude-sonnet-4-6')).toBe(true);

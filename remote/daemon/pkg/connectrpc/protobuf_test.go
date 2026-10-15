@@ -43,7 +43,7 @@ func TestBuildStartCascadeAndDecode(t *testing.T) {
 // l'inverse quand l'UID est vide.
 func TestBuildStartCascadeModelUID(t *testing.T) {
 	t.Run("UID prioritaire", func(t *testing.T) {
-		buf := BuildStartCascade("file:///C:/x", "", "gemini-3.1-pro-low", 0)
+		buf := BuildStartCascade("file:///C:/x", "", "gemini-pro", 0)
 		foundEnum := false
 		for _, f := range DecodeFields(buf) {
 			if f.Num == 14 && f.Varint == 246 {

@@ -2034,6 +2034,7 @@ export async function executeGoogleCloudCodeWithPool(
         const u = new URL(candidate.apiUrl);
         const host = u.hostname;
         if (!host || host.includes('generativelanguage')) return undefined;
+        if (process.env.AG_GOOGLE_CLOUDCODE_HOST) return GOOGLE_HOSTS.CLOUD_CODE;
         if (!isGeminiCliModel(candidate) && host === 'cloudcode-pa.googleapis.com') return undefined;
         return host.includes('cloudcode') ? host : undefined;
       } catch { return undefined; }

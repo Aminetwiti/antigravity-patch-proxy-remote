@@ -116,7 +116,7 @@ func TestWebSocketCreateCascadeModelPropagation(t *testing.T) {
 		client.send(t, map[string]string{
 			"type": "create_cascade", "requestId": "rM",
 			"workspaceUri": "file:///C:/proj",
-			"modelUID":     "gemini-3.1-pro-low",
+			"modelUID":     "gemini-4-argon-low",
 		})
 		resp := client.recv(t)
 		if resp["error"] != nil {
@@ -125,8 +125,8 @@ func TestWebSocketCreateCascadeModelPropagation(t *testing.T) {
 		if backend.lastCascade == nil {
 			t.Fatal("CreateCascade n'a jamais été appelé")
 		}
-		if backend.lastCascade.modelUID != "gemini-3.1-pro-low" {
-			t.Errorf("Attendu modelUID=gemini-3.1-pro-low, reçu %q", backend.lastCascade.modelUID)
+		if backend.lastCascade.modelUID != "gemini-4-argon-low" {
+			t.Errorf("Attendu modelUID=gemini-4-argon-low, reçu %q", backend.lastCascade.modelUID)
 		}
 		if backend.lastCascade.modelEnum != 0 {
 			t.Errorf("Attendu modelEnum=0 (repli inactif quand UID présent), reçu %d", backend.lastCascade.modelEnum)

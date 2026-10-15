@@ -16,11 +16,11 @@ describe('Unified Model Deduplication (Cloud Code + AI Studio Single Entry)', ()
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-dedup-test-'));
     tempFilePath = path.join(tmpDir, 'custom_models.json');
     const sampleModels = [
-      { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
-      { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
-      { id: 'gemini-2.5-flash-thinking', displayName: 'Gemini 2.5 Flash Thinking' },
-      { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet' },
-      { id: 'claude-3-5-sonnet', displayName: 'Claude 3.5 Sonnet' },
+      { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)' },
+      { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash' },
+      { id: 'gemini-3.8-flash', displayName: 'Gemini 3.8 Flash High Fast' },
+      { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6' },
+      { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)' },
     ];
     const providers: any[] = [];
     providers.push({

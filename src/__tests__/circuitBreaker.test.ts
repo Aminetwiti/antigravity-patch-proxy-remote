@@ -82,9 +82,9 @@ describe('circuitBreaker', () => {
   it('supports fallbackChain configuration property on model definition', () => {
     const modelWithChain: CustomModel = {
       ...baseModel,
-      fallbackChain: ['deepseek-chat', 'gpt-4o', 'gemini-2.5-pro'],
+      fallbackChain: ['deepseek-chat', 'gpt-4o', 'gemini-4-argon-medium'],
     };
-    expect(modelWithChain.fallbackChain).toEqual(['deepseek-chat', 'gpt-4o', 'gemini-2.5-pro']);
+    expect(modelWithChain.fallbackChain).toEqual(['deepseek-chat', 'gpt-4o', 'gemini-4-argon-medium']);
   });
 
   it('applies a 15-minute cooldown for billing errors', () => {

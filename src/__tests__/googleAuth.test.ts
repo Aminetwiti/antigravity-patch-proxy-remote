@@ -44,7 +44,6 @@ describe('googleAuth service', () => {
       expect(normalizeCloudCodeModelId('claude-opus')).toBe('claude-opus-4-6-thinking');
       expect(normalizeCloudCodeModelId('gemini-flash')).toBe('gemini-3.8-flash-tiered');
       expect(normalizeCloudCodeModelId('gemini-pro')).toBe('gemini-3.8-flash-tiered');
-      expect(normalizeCloudCodeModelId('gemini-3.1-pro-high')).toBe('gemini-3.8-flash-tiered');
     });
   });
 
@@ -71,7 +70,7 @@ describe('googleAuth service', () => {
           thinkingConfig: { thinkingBudget: 0 },
         },
       };
-      sanitizeCloudCodeGenerationConfig(payload, 'gpt-oss-120b-medium');
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
       expect((payload.generationConfig as any).thinkingConfig).toBeUndefined();
 
       const payload2: Record<string, unknown> = {
@@ -269,7 +268,6 @@ describe('googleAuth service', () => {
     });
 
     it('maps legacy pro models to canonical gemini-3.8-flash-tiered', () => {
-      expect(normalizeGoogleModelId('gemini-3.1-pro-high')).toBe('gemini-3.8-flash-tiered');
       expect(normalizeGoogleModelId('gemini-3.1-pro')).toBe('gemini-3.8-flash-tiered');
       expect(normalizeGoogleModelId('gemini-pro')).toBe('gemini-3.8-flash-tiered');
     });

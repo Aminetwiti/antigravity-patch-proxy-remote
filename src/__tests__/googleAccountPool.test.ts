@@ -98,7 +98,7 @@ describe('Google Multi-Account Pool & Failover', () => {
       provider: 'google',
       apiKey: 'ya29.acc1_token',
       apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
-      externalModelName: 'gemini-3.1-pro-high',
+      externalModelName: 'gemini-4-argon-medium',
       accountEmail: 'user1@gmail.com',
       refreshToken: '1//refresh1',
       projectId: 'project-1',
@@ -110,7 +110,7 @@ describe('Google Multi-Account Pool & Failover', () => {
       provider: 'google',
       apiKey: 'ya29.acc2_token',
       apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
-      externalModelName: 'gemini-3.1-pro-high',
+      externalModelName: 'gemini-4-argon-medium',
       accountEmail: 'user2@gmail.com',
       refreshToken: '1//refresh2',
       projectId: 'project-2',
@@ -122,7 +122,7 @@ describe('Google Multi-Account Pool & Failover', () => {
       provider: 'google',
       apiKey: 'ya29.acc3_token',
       apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
-      externalModelName: 'gemini-3.1-pro-high',
+      externalModelName: 'gemini-4-argon-medium',
       accountEmail: 'user3@gmail.com',
       refreshToken: '1//refresh3',
       projectId: 'project-3',
@@ -162,7 +162,7 @@ describe('Google Multi-Account Pool & Failover', () => {
   });
 
   it('pools all distinct Google accounts offering the target model', () => {
-    const targetModel = mockGoogleModels[0]; // user1's gemini-3.1-pro-high
+    const targetModel = mockGoogleModels[0]; // user1's gemini-4-argon-medium
     const pool = getGoogleAccountPool(targetModel, mockGoogleModels);
 
     expect(pool.length).toBe(3);
@@ -187,11 +187,11 @@ describe('Google Multi-Account Pool & Failover', () => {
       mockGoogleModels[0], // user1
       mockGoogleModels[1], // user2
       {
-        name: 'models/google:gemini-3.1-pro-high:auto-pool',
+        name: 'models/google:gemini-4-argon-medium:auto-pool',
         displayName: 'Gemini 3.1 Pro (High)',
         provider: 'google',
         apiKey: 'auto',
-        externalModelName: 'gemini-3.1-pro-high',
+        externalModelName: 'gemini-4-argon-medium',
         apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
       },
     ];
@@ -644,7 +644,7 @@ describe('Google Multi-Account Pool & Failover', () => {
       const flashModel: CustomModel = {
         name: 'flash-candidate',
         provider: 'google',
-        externalModelName: 'gemini-3.7-flash-tiered',
+        externalModelName: 'gemini-3.8-flash-tiered',
         refreshToken: 'mock_token',
         accountEmail: 'flash@gmail.com',
         quotas: {
@@ -809,7 +809,7 @@ describe('Google Multi-Account Pool & Failover', () => {
         provider: 'google',
         apiKey: 'key1',
         apiUrl: 'https://cloudcode.googleapis.com',
-        externalModelName: 'gemini-2.5-pro',
+        externalModelName: 'gemini-4-argon-medium',
         accountEmail: 'free@gmail.com',
         refreshToken: 'refresh-token-free',
         quotas: { geminiFiveHourPct: 60, geminiWeeklyPct: 60 },
@@ -822,7 +822,7 @@ describe('Google Multi-Account Pool & Failover', () => {
         provider: 'google',
         apiKey: 'key2',
         apiUrl: 'https://cloudcode.googleapis.com',
-        externalModelName: 'gemini-2.5-pro',
+        externalModelName: 'gemini-4-argon-medium',
         accountEmail: 'pro@gmail.com',
         refreshToken: 'refresh-token-pro',
         isPro: true,
@@ -836,7 +836,7 @@ describe('Google Multi-Account Pool & Failover', () => {
         provider: 'google',
         apiKey: 'key3',
         apiUrl: 'https://cloudcode.googleapis.com',
-        externalModelName: 'gemini-2.5-pro',
+        externalModelName: 'gemini-4-argon-medium',
         accountEmail: 'vip@gmail.com',
         refreshToken: 'refresh-token-vip',
         priority: 25,
@@ -857,7 +857,7 @@ describe('Google Multi-Account Pool & Failover', () => {
       const testAcc: CustomModel = {
         name: 'acc-latency',
         provider: 'google',
-        externalModelName: 'gemini-2.5-pro',
+        externalModelName: 'gemini-4-argon-medium',
         accountEmail: 'latency@gmail.com',
         refreshToken: 'refresh-token-latency',
         quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 80 },
@@ -883,7 +883,7 @@ describe('Google Multi-Account Pool & Failover', () => {
         {
           name: 'low-1',
           provider: 'google',
-          externalModelName: 'gemini-2.5-pro',
+          externalModelName: 'gemini-4-argon-medium',
           accountEmail: 'low1@gmail.com',
           refreshToken: 'tok1',
           quotas: { geminiFiveHourPct: 10, geminiWeeklyPct: 10 },
@@ -891,7 +891,7 @@ describe('Google Multi-Account Pool & Failover', () => {
         {
           name: 'low-2',
           provider: 'google',
-          externalModelName: 'gemini-2.5-pro',
+          externalModelName: 'gemini-4-argon-medium',
           accountEmail: 'low2@gmail.com',
           refreshToken: 'tok2',
           quotas: { geminiFiveHourPct: 12, geminiWeeklyPct: 12 },
@@ -903,7 +903,7 @@ describe('Google Multi-Account Pool & Failover', () => {
         {
           name: 'healthy-1',
           provider: 'google',
-          externalModelName: 'gemini-2.5-pro',
+          externalModelName: 'gemini-4-argon-medium',
           accountEmail: 'h1@gmail.com',
           refreshToken: 'tok1',
           quotas: { geminiFiveHourPct: 70, geminiWeeklyPct: 70 },
@@ -916,7 +916,7 @@ describe('Google Multi-Account Pool & Failover', () => {
       const multiProjAcc: CustomModel = {
         name: 'multi-proj',
         provider: 'google',
-        externalModelName: 'gemini-2.5-pro',
+        externalModelName: 'gemini-4-argon-medium',
         projectIds: ['proj-alpha', 'proj-beta', 'proj-gamma'],
       };
 

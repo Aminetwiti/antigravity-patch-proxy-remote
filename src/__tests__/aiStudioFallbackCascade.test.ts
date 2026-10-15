@@ -99,7 +99,7 @@ describe('AI Studio Fallback Cascade — filter logic', () => {
   it('UC-1: includes google-gemini accounts in the fallback pool', () => {
     const models: CustomModel[] = [
       cloudCodeAccount('cc1@gmail.com'),
-      aiStudioAccount('studio1@gmail.com', 'gemini-2.5-flash'),
+      aiStudioAccount('studio1@gmail.com', 'gemini-3.8-flash'),
     ];
     const { nonGoogleFallbacks } = buildFallbackOrder(models);
     expect(nonGoogleFallbacks).toHaveLength(1);
@@ -120,8 +120,8 @@ describe('AI Studio Fallback Cascade — filter logic', () => {
       cloudCodeAccount('cc1@gmail.com'),
       openAiModel(),
       anthropicModel(),
-      aiStudioAccount('studio1@gmail.com', 'gemini-2.5-flash'),
-      aiStudioAccount('studio2@gmail.com', 'gemini-2.5-pro'),
+      aiStudioAccount('studio1@gmail.com', 'gemini-3.8-flash'),
+      aiStudioAccount('studio2@gmail.com', 'gemini-4-argon-medium'),
     ];
     const { orderedFallbacks } = buildFallbackOrder(models);
     // First two must be AI Studio
@@ -135,10 +135,10 @@ describe('AI Studio Fallback Cascade — filter logic', () => {
   it('UC-4: all 4 AI Studio accounts appear in the rotation (none dropped)', () => {
     const models: CustomModel[] = [
       cloudCodeAccount('cc1@gmail.com'),
-      aiStudioAccount('studio1@gmail.com', 'gemini-2.5-flash'),
-      aiStudioAccount('studio2@gmail.com', 'gemini-2.5-flash'),
-      aiStudioAccount('studio3@gmail.com', 'gemini-2.5-pro'),
-      aiStudioAccount('studio4@gmail.com', 'gemini-2.5-flash-lite'),
+      aiStudioAccount('studio1@gmail.com', 'gemini-3.8-flash'),
+      aiStudioAccount('studio2@gmail.com', 'gemini-3.8-flash'),
+      aiStudioAccount('studio3@gmail.com', 'gemini-4-argon-medium'),
+      aiStudioAccount('studio4@gmail.com', 'gemini-3.8-flash-lite'),
     ];
     const { aiStudioFallbacks } = buildFallbackOrder(models);
     expect(aiStudioFallbacks).toHaveLength(4);
@@ -146,7 +146,7 @@ describe('AI Studio Fallback Cascade — filter logic', () => {
 
   it('UC-5: pool-only models (_poolOnly=true) are never used as fallback', () => {
     const poolOnly: CustomModel = {
-      ...aiStudioAccount('studio1@gmail.com', 'gemini-2.5-flash'),
+      ...aiStudioAccount('studio1@gmail.com', 'gemini-3.8-flash'),
       _poolOnly: true,
     };
     const models: CustomModel[] = [cloudCodeAccount('cc1@gmail.com'), poolOnly];
@@ -155,8 +155,8 @@ describe('AI Studio Fallback Cascade — filter logic', () => {
   });
 
   it('UC-6: AI Studio account with open circuit breaker is skipped', () => {
-    const healthy = aiStudioAccount('studio1@gmail.com', 'gemini-2.5-flash');
-    const tripped = aiStudioAccount('studio2@gmail.com', 'gemini-2.5-flash');
+    const healthy = aiStudioAccount('studio1@gmail.com', 'gemini-3.8-flash');
+    const tripped = aiStudioAccount('studio2@gmail.com', 'gemini-3.8-flash');
 
     // Trip the circuit breaker for studio2 by recording 5 consecutive server failures
     for (let i = 0; i < 5; i++) recordFailure(tripped, 'server');
@@ -175,21 +175,21 @@ describe('AI Studio Fallback Cascade — filter logic', () => {
   it('UC-7: all three Flash variants (3.6, 3.7, 3.8) are eligible as fallback', () => {
     const models: CustomModel[] = [
       cloudCodeAccount('cc1@gmail.com'),
-      aiStudioAccount('a@g.com', 'gemini-2.0-flash'),          // Flash 3.6-era
-      aiStudioAccount('b@g.com', 'gemini-2.5-flash'),          // Flash 3.7-era
-      aiStudioAccount('c@g.com', 'gemini-2.5-flash-preview'),  // Flash 3.8-era
+      aiStudioAccount('a@g.com', 'gemini-4-argon-medium'),
+      aiStudioAccount('b@g.com', 'gemini-3.8-flash'),
+      aiStudioAccount('c@g.com', 'gemini-3.8-flash-tiered'),
     ];
     const { aiStudioFallbacks } = buildFallbackOrder(models);
     expect(aiStudioFallbacks).toHaveLength(3);
     const names = aiStudioFallbacks.map((m) => m.externalModelName);
-    expect(names).toContain('gemini-2.0-flash');
-    expect(names).toContain('gemini-2.5-flash');
-    expect(names).toContain('gemini-2.5-flash-preview');
+    expect(names).toContain('gemini-4-argon-medium');
+    expect(names).toContain('gemini-3.8-flash');
+    expect(names).toContain('gemini-3.8-flash-tiered');
   });
 
   it('UC-8: when all AI Studio accounts have open breakers, falls through to third-party', () => {
-    const s1 = aiStudioAccount('studio1@gmail.com', 'gemini-2.5-flash');
-    const s2 = aiStudioAccount('studio2@gmail.com', 'gemini-2.5-flash');
+    const s1 = aiStudioAccount('studio1@gmail.com', 'gemini-3.8-flash');
+    const s2 = aiStudioAccount('studio2@gmail.com', 'gemini-3.8-flash');
     for (let i = 0; i < 5; i++) {
       recordFailure(s1, 'server');
       recordFailure(s2, 'server');
@@ -212,10 +212,10 @@ describe('AI Studio Fallback Cascade — filter logic', () => {
       cloudCodeAccount('cc1@gmail.com'),
       cloudCodeAccount('cc2@gmail.com'),
       cloudCodeAccount('cc3@gmail.com'),
-      aiStudioAccount('s1@gmail.com', 'gemini-2.5-flash'),
-      aiStudioAccount('s2@gmail.com', 'gemini-2.5-flash'),
-      aiStudioAccount('s3@gmail.com', 'gemini-2.5-pro'),
-      aiStudioAccount('s4@gmail.com', 'gemini-2.5-flash-lite'),
+      aiStudioAccount('s1@gmail.com', 'gemini-3.8-flash'),
+      aiStudioAccount('s2@gmail.com', 'gemini-3.8-flash'),
+      aiStudioAccount('s3@gmail.com', 'gemini-4-argon-medium'),
+      aiStudioAccount('s4@gmail.com', 'gemini-3.8-flash-lite'),
       openAiModel(),
       anthropicModel(),
     ];
@@ -236,7 +236,7 @@ describe('AI Studio Fallback Cascade — filter logic', () => {
     const models: CustomModel[] = [
       cloudCodeAccount('cc1@gmail.com'),
       cloudCodeAccount('cc2@gmail.com'),
-      { ...aiStudioAccount('s1@gmail.com', 'gemini-2.5-flash'), _poolOnly: true },
+      { ...aiStudioAccount('s1@gmail.com', 'gemini-3.8-flash'), _poolOnly: true },
     ];
     const { orderedFallbacks } = buildFallbackOrder(models);
     expect(orderedFallbacks).toHaveLength(0);

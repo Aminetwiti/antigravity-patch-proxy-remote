@@ -38,7 +38,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         },
         models: [
           { id: 'gemini-3.8-flash-tiered', displayName: '[Account 1] Gemini 3.8 Flash', enabled: true },
-          { id: 'gemini-3.1-pro-high', displayName: '[Account 1] Gemini 3.1 Pro', enabled: true },
+          { id: 'gemini-4-argon-medium', displayName: '[Account 1] Gemini 4 Argon', enabled: true },
         ],
       },
       {
@@ -61,7 +61,7 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
           claudeWeeklyPct: 50,
         },
         models: [
-          { id: 'gemini-3.1-pro-high', displayName: '[Account 2] Gemini 3.1 Pro', enabled: true },
+          { id: 'gemini-4-argon-medium', displayName: '[Account 2] Gemini 4 Argon', enabled: true },
           { id: 'claude-sonnet-4-6', displayName: '[Account 2] Claude Sonnet 4.6', enabled: true },
         ],
       },
@@ -109,10 +109,10 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
         picture: mockDiscoveryResult.picture,
         quotas: mockDiscoveryResult.quotas,
         models: [
+          { id: 'gemini-4-argon-medium', displayName: `[${accountName}] Gemini 4 Argon`, enabled: true },
           { id: 'gemini-3.8-flash-tiered', displayName: `[${accountName}] Gemini 3.8 Flash`, enabled: true },
-          { id: 'gemini-3.7-flash-tiered', displayName: `[${accountName}] Gemini 3.7 Flash`, enabled: true },
-          { id: 'gemini-3.1-pro-high', displayName: `[${accountName}] Gemini 3.1 Pro`, enabled: true },
           { id: 'claude-sonnet-4-6', displayName: `[${accountName}] Claude Sonnet 4.6`, enabled: true },
+          { id: 'claude-opus-4-6-thinking', displayName: `[${accountName}] Claude Opus 4.6`, enabled: true },
         ],
       };
 
@@ -150,10 +150,10 @@ describe('Google Accounts — Comprehensive Actions Validation', () => {
 
       if (models.length === 0) {
         models.push(
+          { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon', enabled: true },
           { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-          { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
-          { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
-          { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true }
+          { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
+          { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6', enabled: true }
         );
       }
 

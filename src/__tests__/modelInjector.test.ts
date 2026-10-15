@@ -32,12 +32,12 @@ describe('mergeModels', () => {
   };
 
   const poolOnlyModel: CustomModel = {
-    name: 'models/google:gemini-3.7-flash-tiered:twi-ti',
-    displayName: 'Gemini 3.7 Flash',
+    name: 'models/google:gemini-3.8-flash-tiered:twi-ti',
+    displayName: 'Gemini 3.8 Flash',
     provider: 'google',
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
     apiKey: 'ya29.twiti',
-    externalModelName: 'gemini-3.7-flash-tiered',
+    externalModelName: 'gemini-3.8-flash-tiered',
     accountName: 'Twi Ti',
     accountEmail: 'dev.user@example.com',
     _poolOnly: true,
@@ -80,14 +80,14 @@ describe('mergeModels', () => {
 
   it('aliases upstream models whose inner model field differs from map key (e.g. M50)', () => {
     const upstream = {
-      'gemini-3.1-flash-lite': {
-        displayName: 'Gemini 3.1 Flash Lite',
+      'gemini-3.8-flash-low': {
+        displayName: 'Gemini 3.8 Flash Low',
         model: 'MODEL_PLACEHOLDER_M50',
       },
     };
     const merged = mergeModels(upstream, []) as Record<string, any>;
     expect(merged['MODEL_PLACEHOLDER_M50']).toBeDefined();
-    expect(merged['MODEL_PLACEHOLDER_M50'].displayName).toBe('Gemini 3.1 Flash Lite');
+    expect(merged['MODEL_PLACEHOLDER_M50'].displayName).toBe('Gemini 3.8 Flash Low');
     expect(merged['models/MODEL_PLACEHOLDER_M50']).toBeDefined();
   });
 

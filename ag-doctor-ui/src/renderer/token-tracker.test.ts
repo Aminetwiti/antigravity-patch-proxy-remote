@@ -24,13 +24,13 @@ describe('token-tracker', () => {
       expect(cost).toBeCloseTo(0.6, 3);
     });
 
-    it('calculates correct cost for Gemini 2.5 Pro and Flash', () => {
+    it('calculates correct cost for Gemini 4 Argon and Flash', () => {
       // 100,000 prompt ($1.25/M) + 50,000 completion ($5.0/M) -> in 0.125, out 0.25 -> 0.375
-      const costPro = estimateTokenCost('gemini-2.5-pro', 100_000, 50_000);
+      const costPro = estimateTokenCost('gemini-4-argon-medium', 100_000, 50_000);
       expect(costPro).toBeCloseTo(0.375, 3);
 
       // Flash: 100,000 prompt ($0.10/M) + 50,000 completion ($0.40/M) -> in 0.01, out 0.02 -> 0.03
-      const costFlash = estimateTokenCost('gemini-2.5-flash', 100_000, 50_000);
+      const costFlash = estimateTokenCost('gemini-3.8-flash', 100_000, 50_000);
       expect(costFlash).toBeCloseTo(0.03, 3);
     });
 
@@ -169,7 +169,7 @@ describe('token-tracker', () => {
     it('aggregates Google / Antigravity stats and context caching accurately', () => {
       engine.logUsage({
         provider: 'google',
-        model: 'gemini-2.5-pro',
+        model: 'gemini-4-argon-medium',
         promptTokens: 10000,
         completionTokens: 2000,
         cachedTokens: 7500,

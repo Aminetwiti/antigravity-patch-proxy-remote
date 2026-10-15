@@ -91,10 +91,10 @@ export function loadCustomModels(filePath?: string, options?: { includeDisabled?
         if (pModels.length === 0 && isGoogle) {
           const accWithModels = accounts.find((a: any) => Array.isArray(a.models) && a.models.length > 0);
           pModels = accWithModels ? accWithModels.models : [
+            { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
             { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-            { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
-            { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
             { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+            { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
           ];
         }
 

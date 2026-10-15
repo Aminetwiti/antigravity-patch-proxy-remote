@@ -95,7 +95,7 @@ void main() {
     });
 
     testWidgets('Scenario #3: Changement de modèle au repos sans stop préalable', (tester) async {
-      String currentModel = 'gemini-3.1-pro-high';
+      String currentModel = 'gemini-4-argon-medium';
       String? sentModel;
 
       await tester.pumpWidget(
@@ -178,7 +178,7 @@ void main() {
 
     testWidgets('Scenario #9: Bascule Modèle Local vers Google AI Studio Gemini 3.8', (tester) async {
       String model = 'ollama/llama3';
-      model = 'google/gemini-3.1-pro-high';
+      model = 'google/gemini-4-argon-medium';
       expect(model.startsWith('google/'), isTrue);
     });
 
@@ -244,13 +244,13 @@ void main() {
     testWidgets('Scenario #18: Switch de modèle par changement de session dans le Drawer', (tester) async {
       final sessionA = const CascadeSession(id: 'sess-a', title: 'Session A', workspacePath: '/ws', status: 'READY', time: '1m');
       final sessionB = const CascadeSession(id: 'sess-b', title: 'Session B', workspacePath: '/ws', status: 'READY', time: '2m');
-      final sessionModels = {'sess-a': 'deepseek-r1', 'sess-b': 'gemini-3.1-pro-high'};
+      final sessionModels = {'sess-a': 'deepseek-r1', 'sess-b': 'gemini-4-argon-medium'};
 
       String activeModel = sessionModels[sessionA.id]!;
       expect(activeModel, 'deepseek-r1');
 
       activeModel = sessionModels[sessionB.id]!;
-      expect(activeModel, 'gemini-3.1-pro-high');
+      expect(activeModel, 'gemini-4-argon-medium');
     });
 
     testWidgets('Scenario #19: Fork / duplication de session avec changement de modèle', (tester) async {
@@ -293,9 +293,9 @@ void main() {
 
     testWidgets('Scenario #23: Reprise après échec de sous-agent avec nouveau modèle à large contexte', (tester) async {
       bool subagentFailed = true;
-      String nextModel = 'gemini-3.1-pro-high'; // 1M context
+      String nextModel = 'gemini-4-argon-medium'; // 1M context
       expect(subagentFailed, isTrue);
-      expect(nextModel, 'gemini-3.1-pro-high');
+      expect(nextModel, 'gemini-4-argon-medium');
     });
 
     testWidgets('Scenario #24: Multi-sous-agents parallèles sur différents fournisseurs', (tester) async {
@@ -314,11 +314,11 @@ void main() {
       String currentModel = 'claude-sonnet-4-6';
 
       if (statusCode == 429) {
-        currentModel = 'gemini-3.1-pro-high';
+        currentModel = 'gemini-4-argon-medium';
         statusCode = 200; // Success on new model
       }
 
-      expect(currentModel, 'gemini-3.1-pro-high');
+      expect(currentModel, 'gemini-4-argon-medium');
       expect(statusCode, 200);
     });
 

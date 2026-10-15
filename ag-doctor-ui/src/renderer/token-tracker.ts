@@ -9,18 +9,12 @@ export interface TokenPrice {
 }
 
 export const MODEL_PRICING: Record<string, TokenPrice> = {
+  'gemini-4-argon-medium': { inputPerMillion: 1.25, outputPerMillion: 5.0 },
   'gemini-3.8-pro': { inputPerMillion: 1.25, outputPerMillion: 5.0 },
   'gemini-3.8-flash': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
   'gemini-3.8-flash-tiered': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
-  'gemini-3.7-pro': { inputPerMillion: 1.25, outputPerMillion: 5.0 },
-  'gemini-3.7-flash': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
-  'gemini-3.7-flash-tiered': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
   'claude-sonnet-4-6': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
   'claude-opus-4-6': { inputPerMillion: 15.0, outputPerMillion: 75.0 },
-  'claude-3-7-sonnet': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
-  'claude-3-5-sonnet': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
-  'gemini-2.5-pro': { inputPerMillion: 1.25, outputPerMillion: 5.0 },
-  'gemini-2.5-flash': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
   'gpt-4o': { inputPerMillion: 2.5, outputPerMillion: 10.0 },
   'gpt-4o-mini': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
   'deepseek-chat': { inputPerMillion: 0.14, outputPerMillion: 0.28 },
@@ -142,15 +136,15 @@ Structure de réflexion (Chain-of-Thought) :
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 
 interface CompletionPayload {
-  model: 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'claude-3-5-sonnet';
+  model: 'gemini-4-argon-medium' | 'gemini-3.8-flash' | 'claude-sonnet-4-6';
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   temperature?: number;
 }
 
 export async function dispatchInference(payload: CompletionPayload): Promise<string> {
   const start = performance.now();
-  console.log(\`[GoogleAntigravity] Dispatching to \${payload.model} via LS proxy port 51074\`);
-  return \`Token execution completed in \${Math.round(performance.now() - start)}ms\`;
+  console.log(`[GoogleAntigravity] Dispatching to ${payload.model} via LS proxy port 51074`);
+  return `Token execution completed in ${Math.round(performance.now() - start)}ms`;
 }`,
 
   systemPrompt: `Tu es Antigravity, un assistant principal d'ingénierie logicielle conçu par l'équipe Google DeepMind.
@@ -164,12 +158,12 @@ Principes directeurs :
 Assistant : Absolument ! Voici la projection basée sur un prompt moyen de 1 200 tokens d'entrée et 450 tokens de sortie :
 1. Total Entrée : 60 000 tokens
 2. Total Sortie : 22 500 tokens
-3. Coût estimé sur Gemini 2.5 Flash : ~$0.015 USD (soit 34x moins cher que les modèles concurrents)
+3. Coût estimé sur Gemini 3.8 Flash : ~$0.015 USD (soit 34x moins cher que les modèles concurrents)
 4. Latence moyenne observée : 195ms`,
 
   jsonPayload: `{
   "request": {
-    "model": "gemini-2.5-pro",
+    "model": "gemini-3.8-flash",
     "contents": [
       { "role": "user", "parts": [{ "text": "Analyse les performances du pipeline de compilation et optimise les allocations mémoire." }] }
     ],
@@ -649,12 +643,12 @@ export class TokenTrackerEngine {
     if (this.entries.length > 0) return;
 
     const samples = [
-      { provider: 'google', model: 'gemini-2.5-pro', prompt: 8420, completion: 1150, cached: 6200, latency: 680, status: 200, offset: 3 },
-      { provider: 'google', model: 'gemini-2.5-flash', prompt: 3100, completion: 420, cached: 2100, latency: 190, status: 200, offset: 8 },
-      { provider: 'google', model: 'gemini-2.0-flash-thinking', prompt: 4600, completion: 1840, cached: 3200, latency: 1120, status: 200, offset: 15 },
-      { provider: 'google', model: 'gemini-1.5-pro', prompt: 14200, completion: 820, cached: 11000, latency: 1450, status: 200, offset: 32 },
-      { provider: 'anthropic', model: 'claude-3-5-sonnet', prompt: 1420, completion: 480, cached: 0, latency: 1250, status: 200, offset: 45 },
-      { provider: 'google', model: 'gemini-2.5-flash', prompt: 1950, completion: 310, cached: 1400, latency: 175, status: 200, offset: 60 },
+      { provider: 'google', model: 'gemini-4-argon-medium', prompt: 8420, completion: 1150, cached: 6200, latency: 680, status: 200, offset: 3 },
+      { provider: 'google', model: 'gemini-3.8-flash', prompt: 3100, completion: 420, cached: 2100, latency: 190, status: 200, offset: 8 },
+      { provider: 'google', model: 'gemini-3.8-flash-tiered', prompt: 4600, completion: 1840, cached: 3200, latency: 1120, status: 200, offset: 15 },
+      { provider: 'google', model: 'gemini-4-argon-medium', prompt: 14200, completion: 820, cached: 11000, latency: 1450, status: 200, offset: 32 },
+      { provider: 'anthropic', model: 'claude-sonnet-4-6', prompt: 1420, completion: 480, cached: 0, latency: 1250, status: 200, offset: 45 },
+      { provider: 'google', model: 'gemini-3.8-flash', prompt: 1950, completion: 310, cached: 1400, latency: 175, status: 200, offset: 60 },
       { provider: 'openai', model: 'gpt-4o', prompt: 2150, completion: 820, cached: 0, latency: 1840, status: 200, offset: 75 },
       { provider: 'deepseek', model: 'deepseek-r1', prompt: 3200, completion: 1450, cached: 0, latency: 3100, status: 200, offset: 95 },
       { provider: 'ollama', model: 'qwen-2.5-coder', prompt: 950, completion: 320, cached: 0, latency: 1650, status: 200, offset: 120 },

@@ -189,7 +189,7 @@ describe('extractModelNameFromPayload', () => {
   it('extracts selectedModel or requestedModel or modelId', () => {
     expect(extractModelNameFromPayload({ selectedModel: 'claude-3-7-sonnet' })).toBe('claude-3-7-sonnet');
     expect(extractModelNameFromPayload({ requestedModel: 'model_placeholder_m50' })).toBe('model_placeholder_m50');
-    expect(extractModelNameFromPayload({ modelId: 'gemini-2.5-pro' })).toBe('gemini-2.5-pro');
+    expect(extractModelNameFromPayload({ modelId: 'gemini-4-argon-medium' })).toBe('gemini-4-argon-medium');
     expect(extractModelNameFromPayload({ request: { requestedModel: 'gemini-3.8-flash-high' } })).toBe('gemini-3.8-flash-high');
     expect(extractModelNameFromPayload({ request: { selectedModel: 'gemini-3.8-flash-tiered' } })).toBe('gemini-3.8-flash-tiered');
   });

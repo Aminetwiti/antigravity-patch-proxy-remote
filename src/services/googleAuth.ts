@@ -845,21 +845,6 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.8-flash-medium': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash-high': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash-low': 'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash-medium': 'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash-high': 'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash-tiered': 'gemini-3.8-flash-tiered',
-    'gemini-3.6-flash-low': 'gemini-3.8-flash-tiered',
-    'gemini-3.6-flash-medium': 'gemini-3.8-flash-tiered',
-    'gemini-3.6-flash-high': 'gemini-3.8-flash-tiered',
-    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.6-flash-tiered': 'gemini-3.8-flash-tiered',
-    'gemini-3.1-pro-low': 'gemini-3.8-flash-tiered',
-    'gemini-3.1-pro-high': 'gemini-3.8-flash-tiered',
-    'gemini-3.1-pro': 'gemini-3.8-flash-tiered',
-    'gemini-flash': 'gemini-3.8-flash-tiered',
-    'gemini-pro': 'gemini-3.8-flash-tiered',
     'claude-sonnet-5-5-medium': 'claude-sonnet-5-5',
     'claude-sonnet-5-5-high': 'claude-sonnet-5-5',
     'claude-sonnet-5-5': 'claude-sonnet-5-5',
@@ -911,14 +896,8 @@ export function normalizeGoogleModelId(modelName: string): string {
     'gemini-4-argon': 'gemini-4-argon-medium',
     'gemini-4-argon-medium': 'gemini-4-argon-medium',
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.7-flash-tiered': 'gemini-3.8-flash-tiered',
-    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.6-flash-tiered': 'gemini-3.8-flash-tiered',
+    'gemini-3.8-flash-tiered': 'gemini-3.8-flash-tiered',
     'gemini-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.1-pro-high': 'gemini-3.8-flash-tiered',
-    'gemini-3.1-pro': 'gemini-3.8-flash-tiered',
-    'gemini-3.0-pro': 'gemini-3.8-flash-tiered',
     'gemini-pro': 'gemini-3.8-flash-tiered',
     'claude-sonnet-5-5': 'claude-sonnet-5-5',
     'claude-opus-5-5': 'claude-opus-5-5',
@@ -955,13 +934,10 @@ export function normalizeGoogleModelId(modelName: string): string {
 /**
  * Official models supported by Google Gemini CLI (Production Cloud Code).
  * Sourced directly from official Google Gemini CLI (/model manage):
- * 1. gemini-3-flash-preview
- * 2. gemini-2.5-pro
- * 3. gemini-3.8-flash (and tiered variants)
- * 4. gemma-4-31b-it
- * 5. gemma-4-26b-a4b-it
- *
- * NOTE: gemini-3.7-flash, gemini-3.6-flash, gemini-3.5, gemini-3.1, and Claude models are NOT supported by Gemini CLI.
+ * 1. gemini-3.8-flash (and tiered variants)
+ * 2. gemini-4-argon (and variants)
+ * 3. gemma-4-31b-it
+ * 4. gemma-4-26b-a4b-it
  */
 export const GEMINI_CLI_SUPPORTED_MODELS = new Set<string>([
   'gemini-3.8-flash',

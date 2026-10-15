@@ -977,8 +977,8 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
       if (googleProviders.length === 1 && (!googleProviders[0].models || googleProviders[0].models.length === 0)) {
         const accWithModels = (googleProviders[0].accounts || []).find((a: any) => Array.isArray(a.models) && a.models.length > 0);
         googleProviders[0].models = accWithModels?.models?.length ? accWithModels.models : [
+          { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
           { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-          { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
           { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
           { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
         ];
@@ -1300,14 +1300,11 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_evt, params: 
       }
 
       const fallbackModels = [
+        { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
+        { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
         { id: 'gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)', enabled: true },
         { id: 'gemini-3.8-flash-medium', displayName: 'Gemini 3.8 Flash (Medium)', enabled: true },
         { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)', enabled: true },
-        { id: 'gemini-3.7-flash-low', displayName: 'Gemini 3.7 Flash (Low)', enabled: true },
-        { id: 'gemini-3.7-flash-medium', displayName: 'Gemini 3.7 Flash (Medium)', enabled: true },
-        { id: 'gemini-3.7-flash-high', displayName: 'Gemini 3.7 Flash (High)', enabled: true },
-        { id: 'gemini-3.6-flash-low', displayName: 'Gemini 3.6 Flash (Low)', enabled: true },
-        { id: 'gemini-3.6-flash-medium', displayName: 'Gemini 3.6 Flash (Medium)', enabled: true },
         { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
         { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
       ];

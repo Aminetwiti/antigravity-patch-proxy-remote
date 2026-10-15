@@ -83,10 +83,10 @@ export function normalizeAccountEntry(raw: any, index: number = 0): NormalizedIm
         enabled: m.enabled !== false,
       }))
     : [
+        { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
         { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-        { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
-        { id: 'gemini-3.1-pro-high', displayName: 'Gemini 3.1 Pro', enabled: true },
         { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
+        { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
       ];
 
   return {

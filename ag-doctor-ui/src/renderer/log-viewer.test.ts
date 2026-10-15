@@ -248,11 +248,11 @@ describe('Structured Log Viewer - Enhanced Subsystems and Resilience', () => {
 
 describe('Structured Log Viewer - Faceted Search & Sanitization', () => {
   it('extracts traceId and jsonPayload when present', () => {
-    const raw = '[2026-10-06 16:15:47.118] [info] [Proxy] Request payload Trace: 0xcdbb2ef6303b6b91 data: {"model":"gemini-2.5-pro","stream":true}';
+    const raw = '[2026-10-06 16:15:47.118] [info] [Proxy] Request payload Trace: 0xcdbb2ef6303b6b91 data: {"model":"gemini-3.8-flash","stream":true}';
     const entry = parseLogLine(raw);
     expect(entry.traceId).toBe('0xcdbb2ef6303b6b91');
     expect(entry.hasPayload).toBe(true);
-    expect(entry.jsonPayload).toEqual({ model: 'gemini-2.5-pro', stream: true });
+    expect(entry.jsonPayload).toEqual({ model: 'gemini-3.8-flash', stream: true });
   });
 
   it('filters with faceted query syntax', () => {

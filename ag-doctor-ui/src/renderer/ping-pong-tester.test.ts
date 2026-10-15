@@ -202,13 +202,13 @@ describe('ping-pong-tester module', () => {
       });
       (globalThis as any).ag = { modelPingPong: mockPingPong };
 
-      const res = await testSingleModel({ name: 'gemini-2.5-flash', id: 'gemini-2.5-flash', provider: 'google' });
+      const res = await testSingleModel({ name: 'gemini-3.8-flash', id: 'gemini-3.8-flash', provider: 'google' });
       expect(res.ok).toBe(true);
       expect(res.latencyMs).toBe(145);
       expect(res.speedTier).toBe('fast');
       expect(res.pongText).toBe('pong');
       expect(mockPingPong).toHaveBeenCalledWith({
-        modelId: 'gemini-2.5-flash',
+        modelId: 'gemini-3.8-flash',
         providerId: undefined,
         prompt: 'ping',
       });

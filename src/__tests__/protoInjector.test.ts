@@ -91,8 +91,8 @@ describe('injectCustomModelsIntoResponse', () => {
       { tag: 0x12, value: Buffer.from('Gemini 3.8 Flash') },
     ]);
     const entry2 = encodeProtoBuf([
-      { tag: 0x0a, value: Buffer.from('gemini-3.7-flash-tiered') },
-      { tag: 0x12, value: Buffer.from('Gemini 3.7 Flash') },
+      { tag: 0x0a, value: Buffer.from('gemini-4-argon-medium') },
+      { tag: 0x12, value: Buffer.from('Gemini 4 Argon (Medium)') },
     ]);
 
     const msgBody = Buffer.concat([

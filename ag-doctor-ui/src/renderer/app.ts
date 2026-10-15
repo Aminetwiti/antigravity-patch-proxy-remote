@@ -2349,7 +2349,7 @@ function renderTokenizerTool(): void {
   if (!tokenizeTextFn) return;
 
   const text = tokenizerInputText?.value || '';
-  const model = tokenizerModelSelect?.value || 'gemini-2.5-pro';
+  const model = tokenizerModelSelect?.value || 'gemini-3.8-flash';
 
   const res = tokenizeTextFn(text, model);
 
@@ -2813,7 +2813,7 @@ async function loadTokenizer(): Promise<void> {
     tokenizerCopyTokensBtn.dataset.bound = '1';
     tokenizerCopyTokensBtn.addEventListener('click', () => {
       if (!tokenizeTextFn || !tokenizerInputText) return;
-      const res = tokenizeTextFn(tokenizerInputText.value, tokenizerModelSelect?.value || 'gemini-2.5-pro');
+      const res = tokenizeTextFn(tokenizerInputText.value, tokenizerModelSelect?.value || 'gemini-3.8-flash');
       if (navigator.clipboard) {
         navigator.clipboard.writeText(JSON.stringify(res.tokens, null, 2)).then(() => {
           toast(`${res.tokens.length} tokens copiés en JSON`, 'ok', 1600);
@@ -2828,10 +2828,10 @@ async function loadTokenizer(): Promise<void> {
     if (tokenizerPresetGeminiPro && !tokenizerPresetGeminiPro.dataset.bound) {
       tokenizerPresetGeminiPro.dataset.bound = '1';
       tokenizerPresetGeminiPro.addEventListener('click', () => {
-        if (tokenizerInputText) tokenizerInputText.value = presets.gemini25Pro;
-        if (tokenizerModelSelect) tokenizerModelSelect.value = 'gemini-2.5-pro';
+        if (tokenizerInputText) tokenizerInputText.value = presets.gemini25Pro || presets.systemPrompt;
+        if (tokenizerModelSelect) tokenizerModelSelect.value = 'gemini-3.8-flash';
         renderTokenizerTool();
-        toast('Exemple Gemini 2.5 Pro chargé', 'info', 1200);
+        toast('Exemple Gemini 3.8 Flash chargé', 'info', 1200);
       });
     }
     if (tokenizerPresetThinking && !tokenizerPresetThinking.dataset.bound) {
@@ -7233,8 +7233,8 @@ if (pmImportLocalBtn) {
         enabled: true,
         allowUnauthorized: false,
         models: [
+          { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
           { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
-          { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash Tiered', enabled: true },
           { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
           { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
         ],
@@ -10121,10 +10121,9 @@ function setupGoogleAccountsLiveTicker(): void {
 function isObsoleteModelUI(idOrName?: string, displayName?: string): boolean {
   if (!idOrName && !displayName) return false;
   const str = `${idOrName || ''} ${displayName || ''}`.toLowerCase();
-  if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[015])/i.test(str)) return true;
-  if (/\bgemini[-_\s]*(?:3\.1|3\.0|2\.5|2\.0|1\.5|3\.5)[-_\s]*(?:pro|flash|high|low|medium|thinking)?\b/i.test(str)) return true;
-  if (/gemini[-_\s]*3(?:\.0)?(?:-pro|\b)/i.test(str) && !str.includes('3.7') && !str.includes('3.8')) return true;
-  if (str.includes('gemini-3.1-pro') || str.includes('gemini-3.0-pro') || str.includes('gemini-2.0-flash') || str.includes('gemini-2.5-pro') || str.includes('gemini-1.5-pro') || str.includes('gemini-1.5-flash')) return true;
+  if (str.includes('argon')) return false;
+  if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[01567])/i.test(str)) return true;
+  if (/\bgemini[-_\s]*(?:3(?:\.0)?(?:-pro|-flash|\b)|pro-agent)/i.test(str) && !str.includes('3.8')) return true;
   if (/\bgpt[-_\s]*(?:3\.5|4o|4|oss|3)/i.test(str) || str.startsWith('gpt-')) return true;
   if (/claude[-_\s]*3[-_\s]*5/i.test(str)) return true;
   return false;
@@ -10132,8 +10131,8 @@ function isObsoleteModelUI(idOrName?: string, displayName?: string): boolean {
 
 function getUnifiedGoogleModelsList(): Array<{ id: string; displayName: string; enabled: boolean }> {
   const STANDARD_GOOGLE_MODELS = [
+    { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
     { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
-    { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash', enabled: true },
     { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
     { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
   ];
@@ -10155,7 +10154,6 @@ function getUnifiedGoogleModelsList(): Array<{ id: string; displayName: string; 
 
         let canonicalId = m.id;
         if (canonicalId === 'gemini-3.8-flash' || canonicalId === 'models/gemini-3.8-flash') canonicalId = 'gemini-3.8-flash-tiered';
-        if (canonicalId === 'gemini-3.7-flash' || canonicalId === 'models/gemini-3.7-flash') canonicalId = 'gemini-3.7-flash-tiered';
 
         const existing = masterModelMap.get(canonicalId);
         if (existing) {
@@ -11701,10 +11699,10 @@ async function triggerIdeAccountDiscovery(): Promise<void> {
               enabled: m.enabled !== false,
             }))
           : [
+              { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
               { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
-              { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash Tiered', enabled: true },
-              { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', enabled: true },
-              { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', enabled: true },
+              { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+              { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
             ],
       };
 
@@ -12017,7 +12015,7 @@ gaFormSaveBtn?.addEventListener('click', async () => {
   if (currentGaFetchedModels.length === 0) {
     currentGaFetchedModels.push(
       { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
-      { id: 'gemini-3.7-flash-tiered', displayName: 'Gemini 3.7 Flash Tiered', enabled: true }
+      { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true }
     );
   }
 
