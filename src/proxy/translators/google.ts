@@ -77,8 +77,10 @@ export function mapGeminiToGoogle(geminiBody: GeminiRequestBody, modelName: stri
   delete raw.agentModel;
   delete raw.request;
 
-  // Inject permissive safetySettings (BLOCK_NONE) to prevent hyper-aggressive safety blocks on legitimate code
-  if (!raw.safetySettings || (Array.isArray(raw.safetySettings) && raw.safetySettings.length === 0)) {
+  // If request originates from Antigravity Cloud Code envelope or defines safetySettings,
+  // inject permissive safetySettings (BLOCK_NONE) to prevent hyper-aggressive safety blocks on legitimate code.
+  const isCloudCodeEnvelope = Boolean(input.request && typeof input.request === 'object');
+  if (isCloudCodeEnvelope || raw.safetySettings) {
     raw.safetySettings = [
       { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
       { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },

@@ -635,15 +635,15 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
 
   const geminiResetStr = quota.geminiResetTime || quota.geminiFiveHourReset || (quota as any).fiveHourResetTime;
   const geminiResetPassed = geminiResetStr ? new Date(geminiResetStr).getTime() <= now : false;
-  const geminiWeeklyDepleted = (typeof quota.geminiWeeklyPct === 'number' && quota.geminiWeeklyPct < 5 && !geminiResetPassed) ||
-                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < 5 && !geminiResetPassed);
+  const geminiWeeklyDepleted = (typeof quota.geminiWeeklyPct === 'number' && quota.geminiWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiResetPassed) ||
+                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiResetPassed);
 
   const claudeResetStr = quota.claudeResetTime || quota.claudeFiveHourReset || (quota as any).fiveHourResetTime;
   const claudeResetPassed = claudeResetStr ? new Date(claudeResetStr).getTime() <= now : false;
-  const claudeWeeklyDepleted = (typeof quota.claudeWeeklyPct === 'number' && quota.claudeWeeklyPct < 5 && !claudeResetPassed) ||
-                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < 5 && !claudeResetPassed);
+  const claudeWeeklyDepleted = (typeof quota.claudeWeeklyPct === 'number' && quota.claudeWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeResetPassed) ||
+                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeResetPassed);
 
-  if (quota.geminiFiveHourPct >= 5) {
+  if (quota.geminiFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT) {
     const remaining = getCooldownRemainingForFamily('gemini');
     const isStrictCooldown = remaining > FIVE_HOURS_MS;
     const isRateLimited = (remaining > 0) && (
@@ -679,7 +679,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
 
       const genCd = googleAccountCooldowns.get(normAccountKey) || googleAccountCooldowns.get(rawAccountKey);
       if (genCd) {
-        if (quota.claudeFiveHourPct < 5 || claudeWeeklyDepleted) {
+        if (quota.claudeFiveHourPct < PREVENTIVE_QUOTA_THRESHOLD_PCT || claudeWeeklyDepleted) {
           googleAccountCooldowns.set(`${normAccountKey}:claude`, genCd);
           googleAccountCooldowns.set(`${rawAccountKey}:claude`, genCd);
         }
@@ -689,7 +689,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
         accountProbationUntil.delete(rawAccountKey);
       }
       if (quotaExhaustedAccountKeys.has(normAccountKey) || quotaExhaustedAccountKeys.has(rawAccountKey)) {
-        if (quota.claudeFiveHourPct < 5 || claudeWeeklyDepleted) {
+        if (quota.claudeFiveHourPct < PREVENTIVE_QUOTA_THRESHOLD_PCT || claudeWeeklyDepleted) {
           quotaExhaustedAccountKeys.add(`${normAccountKey}:claude`);
           quotaExhaustedAccountKeys.add(`${rawAccountKey}:claude`);
         }
@@ -704,7 +704,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
     }
   }
 
-  if (quota.claudeFiveHourPct >= 5) {
+  if (quota.claudeFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT) {
     const remaining = getCooldownRemainingForFamily('claude');
     const isStrictCooldown = remaining > FIVE_HOURS_MS;
     const isRateLimited = (remaining > 0) && (
@@ -737,7 +737,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
 
       const genCd = googleAccountCooldowns.get(normAccountKey) || googleAccountCooldowns.get(rawAccountKey);
       if (genCd) {
-        if (quota.geminiFiveHourPct < 5 || geminiWeeklyDepleted) {
+        if (quota.geminiFiveHourPct < PREVENTIVE_QUOTA_THRESHOLD_PCT || geminiWeeklyDepleted) {
           googleAccountCooldowns.set(`${normAccountKey}:gemini`, genCd);
           googleAccountCooldowns.set(`${rawAccountKey}:gemini`, genCd);
         }
@@ -747,7 +747,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
         accountProbationUntil.delete(rawAccountKey);
       }
       if (quotaExhaustedAccountKeys.has(normAccountKey) || quotaExhaustedAccountKeys.has(rawAccountKey)) {
-        if (quota.geminiFiveHourPct < 5 || geminiWeeklyDepleted) {
+        if (quota.geminiFiveHourPct < PREVENTIVE_QUOTA_THRESHOLD_PCT || geminiWeeklyDepleted) {
           quotaExhaustedAccountKeys.add(`${normAccountKey}:gemini`);
           quotaExhaustedAccountKeys.add(`${rawAccountKey}:gemini`);
         }
@@ -1018,6 +1018,13 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
     return 0;
   }
   if (weekly <= 0 && !weeklyResetPassed) return 0;
+
+  // Preventive Anti-Lockout Guard:
+  // If weekly quota has dropped to or below PREVENTIVE_QUOTA_THRESHOLD_PCT (default: 10%),
+  // score as 0 to shield the account from reaching 0% and triggering Google's 7-day hard lockout.
+  if (typeof weekly === 'number' && weekly <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !weeklyResetPassed) {
+    return 0;
+  }
 
   const effFiveHour = (fiveHour <= 0 && fiveHourResetPassed) ? 50 : fiveHour;
   const effWeekly = (weekly <= 0 && weeklyResetPassed) ? 50 : weekly;

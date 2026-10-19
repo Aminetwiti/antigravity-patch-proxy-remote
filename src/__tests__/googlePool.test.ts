@@ -40,6 +40,8 @@ import {
   clearAccountBurst,
   _resetAccountBurst,
   verifyAndReconcileCooldowns,
+  isAccountNearExhaustion,
+  PREVENTIVE_QUOTA_THRESHOLD_PCT,
 } from '../proxy/googlePool';
 import { updateLiveAccountQuota } from '../services/googleAuth';
 import { GOOGLE_POOL_HEADER_TIMEOUT_MS, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, P2C_SCORE_DELTA } from '../constants';
@@ -228,6 +230,47 @@ describe('getModelQuotaScore', () => {
       quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 50 } as any,
     });
     expect(getModelQuotaScore(m)).toBe(0);
+  });
+
+  it('returns 0 when weekly is at or below PREVENTIVE_QUOTA_THRESHOLD_PCT to shield against 7-day lockout', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: PREVENTIVE_QUOTA_THRESHOLD_PCT } as any,
+    });
+    expect(getModelQuotaScore(m)).toBe(0);
+  });
+
+  it('allows positive score when weekly is above PREVENTIVE_QUOTA_THRESHOLD_PCT', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: PREVENTIVE_QUOTA_THRESHOLD_PCT + 5 } as any,
+    });
+    expect(getModelQuotaScore(m)).toBeGreaterThan(0);
+  });
+});
+
+describe('isAccountNearExhaustion', () => {
+  it('returns true when weekly quota is <= PREVENTIVE_QUOTA_THRESHOLD_PCT', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 8 } as any,
+    });
+    expect(isAccountNearExhaustion(m, 'gemini')).toBe(true);
+  });
+
+  it('returns false when weekly quota is above threshold', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 50 } as any,
+    });
+    expect(isAccountNearExhaustion(m, 'gemini')).toBe(false);
+  });
+
+  it('returns false when reset timestamp has already elapsed', () => {
+    const m = makeModel({
+      quotas: {
+        geminiFiveHourPct: 80,
+        geminiWeeklyPct: 5,
+        geminiWeeklyReset: new Date(Date.now() - 60_000).toISOString(),
+      } as any,
+    });
+    expect(isAccountNearExhaustion(m, 'gemini')).toBe(false);
   });
 });
 

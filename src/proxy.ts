@@ -171,6 +171,9 @@ import {
   recordAccountBurst,
   clearAccountBurst,
   _resetAccountBurst,
+  isAccountNearExhaustion,
+  PREVENTIVE_QUOTA_THRESHOLD_PCT,
+  PREVENTIVE_COOLDOWN_MS,
 } from './proxy/googlePool';
 import { safeWriteHead, safeEnd } from './proxy/httpUtils';
 import {
@@ -2026,9 +2029,9 @@ export async function executeGoogleCloudCodeWithPool(
   ).length;
   if (initialHealthyCount === 0 && sortedAccounts.length > 0) {
     lastStatus = 429;
-    lastErrorText = `All ${sortedAccounts.length} accounts in Google Cloud Code pool are in cooldown or have 0% quota for ${modelFamily}`;
+    lastErrorText = `All ${sortedAccounts.length} accounts in Google Cloud Code pool are in cooldown or near-exhaustion (<= ${PREVENTIVE_QUOTA_THRESHOLD_PCT}% quota) for ${modelFamily}`;
     log.warn(
-      `[Proxy] All ${sortedAccounts.length} accounts in Google Cloud Code pool are unavailable (cooldown or 0% quota) for ${modelFamily}. Fast-failing pool to trigger immediate fallback.`,
+      `[Proxy] All ${sortedAccounts.length} accounts in Google Cloud Code pool are unavailable (cooldown or <= ${PREVENTIVE_QUOTA_THRESHOLD_PCT}% quota) for ${modelFamily}. Fast-failing pool to trigger immediate fallback and prevent 7-day lockout.`,
     );
   } else if (initialHealthyCount > 0 && initialHealthyCount < 3) {
     log.warn(
@@ -3910,6 +3913,9 @@ export {
   clearAccountBurst,
   liftBurstCooldowns,
   _resetAccountBurst,
+  isAccountNearExhaustion,
+  PREVENTIVE_QUOTA_THRESHOLD_PCT,
+  PREVENTIVE_COOLDOWN_MS,
 } from './proxy/googlePool';
 export type { Google429Category, Google429Decision } from './proxy/googlePool';
 

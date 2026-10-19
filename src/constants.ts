@@ -524,4 +524,14 @@ export function isObsoleteModel(idOrName?: string, displayName?: string): boolea
 
   // Deprecated Gemini / Google models: 1.x, 2.x, 3.0, 3.1, 3.5, 3.6, 3.7
   if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[01567])/i.test(str)) return true;
-  if (
+  if (/\bgemini[-_\s]*(?:3(?:\.0)?(?:-pro|-flash|\b)|pro-agent)/i.test(str) && !str.includes('3.8')) return true;
+
+  // GPT models (gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5, gpt-oss, etc.)
+  if (/\bgpt[-_\s]*(?:3\.5|4o|4|oss|3)/i.test(str) || str.startsWith('gpt-')) return true;
+
+  // Old Claude 3.5
+  if (/claude[-_\s]*3[-_\s]*5/i.test(str)) return true;
+
+  return false;
+}
+
