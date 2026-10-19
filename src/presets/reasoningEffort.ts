@@ -158,3 +158,81 @@ export function isReasoningLikeModel(modelName: string): boolean {
     modelName,
   );
 }
+
+/**
+ * Detects whether a request originates from an automated subagent
+ * (e.g., codebase research, accessibility audit, linter, terminal executor).
+ */
+export function isSubagentRequest(reqObj: unknown): boolean {
+  if (!reqObj || typeof reqObj !== 'object') return false;
+  const target = ((reqObj as any).request || reqObj) as Record<string, unknown>;
+
+  // 1. Explicit metadata or role flag
+  if (typeof (target as any).agentType === 'string' && /subagent/i.test((target as any).agentType)) return true;
+  if (typeof (target as any).role === 'string' && /subagent/i.test((target as any).role)) return true;
+  if ((target as any).isSubagent === true) return true;
+
+  // 2. Inspect system instructions for subagent identity
+  const si = target.systemInstruction as { parts?: Array<{ text?: string }> } | undefined;
+  if (si && Array.isArray(si.parts)) {
+    const sysText = si.parts.map((p) => p.text || '').join('\n');
+    if (/subagent|codebase researcher|research subagent|flutter[_\s\-]?a11y|linter/i.test(sysText)) {
+      return true;
+    }
+  }
+
+  // 3. Inspect contents for subagent role / dispatch markers
+  if (Array.isArray(target.contents)) {
+    for (const c of target.contents) {
+      if (Array.isArray(c?.parts)) {
+        for (const p of c.parts) {
+          if (p && typeof p.text === 'string') {
+            if (/\[Subagent Task\]|Role:.*Subagent|invoke_subagent|Research Subagent|Codebase Researcher/i.test(p.text)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Clamps reasoning effort / thinking budget on subagent requests to prevent
+ * excessive token burn on background tasks (subagent effort governor).
+ * Default max budget: 2048 tokens.
+ *
+ * @returns true if the request payload was modified
+ */
+export function clampSubagentReasoning(
+  reqObj: unknown,
+  maxBudget = 2048,
+): boolean {
+  if (!isSubagentRequest(reqObj)) return false;
+
+  const target = ((reqObj as any).request || reqObj) as Record<string, any>;
+  let modified = false;
+
+  const genCfg = target.generationConfig || target.generation_config;
+  if (genCfg && typeof genCfg === 'object') {
+    const tc = genCfg.thinkingConfig || genCfg.thinking_config;
+    if (tc && typeof tc === 'object') {
+      if (tc.thinkingBudget !== undefined && tc.thinkingBudget !== null) {
+        const current = typeof tc.thinkingBudget === 'number' ? tc.thinkingBudget : parseInt(tc.thinkingBudget, 10);
+        if (current > maxBudget) {
+          tc.thinkingBudget = maxBudget;
+          modified = true;
+        }
+      }
+      if (tc.thinkingLevel && tc.thinkingLevel !== 'low') {
+        tc.thinkingLevel = 'low';
+        modified = true;
+      }
+    }
+  }
+
+  return modified;
+}
+

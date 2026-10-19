@@ -7,6 +7,8 @@ import {
   adaptiveReasoningEffort,
   budgetReasoningEffort,
   isReasoningLikeModel,
+  isSubagentRequest,
+  clampSubagentReasoning,
   type ReasoningEffort,
   type ThinkingBudget,
 } from '../presets/reasoningEffort';
@@ -134,3 +136,116 @@ describe('isReasoningLikeModel', () => {
     expect(isReasoningLikeModel('')).toBe(false);
   });
 });
+
+describe('isSubagentRequest', () => {
+  it('detects subagent from agentType or role', () => {
+    expect(isSubagentRequest({ agentType: 'subagent' })).toBe(true);
+    expect(isSubagentRequest({ role: 'research-subagent' })).toBe(true);
+    expect(isSubagentRequest({ isSubagent: true })).toBe(true);
+  });
+
+  it('detects subagent from systemInstruction', () => {
+    const payload = {
+      systemInstruction: {
+        parts: [{ text: 'You are a Codebase Researcher subagent tasked with reading files.' }],
+      },
+    };
+    expect(isSubagentRequest(payload)).toBe(true);
+  });
+
+  it('detects subagent from nested request wrapper', () => {
+    const payload = {
+      request: {
+        systemInstruction: {
+          parts: [{ text: 'Flutter a11y agent expert reviewing accessibility' }],
+        },
+      },
+    };
+    expect(isSubagentRequest(payload)).toBe(true);
+  });
+
+  it('detects subagent from contents markers', () => {
+    const payload = {
+      contents: [
+        {
+          parts: [{ text: '[Subagent Task] Analyze directory structure' }],
+        },
+      ],
+    };
+    expect(isSubagentRequest(payload)).toBe(true);
+  });
+
+  it('returns false for standard human chat requests', () => {
+    const payload = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: 'Hello, please write a binary search algorithm in Python' }],
+        },
+      ],
+    };
+    expect(isSubagentRequest(payload)).toBe(false);
+    expect(isSubagentRequest(null)).toBe(false);
+    expect(isSubagentRequest({})).toBe(false);
+  });
+});
+
+describe('clampSubagentReasoning', () => {
+  it('clamps excessive thinkingBudget to 2048 for subagents', () => {
+    const req = {
+      role: 'subagent',
+      generationConfig: {
+        thinkingConfig: {
+          thinkingBudget: 16000,
+        },
+      },
+    };
+    const modified = clampSubagentReasoning(req);
+    expect(modified).toBe(true);
+    expect(req.generationConfig.thinkingConfig.thinkingBudget).toBe(2048);
+  });
+
+  it('clamps thinkingLevel from high to low for subagents', () => {
+    const req = {
+      agentType: 'subagent',
+      generation_config: {
+        thinking_config: {
+          thinkingLevel: 'high',
+        },
+      },
+    };
+    const modified = clampSubagentReasoning(req);
+    expect(modified).toBe(true);
+    expect(req.generation_config.thinking_config.thinkingLevel).toBe('low');
+  });
+
+  it('does not modify subagents with budget already <= 2048', () => {
+    const req = {
+      role: 'subagent',
+      generationConfig: {
+        thinkingConfig: {
+          thinkingBudget: 1024,
+          thinkingLevel: 'low',
+        },
+      },
+    };
+    const modified = clampSubagentReasoning(req);
+    expect(modified).toBe(false);
+    expect(req.generationConfig.thinkingConfig.thinkingBudget).toBe(1024);
+  });
+
+  it('does not touch non-subagent requests', () => {
+    const req = {
+      generationConfig: {
+        thinkingConfig: {
+          thinkingBudget: 32000,
+          thinkingLevel: 'high',
+        },
+      },
+    };
+    const modified = clampSubagentReasoning(req);
+    expect(modified).toBe(false);
+    expect(req.generationConfig.thinkingConfig.thinkingBudget).toBe(32000);
+  });
+});
+

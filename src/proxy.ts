@@ -98,8 +98,8 @@ import {
 } from './proxy/urlBuilder';
 import { generateModelPlaceholderId, toSlug } from './proxy/idGenerator';
 import { expandModelsWithEffort } from './proxy/effortExpander';
-import { isNativeCloudCodeModel, extractModelNameFromPayload } from './proxy/modelUtils';
-export { isNativeCloudCodeModel, extractModelNameFromPayload };
+import { isNativeCloudCodeModel, extractModelNameFromPayload, clampSubagentReasoning, isSubagentRequest } from './proxy/modelUtils';
+export { isNativeCloudCodeModel, extractModelNameFromPayload, clampSubagentReasoning, isSubagentRequest };
 import { resolveGoogleIp, invalidateCachedDns } from './proxy/dnsResolver';
 import { markProviderRateLimited, isProviderRateLimited } from './proxy/modelRouter';
 import { trimContextPayload } from './proxy/contextTrimmer';
@@ -1237,6 +1237,7 @@ export async function proxyToGoogle(
     method: req.method,
     headers: headers as Record<string, string>,
     servername: targetHost,
+    agent: getHttpsAgent({ host: targetHost }),
   };
 
   // Guard flag to prevent ERR_HTTP_HEADERS_SENT when timeout and response race
@@ -3690,10 +3691,10 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     // newlines so a frame that spans two chunks is still counted.
     emptyGuard.observe(chunk);
     buffer += chunk.toString('utf-8');
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
+    let lineEndIdx: number;
+    while ((lineEndIdx = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, lineEndIdx);
+      buffer = buffer.slice(lineEndIdx + 1);
       const trimmed = line.trim();
       if (!trimmed) continue;
       if (trimmed.startsWith('data: ')) {
@@ -4692,6 +4693,11 @@ function handleCustomModelRequest(
   });
 
   request.setTimeout(REQUEST_TIMEOUT_MS, () => handleRequestTimeout(request, ctx));
+  request.on('socket', (socket) => {
+    try {
+      if (typeof socket.setNoDelay === 'function') socket.setNoDelay(true);
+    } catch (_) {}
+  });
 
   request.on('error', (err) => handleRequestError(err, ctx));
   request.write(JSON.stringify(payload));
@@ -6851,6 +6857,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
         }
 
+        // Subagent Effort Governor: automatically detect subagent tasks and clamp thinking budget
+        if (clampSubagentReasoning(targetReq)) {
+          log.info(`[Proxy] 🛡️ Subagent detected: clamped thinking budget to 2048 tokens to conserve quota`);
+          contentsNormalized = true;
+        }
+
         if (signaturesRestored || contentsNormalized) {
           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
           log.debug(`[Proxy] Re-encoded Cloud Code request with normalized turns/signatures (convId=${sessionKey || 'draft'}, model=${effectiveModelName})`);
@@ -7313,6 +7325,11 @@ export function startProxy(): Promise<number> {
           setupCustomModelsWatcher();
           prewarmGoogleAccounts(models);
           resolveGoogleIp(GOOGLE_HOSTS.CLOUD_CODE).catch(() => {});
+          try {
+            warmTlsConnection(GOOGLE_HOSTS.CLOUD_CODE);
+            warmTlsConnection('daily-cloudcode-pa.googleapis.com');
+            warmTlsConnection('generativelanguage.googleapis.com');
+          } catch (_) {}
         } catch (err) {
           log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
         }

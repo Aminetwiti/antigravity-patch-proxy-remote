@@ -95,4 +95,43 @@ describe('Google API Hardening (Forum Findings Parity)', () => {
       expect(isPrecondition400('400 Invalid argument: unexpected token in generationConfig')).toBe(false);
     });
   });
+
+  describe('Speculative TLS Pre-Warming & Fast SSE Parsing', () => {
+    it('warmTlsConnection executes safely without unhandled rejections', async () => {
+      const { warmTlsConnection } = await import('../proxy/agentPool');
+      expect(() => {
+        warmTlsConnection('daily-cloudcode-pa.googleapis.com');
+        warmTlsConnection('generativelanguage.googleapis.com');
+      }).not.toThrow();
+    });
+
+    it('processes fragmented SSE buffers correctly using indexOf scanner', () => {
+      let buffer = '';
+      const linesReceived: string[] = [];
+      const chunks = [
+        'data: {"cand',
+        'idates":[{"text":"Hel',
+        'lo"}]}\n\ndata: {"candidates":[{"text":" world"}]}\n',
+      ];
+
+      for (const chunk of chunks) {
+        buffer += chunk;
+        let lineEndIdx: number;
+        while ((lineEndIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, lineEndIdx);
+          buffer = buffer.slice(lineEndIdx + 1);
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data: ')) {
+            linesReceived.push(trimmed);
+          }
+        }
+      }
+
+      expect(linesReceived).toHaveLength(2);
+      expect(linesReceived[0]).toBe('data: {"candidates":[{"text":"Hello"}]}');
+      expect(linesReceived[1]).toBe('data: {"candidates":[{"text":" world"}]}');
+      expect(buffer).toBe('');
+    });
+  });
 });
+

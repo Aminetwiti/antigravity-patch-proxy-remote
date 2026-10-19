@@ -13,6 +13,8 @@ export {
   coerceReasoningEffort,
   coerceThinkingBudget,
   isReasoningLikeModel,
+  isSubagentRequest,
+  clampSubagentReasoning,
   type ReasoningEffort as AdaptiveReasoningEffort,
   type ThinkingBudget as AdaptiveThinkingBudget,
 } from '../presets/reasoningEffort';
