@@ -2996,4 +2996,559 @@ th.sortable-th:hover {
   color: var(--text-2) !important;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 3 DEDICATED DASHBOARD MODES (OVERVIEW / INSIGHTS / CLASSIC)
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Segmented Control Switcher ── */
+.token-mode-segmented-control {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.token-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.token-mode-btn .mode-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.token-mode-btn:hover {
+  color: var(--text-0);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.token-mode-btn.active {
+  color: #60a5fa;
+  background: var(--bg-2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+}
+
+/* ── MODE 1: OVERVIEW / COCKPIT STYLES ── */
+.cockpit-top-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1024px) {
+  .cockpit-top-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cockpit-card {
+  background: #090d16;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+}
+
+.cockpit-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.cockpit-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cockpit-dot-live {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+  animation: pulse-live 2s infinite;
+}
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.9); }
+}
+
+.cockpit-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-1);
+}
+
+.cockpit-period-badge {
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.cockpit-report-body {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 1.4fr;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+@media (max-width: 768px) {
+  .cockpit-report-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cockpit-stat-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cockpit-metric-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.05em;
+}
+
+.cockpit-metric-val {
+  font-size: 32px;
+  font-weight: 800;
+  font-family: var(--font-mono, monospace);
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.cockpit-metric-sub {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+/* Sunburst Radial Summary */
+.cockpit-radial-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.radial-sunburst-container {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radial-sunburst-svg {
+  transform: rotate(-90deg);
+}
+
+.radial-sunburst-center {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.radial-center-count {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: var(--font-mono, monospace);
+  color: #60a5fa;
+}
+
+.radial-center-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-2);
+}
+
+.cockpit-finops-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cockpit-pricing-link {
+  color: #22c55e;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.cockpit-spend-val {
+  font-size: 26px;
+  font-weight: 800;
+  font-family: var(--font-mono, monospace);
+  color: #22c55e;
+}
+
+.cockpit-spend-sub {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.cockpit-cache-save-block {
+  margin-top: 6px;
+}
+
+.cockpit-cache-save-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.05em;
+}
+
+.cockpit-cache-save-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: #38bdf8;
+  font-family: var(--font-mono, monospace);
+}
+
+.cockpit-cache-save-pct {
+  font-size: 10px;
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.cockpit-gateway-status {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* Sidebar Nav Pills */
+.cockpit-sidebar-tabs {
+  justify-content: space-between;
+}
+
+.cockpit-sidebar-nav {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-1);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.cockpit-nav-pill {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.cockpit-nav-pill.active {
+  background: var(--bg-2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.cockpit-sidebar-body {
+  padding: 16px 0;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.cockpit-empty-state {
+  margin: auto;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.cockpit-sidebar-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.cockpit-active-pill {
+  color: #22c55e;
+  font-weight: 600;
+}
+
+/* Cockpit Bottom Row */
+.cockpit-bottom-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 860px) {
+  .cockpit-bottom-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cockpit-pulse-bars-track {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 64px;
+  padding: 8px 0;
+}
+
+.cockpit-pulse-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+  position: relative;
+}
+
+.cockpit-pulse-bar-fill {
+  width: 100%;
+  min-height: 6px;
+  background: linear-gradient(180deg, #34d399, #059669);
+  border-radius: 3px 3px 1px 1px;
+  transition: height 0.2s ease;
+}
+
+.cockpit-pulse-bar-fill:hover {
+  filter: brightness(1.3);
+}
+
+.cockpit-pulse-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.cockpit-latency-badge {
+  font-size: 11px;
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.cockpit-arc-gauge-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.cockpit-arc-center {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cockpit-arc-hit {
+  font-size: 10px;
+  color: #34d399;
+  font-weight: 600;
+}
+
+.cockpit-arc-cached {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: var(--font-mono, monospace);
+  color: #fff;
+}
+
+.cockpit-arc-sub {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+
+.cockpit-efficiency-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+/* ── MODE 3: CLASSIC STYLES ── */
+.classic-kpis-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1100px) {
+  .classic-kpis-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .classic-kpis-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.classic-kpi-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.classic-kpi-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.classic-kpi-icon {
+  font-size: 14px;
+}
+
+.classic-kpi-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.classic-kpi-val {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-0);
+}
+
+.classic-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  margin-bottom: 16px;
+}
+
+.classic-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.classic-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.classic-pill-toggle {
+  display: inline-flex;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.classic-pill-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.classic-pill-btn.active {
+  background: var(--bg-2);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+}
+
+.classic-chart-container {
+  width: 100%;
+  height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-0);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 12px;
+}
+
+.classic-bottom-row {
+  display: flex;
+  gap: 16px;
+}
+
+@media (max-width: 860px) {
+  .classic-bottom-row {
+    flex-direction: column;
+  }
+}
+
+.classic-table-wrap {
+  min-height: 120px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 

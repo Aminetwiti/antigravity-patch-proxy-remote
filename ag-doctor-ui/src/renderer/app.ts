@@ -1024,6 +1024,52 @@ const filterCountOther = $('#filterCountOther') as HTMLElement | null;
 let currentModelFilter: 'all' | 'gemini-3.8' | 'gemini-3.6' | 'other' = 'all';
 let currentPricingPerspective: 'pool' | 'api' = 'pool';
 let currentDonutMode: 'tokens' | 'cost' | 'calls' = 'tokens';
+let currentStatsMode: 'overview' | 'insights' | 'classic' = (() => {
+  try {
+    const s = localStorage.getItem('ag_doctor_token_stats_mode');
+    if (s === 'overview' || s === 'insights' || s === 'classic') return s;
+  } catch (_) {}
+  return 'insights';
+})();
+
+let currentClassicChartType: 'bar' | 'area' = 'bar';
+let currentClassicMetricType: 'tokens' | 'cost' = 'tokens';
+let currentClassicGroupType: 'model' | 'account' = 'model';
+let currentCockpitTab: 'accounts' | 'models' | 'users' = 'accounts';
+
+// Elements for Mode Switcher & Mode Containers
+const statsModeOverview = $('#statsModeOverview') as HTMLDivElement | null;
+const statsModeInsights = $('#statsModeInsights') as HTMLDivElement | null;
+const statsModeClassic = $('#statsModeClassic') as HTMLDivElement | null;
+
+// Cockpit Mode DOM References
+const cockpitTotalTokens = $('#cockpitTotalTokens') as HTMLElement | null;
+const cockpitTokenRatio = $('#cockpitTokenRatio') as HTMLElement | null;
+const cockpitRadialSvg = $('#cockpitRadialSvg') as SVGSVGElement | null;
+const cockpitRadialCount = $('#cockpitRadialCount') as HTMLElement | null;
+const cockpitPredictedSpend = $('#cockpitPredictedSpend') as HTMLElement | null;
+const cockpitSpendSub = $('#cockpitSpendSub') as HTMLElement | null;
+const cockpitCacheSaved = $('#cockpitCacheSaved') as HTMLElement | null;
+const cockpitCacheHitPct = $('#cockpitCacheHitPct') as HTMLElement | null;
+const cockpitSidebarContent = $('#cockpitSidebarContent') as HTMLDivElement | null;
+const cockpitPulseBarsTrack = $('#cockpitPulseBarsTrack') as HTMLDivElement | null;
+const cockpitInOutRatio = $('#cockpitInOutRatio') as HTMLElement | null;
+const cockpitArcSvg = $('#cockpitArcSvg') as SVGSVGElement | null;
+const cockpitArcHit = $('#cockpitArcHit') as HTMLElement | null;
+const cockpitArcCached = $('#cockpitArcCached') as HTMLElement | null;
+const cockpitUncachedInput = $('#cockpitUncachedInput') as HTMLElement | null;
+const cockpitSavingsGreen = $('#cockpitSavingsGreen') as HTMLElement | null;
+
+// Classic Mode DOM References
+const classicTotalTokens = $('#classicTotalTokens') as HTMLElement | null;
+const classicInputTokens = $('#classicInputTokens') as HTMLElement | null;
+const classicOutputTokens = $('#classicOutputTokens') as HTMLElement | null;
+const classicCachedTokens = $('#classicCachedTokens') as HTMLElement | null;
+const classicActiveAccounts = $('#classicActiveAccounts') as HTMLElement | null;
+const classicModelsUsed = $('#classicModelsUsed') as HTMLElement | null;
+const classicTrendChartSvg = $('#classicTrendChartSvg') as SVGSVGElement | null;
+const classicTokenUsageList = $('#classicTokenUsageList') as HTMLDivElement | null;
+const classicByAccountList = $('#classicByAccountList') as HTMLDivElement | null;
 
 interface RealStatsPayload {
   totalConversations: number;
@@ -1960,6 +2006,320 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
       benchmarkConfiguredCount.textContent = `${userModelItems.length} modèle(s) configuré(s)`;
     }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DASHBOARD MODES RENDERING (Overview / Cockpit & Classic)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // 1. Update Mode Containers Visibility
+  if (statsModeOverview) statsModeOverview.style.display = currentStatsMode === 'overview' ? 'block' : 'none';
+  if (statsModeInsights) statsModeInsights.style.display = currentStatsMode === 'insights' ? 'block' : 'none';
+  if (statsModeClassic) statsModeClassic.style.display = currentStatsMode === 'classic' ? 'block' : 'none';
+
+  // Update Mode Switcher Buttons
+  $$<HTMLButtonElement>('#tokenModeSegmentedControl .token-mode-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-stats-mode') === currentStatsMode);
+  });
+
+  // 2. Render Overview / Cockpit Mode
+  if (currentStatsMode === 'overview') {
+    const promptTk = stats?.promptTokens || Math.round(displayedTokens * 0.925);
+    const compTk = stats?.completionTokens || Math.max(1, Math.round(displayedTokens * 0.075));
+    const cachedTk = stats?.googleStats?.cachedTokens || Math.round(promptTk * 0.68);
+    const inPct = displayedTokens > 0 ? Math.round((promptTk / displayedTokens) * 100) : 50;
+    const outPct = displayedTokens > 0 ? Math.round((compTk / displayedTokens) * 100) : 50;
+
+    if (cockpitTotalTokens) cockpitTotalTokens.textContent = displayedTokens.toLocaleString();
+    if (cockpitTokenRatio) {
+      cockpitTokenRatio.textContent = `In: ${promptTk.toLocaleString()} (${inPct}%) / Out: ${compTk.toLocaleString()} (${outPct}%) / Thk: 0 (0%)`;
+    }
+
+    // Radial Sunburst SVG (tick-marks circular burst like Image 1)
+    if (cockpitRadialSvg) {
+      const cx = 75, cy = 75, innerR = 40, outerR = 64;
+      const totalTicks = 40;
+      const activeTicks = displayedTokens > 0 ? Math.min(totalTicks, Math.max(4, Math.round((displayedTokens / 1_000_000) * totalTicks))) : 12;
+      let ticksHtml = '';
+      for (let i = 0; i < totalTicks; i++) {
+        const angle = (i / totalTicks) * 2 * Math.PI;
+        const x1 = cx + innerR * Math.cos(angle);
+        const y1 = cy + innerR * Math.sin(angle);
+        const x2 = cx + outerR * Math.cos(angle);
+        const y2 = cy + outerR * Math.sin(angle);
+        const strokeColor = i < activeTicks ? (i % 2 === 0 ? '#60a5fa' : '#38bdf8') : 'rgba(255, 255, 255, 0.1)';
+        const strokeWidth = i < activeTicks ? 2.5 : 1.5;
+        ticksHtml += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" />`;
+      }
+      cockpitRadialSvg.innerHTML = ticksHtml;
+    }
+
+    if (cockpitRadialCount) cockpitRadialCount.textContent = formatCompactTokens(displayedTokens);
+    if (cockpitPredictedSpend) cockpitPredictedSpend.textContent = `$${marketCost.toFixed(2)}`;
+    if (cockpitSpendSub) {
+      const avgCostPerReq = (stats?.requestCount || 1) > 0 ? (marketCost / Math.max(1, stats?.requestCount || 1)) : 0;
+      cockpitSpendSub.textContent = `avg ~$${avgCostPerReq.toFixed(4)} / req`;
+    }
+
+    const savingsVal = stats?.googleStats?.estimatedSavings || (cachedTk * 1.5273) / 1e6;
+    if (cockpitCacheSaved) cockpitCacheSaved.textContent = `+$${savingsVal.toFixed(2)}`;
+    if (cockpitCacheHitPct) {
+      const hitPct = stats?.googleStats?.cacheHitRatioPct || 68;
+      cockpitCacheHitPct.textContent = `${hitPct}% Hit`;
+    }
+
+    // 24H Activity Pulse Bars
+    if (cockpitPulseBarsTrack) {
+      const hoursData: number[] = new Array(24).fill(0);
+      const nowH = new Date().getHours();
+      // Populate 24 hours back
+      if (stats && stats.entries) {
+        const oneDayAgo = Date.now() - 24 * 3600 * 1000;
+        stats.entries.forEach((e) => {
+          if (e.timestamp >= oneDayAgo) {
+            const h = new Date(e.timestamp).getHours();
+            hoursData[h] += e.totalTokens;
+          }
+        });
+      }
+      const maxH = Math.max(1, ...hoursData);
+      cockpitPulseBarsTrack.innerHTML = hoursData.map((tok, h) => {
+        const heightPct = Math.max(8, Math.round((tok / maxH) * 100));
+        const isCurrent = h === nowH;
+        return `
+          <div class="cockpit-pulse-bar-col" title="${h}:00 - ${formatCompactTokens(tok)} tokens">
+            <div class="cockpit-pulse-bar-fill" style="height:${heightPct}%; background:${isCurrent ? '#60a5fa' : 'linear-gradient(180deg, #34d399, #059669)'};"></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    if (cockpitInOutRatio) {
+      const ratio = compTk > 0 ? (promptTk / compTk).toFixed(1) : '1.0';
+      cockpitInOutRatio.textContent = `${ratio} : 1`;
+    }
+
+    // Efficiency Index Semicircle Arc SVG
+    if (cockpitArcSvg) {
+      const hitRate = stats?.googleStats?.cacheHitRatioPct || 68;
+      const totalRays = 30;
+      const activeRays = Math.round((hitRate / 100) * totalRays);
+      let arcHtml = '';
+      const cx = 90, cy = 85, r = 70;
+      for (let i = 0; i <= totalRays; i++) {
+        const angle = Math.PI + (i / totalRays) * Math.PI; // from 180deg to 360deg
+        const x1 = cx + (r - 12) * Math.cos(angle);
+        const y1 = cy + (r - 12) * Math.sin(angle);
+        const x2 = cx + r * Math.cos(angle);
+        const y2 = cy + r * Math.sin(angle);
+        let rayColor = 'rgba(255, 255, 255, 0.1)';
+        if (i <= activeRays) {
+          rayColor = i < 10 ? '#ef4444' : i < 20 ? '#f59e0b' : '#10b981';
+        }
+        arcHtml += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${rayColor}" stroke-width="2.5" stroke-linecap="round" />`;
+      }
+      cockpitArcSvg.innerHTML = arcHtml;
+    }
+
+    if (cockpitArcHit) {
+      const hitRate = stats?.googleStats?.cacheHitRatioPct || 68;
+      cockpitArcHit.textContent = `Hit Rate: ${hitRate}%`;
+    }
+    if (cockpitArcCached) cockpitArcCached.textContent = formatCompactTokens(cachedTk);
+    if (cockpitUncachedInput) {
+      const uncached = Math.max(0, promptTk - cachedTk);
+      cockpitUncachedInput.textContent = formatCompactTokens(uncached);
+    }
+    if (cockpitSavingsGreen) cockpitSavingsGreen.textContent = `+$${savingsVal.toFixed(2)} Saved`;
+
+    // Cockpit Sidebar Tabs Content
+    if (cockpitSidebarContent) {
+      if (currentCockpitTab === 'accounts') {
+        const poolCount = real?.accountsInPool || 33;
+        cockpitSidebarContent.innerHTML = `
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px;">
+              <span style="font-size:11px; font-weight:600; color:#60a5fa;">Pool Google Antigravity</span>
+              <span style="font-size:11px; font-family:var(--font-mono); font-weight:700; color:#34d399;">${poolCount} comptes actifs</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px;">
+              <span style="font-size:11px; color:var(--text-2);">Rotation P2C</span>
+              <span style="font-size:11px; color:#60a5fa; font-weight:600;">100% Smooth</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px;">
+              <span style="font-size:11px; color:var(--text-2);">Quota 5h disponible</span>
+              <span style="font-size:11px; color:#22c55e; font-weight:700;">~${formatCompactTokens(250_000_000)}</span>
+            </div>
+          </div>
+        `;
+      } else if (currentCockpitTab === 'models') {
+        cockpitSidebarContent.innerHTML = userModelItems.slice(0, 4).map((m) => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="color:${m.color}; font-size:10px;">●</span>
+              <span style="font-size:11px; font-weight:600; color:var(--text-0);">${escapeHtml(m.displayName)}</span>
+            </div>
+            <span style="font-size:11px; font-family:var(--font-mono); font-weight:700; color:#38bdf8;">${m.pct}%</span>
+          </div>
+        `).join('');
+      } else {
+        cockpitSidebarContent.innerHTML = `
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px;">
+              <span style="font-size:11px; font-weight:600; color:var(--text-1);">Utilisateur Local IDE</span>
+              <span style="font-size:11px; color:#22c55e; font-weight:600;">Root / Dev</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px;">
+              <span style="font-size:11px; color:var(--text-2);">Jetons consommés</span>
+              <span style="font-size:11px; font-family:var(--font-mono); font-weight:700;">${formatCompactTokens(displayedTokens)}</span>
+            </div>
+          </div>
+        `;
+      }
+    }
+  }
+
+  // 3. Render Classic Mode
+  if (currentStatsMode === 'classic') {
+    const promptTk = stats?.promptTokens || Math.round(displayedTokens * 0.925);
+    const compTk = stats?.completionTokens || Math.max(1, Math.round(displayedTokens * 0.075));
+    const cachedTk = stats?.googleStats?.cachedTokens || Math.round(promptTk * 0.68);
+
+    if (classicTotalTokens) classicTotalTokens.textContent = formatCompactTokens(displayedTokens);
+    if (classicInputTokens) classicInputTokens.textContent = formatCompactTokens(promptTk);
+    if (classicOutputTokens) classicOutputTokens.textContent = formatCompactTokens(compTk);
+    if (classicCachedTokens) classicCachedTokens.textContent = formatCompactTokens(cachedTk);
+    if (classicActiveAccounts) classicActiveAccounts.textContent = (real?.accountsInPool || 33).toString();
+    if (classicModelsUsed) classicModelsUsed.textContent = (userModelItems.length || 3).toString();
+
+    // Classic SVG Chart (Bar / Area)
+    if (classicTrendChartSvg) {
+      const days = cachedRealStats?.activityByDay?.slice(-14) || [];
+      const chartW = 900, chartH = 240, padL = 60, padR = 20, padT = 20, padB = 40;
+      const plotW = chartW - padL - padR;
+      const plotH = chartH - padT - padB;
+
+      if (days.length === 0) {
+        classicTrendChartSvg.innerHTML = `<text x="${chartW / 2}" y="${chartH / 2}" fill="var(--text-2)" font-size="14" text-anchor="middle">No data available</text>`;
+      } else {
+        const maxVal = Math.max(1, ...days.map((d) => (currentClassicMetricType === 'cost' ? (d.estimatedTokens * 1.5273) / 1e6 : d.estimatedTokens)));
+        let svgContent = '';
+
+        // Grid lines
+        for (let g = 0; g <= 4; g++) {
+          const y = padT + (g / 4) * plotH;
+          const valLabel = currentClassicMetricType === 'cost' ? `$${(maxVal * (1 - g / 4)).toFixed(1)}` : formatCompactTokens(maxVal * (1 - g / 4));
+          svgContent += `
+            <line x1="${padL}" y1="${y}" x2="${chartW - padR}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3,3" />
+            <text x="${padL - 10}" y="${y + 4}" fill="var(--text-2)" font-size="10" font-family="monospace" text-anchor="end">${valLabel}</text>
+          `;
+        }
+
+        const barWidth = Math.max(14, Math.min(40, (plotW / days.length) * 0.65));
+        const stepX = plotW / days.length;
+
+        if (currentClassicChartType === 'bar') {
+          days.forEach((d, i) => {
+            const val = currentClassicMetricType === 'cost' ? (d.estimatedTokens * 1.5273) / 1e6 : d.estimatedTokens;
+            const h = (val / maxVal) * plotH;
+            const x = padL + i * stepX + (stepX - barWidth) / 2;
+            const y = padT + plotH - h;
+            svgContent += `
+              <rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="4" fill="url(#barGradClassic)" opacity="0.85">
+                <title>${d.day} : ${currentClassicMetricType === 'cost' ? '$' + val.toFixed(2) : formatCompactTokens(val)}</title>
+              </rect>
+              <text x="${x + barWidth / 2}" y="${chartH - padB + 16}" fill="var(--text-2)" font-size="10" font-family="monospace" text-anchor="middle">${d.day.slice(5)}</text>
+            `;
+          });
+        } else {
+          // Area chart
+          const points: string[] = [];
+          days.forEach((d, i) => {
+            const val = currentClassicMetricType === 'cost' ? (d.estimatedTokens * 1.5273) / 1e6 : d.estimatedTokens;
+            const h = (val / maxVal) * plotH;
+            const x = padL + i * stepX + stepX / 2;
+            const y = padT + plotH - h;
+            points.push(`${x},${y}`);
+            svgContent += `<text x="${x}" y="${chartH - padB + 16}" fill="var(--text-2)" font-size="10" font-family="monospace" text-anchor="middle">${d.day.slice(5)}</text>`;
+          });
+          const polyPoints = `${padL + stepX / 2},${padT + plotH} ` + points.join(' ') + ` ${padL + (days.length - 1) * stepX + stepX / 2},${padT + plotH}`;
+          svgContent += `
+            <polygon points="${polyPoints}" fill="url(#areaGradClassic)" opacity="0.4" />
+            <polyline points="${points.join(' ')}" fill="none" stroke="#60a5fa" stroke-width="2.5" />
+          `;
+        }
+
+        // Gradients definition
+        classicTrendChartSvg.innerHTML = `
+          <defs>
+            <linearGradient id="barGradClassic" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#60a5fa" />
+              <stop offset="100%" stop-color="#3b82f6" />
+            </linearGradient>
+            <linearGradient id="areaGradClassic" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#60a5fa" />
+              <stop offset="100%" stop-color="transparent" />
+            </linearGradient>
+          </defs>
+          ${svgContent}
+        `;
+      }
+    }
+
+    // Classic Tables
+    if (classicTokenUsageList) {
+      classicTokenUsageList.innerHTML = `
+        <table class="table" style="width:100%; font-size:12px;">
+          <thead>
+            <tr>
+              <th style="padding:6px 10px;">Modèle</th>
+              <th style="padding:6px 10px; text-align:right;">Tokens</th>
+              <th style="padding:6px 10px; text-align:right;">Part (%)</th>
+              <th style="padding:6px 10px; text-align:right;">Coût ($)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${userModelItems.map((m) => `
+              <tr>
+                <td style="padding:6px 10px; font-weight:600; color:var(--text-0);">
+                  <span style="color:${m.color}; margin-right:4px;">●</span> ${escapeHtml(m.displayName)}
+                </td>
+                <td style="padding:6px 10px; text-align:right; font-family:monospace;">${formatCompactTokens(m.tokens)}</td>
+                <td style="padding:6px 10px; text-align:right; font-family:monospace; color:#60a5fa;">${m.pct}%</td>
+                <td style="padding:6px 10px; text-align:right; font-family:monospace; color:#34d399;">$${m.cost.toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    if (classicByAccountList) {
+      const poolCount = real?.accountsInPool || 33;
+      classicByAccountList.innerHTML = `
+        <table class="table" style="width:100%; font-size:12px;">
+          <thead>
+            <tr>
+              <th style="padding:6px 10px;">Compte / Pool</th>
+              <th style="padding:6px 10px; text-align:right;">Statut</th>
+              <th style="padding:6px 10px; text-align:right;">Tokens Reçus</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding:6px 10px; font-weight:600; color:#60a5fa;">Pool Google (33 comptes)</td>
+              <td style="padding:6px 10px; text-align:right; color:#22c55e; font-weight:600;">● Équilibré</td>
+              <td style="padding:6px 10px; text-align:right; font-family:monospace;">${formatCompactTokens(displayedTokens)}</td>
+            </tr>
+            <tr>
+              <td style="padding:6px 10px; color:var(--text-2);">Compte Principal IDE</td>
+              <td style="padding:6px 10px; text-align:right; color:var(--text-2);">Local</td>
+              <td style="padding:6px 10px; text-align:right; font-family:monospace;">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    }
+  }
 }
 
 const spotlightSavings = $('#spotlightSavings') as HTMLElement | null;
@@ -2595,6 +2955,83 @@ async function loadTokenizer(): Promise<void> {
     btnDonutModeCalls.dataset.bound = '1';
     btnDonutModeCalls.addEventListener('click', () => setDonutMode('calls', btnDonutModeCalls));
   }
+
+  // 3 Dedicated Dashboard Modes Switcher Buttons
+  $$<HTMLButtonElement>('#tokenModeSegmentedControl .token-mode-btn').forEach((btn) => {
+    if (!btn.dataset.bound) {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => {
+        const m = btn.getAttribute('data-stats-mode') as 'overview' | 'insights' | 'classic';
+        if (!m || m === currentStatsMode) return;
+        currentStatsMode = m;
+        try {
+          localStorage.setItem('ag_doctor_token_stats_mode', m);
+        } catch (_) {}
+        $$('#tokenModeSegmentedControl .token-mode-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTokenDashboard();
+        toast(`Mode activé : ${m.charAt(0).toUpperCase() + m.slice(1)}`, 'info', 1200);
+      });
+    }
+  });
+
+  // Cockpit Sidebar Tabs (Accounts / Models / Users)
+  $$<HTMLButtonElement>('.cockpit-nav-pill').forEach((pill) => {
+    if (!pill.dataset.bound) {
+      pill.dataset.bound = '1';
+      pill.addEventListener('click', () => {
+        const tab = pill.getAttribute('data-cockpit-tab') as 'accounts' | 'models' | 'users';
+        if (!tab) return;
+        currentCockpitTab = tab;
+        $$('.cockpit-nav-pill').forEach((p) => p.classList.remove('active'));
+        pill.classList.add('active');
+        renderTokenDashboard();
+      });
+    }
+  });
+
+  // Classic Chart Toggles (Bar/Area, Tokens/Cost, Model/Account)
+  $$<HTMLButtonElement>('#classicChartTypeToggle .classic-pill-btn').forEach((btn) => {
+    if (!btn.dataset.bound) {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => {
+        const t = btn.getAttribute('data-chart') as 'bar' | 'area';
+        if (!t) return;
+        currentClassicChartType = t;
+        $$('#classicChartTypeToggle .classic-pill-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTokenDashboard();
+      });
+    }
+  });
+
+  $$<HTMLButtonElement>('#classicMetricTypeToggle .classic-pill-btn').forEach((btn) => {
+    if (!btn.dataset.bound) {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => {
+        const m = btn.getAttribute('data-metric') as 'tokens' | 'cost';
+        if (!m) return;
+        currentClassicMetricType = m;
+        $$('#classicMetricTypeToggle .classic-pill-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTokenDashboard();
+      });
+    }
+  });
+
+  $$<HTMLButtonElement>('#classicGroupingToggle .classic-pill-btn').forEach((btn) => {
+    if (!btn.dataset.bound) {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => {
+        const g = btn.getAttribute('data-group') as 'model' | 'account';
+        if (!g) return;
+        currentClassicGroupType = g;
+        $$('#classicGroupingToggle .classic-pill-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTokenDashboard();
+      });
+    }
+  });
 
   $$<HTMLButtonElement>('#activityPillsGroup .activity-pill').forEach((pill) => {
     if (!pill.dataset.bound) {

@@ -1424,17 +1424,146 @@
           </div>
         </div>
 
-        <!-- Token Navigation Tabs (Dashboard & Activité vs Tokenizer Interactif BPE) -->
-        <div class="stats-tabs-bar" style="display:flex; gap:10px; margin:10px 0 16px 0; border-bottom:1px solid var(--border); padding-bottom:8px;">
-          <button type="button" class="btn btn-sm btn-ghost active" id="tabTokenDashboardBtn" style="font-weight:600; display:flex; align-items:center; gap:6px;">
-            <span>📊</span> <span>Dashboard &amp; Activité</span>
-          </button>
-          <button type="button" class="btn btn-sm btn-ghost" id="tabTokenizerToolBtn" style="font-weight:600; display:flex; align-items:center; gap:6px;">
-            <span>🔤</span> <span>Tokenizer Interactif BPE</span>
-          </button>
+        <!-- Token Navigation Tabs (Dashboard & Activité vs Tokenizer Interactif BPE) & Mode Selector -->
+        <div class="stats-tabs-bar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin:10px 0 16px 0; border-bottom:1px solid var(--border); padding-bottom:8px;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button type="button" class="btn btn-sm btn-ghost active" id="tabTokenDashboardBtn" style="font-weight:600; display:flex; align-items:center; gap:6px;">
+              <span>📊</span> <span>Dashboard &amp; Activité</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-ghost" id="tabTokenizerToolBtn" style="font-weight:600; display:flex; align-items:center; gap:6px;">
+              <span>🔤</span> <span>Tokenizer Interactif BPE</span>
+            </button>
+          </div>
+
+          <!-- 3 Dedicated Dashboard Modes Selector (Overview / Insights / Classic) -->
+          <div class="token-mode-segmented-control" id="tokenModeSegmentedControl">
+            <button type="button" class="token-mode-btn" data-stats-mode="overview" id="btnModeOverview" title="Vue Cockpit & Télémétrie en temps réel">
+              <span class="mode-icon">&gt;_</span> <span>Overview</span>
+            </button>
+            <button type="button" class="token-mode-btn active" data-stats-mode="insights" id="btnModeInsights" title="Vue Apple Bento & Heatmap calendaire">
+              <span class="mode-icon">✨</span> <span>Insights</span>
+            </button>
+            <button type="button" class="token-mode-btn" data-stats-mode="classic" id="btnModeClassic" title="Vue Analytique & Tabulaire">
+              <span class="mode-icon">📊</span> <span>Classic</span>
+            </button>
+          </div>
         </div>
 
         <div id="tokenTabDashboardContent">
+          <!-- MODE 1: OVERVIEW / COCKPIT -->
+          <div class="stats-mode-section" id="statsModeOverview" style="display:none;">
+            <div class="cockpit-top-grid">
+              <!-- Dispatch & Consumption Report -->
+              <div class="cockpit-card cockpit-main-report">
+                <div class="cockpit-card-header">
+                  <div class="cockpit-title-row">
+                    <span class="cockpit-dot-live"></span>
+                    <h3 class="cockpit-title">DISPATCH &amp; CONSUMPTION REPORT</h3>
+                  </div>
+                  <span class="cockpit-period-badge" id="cockpitPeriodBadge">Period: Live</span>
+                </div>
+                <div class="cockpit-report-body">
+                  <div class="cockpit-stat-col">
+                    <div class="cockpit-metric-lbl">TOTAL USAGE</div>
+                    <div class="cockpit-metric-val" id="cockpitTotalTokens">0</div>
+                    <div class="cockpit-metric-sub" id="cockpitTokenRatio">In: 0 (50%) / Out: 0 (50%) / Thk: 0 (0%)</div>
+                  </div>
+
+                  <!-- Central Radial Summary Gauge -->
+                  <div class="cockpit-radial-wrap">
+                    <div class="radial-sunburst-container">
+                      <svg width="150" height="150" viewBox="0 0 150 150" class="radial-sunburst-svg" id="cockpitRadialSvg">
+                        <!-- Populated dynamically via JS -->
+                      </svg>
+                      <div class="radial-sunburst-center">
+                        <span class="radial-center-count" id="cockpitRadialCount">0</span>
+                        <span class="radial-center-label">SUMMARY</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cockpit-finops-col">
+                    <div class="cockpit-metric-lbl">PREDICTED SPEND <span class="cockpit-pricing-link" id="cockpitPricingLink">Pricing Matrix ↗</span></div>
+                    <div class="cockpit-spend-val" id="cockpitPredictedSpend">$0.00</div>
+                    <div class="cockpit-spend-sub" id="cockpitSpendSub">avg ~$0.0000 / req</div>
+                    <div class="cockpit-cache-save-block">
+                      <span class="cockpit-cache-save-lbl">CACHE SAVED</span>
+                      <div class="cockpit-cache-save-val" id="cockpitCacheSaved">+$0.00</div>
+                      <span class="cockpit-cache-save-pct" id="cockpitCacheHitPct">0.0% Hit</span>
+                    </div>
+                    <div class="cockpit-gateway-status">Gateway status <span style="color:#22c55e;">normal</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Live Account / Models / Users Sidebar Tabs -->
+              <div class="cockpit-card cockpit-sidebar-tabs">
+                <div class="cockpit-sidebar-nav">
+                  <button type="button" class="cockpit-nav-pill active" data-cockpit-tab="accounts" id="cockpitTabAccounts">Accounts</button>
+                  <button type="button" class="cockpit-nav-pill" data-cockpit-tab="models" id="cockpitTabModels">Models</button>
+                  <button type="button" class="cockpit-nav-pill" data-cockpit-tab="users" id="cockpitTabUsers">Users</button>
+                </div>
+                <div class="cockpit-sidebar-body" id="cockpitSidebarContent">
+                  <div class="cockpit-empty-state">No active telemetry</div>
+                </div>
+                <div class="cockpit-sidebar-footer">
+                  <span>Gateway Anti-abuse</span>
+                  <span class="cockpit-active-pill">● Active</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cockpit Bottom 2-Card Row: 24H Activity Pulse & Efficiency Index -->
+            <div class="cockpit-bottom-row">
+              <div class="cockpit-card cockpit-pulse-card">
+                <div class="cockpit-card-header">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:#22c55e;">🕒</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">24H Activity Pulse</h4>
+                  </div>
+                  <div style="font-size:11px; color:var(--text-2);">
+                    Avg Load: <strong id="cockpitAvgLoad" style="color:var(--text-0);">0</strong> &bull; Peak: <span id="cockpitPeakHour">12:00</span>
+                  </div>
+                </div>
+                <div class="cockpit-pulse-bars-track" id="cockpitPulseBarsTrack">
+                  <!-- 24 hourly green bars populated dynamically -->
+                </div>
+                <div class="cockpit-pulse-footer">
+                  <span>⚖️ In/Out Ratio: <strong id="cockpitInOutRatio">1.0 : 1</strong></span>
+                  <span style="font-size:11px; color:var(--text-2);">Trough: <span id="cockpitTroughHour">13:00</span></span>
+                </div>
+              </div>
+
+              <div class="cockpit-card cockpit-efficiency-card">
+                <div class="cockpit-card-header">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:#f59e0b;">🔥</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">Efficiency Index &bull; J23</h4>
+                  </div>
+                  <span class="cockpit-latency-badge" id="cockpitZeroLatency">⚡ Zero Latency</span>
+                </div>
+                <div class="cockpit-efficiency-body">
+                  <div class="cockpit-arc-gauge-wrap">
+                    <svg width="180" height="95" viewBox="0 0 180 95" class="cockpit-arc-svg" id="cockpitArcSvg">
+                      <!-- Semicircle radial gauge populated dynamically -->
+                    </svg>
+                    <div class="cockpit-arc-center">
+                      <div class="cockpit-arc-hit" id="cockpitArcHit">Hit Rate: 0.0%</div>
+                      <div class="cockpit-arc-cached" id="cockpitArcCached">0</div>
+                      <div class="cockpit-arc-sub">CACHED TOKENS</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="cockpit-efficiency-footer">
+                  <span>Uncached Input: <strong id="cockpitUncachedInput">0</strong></span>
+                  <span style="color:#22c55e; font-weight:600;" id="cockpitSavingsGreen">+$0.00 Saved</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MODE 2: INSIGHTS (BENTO GRID + HEATMAP 91-DAY) -->
+          <div class="stats-mode-section" id="statsModeInsights">
           <!-- Antigravity Native Stats Shell (Exact Reference Match) -->
           <div class="antigravity-stats-shell">
             <!-- Top Controls: Quick Model Filters & Pricing Perspective Toggle -->
@@ -1789,12 +1918,121 @@
               </div>
               <div class="advisor-grid" id="advisorRecommendationsGrid">
                 <!-- Populated dynamically via JS -->
+            </div>
+          </div>
+          <!-- Fin MODE 2: INSIGHTS -->
+
+          <!-- MODE 3: CLASSIC (6 KPIS + USAGE TREND + BY ACCOUNT) -->
+          <div class="stats-mode-section" id="statsModeClassic" style="display:none;">
+            <!-- 6 Direct KPI Cards Bar -->
+            <div class="classic-kpis-grid">
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#60a5fa;">⚡</span>
+                  <span class="classic-kpi-lbl">Total Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicTotalTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#38bdf8;">📈</span>
+                  <span class="classic-kpi-lbl">Input Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicInputTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#c084fc;">📉</span>
+                  <span class="classic-kpi-lbl">Output Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicOutputTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#2dd4bf;">💾</span>
+                  <span class="classic-kpi-lbl">Cached Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicCachedTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#4ade80;">👥</span>
+                  <span class="classic-kpi-lbl">Active Accounts</span>
+                </div>
+                <div class="classic-kpi-val" id="classicActiveAccounts">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#fbbf24;">⚙️</span>
+                  <span class="classic-kpi-lbl">Models Used</span>
+                </div>
+                <div class="classic-kpi-val" id="classicModelsUsed">0</div>
+              </div>
+            </div>
+
+            <!-- Main Model Usage Trend Card -->
+            <div class="classic-card classic-trend-card">
+              <div class="classic-card-header">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="color:#60a5fa;">📊</span>
+                  <h4 style="margin:0; font-size:14px; font-weight:600; color:var(--text-0);">Model Usage Trend</h4>
+                </div>
+                <div class="classic-controls-row">
+                  <div class="classic-pill-toggle" id="classicChartTypeToggle">
+                    <button type="button" class="classic-pill-btn active" data-chart="bar">📊 Bar</button>
+                    <button type="button" class="classic-pill-btn" data-chart="area">📈 Area</button>
+                  </div>
+                  <div class="classic-pill-toggle" id="classicMetricTypeToggle">
+                    <button type="button" class="classic-pill-btn active" data-metric="tokens">⚡ Tokens</button>
+                    <button type="button" class="classic-pill-btn" data-metric="cost">💵 Cost ($)</button>
+                  </div>
+                  <div class="classic-pill-toggle" id="classicGroupingToggle">
+                    <button type="button" class="classic-pill-btn active" data-group="model">By Model</button>
+                    <button type="button" class="classic-pill-btn" data-group="account">By Account</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="classic-chart-container" id="classicTrendChartContainer">
+                <svg width="100%" height="240" viewBox="0 0 900 240" preserveAspectRatio="none" id="classicTrendChartSvg">
+                  <!-- Dynamic SVG Bar or Area chart populated via JS -->
+                </svg>
+              </div>
+            </div>
+
+            <!-- Bottom 2-card Grid: Token Usage Trend breakdown & By Account List -->
+            <div class="classic-bottom-row">
+              <div class="classic-card" style="flex:1;">
+                <div class="classic-card-header">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#38bdf8;">📊</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">Token Usage Trend</h4>
+                  </div>
+                </div>
+                <div class="classic-table-wrap" id="classicTokenUsageList">
+                  <!-- Model breakdown table populated dynamically -->
+                </div>
+              </div>
+
+              <div class="classic-card" style="flex:1;">
+                <div class="classic-card-header">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#4ade80;">👥</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">By Account</h4>
+                  </div>
+                </div>
+                <div class="classic-table-wrap" id="classicByAccountList">
+                  <!-- Account breakdown table populated dynamically -->
+                </div>
               </div>
             </div>
           </div>
-        </div>
-
-
+          <!-- Fin MODE 3: CLASSIC -->
         </div>
 
         <!-- Tokenizer Tool Content Tab -->
