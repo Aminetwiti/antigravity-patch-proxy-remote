@@ -394,18 +394,36 @@ export async function runLogs(ctx: CommandContext, opts: LogsOptions): Promise<n
     return 0;
   }
 
+  const truncateLogFile = (filePath: string): boolean => {
+    try {
+      const fd = fs.openSync(filePath, 'r+');
+      try {
+        fs.ftruncateSync(fd, 0);
+        return true;
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      try {
+        fs.writeFileSync(filePath, '', 'utf-8');
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
   // ── Clear-all mode: wipe every log file ──
   if (opts.clearAll) {
     const sources = getLogSources();
     let cleared = 0;
     for (const [name, fp] of Object.entries(sources)) {
       if (fs.existsSync(fp)) {
-        fs.writeFileSync(fp, '', 'utf-8');
-        cleared++;
+        if (truncateLogFile(fp)) cleared++;
       }
-      // Also clear rotated .1 files
+      // Also clear rotated .1 files safely
       if (fs.existsSync(fp + '.1')) {
-        fs.unlinkSync(fp + '.1');
+        truncateLogFile(fp + '.1');
       }
     }
     ok(`Cleared ${cleared} log file(s)`);
@@ -428,9 +446,10 @@ export async function runLogs(ctx: CommandContext, opts: LogsOptions): Promise<n
 
   // ── Clear mode ──
   if (opts.clear) {
-    fs.writeFileSync(targetPath, '', 'utf-8');
-    // Also clear rotated .1 file if present
-    if (fs.existsSync(targetPath + '.1')) fs.unlinkSync(targetPath + '.1');
+    truncateLogFile(targetPath);
+    if (fs.existsSync(targetPath + '.1')) {
+      truncateLogFile(targetPath + '.1');
+    }
     ok(`Cleared: ${targetPath}`);
     return 0;
   }

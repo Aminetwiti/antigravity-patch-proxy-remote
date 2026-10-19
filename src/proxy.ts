@@ -1890,9 +1890,9 @@ export async function executeGoogleCloudCodeWithPool(
   const activePool = accountPool.filter((a) => {
     const qKey = getAccountQuotaKey(a);
     const liveQ = (getLiveAccountQuota(qKey) || a.quotas) as Record<string, any> | undefined;
-    return !(a as any).isUnlicensed && !liveQ?.isUnlicensed;
+    return (a as any).enabled !== false && !(a as any).isUnlicensed && !liveQ?.isUnlicensed && !isAccountUnlicensed(a);
   });
-  let eligibleAccounts = activePool.length > 0 ? activePool : accountPool;
+  let eligibleAccounts = activePool.length > 0 ? activePool : accountPool.filter((a) => (a as any).enabled !== false && !isAccountUnlicensed(a));
   if (isClaude55) {
     const candidates55 = eligibleAccounts.filter((a) => isAccountEntitledToClaude55(a));
     const otherCandidates = eligibleAccounts.filter((a) => !isAccountEntitledToClaude55(a));
@@ -2017,13 +2017,20 @@ export async function executeGoogleCloudCodeWithPool(
   const initialHealthyCount = sortedAccounts.filter(
     (a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && getModelQuotaScore(a, modelFamily) > 0,
   ).length;
-  if (initialHealthyCount > 0 && initialHealthyCount < 3) {
+  if (initialHealthyCount === 0 && sortedAccounts.length > 0) {
+    lastStatus = 429;
+    lastErrorText = `All ${sortedAccounts.length} accounts in Google Cloud Code pool are in cooldown or have 0% quota for ${modelFamily}`;
+    log.warn(
+      `[Proxy] All ${sortedAccounts.length} accounts in Google Cloud Code pool are unavailable (cooldown or 0% quota) for ${modelFamily}. Fast-failing pool to trigger immediate fallback.`,
+    );
+  } else if (initialHealthyCount > 0 && initialHealthyCount < 3) {
     log.warn(
       `[Proxy] ⚠️ Low pool headroom for ${modelFamily}: only ${initialHealthyCount} healthy account(s) available. Cascade fallback is armed.`,
     );
   }
 
   for (let i = 0; i < totalAttempts; i++) {
+    if (initialHealthyCount === 0) break;
     const candidate = sortedAccounts[i];
     const candidateName =
       candidate.accountEmail ||
@@ -2031,6 +2038,12 @@ export async function executeGoogleCloudCodeWithPool(
       (candidate.refreshToken ? `token:..${candidate.refreshToken.slice(-6)}` : '') ||
       candidate.displayName ||
       candidate.name;
+
+    // Fast-skip: if this candidate is disabled or unlicensed
+    if ((candidate as any).enabled === false || isAccountUnlicensed(candidate)) {
+      log.info(`[Proxy] Fast-skipping candidate ${candidateName}: account is disabled or unlicensed`);
+      continue;
+    }
 
     // Fast-skip: if this candidate is already in active cooldown for this model family
     if (isAccountInCooldown(candidate, modelFamily)) {
@@ -2047,11 +2060,8 @@ export async function executeGoogleCloudCodeWithPool(
     // Fast-skip: if this candidate has 0% quota remaining and reset has not passed
     const candidateQuotaScore = getModelQuotaScore(candidate, modelFamily);
     if (candidateQuotaScore <= 0) {
-      const hasPositiveRemaining = sortedAccounts.slice(i + 1).some((c) => getModelQuotaScore(c, modelFamily) > 0 && !isAccountInCooldown(c, modelFamily));
-      if (hasPositiveRemaining) {
-        log.info(`[Proxy] Fast-skipping candidate ${candidateName}: 0% quota remaining for ${modelFamily}`);
-        continue;
-      }
+      log.info(`[Proxy] Fast-skipping candidate ${candidateName}: 0% quota remaining for ${modelFamily}`);
+      continue;
     }
 
     // Fast-skip: if this candidate reached max concurrent in-flight slots (2, or 1 in probation)
@@ -2263,6 +2273,11 @@ export async function executeGoogleCloudCodeWithPool(
     }
 
     if (outcome.statusCode === 499 || (outcome.error && /Client closed request/i.test(outcome.error)) || req.destroyed || res.writableEnded) {
+      if (elapsedMs >= 15_000) {
+        log.warn(`[Proxy] Account [${candidateName}] stalled connection for ${Math.round(elapsedMs / 1000)}s before client closed (HTTP 499). Placing in 60s cooldown to protect pool from black-hole accounts.`);
+        setAccountCooldown(candidate, 60_000, currentFamily, true);
+        recordAccountLatency(candidate, 60_000);
+      }
       log.info(`[Proxy] 🛑 Client cancelled or closed connection (HTTP 499). Halting account rotation loop.`);
       return false;
     }
@@ -2624,6 +2639,42 @@ export async function executeGoogleCloudCodeWithPool(
     } else {
       consecutiveTransportErrorCount = 0;
 
+      // Specialized handler for Google Cloud Code per-account capacity exhaustion:
+      // Google returns HTTP 503 with reason "MODEL_CAPACITY_EXHAUSTED" / "No capacity available for model ... on the server"
+      // even when retrieveUserQuotaSummary reports positive quota. This is a per-account model allocation exhaustion,
+      // NOT a global Google service outage!
+      const isCapacityExhausted =
+        /MODEL_CAPACITY_EXHAUSTED|no capacity available/i.test(lastErrorText) ||
+        (lastStatus === 503 && /capacity/i.test(lastErrorText));
+
+      if (isCapacityExhausted) {
+        log.warn(
+          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED for [${targetModel}]. Setting 0% quota for ${currentFamily} and cooling down for 15min. Seamlessly rotating to next candidate...`,
+        );
+        const liveKey = getAccountQuotaKey(candidate);
+        const existingQuota = getLiveAccountQuota(liveKey);
+        const nowMs = Date.now();
+        const resetIso = new Date(nowMs + 15 * 60_000).toISOString();
+        if (currentFamily === 'gemini') {
+          updateLiveAccountQuota(liveKey, {
+            ...existingQuota,
+            geminiFiveHourPct: 0,
+            geminiFiveHourReset: resetIso,
+            updatedAt: nowMs,
+          } as AccountLiveQuota);
+        } else if (currentFamily === 'claude') {
+          updateLiveAccountQuota(liveKey, {
+            ...existingQuota,
+            claudeFiveHourPct: 0,
+            claudeFiveHourReset: resetIso,
+            updatedAt: nowMs,
+          } as AccountLiveQuota);
+        }
+        setAccountCooldown(candidate, 15 * 60_000, currentFamily, true);
+        recordAccountLatency(candidate, 45_000);
+        continue;
+      }
+
       // On HTTP 500 / 502 / 503 / 504 (Internal Error / Gateway Timeout / Service Unavailable / Bad Gateway / Overloaded):
       const isServerOutage =
         lastStatus === 500 ||
@@ -2761,6 +2812,8 @@ export async function executeGoogleCloudCodeWithPool(
         let fallbackCandidates = allCustomModels.filter(
           (m) =>
             isGoogleCloudCodeModel(m) &&
+            (m as any).enabled !== false &&
+            !isAccountUnlicensed(m) &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&
             normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === fallbackModel.toLowerCase() &&
@@ -2770,23 +2823,8 @@ export async function executeGoogleCloudCodeWithPool(
             getModelQuotaScore(m, fbFamily) > 0,
         );
 
-        // If no candidate with measured positive quota score, allow candidate accounts not in cooldown (excluding unlicensed)
         if (fallbackCandidates.length === 0) {
-          fallbackCandidates = allCustomModels.filter(
-            (m) =>
-              isGoogleCloudCodeModel(m) &&
-              (m as any).enabled !== false &&
-              !(m as any).isUnlicensed &&
-              !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
-              !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&
-              normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === fallbackModel.toLowerCase() &&
-              !getOpenBreaker(m) &&
-              !isAccountInCooldown(m, fbFamily),
-          );
-        }
-
-        if (fallbackCandidates.length === 0) {
-          log.info(`[Proxy] Skipping fallback model ${fallbackModel}: no available accounts in pool (all in cooldown or quota-exhausted for ${fbFamily})`);
+          log.info(`[Proxy] Skipping fallback model ${fallbackModel}: no available accounts in pool with positive quota for ${fbFamily}`);
           continue;
         }
 

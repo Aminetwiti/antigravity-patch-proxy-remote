@@ -2331,6 +2331,19 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
         cell.addEventListener('mouseleave', () => {
           if (heatmapFloatingTooltip) heatmapFloatingTooltip.style.display = 'none';
         });
+        cell.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (heatmapFloatingTooltip) heatmapFloatingTooltip.style.display = 'none';
+          showDayInspector(new Date(d.ymd), d.tokens, 'daily', cell, { convs: d.convs, steps: d.steps, estimatedTokens: d.tokens });
+        });
+        cell.addEventListener('keydown', (ev: KeyboardEvent) => {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (heatmapFloatingTooltip) heatmapFloatingTooltip.style.display = 'none';
+            showDayInspector(new Date(d.ymd), d.tokens, 'daily', cell, { convs: d.convs, steps: d.steps, estimatedTokens: d.tokens });
+          }
+        });
         frag.appendChild(cell);
       }
       statsHeatmapMatrix.replaceChildren(frag);
@@ -3223,39 +3236,16 @@ async function loadTokenizer(): Promise<void> {
   await ensureRealTokenStats(true);
 
   renderTokenDashboard();
-  renderTokenizerTool();
 
   if (!tokenAutoRefreshTimer) {
     tokenAutoRefreshTimer = setInterval(async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       const tokView = document.getElementById('view-tokenizer');
       if (tokView && tokView.classList.contains('active')) {
         await ensureRealTokenStats(true);
         renderTokenDashboard();
       }
     }, 8000);
-  }
-
-  // Tab switching
-  if (tabTokenDashboardBtn && !tabTokenDashboardBtn.dataset.bound) {
-    tabTokenDashboardBtn.dataset.bound = '1';
-    tabTokenDashboardBtn.addEventListener('click', () => {
-      tabTokenDashboardBtn.classList.add('active');
-      tabTokenizerToolBtn?.classList.remove('active');
-      if (tokenTabDashboardContent) tokenTabDashboardContent.style.display = 'block';
-      if (tokenTabToolContent) tokenTabToolContent.style.display = 'none';
-      renderTokenDashboard();
-    });
-  }
-
-  if (tabTokenizerToolBtn && !tabTokenizerToolBtn.dataset.bound) {
-    tabTokenizerToolBtn.dataset.bound = '1';
-    tabTokenizerToolBtn.addEventListener('click', () => {
-      tabTokenizerToolBtn.classList.add('active');
-      tabTokenDashboardBtn?.classList.remove('active');
-      if (tokenTabDashboardContent) tokenTabDashboardContent.style.display = 'none';
-      if (tokenTabToolContent) tokenTabToolContent.style.display = 'block';
-      renderTokenizerTool();
-    });
   }
 
   // Antigravity Native Stats Board Interactions
@@ -9479,6 +9469,34 @@ export function getAccountEffectiveQuotas(acc: any): {
   };
 }
 
+export function isAccountCapExhausted(a: any, windowMode: '5h' | 'weekly' = gaCurrentQuotaWindow || '5h'): boolean {
+  if (!a) return false;
+  const cdGemini = getAccountActiveCooldown(a, 'gemini');
+  const cdClaude = getAccountActiveCooldown(a, 'claude');
+  if (cdGemini?.isWeeklyCap || cdClaude?.isWeeklyCap) return true;
+  if (a.status === 'exhausted') return true;
+
+  const eff = getAccountEffectiveQuotas(a);
+  const tier = getAccountTier(a).toLowerCase();
+
+  // If active window is weekly and weekly quota is depleted
+  if (windowMode === 'weekly') {
+    if (eff.geminiWkPct <= 0) return true;
+    if (tier !== 'free' && typeof eff.claudeWkPct === 'number' && eff.claudeWkPct <= 0) return true;
+  }
+
+  // 0% quota in 5h rolling window or weekly quota (since weekly 0% locks the account)
+  if (eff.gemini5hPct <= 0 || eff.geminiWkPct <= 0) return true;
+  if (tier !== 'free' && ((typeof eff.claude5hPct === 'number' && eff.claude5hPct <= 0) || (typeof eff.claudeWkPct === 'number' && eff.claudeWkPct <= 0))) {
+    return true;
+  }
+
+  // Critical insufficient quota (<= 5% remaining in both buckets)
+  if (eff.gemini5hPct <= 5 && eff.geminiWkPct <= 5) return true;
+
+  return false;
+}
+
 function estimateAccountTokens(acc: any): {
   accountCapacity5h: number;
   accountCapacityWeekly: number;
@@ -9933,19 +9951,23 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
     const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
     const isBlocked = isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'));
     const cdGemini = getAccountActiveCooldown(a, 'gemini');
-    const eff = getAccountEffectiveQuotas(a);
+    const cdClaude = getAccountActiveCooldown(a, 'claude');
+    const isExh = isAccountCapExhausted(a);
+    const isTempCooldown = !isExh && ((cdGemini && !cdGemini.isWeeklyCap) || (cdClaude && !cdClaude.isWeeklyCap));
 
     if (isBlocked) {
       blocked++;
     }
 
-    if (!isEnabled || isUnlicensed) {
-      paused++;
-    } else if (cdGemini) {
-      cooldown++;
-    } else if (eff.gemini5hPct <= 0) {
+    if (isExh) {
       exhausted++;
-    } else {
+    }
+
+    if (!isEnabled) {
+      paused++;
+    } else if (isTempCooldown) {
+      cooldown++;
+    } else if (!isExh && !isBlocked) {
       ready++;
     }
   }
@@ -12504,10 +12526,13 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
     const eff = getAccountEffectiveQuotas(a);
     const gCd = getAccountActiveCooldown(a, 'gemini');
     const cCd = getAccountActiveCooldown(a, 'claude');
-    if (gCd) {
-      geminiCooldown++;
-    } else if (eff.gemini5hPct <= 0) {
+    const isExh = isAccountCapExhausted(a);
+    const isTempCd = gCd && !gCd.isWeeklyCap && !isExh;
+
+    if (isExh) {
       geminiExhausted++;
+    } else if (isTempCd) {
+      geminiCooldown++;
     } else {
       geminiReady++;
     }

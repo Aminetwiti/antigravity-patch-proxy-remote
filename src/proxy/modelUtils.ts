@@ -398,7 +398,9 @@ export function isNativeCloudCodeModel(modelName: string): boolean {
     slug.startsWith('gpt-oss-') ||
     slug.startsWith('gemma-') ||
     slug.startsWith('model-tier-') ||
-    slug.startsWith('modeltier-')
+    slug.startsWith('modeltier-') ||
+    slug.startsWith('model-google-') ||
+    slug.startsWith('modelgoogle-')
   );
 }
 

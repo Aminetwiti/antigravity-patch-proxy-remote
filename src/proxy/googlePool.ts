@@ -69,7 +69,15 @@ const rateLimitedCooldownKeys = new Set<string>();
 const unlicensedAccountKeys = new Set<string>();
 
 export function isAccountUnlicensed(candidate: CustomModel): boolean {
+  if (!candidate) return false;
+  if ((candidate as any).isUnlicensed === true || (candidate as any).quotas?.isUnlicensed === true) {
+    return true;
+  }
   const key = getAccountQuotaKey(candidate);
+  const liveQ = getLiveAccountQuota(key);
+  if (liveQ?.isUnlicensed === true) {
+    return true;
+  }
   const email = (candidate.accountEmail || '').toLowerCase();
   return unlicensedAccountKeys.has(key) ||
          (email !== '' && (unlicensedAccountKeys.has(email) ||
@@ -870,6 +878,9 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   if (isGoogleCloudCodeModel(m) && !m.refreshToken && (!m.apiKey || !m.apiKey.startsWith('ya29.'))) {
     return 0;
   }
+  if ((m as any).enabled === false || isAccountUnlicensed(m)) {
+    return 0;
+  }
   const key = getAccountQuotaKey(m);
   const live = getLiveAccountQuota(key);
   const q = (live || m.quotas) as Record<string, any> | undefined;
@@ -878,6 +889,9 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
     // ensuring healthy Cloud Code accounts (score 30-100) are used first to avoid burning direct API quotas.
     const isAiStudioKey = m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ.'));
     return isAiStudioKey ? 25 : 50;
+  }
+  if (q.isUnlicensed) {
+    return 0;
   }
 
   const isArgon = modelFamily
@@ -930,16 +944,16 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   const FIVE_H_WINDOW_MS = 18_900_000; // 5h 15min
   const quotaIsStaleWindow = quotaAge >= FIVE_H_WINDOW_MS;
 
-  if (fiveHour === 0 && !fiveHourResetPassed) {
+  if (fiveHour <= 0 && !fiveHourResetPassed) {
     // Only apply staleness escape for live-polled data (updatedAt > 0).
     // Static config quotas have updatedAt=0 and must still block.
     if (!fiveHourResetStr && typeof q.updatedAt === 'number' && q.updatedAt > 0 && quotaIsStaleWindow) return 20;
     return 0;
   }
-  if (weekly === 0 && !weeklyResetPassed) return 0;
+  if (weekly <= 0 && !weeklyResetPassed) return 0;
 
-  const effFiveHour = (fiveHour === 0 && fiveHourResetPassed) ? 50 : fiveHour;
-  const effWeekly = (weekly === 0 && weeklyResetPassed) ? 50 : weekly;
+  const effFiveHour = (fiveHour <= 0 && fiveHourResetPassed) ? 50 : fiveHour;
+  const effWeekly = (weekly <= 0 && weeklyResetPassed) ? 50 : weekly;
   return (effFiveHour * 0.7) + (effWeekly * 0.3);
 }
 
@@ -1284,9 +1298,10 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
   if (!candidates || candidates.length === 0) return undefined;
   if (candidates.length === 1) return candidates[0];
 
-  const available = candidates.filter((m) => !isAccountInCooldown(m, modelFamily) && !getOpenBreaker(m));
+  const available = candidates.filter((m) => (m as any).enabled !== false && !isAccountInCooldown(m, modelFamily) && !getOpenBreaker(m) && !isAccountUnlicensed(m));
   const availableWithQuota = available.filter((m) => getModelQuotaScore(m, modelFamily) > 0);
-  const pool = availableWithQuota.length > 0 ? availableWithQuota : (available.length > 0 ? available : candidates);
+  const pool = availableWithQuota.length > 0 ? availableWithQuota : (available.length > 0 ? available : candidates.filter((m) => (m as any).enabled !== false && !isAccountUnlicensed(m)));
+  if (pool.length === 0) return undefined;
   // Exclude accounts saturated with concurrent in-flight requests (>= MAX_CONCURRENT_PER_ACCOUNT, or 1 in probation)
   // if other idle/available accounts exist in the pool.
   const freePool = pool.filter(
@@ -1384,6 +1399,8 @@ export function getGoogleAccountPool(
     if (!isGoogleCloudCodeModel(m)) return false;
     // Virtual dropdown auto-pool placeholders must not serve as candidate accounts
     if (m.name?.includes(':auto-pool') || m.apiKey === 'auto') return false;
+    // Disabled accounts must not be pooled
+    if ((m as any).enabled === false) return false;
     // Unlicensed accounts (HTTP 403) must not be pooled
     if (isAccountUnlicensed(m)) return false;
     const mRaw = (m.externalModelName || m.name)
