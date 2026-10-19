@@ -2,6 +2,19 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.7.5] - 2026-10-19 (Token Tracker Calendar Filters, Cluster Failover Resilience & UI Modernization)
+
+### Added
+- **Token Tracker Calendar Date Range Filtering**: Preset date ranges (Today, Yesterday, 24h, 7d, 30d, This Month, Last Month, 7m, This Year) and custom start/end date selectors with dynamic filtering and filtered CSV / JSON export in `ag-doctor-ui`.
+- **Google Account Pool Cluster Failover Resilience**: Combined outage tracking across consecutive 503 capacity exhausts and 504 gateway timeouts to trigger fast failovers; extended timeout cooldown to 120s; safe socket cleanup on preflight timeout.
+- **Weekly Reset Time Parsing & Isolation**: Dedicated `weeklyResetMs` classification in Google Cloud Code 429 decisions to preserve the 5-hour rolling cooldown window.
+- **Session Management & Device Randomization**: Interactive unstick session routines, dual summary synchronization, and randomized device telemetry identifiers.
+
+### Changed
+- Bumped project release version to v3.7.5 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
 ## [3.7.4] - 2026-10-15 (Gemini Next-Gen Models, Native Zero-Fallback & Quota Token Engine)
 
 ### Added
