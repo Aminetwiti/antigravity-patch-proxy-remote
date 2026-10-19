@@ -10404,13 +10404,13 @@ function initGoogleAccountsToolbarOnce(): void {
     const rawJsonString = JSON.stringify(rawJson, null, 2);
 
     const modalHtml = `
-      <div class="ga-error-details-card" style="font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif); color: #f1f5f9; padding: 2px 4px; line-height: 1.5;">
+      <div class="ga-error-details-card" style="font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif); color: #f1f5f9; padding: 4px 6px; line-height: 1.5;">
         <!-- Header: Severity Banner & Comprehension -->
-        <div style="text-align: center; margin-bottom: 20px; position: relative;">
-          <div style="width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle, ${isValidationRequired ? 'rgba(245, 158, 11, 0.28)' : 'rgba(239, 68, 68, 0.28)'} 0%, ${isValidationRequired ? 'rgba(245, 158, 11, 0.05)' : 'rgba(239, 68, 68, 0.05)'} 75%); border: 2px solid ${isValidationRequired ? '#f59e0b' : '#ef4444'}; color: ${isValidationRequired ? '#f59e0b' : '#ef4444'}; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 12px; box-shadow: 0 0 24px ${isValidationRequired ? 'rgba(245, 158, 11, 0.35)' : 'rgba(239, 68, 68, 0.35)'};">
-            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${isValidationRequired ? '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' : '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'}</svg>
+        <div style="text-align: center; margin-bottom: 18px; position: relative;">
+          <div style="width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle, ${isValidationRequired ? 'rgba(245, 158, 11, 0.28)' : 'rgba(239, 68, 68, 0.28)'} 0%, ${isValidationRequired ? 'rgba(245, 158, 11, 0.05)' : 'rgba(239, 68, 68, 0.05)'} 75%); border: 2px solid ${isValidationRequired ? '#f59e0b' : '#ef4444'}; color: ${isValidationRequired ? '#f59e0b' : '#ef4444'}; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 10px; box-shadow: 0 0 20px ${isValidationRequired ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)'};">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${isValidationRequired ? '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' : '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'}</svg>
           </div>
-          <h2 style="font-size: 20px; font-weight: 700; color: #ffffff; margin: 0 0 4px 0; letter-spacing: -0.3px;">Diagnostic &amp; Résolution de Compte</h2>
+          <h2 style="font-size: 19px; font-weight: 700; color: #ffffff; margin: 0 0 4px 0; letter-spacing: -0.3px;">Diagnostic &amp; Résolution de Compte</h2>
           <div style="font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 6px;">
             <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${isValidationRequired ? '#f59e0b' : '#ef4444'}; box-shadow: 0 0 6px ${isValidationRequired ? '#f59e0b' : '#ef4444'};"></span>
             <span>${isValidationRequired ? 'Erreur HTTP 403 · Vérification Interactive Requise (Challenge/Captcha)' : 'Erreur HTTP 403 Forbidden · Violation des Conditions d\'Utilisation (TOS)'}</span>
@@ -10418,37 +10418,37 @@ function initGoogleAccountsToolbarOnce(): void {
         </div>
 
         <!-- Account Card: Recognition Over Recall -->
-        <div style="margin-bottom: 14px; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+        <div style="margin-bottom: 14px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
           <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
-            <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0;">
+            <div style="width: 30px; height: 30px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12.5px; flex-shrink: 0;">
               G
             </div>
             <div style="min-width: 0;">
-              <div style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8;">COMPTE AFFECTÉ</div>
-              <div style="font-size: 13.5px; font-weight: 600; color: #f8fafc; font-family: var(--font-mono, monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="gaAccountEmailText">
+              <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8;">COMPTE AFFECTÉ</div>
+              <div style="font-size: 13px; font-weight: 600; color: #f8fafc; font-family: var(--font-mono, monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="gaAccountEmailText">
                 ${escapeHtml(accountEmail)}
               </div>
             </div>
           </div>
-          <button type="button" id="gaCopyEmailBtn" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; padding: 6px 10px; font-size: 11.5px; color: #cbd5e1; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s ease; flex-shrink: 0;" title="Copier l'email dans le presse-papier">
+          <button type="button" id="gaCopyEmailBtn" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; padding: 5px 9px; font-size: 11px; color: #cbd5e1; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s ease; flex-shrink: 0;" title="Copier l'email dans le presse-papier">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             <span id="gaCopyEmailLabel">Copier</span>
           </button>
         </div>
 
         <!-- Status Badges: Visual Categorization -->
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; margin-bottom: 6px;">STATUT DU PROXY &amp; ROTATION</div>
+        <div style="margin-bottom: 14px;">
+          <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; margin-bottom: 6px;">STATUT DU PROXY &amp; ROTATION</div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <span style="background: rgba(239, 68, 68, 0.18); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+            <span style="background: rgba(239, 68, 68, 0.18); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               Blocked due to Violation
             </span>
-            <span style="background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+            <span style="background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
               Proxy Rotation Disabled
             </span>
-            <span style="background: rgba(148, 163, 184, 0.12); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.25); padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+            <span style="background: rgba(148, 163, 184, 0.12); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.25); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               Autres comptes préservés
             </span>
@@ -10458,18 +10458,18 @@ function initGoogleAccountsToolbarOnce(): void {
         <!-- Reason & Show Raw JSON -->
         <div style="margin-bottom: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8;">MESSAGE GOOGLE CLOUD CODE</span>
+            <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8;">MESSAGE GOOGLE CLOUD CODE</span>
             <div style="display: flex; gap: 8px;">
-              <button type="button" id="gaCopyRawBtn" style="display: none; background: none; border: none; color: #94a3b8; font-size: 11.5px; cursor: pointer; padding: 2px 4px;">
-                📋 Copier JSON
+              <button type="button" id="gaCopyRawBtn" style="display: none; background: none; border: none; color: #94a3b8; font-size: 11px; cursor: pointer; padding: 2px 4px;">
+                Copier JSON
               </button>
-              <button type="button" id="gaToggleRawBtn" style="background: none; border: none; color: #60a5fa; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px;">
+              <button type="button" id="gaToggleRawBtn" style="background: none; border: none; color: #60a5fa; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px;">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 <span id="gaToggleRawLabel">Show Raw</span>
               </button>
             </div>
           </div>
-          <div id="gaReasonFormatted" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 12px 14px; color: #fca5a5; font-size: 12.5px; line-height: 1.55;">
+          <div id="gaReasonFormatted" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 10px 14px; color: #fca5a5; font-size: 12px; line-height: 1.55;">
             <div style="font-weight: 600; margin-bottom: 4px; color: #f87171; display: flex; align-items: center; gap: 6px;">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               ${escapeHtml(reason)}
@@ -10479,128 +10479,117 @@ function initGoogleAccountsToolbarOnce(): void {
           <pre id="gaReasonRaw" style="display: none; background: #070a12; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 12px; color: #94a3b8; font-size: 11px; font-family: var(--font-mono, monospace); max-height: 160px; overflow-y: auto; white-space: pre-wrap; margin: 0; line-height: 1.45;">${escapeHtml(rawJsonString)}</pre>
         </div>
 
-        <!-- 1-Click Auto-Remediation (Native In-App) -->
-        <div style="margin-bottom: 16px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 14px;">
-          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #34d399; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-            <span>⚡</span> AUTO-REMÉDIATION 1-CLIC (INTÉGRÉE DANS DOCTOR)
+        ${isValidationRequired ? `
+        <!-- Validation Challenge Section (Primary for Captcha / Interactive) -->
+        <div style="margin-bottom: 16px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #fbbf24; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            ACTION REQUISE : VALIDATION DE SÉCURITÉ GOOGLE
           </div>
           <p style="margin: 0 0 10px 0; font-size: 12px; color: #cbd5e1; line-height: 1.45;">
-            Cette action lance l'authentification Google officielle directement dans Doctor, renouvelle le token et régénère les identifiants ADC sans aucune commande de terminal ni outil externe.
+            Google exige que le propriétaire du compte résolve un défi interactif (captcha, acceptation de prompt ou connexion web) pour réautoriser l'accès.
           </p>
-          <button type="button" id="gaAutoRepairAdcBtn" style="width: 100%; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; border-radius: 7px; padding: 10px 14px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 3px 12px rgba(16, 185, 129, 0.35); transition: all 0.15s ease;">
-            <svg id="gaAutoRepairAdcIcon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            <span id="gaAutoRepairAdcLabel">⚡ Réparer ce Compte (Fix 1-Clic Automatique)</span>
+          <div style="display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px;">
+            <button type="button" id="gaGoToValidationBtn" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border: none; border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; box-shadow: 0 3px 12px rgba(245, 158, 11, 0.35); transition: all 0.15s ease;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span>Résoudre le Challenge</span>
+            </button>
+            <button type="button" id="gaCopyValidationBtn" style="background: rgba(255, 255, 255, 0.05); color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span id="gaCopyValidationLabel">Copier le Lien</span>
+            </button>
+          </div>
+        </div>
+        ` : `
+        <!-- Recours Officiel & Appeal Copilot (Primary for TOS Violation) -->
+        <div style="margin-bottom: 16px; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.3); border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #93c5fd; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            RECOURS OFFICIEL GOOGLE CLOUD CODE
+          </div>
+          <p style="margin: 0 0 10px 0; font-size: 12px; color: #cbd5e1; line-height: 1.45;">
+            Le blocage de type TOS ne peut être levé que par une revue humaine Google. Utilisez le formulaire officiel ci-dessous avec l'argumentaire pré-rédigé.
+          </p>
+          <div style="display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; margin-bottom: 12px;">
+            <button type="button" id="gaGoToAppealBtn" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border: none; border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; box-shadow: 0 3px 12px rgba(37, 99, 235, 0.35); transition: all 0.15s ease;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span>Ouvrir le Recours Google</span>
+            </button>
+            <button type="button" id="gaCopyAppealBtn" style="background: rgba(255, 255, 255, 0.05); color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span id="gaCopyAppealLabel">Copier Lien Recours</span>
+            </button>
+          </div>
+
+          <!-- Appeal Copilot Content -->
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 10px 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8;">ARGUMENTAIRE RECOMMANDÉ (CLIC POUR COPIER)</span>
+              <button type="button" id="gaCopyAppealTextBtn" style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 4px; color: #60a5fa; padding: 2px 8px; font-size: 10.5px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span id="gaCopyAppealTextLabel">Copier Texte</span>
+              </button>
+            </div>
+            <div id="gaAppealTextContent" style="font-size: 11.5px; color: #cbd5e1; line-height: 1.5; font-style: italic; background: rgba(0,0,0,0.3); padding: 8px 10px; border-radius: 5px; border-left: 3px solid #3b82f6;">
+              "Ce compte est utilisé légitimement avec Google Cloud Code et l'IDE Antigravity pour de l'assistance au développement de code local. Aucune activité de scraping, revente ou abus automatisé. Il s'agit très probablement d'un faux-positif suite à un renouvellement de jetons locaux. Merci de réactiver l'accès au service."
+            </div>
+          </div>
+        </div>
+        `}
+
+        <!-- 1-Click Auto-Remediation (Secondary if TOS, Primary if ADC error) -->
+        <div style="margin-bottom: 16px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #34d399; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            RÉ-AUTHENTIFICATION &amp; SYNCHRONISATION ADC (1-CLIC)
+          </div>
+          <p style="margin: 0 0 10px 0; font-size: 12px; color: #cbd5e1; line-height: 1.45;">
+            ${isValidationRequired
+              ? 'Une fois le challenge Google validé dans le navigateur, cliquez ici pour resynchroniser les jetons et réactiver le compte.'
+              : 'Renouvelle les jetons locaux et réécrit les identifiants ADC sans commande de terminal. À utiliser en cas d\'erreur d\'autorisation ou après accord de recours Google.'}
+          </p>
+          <button type="button" id="gaAutoRepairAdcBtn" style="width: 100%; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; border-radius: 7px; padding: 9px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 3px 12px rgba(16, 185, 129, 0.3); transition: all 0.15s ease;">
+            <svg id="gaAutoRepairAdcIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span id="gaAutoRepairAdcLabel">Ré-authentifier &amp; Synchroniser ADC</span>
           </button>
           <div id="gaAutoRepairAdcFeedback" style="display: none; margin-top: 10px; font-size: 11.5px; border-radius: 6px; padding: 8px 10px;"></div>
         </div>
 
-        <!-- Action Buttons: Fitts's Law & Clear Intent -->
-        <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px; margin-bottom: 16px;">
-          ${isValidationRequired ? `
-          <button type="button" id="gaGoToValidationBtn" style="background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; border-radius: 8px; padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35); transition: transform 0.1s ease, box-shadow 0.15s ease;">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            <span>Valider le Compte (Captcha / Déblocage)</span>
-            <span style="font-size: 11px; opacity: 0.85;">↗</span>
-          </button>
-          <button type="button" id="gaCopyValidationBtn" style="background: rgba(255, 255, 255, 0.05); color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.15s ease;">
-            <svg id="gaCopyValidationIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            <span id="gaCopyValidationLabel">Copier Lien de Sécurité</span>
-          </button>
-          ` : `
-          <button type="button" id="gaGoToAppealBtn" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border: none; border-radius: 8px; padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35); transition: transform 0.1s ease, box-shadow 0.15s ease;">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            <span>Go to Appeal</span>
-            <span style="font-size: 11px; opacity: 0.85;">↗</span>
-          </button>
-          <button type="button" id="gaCopyAppealBtn" style="background: rgba(255, 255, 255, 0.05); color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.15s ease;">
-            <svg id="gaCopyAppealIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            <span id="gaCopyAppealLabel">Copy Appeal URL</span>
-          </button>
-          `}
-        </div>
-
-        <!-- Appeal Copilot: Argumentaire de Recours prêt à copier -->
-        <div style="margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px; background: rgba(15, 23, 42, 0.5);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
-              <span>🤖</span> APPEAL COPILOT (ARGUMENTAIRE DE RECOURS)
-            </span>
-            <button type="button" id="gaCopyAppealTextBtn" style="background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 5px; color: #60a5fa; padding: 3px 8px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
-              <span>📋</span> <span id="gaCopyAppealTextLabel">Copier le texte</span>
-            </button>
-          </div>
-          <div id="gaAppealTextContent" style="font-size: 11.5px; color: #cbd5e1; line-height: 1.5; font-style: italic; background: rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 6px; border-left: 3px solid #60a5fa;">
-            "Ce compte est utilisé légitimement avec Google Cloud Code et l'IDE Antigravity pour de l'assistance au développement de code local. Aucune activité de scraping, revente ou abus automatisé. Il s'agit très probablement d'un faux-positif suite à un renouvellement de jetons locaux. Merci de réactiver l'accès au service."
-          </div>
-        </div>
-
-        <!-- Terminal Quick Fix: Progressive Disclosure & Self-Efficacy -->
-        <div style="margin-bottom: 16px; border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; overflow: hidden; background: rgba(15, 23, 42, 0.6);">
-          <button type="button" id="gaQuickFixToggleBtn" style="width: 100%; background: rgba(37, 99, 235, 0.12); border: none; padding: 12px 14px; text-align: left; color: #93c5fd; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: background 0.15s ease;">
+        <!-- Terminal Quick Fix: Progressive Disclosure & Fallback -->
+        <div style="margin-bottom: 14px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; overflow: hidden; background: rgba(15, 23, 42, 0.5);">
+          <button type="button" id="gaQuickFixToggleBtn" style="width: 100%; background: rgba(255, 255, 255, 0.03); border: none; padding: 10px 14px; text-align: left; color: #94a3b8; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: background 0.15s ease;">
             <span style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-family: var(--font-mono, monospace); font-weight: 700; font-size: 13px; background: rgba(59, 130, 246, 0.25); color: #60a5fa; padding: 2px 6px; border-radius: 4px;">&gt;_</span>
-              <span>Terminal Quick Fix (Resolves internal 403s)</span>
+              <span style="font-family: var(--font-mono, monospace); font-weight: 700; font-size: 11px; background: rgba(255, 255, 255, 0.08); color: #cbd5e1; padding: 2px 6px; border-radius: 4px;">&gt;_</span>
+              <span>Commandes CLI Manuelles (gcloud / fallback avancé)</span>
             </span>
-            <span id="gaQuickFixArrow" style="transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); font-size: 16px; font-weight: bold; color: #60a5fa;">›</span>
+            <span id="gaQuickFixArrow" style="transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); font-size: 14px; font-weight: bold; color: #94a3b8;">›</span>
           </button>
-          <div id="gaQuickFixBody" style="display: none; padding: 14px 16px; font-size: 12px; line-height: 1.6; color: #cbd5e1; border-top: 1px solid rgba(59, 130, 246, 0.2);">
-            <div style="background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3b82f6; padding: 8px 12px; border-radius: 0 6px 6px 0; margin-bottom: 12px; font-size: 11.5px; color: #bfdbfe;">
-              💡 <strong>Déblocage immédiat :</strong> La commande ci-dessous réinitialise l'autorisation Application Default Credentials (ADC) sans attendre le délai de traitement de l'appel.
-            </div>
-
-            <!-- Step 1: Tell Google it's me -->
+          <div id="gaQuickFixBody" style="display: none; padding: 12px 14px; font-size: 11.5px; line-height: 1.6; color: #cbd5e1; border-top: 1px solid rgba(255, 255, 255, 0.08);">
             <p style="margin: 0 0 6px 0; font-weight: 600; color: #f1f5f9;">1. Indiquer à Google "c'est bien moi" :</p>
-            <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 6px; font-family: var(--font-mono, monospace); color: #38bdf8;">
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 6px; font-family: var(--font-mono, monospace); color: #38bdf8;">
               <span style="user-select: all;">gcloud auth login --update-adc</span>
-              <button type="button" class="btn-copy-cmd" data-cmd="gcloud auth login --update-adc" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1; border-radius: 4px; cursor: pointer; padding: 3px 8px; font-size: 11px; display: flex; align-items: center; gap: 4px;" title="Copier la commande">
-                <span>📋</span> Copier
+              <button type="button" class="btn-copy-cmd" data-cmd="gcloud auth login --update-adc" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1; border-radius: 4px; cursor: pointer; padding: 2px 6px; font-size: 10.5px; display: flex; align-items: center; gap: 4px;">
+                Copier
               </button>
             </div>
-            <p style="margin: 0 0 14px 0; color: #94a3b8; font-size: 11px;">Appuyez sur <kbd style="background: rgba(255,255,255,0.12); padding: 1px 4px; border-radius: 3px; color: #f8fafc;">Entrée</kbd>, tapez <kbd style="background: rgba(255,255,255,0.12); padding: 1px 4px; border-radius: 3px; color: #f8fafc;">Y</kbd>. Le navigateur s'ouvre : sélectionnez ce compte et cliquez sur "Autoriser". Une fois le message <em>"You are now authenticated"</em> affiché, le compte est prêt.</p>
 
-            <!-- Step 2: Clear cache if fails -->
-            <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 6px;">2. 🧹 Si le 403 persiste (Vider le cache d'identification) :</div>
-            <p style="margin: 0 0 6px 0; font-size: 11.5px; color: #94a3b8;">Révoquez l'ancien jeton corrompu :</p>
-            <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 6px; font-family: var(--font-mono, monospace); color: #f87171;">
+            <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 4px; margin-top: 10px;">2. Si le 403 persiste (révocation) :</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 6px; font-family: var(--font-mono, monospace); color: #f87171;">
               <span style="user-select: all;">gcloud auth revoke ${escapeHtml(accountEmail)}</span>
-              <button type="button" class="btn-copy-cmd" data-cmd="gcloud auth revoke ${escapeHtml(accountEmail)}" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1; border-radius: 4px; cursor: pointer; padding: 3px 8px; font-size: 11px; display: flex; align-items: center; gap: 4px;" title="Copier la commande">
-                <span>📋</span> Copier
-              </button>
-            </div>
-            <p style="margin: 0 0 6px 0; font-size: 11.5px; color: #94a3b8;">Puis reconnectez-vous :</p>
-            <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 14px; font-family: var(--font-mono, monospace); color: #38bdf8;">
-              <span style="user-select: all;">gcloud auth login --update-adc</span>
-              <button type="button" class="btn-copy-cmd" data-cmd="gcloud auth login --update-adc" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1; border-radius: 4px; cursor: pointer; padding: 3px 8px; font-size: 11px; display: flex; align-items: center; gap: 4px;" title="Copier la commande">
-                <span>📋</span> Copier
+              <button type="button" class="btn-copy-cmd" data-cmd="gcloud auth revoke ${escapeHtml(accountEmail)}" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1; border-radius: 4px; cursor: pointer; padding: 2px 6px; font-size: 10.5px; display: flex; align-items: center; gap: 4px;">
+                Copier
               </button>
             </div>
 
-            <!-- Step 3: Platform specific env vars -->
-            <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 6px;">3. ⚙️ Réinitialiser la variable GOOGLE_APPLICATION_CREDENTIALS :</div>
-            <div style="display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 14px;">
-              <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 6px 10px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.06); font-family: var(--font-mono, monospace); font-size: 11px;">
-                <span style="color: #93c5fd;"><span style="color: #64748b;"># PowerShell:</span> $env:GOOGLE_APPLICATION_CREDENTIALS=""</span>
-                <button type="button" class="btn-copy-cmd" data-cmd='$env:GOOGLE_APPLICATION_CREDENTIALS=""' style="background: none; border: none; color: #94a3b8; cursor: pointer; padding: 2px 6px; font-size: 11px;" title="Copier PowerShell">📋</button>
-              </div>
-              <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 6px 10px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.06); font-family: var(--font-mono, monospace); font-size: 11px;">
-                <span style="color: #93c5fd;"><span style="color: #64748b;"># Bash / macOS:</span> unset GOOGLE_APPLICATION_CREDENTIALS</span>
-                <button type="button" class="btn-copy-cmd" data-cmd="unset GOOGLE_APPLICATION_CREDENTIALS" style="background: none; border: none; color: #94a3b8; cursor: pointer; padding: 2px 6px; font-size: 11px;" title="Copier Bash">📋</button>
-              </div>
+            <div style="margin-top: 10px; font-size: 11px; color: #94a3b8;">
+              Vérifiez également l'état de vos APIs dans la <a href="#" id="gaOpenConsoleLink" style="color: #60a5fa; text-decoration: underline;">Console Google Cloud</a>.
             </div>
-
-            <!-- Common Tips -->
-            <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 6px;">💡 Astuces Complémentaires :</div>
-            <ul style="margin: 0; padding-left: 18px; color: #94a3b8; font-size: 11.5px; line-height: 1.55;">
-              <li style="margin-bottom: 4px;">Pour les environnements de production, l'usage d'une clé <strong>Service Account JSON</strong> dédiée garantit une stabilité maximale.</li>
-              <li style="margin-bottom: 4px;">Vérifiez si l'API Generative Language est active dans la <a href="#" id="gaOpenConsoleLink" style="color: #60a5fa; text-decoration: underline;">Console Google Cloud</a>. Si les autorisations sont gelées pour contrôle de sécurité, laissez le compte refroidir pendant 72 heures.</li>
-              <li>Vous pouvez également tester la commande <code style="color: #cbd5e1; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">npm install -g @google/gemini-cli</code>. Si elle fonctionne, supprimez puis ré-autorisez simplement le compte dans l'interface.</li>
-            </ul>
           </div>
         </div>
 
         <!-- Detection Timestamp -->
-        <div style="font-size: 11px; color: #64748b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; justify-content: flex-end;">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <div style="font-size: 10.5px; color: #64748b; margin-top: 6px; display: flex; align-items: center; gap: 6px; justify-content: flex-end;">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           Détecté le : ${detectionTimeStr}
         </div>
       </div>
@@ -10610,13 +10599,29 @@ function initGoogleAccountsToolbarOnce(): void {
       confirmLabel: 'Fermer le Diagnostic',
       hideCancel: true,
       onMount: (handle) => {
+        // Impeccable layout bounds: enable .modal-lg max-width & internal scrolling
+        const modalEl = handle.bodyEl.closest('.modal') as HTMLElement | null;
+        if (modalEl) {
+          modalEl.classList.add('modal-lg');
+          modalEl.style.maxWidth = '620px';
+          modalEl.style.maxHeight = '86vh';
+          modalEl.style.display = 'flex';
+          modalEl.style.flexDirection = 'column';
+          modalEl.style.margin = 'auto';
+        }
+        if (handle.bodyEl) {
+          handle.bodyEl.style.overflowY = 'auto';
+          handle.bodyEl.style.maxHeight = 'calc(86vh - 120px)';
+          handle.bodyEl.style.padding = '16px 20px';
+        }
+
         handle.confirmBtn.style.width = '100%';
-        handle.confirmBtn.style.padding = '12px 20px';
-        handle.confirmBtn.style.fontSize = '14px';
+        handle.confirmBtn.style.padding = '10px 18px';
+        handle.confirmBtn.style.fontSize = '13.5px';
         handle.confirmBtn.style.fontWeight = '600';
-        handle.confirmBtn.style.borderRadius = '8px';
+        handle.confirmBtn.style.borderRadius = '7px';
         handle.confirmBtn.style.background = '#2563eb';
-        handle.confirmBtn.style.boxShadow = '0 4px 14px rgba(37, 99, 235, 0.4)';
+        handle.confirmBtn.style.boxShadow = '0 3px 12px rgba(37, 99, 235, 0.35)';
 
         // Copy Account Email
         const copyEmailBtn = handle.bodyEl.querySelector('#gaCopyEmailBtn');

@@ -6705,6 +6705,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         sanitizeCloudCodeGenerationConfig(fallbackReq, rawModelName);
         fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
       }
+      if (rawModelName.includes('2_5_flash_lite') || rawModelName.includes('2-5-flash-lite') || rawModelName.includes('flash_lite') || rawModelName.includes('flash-lite')) {
+        const rewrittenModel = 'gemini-3.8-flash-tiered';
+        fallbackJson.model = rewrittenModel;
+        if (fallbackJson.request && typeof fallbackJson.request === 'object') {
+          (fallbackJson.request as Record<string, unknown>).model = rewrittenModel;
+        }
+        rawModelName = rewrittenModel;
+        fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
+      }
     } catch { /* not JSON — continue as-is */ }
     await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || '', undefined, sessId || '', rawModelName);
 
