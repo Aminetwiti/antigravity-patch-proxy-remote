@@ -302,7 +302,7 @@ export async function main(argv: string[]): Promise<number> {
       case 'prune':
         return await runPrune(ctx, sub, rest);
       case 'device':
-        return await runDevice(ctx);
+        return await runDevice(ctx, sub, rest);
       case 'help':
       case '--help':
       case '-h':

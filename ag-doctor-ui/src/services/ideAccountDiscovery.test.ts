@@ -205,6 +205,41 @@ describe('ideAccountDiscovery', () => {
       expect(quotas!.errorDetails?.code).toBe(403);
       expect(quotas!.groups[0].displayName).toBe('Violation TOS (HTTP 403)');
     });
+
+    it('handles 403 VALIDATION_REQUIRED response by returning isValidationRequired status', async () => {
+      const mock403Val = {
+        error: {
+          code: 403,
+          message: 'Interactive challenge required for verification',
+          status: 'PERMISSION_DENIED',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+              reason: 'VALIDATION_REQUIRED',
+              domain: 'cloudcode-pa.googleapis.com',
+              metadata: {
+                validation_url: 'https://accounts.google.com/challenge/recaptcha',
+              },
+            },
+          ],
+        },
+      };
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => mock403Val,
+      } as any);
+
+      const quotas = await fetchGoogleAccountQuotas('ya29.val-token');
+      expect(quotas).not.toBeNull();
+      expect(quotas!.isUnlicensed).toBe(false);
+      expect((quotas as any).isValidationRequired).toBe(true);
+      expect(quotas!.errorDetails).toBeDefined();
+      expect(quotas!.errorDetails?.reason).toBe('VALIDATION_REQUIRED');
+      expect((quotas!.errorDetails as any)?.validationUrl).toBe('https://accounts.google.com/challenge/recaptcha');
+      expect(quotas!.groups[0].displayName).toBe('Vérification Requise (HTTP 403)');
+    });
   });
 
   describe('refreshGoogleToken deduplication', () => {

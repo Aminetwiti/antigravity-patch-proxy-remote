@@ -91,14 +91,13 @@ describe('ag-doctor device management', () => {
 
   it('returns error when unknown subcommand is passed to runDevice', async () => {
     const ctx: CommandContext = {
-      args: { command: ['device', 'invalidSub'], options: {}, positional: [] },
-      rawArgv: [],
       cwd: tempDir,
       json: true,
       verbose: false,
       yes: false,
+      options: {},
     };
-    const code = await runDevice(ctx);
+    const code = await runDevice(ctx, 'invalidSub');
     expect(code).toBe(1);
   });
 });

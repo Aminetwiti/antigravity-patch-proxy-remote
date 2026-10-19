@@ -9766,6 +9766,33 @@ function initGoogleAccountsToolbarOnce(): void {
   purgeCacheBtn?.addEventListener('click', () => runPurgeAndRepair(purgeCacheBtn));
   gaRepairCooldownsBtn?.addEventListener('click', () => runPurgeAndRepair(gaRepairCooldownsBtn));
 
+  const randomizeDeviceBtn = $('#gaToolbarRandomizeDeviceBtn') as HTMLButtonElement | null;
+  randomizeDeviceBtn?.addEventListener('click', async () => {
+    const ok = await confirmModal(
+      'Régénérer l\'Empreinte Machine (Anti-Ban)',
+      'Voulez-vous générer de nouveaux identifiants télémétriques (machineId, macMachineId, devDeviceId, sqmId, serviceMachineId) ?\n\nCette action désolidarise immédiatement votre installation des comptes bloqués par Google pour éviter le bannissement par syndication.\n\nUn backup automatique de storage.json sera créé.',
+      { confirmLabel: '🎲 Régénérer l\'Empreinte' }
+    );
+    if (!ok) return;
+
+    randomizeDeviceBtn.setAttribute('disabled', 'true');
+    const origHtml = randomizeDeviceBtn.innerHTML;
+    randomizeDeviceBtn.innerHTML = `<span class="spinner"></span> Régénération…`;
+    try {
+      const res = await (window.ag?.providers as any)?.randomizeMachineId?.() || await (window.ag as any)?.randomizeMachineId?.();
+      if (res && res.success) {
+        toast(`🎲 Empreinte machine renouvelée avec succès (${res.updatedFiles?.length || 1} fichier(s) mis à jour) !`, 'ok', 5000);
+      } else {
+        toast(`Erreur : ${res?.error || 'Échec de renouvellement'}`, 'err');
+      }
+    } catch (err: any) {
+      toast(`Erreur : ${err?.message || err}`, 'err');
+    } finally {
+      randomizeDeviceBtn.removeAttribute('disabled');
+      randomizeDeviceBtn.innerHTML = origHtml;
+    }
+  });
+
   // Cockpit Density Mode (Vue Essentielle vs Vue Complète - Miller's law chunking)
   const densityLabel = $('#gaDensityToggleLabel') as HTMLSpanElement | null;
   const telemetryGrid = document.querySelector('.ga-telemetry-grid') as HTMLElement | null;

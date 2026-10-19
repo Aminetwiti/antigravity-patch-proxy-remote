@@ -15,18 +15,18 @@ import {
   DeviceProfile,
 } from '../core/device';
 
-export async function runDevice(ctx: CommandContext): Promise<number> {
-  const sub = ctx.args.command[1] || 'show';
+export async function runDevice(ctx: CommandContext, sub?: string, rest: string[] = []): Promise<number> {
+  const targetSub = sub || 'show';
 
-  if (sub === 'show') {
+  if (targetSub === 'show') {
     return runDeviceShow(ctx);
   }
 
-  if (sub === 'reset') {
-    return runDeviceReset(ctx);
+  if (targetSub === 'reset') {
+    return runDeviceReset(ctx, rest);
   }
 
-  error(`Unknown device subcommand: ${sub}`);
+  error(`Unknown device subcommand: ${targetSub}`);
   info(`Usage: ag-doctor device {show|reset} [--dry-run]`);
   return 1;
 }
@@ -74,8 +74,8 @@ function runDeviceShow(ctx: CommandContext): number {
   return 0;
 }
 
-function runDeviceReset(ctx: CommandContext): number {
-  const dryRun = Boolean(ctx.args.options['dry-run']);
+function runDeviceReset(ctx: CommandContext, rest: string[] = []): number {
+  const dryRun = Boolean(ctx.options['dry-run'] || rest.includes('--dry-run'));
   const paths = findStorageJsonPaths();
 
   if (paths.length === 0) {

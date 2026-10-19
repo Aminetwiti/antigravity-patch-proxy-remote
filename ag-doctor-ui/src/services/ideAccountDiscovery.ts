@@ -534,10 +534,49 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
           try {
             errJson = await res.json();
           } catch {}
-          const errDetail = errJson?.error?.details?.[0];
-          const appealUrl = errDetail?.metadata?.appeal_url || 'https://forms.gle/hGzM9MEUv2azZsrb9';
+          const details = Array.isArray(errJson?.error?.details) ? errJson.error.details : [];
+          let appealUrl = 'https://forms.gle/hGzM9MEUv2azZsrb9';
+          let validationUrl: string | undefined;
+          for (const d of details) {
+            if (d?.metadata?.appeal_url) appealUrl = d.metadata.appeal_url;
+            if (d?.metadata?.validation_url) validationUrl = d.metadata.validation_url;
+            if (d?.metadata?.challenge_url) validationUrl = d.metadata.challenge_url;
+          }
+          const errDetail = details[0];
           const reason = errDetail?.reason || (errJson?.error?.message?.includes('Terms of Service') ? 'TOS_VIOLATION' : 'PERMISSION_DENIED');
           const message = errJson?.error?.message || 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.';
+
+          if (validationUrl || reason === 'VALIDATION_REQUIRED' || message.toLowerCase().includes('validation_required') || message.toLowerCase().includes('challenge')) {
+            const valUrl = validationUrl || 'https://accounts.google.com';
+            return {
+              fiveHourPercentage: 0,
+              weeklyPercentage: 0,
+              geminiFiveHourPct: 0,
+              geminiWeeklyPct: 0,
+              claudeFiveHourPct: 0,
+              claudeWeeklyPct: 0,
+              isUnlicensed: false,
+              isValidationRequired: true,
+              errorDetails: {
+                code: 403,
+                status: 'VALIDATION_REQUIRED',
+                reason: 'VALIDATION_REQUIRED',
+                message: message || 'Une vérification interactive est requise pour ce compte Google (Captcha ou validation de sécurité).',
+                validationUrl: valUrl,
+                appealUrl,
+                detectionTime: new Date().toISOString(),
+                raw: errJson || { error: { code: 403, status: 'VALIDATION_REQUIRED', message, details: [{ reason: 'VALIDATION_REQUIRED', metadata: { validation_url: valUrl } }] } }
+              },
+              groups: [
+                {
+                  displayName: 'Vérification Requise (HTTP 403)',
+                  buckets: [
+                    { bucketId: 'validation_required', window: 'none', percentage: 0 }
+                  ]
+                }
+              ]
+            };
+          }
 
           if (reason === 'TOS_VIOLATION' || errJson?.error?.message?.includes('Terms of Service')) {
             return {

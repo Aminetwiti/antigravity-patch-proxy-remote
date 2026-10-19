@@ -835,7 +835,7 @@
                     ⏸ En Pause <span class="ga-chip-cnt" id="gaCntPaused">0</span>
                   </button>
                   <button type="button" class="ga-chip" data-filter="status:blocked" style="border-color: rgba(239, 68, 68, 0.45); color: #f87171; background: rgba(239, 68, 68, 0.08);">
-                    🚫 Sans licence <span class="ga-chip-cnt" id="gaCntBlocked">0</span>
+                    🚨 Erreurs & TOS <span class="ga-chip-cnt" id="gaCntBlocked">0</span>
                   </button>
                   <div style="width: 1px; height: 14px; background: var(--border); margin: 3px 1px; align-self: center;"></div>
                   <button type="button" class="ga-chip" data-filter="pro">
@@ -863,6 +863,9 @@
                 </button>
                 <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarWakeAllBtn" title="Lever tous les cooldowns et réveiller tous les comptes">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Lever Cooldowns
+                </button>
+                <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarRandomizeDeviceBtn" title="Régénérer l'empreinte machine (machineId, sqmId, serviceMachineId) pour désolidariser la machine des comptes bloqués (Anti-Ban)" style="border-color: rgba(168, 85, 247, 0.4); color: #c084fc;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> Empreinte Anti-Ban
                 </button>
                 <div style="width: 1px; height: 18px; background: var(--border); margin: 0 4px;"></div>
                 <button type="button" class="btn btn-secondary ga-toolbar-action ga-toolbar-action--danger" id="gaToolbarPurgeCacheBtn" title="Purger le cache disque des quotas et réinitialiser tous les cooldowns">

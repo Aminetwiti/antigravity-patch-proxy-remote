@@ -180,6 +180,65 @@ describe('Error Classifier', () => {
       expect(result.title).toBe('Invalid Request (400)');
       expect(result.message).toContain('Context window exceeded');
     });
+
+    it('classifies internal gateway / self-harm messages as recoverable server warnings', () => {
+      const res1 = classifyError(500, null, 'all accounts limited in pool');
+      expect(res1.errorType).toBe('server');
+      expect(res1.title).toBe('Pool Temporarily Exhausted');
+      expect(res1.retryable).toBe(true);
+      expect(res1.severity).toBe('warning');
+
+      const res2 = classifyError(500, new Error('token pool is empty'));
+      expect(res2.errorType).toBe('server');
+      expect(res2.title).toBe('Pool Temporarily Exhausted');
+      expect(res2.retryable).toBe(true);
+    });
+
+    it('classifies 403 with validation URL as Validation Required', () => {
+      const body = JSON.stringify({
+        error: {
+          code: 403,
+          status: 'PERMISSION_DENIED',
+          message: 'Account validation required',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+              reason: 'VALIDATION_REQUIRED',
+              metadata: {
+                validation_url: 'https://accounts.google.com/signin/v2/challenge',
+              },
+            },
+          ],
+        },
+      });
+      const res = classifyError(403, null, body);
+      expect(res.errorType).toBe('forbidden');
+      expect(res.title).toBe('Validation Required');
+      expect(res.actionUrl).toBe('https://accounts.google.com/signin/v2/challenge');
+      expect(res.severity).toBe('warning');
+    });
+
+    it('classifies 403 with Terms of Service as TOS Violation with appealUrl', () => {
+      const body = JSON.stringify({
+        error: {
+          code: 403,
+          message: 'Disabled for violation of Terms of Service',
+          details: [
+            {
+              reason: 'TOS_VIOLATION',
+              metadata: {
+                appeal_url: 'https://forms.gle/custom-appeal',
+              },
+            },
+          ],
+        },
+      });
+      const res = classifyError(403, null, body);
+      expect(res.errorType).toBe('forbidden');
+      expect(res.title).toBe('Terms of Service Violation');
+      expect(res.actionUrl).toBe('https://forms.gle/custom-appeal');
+      expect(res.severity).toBe('error');
+    });
   });
 
   describe('generateDiagnosticCardMarkdown', () => {
