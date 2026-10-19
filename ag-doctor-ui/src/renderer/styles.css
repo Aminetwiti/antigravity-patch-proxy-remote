@@ -4120,7 +4120,47 @@ body {
 .ga-runway-container {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
+}
+.ga-runway-badge {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.28);
+  white-space: nowrap;
+  letter-spacing: -0.1px;
+}
+.ga-runway-badge--healthy {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+  color: #34d399;
+}
+.ga-runway-badge--tense {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fbbf24;
+}
+.ga-runway-badge--critical {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+}
+.ga-runway-val {
+  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.ga-runway-tokens {
+  font-size: 10px;
+  color: var(--text-2);
+  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
 }
 .ga-burn-profile-selector {
   display: inline-flex;
@@ -4295,7 +4335,8 @@ body {
   background: rgba(245, 158, 11, 0.08);
   color: #fbbf24;
 }
-.ga-timeline-item.five-h {
+.ga-timeline-item.five-h,
+.ga-timeline-item.\35 h {
   border-color: rgba(56, 189, 248, 0.3);
   background: rgba(56, 189, 248, 0.06);
   color: #38bdf8;
@@ -4308,6 +4349,7 @@ body {
 .ga-timeline-item strong {
   font-family: var(--font-mono, monospace);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

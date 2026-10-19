@@ -26,7 +26,7 @@
       "description": "Local Ollama Llama 3 model run on your machine",
       "provider": "ollama",
       "apiKey": "",
-      "apiUrl": "http://localhost:11434/v1/chat/completions",
+      "apiUrl": "http://127.0.0.1:11434/v1/chat/completions",
       "externalModelName": "llama3"
     }
   ]

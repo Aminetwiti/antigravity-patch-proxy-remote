@@ -1,5 +1,7 @@
 export interface PoolRunwayResult {
   totalAvailableTokens: number;
+  totalAvailableTokens5h?: number;
+  totalAvailableTokensWeekly?: number;
   totalConsumedTokens5h: number;
   totalConsumedTokensWeekly: number;
   hourlyBurnRate: number;
@@ -35,20 +37,55 @@ export interface AccountTokenMetrics {
  * Calculates consumed and available tokens for an individual account from its quotas.
  */
 export function calculateAccountTokens(acc: any): AccountTokenMetrics {
+  const isUnlicensed = Boolean(acc?.isUnlicensed || acc?.quotas?.isUnlicensed);
+  if (isUnlicensed) {
+    return {
+      availableTokens5h: 0,
+      consumedTokens5h: 0,
+      availableTokensWeekly: 0,
+      consumedTokensWeekly: 0,
+      pct5h: 0,
+      pctWeekly: 0,
+    };
+  }
+
   const q = acc?.quotas || {};
-  const wkPct = q.geminiWeeklyPct ?? q.weeklyPercentage ?? 100;
-  const pct5h = wkPct <= 0 ? 0 : (q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100);
+  let wkPct: number | undefined = q.geminiWeeklyPct ?? q.weeklyPercentage ?? q.geminiWkPct;
+  let pct5h: number | undefined = q.geminiFiveHourPct ?? q.fiveHourPercentage ?? q.gemini5hPct;
+
+  if (Array.isArray(q.groups)) {
+    for (const g of q.groups) {
+      const gName = (g.displayName || g.name || '').toLowerCase();
+      const isClaudeGroup = gName.includes('claude') || gName.includes('3p') || gName.includes('gpt');
+      const isArgonGroup = gName.includes('argon');
+      if (isClaudeGroup || isArgonGroup) continue;
+      for (const b of (g.buckets || [])) {
+        const bId = (b.bucketId || '').toLowerCase();
+        const bWin = (b.window || '').toLowerCase();
+        const isDisabled = Boolean(b.disabled);
+        const remFrac = isDisabled ? 0 : (typeof b.remainingFraction === 'number' ? b.remainingFraction : (typeof b.percentage === 'number' ? b.percentage / 100 : undefined));
+        const pct = remFrac !== undefined ? Math.round(remFrac * 100) : undefined;
+        const is5h = bId.includes('5h') || bWin.includes('5h') || bWin.includes('hour');
+        const isWk = bId.includes('weekly') || bWin.includes('weekly');
+        if (is5h && pct !== undefined && pct5h === undefined) pct5h = pct;
+        if (isWk && pct !== undefined && wkPct === undefined) wkPct = pct;
+      }
+    }
+  }
+
+  const finalWkPct = wkPct ?? 100;
+  const finalPct5h = finalWkPct <= 0 ? 0 : (pct5h ?? 100);
   const tier = String(acc?.tier || '').toUpperCase();
-  const cap5h = tier.includes('FREE') ? Math.round(GEMINI_5H_QUOTA_TOKENS * 0.4) : GEMINI_5H_QUOTA_TOKENS;
+  const cap5h = tier.includes('FREE') ? Math.round(GEMINI_5H_QUOTA_TOKENS * 0.4) : (tier === 'ULTRA' ? GEMINI_5H_QUOTA_TOKENS * 2 : GEMINI_5H_QUOTA_TOKENS);
   const weeklyTotal = Math.round(cap5h / GEMINI_WEEKLY_RATIO);
 
   return {
-    availableTokens5h: Math.round((cap5h * Math.max(0, Math.min(100, pct5h))) / 100),
-    consumedTokens5h: Math.round((cap5h * Math.max(0, 100 - pct5h)) / 100),
-    availableTokensWeekly: Math.round((weeklyTotal * Math.max(0, Math.min(100, wkPct))) / 100),
-    consumedTokensWeekly: Math.round((weeklyTotal * Math.max(0, 100 - wkPct)) / 100),
-    pct5h,
-    pctWeekly: wkPct,
+    availableTokens5h: Math.round((cap5h * Math.max(0, Math.min(100, finalPct5h))) / 100),
+    consumedTokens5h: Math.round((cap5h * Math.max(0, 100 - finalPct5h)) / 100),
+    availableTokensWeekly: Math.round((weeklyTotal * Math.max(0, Math.min(100, finalWkPct))) / 100),
+    consumedTokensWeekly: Math.round((weeklyTotal * Math.max(0, 100 - finalWkPct)) / 100),
+    pct5h: finalPct5h,
+    pctWeekly: finalWkPct,
   };
 }
 
@@ -107,6 +144,8 @@ export function calculatePoolRunway(
   if (!Array.isArray(accounts) || accounts.length === 0 || hourlyBurnRate <= 0) {
     return {
       totalAvailableTokens: 0,
+      totalAvailableTokens5h: 0,
+      totalAvailableTokensWeekly: 0,
       totalConsumedTokens5h: 0,
       totalConsumedTokensWeekly: 0,
       hourlyBurnRate,
@@ -117,7 +156,8 @@ export function calculatePoolRunway(
     };
   }
 
-  let totalAvailableTokens = 0;
+  let totalAvailable5h = 0;
+  let totalAvailableWeekly = 0;
   let totalConsumedTokens5h = 0;
   let totalConsumedTokensWeekly = 0;
 
@@ -131,11 +171,13 @@ export function calculatePoolRunway(
     if (acc.isUnlicensed || acc.quotas?.isUnlicensed) continue;
 
     const metrics = calculateAccountTokens(acc);
-    totalAvailableTokens += metrics.availableTokens5h;
+    totalAvailable5h += metrics.availableTokens5h;
+    totalAvailableWeekly += metrics.availableTokensWeekly;
     totalConsumedTokens5h += metrics.consumedTokens5h;
     totalConsumedTokensWeekly += metrics.consumedTokensWeekly;
   }
 
+  const totalAvailableTokens = totalAvailable5h;
   const totalMinutes = Math.floor((totalAvailableTokens / hourlyBurnRate) * 60);
   const runwayHours = Math.floor(totalMinutes / 60);
   const runwayMinutes = totalMinutes % 60;
@@ -153,6 +195,8 @@ export function calculatePoolRunway(
 
   return {
     totalAvailableTokens,
+    totalAvailableTokens5h: totalAvailable5h,
+    totalAvailableTokensWeekly: totalAvailableWeekly,
     totalConsumedTokens5h,
     totalConsumedTokensWeekly,
     hourlyBurnRate,
@@ -169,7 +213,8 @@ export function calculatePoolRunway(
 export function getUpcomingResetsTimeline(
   accounts: any[],
   nowMs: number = Date.now(),
-  maxItems = 4
+  maxItems = 4,
+  activeCooldowns: Record<string, any> = {}
 ): UpcomingResetItem[] {
   if (!Array.isArray(accounts)) return [];
 
@@ -177,19 +222,20 @@ export function getUpcomingResetsTimeline(
 
   for (const acc of accounts) {
     if (!acc) continue;
-    const accountName = acc.name || acc.email || acc.id || 'Compte Google';
+    const accountName = (acc.name || acc.email || acc.id || 'Compte Google').split('@')[0].trim();
     const quotas = acc.quotas || {};
 
     // 5H Reset
-    if (quotas.fiveHourResetTime) {
-      const t = new Date(quotas.fiveHourResetTime).getTime();
+    const fiveHourReset = quotas.fiveHourResetTime || quotas.gemini5hReset || quotas.geminiFiveHourResetTime;
+    if (fiveHourReset) {
+      const t = new Date(fiveHourReset).getTime();
       const diff = t - nowMs;
       if (!isNaN(diff) && diff > 0) {
         items.push({
           accountId: acc.id,
           accountName,
           type: '5h',
-          targetTime: quotas.fiveHourResetTime,
+          targetTime: fiveHourReset,
           remainingMs: diff,
           formattedCountdown: formatCompactDuration(diff),
         });
@@ -197,22 +243,47 @@ export function getUpcomingResetsTimeline(
     }
 
     // Weekly Reset
-    if (quotas.weeklyResetTime) {
-      const t = new Date(quotas.weeklyResetTime).getTime();
+    const weeklyReset = quotas.weeklyResetTime || quotas.geminiWkReset || quotas.geminiWeeklyResetTime;
+    if (weeklyReset) {
+      const t = new Date(weeklyReset).getTime();
       const diff = t - nowMs;
       if (!isNaN(diff) && diff > 0) {
         items.push({
           accountId: acc.id,
           accountName,
           type: 'weekly',
-          targetTime: quotas.weeklyResetTime,
+          targetTime: weeklyReset,
           remainingMs: diff,
           formattedCountdown: formatCompactDuration(diff),
         });
       }
     }
 
-    // Cooldown
+    // Inspect groups buckets if present
+    if (Array.isArray(quotas.groups)) {
+      for (const g of quotas.groups) {
+        for (const b of (g.buckets || [])) {
+          if (b.resetTime) {
+            const t = new Date(b.resetTime).getTime();
+            const diff = t - nowMs;
+            const bId = (b.bucketId || '').toLowerCase();
+            const is5h = bId.includes('5h') || (b.window || '').toLowerCase().includes('5h');
+            if (!isNaN(diff) && diff > 0 && !items.some(i => i.accountId === acc.id && Math.abs(i.remainingMs - diff) < 60000)) {
+              items.push({
+                accountId: acc.id,
+                accountName,
+                type: is5h ? '5h' : 'weekly',
+                targetTime: b.resetTime,
+                remainingMs: diff,
+                formattedCountdown: formatCompactDuration(diff),
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Cooldown from acc.cooldown
     const cd = acc.cooldown;
     if (cd && cd.until) {
       const t = new Date(cd.until).getTime();
@@ -223,6 +294,22 @@ export function getUpcomingResetsTimeline(
           accountName,
           type: 'cooldown',
           targetTime: cd.until,
+          remainingMs: diff,
+          formattedCountdown: formatCompactDuration(diff),
+        });
+      }
+    }
+
+    // Cooldown from activeCooldowns
+    const gCd = activeCooldowns[`google:${acc.email || acc.name || acc.id}:gemini`];
+    if (gCd && gCd.until) {
+      const diff = gCd.until - nowMs;
+      if (!isNaN(diff) && diff > 0 && !items.some(i => i.accountId === acc.id && i.type === 'cooldown')) {
+        items.push({
+          accountId: acc.id,
+          accountName,
+          type: 'cooldown',
+          targetTime: new Date(gCd.until).toISOString(),
           remainingMs: diff,
           formattedCountdown: formatCompactDuration(diff),
         });

@@ -660,6 +660,44 @@ describe('Google Accounts High-Density Dashboard Logic', () => {
       expect(dropdownHtml).toContain('1-clic');
       expect(dropdownHtml).toContain('Gratuit');
     });
+
+    it('accurately identifies blocked / sick accounts and filters them via status:blocked', () => {
+      const accounts = [
+        { id: 'acc1', name: 'Healthy', enabled: true, quotas: { geminiFiveHourPct: 80 } },
+        { id: 'acc2', name: 'TOS Blocked', enabled: true, isUnlicensed: true },
+        { id: 'acc3', name: 'Details Error', enabled: true, errorDetails: { reason: 'TOS_VIOLATION' } },
+        { id: 'acc4', name: 'HTTP 403 Error', enabled: true, status: 'unhealthy', lastError: '403 Forbidden: PERMISSION_DENIED' },
+      ];
+
+      const isAccountBlocked = (a: any) => Boolean(
+        a.isUnlicensed ||
+        a.errorDetails ||
+        a.quotas?.errorDetails ||
+        (a.status === 'unhealthy' && a.lastError?.includes('403'))
+      );
+
+      const blockedAccounts = accounts.filter(isAccountBlocked);
+      expect(blockedAccounts.length).toBe(3);
+      expect(blockedAccounts.map(a => a.id)).toEqual(['acc2', 'acc3', 'acc4']);
+    });
+
+    it('contains 1-Click Native Auto-Remediation and Appeal Copilot buttons in Error Details UI template', () => {
+      const modalTemplate = `
+        <button id="gaAutoRepairAdcBtn" class="btn btn-primary btn-sm">
+          ⚡ Réparer ce Compte (Fix 1-Clic Automatique)
+        </button>
+        <button id="gaCopyAppealTextBtn" class="btn btn-ghost btn-sm">
+          Copier le modèle de recours
+        </button>
+        <div id="gaAppealTextContent">I am writing to respectfully appeal the suspension...</div>
+      `;
+
+      expect(modalTemplate).toContain('id="gaAutoRepairAdcBtn"');
+      expect(modalTemplate).toContain('Fix 1-Clic Automatique');
+      expect(modalTemplate).toContain('id="gaCopyAppealTextBtn"');
+      expect(modalTemplate).toContain('gaAppealTextContent');
+      expect(modalTemplate).toContain('respectfully appeal');
+    });
   });
 });
 

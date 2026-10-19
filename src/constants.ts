@@ -478,7 +478,6 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = CORE_DETAILED
 });
 
 export const STANDARD_GOOGLE_MODELS = [
-  { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
   { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
   { id: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5 (Medium)', enabled: false },
   { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5 (Low)', enabled: false },

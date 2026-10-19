@@ -113,6 +113,98 @@ describe('ideAccountDiscovery', () => {
       const quotas = await fetchGoogleAccountQuotas('ya29.bad-token');
       expect(quotas).toBeNull();
     });
+
+    it('falls back to secondary host if primary host omits Gemini group and never pollutes Gemini quotas with Claude limits', async () => {
+      const claudeOnlyResponse = {
+        groups: [
+          {
+            displayName: 'Claude and GPT models',
+            buckets: [
+              { bucketId: '3p-5h', window: '5h', remainingFraction: 0, resetTime: '2026-10-19T00:55:21Z' },
+              { bucketId: '3p-weekly', window: 'weekly', remainingFraction: 0.45, resetTime: '2026-10-25T19:55:21Z' },
+            ],
+          },
+        ],
+      };
+
+      const fullResponse = {
+        groups: [
+          {
+            displayName: 'Gemini Models',
+            buckets: [
+              { bucketId: 'gemini-5h', window: '5h', remainingFraction: 0.94, resetTime: '2026-10-19T03:56:48Z' },
+              { bucketId: 'gemini-weekly', window: 'weekly', remainingFraction: 0.92, resetTime: '2026-10-21T13:01:39Z' },
+            ],
+          },
+          {
+            displayName: 'Claude and GPT models',
+            buckets: [
+              { bucketId: '3p-5h', window: '5h', remainingFraction: 0, resetTime: '2026-10-19T00:55:21Z' },
+              { bucketId: '3p-weekly', window: 'weekly', remainingFraction: 0.45, resetTime: '2026-10-25T19:55:21Z' },
+            ],
+          },
+        ],
+      };
+
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => claudeOnlyResponse,
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => fullResponse,
+        } as any);
+
+      const quotas = await fetchGoogleAccountQuotas('ya29.mock-token');
+      expect(quotas).not.toBeNull();
+      // Gemini quotas must be from the Gemini group, NOT polluted by Claude's 0% / 45%
+      expect(quotas!.geminiFiveHourPct).toBe(94);
+      expect(quotas!.geminiWeeklyPct).toBe(92);
+      expect(quotas!.fiveHourPercentage).toBe(94);
+      expect(quotas!.weeklyPercentage).toBe(92);
+      // Claude quotas must reflect Claude's limits
+      expect(quotas!.claudeFiveHourPct).toBe(0);
+      expect(quotas!.claudeWeeklyPct).toBe(45);
+    });
+
+    it('handles 403 TOS violation response by returning unlicensed status with errorDetails', async () => {
+      const mock403TOS = {
+        error: {
+          code: 403,
+          message: 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.',
+          status: 'PERMISSION_DENIED',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+              reason: 'TOS_VIOLATION',
+              domain: 'cloudcode-pa.googleapis.com',
+              metadata: {
+                appeal_url: 'https://forms.gle/hGzM9MEUv2azZsrb9',
+                appeal_url_link_text: 'Submit Appeal',
+                uiMessage: 'true',
+              },
+            },
+          ],
+        },
+      };
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => mock403TOS,
+      } as any);
+
+      const quotas = await fetchGoogleAccountQuotas('ya29.bad-tos-token');
+      expect(quotas).not.toBeNull();
+      expect(quotas!.isUnlicensed).toBe(true);
+      expect(quotas!.errorDetails).toBeDefined();
+      expect(quotas!.errorDetails?.reason).toBe('TOS_VIOLATION');
+      expect(quotas!.errorDetails?.appealUrl).toBe('https://forms.gle/hGzM9MEUv2azZsrb9');
+      expect(quotas!.errorDetails?.status).toBe('PERMISSION_DENIED');
+      expect(quotas!.errorDetails?.code).toBe(403);
+      expect(quotas!.groups[0].displayName).toBe('Violation TOS (HTTP 403)');
+    });
   });
 
   describe('refreshGoogleToken deduplication', () => {

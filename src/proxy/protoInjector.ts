@@ -428,31 +428,33 @@ function injectCustomModelsIntoUserStatusJson(
         continue;
       }
 
-      // Unlock Argon or Ultra-gated models in clientModelConfigs
-      const tagTitle = String(c.tagTitle || '');
-      const tagDesc = String(c.tagDescription || '');
-      if (
-        label.toLowerCase().includes('argon') ||
-        modelId.toLowerCase().includes('argon') ||
-        tagTitle.toLowerCase().includes('unavailable') ||
-        tagDesc.toLowerCase().includes('ultra') ||
-        c.disabled === true
-      ) {
-        delete c.disabled;
-        if (tagTitle.toLowerCase().includes('unavailable') || tagDesc.toLowerCase().includes('ultra')) {
-          delete c.tagTitle;
-          delete c.tagDescription;
-        }
-        if (!c.quotaInfo) {
-          c.quotaInfo = {
-            remainingFraction: 1,
-            resetTime: '2099-01-01T00:00:00Z',
-          };
-        }
-        if (Array.isArray(c.allowedTiers)) {
-          if (!c.allowedTiers.includes('g1-ultra-tier')) c.allowedTiers.push('g1-ultra-tier');
-          if (!c.allowedTiers.includes('ultra-tier')) c.allowedTiers.push('ultra-tier');
-          if (!c.allowedTiers.includes('TEAMS_TIER_ULTRA')) c.allowedTiers.push('TEAMS_TIER_ULTRA');
+      // Do NOT unlock native Argon models: standard Google accounts have 0 Argon quota.
+      // Forcing Argon unlock causes Antigravity to schedule background tasks on Argon, triggering 429 quota exhaustion.
+      const isArgon = label.toLowerCase().includes('argon') || modelId.toLowerCase().includes('argon');
+      if (!isArgon) {
+        const tagTitle = String(c.tagTitle || '');
+        const tagDesc = String(c.tagDescription || '');
+        if (
+          tagTitle.toLowerCase().includes('unavailable') ||
+          tagDesc.toLowerCase().includes('ultra') ||
+          c.disabled === true
+        ) {
+          delete c.disabled;
+          if (tagTitle.toLowerCase().includes('unavailable') || tagDesc.toLowerCase().includes('ultra')) {
+            delete c.tagTitle;
+            delete c.tagDescription;
+          }
+          if (!c.quotaInfo) {
+            c.quotaInfo = {
+              remainingFraction: 1,
+              resetTime: '2099-01-01T00:00:00Z',
+            };
+          }
+          if (Array.isArray(c.allowedTiers)) {
+            if (!c.allowedTiers.includes('g1-ultra-tier')) c.allowedTiers.push('g1-ultra-tier');
+            if (!c.allowedTiers.includes('ultra-tier')) c.allowedTiers.push('ultra-tier');
+            if (!c.allowedTiers.includes('TEAMS_TIER_ULTRA')) c.allowedTiers.push('TEAMS_TIER_ULTRA');
+          }
         }
       }
 

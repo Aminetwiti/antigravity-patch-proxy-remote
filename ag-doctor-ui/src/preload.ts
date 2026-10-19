@@ -87,6 +87,11 @@ const api = {
       cleared: number;
       error?: string;
     }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_PURGE_QUOTA_CACHE),
+    repairAccountAdc: (email?: string): Promise<{
+      success: boolean;
+      output?: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_REPAIR_ADC, email),
     onOAuthIntercepted: (handler: (data: { url: string; port?: number; redirectUri?: string; ts?: number }) => void): (() => void) => {
       const listener = (_: unknown, data: any) => handler(data);
       ipcRenderer.on(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);

@@ -104,6 +104,17 @@ describe('googleAuth service', () => {
       expect(tc2).toBeDefined();
       expect(tc2.thinkingLevel).toBe('medium');
       expect(tc2.thinkingBudget).toBeUndefined();
+
+      const payloadHighLevel: Record<string, unknown> = {
+        generationConfig: {
+          thinkingConfig: { thinkingLevel: 'high' },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payloadHighLevel, 'gemini-3.8-flash-tiered');
+      const tc3 = (payloadHighLevel.generationConfig as any).thinkingConfig;
+      expect(tc3).toBeDefined();
+      expect(tc3.thinkingLevel).toBe('medium');
+      expect(tc3.thinkingBudget).toBeUndefined();
     });
 
     it('clamps thinkingBudget to >= 1024 for Claude models', () => {

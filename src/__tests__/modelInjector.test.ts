@@ -97,11 +97,10 @@ describe('mergeModels', () => {
 
     expect(models['MODEL_PLACEHOLDER_M577']).toBeDefined();
     expect(models['gemini-3.8-flash']).toBeDefined();
-    expect(models['gemini-4-argon-medium']).toBeDefined();
     expect(response.agentModelSorts).toBeDefined();
   });
 
-  it('unlocks Gemini 4 Argon when upstream returns it disabled with Unavailable tag', () => {
+  it('keeps Gemini 4 Argon disabled when upstream returns it disabled with Unavailable tag', () => {
     const upstream = {
       'gemini-4-argon-medium': {
         displayName: 'Gemini 4 Argon (Medium)',
@@ -114,10 +113,19 @@ describe('mergeModels', () => {
     const merged = mergeModels(upstream, []) as Record<string, any>;
     const argon = merged['gemini-4-argon-medium'];
     expect(argon).toBeDefined();
-    expect(argon.disabled).toBeUndefined();
-    expect(argon.tagTitle).toBeUndefined();
-    expect(argon.tagDescription).toBeUndefined();
-    expect(argon.quotaInfo).toBeDefined();
-    expect(argon.quotaInfo.remainingFraction).toBe(1);
+    expect(argon.disabled).toBe(true);
+    expect(argon.tagTitle).toBe('Unavailable');
+  });
+
+  it('ensures no obsolete models such as gpt-oss-120b are present in agentModelSorts', () => {
+    const response = buildSyntheticModelsResponse([]);
+    const sorts = response.agentModelSorts as any[];
+    const modelIds = sorts[0]?.groups[0]?.modelIds || [];
+    expect(modelIds).not.toContain('gpt-oss-120b');
+    expect(modelIds).not.toContain('gpt-oss-120b-medium');
+    const models = response.models as Record<string, any>;
+    for (const id of modelIds) {
+      expect(models[id], `Model ${id} from agentModelSorts must exist in response.models`).toBeDefined();
+    }
   });
 });

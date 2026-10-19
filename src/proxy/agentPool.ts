@@ -145,8 +145,9 @@ export function getHttpAgent(opts: AgentOptions): http.Agent {
 /**
  * Drop the cached agent for a host so the next call gets a fresh one.
  * Useful after TLS errors or for tests.
+ * By default only destroys free/idle sockets so in-flight requests on other accounts are not aborted.
  */
-export function evictAgent(opts: AgentOptions): void {
+export function evictAgent(opts: AgentOptions, force = false): void {
   const httpsPort = defaultPort('https', opts.port);
   const httpPort = defaultPort('http', opts.port);
   const keyHttps = buildKey({ scheme: 'https', host: opts.host, port: httpsPort, allowUnauthorized: !!opts.allowUnauthorized });
@@ -154,13 +155,36 @@ export function evictAgent(opts: AgentOptions): void {
 
   const a = httpsCache.get(keyHttps);
   if (a) {
-    a.destroy();
     httpsCache.delete(keyHttps);
+    if (force) {
+      a.destroy();
+    } else {
+      destroyFreeSockets(a);
+    }
   }
   const b = httpCache.get(keyHttp);
   if (b) {
-    b.destroy();
     httpCache.delete(keyHttp);
+    if (force) {
+      b.destroy();
+    } else {
+      destroyFreeSockets(b);
+    }
+  }
+}
+
+function destroyFreeSockets(agent: http.Agent | https.Agent): void {
+  const free = (agent as any).freeSockets;
+  if (!free || typeof free !== 'object') return;
+  for (const key of Object.keys(free)) {
+    const list = free[key];
+    if (Array.isArray(list)) {
+      for (const sock of list) {
+        try {
+          sock.destroy();
+        } catch (_) {}
+      }
+    }
   }
 }
 

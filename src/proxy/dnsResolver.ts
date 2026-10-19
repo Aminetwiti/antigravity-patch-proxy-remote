@@ -115,6 +115,10 @@ export function clearDnsCache(): void {
   dnsCache.clear();
 }
 
+export function invalidateCachedDns(hostname: string): void {
+  dnsCache.delete(hostname);
+}
+
 function cacheDnsResult(hostname: string, ip: string): void {
   dnsCache.set(hostname, { ip, ts: Date.now() });
 }

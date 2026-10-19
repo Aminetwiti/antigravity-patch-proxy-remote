@@ -880,27 +880,47 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
     return isAiStudioKey ? 25 : 50;
   }
 
-  const isClaude = modelFamily
+  const isArgon = modelFamily
+    ? modelFamily.toLowerCase().includes('argon')
+    : (m.externalModelName || m.name || '').toLowerCase().includes('argon');
+
+  const isClaude = !isArgon && (modelFamily
     ? modelFamily.toLowerCase().includes('claude')
-    : (m.externalModelName || m.name || '').toLowerCase().includes('claude');
+    : (m.externalModelName || m.name || '').toLowerCase().includes('claude'));
 
-  const fiveHour = typeof (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct) === 'number'
-    ? (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct)
-    : typeof q.fiveHourPercentage === 'number'
-      ? q.fiveHourPercentage
-      : 50;
+  const fiveHour = isArgon
+    ? (typeof q.argonFiveHourPct === 'number'
+        ? q.argonFiveHourPct
+        : (typeof q.geminiFiveHourPct === 'number'
+          ? q.geminiFiveHourPct
+          : (typeof q.fiveHourPercentage === 'number' ? q.fiveHourPercentage : 50)))
+    : (typeof (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct) === 'number'
+      ? (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct)
+      : typeof q.fiveHourPercentage === 'number'
+        ? q.fiveHourPercentage
+        : 50);
 
-  const weekly = typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
-    ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
-    : typeof q.weeklyPercentage === 'number'
-      ? q.weeklyPercentage
-      : 50;
+  const weekly = isArgon
+    ? (typeof q.argonWeeklyPct === 'number'
+        ? q.argonWeeklyPct
+        : (typeof q.geminiWeeklyPct === 'number'
+          ? q.geminiWeeklyPct
+          : (typeof q.weeklyPercentage === 'number' ? q.weeklyPercentage : 50)))
+    : (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
+      ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
+      : typeof q.weeklyPercentage === 'number'
+        ? q.weeklyPercentage
+        : 50);
 
   const now = Date.now();
-  const fiveHourResetStr = isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime);
+  const fiveHourResetStr = isArgon
+    ? (q.argonFiveHourReset || q.geminiFiveHourReset || q.fiveHourResetTime)
+    : (isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime));
   const fiveHourResetPassed = fiveHourResetStr ? new Date(fiveHourResetStr).getTime() <= now : false;
 
-  const weeklyResetStr = isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime);
+  const weeklyResetStr = isArgon
+    ? (q.argonWeeklyReset || q.geminiWeeklyReset || q.weeklyResetTime)
+    : (isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime));
   const weeklyResetPassed = weeklyResetStr ? new Date(weeklyResetStr).getTime() <= now : false;
 
   // Staleness escape: if quota data has no resetTime AND is older than one 5h window,
@@ -1035,18 +1055,27 @@ export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): nu
   // elevated EWMA latency penalizes up to 25 points;
   // accounts with weekly quota under 30% receive a penalty (up to -20 points under 15%)
   // so accounts with healthy 5h and weekly > 30% are prioritized for attempt 1.
-  const isClaude = modelFamily
+  const isArgon = modelFamily
+    ? modelFamily.toLowerCase().includes('argon')
+    : (m.externalModelName || m.name || '').toLowerCase().includes('argon');
+  const isClaude = !isArgon && (modelFamily
     ? modelFamily.toLowerCase().includes('claude')
-    : (m.externalModelName || m.name || '').toLowerCase().includes('claude');
+    : (m.externalModelName || m.name || '').toLowerCase().includes('claude'));
   const qKey = getAccountQuotaKey(m);
   const live = getLiveAccountQuota(qKey);
   const q = (live || m.quotas) as Record<string, any> | undefined;
   const weeklyPct = q
-    ? (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
-      ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
-      : typeof q.weeklyPercentage === 'number'
-        ? q.weeklyPercentage
-        : 100)
+    ? (isArgon
+      ? (typeof q.argonWeeklyPct === 'number'
+          ? q.argonWeeklyPct
+          : (typeof q.geminiWeeklyPct === 'number'
+            ? q.geminiWeeklyPct
+            : (typeof q.weeklyPercentage === 'number' ? q.weeklyPercentage : 100)))
+      : (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
+        ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
+        : typeof q.weeklyPercentage === 'number'
+          ? q.weeklyPercentage
+          : 100))
     : 100;
   // Progressive weekly penalty: accounts below 15% get strong penalty (up to 20 pts);
   // accounts between 15% and 30% get mild penalty (up to 7 pts) to favor accounts with > 30% weekly quota.

@@ -347,5 +347,51 @@ describe('google-accounts-telemetry', () => {
       expect(pool.totalConsumedWeekly).toBeGreaterThan(0);
       expect(pool.totalAvailableWeekly).toBeGreaterThan(0);
     });
+
+    it('extracts quotas from Google groups buckets when present', () => {
+      const acc = {
+        id: 'google-groups-account',
+        enabled: true,
+        quotas: {
+          groups: [
+            {
+              displayName: 'Gemini Models',
+              buckets: [
+                { bucketId: 'gemini-5h', remainingFraction: 0.85 },
+                { bucketId: 'gemini-weekly', remainingFraction: 0.92 },
+              ],
+            },
+          ],
+        },
+      };
+      const metrics = calculateAccountTokens(acc);
+      expect(metrics.pct5h).toBe(85);
+      expect(metrics.pctWeekly).toBe(92);
+      expect(metrics.availableTokens5h).toBe(Math.round(250_000_000 * 0.85));
+    });
+
+    it('includes active cooldowns and groups reset times in upcoming resets timeline', () => {
+      const now = Date.now();
+      const accounts = [
+        {
+          id: 'acc-cd',
+          name: 'cooldown-test',
+          email: 'test@example.com',
+          quotas: {
+            gemini5hReset: new Date(now + 120_000).toISOString(),
+          },
+        },
+      ];
+      const cooldownCache = {
+        'google:test@example.com:gemini': {
+          until: now + 60_000,
+          remainingMin: 1,
+        },
+      };
+      const timeline = getUpcomingResetsTimeline(accounts, now, 4, cooldownCache);
+      expect(timeline.length).toBeGreaterThan(0);
+      expect(timeline[0].type).toBe('cooldown');
+      expect(timeline[0].accountName).toBe('cooldown-test');
+    });
   });
 });

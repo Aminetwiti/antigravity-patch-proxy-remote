@@ -8128,7 +8128,7 @@ let currentGaFetchedModels: Array<{ id: string; displayName: string; enabled: bo
 let googleAccountsCache: ProviderEntry[] = [];
 let gaCurrentQuotaWindow: '5h' | 'weekly' = 'weekly';
 let gaCurrentViewMode: 'list' | 'grid' = 'list';
-let gaCurrentFilter: 'all' | 'pro' | 'ultra' | 'free' | 'status:ready' | 'status:exhausted' | 'status:cooldown' | 'status:paused' = 'all';
+let gaCurrentFilter: 'all' | 'pro' | 'ultra' | 'free' | 'status:ready' | 'status:exhausted' | 'status:cooldown' | 'status:paused' | 'status:blocked' = 'all';
 let gaSearchQuery: string = '';
 let gaShowAllQuotas: boolean = true;
 let gaSortColumn: 'name' | 'quota' | 'lastUsed' | null = null;
@@ -8456,19 +8456,30 @@ export function getAccountEffectiveQuotas(acc: any): {
   geminiWkPct: number;
   claude5hPct: number;
   claudeWkPct: number;
+  argon5hPct?: number;
+  argonWkPct?: number;
   gemini5hReset?: string;
   geminiWkReset?: string;
   claude5hReset?: string;
   claudeWkReset?: string;
+  argon5hReset?: string;
+  argonWkReset?: string;
 } {
   const q = acc?.quotas || {};
 
   if (acc?.isUnlicensed || q?.isUnlicensed) {
+    const hasArgon = Boolean(
+      q?.argonWeeklyPct !== undefined ||
+      q?.argonFiveHourPct !== undefined ||
+      (Array.isArray(q?.groups) && q.groups.some((g: any) => (g.displayName || g.name || '').toLowerCase().includes('argon')))
+    );
     return {
       gemini5hPct: 0,
       geminiWkPct: 0,
       claude5hPct: 0,
       claudeWkPct: 0,
+      argon5hPct: hasArgon ? 0 : undefined,
+      argonWkPct: hasArgon ? 0 : undefined,
     };
   }
 
@@ -8476,15 +8487,20 @@ export function getAccountEffectiveQuotas(acc: any): {
   let foundGeminiWk: number | undefined;
   let foundClaude5h: number | undefined;
   let foundClaudeWk: number | undefined;
+  let foundArgon5h: number | undefined;
+  let foundArgonWk: number | undefined;
   let foundGemini5hReset: string | undefined;
   let foundGeminiWkReset: string | undefined;
   let foundClaude5hReset: string | undefined;
   let foundClaudeWkReset: string | undefined;
+  let foundArgon5hReset: string | undefined;
+  let foundArgonWkReset: string | undefined;
 
   // Inspect groups / buckets if present (Google Cloud Code Live Quota Summary)
   if (Array.isArray(q.groups)) {
     for (const g of q.groups) {
       const gName = (g.displayName || g.name || '').toLowerCase();
+      const isArgonGroup = gName.includes('argon');
       const isClaudeGroup = gName.includes('claude') || gName.includes('3p') || gName.includes('gpt');
       for (const b of (g.buckets || [])) {
         const bId = (b.bucketId || '').toLowerCase();
@@ -8495,7 +8511,16 @@ export function getAccountEffectiveQuotas(acc: any): {
         const is5h = bId.includes('5h') || bWin.includes('5h') || bWin.includes('hour');
         const isWk = bId.includes('weekly') || bWin.includes('weekly');
 
-        if (isClaudeGroup || bId.includes('claude') || bId.includes('3p')) {
+        if (isArgonGroup || bId.includes('argon')) {
+          if (is5h && pct !== undefined && foundArgon5h === undefined) {
+            foundArgon5h = pct;
+            foundArgon5hReset = b.resetTime;
+          }
+          if (isWk && pct !== undefined && foundArgonWk === undefined) {
+            foundArgonWk = pct;
+            foundArgonWkReset = b.resetTime;
+          }
+        } else if (isClaudeGroup || bId.includes('claude') || bId.includes('3p')) {
           if (is5h && pct !== undefined && foundClaude5h === undefined) {
             foundClaude5h = pct;
             foundClaude5hReset = b.resetTime;
@@ -8523,6 +8548,8 @@ export function getAccountEffectiveQuotas(acc: any): {
   let gemini5hPct = (typeof q.geminiFiveHourPct === 'number' ? q.geminiFiveHourPct : foundGemini5h) ?? q.fiveHourPercentage ?? (acc?.status === 'unhealthy' ? 0 : 100);
   let claudeWkPct = (typeof q.claudeWeeklyPct === 'number' ? q.claudeWeeklyPct : foundClaudeWk) ?? (q.groups && foundClaudeWk === undefined && typeof q.claudeWeeklyPct !== 'number' ? 0 : (acc?.status === 'unhealthy' ? 0 : 100));
   let claude5hPct = (typeof q.claudeFiveHourPct === 'number' ? q.claudeFiveHourPct : foundClaude5h) ?? (acc?.status === 'unhealthy' ? 0 : 100);
+  let argonWkPct = (typeof q.argonWeeklyPct === 'number' ? q.argonWeeklyPct : foundArgonWk);
+  let argon5hPct = (typeof q.argonFiveHourPct === 'number' ? q.argonFiveHourPct : foundArgon5h);
 
   // Reality rule: If weekly quota is 0, Google locks the 5h window completely
   if (geminiWkPct <= 0) {
@@ -8530,6 +8557,9 @@ export function getAccountEffectiveQuotas(acc: any): {
   }
   if (claudeWkPct <= 0) {
     claude5hPct = 0;
+  }
+  if (typeof argonWkPct === 'number' && argonWkPct <= 0) {
+    argon5hPct = 0;
   }
 
   // Free accounts do not have access to Claude/GPT models
@@ -8544,6 +8574,8 @@ export function getAccountEffectiveQuotas(acc: any): {
     geminiWkPct = 0;
     claude5hPct = 0;
     claudeWkPct = 0;
+    if (typeof argonWkPct === 'number') argonWkPct = 0;
+    if (typeof argon5hPct === 'number') argon5hPct = 0;
   }
 
   const is5hWindowReset = (iso?: string) => {
@@ -8556,16 +8588,22 @@ export function getAccountEffectiveQuotas(acc: any): {
   const rawGeminiWkReset = foundGeminiWkReset || q.geminiWeeklyReset || q.weeklyResetTime || (!is5hWindowReset(q.geminiResetTime) ? q.geminiResetTime : undefined);
   const rawClaude5hReset = foundClaude5hReset || q.claudeFiveHourReset || (is5hWindowReset(q.claudeResetTime) ? q.claudeResetTime : undefined);
   const rawClaudeWkReset = foundClaudeWkReset || q.claudeWeeklyReset || (!is5hWindowReset(q.claudeWeeklyReset) ? q.claudeWeeklyReset : rawGeminiWkReset);
+  const rawArgon5hReset = foundArgon5hReset || q.argonFiveHourReset;
+  const rawArgonWkReset = foundArgonWkReset || q.argonWeeklyReset;
 
   return {
     gemini5hPct: Math.max(0, Math.min(100, gemini5hPct)),
     geminiWkPct: Math.max(0, Math.min(100, geminiWkPct)),
     claude5hPct: Math.max(0, Math.min(100, claude5hPct)),
     claudeWkPct: Math.max(0, Math.min(100, claudeWkPct)),
+    argon5hPct: typeof argon5hPct === 'number' ? Math.max(0, Math.min(100, argon5hPct)) : undefined,
+    argonWkPct: typeof argonWkPct === 'number' ? Math.max(0, Math.min(100, argonWkPct)) : undefined,
     gemini5hReset: rawGemini5hReset,
     geminiWkReset: rawGeminiWkReset,
     claude5hReset: rawClaude5hReset,
     claudeWkReset: rawClaudeWkReset,
+    argon5hReset: rawArgon5hReset,
+    argonWkReset: rawArgonWkReset,
   };
 }
 
@@ -9011,6 +9049,7 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
   let exhausted = 0;
   let cooldown = 0;
   let paused = 0;
+  let blocked = 0;
 
   for (const a of accounts) {
     const tier = getAccountTier(a);
@@ -9020,8 +9059,13 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
 
     const isEnabled = a.enabled !== false;
     const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
+    const isBlocked = isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'));
     const cdGemini = getAccountActiveCooldown(a, 'gemini');
     const eff = getAccountEffectiveQuotas(a);
+
+    if (isBlocked) {
+      blocked++;
+    }
 
     if (!isEnabled || isUnlicensed) {
       paused++;
@@ -9039,6 +9083,7 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
   const elExhausted = $('#gaCntExhausted');
   const elCooldown = $('#gaCntCooldown');
   const elPaused = $('#gaCntPaused');
+  const elBlocked = $('#gaCntBlocked');
   const elPro = $('#gaCntPro');
   const elUltra = $('#gaCntUltra');
   const elFree = $('#gaCntFree');
@@ -9048,6 +9093,7 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
   if (elExhausted) elExhausted.textContent = String(exhausted);
   if (elCooldown) elCooldown.textContent = String(cooldown);
   if (elPaused) elPaused.textContent = String(paused);
+  if (elBlocked) elBlocked.textContent = String(blocked);
   if (elPro) elPro.textContent = String(pro);
   if (elUltra) elUltra.textContent = String(ultra);
   if (elFree) elFree.textContent = String(free);
@@ -9419,10 +9465,446 @@ function initGoogleAccountsToolbarOnce(): void {
     }
   });
 
+  function showAccountErrorDetailsModal(account: any): void {
+    if (!account) return;
+    const err = account.errorDetails || account.quotas?.errorDetails || {};
+    const reason = err.reason || (account.lastError?.includes('Terms of Service') ? 'TOS_VIOLATION' : 'PERMISSION_DENIED');
+    const message = err.message || account.lastError || 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.';
+    const appealUrl = err.appealUrl || 'https://forms.gle/hGzM9MEUv2azZsrb9';
+    const detectionDate = err.detectionTime ? new Date(err.detectionTime) : new Date(account.lastTestedAt || Date.now());
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const detectionTimeStr = `${pad(detectionDate.getDate())}/${pad(detectionDate.getMonth() + 1)}/${detectionDate.getFullYear()} à ${pad(detectionDate.getHours())}:${pad(detectionDate.getMinutes())}:${pad(detectionDate.getSeconds())}`;
+
+    const rawJson = err.raw || {
+      error: {
+        code: 403,
+        message,
+        status: 'PERMISSION_DENIED',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason,
+            domain: 'cloudcode-pa.googleapis.com',
+            metadata: {
+              appeal_url: appealUrl,
+              appeal_url_link_text: 'Submit Appeal',
+              uiMessage: 'true'
+            }
+          }
+        ]
+      }
+    };
+
+    const accountEmail = account.email || account.name || 'compte@gmail.com';
+    const rawJsonString = JSON.stringify(rawJson, null, 2);
+
+    const modalHtml = `
+      <div class="ga-error-details-card" style="font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif); color: #f1f5f9; padding: 2px 4px; line-height: 1.5;">
+        <!-- Header: Severity Banner & Comprehension -->
+        <div style="text-align: center; margin-bottom: 20px; position: relative;">
+          <div style="width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle, rgba(239, 68, 68, 0.28) 0%, rgba(239, 68, 68, 0.05) 75%); border: 2px solid #ef4444; color: #ef4444; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 12px; box-shadow: 0 0 24px rgba(239, 68, 68, 0.35);">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </div>
+          <h2 style="font-size: 20px; font-weight: 700; color: #ffffff; margin: 0 0 4px 0; letter-spacing: -0.3px;">Diagnostic &amp; Résolution de Compte</h2>
+          <div style="font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 6px #ef4444;"></span>
+            <span>Erreur HTTP 403 Forbidden · Violation des Conditions d'Utilisation (TOS)</span>
+          </div>
+        </div>
+
+        <!-- Account Card: Recognition Over Recall -->
+        <div style="margin-bottom: 14px; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0;">
+              G
+            </div>
+            <div style="min-width: 0;">
+              <div style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8;">COMPTE AFFECTÉ</div>
+              <div style="font-size: 13.5px; font-weight: 600; color: #f8fafc; font-family: var(--font-mono, monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="gaAccountEmailText">
+                ${escapeHtml(accountEmail)}
+              </div>
+            </div>
+          </div>
+          <button type="button" id="gaCopyEmailBtn" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; padding: 6px 10px; font-size: 11.5px; color: #cbd5e1; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s ease; flex-shrink: 0;" title="Copier l'email dans le presse-papier">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="gaCopyEmailLabel">Copier</span>
+          </button>
+        </div>
+
+        <!-- Status Badges: Visual Categorization -->
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; margin-bottom: 6px;">STATUT DU PROXY &amp; ROTATION</div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <span style="background: rgba(239, 68, 68, 0.18); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Blocked due to Violation
+            </span>
+            <span style="background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+              Proxy Rotation Disabled
+            </span>
+            <span style="background: rgba(148, 163, 184, 0.12); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.25); padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Autres comptes préservés
+            </span>
+          </div>
+        </div>
+
+        <!-- Reason & Show Raw JSON -->
+        <div style="margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8;">MESSAGE GOOGLE CLOUD CODE</span>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" id="gaCopyRawBtn" style="display: none; background: none; border: none; color: #94a3b8; font-size: 11.5px; cursor: pointer; padding: 2px 4px;">
+                📋 Copier JSON
+              </button>
+              <button type="button" id="gaToggleRawBtn" style="background: none; border: none; color: #60a5fa; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px;">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span id="gaToggleRawLabel">Show Raw</span>
+              </button>
+            </div>
+          </div>
+          <div id="gaReasonFormatted" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 12px 14px; color: #fca5a5; font-size: 12.5px; line-height: 1.55;">
+            <div style="font-weight: 600; margin-bottom: 4px; color: #f87171; display: flex; align-items: center; gap: 6px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              ${escapeHtml(reason)}
+            </div>
+            ${escapeHtml(message)}
+          </div>
+          <pre id="gaReasonRaw" style="display: none; background: #070a12; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 12px; color: #94a3b8; font-size: 11px; font-family: var(--font-mono, monospace); max-height: 160px; overflow-y: auto; white-space: pre-wrap; margin: 0; line-height: 1.45;">${escapeHtml(rawJsonString)}</pre>
+        </div>
+
+        <!-- 1-Click Auto-Remediation (Native In-App) -->
+        <div style="margin-bottom: 16px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #34d399; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>⚡</span> AUTO-REMÉDIATION 1-CLIC (INTÉGRÉE DANS DOCTOR)
+          </div>
+          <p style="margin: 0 0 10px 0; font-size: 12px; color: #cbd5e1; line-height: 1.45;">
+            Cette action lance l'authentification Google officielle directement dans Doctor, renouvelle le token et régénère les identifiants ADC sans aucune commande de terminal ni outil externe.
+          </p>
+          <button type="button" id="gaAutoRepairAdcBtn" style="width: 100%; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; border-radius: 7px; padding: 10px 14px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 3px 12px rgba(16, 185, 129, 0.35); transition: all 0.15s ease;">
+            <svg id="gaAutoRepairAdcIcon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span id="gaAutoRepairAdcLabel">⚡ Réparer ce Compte (Fix 1-Clic Automatique)</span>
+          </button>
+          <div id="gaAutoRepairAdcFeedback" style="display: none; margin-top: 10px; font-size: 11.5px; border-radius: 6px; padding: 8px 10px;"></div>
+        </div>
+
+        <!-- Action Buttons: Fitts's Law & Clear Intent -->
+        <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px; margin-bottom: 16px;">
+          <button type="button" id="gaGoToAppealBtn" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border: none; border-radius: 8px; padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35); transition: transform 0.1s ease, box-shadow 0.15s ease;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            <span>Go to Appeal</span>
+            <span style="font-size: 11px; opacity: 0.85;">↗</span>
+          </button>
+          <button type="button" id="gaCopyAppealBtn" style="background: rgba(255, 255, 255, 0.05); color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.15s ease;">
+            <svg id="gaCopyAppealIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="gaCopyAppealLabel">Copy Appeal URL</span>
+          </button>
+        </div>
+
+        <!-- Appeal Copilot: Argumentaire de Recours prêt à copier -->
+        <div style="margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px; background: rgba(15, 23, 42, 0.5);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
+              <span>🤖</span> APPEAL COPILOT (ARGUMENTAIRE DE RECOURS)
+            </span>
+            <button type="button" id="gaCopyAppealTextBtn" style="background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 5px; color: #60a5fa; padding: 3px 8px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+              <span>📋</span> <span id="gaCopyAppealTextLabel">Copier le texte</span>
+            </button>
+          </div>
+          <div id="gaAppealTextContent" style="font-size: 11.5px; color: #cbd5e1; line-height: 1.5; font-style: italic; background: rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 6px; border-left: 3px solid #60a5fa;">
+            "Ce compte est utilisé légitimement avec Google Cloud Code et l'IDE Antigravity pour de l'assistance au développement de code local. Aucune activité de scraping, revente ou abus automatisé. Il s'agit très probablement d'un faux-positif suite à un renouvellement de jetons locaux. Merci de réactiver l'accès au service."
+          </div>
+        </div>
+
+        <!-- Terminal Quick Fix: Progressive Disclosure & Self-Efficacy -->
+        <div style="margin-bottom: 16px; border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; overflow: hidden; background: rgba(15, 23, 42, 0.6);">
+          <button type="button" id="gaQuickFixToggleBtn" style="width: 100%; background: rgba(37, 99, 235, 0.12); border: none; padding: 12px 14px; text-align: left; color: #93c5fd; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: background 0.15s ease;">
+            <span style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-family: var(--font-mono, monospace); font-weight: 700; font-size: 13px; background: rgba(59, 130, 246, 0.25); color: #60a5fa; padding: 2px 6px; border-radius: 4px;">&gt;_</span>
+              <span>Terminal Quick Fix (Resolves internal 403s)</span>
+            </span>
+            <span id="gaQuickFixArrow" style="transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); font-size: 16px; font-weight: bold; color: #60a5fa;">›</span>
+          </button>
+          <div id="gaQuickFixBody" style="display: none; padding: 14px 16px; font-size: 12px; line-height: 1.6; color: #cbd5e1; border-top: 1px solid rgba(59, 130, 246, 0.2);">
+            <div style="background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3b82f6; padding: 8px 12px; border-radius: 0 6px 6px 0; margin-bottom: 12px; font-size: 11.5px; color: #bfdbfe;">
+              💡 <strong>Déblocage immédiat :</strong> La commande ci-dessous réinitialise l'autorisation Application Default Credentials (ADC) sans attendre le délai de traitement de l'appel.
+            </div>
+
+            <!-- Step 1: Tell Google it's me -->
+            <p style="margin: 0 0 6px 0; font-weight: 600; color: #f1f5f9;">1. Indiquer à Google "c'est bien moi" :</p>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 6px; font-family: var(--font-mono, monospace); color: #38bdf8;">
+              <span style="user-select: all;">gcloud auth login --update-adc</span>
+              <button type="button" class="btn-copy-cmd" data-cmd="gcloud auth login --update-adc" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1; border-radius: 4px; cursor: pointer; padding: 3px 8px; font-size: 11px; display: flex; align-items: center; gap: 4px;" title="Copier la commande">
+                <span>📋</span> Copier
+              </button>
+            </div>
+            <p style="margin: 0 0 14px 0; color: #94a3b8; font-size: 11px;">Appuyez sur <kbd style="background: rgba(255,255,255,0.12); padding: 1px 4px; border-radius: 3px; color: #f8fafc;">Entrée</kbd>, tapez <kbd style="background: rgba(255,255,255,0.12); padding: 1px 4px; border-radius: 3px; color: #f8fafc;">Y</kbd>. Le navigateur s'ouvre : sélectionnez ce compte et cliquez sur "Autoriser". Une fois le message <em>"You are now authenticated"</em> affiché, le compte est prêt.</p>
+
+            <!-- Step 2: Clear cache if fails -->
+            <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 6px;">2. 🧹 Si le 403 persiste (Vider le cache d'identification) :</div>
+            <p style="margin: 0 0 6px 0; font-size: 11.5px; color: #94a3b8;">Révoquez l'ancien jeton corrompu :</p>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 6px; font-family: var(--font-mono, monospace); color: #f87171;">
+              <span style="user-select: all;">gcloud auth revoke ${escapeHtml(accountEmail)}</span>
+              <button type="button" class="btn-copy-cmd" data-cmd="gcloud auth revoke ${escapeHtml(accountEmail)}" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1; border-radius: 4px; cursor: pointer; padding: 3px 8px; font-size: 11px; display: flex; align-items: center; gap: 4px;" title="Copier la commande">
+                <span>📋</span> Copier
+              </button>
+            </div>
+            <p style="margin: 0 0 6px 0; font-size: 11.5px; color: #94a3b8;">Puis reconnectez-vous :</p>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 14px; font-family: var(--font-mono, monospace); color: #38bdf8;">
+              <span style="user-select: all;">gcloud auth login --update-adc</span>
+              <button type="button" class="btn-copy-cmd" data-cmd="gcloud auth login --update-adc" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1; border-radius: 4px; cursor: pointer; padding: 3px 8px; font-size: 11px; display: flex; align-items: center; gap: 4px;" title="Copier la commande">
+                <span>📋</span> Copier
+              </button>
+            </div>
+
+            <!-- Step 3: Platform specific env vars -->
+            <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 6px;">3. ⚙️ Réinitialiser la variable GOOGLE_APPLICATION_CREDENTIALS :</div>
+            <div style="display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 6px 10px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.06); font-family: var(--font-mono, monospace); font-size: 11px;">
+                <span style="color: #93c5fd;"><span style="color: #64748b;"># PowerShell:</span> $env:GOOGLE_APPLICATION_CREDENTIALS=""</span>
+                <button type="button" class="btn-copy-cmd" data-cmd='$env:GOOGLE_APPLICATION_CREDENTIALS=""' style="background: none; border: none; color: #94a3b8; cursor: pointer; padding: 2px 6px; font-size: 11px;" title="Copier PowerShell">📋</button>
+              </div>
+              <div style="display: flex; align-items: center; justify-content: space-between; background: #070a12; padding: 6px 10px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.06); font-family: var(--font-mono, monospace); font-size: 11px;">
+                <span style="color: #93c5fd;"><span style="color: #64748b;"># Bash / macOS:</span> unset GOOGLE_APPLICATION_CREDENTIALS</span>
+                <button type="button" class="btn-copy-cmd" data-cmd="unset GOOGLE_APPLICATION_CREDENTIALS" style="background: none; border: none; color: #94a3b8; cursor: pointer; padding: 2px 6px; font-size: 11px;" title="Copier Bash">📋</button>
+              </div>
+            </div>
+
+            <!-- Common Tips -->
+            <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 6px;">💡 Astuces Complémentaires :</div>
+            <ul style="margin: 0; padding-left: 18px; color: #94a3b8; font-size: 11.5px; line-height: 1.55;">
+              <li style="margin-bottom: 4px;">Pour les environnements de production, l'usage d'une clé <strong>Service Account JSON</strong> dédiée garantit une stabilité maximale.</li>
+              <li style="margin-bottom: 4px;">Vérifiez si l'API Generative Language est active dans la <a href="#" id="gaOpenConsoleLink" style="color: #60a5fa; text-decoration: underline;">Console Google Cloud</a>. Si les autorisations sont gelées pour contrôle de sécurité, laissez le compte refroidir pendant 72 heures.</li>
+              <li>Vous pouvez également tester la commande <code style="color: #cbd5e1; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">npm install -g @google/gemini-cli</code>. Si elle fonctionne, supprimez puis ré-autorisez simplement le compte dans l'interface.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Detection Timestamp -->
+        <div style="font-size: 11px; color: #64748b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; justify-content: flex-end;">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Détecté le : ${detectionTimeStr}
+        </div>
+      </div>
+    `;
+
+    void modals.confirm('Diagnostic Erreur 403 / TOS', modalHtml, {
+      confirmLabel: 'Fermer le Diagnostic',
+      hideCancel: true,
+      onMount: (handle) => {
+        handle.confirmBtn.style.width = '100%';
+        handle.confirmBtn.style.padding = '12px 20px';
+        handle.confirmBtn.style.fontSize = '14px';
+        handle.confirmBtn.style.fontWeight = '600';
+        handle.confirmBtn.style.borderRadius = '8px';
+        handle.confirmBtn.style.background = '#2563eb';
+        handle.confirmBtn.style.boxShadow = '0 4px 14px rgba(37, 99, 235, 0.4)';
+
+        // Copy Account Email
+        const copyEmailBtn = handle.bodyEl.querySelector('#gaCopyEmailBtn');
+        const copyEmailLabel = handle.bodyEl.querySelector('#gaCopyEmailLabel');
+        copyEmailBtn?.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(accountEmail);
+            if (copyEmailLabel) copyEmailLabel.textContent = '✓ Copié !';
+            toast('Email copié dans le presse-papier !', 'ok');
+            setTimeout(() => {
+              if (copyEmailLabel) copyEmailLabel.textContent = 'Copier';
+            }, 1800);
+          } catch {
+            toast('Impossible de copier l\'email', 'err');
+          }
+        });
+
+        // 1-Click Native Auto-Remediation (No external command needed)
+        const autoRepairBtn = handle.bodyEl.querySelector('#gaAutoRepairAdcBtn') as HTMLButtonElement | null;
+        const autoRepairLabel = handle.bodyEl.querySelector('#gaAutoRepairAdcLabel');
+        const autoRepairFeedback = handle.bodyEl.querySelector('#gaAutoRepairAdcFeedback') as HTMLElement | null;
+
+        autoRepairBtn?.addEventListener('click', async () => {
+          if (!autoRepairBtn) return;
+          autoRepairBtn.disabled = true;
+          autoRepairBtn.style.opacity = '0.75';
+          if (autoRepairLabel) autoRepairLabel.textContent = 'Connexion Google en cours...';
+          if (autoRepairFeedback) {
+            autoRepairFeedback.style.display = 'block';
+            autoRepairFeedback.style.background = 'rgba(59, 130, 246, 0.15)';
+            autoRepairFeedback.style.border = '1px solid rgba(59, 130, 246, 0.35)';
+            autoRepairFeedback.style.color = '#93c5fd';
+            autoRepairFeedback.innerHTML = '🌐 Navigateur ouvert pour l\'autorisation Google. Veuillez cliquer sur "Autoriser" puis patienter...';
+          }
+
+          try {
+            const res = await (window.ag.providers as any).repairAccountAdc?.(accountEmail);
+            if (res && res.success) {
+              if (autoRepairLabel) autoRepairLabel.innerHTML = '✓ Réparation validée avec succès !';
+              if (autoRepairFeedback) {
+                autoRepairFeedback.style.background = 'rgba(16, 185, 129, 0.18)';
+                autoRepairFeedback.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+                autoRepairFeedback.style.color = '#34d399';
+                autoRepairFeedback.innerHTML = '✅ Compte réhabilité et identifiants Google ADC synchronisés avec succès !';
+              }
+              toast('Compte Google réparé et ADC synchronisé !', 'ok', 4000);
+              await loadGoogleAccounts(true);
+            } else {
+              if (autoRepairLabel) autoRepairLabel.textContent = 'Échec de la réparation';
+              if (autoRepairFeedback) {
+                autoRepairFeedback.style.background = 'rgba(239, 68, 68, 0.15)';
+                autoRepairFeedback.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                autoRepairFeedback.style.color = '#fca5a5';
+                autoRepairFeedback.innerHTML = `⚠️ ${escapeHtml(res?.error || 'Erreur lors de la réparation du compte')}`;
+              }
+              toast(`Erreur : ${res?.error || 'Échec de réparation'}`, 'err', 4500);
+            }
+          } catch (err: any) {
+            if (autoRepairFeedback) {
+              autoRepairFeedback.style.display = 'block';
+              autoRepairFeedback.style.background = 'rgba(239, 68, 68, 0.15)';
+              autoRepairFeedback.style.color = '#fca5a5';
+              autoRepairFeedback.innerHTML = `⚠️ ${escapeHtml(err?.message || String(err))}`;
+            }
+          } finally {
+            autoRepairBtn.disabled = false;
+            autoRepairBtn.style.opacity = '1';
+          }
+        });
+
+        // Copy Appeal Copilot Text
+        const copyAppealTextBtn = handle.bodyEl.querySelector('#gaCopyAppealTextBtn');
+        const copyAppealTextLabel = handle.bodyEl.querySelector('#gaCopyAppealTextLabel');
+        const appealTextContent = handle.bodyEl.querySelector('#gaAppealTextContent');
+
+        copyAppealTextBtn?.addEventListener('click', async () => {
+          const textToCopy = appealTextContent?.textContent?.trim().replace(/^"|"$/g, '') || '';
+          if (textToCopy) {
+            try {
+              await navigator.clipboard.writeText(textToCopy);
+              if (copyAppealTextLabel) copyAppealTextLabel.textContent = '✓ Texte Copié !';
+              toast('Argumentaire de recours copié dans le presse-papier !', 'ok');
+              setTimeout(() => {
+                if (copyAppealTextLabel) copyAppealTextLabel.textContent = 'Copier le texte';
+              }, 2000);
+            } catch {
+              toast('Impossible de copier l\'argumentaire', 'err');
+            }
+          }
+        });
+
+        // Toggle Show/Hide Raw
+        const toggleRawBtn = handle.bodyEl.querySelector('#gaToggleRawBtn');
+        const toggleRawLabel = handle.bodyEl.querySelector('#gaToggleRawLabel');
+        const copyRawBtn = handle.bodyEl.querySelector('#gaCopyRawBtn') as HTMLElement;
+        const reasonFormatted = handle.bodyEl.querySelector('#gaReasonFormatted') as HTMLElement;
+        const reasonRaw = handle.bodyEl.querySelector('#gaReasonRaw') as HTMLElement;
+        toggleRawBtn?.addEventListener('click', () => {
+          const isRaw = reasonRaw.style.display !== 'none';
+          if (isRaw) {
+            reasonRaw.style.display = 'none';
+            reasonFormatted.style.display = 'block';
+            if (copyRawBtn) copyRawBtn.style.display = 'none';
+            if (toggleRawLabel) toggleRawLabel.textContent = 'Show Raw';
+          } else {
+            reasonRaw.style.display = 'block';
+            reasonFormatted.style.display = 'none';
+            if (copyRawBtn) copyRawBtn.style.display = 'inline-block';
+            if (toggleRawLabel) toggleRawLabel.textContent = 'Hide Raw';
+          }
+        });
+
+        // Copy Raw JSON
+        copyRawBtn?.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(rawJsonString);
+            toast('JSON brut copié dans le presse-papier !', 'ok');
+          } catch {
+            toast('Impossible de copier le JSON', 'err');
+          }
+        });
+
+        // Go to Appeal
+        const goToAppealBtn = handle.bodyEl.querySelector('#gaGoToAppealBtn');
+        goToAppealBtn?.addEventListener('click', () => {
+          if (window.ag?.openExternal) {
+            void window.ag.openExternal(appealUrl);
+          } else {
+            window.open(appealUrl, '_blank');
+          }
+        });
+
+        // Copy Appeal URL with micro-interaction feedback
+        const copyAppealBtn = handle.bodyEl.querySelector('#gaCopyAppealBtn');
+        const copyAppealLabel = handle.bodyEl.querySelector('#gaCopyAppealLabel');
+        copyAppealBtn?.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(appealUrl);
+            if (copyAppealLabel) copyAppealLabel.textContent = '✓ URL Copiée !';
+            toast('Appeal URL copié dans le presse-papier !', 'ok');
+            setTimeout(() => {
+              if (copyAppealLabel) copyAppealLabel.textContent = 'Copy Appeal URL';
+            }, 2000);
+          } catch {
+            toast('Impossible de copier l\'URL', 'err');
+          }
+        });
+
+        // Terminal Quick Fix Accordion
+        const quickFixToggleBtn = handle.bodyEl.querySelector('#gaQuickFixToggleBtn');
+        const quickFixBody = handle.bodyEl.querySelector('#gaQuickFixBody') as HTMLElement;
+        const quickFixArrow = handle.bodyEl.querySelector('#gaQuickFixArrow') as HTMLElement;
+        quickFixToggleBtn?.addEventListener('click', () => {
+          const isExpanded = quickFixBody.style.display !== 'none';
+          quickFixBody.style.display = isExpanded ? 'none' : 'block';
+          if (quickFixArrow) {
+            quickFixArrow.style.transform = isExpanded ? 'none' : 'rotate(90deg)';
+          }
+        });
+
+        // Copy Command Buttons with micro-interaction
+        handle.bodyEl.querySelectorAll('.btn-copy-cmd').forEach((btnEl) => {
+          btnEl.addEventListener('click', async () => {
+            const cmd = (btnEl as HTMLElement).dataset.cmd || '';
+            if (cmd) {
+              try {
+                await navigator.clipboard.writeText(cmd);
+                const originalHtml = btnEl.innerHTML;
+                btnEl.innerHTML = '<span style="color:#10b981;">✓</span> Copié !';
+                toast(`Commande copiée : ${cmd}`, 'ok');
+                setTimeout(() => {
+                  btnEl.innerHTML = originalHtml;
+                }, 1500);
+              } catch {}
+            }
+          });
+        });
+
+        // Google Cloud Console Link
+        handle.bodyEl.querySelector('#gaOpenConsoleLink')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          const url = 'https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com';
+          if (window.ag?.openExternal) void window.ag.openExternal(url);
+          else window.open(url, '_blank');
+        });
+      }
+    });
+  }
+
   // Delegated event listeners for gaAccountsContainer
   if (gaAccountsContainer) {
     gaAccountsContainer.addEventListener('click', async (e) => {
       const target = e.target as HTMLElement;
+
+      // Error Details modal trigger (badge or button)
+      const errTrigger = target.closest('.ga-error-details-btn, .ga-error-details-badge') as HTMLElement | null;
+      if (errTrigger) {
+        const row = errTrigger.closest('[data-id]') as HTMLElement | null;
+        const id = row?.dataset.id || errTrigger.dataset.id;
+        const acc = googleAccountsCache.find((x) => x.id === id);
+        if (acc) {
+          showAccountErrorDetailsModal(acc);
+          return;
+        }
+      }
 
       // Sortable table headers
       const sortTh = target.closest('.ga-sortable-th') as HTMLElement | null;
@@ -9613,6 +10095,20 @@ function initGoogleAccountsToolbarOnce(): void {
               </button>
             </div>
             ` : ''}
+            ${(account.isUnlicensed || (account as any).errorDetails || account.quotas?.errorDetails || ((account as any).status === 'unhealthy' && (account as any).lastError?.includes('403'))) ? `
+            <div style="margin-bottom: 14px; padding: 12px 14px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+              <div>
+                <strong style="color: #ef4444; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  Compte Bloqué par Google (TOS Violation / 403)
+                </strong>
+                <div style="font-size: 11px; color: #fca5a5; margin-top: 2px;">Violation des conditions ou suspension détectée. Guide de déblocage disponible.</div>
+              </div>
+              <button type="button" class="btn btn-sm" id="gaModalOpenErrorDetailsBtn" style="background: #ef4444; color: #fff; font-size: 11.5px; font-weight: 600; padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; flex-shrink: 0; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35);">
+                🔒 Solutions Quick Fix
+              </button>
+            </div>
+            ` : ''}
             <div style="background: var(--bg-1); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
               <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-1);">Live Quota Metrics</div>
               ${quotas && !isCli ? (() => {
@@ -9736,6 +10232,13 @@ function initGoogleAccountsToolbarOnce(): void {
             } catch (err: any) {
               toast(`Erreur : ${err?.message || err}`, 'err');
             }
+          });
+
+          const modalOpenErrBtn = document.getElementById('gaModalOpenErrorDetailsBtn');
+          modalOpenErrBtn?.addEventListener('click', () => {
+            const closeBtn = document.querySelector('#modalConfirm, #modalClose') as HTMLElement | null;
+            closeBtn?.click();
+            setTimeout(() => showAccountErrorDetailsModal(account), 150);
           });
         }, 100);
         await confirmPromise;
@@ -10540,12 +11043,17 @@ async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> 
     // Synchronize models across all Google accounts in background
     void synchronizeGoogleAccountsModels(googleAccountsCache);
 
-    // Refresh live quotas in background only if forced or if an account has missing quotas
-    const missingQuotas = googleAccountsCache.some((acc) => !acc.quotas || (!acc.quotas.geminiFiveHourPct && !acc.quotas.fiveHourPercentage && !acc.isUnlicensed));
-    const shouldFetchQuotas = forceRefresh || missingQuotas;
+    // Refresh live quotas in background if forced, if quotas are missing, or if quotas are stale (> 3 minutes)
+    const isStale = (acc: any) =>
+      !acc.quotas ||
+      !acc.quotas.updatedAt ||
+      Date.now() - Number(acc.quotas.updatedAt) > 3 * 60 * 1000;
+    const shouldFetchQuotas = forceRefresh || googleAccountsCache.some(isStale);
     if (shouldFetchQuotas) {
       gaLastQuotaRefreshTimestamp = Date.now();
-      const accountsToRefresh = forceRefresh ? [...googleAccountsCache] : googleAccountsCache.filter((acc) => !acc.quotas);
+      const accountsToRefresh = forceRefresh
+        ? [...googleAccountsCache]
+        : googleAccountsCache.filter(isStale);
       const concurrency = 3;
       const workers = Array.from({ length: concurrency }, async () => {
         while (accountsToRefresh.length > 0) {
@@ -10643,6 +11151,60 @@ async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> 
     gaIsLoadingAccounts = false;
     hideSkeleton(gaAccountsContainer);
   }
+}
+
+/**
+ * Dynamically renders any future or non-standard quota groups returned by Google Cloud Code
+ * (e.g. Gemini 3.5 Ultra, Agentic Tasks, Search Grounding, or any unexpected quota group).
+ */
+function renderDynamicExtraQuotaGroups(quotas: any, showAll: boolean, isWeekly: boolean): string {
+  if (!quotas || !Array.isArray(quotas.groups) || quotas.groups.length === 0) return '';
+  let out = '';
+  for (const g of quotas.groups) {
+    const gName = (g.displayName || g.name || '').trim();
+    const gLower = gName.toLowerCase();
+    // Skip standard groups already handled (Gemini, Claude, Argon)
+    if (gLower.includes('gemini models') || gLower.includes('claude and gpt') || gLower.includes('argon')) {
+      continue;
+    }
+    if ((gLower.includes('gemini') && !gLower.includes('ultra')) || gLower.includes('claude') || gLower.includes('3p') || gLower.includes('gpt')) {
+      continue;
+    }
+
+    const buckets = Array.isArray(g.buckets) ? g.buckets : [];
+    const icon = gLower.includes('agent') ? '🤖' : (gLower.includes('ultra') ? '💎' : (gLower.includes('search') ? '🔍' : '✨'));
+
+    for (const b of buckets) {
+      const bWin = (b.window || '').toLowerCase();
+      const is5h = bWin.includes('5h') || bWin.includes('hour');
+      const isWk = bWin.includes('week');
+      if (!showAll) {
+        if (isWeekly && !isWk) continue;
+        if (!isWeekly && isWk && buckets.some((other: any) => (other.window || '').toLowerCase().includes('5h'))) continue;
+      }
+
+      const frac = typeof b.remainingFraction === 'number'
+        ? b.remainingFraction
+        : (typeof b.percentage === 'number' ? b.percentage / 100 : 1.0);
+      const pct = Math.max(0, Math.min(100, Math.round(frac * 100)));
+      const cd = b.resetTime ? formatCompactCountdown(b.resetTime) : '';
+      const winLabel = is5h ? '5h' : (isWk ? 'Wk' : (b.window || ''));
+      const label = `${escapeHtml(gName)} ${winLabel}`.trim();
+
+      out += `
+        <div class="ga-quota-row ga-split-segment ga-quota-row--custom" title="${escapeHtml(g.description || gName)}">
+          <span class="ga-quota-name"><span class="ga-engine-icon">${icon}</span> ${label}</span>
+          <div class="ga-quota-bar">
+            <div class="ga-quota-fill" style="width: ${pct}%; background: ${getQuotaColor(pct)};"></div>
+          </div>
+          <span class="ga-quota-pct" style="color: ${getQuotaColor(pct)};">${pct}%</span>
+          <span class="ga-quota-tokens">(${pct}%)</span>
+          <span class="ga-quota-reset">${cd ? `⏳ ${cd}` : ''}</span>
+        </div>
+      `;
+    }
+  }
+  return out;
 }
 
 function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, isCardView = false): string {
@@ -10748,10 +11310,14 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
     geminiWkPct,
     claude5hPct,
     claudeWkPct,
+    argon5hPct,
+    argonWkPct,
     gemini5hReset: rawGemini5hReset,
     geminiWkReset: rawGeminiWkReset,
     claude5hReset: rawClaude5hReset,
     claudeWkReset: rawClaudeWkReset,
+    argon5hReset: rawArgon5hReset,
+    argonWkReset: rawArgonWkReset,
   } = getAccountEffectiveQuotas(a);
 
   const is5hWindowReset = (iso?: string) => {
@@ -10770,6 +11336,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
   const geminiWkReset = formatCd(rawGeminiWkReset);
   const claude5hReset = formatCd(rawClaude5hReset, claude5hPct < 100 && is5hWindowReset(rawClaude5hReset));
   const claudeWkReset = formatCd(rawClaudeWkReset);
+  const argonWkReset = formatCd(rawArgonWkReset);
 
   if (showAll) {
     const gemini5hToks = est.geminiAvailable5h;
@@ -10780,7 +11347,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
     return `
       <div class="ga-quota-container" ${containerStyle ? `style="${containerStyle}"` : ''}>
         <div class="ga-quota-row">
-          <span class="ga-quota-name" title="Gemini 5h rolling window (100% = 13% hebdo = 250M tokens)">Gemini 5h</span>
+          <span class="ga-quota-name" title="Gemini 5h rolling window (100% = 13% hebdo = 250M tokens)"><span class="ga-engine-icon ga-engine-icon--gemini">⚡</span> Gemini 5h</span>
           <div class="ga-quota-bar">
             <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, gemini5hPct))}%; background: ${getQuotaColor(gemini5hPct)};"></div>
           </div>
@@ -10789,7 +11356,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
           <span class="ga-quota-reset" title="Réinitialisation 5h">${gemini5hReset}</span>
         </div>
         <div class="ga-quota-row">
-          <span class="ga-quota-name" title="Gemini Weekly quota (~1.92B tokens max)">Gemini Wk</span>
+          <span class="ga-quota-name" title="Gemini Weekly quota (~1.92B tokens max)"><span class="ga-engine-icon ga-engine-icon--gemini">⚡</span> Gemini Wk</span>
           <div class="ga-quota-bar">
             <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, geminiWkPct))}%; background: ${getQuotaColor(geminiWkPct)};"></div>
           </div>
@@ -10798,7 +11365,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
           <span class="ga-quota-reset" title="Réinitialisation hebdomadaire">${geminiWkReset}</span>
         </div>
         <div class="ga-quota-row">
-          <span class="ga-quota-name" title="Claude/GPT 5h rolling window (100% = 50% hebdo)">Claude 5h</span>
+          <span class="ga-quota-name" title="Claude/GPT 5h rolling window (100% = 50% hebdo)"><span class="ga-engine-icon ga-engine-icon--claude">🧠</span> Claude 5h</span>
           <div class="ga-quota-bar">
             <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claude5hPct))}%; background: ${getQuotaColor(claude5hPct)};"></div>
           </div>
@@ -10807,7 +11374,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
           <span class="ga-quota-reset" title="Réinitialisation Claude 5h">${claude5hReset}</span>
         </div>
         <div class="ga-quota-row">
-          <span class="ga-quota-name" title="Claude/GPT Weekly quota">Claude Wk</span>
+          <span class="ga-quota-name" title="Claude/GPT Weekly quota"><span class="ga-engine-icon ga-engine-icon--claude">🧠</span> Claude Wk</span>
           <div class="ga-quota-bar">
             <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claudeWkPct))}%; background: ${getQuotaColor(claudeWkPct)};"></div>
           </div>
@@ -10815,6 +11382,17 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
           <span class="ga-quota-tokens" title="Claude Hebdo : ~${formatCompactTokens(claudeWkToks)} disponibles (${claudeWkPct}%) · ~${formatCompactTokens(est.claudeConsumedWeekly)} consommés (${100 - claudeWkPct}%) sur 20M max">(~${formatCompactTokens(claudeWkToks)} dispo · ${formatCompactTokens(est.claudeConsumedWeekly)} cons.)</span>
           <span class="ga-quota-reset" title="Réinitialisation Claude hebdomadaire">${claudeWkReset}</span>
         </div>
+        ${typeof argonWkPct === 'number' ? `
+        <div class="ga-quota-row ga-quota-row--argon">
+          <span class="ga-quota-name" title="Gemini 4 Argon Weekly quota (Quota indépendant Google)"><span class="ga-engine-icon ga-engine-icon--argon">🧬</span> Argon Wk</span>
+          <div class="ga-quota-bar">
+            <div class="ga-quota-fill ga-quota-fill--argon" style="width: ${Math.min(100, Math.max(0, argonWkPct))}%;"></div>
+          </div>
+          <span class="ga-quota-pct" style="color: #a5b4fc;">${argonWkPct}%</span>
+          <span class="ga-quota-tokens" title="Gemini 4 Argon Hebdo : ${argonWkPct}% disponible">(~${formatCompactTokens(Math.round(est.geminiCapacityWeekly * (argonWkPct / 100)))} dispo)</span>
+          <span class="ga-quota-reset" title="Réinitialisation Argon hebdomadaire">${argonWkReset}</span>
+        </div>` : ''}
+        ${renderDynamicExtraQuotaGroups(quotas, showAll, isWeekly)}
       </div>
     `;
   }
@@ -10842,7 +11420,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
   return `
     <div class="ga-quota-container ga-split-gauge" ${containerStyle ? `style="${containerStyle}"` : ''}>
       <div class="ga-quota-row ga-split-segment">
-        <span class="ga-quota-name"><span class="ga-engine-icon">⚡</span> Gemini</span>
+        <span class="ga-quota-name"><span class="ga-engine-icon ga-engine-icon--gemini">⚡</span> Gemini</span>
         <div class="ga-quota-bar">
           <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, geminiPct))}%; background: ${getQuotaColor(geminiPct)};"></div>
         </div>
@@ -10851,7 +11429,7 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
         <span class="ga-quota-reset">${geminiReset}</span>
       </div>
       <div class="ga-quota-row ga-split-segment">
-        <span class="ga-quota-name"><span class="ga-engine-icon">🧠</span> Claude/GPT</span>
+        <span class="ga-quota-name"><span class="ga-engine-icon ga-engine-icon--claude">🧠</span> Claude/GPT</span>
         <div class="ga-quota-bar">
           <div class="ga-quota-fill" style="width: ${Math.min(100, Math.max(0, claudePct))}%; background: ${getQuotaColor(claudePct)};"></div>
         </div>
@@ -10859,6 +11437,17 @@ function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, is
         <span class="ga-quota-tokens" title="${isWeekly ? 'Claude/GPT Hebdo' : 'Claude/GPT 5h'} : ~${formatCompactTokens(claudeToks)} disponibles (${claudePct}%) · ~${formatCompactTokens(claudeConsumed)} consommés (${100 - claudePct}%) sur ${formatCompactTokens(claudeCap)} max">(~${formatCompactTokens(claudeToks)} dispo · ${formatCompactTokens(claudeConsumed)} cons.)</span>
         <span class="ga-quota-reset">${claudeReset}</span>
       </div>
+      ${typeof argonWkPct === 'number' ? `
+      <div class="ga-quota-row ga-split-segment ga-quota-row--argon">
+        <span class="ga-quota-name"><span class="ga-engine-icon ga-engine-icon--argon">🧬</span> Argon</span>
+        <div class="ga-quota-bar">
+          <div class="ga-quota-fill ga-quota-fill--argon" style="width: ${Math.min(100, Math.max(0, argonWkPct))}%;"></div>
+        </div>
+        <span class="ga-quota-pct" style="color: #a5b4fc;">${argonWkPct}%</span>
+        <span class="ga-quota-tokens" title="Gemini 4 Argon Hebdo : ${argonWkPct}% disponible">(${argonWkPct}%)</span>
+        <span class="ga-quota-reset">${argonWkReset}</span>
+      </div>` : ''}
+      ${renderDynamicExtraQuotaGroups(quotas, showAll, isWeekly)}
       ${isCritical5h ? `
       <div class="ga-soft-stow-alert" title="Quota 5h critique (<3%). Recommandation : mettre en pause préventive pour éviter les 429 burst.">
         <span>⚠️ Réserve &lt;3%</span>
@@ -10991,10 +11580,15 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
   const currentBurnProfile: BurnProfile = (container as any)._burnProfile || 'normal';
   const runway = (typeof calculateBurnProjection === 'function')
     ? calculateBurnProjection(accounts, currentBurnProfile)
-    : (typeof calculatePoolRunway === 'function' ? calculatePoolRunway(accounts) : { formattedRunway: '> 24h', burnState: 'healthy' as const, totalAvailableTokens: 0, hourlyBurnRate: 120000, runwayHours: 24, runwayMinutes: 0 });
+    : (typeof calculatePoolRunway === 'function' ? calculatePoolRunway(accounts) : { formattedRunway: '> 24h', burnState: 'healthy' as const, totalAvailableTokens: 0, totalAvailableTokens5h: 0, totalAvailableTokensWeekly: 0, hourlyBurnRate: 120000, runwayHours: 24, runwayMinutes: 0 });
+
+  const isWeekly = gaCurrentQuotaWindow === 'weekly';
+  const availToks = isWeekly
+    ? (runway.totalAvailableTokensWeekly || runway.totalAvailableTokens)
+    : (runway.totalAvailableTokens5h || runway.totalAvailableTokens);
 
   const timelineItems = (typeof getUpcomingResetsTimeline === 'function')
-    ? getUpcomingResetsTimeline(accounts)
+    ? getUpcomingResetsTimeline(accounts, Date.now(), 4, gaActiveCooldownsCache)
     : [];
   const velocity = (typeof calculatePoolVelocity === 'function')
     ? calculatePoolVelocity(cachedRealStats?.sessions || [])
@@ -11031,11 +11625,18 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
         </div>
         ` : '<div></div>'}
 
-        <!-- Smart Runway Profile Switcher -->
-        <div class="ga-burn-profile-selector" title="Cadence de burn runway">
-          <button type="button" class="ga-burn-profile-btn ${currentBurnProfile === 'eco' ? 'active' : ''}" data-profile="eco" title="Mode Éco (60k tokens/h)">Éco</button>
-          <button type="button" class="ga-burn-profile-btn ${currentBurnProfile === 'normal' ? 'active' : ''}" data-profile="normal" title="Mode Normal (120k tokens/h)">Norm</button>
-          <button type="button" class="ga-burn-profile-btn ${currentBurnProfile === 'burst' ? 'active' : ''}" data-profile="burst" title="Mode Burst (250k tokens/h)">Burst</button>
+        <!-- Smart Runway Profile & Projection (Option B) -->
+        <div class="ga-runway-container">
+          <div class="ga-runway-badge ga-runway-badge--${runway.burnState}" title="Autonomie estimée du pool selon la cadence sélectionnée">
+            <span>🔋 Autonomie :</span>
+            <span class="ga-runway-val">${runway.formattedRunway}</span>
+            <span class="ga-runway-tokens">(~${formatCompactTokens(availToks)} dispo)</span>
+          </div>
+          <div class="ga-burn-profile-selector" title="Cadence de burn runway">
+            <button type="button" class="ga-burn-profile-btn ${currentBurnProfile === 'eco' ? 'active' : ''}" data-profile="eco" title="Mode Éco (60k tokens/h)">Éco</button>
+            <button type="button" class="ga-burn-profile-btn ${currentBurnProfile === 'normal' ? 'active' : ''}" data-profile="normal" title="Mode Normal (120k tokens/h)">Norm</button>
+            <button type="button" class="ga-burn-profile-btn ${currentBurnProfile === 'burst' ? 'active' : ''}" data-profile="burst" title="Mode Burst (250k tokens/h)">Burst</button>
+          </div>
         </div>
       </div>
 
@@ -11055,6 +11656,25 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
           ${claudeWeeklyCap > 0 ? `<span class="ga-health-legend-item" style="color: var(--text-3); font-size: 11px;">(${claudeWeeklyCap} comptes avec plafond Claude redirigés sur Gemini)</span>` : ''}
         </div>
       </div>
+
+      <!-- Timeline Frise of Upcoming Resets (Option B - Temporal Transparency) -->
+      ${timelineItems && timelineItems.length > 0 ? `
+      <div class="ga-timeline-wrapper">
+        <div class="ga-timeline-title">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Prochains déblocages :
+        </div>
+        <div class="ga-timeline-items">
+          ${timelineItems.map((item) => `
+            <div class="ga-timeline-item ${item.type === '5h' ? 'five-h' : item.type}" title="${escapeHtml(item.accountName)} · Déblocage ${item.type === 'cooldown' ? 'Cooldown 429' : (item.type === '5h' ? 'Fenêtre 5h' : 'Quota Hebdomadaire')} dans ${item.formattedCountdown}">
+              <span>${item.type === 'cooldown' ? '❄️ 429' : (item.type === '5h' ? '⚡ 5h' : '📅 Hebdo')}</span>
+              <span>${escapeHtml(item.accountName)}</span>
+              <strong>${item.formattedCountdown}</strong>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
 
       <!-- Contextual Strategic Advice (Shown only when actionable) -->
       ${advice && advice.text ? `
@@ -11168,6 +11788,8 @@ function renderGoogleAccountsList(accounts: any[]): void {
 
     const eff = getAccountEffectiveQuotas(a);
 
+    const isBlocked = isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'));
+
     if (gaCurrentFilter === 'status:ready') {
       if (!isEnabled || cdGemini || isUnlicensed || eff.gemini5hPct <= 0) return false;
     } else if (gaCurrentFilter === 'status:exhausted') {
@@ -11176,6 +11798,8 @@ function renderGoogleAccountsList(accounts: any[]): void {
       if (!isEnabled || !cdGemini) return false;
     } else if (gaCurrentFilter === 'status:paused') {
       if (isEnabled && !isUnlicensed) return false;
+    } else if (gaCurrentFilter === 'status:blocked') {
+      if (!isBlocked) return false;
     } else if (gaCurrentFilter !== 'all' && tier !== gaCurrentFilter) {
       return false;
     }
@@ -11342,6 +11966,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   ${typeof a.lastLatencyMs === 'number' ? `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-family: var(--font-mono); font-size: 10px;" title="Dernière latence mesurée">⚡ ${a.lastLatencyMs}ms</span>` : ''}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()} ga-tier-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Cliquer pour basculer (FREE ↔ PRO)">${tierIcon} ${tier}</span>
                   ${(a.quotas?.creditAmount || a.creditAmount) ? `<span class="ga-badge ga-badge-credits">🪙 ${a.quotas?.creditAmount || a.creditAmount} credits</span>` : ''}
+                  ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `<button type="button" class="ga-badge ga-error-details-badge ga-badge-unlicensed" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Compte sans licence active Antigravity (HTTP 403). Cliquez pour voir le diagnostic et les solutions (Quick Fix).">🚫 Compte sans licence</button>` : ''}
                 </div>
                 ${a.email && a.name && a.email !== a.name
                   ? `<div style="font-size: 11px; color: var(--text-4);">${escapeHtml(a.name)}</div>`
@@ -11368,6 +11993,10 @@ function renderGoogleAccountsList(accounts: any[]): void {
               <button type="button" class="ga-action-btn ga-refresh" title="Rafraîchir les quotas de ce compte" aria-label="Refresh quotas for ${escapeHtml(a.name || a.email)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               </button>
+              ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `
+              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="Diagnostic Erreur (TOS / 403) & Solutions Quick Fix" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </button>` : ''}
               <button type="button" class="ga-action-btn ga-details" title="Détails du compte" aria-label="Details for ${escapeHtml(a.name || a.email)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
               </button>
@@ -11508,6 +12137,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   ${typeof a.lastLatencyMs === 'number' ? `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-family: var(--font-mono); font-size: 10px;" title="Dernière latence mesurée">⚡ ${a.lastLatencyMs}ms</span>` : ''}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()} ga-tier-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Cliquer pour basculer (FREE ↔ PRO)">${tierIcon} ${tier}</span>
                   ${(a.quotas?.creditAmount || a.creditAmount) ? `<span class="ga-badge ga-badge-credits">🪙 ${a.quotas?.creditAmount || a.creditAmount} credits</span>` : ''}
+                  ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `<button type="button" class="ga-badge ga-error-details-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 600; font-size: 10px; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px;" title="Compte bloqué (403 / TOS). Cliquez pour voir le diagnostic et les solutions (Quick Fix).">🔒 Erreur 403 (TOS)</button>` : ''}
                 </div>
                 <div style="font-size: 11px; color: var(--text-4); margin-top: 2px;">${dedupModels.filter((m) => m.enabled !== false).length} models · ${escapeHtml(maskKeyPreview(a.apiKey))}</div>
               </div>
@@ -11516,6 +12146,10 @@ function renderGoogleAccountsList(accounts: any[]): void {
               <button type="button" class="ga-action-btn ga-switch ${isCurrent ? 'active-switch' : ''}" title="${isCurrent ? 'Compte actif principal' : 'Activer ce compte (1-clic)'}" aria-label="Switch to ${escapeHtml(a.name || a.email)}">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
               </button>
+              ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `
+              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="Diagnostic Erreur (TOS / 403) & Solutions Quick Fix" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </button>` : ''}
               <button type="button" class="ga-action-btn ga-details" title="Détails du compte" aria-label="Details for ${escapeHtml(a.name || a.email)}">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
               </button>

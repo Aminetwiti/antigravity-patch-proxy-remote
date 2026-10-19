@@ -44,6 +44,7 @@ export const DOCTOR_IPC_CHANNELS = {
   GOOGLE_LIFT_ACCOUNT_COOLDOWN: 'ag:google:lift-account-cooldown',
   GOOGLE_LIFT_BURST_COOLDOWNS: 'ag:google:lift-burst-cooldowns',
   GOOGLE_PURGE_QUOTA_CACHE: 'ag:google:purge-quota-cache',
+  GOOGLE_REPAIR_ADC: 'ag:google:repair-adc',
   MODEL_PING_PONG: 'ag:model:ping-pong',
 
   // Proxy & MITM

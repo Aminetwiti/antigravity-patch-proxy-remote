@@ -855,15 +855,31 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           if (cacheEntry.claudeWeeklyReset) {
             acc.quotas.claudeWeeklyReset = cacheEntry.claudeWeeklyReset;
           }
+          if (typeof cacheEntry.argonFiveHourPct === 'number') {
+            acc.quotas.argonFiveHourPct = cacheEntry.argonFiveHourPct;
+          }
+          if (typeof cacheEntry.argonWeeklyPct === 'number') {
+            acc.quotas.argonWeeklyPct = cacheEntry.argonWeeklyPct;
+          }
+          if (cacheEntry.argonFiveHourReset) {
+            acc.quotas.argonFiveHourReset = cacheEntry.argonFiveHourReset;
+          }
+          if (cacheEntry.argonWeeklyReset) {
+            acc.quotas.argonWeeklyReset = cacheEntry.argonWeeklyReset;
+          }
           if (cacheEntry.updatedAt) {
             acc.quotas.updatedAt = cacheEntry.updatedAt;
           }
           if (cacheEntry.tier) acc.tier = cacheEntry.tier;
           if (cacheEntry.tierId) acc.tierId = cacheEntry.tierId;
           if (cacheEntry.isUnlicensed) acc.isUnlicensed = true;
+          if (cacheEntry.errorDetails) {
+            acc.errorDetails = cacheEntry.errorDetails;
+            acc.quotas.errorDetails = cacheEntry.errorDetails;
+          }
 
           // Rebuild groups with live bucket data so legacy group parser uses the real numbers
-          acc.quotas.groups = [
+          const builtGroups: any[] = [
             {
               displayName: 'Gemini Models',
               buckets: [
@@ -899,6 +915,41 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
               ],
             },
           ];
+
+          if (typeof acc.quotas.argonWeeklyPct === 'number' || typeof acc.quotas.argonFiveHourPct === 'number') {
+            const argonBuckets: any[] = [];
+            if (typeof acc.quotas.argonWeeklyPct === 'number') {
+              argonBuckets.push({
+                bucketId: 'argon-weekly',
+                window: 'weekly',
+                percentage: acc.quotas.argonWeeklyPct,
+                resetTime: acc.quotas.argonWeeklyReset,
+              });
+            }
+            if (typeof acc.quotas.argonFiveHourPct === 'number') {
+              argonBuckets.push({
+                bucketId: 'argon-5h',
+                window: '5h',
+                percentage: acc.quotas.argonFiveHourPct,
+                resetTime: acc.quotas.argonFiveHourReset,
+              });
+            }
+            builtGroups.push({
+              displayName: 'Gemini 4 Argon',
+              buckets: argonBuckets,
+            });
+          }
+
+          // Preserve any other groups returned dynamically from Google (e.g. future or experimental tiers)
+          const existingGroups = Array.isArray(cacheEntry.groups) ? cacheEntry.groups : (Array.isArray(acc.quotas.groups) ? acc.quotas.groups : []);
+          for (const eg of existingGroups) {
+            const egName = (eg.displayName || eg.name || '').toLowerCase();
+            if (!egName.includes('gemini') && !egName.includes('claude') && !egName.includes('3p') && !egName.includes('argon')) {
+              builtGroups.push(eg);
+            }
+          }
+
+          acc.quotas.groups = builtGroups;
         }
       }
     }
@@ -1812,7 +1863,13 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, async (_evt, tok
     }
 
     // Persist fresh quota to quota_cache.json if email is known
-    const emailToCache = typeof tokenOrKey === 'object' ? (tokenOrKey?.email || tokenOrKey?.accountEmail) : undefined;
+    let emailToCache = typeof tokenOrKey === 'object' ? (tokenOrKey?.email || tokenOrKey?.accountEmail) : undefined;
+    if (!emailToCache && effectiveToken) {
+      try {
+        const u = await fetchGoogleUserInfo(effectiveToken);
+        if (u?.email) emailToCache = u.email;
+      } catch {}
+    }
     if (emailToCache) {
       try {
         const qCachePath = path.join(app.getPath('home'), '.gemini', 'antigravity', 'quota_cache.json');
@@ -2077,6 +2134,27 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_PURGE_QUOTA_CACHE, async () => {
     return { success: true, cleared: clearedCount };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erreur lors de la purge du cache de quota' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_REPAIR_ADC, async (_evt, email?: string) => {
+  try {
+    // 1-Click Native In-App Repair: Directly performs Google OAuth flow & updates ADC credentials file
+    const res = await startGoogleOAuthLogin('antigravity', email);
+    if (res.success && res.account) {
+      mainWindow?.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
+      return {
+        success: true,
+        output: `Compte ${res.account.email} réhabilité avec succès. Jetons et identifiants Google ADC synchronisés.`,
+      };
+    } else {
+      return {
+        success: false,
+        error: (res as any).error || 'Autorisation annulée ou expirée',
+      };
+    }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la réparation du compte' };
   }
 });
 

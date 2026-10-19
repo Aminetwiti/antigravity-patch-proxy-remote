@@ -325,9 +325,47 @@ function saveAccountToCustomModels(accountData: {
 }
 
 /**
+ * Writes the standard Google Cloud Application Default Credentials (ADC) file.
+ * This directly replaces `gcloud auth login --update-adc` without needing the gcloud CLI.
+ */
+export function writeAdcCredentialsFile(
+  email: string,
+  refreshToken: string,
+  clientId = GOOGLE_CLIENT_ID,
+  clientSecret = GOOGLE_CLIENT_SECRET
+): void {
+  try {
+    const isWin = process.platform === 'win32';
+    const gcloudDir = isWin
+      ? path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming'), 'gcloud')
+      : path.join(process.env.HOME || '', '.config', 'gcloud');
+
+    if (!fs.existsSync(gcloudDir)) {
+      fs.mkdirSync(gcloudDir, { recursive: true });
+    }
+
+    const adcPath = path.join(gcloudDir, 'application_default_credentials.json');
+    const adcData = {
+      account: email,
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      type: 'authorized_user',
+    };
+
+    fs.writeFileSync(adcPath, JSON.stringify(adcData, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[GoogleOAuthServer] Failed to write ADC credentials file:', err);
+  }
+}
+
+/**
  * Starts a transient local HTTP server, launches browser OAuth, and resolves with account details.
  */
-export async function startGoogleOAuthLogin(providerType: 'antigravity' | 'gemini-cli' = 'antigravity'): Promise<GoogleOAuthResult> {
+export async function startGoogleOAuthLogin(
+  providerType: 'antigravity' | 'gemini-cli' = 'antigravity',
+  loginHint?: string
+): Promise<GoogleOAuthResult> {
   let server: http.Server | null = null;
   let chosenPort = 8086;
 
@@ -361,14 +399,19 @@ export async function startGoogleOAuthLogin(providerType: 'antigravity' | 'gemin
     'https://www.googleapis.com/auth/userinfo.profile',
   ].join(' ');
 
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` + new URLSearchParams({
+  const authParams: Record<string, string> = {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: scopes,
     access_type: 'offline',
     prompt: 'consent',
-  }).toString();
+  };
+  if (loginHint && typeof loginHint === 'string' && loginHint.includes('@')) {
+    authParams.login_hint = loginHint.trim();
+  }
+
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` + new URLSearchParams(authParams).toString();
 
   return new Promise<GoogleOAuthResult>((resolve) => {
     let timeoutTimer: NodeJS.Timeout | null = null;
@@ -445,6 +488,9 @@ export async function startGoogleOAuthLogin(providerType: 'antigravity' | 'gemin
         tierId: projectInfo?.tierId,
         quotas,
       }, providerType);
+
+      // Automatically write/update standard Google ADC credentials file
+      writeAdcCredentialsFile(email, refreshToken, clientId, clientSecret);
 
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(getSuccessHtml());
