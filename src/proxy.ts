@@ -3375,8 +3375,37 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
   // gate from `vscode-unify-chat-provider`.
   const emptyGuard = new EmptyStreamGuard();
 
+  // 3s periodic SSE keepalive heartbeat (inspired by Antigravity-Manager stream lifecycle)
+  // Keeps downstream connections alive during long thinking pauses (e.g. Claude 3.7 Thinking, DeepSeek R1).
+  const HEARTBEAT_INTERVAL_MS = 3000;
+  let lastChunkTime = Date.now();
+  const heartbeatTimer = setInterval(() => {
+    if (res.writableEnded || res.destroyed) {
+      clearInterval(heartbeatTimer);
+      return;
+    }
+    if (Date.now() - lastChunkTime >= HEARTBEAT_INTERVAL_MS) {
+      try {
+        res.write(': ping\n\n');
+      } catch {
+        clearInterval(heartbeatTimer);
+      }
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+
+  const cleanupHeartbeat = () => {
+    clearInterval(heartbeatTimer);
+  };
+  res.on('close', cleanupHeartbeat);
+  res.on('finish', cleanupHeartbeat);
+  apiRes.on('close', cleanupHeartbeat);
+
+  let streamHasThought = false;
+  let streamHasTextOrToolCall = false;
+
   let buffer = '';
   apiRes.on('data', (chunk: Buffer) => {
+    lastChunkTime = Date.now();
     // Observe first, then forward. The guard splits SSE frames on
     // newlines so a frame that spans two chunks is still counted.
     emptyGuard.observe(chunk);
@@ -3411,8 +3440,18 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
             const candidateParts = (mapped as any).content?.parts;
             if (Array.isArray(candidateParts)) {
               for (const p of candidateParts) {
-                if (p && typeof p.text === 'string') streamOutputChars += p.text.length;
+                if (p && (p.thought || p.type === 'thinking' || (p as any).thoughtSignature)) {
+                  streamHasThought = true;
+                }
+                if (p && typeof p.text === 'string' && p.text.trim().length > 0 && !p.thought) {
+                  streamHasTextOrToolCall = true;
+                  streamOutputChars += p.text.length;
+                }
+                if (p && (p.functionCall || p.function_call)) {
+                  streamHasTextOrToolCall = true;
+                }
               }
+            }
             }
             extractAndCacheThoughtSignatures({ candidates: [mapped] }, '');
             const cloudCodeResponse = {
@@ -3432,6 +3471,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
   });
 
   apiRes.on('end', () => {
+    cleanupHeartbeat();
     idleGuard.dispose();
     emptyGuard.observe(Buffer.from('')); // no-op, but tightens API
 
@@ -3488,6 +3528,28 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
           log.debug(`[Proxy] Stream buffer drain parse warning for ${model.name}:`, (e as Error).message);
         }
       }
+    }
+
+    // Thinking Dropout Auto-Healing (inspired by Antigravity-Manager auto_heal.rs):
+    // When a model finishes thinking but emits STOP with zero text and zero tool calls,
+    // inject a fallback non-empty content part so the Language Server state machine progresses smoothly.
+    if (streamHasThought && !streamHasTextOrToolCall) {
+      log.warn(`[Proxy] ⚠️ [Auto-Heal] Thinking dropout detected for ${model.name}: model emitted thinking but zero content/toolCall. Injecting auto-heal text frame.`);
+      const healChunk = {
+        response: {
+          candidates: [
+            {
+              content: { parts: [{ text: ' ' }], role: 'model' },
+              finishReason: 'STOP',
+              index: 0,
+            },
+          ],
+        },
+        traceId: '',
+        metadata: {},
+      };
+      sanitizeCandidatesInResponse(healChunk);
+      writeSafeSseChunk(res, healChunk);
     }
 
     const finalChunk = {

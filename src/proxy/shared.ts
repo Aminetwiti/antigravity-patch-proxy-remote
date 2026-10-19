@@ -121,6 +121,23 @@ export function detectSignatureFamily(modelOrSig?: string): 'gemini' | 'claude' 
 }
 
 /**
+ * Normalize and auto-repair thought signatures.
+ * Antigravity-Manager resilience trick: If the signature is sent as raw protobuf binary
+ * (first byte 0x12), auto-heal by encoding it to standard Base64.
+ */
+export function normalizeThoughtSignature(sig: string): string {
+  if (!sig || typeof sig !== 'string') return '';
+  if (sig.charCodeAt(0) === 0x12) {
+    try {
+      return Buffer.from(sig, 'binary').toString('base64');
+    } catch {
+      return sig;
+    }
+  }
+  return sig;
+}
+
+/**
  * Extracts thought_signature from response candidates and stores them in cache.
  * Scoped by convId:funcName and funcName, with rewind detection.
  */
@@ -149,7 +166,7 @@ export function extractAndCacheThoughtSignatures(
                 (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
                 (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature);
       if (s) {
-        turnSig = s;
+        turnSig = normalizeThoughtSignature(s);
         break;
       }
     }
@@ -158,11 +175,12 @@ export function extractAndCacheThoughtSignatures(
       const p = part as Record<string, unknown>;
       const fc = (p?.functionCall || p?.function_call) as Record<string, unknown> | undefined;
       const fnName = (fc?.name as string) || (p?.name as string);
-      const sig = (typeof p?.thought_signature === 'string' && p.thought_signature) ||
-                  (typeof p?.thoughtSignature === 'string' && p.thoughtSignature) ||
-                  (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
-                  (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature) ||
-                  turnSig;
+      const rawSig = (typeof p?.thought_signature === 'string' && p.thought_signature) ||
+                     (typeof p?.thoughtSignature === 'string' && p.thoughtSignature) ||
+                     (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
+                     (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature) ||
+                     turnSig;
+      const sig = normalizeThoughtSignature(rawSig);
       if (sig) {
         const meta: ThoughtSignatureMetadata = {
           signature: sig,
@@ -313,8 +331,9 @@ export function restoreThoughtSignatures(
       // causes Google's API to return INVALID_ARGUMENT (400).
       if (!cached) continue;
 
-      p.thought_signature = cached;
-      p.thoughtSignature = cached;
+      const finalSig = normalizeThoughtSignature(cached);
+      p.thought_signature = finalSig;
+      p.thoughtSignature = finalSig;
       restoredCount++;
     }
   }

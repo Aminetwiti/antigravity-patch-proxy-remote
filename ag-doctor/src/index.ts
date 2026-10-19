@@ -39,6 +39,7 @@ import { runProfile } from './commands/profile';
 import { runDaemon } from './commands/daemon';
 import { runAntigravity } from './commands/antigravity';
 import { runPrune } from './commands/prune';
+import { runDevice } from './commands/device';
 import { getActiveProfile, resolveActiveProfile } from './core/profile';
 
 const USAGE = `ag-doctor — Antigravity diagnostic & management CLI
@@ -93,6 +94,7 @@ Commands:
   daemon {start|stop|status|run|rules|enable|disable|trigger|log|reset}
                          Auto-recovery daemon (continuous monitoring)
   db:prune [--dry-run]   Purge orphan conversation trajectories & vacuum database
+  device {show|reset}    Inspect or reset hardware/telemetry identity (storage.json)
   antigravity {status|version|launch|kill|restart}
                          Manage the Antigravity install (version, launch, close)
   update                 Re-run the parent deploy script
@@ -299,6 +301,8 @@ export async function main(argv: string[]): Promise<number> {
       case 'db:prune':
       case 'prune':
         return await runPrune(ctx, sub, rest);
+      case 'device':
+        return await runDevice(ctx);
       case 'help':
       case '--help':
       case '-h':

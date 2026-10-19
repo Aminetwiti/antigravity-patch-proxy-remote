@@ -22,6 +22,7 @@ export const DOCTOR_IPC_CHANNELS = {
   NAVIGATE: 'ag:navigate',
   COMMAND_PALETTE: 'ag:command-palette',
   THEME_CHANGED: 'ag:theme-changed',
+  SYSTEM_RANDOMIZE_MACHINE_ID: 'ag:system:randomize-machine-id',
 
   // Providers
   PROVIDERS_GET: 'ag:providers:get',

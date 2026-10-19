@@ -92,6 +92,13 @@ const api = {
       output?: string;
       error?: string;
     }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_REPAIR_ADC, email),
+    randomizeMachineId: (): Promise<{
+      success: boolean;
+      profile?: any;
+      updatedFiles?: string[];
+      backups?: string[];
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.SYSTEM_RANDOMIZE_MACHINE_ID),
     onOAuthIntercepted: (handler: (data: { url: string; port?: number; redirectUri?: string; ts?: number }) => void): (() => void) => {
       const listener = (_: unknown, data: any) => handler(data);
       ipcRenderer.on(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);

@@ -140,7 +140,7 @@ function mapGeminiToolsToAnthropic(geminiTools: GeminiTool[]): AnthropicTool[] {
       }
     }
   }
-  return anthropicTools;
+  return anthropicTools.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function generateSyntheticToolId(): string {

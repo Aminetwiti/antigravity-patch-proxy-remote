@@ -1045,7 +1045,7 @@ const statsModeClassic = $('#statsModeClassic') as HTMLDivElement | null;
 // Cockpit Mode DOM References
 const cockpitTotalTokens = $('#cockpitTotalTokens') as HTMLElement | null;
 const cockpitTokenRatio = $('#cockpitTokenRatio') as HTMLElement | null;
-const cockpitRadialSvg = $('#cockpitRadialSvg') as SVGSVGElement | null;
+const cockpitRadialSvg = $('#cockpitRadialSvg') as unknown as SVGSVGElement | null;
 const cockpitRadialCount = $('#cockpitRadialCount') as HTMLElement | null;
 const cockpitPredictedSpend = $('#cockpitPredictedSpend') as HTMLElement | null;
 const cockpitSpendSub = $('#cockpitSpendSub') as HTMLElement | null;
@@ -1054,7 +1054,7 @@ const cockpitCacheHitPct = $('#cockpitCacheHitPct') as HTMLElement | null;
 const cockpitSidebarContent = $('#cockpitSidebarContent') as HTMLDivElement | null;
 const cockpitPulseBarsTrack = $('#cockpitPulseBarsTrack') as HTMLDivElement | null;
 const cockpitInOutRatio = $('#cockpitInOutRatio') as HTMLElement | null;
-const cockpitArcSvg = $('#cockpitArcSvg') as SVGSVGElement | null;
+const cockpitArcSvg = $('#cockpitArcSvg') as unknown as SVGSVGElement | null;
 const cockpitArcHit = $('#cockpitArcHit') as HTMLElement | null;
 const cockpitArcCached = $('#cockpitArcCached') as HTMLElement | null;
 const cockpitUncachedInput = $('#cockpitUncachedInput') as HTMLElement | null;
@@ -1067,7 +1067,7 @@ const classicOutputTokens = $('#classicOutputTokens') as HTMLElement | null;
 const classicCachedTokens = $('#classicCachedTokens') as HTMLElement | null;
 const classicActiveAccounts = $('#classicActiveAccounts') as HTMLElement | null;
 const classicModelsUsed = $('#classicModelsUsed') as HTMLElement | null;
-const classicTrendChartSvg = $('#classicTrendChartSvg') as SVGSVGElement | null;
+const classicTrendChartSvg = $('#classicTrendChartSvg') as unknown as SVGSVGElement | null;
 const classicTokenUsageList = $('#classicTokenUsageList') as HTMLDivElement | null;
 const classicByAccountList = $('#classicByAccountList') as HTMLDivElement | null;
 
@@ -2071,13 +2071,14 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
     if (cockpitPulseBarsTrack) {
       const hoursData: number[] = new Array(24).fill(0);
       const nowH = new Date().getHours();
-      // Populate 24 hours back
-      if (stats && stats.entries) {
+      // Populate 24 hours back from tokenTracker if available
+      if (tokenTracker) {
         const oneDayAgo = Date.now() - 24 * 3600 * 1000;
-        stats.entries.forEach((e) => {
+        const entries = tokenTracker.getEntries();
+        entries.forEach((e: any) => {
           if (e.timestamp >= oneDayAgo) {
             const h = new Date(e.timestamp).getHours();
-            hoursData[h] += e.totalTokens;
+            hoursData[h] += (e.totalTokens || 0);
           }
         });
       }
