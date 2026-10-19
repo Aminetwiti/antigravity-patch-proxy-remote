@@ -1774,6 +1774,12 @@ export function executeGoogleCloudCodeRequest(
         finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
       });
 
+      proxyReq.on('socket', (socket) => {
+        try {
+          if (typeof socket.setNoDelay === 'function') socket.setNoDelay(true);
+        } catch (_) {}
+      });
+
       if (reqBody) {
         proxyReq.write(reqBody);
       }
@@ -6856,6 +6862,7 @@ export function startProxy(): Promise<number> {
           startQuotaPollingInterval();
           setupCustomModelsWatcher();
           prewarmGoogleAccounts(models);
+          resolveGoogleIp(GOOGLE_HOSTS.CLOUD_CODE).catch(() => {});
         } catch (err) {
           log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
         }

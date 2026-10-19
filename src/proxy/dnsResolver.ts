@@ -108,7 +108,7 @@ export function resolveWithSystemDns(hostname: string): Promise<string[]> {
  * hostname so we can reuse it immediately for 0ms resolution, and fall back
  * to it when all DNS servers are unreachable. Entries expire after DNS_CACHE_TTL_MS.
  */
-const DNS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const DNS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const dnsCache = new Map<string, { ip: string; ts: number }>();
 
 export function clearDnsCache(): void {

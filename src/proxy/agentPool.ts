@@ -55,10 +55,10 @@ import * as https from 'https';
 export const DEFAULT_MAX_SOCKETS = 32;
 
 /** Maximum idle (keep-alive) sockets retained per host. */
-export const DEFAULT_MAX_FREE_SOCKETS = 8;
+export const DEFAULT_MAX_FREE_SOCKETS = 16;
 
 /** Keep-alive timeout for free sockets, in milliseconds. */
-export const DEFAULT_FREE_SOCKET_TIMEOUT_MS = 30_000;
+export const DEFAULT_FREE_SOCKET_TIMEOUT_MS = 90_000;
 
 export interface AgentOptions {
   /** Hostname (used as the cache key alongside port). */
