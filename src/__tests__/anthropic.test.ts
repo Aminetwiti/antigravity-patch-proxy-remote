@@ -124,6 +124,38 @@ describe('mapGeminiToAnthropic', () => {
     expect(result.tools).toHaveLength(1);
     expect(result.tools![0].name).toBe('get_weather');
     expect(result.tools![0].input_schema).toBeDefined();
+    expect(result.tools![0].cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('should inject ephemeral cache_control for long system prompt (>1000 chars)', () => {
+    const longPrompt = 'A'.repeat(1050);
+    const body = {
+      systemInstruction: { parts: [{ text: longPrompt }] },
+      contents: [],
+    };
+    const result = mapGeminiToAnthropic(body, 'claude-3-5-sonnet-latest');
+    expect(Array.isArray(result.system)).toBe(true);
+    const sysBlocks = result.system as Array<{ type: string; text: string; cache_control?: { type: string } }>;
+    expect(sysBlocks[0].text).toBe(longPrompt);
+    expect(sysBlocks[0].cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('should mark only the last tool with ephemeral cache_control when multiple tools exist', () => {
+    const body = {
+      contents: [],
+      tools: [
+        {
+          functionDeclarations: [
+            { name: 'tool_a', description: 'Tool A', parameters: { type: 'OBJECT', properties: {} } },
+            { name: 'tool_b', description: 'Tool B', parameters: { type: 'OBJECT', properties: {} } },
+          ],
+        },
+      ],
+    };
+    const result = mapGeminiToAnthropic(body, 'claude-3-5-sonnet-latest');
+    expect(result.tools).toHaveLength(2);
+    expect(result.tools![0].cache_control).toBeUndefined();
+    expect(result.tools![1].cache_control).toEqual({ type: 'ephemeral' });
   });
 });
 

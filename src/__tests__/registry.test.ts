@@ -72,6 +72,13 @@ describe('Registry - OpenRouter support', () => {
     expect(anthropicHeaders['x-api-key']).toBe('sk-ant-key');
     expect(anthropicHeaders['Authorization']).toBeUndefined();
   });
+
+  it('getProviderHeaders should include anthropic-beta prompt-caching header for anthropic', () => {
+    const headers = getProviderHeaders('anthropic', 'sk-ant-key-123');
+    expect(headers['x-api-key']).toBe('sk-ant-key-123');
+    expect(headers['anthropic-version']).toBe('2025-04-01');
+    expect(headers['anthropic-beta']).toBe('prompt-caching-2024-07-31');
+  });
 });
 
 describe('Registry - Provider routing matrix', () => {

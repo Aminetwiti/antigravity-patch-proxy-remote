@@ -40,6 +40,13 @@ interface AnthropicTool {
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
+  cache_control?: { type: 'ephemeral' };
+}
+
+interface AnthropicSystemBlock {
+  type: 'text';
+  text: string;
+  cache_control?: { type: 'ephemeral' };
 }
 
 interface AnthropicContentBlock {
@@ -69,7 +76,7 @@ interface AnthropicMessage {
 interface AnthropicRequestBody {
   model: string;
   messages: AnthropicMessage[];
-  system?: string;
+  system?: string | AnthropicSystemBlock[];
   max_tokens: number;
   temperature?: number;
   tools?: AnthropicTool[];
@@ -270,9 +277,22 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
   const result: AnthropicRequestBody = {
     model: modelName,
     messages,
-    system,
     max_tokens: geminiBody.generationConfig?.maxOutputTokens ?? 16000,
   };
+
+  if (system) {
+    if (system.length > 1000) {
+      result.system = [
+        {
+          type: 'text',
+          text: system,
+          cache_control: { type: 'ephemeral' },
+        },
+      ];
+    } else {
+      result.system = system;
+    }
+  }
 
   // Claude thinking models don't support temperature (centralized detection)
   const { isThinkingModel } = detectModelCapabilitiesByName(modelName);
@@ -283,7 +303,11 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
 
   if (geminiBody.tools && Array.isArray(geminiBody.tools)) {
     const anthTools = mapGeminiToolsToAnthropic(geminiBody.tools);
-    if (anthTools.length > 0) result.tools = anthTools;
+    if (anthTools.length > 0) {
+      // Add prompt caching breakpoint to the last tool definition (caches all tools up to this point)
+      anthTools[anthTools.length - 1].cache_control = { type: 'ephemeral' };
+      result.tools = anthTools;
+    }
   }
 
   return result;

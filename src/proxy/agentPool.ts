@@ -258,3 +258,34 @@ export function resolveClientForUrl(rawUrl: string | URL, allowUnauthorized = fa
     agent: getHttpAgent({ host, port, allowUnauthorized }),
   };
 }
+
+/**
+ * Speculative TLS Pre-Warming:
+ * Opens a keep-alive connection in the background so the user's first prompt
+ * skips DNS resolution and TLS handshake latency (~150-350ms).
+ */
+export function warmTlsConnection(host: string, port = 443, allowUnauthorized = false): void {
+  try {
+    const agent = getHttpsAgent({ host, port, allowUnauthorized });
+    const req = https.request({
+      method: 'HEAD',
+      host,
+      port,
+      path: '/',
+      agent,
+      timeout: 3000,
+    });
+    req.on('response', (res) => {
+      // Consume response stream to return the socket to freeSockets keep-alive pool
+      res.resume();
+    });
+    req.on('error', () => {
+      // Ignore background pre-warm errors
+    });
+    req.on('timeout', () => {
+      try { req.destroy(); } catch (_) {}
+    });
+    req.end();
+  } catch (_) {}
+}
+

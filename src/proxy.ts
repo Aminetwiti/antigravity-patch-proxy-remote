@@ -74,7 +74,7 @@ import { classifyError, ErrorDiagnostic, type ErrorType } from './proxy/errorCla
 import { shouldRetryStatus, computeRetryDelay, isRetryableNetworkError, type RetryStrategy } from './proxy/retryStrategy';
 import { getOpenBreaker, recordFailure, recordSuccess, CIRCUIT_BREAKER_RESET_MS } from './proxy/circuitBreaker';
 import { IdleTimeoutGuard } from './proxy/idleTimeout';
-import { resolveClientForUrl, getHttpsAgent, evictAgent, disposeAll as disposeAgentPool } from './proxy/agentPool';
+import { resolveClientForUrl, getHttpsAgent, evictAgent, disposeAll as disposeAgentPool, warmTlsConnection } from './proxy/agentPool';
 import { EmptyStreamGuard } from './proxy/emptyStream';
 import { getRetryBudget, RETRY_BUDGET_BASE } from './proxy/retryBudget';
 import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from './proxy/diagnostics';
@@ -949,6 +949,9 @@ export function transformGoogleStreamForRemote(
   delete headers['content-length'];
   delete headers['content-encoding'];
   safeWriteHead(clientRes, proxyRes.statusCode || 200, headers as Record<string, string>);
+  if (clientRes?.socket && typeof clientRes.socket.setNoDelay === 'function') {
+    try { clientRes.socket.setNoDelay(true); } catch (_) {}
+  }
 
   const onClientClose = () => {
     if (proxyRes && !proxyRes.destroyed && typeof proxyRes.destroy === 'function') {
@@ -2290,14 +2293,15 @@ export async function executeGoogleCloudCodeWithPool(
     const isFlash = /flash/i.test(targetModel);
     const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel);
     const isFlashModel = isFlash;
-    const isLargePayloadOrThinking = updatedBody.length > 60_000 || (isThinkingModel && !isFlash);
-    // For streaming requests with sibling accounts in pool, use fast header timeouts for quick failover:
-    // - Flash models: strict 4.5s TTFT (or 8s if thinking budget) when siblings exist to eliminate black-hole stalls immediately
-    // - Thinking / large prompts: 40-55s (allows reasoning budget without stalling the IDE)
+    const isLargePayload = updatedBody.length > 35_000;
+    const isLargePayloadOrThinking = isLargePayload || isThinkingModel;
+    // For streaming requests with sibling accounts in pool, use calibrated header timeouts:
+    // - Large prompts / old conversations (>35k bytes) or Thinking models: 40-55s (allows prompt prefill & reasoning without premature timeout)
+    // - Small Flash requests (new conversations/short prompts): strict 3.5s TTFT to eliminate black-hole stalls immediately
     // - Standard models: 25-35s
     const flashTimeoutMs = hasOtherCandidates
-      ? (isThinkingModel ? Math.min(8_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS)
-      : Math.min(12_000, GOOGLE_PROXY_TIMEOUT_MS);
+      ? (isThinkingModel ? Math.min(10_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS)
+      : Math.min(15_000, GOOGLE_PROXY_TIMEOUT_MS);
     const largeTimeoutMs = hasOtherCandidates
       ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : 55_000)
       : GOOGLE_PROXY_TIMEOUT_MS;
@@ -2305,9 +2309,9 @@ export async function executeGoogleCloudCodeWithPool(
       ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_MS : 35_000)
       : GOOGLE_PROXY_TIMEOUT_MS;
 
-    const baseCandidateTimeout = isFlashModel
-      ? flashTimeoutMs
-      : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs);
+    const baseCandidateTimeout = isLargePayloadOrThinking
+      ? largeTimeoutMs
+      : (isFlashModel ? flashTimeoutMs : standardTimeoutMs);
 
     // When no other candidates exist, fallback to the full proxy timeout.
     const poolHeaderTimeout = hasOtherCandidates
@@ -2318,6 +2322,7 @@ export async function executeGoogleCloudCodeWithPool(
       isStreamReq &&
       hasOtherCandidates &&
       isFlashModel &&
+      !isLargePayloadOrThinking &&
       !res.headersSent &&
       !res.writableEnded &&
       poolHeaderTimeout > HEDGED_REQUEST_DELAY_MS;
@@ -3622,6 +3627,9 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
       'X-Accel-Buffering': 'no',
     })) {
       return;
+    }
+    if (res?.socket && typeof res.socket.setNoDelay === 'function') {
+      try { res.socket.setNoDelay(true); } catch (_) {}
     }
   }
 
