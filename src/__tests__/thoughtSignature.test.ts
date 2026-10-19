@@ -96,6 +96,30 @@ describe('thoughtSignature handling', () => {
       expect(() => extractAndCacheThoughtSignatures({ candidates: [{}] }, 'conv-1')).not.toThrow();
       expect(thoughtSignatureCache.size).toBe(0);
     });
+
+    it('auto-heals raw protobuf binary signatures starting with 0x12 into Base64', () => {
+      const rawProtobufBytes = String.fromCharCode(0x12) + 'test_binary_signature';
+      const expectedBase64 = Buffer.from(rawProtobufBytes, 'binary').toString('base64');
+
+      const responseData = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  functionCall: { name: 'run_command', args: { CommandLine: 'pwd' } },
+                  thought_signature: rawProtobufBytes,
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      extractAndCacheThoughtSignatures(responseData, 'conv-proto-test');
+      expect(thoughtSignatureCache.get('conv-proto-test:run_command')).toBe(expectedBase64);
+      expect(thoughtSignatureCache.get('run_command')).toBe(expectedBase64);
+    });
   });
 
   describe('restoreThoughtSignatures', () => {

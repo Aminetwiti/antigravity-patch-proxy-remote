@@ -89,6 +89,7 @@ describe('Google Multi-Account Pool & Failover', () => {
     _clearLiveQuotasForTests();
     _clearSlotWaitersForTests();
     clearRevokedTokens();
+    _resetAllAccountCooldowns();
   });
 
   const mockGoogleModels: CustomModel[] = [

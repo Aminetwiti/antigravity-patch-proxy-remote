@@ -73,13 +73,6 @@ function estimateAccountTokens(acc: any) {
     claudePct5h = 0;
   }
 
-  if (acc.enabled === false) {
-    pct5h = 0;
-    pctWk = 0;
-    claudePct5h = 0;
-    claudePctWk = 0;
-  }
-
   const geminiAvailable5h = Math.round((geminiCap5h * Math.max(0, Math.min(100, pct5h))) / 100);
   const geminiAvailableWeekly = Math.round((geminiCapWeekly * Math.max(0, Math.min(100, pctWk))) / 100);
 
@@ -462,6 +455,25 @@ describe('Google Accounts High-Density Dashboard Logic', () => {
       expect(est.claudeAvailableWeekly).toBe(500_000); // 50% of 1M
     });
 
+    it('preserves real quotas and token estimates when account is paused (enabled: false)', () => {
+      const acc = {
+        name: 'paused-user@gmail.com',
+        tier: 'PRO',
+        enabled: false,
+        quotas: {
+          geminiFiveHourPct: 80,
+          geminiWeeklyPct: 70,
+          claudeFiveHourPct: 90,
+          claudeWeeklyPct: 85,
+        },
+      };
+      const est = estimateAccountTokens(acc);
+      expect(est.availableTokens5h).toBe(280_000); // 80% of 350k
+      expect(est.availableTokensWeekly).toBe(1_750_000); // 70% of 2.5M
+      expect(est.claudeAvailable5h).toBe(126_000); // 90% of 140k
+      expect(est.claudeAvailableWeekly).toBe(850_000); // 85% of 1M
+    });
+
     it('aggregates multi-account pool token capacity and dollar value correctly', () => {
       const accounts = [
         { id: 'acc-1', name: 'acc1', tier: 'PRO', enabled: true, quotas: { geminiWeeklyPct: 100 } },
@@ -659,6 +671,44 @@ describe('Google Accounts High-Density Dashboard Logic', () => {
       expect(dropdownHtml).toContain('Cloud Code');
       expect(dropdownHtml).toContain('1-clic');
       expect(dropdownHtml).toContain('Gratuit');
+    });
+
+    it('accurately identifies blocked / sick accounts and filters them via status:blocked', () => {
+      const accounts = [
+        { id: 'acc1', name: 'Healthy', enabled: true, quotas: { geminiFiveHourPct: 80 } },
+        { id: 'acc2', name: 'TOS Blocked', enabled: true, isUnlicensed: true },
+        { id: 'acc3', name: 'Details Error', enabled: true, errorDetails: { reason: 'TOS_VIOLATION' } },
+        { id: 'acc4', name: 'HTTP 403 Error', enabled: true, status: 'unhealthy', lastError: '403 Forbidden: PERMISSION_DENIED' },
+      ];
+
+      const isAccountBlocked = (a: any) => Boolean(
+        a.isUnlicensed ||
+        a.errorDetails ||
+        a.quotas?.errorDetails ||
+        (a.status === 'unhealthy' && a.lastError?.includes('403'))
+      );
+
+      const blockedAccounts = accounts.filter(isAccountBlocked);
+      expect(blockedAccounts.length).toBe(3);
+      expect(blockedAccounts.map(a => a.id)).toEqual(['acc2', 'acc3', 'acc4']);
+    });
+
+    it('contains 1-Click Native Auto-Remediation and Appeal Copilot buttons in Error Details UI template', () => {
+      const modalTemplate = `
+        <button id="gaAutoRepairAdcBtn" class="btn btn-primary btn-sm">
+          ⚡ Réparer ce Compte (Fix 1-Clic Automatique)
+        </button>
+        <button id="gaCopyAppealTextBtn" class="btn btn-ghost btn-sm">
+          Copier le modèle de recours
+        </button>
+        <div id="gaAppealTextContent">I am writing to respectfully appeal the suspension...</div>
+      `;
+
+      expect(modalTemplate).toContain('id="gaAutoRepairAdcBtn"');
+      expect(modalTemplate).toContain('Fix 1-Clic Automatique');
+      expect(modalTemplate).toContain('id="gaCopyAppealTextBtn"');
+      expect(modalTemplate).toContain('gaAppealTextContent');
+      expect(modalTemplate).toContain('respectfully appeal');
     });
   });
 });

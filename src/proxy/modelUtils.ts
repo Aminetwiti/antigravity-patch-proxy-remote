@@ -13,6 +13,8 @@ export {
   coerceReasoningEffort,
   coerceThinkingBudget,
   isReasoningLikeModel,
+  isSubagentRequest,
+  clampSubagentReasoning,
   type ReasoningEffort as AdaptiveReasoningEffort,
   type ThinkingBudget as AdaptiveThinkingBudget,
 } from '../presets/reasoningEffort';
@@ -398,7 +400,9 @@ export function isNativeCloudCodeModel(modelName: string): boolean {
     slug.startsWith('gpt-oss-') ||
     slug.startsWith('gemma-') ||
     slug.startsWith('model-tier-') ||
-    slug.startsWith('modeltier-')
+    slug.startsWith('modeltier-') ||
+    slug.startsWith('model-google-') ||
+    slug.startsWith('modelgoogle-')
   );
 }
 

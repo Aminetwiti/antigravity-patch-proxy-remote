@@ -58,6 +58,32 @@ export function classifyError(
   const errorMsg = errorObj?.message ? errorObj.message.toLowerCase() : '';
   const errorCode = typeof errorObj === 'string' ? errorObj.toUpperCase() : (errorObj?.code ? String(errorObj.code).toUpperCase() : '');
 
+  // 0. Check for self-harm / internal gateway errors (Antigravity-Manager parity)
+  const isInternalGateway =
+    bodyText.includes('all accounts limited') ||
+    bodyText.includes('all accounts are currently in cooldown') ||
+    bodyText.includes('token pool is empty') ||
+    bodyText.includes('token pool empty') ||
+    bodyText.includes('pool exhausted') ||
+    bodyText.includes('no available accounts') ||
+    errorMsg.includes('all accounts limited') ||
+    errorMsg.includes('token pool is empty');
+
+  if (isInternalGateway) {
+    return {
+      errorType: 'server',
+      title: 'Pool Temporarily Exhausted',
+      message: 'All accounts in the active pool are momentarily busy or rate-limited. The proxy will auto-recover as soon as quota resets.',
+      suggestions: [
+        'Wait 1 to 5 minutes for account cooldowns to naturally expire.',
+        'Click "⚡ Réveil express" in ag-doctor-ui to reset burst cooldowns immediately.',
+        'Add additional backup accounts to expand the pool capacity.',
+      ],
+      retryable: true,
+      severity: 'warning',
+    };
+  }
+
   // Detect billing / insufficient tokens / credits errors
   const isBilling =
     status === 402 ||
@@ -131,6 +157,86 @@ export function classifyError(
     errorMsg.includes('forbidden');
 
   if (isForbidden) {
+    // Check if upstream included a validation URL, challenge, or appeal URL
+    const details = Array.isArray(bodyJson?.error?.details) ? bodyJson.error.details : [];
+    let appealUrl: string | undefined;
+    let validationUrl: string | undefined;
+    for (const d of details) {
+      if (d?.metadata?.appeal_url) appealUrl = d.metadata.appeal_url;
+      if (d?.metadata?.validation_url) validationUrl = d.metadata.validation_url;
+      if (d?.metadata?.challenge_url) validationUrl = d.metadata.challenge_url;
+    }
+
+    if (validationUrl || bodyText.includes('validation_required') || bodyText.includes('challenge')) {
+      return {
+        errorType: 'forbidden',
+        title: 'Validation Required',
+        message: 'Google requires interactive verification or captcha for this account.',
+        suggestions: [
+          'Open the verification URL in your browser to complete the challenge.',
+          'Verify your account phone number or solve the captcha.',
+          'Once verified, the account will resume normal operation.'
+        ],
+        retryable: false,
+        severity: 'warning',
+        actionUrl: validationUrl || 'https://accounts.google.com',
+      };
+    }
+
+    if (appealUrl || bodyText.includes('terms of service')) {
+      return {
+        errorType: 'forbidden',
+        title: 'Terms of Service Violation',
+        message: 'This account has been flagged for violation of Terms of Service by Google Cloud Code.',
+        suggestions: [
+          'Submit an appeal using the Google Appeal Form.',
+          'Switch to an alternate active account in your pool.',
+          'Regenerate your device fingerprint in ag-doctor-ui to prevent association.'
+        ],
+        retryable: false,
+        severity: 'error',
+        actionUrl: appealUrl || 'https://forms.gle/hGzM9MEUv2azZsrb9',
+      };
+    }
+
+    if (bodyText.includes('project has been denied access') || bodyText.includes('project denied access')) {
+      return {
+        errorType: 'forbidden',
+        title: 'Project Denied Access (Free-Tier Security Flag)',
+        message: 'Google automated security checks placed an anti-abuse flag on your project (403 PERMISSION_DENIED).',
+        suggestions: [
+          'Add billing or prepay $10 on Google Cloud Platform to automatically lift the Free-Tier security flag.',
+          'If staying on Free Tier, request manual review on https://discuss.ai.google.dev with your Project ID.',
+          'Or switch to a Google Cloud Code account in the pool or an alternative provider.'
+        ],
+        retryable: false,
+        severity: 'error',
+        actionUrl: 'https://console.cloud.google.com/billing',
+      };
+    }
+
+    if (
+      bodyText.includes('ineligible for higher rate limits') ||
+      bodyText.includes('ineligible for higher') ||
+      bodyText.includes('starter quota') ||
+      errorMsg.includes('ineligible for higher rate limits')
+    ) {
+      return {
+        errorType: 'forbidden',
+        title: 'Account Ineligible for Higher Rate Limits',
+        message: 'Antigravity licensing service (loadCodeAssist) rejected Pro/Ultra tier upgrade (Account ineligible / Starter Quota).',
+        suggestions: [
+          'Align your Google Pay billing address and country with your physical IP/country.',
+          'Verify that the account is not under Google Workspace or Family Member restrictions.',
+          'Use ag-doctor pool:probe to prune ineligible accounts and prioritize healthy Pro accounts.',
+          'Configure Google AI Studio (generativelanguage.googleapis.com) to bypass Cloud Code licensing restrictions.'
+        ],
+        retryable: false,
+        severity: 'error',
+        actionUrl: 'https://discuss.ai.google.dev/search?q=ineligible%20%23antigravity',
+      };
+    }
+
     return {
       errorType: 'forbidden',
       title: 'Access Denied',
@@ -155,6 +261,25 @@ export function classifyError(
     bodyText.includes('rate limit');
 
   if (isRateLimit) {
+    const isEntitlementDesync =
+      (bodyText.includes('resource_exhausted') || bodyText.includes('resource has been exhausted')) &&
+      (bodyText.includes('free-tier') || bodyText.includes('currenttier') || bodyText.includes('loadcodeassist'));
+
+    if (isEntitlementDesync) {
+      return {
+        errorType: 'rate_limit',
+        title: 'Entitlement Desynchronization (Faux 429)',
+        message: 'Google Cloud Code treated an active subscription as Free-Tier (loadCodeAssist entitlement desynchronization).',
+        suggestions: [
+          'Run "node ag-doctor/bin/ag-doctor.js pool:probe" to rotate to a healthy synchronized account.',
+          'Revoke and re-authenticate Google Antigravity tokens at https://myaccount.google.com/permissions.',
+          'Enable cross-model cascade to Claude Sonnet or Google AI Studio to maintain coding continuity.'
+        ],
+        retryable: true,
+        severity: 'error',
+      };
+    }
+
     return {
       errorType: 'rate_limit',
       title: 'Rate Limited',
@@ -245,6 +370,29 @@ export function classifyError(
   // Detect server errors (5xx)
   if (status && status >= 500 && status < 600) {
     const upstreamDetail = bodyJson?.error?.message || (typeof bodyJson?.error === 'string' ? bodyJson.error : '') || bodyJson?.message || '';
+
+    // Detect 503 TPU capacity saturation on Gemini Flash / cluster pinning
+    const isCapacity503 =
+      status === 503 ||
+      bodyText.includes('no capacity available') ||
+      bodyText.includes('experiencing high traffic') ||
+      errorMsg.includes('no capacity available');
+
+    if (isCapacity503) {
+      return {
+        errorType: 'server',
+        title: 'TPU Capacity Overload (HTTP 503)',
+        message: 'Google Cloud Code inference clusters are currently saturated for this Gemini model (503 UNAVAILABLE: No capacity available).',
+        suggestions: [
+          'The proxy will automatically cascade to healthy pool accounts or Claude/GPT fallback models.',
+          'Switch to another account in your pool or enable cross-model fallback in Antigravity.',
+          'Use a direct Google AI Studio API key, which runs on dedicated non-IDE quota.'
+        ],
+        retryable: true,
+        severity: 'warning',
+      };
+    }
+
     return {
       errorType: 'server',
       title: 'Provider Server Error',
@@ -258,6 +406,30 @@ export function classifyError(
       ],
       retryable: true,
       severity: 'error',
+    };
+  }
+
+  // Detect location / geo-blocking errors (HTTP 400/403 with location not supported / FAILED_PRECONDITION)
+  const isGeoBlocked =
+    (status === 400 || status === 403) &&
+    (bodyText.includes('location is not supported') ||
+     bodyText.includes('user location') ||
+     (bodyText.includes('failed_precondition') && bodyText.includes('location')) ||
+     errorMsg.includes('location is not supported'));
+
+  if (isGeoBlocked) {
+    return {
+      errorType: 'forbidden',
+      title: 'Location Not Supported (Geo-Blocked)',
+      message: 'Google Cloud Code has rejected this request because your network/VPN egress IP is recognized as an unsupported region or commercial VPN/datacenter IP.',
+      suggestions: [
+        'Disable commercial VPN, TUN, or datacenter proxy egress and retry with a standard direct ISP connection.',
+        'Configure a Google AI Studio API key (google-gemini) in custom_models.json, which is not subject to Cloud Code IP restrictions.',
+        'Use an alternative provider (Claude, DeepSeek, OpenRouter) or enable cross-model fallback.'
+      ],
+      retryable: false,
+      severity: 'error',
+      actionUrl: 'https://ai.google.dev/gemini-api/docs/available-regions',
     };
   }
 

@@ -3,6 +3,7 @@
 // proxy.ts re-exports everything; existing callers are unaffected.
 
 import { randomInt } from 'crypto';
+import https from 'https';
 import log from 'electron-log';
 import type { CustomModel } from './types';
 import { getOpenBreaker } from './circuitBreaker';
@@ -13,6 +14,7 @@ import {
   isGoogleCloudCodeModel,
   isTokenRevoked,
   normalizeCloudCodeModelId,
+  getValidGoogleAccessToken,
   type AccountLiveQuota,
 } from '../services/googleAuth';
 import { getBaseModelId } from './urlBuilder';
@@ -21,7 +23,16 @@ import {
   registerUnlicensedAccountsHandlers,
   registerAccountCooldownHandlers,
 } from '../services/quotaCacheStore';
-import { P2C_SCORE_DELTA } from '../constants';
+import {
+  P2C_SCORE_DELTA,
+  PREFLIGHT_HEALTH_CHECK_INTERVAL_MS,
+  PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS,
+  PREVENTIVE_QUOTA_THRESHOLD_PCT,
+  PREVENTIVE_COOLDOWN_MS,
+} from '../constants';
+import { loadCustomModels } from './modelLoader';
+
+export { PREVENTIVE_QUOTA_THRESHOLD_PCT, PREVENTIVE_COOLDOWN_MS };
 
 // ─── Multi-Account Session Affinity (Sticky Sessions) ─────────────────────────
 
@@ -69,12 +80,76 @@ const rateLimitedCooldownKeys = new Set<string>();
 const unlicensedAccountKeys = new Set<string>();
 
 export function isAccountUnlicensed(candidate: CustomModel): boolean {
+  if (!candidate) return false;
+  if ((candidate as any).isUnlicensed === true || (candidate as any).quotas?.isUnlicensed === true) {
+    return true;
+  }
   const key = getAccountQuotaKey(candidate);
+  const liveQ = getLiveAccountQuota(key);
+  if (liveQ?.isUnlicensed === true) {
+    return true;
+  }
   const email = (candidate.accountEmail || '').toLowerCase();
   return unlicensedAccountKeys.has(key) ||
          (email !== '' && (unlicensedAccountKeys.has(email) ||
                            unlicensedAccountKeys.has(`google:${email}`) ||
                            unlicensedAccountKeys.has(`gemini-cli:${email}`)));
+}
+
+export function isAccountTrial(candidate: CustomModel): boolean {
+  if (!candidate) return false;
+  if ((candidate as any).isTrial === true || (candidate as any).planType === 'trial') {
+    return true;
+  }
+  const liveQ = getLiveAccountQuota(getAccountQuotaKey(candidate));
+  if ((liveQ as any)?.isTrial === true || (liveQ as any)?.planType === 'trial') {
+    return true;
+  }
+  const quotas = (candidate as any).quotas;
+  if (quotas?.isTrial === true || quotas?.planType === 'trial') {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks whether an account is near quota exhaustion (at or below PREVENTIVE_QUOTA_THRESHOLD_PCT).
+ * Used to avoid selecting this account when healthier alternatives exist, protecting against
+ * Google's 7-day (167-hour) hard lockout.
+ */
+export function isAccountNearExhaustion(candidate: CustomModel, modelFamily?: string): boolean {
+  if (!candidate) return false;
+  const key = getAccountQuotaKey(candidate);
+  const live = getLiveAccountQuota(key);
+  const q = (live || candidate.quotas) as Record<string, any> | undefined;
+  if (!q) return false;
+
+  const isArgon = modelFamily
+    ? modelFamily.toLowerCase().includes('argon')
+    : (candidate.externalModelName || candidate.name || '').toLowerCase().includes('argon');
+  const isClaude = !isArgon && (modelFamily
+    ? modelFamily.toLowerCase().includes('claude')
+    : (candidate.externalModelName || candidate.name || '').toLowerCase().includes('claude'));
+
+  const weekly = isArgon
+    ? (typeof q.argonWeeklyPct === 'number'
+        ? q.argonWeeklyPct
+        : (typeof q.geminiWeeklyPct === 'number'
+          ? q.geminiWeeklyPct
+          : (typeof q.weeklyPercentage === 'number' ? q.weeklyPercentage : 100)))
+    : (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
+      ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
+      : typeof q.weeklyPercentage === 'number'
+        ? q.weeklyPercentage
+        : 100);
+
+  const now = Date.now();
+  const weeklyResetStr = isArgon
+    ? (q.argonWeeklyReset || q.geminiWeeklyReset || q.weeklyResetTime)
+    : (isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime));
+  const weeklyResetPassed = weeklyResetStr ? new Date(weeklyResetStr).getTime() <= now : false;
+
+  return typeof weekly === 'number' && weekly <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !weeklyResetPassed;
 }
 
 export function markAccountUnlicensed(candidate: CustomModel): void {
@@ -87,6 +162,22 @@ export function markAccountUnlicensed(candidate: CustomModel): void {
     unlicensedAccountKeys.add(`gemini-cli:${email}`);
   }
   triggerQuotaCachePersist();
+}
+
+export function unmarkAccountUnlicensed(candidate: CustomModel | string): void {
+  const key = typeof candidate === 'string' ? candidate : getAccountQuotaKey(candidate);
+  const email = typeof candidate === 'string'
+    ? (candidate.includes('@') ? candidate.toLowerCase() : '')
+    : (candidate.accountEmail || '').toLowerCase();
+  let changed = unlicensedAccountKeys.delete(key);
+  if (email) {
+    if (unlicensedAccountKeys.delete(email)) changed = true;
+    if (unlicensedAccountKeys.delete(`google:${email}`)) changed = true;
+    if (unlicensedAccountKeys.delete(`gemini-cli:${email}`)) changed = true;
+  }
+  if (changed) {
+    triggerQuotaCachePersist();
+  }
 }
 
 export function getUnlicensedAccountKeys(): string[] {
@@ -411,9 +502,9 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
     }
 
     if (quota) {
-      const geminiResetStr = quota.geminiResetTime || quota.geminiFiveHourReset || (quota as any).fiveHourResetTime;
+      const geminiResetStr = quota.geminiResetTime || quota.geminiFiveHourReset || (quota as any).fiveHourResetTime || quota.geminiWeeklyReset;
       const geminiResetPassed = geminiResetStr ? Date.parse(geminiResetStr) <= now : false;
-      const claudeResetStr = quota.claudeResetTime || quota.claudeFiveHourReset || (quota as any).fiveHourResetTime;
+      const claudeResetStr = quota.claudeResetTime || quota.claudeFiveHourReset || (quota as any).fiveHourResetTime || quota.claudeWeeklyReset;
       const claudeResetPassed = claudeResetStr ? Date.parse(claudeResetStr) <= now : false;
 
       let shouldWakeUp = false;
@@ -438,15 +529,14 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const weekStr = geminiWeekVal !== null ? `, week=${geminiWeekVal}%` : '';
         const geminiWeeklyDepleted = geminiWeekVal !== null && geminiWeekVal < 5 && !geminiResetPassed;
 
-        const canWakeQuota = quotaIsFresh || !isQuotaExhausted;
         const isFullyRestored = quota.geminiFiveHourPct === 100 && (geminiWeekVal === null || geminiWeekVal >= 50);
-        if (geminiResetPassed && quota.geminiFiveHourPct >= 5 && canWakeQuota) {
+        if (geminiResetPassed && quota.geminiFiveHourPct >= 5) {
           shouldWakeUp = true;
           reason = `Gemini reset timestamp elapsed (${geminiResetStr}${weekStr})`;
-        } else if (isFullyRestored && canWakeQuota) {
+        } else if (!isQuotaExhausted && isFullyRestored) {
           shouldWakeUp = true;
           reason = `full quota restored (5h=100%${weekStr})`;
-        } else if (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted && canWakeQuota) {
+        } else if (!isQuotaExhausted && quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted) {
           shouldWakeUp = true;
           reason = `${quotaIsFresh ? 'fresh live' : 'healthy'} quota (5h=${quota.geminiFiveHourPct}%${weekStr})`;
         }
@@ -457,15 +547,14 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const weekStr = claudeWeekVal !== null ? `, week=${claudeWeekVal}%` : '';
         const claudeWeeklyDepleted = claudeWeekVal !== null && claudeWeekVal < 5 && !claudeResetPassed;
 
-        const canWakeQuota = quotaIsFresh || !isQuotaExhausted;
         const isFullyRestored = quota.claudeFiveHourPct === 100 && (claudeWeekVal === null || claudeWeekVal >= 50);
-        if (claudeResetPassed && quota.claudeFiveHourPct >= 5 && canWakeQuota) {
+        if (claudeResetPassed && quota.claudeFiveHourPct >= 5) {
           shouldWakeUp = true;
           reason = `Claude reset timestamp elapsed (${claudeResetStr}${weekStr})`;
-        } else if (isFullyRestored && canWakeQuota) {
+        } else if (!isQuotaExhausted && isFullyRestored) {
           shouldWakeUp = true;
           reason = `full quota restored (5h=100%${weekStr})`;
-        } else if (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted && canWakeQuota) {
+        } else if (!isQuotaExhausted && quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted) {
           shouldWakeUp = true;
           reason = `${quotaIsFresh ? 'fresh live' : 'healthy'} quota (5h=${quota.claudeFiveHourPct}%${weekStr})`;
         }
@@ -482,9 +571,8 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const claudeWeekStr = claudeWeekVal !== null ? `, week=${claudeWeekVal}%` : '';
         const claudeWeeklyDepleted = claudeWeekVal !== null && claudeWeekVal < 5 && !claudeResetPassed;
 
-        const canWakeQuota = quotaIsFresh || !isQuotaExhausted;
-        const geminiOk = canWakeQuota && (geminiResetPassed || (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted));
-        const claudeOk = canWakeQuota && (claudeResetPassed || (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted));
+        const geminiOk = geminiResetPassed || (!isQuotaExhausted && quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted);
+        const claudeOk = claudeResetPassed || (!isQuotaExhausted && quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted);
 
         if (geminiOk && claudeOk) {
           shouldWakeUp = true;
@@ -560,15 +648,15 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
 
   const geminiResetStr = quota.geminiResetTime || quota.geminiFiveHourReset || (quota as any).fiveHourResetTime;
   const geminiResetPassed = geminiResetStr ? new Date(geminiResetStr).getTime() <= now : false;
-  const geminiWeeklyDepleted = (typeof quota.geminiWeeklyPct === 'number' && quota.geminiWeeklyPct < 5 && !geminiResetPassed) ||
-                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < 5 && !geminiResetPassed);
+  const geminiWeeklyDepleted = (typeof quota.geminiWeeklyPct === 'number' && quota.geminiWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiResetPassed) ||
+                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiResetPassed);
 
   const claudeResetStr = quota.claudeResetTime || quota.claudeFiveHourReset || (quota as any).fiveHourResetTime;
   const claudeResetPassed = claudeResetStr ? new Date(claudeResetStr).getTime() <= now : false;
-  const claudeWeeklyDepleted = (typeof quota.claudeWeeklyPct === 'number' && quota.claudeWeeklyPct < 5 && !claudeResetPassed) ||
-                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < 5 && !claudeResetPassed);
+  const claudeWeeklyDepleted = (typeof quota.claudeWeeklyPct === 'number' && quota.claudeWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeResetPassed) ||
+                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeResetPassed);
 
-  if (quota.geminiFiveHourPct >= 5) {
+  if (quota.geminiFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT) {
     const remaining = getCooldownRemainingForFamily('gemini');
     const isStrictCooldown = remaining > FIVE_HOURS_MS;
     const isRateLimited = (remaining > 0) && (
@@ -604,7 +692,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
 
       const genCd = googleAccountCooldowns.get(normAccountKey) || googleAccountCooldowns.get(rawAccountKey);
       if (genCd) {
-        if (quota.claudeFiveHourPct < 5 || claudeWeeklyDepleted) {
+        if (quota.claudeFiveHourPct < PREVENTIVE_QUOTA_THRESHOLD_PCT || claudeWeeklyDepleted) {
           googleAccountCooldowns.set(`${normAccountKey}:claude`, genCd);
           googleAccountCooldowns.set(`${rawAccountKey}:claude`, genCd);
         }
@@ -614,7 +702,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
         accountProbationUntil.delete(rawAccountKey);
       }
       if (quotaExhaustedAccountKeys.has(normAccountKey) || quotaExhaustedAccountKeys.has(rawAccountKey)) {
-        if (quota.claudeFiveHourPct < 5 || claudeWeeklyDepleted) {
+        if (quota.claudeFiveHourPct < PREVENTIVE_QUOTA_THRESHOLD_PCT || claudeWeeklyDepleted) {
           quotaExhaustedAccountKeys.add(`${normAccountKey}:claude`);
           quotaExhaustedAccountKeys.add(`${rawAccountKey}:claude`);
         }
@@ -629,7 +717,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
     }
   }
 
-  if (quota.claudeFiveHourPct >= 5) {
+  if (quota.claudeFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT) {
     const remaining = getCooldownRemainingForFamily('claude');
     const isStrictCooldown = remaining > FIVE_HOURS_MS;
     const isRateLimited = (remaining > 0) && (
@@ -662,7 +750,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
 
       const genCd = googleAccountCooldowns.get(normAccountKey) || googleAccountCooldowns.get(rawAccountKey);
       if (genCd) {
-        if (quota.geminiFiveHourPct < 5 || geminiWeeklyDepleted) {
+        if (quota.geminiFiveHourPct < PREVENTIVE_QUOTA_THRESHOLD_PCT || geminiWeeklyDepleted) {
           googleAccountCooldowns.set(`${normAccountKey}:gemini`, genCd);
           googleAccountCooldowns.set(`${rawAccountKey}:gemini`, genCd);
         }
@@ -672,7 +760,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
         accountProbationUntil.delete(rawAccountKey);
       }
       if (quotaExhaustedAccountKeys.has(normAccountKey) || quotaExhaustedAccountKeys.has(rawAccountKey)) {
-        if (quota.geminiFiveHourPct < 5 || geminiWeeklyDepleted) {
+        if (quota.geminiFiveHourPct < PREVENTIVE_QUOTA_THRESHOLD_PCT || geminiWeeklyDepleted) {
           quotaExhaustedAccountKeys.add(`${normAccountKey}:gemini`);
           quotaExhaustedAccountKeys.add(`${rawAccountKey}:gemini`);
         }
@@ -870,37 +958,63 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   if (isGoogleCloudCodeModel(m) && !m.refreshToken && (!m.apiKey || !m.apiKey.startsWith('ya29.'))) {
     return 0;
   }
+  if ((m as any).enabled === false || isAccountUnlicensed(m)) {
+    return 0;
+  }
   const key = getAccountQuotaKey(m);
   const live = getLiveAccountQuota(key);
   const q = (live || m.quotas) as Record<string, any> | undefined;
   if (!q) {
     // ponytail: reserve direct Google AI Studio developer keys (AIzaSy... / AQ...) as fallback by default (score 25),
     // ensuring healthy Cloud Code accounts (score 30-100) are used first to avoid burning direct API quotas.
-    const isAiStudioKey = m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ.'));
+    const isAiStudioKey = m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ'));
     return isAiStudioKey ? 25 : 50;
   }
+  if (q.isUnlicensed) {
+    return 0;
+  }
 
-  const isClaude = modelFamily
+  const isArgon = modelFamily
+    ? modelFamily.toLowerCase().includes('argon')
+    : (m.externalModelName || m.name || '').toLowerCase().includes('argon');
+
+  const isClaude = !isArgon && (modelFamily
     ? modelFamily.toLowerCase().includes('claude')
-    : (m.externalModelName || m.name || '').toLowerCase().includes('claude');
+    : (m.externalModelName || m.name || '').toLowerCase().includes('claude'));
 
-  const fiveHour = typeof (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct) === 'number'
-    ? (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct)
-    : typeof q.fiveHourPercentage === 'number'
-      ? q.fiveHourPercentage
-      : 50;
+  const fiveHour = isArgon
+    ? (typeof q.argonFiveHourPct === 'number'
+        ? q.argonFiveHourPct
+        : (typeof q.geminiFiveHourPct === 'number'
+          ? q.geminiFiveHourPct
+          : (typeof q.fiveHourPercentage === 'number' ? q.fiveHourPercentage : 50)))
+    : (typeof (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct) === 'number'
+      ? (isClaude ? q.claudeFiveHourPct : q.geminiFiveHourPct)
+      : typeof q.fiveHourPercentage === 'number'
+        ? q.fiveHourPercentage
+        : 50);
 
-  const weekly = typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
-    ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
-    : typeof q.weeklyPercentage === 'number'
-      ? q.weeklyPercentage
-      : 50;
+  const weekly = isArgon
+    ? (typeof q.argonWeeklyPct === 'number'
+        ? q.argonWeeklyPct
+        : (typeof q.geminiWeeklyPct === 'number'
+          ? q.geminiWeeklyPct
+          : (typeof q.weeklyPercentage === 'number' ? q.weeklyPercentage : 50)))
+    : (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
+      ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
+      : typeof q.weeklyPercentage === 'number'
+        ? q.weeklyPercentage
+        : 50);
 
   const now = Date.now();
-  const fiveHourResetStr = isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime);
+  const fiveHourResetStr = isArgon
+    ? (q.argonFiveHourReset || q.geminiFiveHourReset || q.fiveHourResetTime)
+    : (isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime));
   const fiveHourResetPassed = fiveHourResetStr ? new Date(fiveHourResetStr).getTime() <= now : false;
 
-  const weeklyResetStr = isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime);
+  const weeklyResetStr = isArgon
+    ? (q.argonWeeklyReset || q.geminiWeeklyReset || q.weeklyResetTime)
+    : (isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime));
   const weeklyResetPassed = weeklyResetStr ? new Date(weeklyResetStr).getTime() <= now : false;
 
   // Staleness escape: if quota data has no resetTime AND is older than one 5h window,
@@ -910,16 +1024,23 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   const FIVE_H_WINDOW_MS = 18_900_000; // 5h 15min
   const quotaIsStaleWindow = quotaAge >= FIVE_H_WINDOW_MS;
 
-  if (fiveHour === 0 && !fiveHourResetPassed) {
+  if (fiveHour <= 0 && !fiveHourResetPassed) {
     // Only apply staleness escape for live-polled data (updatedAt > 0).
     // Static config quotas have updatedAt=0 and must still block.
     if (!fiveHourResetStr && typeof q.updatedAt === 'number' && q.updatedAt > 0 && quotaIsStaleWindow) return 20;
     return 0;
   }
-  if (weekly === 0 && !weeklyResetPassed) return 0;
+  if (weekly <= 0 && !weeklyResetPassed) return 0;
 
-  const effFiveHour = (fiveHour === 0 && fiveHourResetPassed) ? 50 : fiveHour;
-  const effWeekly = (weekly === 0 && weeklyResetPassed) ? 50 : weekly;
+  // Preventive Anti-Lockout Guard:
+  // If weekly quota has dropped to or below PREVENTIVE_QUOTA_THRESHOLD_PCT (default: 10%),
+  // score as 0 to shield the account from reaching 0% and triggering Google's 7-day hard lockout.
+  if (typeof weekly === 'number' && weekly <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !weeklyResetPassed) {
+    return 0;
+  }
+
+  const effFiveHour = (fiveHour <= 0 && fiveHourResetPassed) ? 50 : fiveHour;
+  const effWeekly = (weekly <= 0 && weeklyResetPassed) ? 50 : weekly;
   return (effFiveHour * 0.7) + (effWeekly * 0.3);
 }
 
@@ -1035,18 +1156,27 @@ export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): nu
   // elevated EWMA latency penalizes up to 25 points;
   // accounts with weekly quota under 30% receive a penalty (up to -20 points under 15%)
   // so accounts with healthy 5h and weekly > 30% are prioritized for attempt 1.
-  const isClaude = modelFamily
+  const isArgon = modelFamily
+    ? modelFamily.toLowerCase().includes('argon')
+    : (m.externalModelName || m.name || '').toLowerCase().includes('argon');
+  const isClaude = !isArgon && (modelFamily
     ? modelFamily.toLowerCase().includes('claude')
-    : (m.externalModelName || m.name || '').toLowerCase().includes('claude');
+    : (m.externalModelName || m.name || '').toLowerCase().includes('claude'));
   const qKey = getAccountQuotaKey(m);
   const live = getLiveAccountQuota(qKey);
   const q = (live || m.quotas) as Record<string, any> | undefined;
   const weeklyPct = q
-    ? (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
-      ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
-      : typeof q.weeklyPercentage === 'number'
-        ? q.weeklyPercentage
-        : 100)
+    ? (isArgon
+      ? (typeof q.argonWeeklyPct === 'number'
+          ? q.argonWeeklyPct
+          : (typeof q.geminiWeeklyPct === 'number'
+            ? q.geminiWeeklyPct
+            : (typeof q.weeklyPercentage === 'number' ? q.weeklyPercentage : 100)))
+      : (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
+        ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
+        : typeof q.weeklyPercentage === 'number'
+          ? q.weeklyPercentage
+          : 100))
     : 100;
   // Progressive weekly penalty: accounts below 15% get strong penalty (up to 20 pts);
   // accounts between 15% and 30% get mild penalty (up to 7 pts) to favor accounts with > 30% weekly quota.
@@ -1074,6 +1204,7 @@ export interface Google429Decision {
   reason: string;
   isExplicitReset?: boolean;
   rawRetryAfterMs?: number | null;
+  weeklyResetMs?: number | null;
 }
 
 export function classifyGoogleCloudCode429(
@@ -1147,6 +1278,7 @@ export function classifyGoogleCloudCode429(
   // 429 bodies. A 5h rolling window can never exceed 5h15m, so anything larger is the weekly cycle
   // marker — discard it and let the quota_exhausted branch apply the standard 5h cooldown.
   const FIVE_H_15_MS = 5 * 3600_000 + 15 * 60_000; // 5h 15min ceiling
+  let weeklyResetMs: number | null = null;
   if (retryAfterMs === null) {
     const resetMatch = msg.match(/resets?\s+in\s+(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
     if (resetMatch && (resetMatch[1] || resetMatch[2] || resetMatch[3])) {
@@ -1154,9 +1286,17 @@ export function classifyGoogleCloudCode429(
       const m = parseInt(resetMatch[2] || '0', 10);
       const s = parseInt(resetMatch[3] || '0', 10);
       const parsed = (h * 3600 + m * 60 + s) * 1000;
-      // Ignore weekly-reset markers embedded in quota-exhausted messages
-      if (parsed > 0 && parsed <= FIVE_H_15_MS) retryAfterMs = parsed;
+      if (parsed > 0) {
+        if (parsed <= FIVE_H_15_MS) {
+          retryAfterMs = parsed;
+        } else {
+          weeklyResetMs = parsed;
+        }
+      }
     }
+  } else if (retryAfterMs > FIVE_H_15_MS) {
+    weeklyResetMs = retryAfterMs;
+    retryAfterMs = null;
   }
 
   // 1. Soft / burst rate limit (micro-throttle, e.g. reset in 0s, try again, or retryAfter <= 3s)
@@ -1232,9 +1372,12 @@ export function classifyGoogleCloudCode429(
       return {
         category: 'quota_exhausted',
         cooldownMs: quotaCooldownMs,
-        reason: `Quota exhausted — ${Math.round(quotaCooldownMs / 3_600_000)}h cooldown and switch account`,
+        reason: weeklyResetMs !== null
+          ? `Quota exhausted (weekly reset in ${Math.round(weeklyResetMs / 3_600_000)}h) — 5h cooldown and switch account`
+          : `Quota exhausted — ${Math.round(quotaCooldownMs / 3_600_000)}h cooldown and switch account`,
         isExplicitReset: retryAfterMs !== null,
         rawRetryAfterMs: retryAfterMs,
+        weeklyResetMs,
       };
     }
   }
@@ -1255,9 +1398,18 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
   if (!candidates || candidates.length === 0) return undefined;
   if (candidates.length === 1) return candidates[0];
 
-  const available = candidates.filter((m) => !isAccountInCooldown(m, modelFamily) && !getOpenBreaker(m));
-  const availableWithQuota = available.filter((m) => getModelQuotaScore(m, modelFamily) > 0);
-  const pool = availableWithQuota.length > 0 ? availableWithQuota : (available.length > 0 ? available : candidates);
+  const fam = (modelFamily || '').toLowerCase();
+  const isRestrictedTarget = fam.includes('argon') || fam.includes('claude-5-5') || fam.includes('claude-5.5') || fam.includes('5.5') || fam.includes('5-5');
+
+  const available = candidates.filter((m) => (m as any).enabled !== false && !isAccountInCooldown(m, modelFamily) && !getOpenBreaker(m) && !isAccountUnlicensed(m));
+  const tierFiltered = isRestrictedTarget
+    ? available.filter((m) => !isAccountTrial(m))
+    : available;
+  const targetCandidates = tierFiltered.length > 0 ? tierFiltered : available;
+
+  const availableWithQuota = targetCandidates.filter((m) => getModelQuotaScore(m, modelFamily) > 0);
+  const pool = availableWithQuota.length > 0 ? availableWithQuota : (targetCandidates.length > 0 ? targetCandidates : candidates.filter((m) => (m as any).enabled !== false && !isAccountUnlicensed(m)));
+  if (pool.length === 0) return undefined;
   // Exclude accounts saturated with concurrent in-flight requests (>= MAX_CONCURRENT_PER_ACCOUNT, or 1 in probation)
   // if other idle/available accounts exist in the pool.
   const freePool = pool.filter(
@@ -1355,6 +1507,8 @@ export function getGoogleAccountPool(
     if (!isGoogleCloudCodeModel(m)) return false;
     // Virtual dropdown auto-pool placeholders must not serve as candidate accounts
     if (m.name?.includes(':auto-pool') || m.apiKey === 'auto') return false;
+    // Disabled accounts must not be pooled
+    if ((m as any).enabled === false) return false;
     // Unlicensed accounts (HTTP 403) must not be pooled
     if (isAccountUnlicensed(m)) return false;
     const mRaw = (m.externalModelName || m.name)
@@ -1379,3 +1533,269 @@ export function getGoogleAccountPool(
 
   return distinctPool.length > 0 ? distinctPool : [matchedModel];
 }
+
+// ─── Proactive Pre-Flight Health Check & Quarantine ───────────────────────────
+
+export interface PreflightProbeResult {
+  email: string;
+  ok: boolean;
+  statusCode: number;
+  latencyMs: number;
+  reason: string;
+}
+
+/**
+ * Executes a fast non-streaming single-token health check on a Google account.
+ * Accounts that stall > timeoutMs (default 3.5s) are isolated as Black-Hole accounts
+ * and quarantined to protect IDE sessions from hangs.
+ */
+export async function probeGoogleAccountPreflight(
+  account: CustomModel,
+  timeoutMs = PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS,
+): Promise<PreflightProbeResult> {
+  const email = (account.accountEmail || account.name || 'unknown').toLowerCase();
+  const token = await getValidGoogleAccessToken(account).catch(() => null);
+
+  if (!token) {
+    if (account.refreshToken && isTokenRevoked(account.refreshToken)) {
+      markAccountUnlicensed(account);
+    }
+    return {
+      email,
+      ok: false,
+      statusCode: 401,
+      latencyMs: 0,
+      reason: 'Failed to obtain access token (revoked or expired)',
+    };
+  }
+
+  const projectId = resolveGoogleProjectId(account) || 'aicode-consumers';
+  const postData = JSON.stringify({
+    project: projectId,
+    model: 'gemini-3.8-flash-tiered',
+    request: {
+      contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+      generationConfig: { maxOutputTokens: 1, temperature: 0 },
+    },
+  });
+
+  const host = isGeminiCliModel(account) ? 'cloudcode-pa.googleapis.com' : 'daily-cloudcode-pa.googleapis.com';
+  const startTime = Date.now();
+
+  return new Promise<PreflightProbeResult>((resolve) => {
+    let settled = false;
+    const finish = (res: PreflightProbeResult) => {
+      if (settled) return;
+      settled = true;
+      resolve(res);
+    };
+
+    const req = https.request(
+      `https://${host}/v1internal:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'antigravity',
+          'X-Goog-Api-Client': 'google-cloud-sdk antigravity',
+          'Content-Length': Buffer.byteLength(postData),
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => {
+          const latencyMs = Date.now() - startTime;
+          const status = res.statusCode || 0;
+          const ok = status >= 200 && status < 300;
+
+          if (ok) {
+            unmarkAccountUnlicensed(account);
+            clearAccountCooldown(account, 'gemini');
+            clearAccountCooldown(account, 'claude');
+            recordAccountLatency(account, latencyMs);
+            log.info(`[PreFlight] ✅ Account [${email}] is healthy (HTTP 200, ${latencyMs}ms)`);
+            finish({ email, ok: true, statusCode: status, latencyMs, reason: 'OK' });
+            return;
+          }
+
+          let reason = '';
+          try {
+            const j = JSON.parse(body);
+            reason = j.error?.message || j.error?.details?.[0]?.reason || body.substring(0, 100);
+          } catch (_) {
+            reason = body.substring(0, 100);
+          }
+
+          const isLocationBlock = (status === 400 || status === 403) && /location is not supported|user location|failed_precondition/i.test(reason);
+          if (isLocationBlock) {
+            log.warn(`[PreFlight] ⚠️ Account [${email}] network location blocked (HTTP ${status}): ${reason}`);
+            finish({ email, ok: false, statusCode: status, latencyMs, reason: `Location not supported: ${reason}` });
+            return;
+          }
+
+          const isSecurityChallenge = status === 403 || /verify your account|validation_required|permission_denied/i.test(reason);
+          if (isSecurityChallenge) {
+            markAccountUnlicensed(account);
+            setAccountCooldown(account, 7 * 24 * 3600 * 1000);
+            log.warn(`[PreFlight] ⚠️ Account [${email}] security challenge (HTTP ${status}): quarantined. (${reason})`);
+            finish({ email, ok: false, statusCode: status, latencyMs, reason: `Security challenge: ${reason}` });
+            return;
+          }
+
+          if (status === 429) {
+            setAccountCooldown(account, 30_000, 'gemini', true);
+            log.warn(`[PreFlight] ⚠️ Account [${email}] rate-limited (HTTP 429): paused 30s.`);
+            finish({ email, ok: false, statusCode: status, latencyMs, reason: 'HTTP 429' });
+            return;
+          }
+
+          setAccountCooldown(account, 60_000, 'gemini', true);
+          log.warn(`[PreFlight] ⚠️ Account [${email}] HTTP ${status}: placed in 60s cooldown.`);
+          finish({ email, ok: false, statusCode: status, latencyMs, reason: `HTTP ${status}: ${reason}` });
+        });
+      },
+    );
+
+    req.on('timeout', () => {
+      const latencyMs = Date.now() - startTime;
+      // Socket stalled without response -> Black-Hole!
+      markAccountUnlicensed(account);
+      setAccountCooldown(account, 24 * 3600 * 1000, 'gemini', true);
+      setAccountCooldown(account, 24 * 3600 * 1000, 'claude', true);
+      log.warn(`[PreFlight] 🕳️ Black-Hole account detected: [${email}] stalled (> ${timeoutMs}ms). Quarantined for 24h.`);
+      finish({
+        email,
+        ok: false,
+        statusCode: 504,
+        latencyMs,
+        reason: `TIMEOUT (>${timeoutMs}ms - Black Hole)`,
+      });
+      try { req.destroy(); } catch (_) {}
+    });
+
+    req.on('error', (err) => {
+      if (settled) return;
+      const latencyMs = Date.now() - startTime;
+      log.warn(`[PreFlight] Transport error probing [${email}]: ${err.message}`);
+      finish({
+        email,
+        ok: false,
+        statusCode: 0,
+        latencyMs,
+        reason: err.message,
+      });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+/**
+ * Concurrently audits all unique Google accounts in the pool with bounded concurrency.
+ * Isolates and quarantines black-hole accounts so they are never picked during IDE sessions.
+ */
+export async function probeAllGoogleAccountsPreflight(
+  customModels?: CustomModel[],
+  concurrencyLimit = 4,
+): Promise<{ healthy: number; quarantined: number; results: PreflightProbeResult[] }> {
+  const models = customModels || loadCustomModels();
+  const googleAccounts = models.filter((m) => isGoogleCloudCodeModel(m) && (m.accountEmail || m.refreshToken));
+  if (googleAccounts.length === 0) {
+    return { healthy: 0, quarantined: 0, results: [] };
+  }
+
+  const uniqueMap = new Map<string, CustomModel>();
+  for (const acc of googleAccounts) {
+    const key = (acc.accountEmail || acc.refreshToken || '').toLowerCase();
+    if (key && !uniqueMap.has(key)) {
+      uniqueMap.set(key, acc);
+    }
+  }
+
+  const queue = Array.from(uniqueMap.values());
+  log.info(`[PreFlight] 🔍 Starting proactive health check across ${queue.length} unique Google account(s)...`);
+
+  const results: PreflightProbeResult[] = [];
+  const safeConcurrency = Math.min(2, concurrencyLimit, queue.length);
+  const workers = Array.from({ length: safeConcurrency }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (!item) break;
+
+      // Skip probing accounts currently in active cooldown or actively serving traffic
+      if (isAccountInCooldown(item, 'gemini') || getAccountInFlight(item) > 0) {
+        continue;
+      }
+
+      // Skip probing accounts that have successfully served traffic in the last 60 seconds
+      const lastUsed = getAccountLastUsed(item);
+      if (lastUsed > 0 && Date.now() - lastUsed < 60_000) {
+        continue;
+      }
+
+      try {
+        const probeTimeout = Math.max(10_000, PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS);
+        const res = await probeGoogleAccountPreflight(item, probeTimeout);
+        results.push(res);
+        // Pacing delay between probes to avoid Google IP token bucket burst drop
+        await new Promise((r) => setTimeout(r, 200));
+      } catch (err) {
+        log.warn(`[PreFlight] Error probing ${(item.accountEmail || item.name)}:`, err);
+      }
+    }
+  });
+
+  await Promise.allSettled(workers);
+
+  const healthy = results.filter((r) => r.ok).length;
+  const quarantined = results.filter((r) => !r.ok && (r.statusCode === 504 || r.statusCode === 403 || r.statusCode === 401)).length;
+  log.info(`[PreFlight] Proactive audit finished: ${healthy} Healthy, ${quarantined} Quarantined out of ${results.length} accounts.`);
+
+  return { healthy, quarantined, results };
+}
+
+let preflightTimer: NodeJS.Timeout | null = null;
+let preflightBootTimer: NodeJS.Timeout | null = null;
+
+export function startPreflightHealthCheckInterval(intervalMs = PREFLIGHT_HEALTH_CHECK_INTERVAL_MS): void {
+  if (preflightTimer) {
+    clearInterval(preflightTimer);
+    preflightTimer = null;
+  }
+  if (preflightBootTimer) {
+    clearTimeout(preflightBootTimer);
+    preflightBootTimer = null;
+  }
+
+  // Pre-flight check at boot (after 3.5s to let initial token pre-warm begin)
+  preflightBootTimer = setTimeout(() => {
+    probeAllGoogleAccountsPreflight().catch((err) => {
+      log.debug('[PreFlight] Boot health check failed:', err?.message || err);
+    });
+  }, 3500);
+  if (preflightBootTimer.unref) preflightBootTimer.unref();
+
+  // Periodic recurring check (default every 20 minutes)
+  preflightTimer = setInterval(() => {
+    probeAllGoogleAccountsPreflight().catch((err) => {
+      log.debug('[PreFlight] Periodic health check tick failed:', err?.message || err);
+    });
+  }, intervalMs);
+  if (preflightTimer.unref) preflightTimer.unref();
+}
+
+export function stopPreflightHealthCheckInterval(): void {
+  if (preflightTimer) {
+    clearInterval(preflightTimer);
+    preflightTimer = null;
+  }
+  if (preflightBootTimer) {
+    clearTimeout(preflightBootTimer);
+    preflightBootTimer = null;
+  }
+}
+

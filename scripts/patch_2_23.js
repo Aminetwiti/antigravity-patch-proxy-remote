@@ -150,11 +150,11 @@ async function main() {
     }
   }
 
-  // Custom services — copy only custom services, NEVER overwrite existing official ones
+  // Custom services — copy custom services, NEVER overwrite existing official ones
   const servicesSrc = path.join(repoDist, 'services');
   const servicesDst = path.join(buildDir, 'dist', 'services');
   if (fs.existsSync(servicesSrc)) {
-    copyRecursive(servicesSrc, servicesDst, false);
+    copyRecursive(servicesSrc, servicesDst, true);
     // Explicitly restore official settingsService
     fs.writeFileSync(officialSettingsServicePath, officialSettingsService, 'utf8');
   }

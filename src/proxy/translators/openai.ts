@@ -165,7 +165,7 @@ function mapGeminiToolsToOpenAI(geminiTools: GeminiTool[]): OpenAITool[] {
       }
     }
   }
-  return openaiTools;
+  return openaiTools.sort((a, b) => a.function.name.localeCompare(b.function.name));
 }
 
 export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: string): OpenAIRequestBody {

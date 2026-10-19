@@ -55,10 +55,10 @@ import * as https from 'https';
 export const DEFAULT_MAX_SOCKETS = 32;
 
 /** Maximum idle (keep-alive) sockets retained per host. */
-export const DEFAULT_MAX_FREE_SOCKETS = 8;
+export const DEFAULT_MAX_FREE_SOCKETS = 16;
 
 /** Keep-alive timeout for free sockets, in milliseconds. */
-export const DEFAULT_FREE_SOCKET_TIMEOUT_MS = 30_000;
+export const DEFAULT_FREE_SOCKET_TIMEOUT_MS = 90_000;
 
 export interface AgentOptions {
   /** Hostname (used as the cache key alongside port). */
@@ -145,8 +145,9 @@ export function getHttpAgent(opts: AgentOptions): http.Agent {
 /**
  * Drop the cached agent for a host so the next call gets a fresh one.
  * Useful after TLS errors or for tests.
+ * By default only destroys free/idle sockets so in-flight requests on other accounts are not aborted.
  */
-export function evictAgent(opts: AgentOptions): void {
+export function evictAgent(opts: AgentOptions, force = false): void {
   const httpsPort = defaultPort('https', opts.port);
   const httpPort = defaultPort('http', opts.port);
   const keyHttps = buildKey({ scheme: 'https', host: opts.host, port: httpsPort, allowUnauthorized: !!opts.allowUnauthorized });
@@ -154,13 +155,36 @@ export function evictAgent(opts: AgentOptions): void {
 
   const a = httpsCache.get(keyHttps);
   if (a) {
-    a.destroy();
     httpsCache.delete(keyHttps);
+    if (force) {
+      a.destroy();
+    } else {
+      destroyFreeSockets(a);
+    }
   }
   const b = httpCache.get(keyHttp);
   if (b) {
-    b.destroy();
     httpCache.delete(keyHttp);
+    if (force) {
+      b.destroy();
+    } else {
+      destroyFreeSockets(b);
+    }
+  }
+}
+
+function destroyFreeSockets(agent: http.Agent | https.Agent): void {
+  const free = (agent as any).freeSockets;
+  if (!free || typeof free !== 'object') return;
+  for (const key of Object.keys(free)) {
+    const list = free[key];
+    if (Array.isArray(list)) {
+      for (const sock of list) {
+        try {
+          sock.destroy();
+        } catch (_) {}
+      }
+    }
   }
 }
 
@@ -234,3 +258,34 @@ export function resolveClientForUrl(rawUrl: string | URL, allowUnauthorized = fa
     agent: getHttpAgent({ host, port, allowUnauthorized }),
   };
 }
+
+/**
+ * Speculative TLS Pre-Warming:
+ * Opens a keep-alive connection in the background so the user's first prompt
+ * skips DNS resolution and TLS handshake latency (~150-350ms).
+ */
+export function warmTlsConnection(host: string, port = 443, allowUnauthorized = false): void {
+  try {
+    const agent = getHttpsAgent({ host, port, allowUnauthorized });
+    const req = https.request({
+      method: 'HEAD',
+      host,
+      port,
+      path: '/',
+      agent,
+      timeout: 3000,
+    });
+    req.on('response', (res) => {
+      // Consume response stream to return the socket to freeSockets keep-alive pool
+      res.resume();
+    });
+    req.on('error', () => {
+      // Ignore background pre-warm errors
+    });
+    req.on('timeout', () => {
+      try { req.destroy(); } catch (_) {}
+    });
+    req.end();
+  } catch (_) {}
+}
+

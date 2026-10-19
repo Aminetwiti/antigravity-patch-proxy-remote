@@ -259,7 +259,7 @@ export function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel
         const accProvider = (acc as any).provider || (p.provider ?? 'openai');
         const isEffectiveGeminiCli = isGeminiCli || accProvider === 'gemini-cli';
         const accApiUrl = (acc as any).apiUrl as string | undefined;
-        const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ.')) && !acc.refreshToken);
+        const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ')) && !acc.refreshToken);
 
         // Google AI Studio does not support Claude models
         const isClaude = mId.includes('claude') || displayName.toLowerCase().includes('claude');
@@ -403,7 +403,16 @@ export function loadCustomModels(): CustomModel[] {
     const seenBaseIds = new Map<string, CustomModel>();
     for (const m of googleFamilyModels) {
       const raw = (m.externalModelName || m.name || '').replace(/^models\//, '');
+      const rawLower = raw.toLowerCase();
+      // Argon is purely a native Antigravity model and does not exist on Google Cloud Code OAuth API (returns 404).
+      // Skip auto-pool generation so Argon is always handled transparently by native Antigravity.
+      if (rawLower.includes('argon') && isGoogleCloudCodeModel(m)) {
+        continue;
+      }
       const baseId = normalizeCloudCodeModelId(raw);
+      if (baseId.toLowerCase().includes('argon') && isGoogleCloudCodeModel(m)) {
+        continue;
+      }
       if (!seenBaseIds.has(baseId)) {
         seenBaseIds.set(baseId, m);
       }
@@ -433,7 +442,10 @@ export function loadCustomModels(): CustomModel[] {
     });
 
     // Mark ALL real per-account entries (both Cloud Code and AI Studio) as dispatch-only (hidden from dropdown)
-    const realGoogleModels = googleFamilyModels.map(m => ({ ...m, _poolOnly: true as const }));
+    // Exclude Argon from Cloud Code OAuth dispatch pool since Cloud Code OAuth returns 404 for Argon.
+    const realGoogleModels = googleFamilyModels
+      .filter((m) => !(m.externalModelName || m.name || '').toLowerCase().includes('argon') || !isGoogleCloudCodeModel(m))
+      .map((m) => ({ ...m, _poolOnly: true as const }));
 
     return [...pooledGoogleModels, ...realGoogleModels, ...otherModels];
   } catch (e) {

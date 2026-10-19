@@ -3,6 +3,7 @@
  * ag-doctor — entry point.
  * Routes argv to the right command module.
  */
+import path from 'path';
 import { parseArgs } from './cli/parser';
 import type { CommandContext } from './types';
 import { c } from './cli/output';
@@ -39,6 +40,8 @@ import { runProfile } from './commands/profile';
 import { runDaemon } from './commands/daemon';
 import { runAntigravity } from './commands/antigravity';
 import { runPrune } from './commands/prune';
+import { runExportSessions } from './commands/export-sessions';
+import { runDevice } from './commands/device';
 import { getActiveProfile, resolveActiveProfile } from './core/profile';
 
 const USAGE = `ag-doctor — Antigravity diagnostic & management CLI
@@ -93,6 +96,10 @@ Commands:
   daemon {start|stop|status|run|rules|enable|disable|trigger|log|reset}
                          Auto-recovery daemon (continuous monitoring)
   db:prune [--dry-run]   Purge orphan conversation trajectories & vacuum database
+  sessions:export [--all] [--json] [--dest <dir>]
+                         Export conversation trajectories to Markdown/JSON
+  pool:probe [--dry-run] Fast audit & quarantine for Google account pool
+  device {show|reset}    Inspect or reset hardware/telemetry identity (storage.json)
   antigravity {status|version|launch|kill|restart}
                          Manage the Antigravity install (version, launch, close)
   update                 Re-run the parent deploy script
@@ -299,6 +306,20 @@ export async function main(argv: string[]): Promise<number> {
       case 'db:prune':
       case 'prune':
         return await runPrune(ctx, sub, rest);
+      case 'sessions:export':
+      case 'sessions':
+        return await runExportSessions(ctx, sub, rest);
+      case 'pool:probe':
+      case 'pool': {
+        const { fork } = require('child_process');
+        const scriptPath = path.resolve(__dirname, '..', '..', 'scripts', 'probe-pool.js');
+        return new Promise<number>((resolve) => {
+          const child = fork(scriptPath, process.argv.slice(3), { stdio: 'inherit' });
+          child.on('exit', (code: number) => resolve(code || 0));
+        });
+      }
+      case 'device':
+        return await runDevice(ctx, sub, rest);
       case 'help':
       case '--help':
       case '-h':

@@ -353,6 +353,8 @@ export interface AccountLiveQuota {
   geminiWeeklyPct: number;
   claudeFiveHourPct: number;
   claudeWeeklyPct: number;
+  argonFiveHourPct?: number;
+  argonWeeklyPct?: number;
   updatedAt: number;
   geminiResetTime?: string;
   geminiFiveHourReset?: string;
@@ -360,6 +362,8 @@ export interface AccountLiveQuota {
   claudeResetTime?: string;
   claudeFiveHourReset?: string;
   claudeWeeklyReset?: string;
+  argonFiveHourReset?: string;
+  argonWeeklyReset?: string;
   tierId?: string;
   tier?: string;
   projectId?: string;
@@ -367,6 +371,7 @@ export interface AccountLiveQuota {
   hasClaude55?: boolean;
   isFamilyShared?: boolean;
   isUnlicensed?: boolean;
+  groups?: any[];
 }
 
 const accountLiveQuotas = new Map<string, AccountLiveQuota>();
@@ -552,7 +557,13 @@ export function checkAccountClaude55Access(accessToken: string): Promise<boolean
  * Queries Google Cloud Code for live user quota summary (5h and weekly buckets).
  */
 export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuota | null> {
-  const hosts = ['https://daily-cloudcode-pa.googleapis.com', 'https://cloudcode-pa.googleapis.com'];
+  const preferredHost = process.env.AG_GOOGLE_CLOUDCODE_HOST || 'cloudcode-pa.googleapis.com';
+  const hosts = [
+    `https://${preferredHost}`,
+    preferredHost === 'cloudcode-pa.googleapis.com'
+      ? 'https://daily-cloudcode-pa.googleapis.com'
+      : 'https://cloudcode-pa.googleapis.com',
+  ];
 
   return new Promise((resolve) => {
     const tryHost = (idx: number) => {
@@ -586,8 +597,6 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                 try {
                   const data = JSON.parse(rawData);
                   const rawGroups = Array.isArray(data?.groups) ? data.groups : [];
-                  let fiveHourPercentage = 100;
-                  let weeklyPercentage = 100;
                   let geminiFiveHourPct: number | undefined;
                   let geminiWeeklyPct: number | undefined;
                   let geminiFiveHourReset: string | undefined;
@@ -596,15 +605,20 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                   let claudeWeeklyPct: number | undefined;
                   let claudeFiveHourReset: string | undefined;
                   let claudeWeeklyReset: string | undefined;
+                  let argonFiveHourPct: number | undefined;
+                  let argonWeeklyPct: number | undefined;
+                  let argonFiveHourReset: string | undefined;
+                  let argonWeeklyReset: string | undefined;
 
                   for (const g of rawGroups) {
                     const groupName = (g.displayName || '').toLowerCase();
-                    const isGemini = groupName.includes('gemini');
+                    const isArgon = groupName.includes('argon');
                     const isClaude =
                       groupName.includes('claude') ||
                       groupName.includes('3p') ||
                       groupName.includes('other') ||
                       groupName.includes('gpt');
+                    const isGemini = groupName.includes('gemini') && !isArgon;
 
                     for (const b of Array.isArray(g.buckets) ? g.buckets : []) {
                       // If Google disabled this bucket (e.g. weekly limit hit), available fraction is 0
@@ -616,7 +630,19 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                       const is5h = bId.includes('5h') || wStr.includes('5h') || wStr.includes('hour');
                       const isWeekly = bId.includes('weekly') || wStr.includes('weekly');
 
-                      if (isGemini) {
+                      const isArgonBucket = bId.includes('argon') || (isArgon && !bId.includes('3p') && !bId.includes('claude'));
+                      const isGeminiBucket = !isArgonBucket && (bId.includes('gemini') || (isGemini && !bId.includes('3p') && !bId.includes('claude')));
+                      const isClaudeBucket = bId.includes('3p') || bId.includes('claude') || (isClaude && !bId.includes('gemini') && !isArgon);
+
+                      if (isArgonBucket) {
+                        if (is5h) {
+                          argonFiveHourPct = pct;
+                          argonFiveHourReset = b.resetTime;
+                        } else if (isWeekly) {
+                          argonWeeklyPct = pct;
+                          argonWeeklyReset = b.resetTime;
+                        }
+                      } else if (isGeminiBucket) {
                         if (is5h) {
                           geminiFiveHourPct = pct;
                           geminiFiveHourReset = b.resetTime;
@@ -624,7 +650,7 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                           geminiWeeklyPct = pct;
                           geminiWeeklyReset = b.resetTime;
                         }
-                      } else if (isClaude) {
+                      } else if (isClaudeBucket) {
                         if (is5h) {
                           claudeFiveHourPct = pct;
                           claudeFiveHourReset = b.resetTime;
@@ -633,32 +659,38 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                           claudeWeeklyReset = b.resetTime;
                         }
                       }
-
-                      if (is5h && (fiveHourPercentage === 100 || isGemini)) {
-                        fiveHourPercentage = pct;
-                      }
-                      if (isWeekly && (weeklyPercentage === 100 || isGemini)) {
-                        weeklyPercentage = pct;
-                      }
                     }
+                  }
+
+                  // If this host's response lacked the Gemini group entirely, try the next host
+                  if (geminiFiveHourPct === undefined && geminiWeeklyPct === undefined && idx + 1 < hosts.length) {
+                    tryHost(idx + 1);
+                    return;
                   }
 
                   // If weekly quota is 0, the rolling 5-hour limit is blocked (cannot send requests)
                   if (typeof geminiWeeklyPct === 'number' && geminiWeeklyPct === 0) {
                     geminiFiveHourPct = 0;
-                    fiveHourPercentage = 0;
                   }
                   if (typeof claudeWeeklyPct === 'number' && claudeWeeklyPct === 0) {
                     claudeFiveHourPct = 0;
                   }
+                  if (typeof argonWeeklyPct === 'number' && argonWeeklyPct === 0) {
+                    argonFiveHourPct = 0;
+                  }
+
+                  const effGemini5h = geminiFiveHourPct ?? 100;
+                  const effGeminiWk = geminiWeeklyPct ?? 100;
 
                   const result: AccountLiveQuota = {
-                    fiveHourPercentage,
-                    weeklyPercentage,
-                    geminiFiveHourPct: geminiFiveHourPct ?? fiveHourPercentage,
-                    geminiWeeklyPct: geminiWeeklyPct ?? weeklyPercentage,
+                    fiveHourPercentage: effGemini5h,
+                    weeklyPercentage: effGeminiWk,
+                    geminiFiveHourPct: effGemini5h,
+                    geminiWeeklyPct: effGeminiWk,
                     claudeFiveHourPct: claudeFiveHourPct ?? 100,
                     claudeWeeklyPct: claudeWeeklyPct ?? 100,
+                    argonFiveHourPct,
+                    argonWeeklyPct,
                     updatedAt: Date.now(),
                     geminiResetTime: geminiFiveHourReset,
                     geminiFiveHourReset,
@@ -666,6 +698,9 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                     claudeResetTime: claudeFiveHourReset,
                     claudeFiveHourReset,
                     claudeWeeklyReset,
+                    argonFiveHourReset,
+                    argonWeeklyReset,
+                    groups: rawGroups,
                   };
 
                   // Non-blocking tier, project, and Claude 5.5 capability discovery
@@ -826,7 +861,9 @@ export function normalizeCloudCodeModelId(modelId: string): string {
 
   const validCloudCodeModels = new Set([
     'gemini-3.8-flash-tiered',
+    'gemini-4-argon-high',
     'gemini-4-argon-medium',
+    'gemini-4-argon-low',
     'gemini-4-argon',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
@@ -839,12 +876,23 @@ export function normalizeCloudCodeModelId(modelId: string): string {
   }
 
   const map: Record<string, string> = {
-    'gemini-4-argon': 'gemini-4-argon-medium',
+    'gemini-4-argon': 'gemini-4-argon-high',
+    'gemini-4-argon-high': 'gemini-4-argon-high',
     'gemini-4-argon-medium': 'gemini-4-argon-medium',
+    'gemini-4-argon-low': 'gemini-4-argon-low',
     'gemini-3.8-flash-low': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash-medium': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash-high': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
+    'gemini-2.5-flash-lite': 'gemini-3.8-flash-tiered',
+    'gemini-3-preview': 'gemini-3.8-flash-tiered',
+    'gemini-3-flash-preview': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-flash-lite': 'gemini-3.8-flash-tiered',
+    'model_google_gemini_2_5_flash_lite': 'gemini-3.8-flash-tiered',
+    'model-google-gemini-2-5-flash-lite': 'gemini-3.8-flash-tiered',
+    'model_tier_flash_lite': 'gemini-3.8-flash-tiered',
+    'model-tier-flash-lite': 'gemini-3.8-flash-tiered',
     'claude-sonnet-5-5-medium': 'claude-sonnet-5-5',
     'claude-sonnet-5-5-high': 'claude-sonnet-5-5',
     'claude-sonnet-5-5': 'claude-sonnet-5-5',
@@ -863,7 +911,11 @@ export function normalizeCloudCodeModelId(modelId: string): string {
 
   if (clean.includes('opus')) return clean.includes('5-5') || clean.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking';
   if (clean.includes('claude') || clean.includes('sonnet')) return clean.includes('5-5') || clean.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6';
-  if (clean.includes('argon')) return 'gemini-4-argon-medium';
+  if (clean.includes('argon')) {
+    if (clean.includes('low')) return 'gemini-4-argon-low';
+    if (clean.includes('medium')) return 'gemini-4-argon-medium';
+    return 'gemini-4-argon-high';
+  }
   if (clean.includes('flash') || clean.includes('pro')) return 'gemini-3.8-flash-tiered';
   if (clean.includes('gpt')) return 'gemini-3.8-flash-tiered';
 
@@ -880,7 +932,9 @@ export function normalizeGoogleModelId(modelName: string): string {
 
   const validModels = new Set([
     'gemini-3.8-flash-tiered',
+    'gemini-4-argon-high',
     'gemini-4-argon-medium',
+    'gemini-4-argon-low',
     'gemini-4-argon',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
@@ -893,10 +947,21 @@ export function normalizeGoogleModelId(modelName: string): string {
   }
 
   const aliasMap: Record<string, string> = {
-    'gemini-4-argon': 'gemini-4-argon-medium',
+    'gemini-4-argon': 'gemini-4-argon-high',
+    'gemini-4-argon-high': 'gemini-4-argon-high',
     'gemini-4-argon-medium': 'gemini-4-argon-medium',
+    'gemini-4-argon-low': 'gemini-4-argon-low',
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash-tiered': 'gemini-3.8-flash-tiered',
+    'gemini-2.5-flash-lite': 'gemini-3.8-flash-tiered',
+    'gemini-3-preview': 'gemini-3.8-flash-tiered',
+    'gemini-3-flash-preview': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-flash-lite': 'gemini-3.8-flash-tiered',
+    'model_google_gemini_2_5_flash_lite': 'gemini-3.8-flash-tiered',
+    'model-google-gemini-2-5-flash-lite': 'gemini-3.8-flash-tiered',
+    'model_tier_flash_lite': 'gemini-3.8-flash-tiered',
+    'model-tier-flash-lite': 'gemini-3.8-flash-tiered',
     'gemini-flash': 'gemini-3.8-flash-tiered',
     'gemini-pro': 'gemini-3.8-flash-tiered',
     'claude-sonnet-5-5': 'claude-sonnet-5-5',
@@ -921,7 +986,9 @@ export function normalizeGoogleModelId(modelName: string): string {
   }
 
   if (clean.includes('argon')) {
-    return 'gemini-4-argon-medium';
+    if (clean.includes('low')) return 'gemini-4-argon-low';
+    if (clean.includes('medium')) return 'gemini-4-argon-medium';
+    return 'gemini-4-argon-high';
   }
 
   if (clean.includes('pro') || clean.includes('flash') || clean.includes('gpt')) {
@@ -946,7 +1013,9 @@ export const GEMINI_CLI_SUPPORTED_MODELS = new Set<string>([
   'gemini-3.8-flash-medium',
   'gemini-3.8-flash-high',
   'gemini-4-argon',
+  'gemini-4-argon-high',
   'gemini-4-argon-medium',
+  'gemini-4-argon-low',
   'gemma-4-31b-it',
   'gemma-4-26b-a4b-it',
 ]);
@@ -991,7 +1060,7 @@ export function isGoogleCloudCodeModel(m: {
 }): boolean {
   if (m.provider !== 'google' && m.provider !== 'gemini-cli') return false;
   // If explicitly using an AI Studio Developer API key (AIzaSy... or AQ...), treat as AI Studio
-  if (m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ.'))) return false;
+  if (m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ'))) return false;
 
   return Boolean(
     m.refreshToken ||
@@ -1040,14 +1109,16 @@ export function isGeminiCliModel(m?: {
   provider?: string;
   apiUrl?: string;
   name?: string;
+  projectId?: string;
 }): boolean {
   if (!m) return false;
   if (m.provider === 'gemini-cli') return true;
-  if (typeof m.apiUrl === 'string' && m.apiUrl.includes('cloudcode-pa.googleapis.com') && !m.apiUrl.includes('daily-cloudcode')) {
+  if (typeof m.name === 'string' && m.name.toLowerCase().includes('gemini cli')) return true;
+  if (m.projectId === 'aicode-consumers' || m.provider === 'google-gemini') return false;
+  if (typeof m.apiUrl === 'string' && m.apiUrl.includes('cloudcode-pa.googleapis.com/v1internal') && !m.apiUrl.includes('daily-cloudcode')) {
     return true;
   }
-  if (m.provider === 'google') return false;
-  if (typeof m.name === 'string' && m.name.toLowerCase().includes('gemini cli')) return true;
+  if (m.provider === 'google' || (m as any).id === 'provider-google') return false;
   return false;
 }
 
@@ -1085,6 +1156,11 @@ export function sanitizeCloudCodeGenerationConfig(
           if (budget >= 16000) tc.thinkingLevel = 'high';
           else if (budget >= 4000) tc.thinkingLevel = 'medium';
           else tc.thinkingLevel = 'low';
+        }
+        // Flash models only support low and medium thinking levels on Google Cloud Code PA
+        // Requesting 'high' on Flash triggers upstream HTTP 429 RESOURCE_EXHAUSTED
+        if (targetModel.includes('flash') && tc.thinkingLevel === 'high') {
+          tc.thinkingLevel = 'medium';
         }
       } else if (targetModel.includes('gemini-2.5')) {
         // Gemini 2.5 uses thinkingBudget; remove thinkingLevel if present to avoid conflicts

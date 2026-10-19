@@ -86,6 +86,20 @@ describe('Error Classifier', () => {
       const result = classifyError(200, null, 'permission_denied to model resource');
       expect(result.errorType).toBe('forbidden');
     });
+
+    it('classifies project has been denied access as free-tier security flag', () => {
+      const result = classifyError(403, null, '403 PERMISSION_DENIED: Your project has been denied access. Please contact support.');
+      expect(result.errorType).toBe('forbidden');
+      expect(result.title).toBe('Project Denied Access (Free-Tier Security Flag)');
+      expect(result.actionUrl).toBe('https://console.cloud.google.com/billing');
+    });
+
+    it('classifies location is not supported as geo-blocked error', () => {
+      const result = classifyError(400, null, 'User location is not supported for the API use.');
+      expect(result.errorType).toBe('forbidden');
+      expect(result.title).toBe('Location Not Supported (Geo-Blocked)');
+      expect(result.actionUrl).toContain('available-regions');
+    });
   });
 
   describe('Rate limit errors', () => {
@@ -179,6 +193,89 @@ describe('Error Classifier', () => {
       const result = classifyError(400, null, JSON.stringify({ error: { message: 'Context window exceeded' } }));
       expect(result.title).toBe('Invalid Request (400)');
       expect(result.message).toContain('Context window exceeded');
+    });
+
+    it('classifies internal gateway / self-harm messages as recoverable server warnings', () => {
+      const res1 = classifyError(500, null, 'all accounts limited in pool');
+      expect(res1.errorType).toBe('server');
+      expect(res1.title).toBe('Pool Temporarily Exhausted');
+      expect(res1.retryable).toBe(true);
+      expect(res1.severity).toBe('warning');
+
+      const res2 = classifyError(500, new Error('token pool is empty'));
+      expect(res2.errorType).toBe('server');
+      expect(res2.title).toBe('Pool Temporarily Exhausted');
+      expect(res2.retryable).toBe(true);
+    });
+
+    it('classifies 403 with validation URL as Validation Required', () => {
+      const body = JSON.stringify({
+        error: {
+          code: 403,
+          status: 'PERMISSION_DENIED',
+          message: 'Account validation required',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+              reason: 'VALIDATION_REQUIRED',
+              metadata: {
+                validation_url: 'https://accounts.google.com/signin/v2/challenge',
+              },
+            },
+          ],
+        },
+      });
+      const res = classifyError(403, null, body);
+      expect(res.errorType).toBe('forbidden');
+      expect(res.title).toBe('Validation Required');
+      expect(res.actionUrl).toBe('https://accounts.google.com/signin/v2/challenge');
+      expect(res.severity).toBe('warning');
+    });
+
+    it('classifies 403 with Terms of Service as TOS Violation with appealUrl', () => {
+      const body = JSON.stringify({
+        error: {
+          code: 403,
+          message: 'Disabled for violation of Terms of Service',
+          details: [
+            {
+              reason: 'TOS_VIOLATION',
+              metadata: {
+                appeal_url: 'https://forms.gle/custom-appeal',
+              },
+            },
+          ],
+        },
+      });
+      const res = classifyError(403, null, body);
+      expect(res.errorType).toBe('forbidden');
+      expect(res.title).toBe('Terms of Service Violation');
+      expect(res.actionUrl).toBe('https://forms.gle/custom-appeal');
+      expect(res.severity).toBe('error');
+    });
+
+    it('classifies account ineligible for higher rate limits error', () => {
+      const res = classifyError(403, null, 'This account is ineligible for higher rate limits through a Google AI plan at this time');
+      expect(res.errorType).toBe('forbidden');
+      expect(res.title).toBe('Account Ineligible for Higher Rate Limits');
+      expect(res.retryable).toBe(false);
+      expect(res.severity).toBe('error');
+    });
+
+    it('classifies faux 429 entitlement desynchronization', () => {
+      const res = classifyError(429, null, 'RESOURCE_EXHAUSTED: loadCodeAssist currentTier=free-tier');
+      expect(res.errorType).toBe('rate_limit');
+      expect(res.title).toBe('Entitlement Desynchronization (Faux 429)');
+      expect(res.retryable).toBe(true);
+      expect(res.severity).toBe('error');
+    });
+
+    it('classifies 503 TPU capacity overload on Gemini Flash', () => {
+      const res = classifyError(503, null, 'UNAVAILABLE (code 503): No capacity available for model gemini-3.8-flash');
+      expect(res.errorType).toBe('server');
+      expect(res.title).toBe('TPU Capacity Overload (HTTP 503)');
+      expect(res.retryable).toBe(true);
+      expect(res.severity).toBe('warning');
     });
   });
 

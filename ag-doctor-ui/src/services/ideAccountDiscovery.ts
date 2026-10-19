@@ -43,9 +43,26 @@ export interface AccountQuotaSummary {
   claudeFiveHourReset?: string;
   claudeWeeklyPct?: number;
   claudeWeeklyReset?: string;
+  argonFiveHourPct?: number;
+  argonFiveHourReset?: string;
+  argonWeeklyPct?: number;
+  argonWeeklyReset?: string;
   isUnlicensed?: boolean;
+  isValidationRequired?: boolean;
   tier?: string;
+  errorDetails?: AccountErrorDetails;
   groups: QuotaGroup[];
+}
+
+export interface AccountErrorDetails {
+  code: number;
+  status: string;
+  reason: string;
+  message: string;
+  appealUrl?: string;
+  validationUrl?: string;
+  detectionTime: string;
+  raw?: any;
 }
 
 export interface CloudCodeProjectInfo {
@@ -335,7 +352,7 @@ export async function ensureGeminiCliGcpProject(accessToken: string): Promise<st
  * Queries Google Cloud Code v1internal:fetchAvailableModels to discover real model quotas and reset times.
  */
 export async function fetchRealGoogleModelQuotas(accessToken: string): Promise<AccountQuotaSummary | null> {
-  const hosts = ['https://daily-cloudcode-pa.googleapis.com', 'https://cloudcode-pa.googleapis.com'];
+  const hosts = ['https://cloudcode-pa.googleapis.com', 'https://daily-cloudcode-pa.googleapis.com'];
   for (const host of hosts) {
     try {
       const res = await fetch(`${host}/v1internal:fetchAvailableModels`, {
@@ -399,20 +416,55 @@ export async function fetchRealGoogleModelQuotas(accessToken: string): Promise<A
       }
 
       if (buckets.length > 0) {
+        const effGem5h = geminiFiveHourPct ?? Math.round(minRemainingFrac * 100);
+        const effGemReset = geminiFiveHourReset ?? earliestReset;
+        const effClaude5h = claudeFiveHourPct ?? 100;
+        const effClaudeReset = claudeFiveHourReset;
+
         return {
           fiveHourPercentage: Math.round(minRemainingFrac * 100),
           fiveHourResetTime: earliestReset,
           weeklyPercentage: 100,
-          geminiFiveHourPct: geminiFiveHourPct ?? Math.round(minRemainingFrac * 100),
-          geminiFiveHourReset: geminiFiveHourReset ?? earliestReset,
+          geminiFiveHourPct: effGem5h,
+          geminiFiveHourReset: effGemReset,
           geminiWeeklyPct: 100,
-          claudeFiveHourPct: claudeFiveHourPct ?? 100,
-          claudeFiveHourReset,
+          claudeFiveHourPct: effClaude5h,
+          claudeFiveHourReset: effClaudeReset,
           claudeWeeklyPct: 100,
           groups: [
             {
-              displayName: 'Models Live Quota',
-              buckets,
+              displayName: 'Gemini Models',
+              buckets: [
+                {
+                  bucketId: 'gemini-5h',
+                  window: '5h',
+                  percentage: effGem5h,
+                  resetTime: effGemReset,
+                },
+                {
+                  bucketId: 'gemini-weekly',
+                  window: 'weekly',
+                  percentage: 100,
+                  resetTime: effGemReset,
+                },
+              ],
+            },
+            {
+              displayName: 'Claude and GPT models',
+              buckets: [
+                {
+                  bucketId: '3p-5h',
+                  window: '5h',
+                  percentage: effClaude5h,
+                  resetTime: effClaudeReset,
+                },
+                {
+                  bucketId: '3p-weekly',
+                  window: 'weekly',
+                  percentage: 100,
+                  resetTime: effClaudeReset,
+                },
+              ],
             },
           ],
         };
@@ -454,7 +506,14 @@ export async function fetchGoogleUserInfo(accessToken: string): Promise<{ email:
  * Queries Google Cloud Code for live user quota summary (5h and weekly buckets).
  */
 export async function fetchGoogleAccountQuotas(accessToken: string): Promise<AccountQuotaSummary | null> {
-  const hosts = ['https://daily-cloudcode-pa.googleapis.com', 'https://cloudcode-pa.googleapis.com'];
+  const preferredHost = process.env.AG_GOOGLE_CLOUDCODE_HOST || 'cloudcode-pa.googleapis.com';
+  const hosts = [
+    `https://${preferredHost}`,
+    preferredHost === 'cloudcode-pa.googleapis.com'
+      ? 'https://daily-cloudcode-pa.googleapis.com'
+      : 'https://cloudcode-pa.googleapis.com',
+  ];
+  let nonTos403Error: any = null;
   for (const host of hosts) {
     try {
       const res = await fetch(`${host}/v1internal:retrieveUserQuotaSummary`, {
@@ -473,23 +532,93 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
           return null;
         }
         if (res.status === 403) {
-          return {
-            fiveHourPercentage: 0,
-            weeklyPercentage: 0,
-            geminiFiveHourPct: 0,
-            geminiWeeklyPct: 0,
-            claudeFiveHourPct: 0,
-            claudeWeeklyPct: 0,
-            isUnlicensed: true,
-            groups: [
-              {
-                displayName: 'Licence requise (HTTP 403)',
-                buckets: [
-                  { bucketId: 'unlicensed', window: 'none', percentage: 0 }
-                ]
-              }
-            ]
+          let errJson: any = null;
+          try {
+            errJson = await res.json();
+          } catch {}
+          const details = Array.isArray(errJson?.error?.details) ? errJson.error.details : [];
+          let appealUrl = 'https://forms.gle/hGzM9MEUv2azZsrb9';
+          let validationUrl: string | undefined;
+          for (const d of details) {
+            if (d?.metadata?.appeal_url) appealUrl = d.metadata.appeal_url;
+            if (d?.metadata?.validation_url) validationUrl = d.metadata.validation_url;
+            if (d?.metadata?.challenge_url) validationUrl = d.metadata.challenge_url;
+          }
+          const errDetail = details[0];
+          const reason = errDetail?.reason || (errJson?.error?.message?.includes('Terms of Service') ? 'TOS_VIOLATION' : 'PERMISSION_DENIED');
+          const message = errJson?.error?.message || 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.';
+
+          if (validationUrl || reason === 'VALIDATION_REQUIRED' || message.toLowerCase().includes('validation_required') || message.toLowerCase().includes('challenge')) {
+            const valUrl = validationUrl || 'https://accounts.google.com';
+            return {
+              fiveHourPercentage: 0,
+              weeklyPercentage: 0,
+              geminiFiveHourPct: 0,
+              geminiWeeklyPct: 0,
+              claudeFiveHourPct: 0,
+              claudeWeeklyPct: 0,
+              isUnlicensed: false,
+              isValidationRequired: true,
+              errorDetails: {
+                code: 403,
+                status: 'VALIDATION_REQUIRED',
+                reason: 'VALIDATION_REQUIRED',
+                message: message || 'Une vérification interactive est requise pour ce compte Google (Captcha ou validation de sécurité).',
+                validationUrl: valUrl,
+                appealUrl,
+                detectionTime: new Date().toISOString(),
+                raw: errJson || { error: { code: 403, status: 'VALIDATION_REQUIRED', message, details: [{ reason: 'VALIDATION_REQUIRED', metadata: { validation_url: valUrl } }] } }
+              },
+              groups: [
+                {
+                  displayName: 'Vérification Requise (HTTP 403)',
+                  buckets: [
+                    { bucketId: 'validation_required', window: 'none', percentage: 0 }
+                  ]
+                }
+              ]
+            };
+          }
+
+          if (reason === 'TOS_VIOLATION' || errJson?.error?.message?.includes('Terms of Service')) {
+            return {
+              fiveHourPercentage: 0,
+              weeklyPercentage: 0,
+              geminiFiveHourPct: 0,
+              geminiWeeklyPct: 0,
+              claudeFiveHourPct: 0,
+              claudeWeeklyPct: 0,
+              isUnlicensed: true,
+              errorDetails: {
+                code: 403,
+                status: errJson?.error?.status || 'PERMISSION_DENIED',
+                reason: 'TOS_VIOLATION',
+                message,
+                appealUrl,
+                detectionTime: new Date().toISOString(),
+                raw: errJson || { error: { code: 403, status: 'PERMISSION_DENIED', message, details: [{ reason: 'TOS_VIOLATION', metadata: { appeal_url: appealUrl } }] } }
+              },
+              groups: [
+                {
+                  displayName: 'Violation TOS (HTTP 403)',
+                  buckets: [
+                    { bucketId: 'unlicensed', window: 'none', percentage: 0 }
+                  ]
+                }
+              ]
+            };
+          }
+
+          nonTos403Error = {
+            code: 403,
+            status: errJson?.error?.status || 'PERMISSION_DENIED',
+            reason,
+            message,
+            appealUrl,
+            detectionTime: new Date().toISOString(),
+            raw: errJson || { error: { code: 403, status: 'PERMISSION_DENIED', message, details: [{ reason, metadata: { appeal_url: appealUrl } }] } }
           };
+          continue;
         }
         continue;
       }
@@ -497,11 +626,6 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
       const rawGroups = data.groups || [];
 
     const groups: QuotaGroup[] = [];
-    let fiveHourPercentage = 100;
-    let fiveHourResetTime: string | undefined;
-    let weeklyPercentage = 100;
-    let weeklyResetTime: string | undefined;
-
     let geminiFiveHourPct: number | undefined;
     let geminiFiveHourReset: string | undefined;
     let geminiWeeklyPct: number | undefined;
@@ -512,10 +636,16 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
     let claudeWeeklyPct: number | undefined;
     let claudeWeeklyReset: string | undefined;
 
+    let argonFiveHourPct: number | undefined;
+    let argonFiveHourReset: string | undefined;
+    let argonWeeklyPct: number | undefined;
+    let argonWeeklyReset: string | undefined;
+
     for (const g of rawGroups) {
       const groupName = g.displayName || 'Quota Group';
-      const isGeminiGroup = groupName.toLowerCase().includes('gemini');
+      const isArgonGroup = groupName.toLowerCase().includes('argon');
       const isClaudeGroup = groupName.toLowerCase().includes('claude') || groupName.toLowerCase().includes('other') || groupName.toLowerCase().includes('3p') || groupName.toLowerCase().includes('gpt');
+      const isGeminiGroup = !isArgonGroup && groupName.toLowerCase().includes('gemini');
       const buckets: QuotaBucket[] = [];
 
       for (const b of g.buckets || []) {
@@ -535,7 +665,20 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
         const is5h = bucketId.includes('5h') || windowStr.includes('5h') || windowStr.includes('hour');
         const isWeekly = bucketId.includes('weekly') || windowStr.includes('weekly');
 
-        if (isGeminiGroup) {
+        const isArgonBucket = bucketId.includes('argon') || (isArgonGroup && !bucketId.includes('3p') && !bucketId.includes('claude'));
+        const isGeminiBucket = !isArgonBucket && (bucketId.includes('gemini') || (isGeminiGroup && !bucketId.includes('3p') && !bucketId.includes('claude')));
+        const isClaudeBucket = bucketId.includes('3p') || bucketId.includes('claude') || (isClaudeGroup && !bucketId.includes('gemini') && !isArgonGroup);
+
+        if (isArgonBucket) {
+          if (is5h) {
+            argonFiveHourPct = pct;
+            argonFiveHourReset = b.resetTime;
+          }
+          if (isWeekly) {
+            argonWeeklyPct = pct;
+            argonWeeklyReset = b.resetTime;
+          }
+        } else if (isGeminiBucket) {
           if (is5h) {
             geminiFiveHourPct = pct;
             geminiFiveHourReset = b.resetTime;
@@ -544,7 +687,7 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
             geminiWeeklyPct = pct;
             geminiWeeklyReset = b.resetTime;
           }
-        } else if (isClaudeGroup) {
+        } else if (isClaudeBucket) {
           if (is5h) {
             claudeFiveHourPct = pct;
             claudeFiveHourReset = b.resetTime;
@@ -554,43 +697,47 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
             claudeWeeklyReset = b.resetTime;
           }
         }
-
-        // Gemini models group is the primary daily quota indicator for Antigravity
-        if (is5h && (fiveHourPercentage === 100 || isGeminiGroup)) {
-          fiveHourPercentage = pct;
-          fiveHourResetTime = b.resetTime;
-        }
-        if (isWeekly && (weeklyPercentage === 100 || isGeminiGroup)) {
-          weeklyPercentage = pct;
-          weeklyResetTime = b.resetTime;
-        }
       }
 
       groups.push({ displayName: groupName, buckets });
     }
 
+    // If this host's response lacked the Gemini group entirely, try the next host
+    if (geminiFiveHourPct === undefined && geminiWeeklyPct === undefined && hosts.indexOf(host) + 1 < hosts.length) {
+      continue;
+    }
+
     // If weekly quota is 0, the rolling 5-hour limit is blocked
     if (typeof geminiWeeklyPct === 'number' && geminiWeeklyPct === 0) {
       geminiFiveHourPct = 0;
-      fiveHourPercentage = 0;
     }
     if (typeof claudeWeeklyPct === 'number' && claudeWeeklyPct === 0) {
       claudeFiveHourPct = 0;
     }
+    if (typeof argonWeeklyPct === 'number' && argonWeeklyPct === 0) {
+      argonFiveHourPct = 0;
+    }
+
+    const effGemini5h = geminiFiveHourPct ?? 100;
+    const effGeminiWk = geminiWeeklyPct ?? 100;
 
     return {
-        fiveHourPercentage,
-        fiveHourResetTime,
-        weeklyPercentage,
-        weeklyResetTime,
-        geminiFiveHourPct: geminiFiveHourPct ?? fiveHourPercentage,
-        geminiFiveHourReset: geminiFiveHourReset ?? fiveHourResetTime,
-        geminiWeeklyPct: geminiWeeklyPct ?? weeklyPercentage,
-        geminiWeeklyReset: geminiWeeklyReset ?? weeklyResetTime,
+        fiveHourPercentage: effGemini5h,
+        fiveHourResetTime: geminiFiveHourReset,
+        weeklyPercentage: effGeminiWk,
+        weeklyResetTime: geminiWeeklyReset,
+        geminiFiveHourPct: effGemini5h,
+        geminiFiveHourReset,
+        geminiWeeklyPct: effGeminiWk,
+        geminiWeeklyReset,
         claudeFiveHourPct: claudeFiveHourPct ?? 100,
         claudeFiveHourReset,
         claudeWeeklyPct: claudeWeeklyPct ?? 100,
         claudeWeeklyReset,
+        argonFiveHourPct,
+        argonFiveHourReset,
+        argonWeeklyPct,
+        argonWeeklyReset,
         groups,
       };
     } catch {
@@ -636,6 +783,27 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
     }
   } catch {
     // Ignore fallback error
+  }
+
+  if (nonTos403Error) {
+    return {
+      fiveHourPercentage: 0,
+      weeklyPercentage: 0,
+      geminiFiveHourPct: 0,
+      geminiWeeklyPct: 0,
+      claudeFiveHourPct: 0,
+      claudeWeeklyPct: 0,
+      isUnlicensed: true,
+      errorDetails: nonTos403Error,
+      groups: [
+        {
+          displayName: 'Licence requise (HTTP 403)',
+          buckets: [
+            { bucketId: 'unlicensed', window: 'none', percentage: 0 }
+          ]
+        }
+      ]
+    };
   }
 
   return null;

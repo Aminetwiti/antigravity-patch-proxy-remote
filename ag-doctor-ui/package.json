@@ -1,6 +1,6 @@
 {
   "name": "ag-doctor-ui",
-  "version": "3.7.4",
+  "version": "3.7.5",
   "description": "Premium Electron UI for the ag-doctor CLI",
   "main": "dist/main.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "build:cli": "cd ../ag-doctor && npm install && npm run build",
     "prepack": "npm run build && cd ../ag-doctor && npm install && npm run build && npm prune --omit=dev",
     "watch": "tsc -p tsconfig.json --watch",
-    "start": "npm run build && node dist/launch.js",
+    "start": "node -e \"if (!require('fs').existsSync('dist/launch.js')) { require('child_process').execSync('npm run build', { stdio: 'inherit' }); }\" && node dist/launch.js",
+    "start:build": "npm run build && node dist/launch.js",
     "dev": "tsc -p tsconfig.json --watch & node dist/launch.js",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win nsis portable",

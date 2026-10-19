@@ -108,11 +108,15 @@ export function resolveWithSystemDns(hostname: string): Promise<string[]> {
  * hostname so we can reuse it immediately for 0ms resolution, and fall back
  * to it when all DNS servers are unreachable. Entries expire after DNS_CACHE_TTL_MS.
  */
-const DNS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const DNS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const dnsCache = new Map<string, { ip: string; ts: number }>();
 
 export function clearDnsCache(): void {
   dnsCache.clear();
+}
+
+export function invalidateCachedDns(hostname: string): void {
+  dnsCache.delete(hostname);
 }
 
 function cacheDnsResult(hostname: string, ip: string): void {
@@ -237,8 +241,7 @@ const GOOGLE_FALLBACK_IPS: readonly string[] = [
   '216.58.212.46',
 ];
 
-async function tryFallbackIp(hostname: string, remainingMs: number): Promise<string | undefined> {
-  if (remainingMs <= 0) return undefined;
+async function tryFallbackIp(hostname: string, _remainingMs?: number): Promise<string | undefined> {
   // Simple heuristic: pick a deterministic IP based on hostname length so we
   // distribute load without adding state.
   const index = hostname.length % GOOGLE_FALLBACK_IPS.length;

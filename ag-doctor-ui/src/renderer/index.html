@@ -328,6 +328,10 @@
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
               Repair
             </button>
+            <button class="btn btn-ghost" id="dashboardResolveVerificationBtn" type="button" title="Scanner les logs et résoudre le blocage de vérification Antigravity (VALIDATION_REQUIRED)" aria-label="Résoudre Vérification">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v3"/></svg>
+              Résoudre Vérification
+            </button>
             <button class="btn btn-warning" id="fixAllBtn" type="button" title="Run full auto-repair with admin elevation (UAC)" aria-label="Run full auto-repair with admin elevation">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.5 0 4.76 1.02 6.39 2.66"/></svg>
               Fix All
@@ -471,6 +475,10 @@
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
               Restart
             </button>
+            <button class="btn btn-warning" id="agResolveVerificationBtn" type="button" title="Scanner les logs récents pour extraire la validation URL et débloquer Antigravity" aria-label="Résoudre la vérification">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v3"/></svg>
+              Résoudre Vérification
+            </button>
           </div>
         </div>
 
@@ -564,10 +572,10 @@
             <p class="subtitle">Manage the local TLS proxy and CA certificate</p>
           </div>
           <div class="header-actions">
-            <button class="btn btn-ghost" id="mitmInstallBtn" type="button" aria-label="Install MITM CA certificate">Install CA certificate</button>
-            <button class="btn btn-ghost" id="mitmUninstallBtn" type="button" aria-label="Remove MITM CA certificate">Remove CA certificate</button>
+            <button class="btn btn-secondary" id="mitmInstallBtn" type="button" aria-label="Install MITM CA certificate">Install CA certificate</button>
+            <button class="btn btn-danger btn-ghost" id="mitmUninstallBtn" type="button" aria-label="Remove MITM CA certificate" style="display:none;">Remove CA certificate</button>
             <button class="btn btn-primary" id="mitmProxyOnBtn" type="button" aria-label="Enable MITM proxy">Enable proxy</button>
-            <button class="btn btn-ghost" id="mitmProxyOffBtn" type="button" aria-label="Disable MITM proxy">Disable proxy</button>
+            <button class="btn btn-secondary" id="mitmProxyOffBtn" type="button" aria-label="Disable MITM proxy" style="display:none;">Disable proxy</button>
             <button class="btn btn-ghost" id="mitmExportCaBtn" type="button" aria-label="Export MITM CA certificate">Export CA certificate</button>
           </div>
         </div>
@@ -834,6 +842,9 @@
                   <button type="button" class="ga-chip" data-filter="status:paused" style="border-color: rgba(100, 116, 139, 0.35); color: #94a3b8;">
                     ⏸ En Pause <span class="ga-chip-cnt" id="gaCntPaused">0</span>
                   </button>
+                  <button type="button" class="ga-chip" data-filter="status:blocked" style="border-color: rgba(239, 68, 68, 0.45); color: #f87171; background: rgba(239, 68, 68, 0.08);">
+                    🚨 Erreurs & TOS <span class="ga-chip-cnt" id="gaCntBlocked">0</span>
+                  </button>
                   <div style="width: 1px; height: 14px; background: var(--border); margin: 3px 1px; align-self: center;"></div>
                   <button type="button" class="ga-chip" data-filter="pro">
                     PRO <span class="ga-chip-cnt" id="gaCntPro">0</span>
@@ -855,11 +866,17 @@
                 <button type="button" class="btn btn-primary" id="gaToolbarRefreshAllBtn" style="background: var(--accent-blue, #2563eb); color: #fff; padding: 5px 12px; font-size: 11.5px; font-weight: 600; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px;">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Actualiser tout
                 </button>
+                <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarProbeHealthBtn" title="Diagnostiquer instantanément tous les comptes (403, TOS, Black-Hole) avec les signatures Antigravity" style="border-color: rgba(16, 185, 129, 0.45); color: #10b981; background: rgba(16, 185, 129, 0.08); font-weight: 600;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Diagnostic Santé Pool
+                </button>
                 <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarWarmupBtn" title="Préchauffer un compte avec une requête minimale">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> One-click Warmup
                 </button>
                 <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarWakeAllBtn" title="Lever tous les cooldowns et réveiller tous les comptes">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Lever Cooldowns
+                </button>
+                <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarRandomizeDeviceBtn" title="Régénérer l'empreinte machine (machineId, sqmId, serviceMachineId) pour désolidariser la machine des comptes bloqués (Anti-Ban)" style="border-color: rgba(168, 85, 247, 0.4); color: #c084fc;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> Empreinte Anti-Ban
                 </button>
                 <div style="width: 1px; height: 18px; background: var(--border); margin: 0 4px;"></div>
                 <button type="button" class="btn btn-secondary ga-toolbar-action ga-toolbar-action--danger" id="gaToolbarPurgeCacheBtn" title="Purger le cache disque des quotas et réinitialiser tous les cooldowns">
@@ -1068,33 +1085,7 @@
               </div>
             </div>
 
-            <details class="patch-legend" open aria-label="Patch detection legend">
-              <summary class="patch-legend-summary">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="patch-legend-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                <span class="patch-legend-title">Understanding detection signals</span>
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="patch-legend-chevron"><polyline points="6 9 12 15 18 9"/></svg>
-              </summary>
-              <dl class="patch-legend-list">
-                <div class="patch-legend-row">
-                  <dt class="patch-legend-term">
-                    <span class="badge badge-info">Binary signature</span>
-                  </dt>
-                  <dd class="patch-legend-def">
-                    URL pattern found in <code>language_server.exe</code> (stock or patched). Primary signal that the binary is patchable.
-                  </dd>
-                </div>
-                <div class="patch-legend-row">
-                  <dt class="patch-legend-term">
-                    <span class="badge badge-muted">JS overlay footprint</span>
-                  </dt>
-                  <dd class="patch-legend-def">
-                    Presence/absence of specific JS files (<code>proxy-runner.js</code>, <code>cryptoStore.js</code>) in <code>app.asar</code> to distinguish 2.2.x from 2.3.x and 2.4.x (up to 2.4.2).
-                  </dd>
-                </div>
-              </dl>
-            </details>
-
-            <!-- Three patch range cards (2.1 / 2.2 / 2.3) -->
+            <!-- Patch family selection grid -->
             <div class="patch-range-grid" id="patchRangeGrid">
               <div class="skeleton skeleton-card"></div>
               <div class="skeleton skeleton-card"></div>
@@ -1404,502 +1395,600 @@
               <span id="rpmSafetyVal" style="font-weight:600; font-family:var(--font-mono, monospace); color:var(--text-0);">4%</span>
             </div>
             <select id="statsRangeSelect" style="padding:6px 12px; font-size:12px; font-weight:500; border-radius:8px; border:1px solid var(--border); background:var(--bg-1); color:var(--text-0); cursor:pointer;">
-              <option value="7m" selected>7 derniers mois</option>
-              <option value="30d">30 derniers jours</option>
-              <option value="7d">7 derniers jours</option>
+              <option value="today">Aujourd'hui</option>
+              <option value="yesterday">Hier</option>
               <option value="24h">Dernières 24 heures</option>
+              <option value="7d">7 derniers jours</option>
+              <option value="30d">30 derniers jours</option>
+              <option value="this_month">Ce mois-ci</option>
+              <option value="last_month">Mois dernier</option>
+              <option value="7m" selected>7 derniers mois</option>
+              <option value="this_year">Cette année</option>
               <option value="all">Tout l'historique</option>
+              <option value="custom">📅 Personnalisé (Calendrier)...</option>
             </select>
+            <button class="btn btn-ghost btn-sm" id="tokenCalendarBtn" type="button" title="Ouvrir le sélecteur de dates / calendrier" style="display:inline-flex; align-items:center; gap:5px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              <span>Calendrier</span>
+            </button>
             <button class="btn btn-ghost btn-sm" id="tokenRefreshBtn" type="button" title="Actualiser les métriques réelles">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             </button>
             <button class="btn btn-ghost btn-sm" id="tokenExportCsvBtn" type="button" title="Exporter au format CSV">Export CSV</button>
             <button class="btn btn-ghost btn-sm" id="tokenExportJsonBtn" type="button" title="Exporter au format JSON">Export JSON</button>
-            <button class="btn btn-primary btn-sm" id="tokenShareWrappedBtn" type="button" title="Générer ma carte de statistiques Antigravity">
+            <button class="btn btn-ghost btn-sm btn-wrapped-share" id="tokenShareWrappedBtn" type="button" title="Générer ma carte de statistiques Antigravity">
               🏆 Partager mes stats
             </button>
           </div>
         </div>
 
-        <!-- Token Navigation Tabs (Dashboard & Activité vs Tokenizer Interactif BPE) -->
-        <div class="stats-tabs-bar" style="display:flex; gap:10px; margin:10px 0 16px 0; border-bottom:1px solid var(--border); padding-bottom:8px;">
-          <button type="button" class="btn btn-sm btn-ghost active" id="tabTokenDashboardBtn" style="font-weight:600; display:flex; align-items:center; gap:6px;">
-            <span>📊</span> <span>Dashboard &amp; Activité</span>
-          </button>
-          <button type="button" class="btn btn-sm btn-ghost" id="tabTokenizerToolBtn" style="font-weight:600; display:flex; align-items:center; gap:6px;">
-            <span>🔤</span> <span>Tokenizer Interactif BPE</span>
-          </button>
+        <!-- Dedicated Interactive Calendar & Date Filter Bar -->
+        <div id="statsCalendarBar" class="stats-calendar-bar" style="display:none; margin:10px 0 14px 0; padding:12px 16px; background:var(--bg-1); border:1px solid var(--border); border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.25);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <!-- Left: Custom Date Range Inputs -->
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <span style="font-size:12px; font-weight:600; color:var(--text-1); display:flex; align-items:center; gap:6px;">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#60a5fa" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <span>Plage de dates :</span>
+              </span>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label for="statsDateStart" style="font-size:11px; color:var(--text-2);">Du</label>
+                <input type="date" id="statsDateStart" class="stats-date-input" style="padding:5px 10px; font-size:12px; font-family:var(--font-mono); border-radius:6px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0); cursor:pointer;">
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label for="statsDateEnd" style="font-size:11px; color:var(--text-2);">Au</label>
+                <input type="date" id="statsDateEnd" class="stats-date-input" style="padding:5px 10px; font-size:12px; font-family:var(--font-mono); border-radius:6px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0); cursor:pointer;">
+              </div>
+              <button class="btn btn-primary btn-sm" id="statsDateApplyBtn" type="button" style="padding:5px 14px; font-size:12px; font-weight:600;">
+                Appliquer
+              </button>
+              <button class="btn btn-ghost btn-sm" id="statsDateResetBtn" type="button" style="padding:5px 10px; font-size:12px; color:var(--text-2);">
+                Réinitialiser
+              </button>
+            </div>
+
+            <!-- Right: Quick Date Range Chips -->
+            <div class="stats-quick-dates" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              <span style="font-size:11px; color:var(--text-2); margin-right:2px;">Raccourcis :</span>
+              <button type="button" class="quick-date-chip" data-range="today">Aujourd'hui</button>
+              <button type="button" class="quick-date-chip" data-range="yesterday">Hier</button>
+              <button type="button" class="quick-date-chip" data-range="7d">7j</button>
+              <button type="button" class="quick-date-chip" data-range="30d">30j</button>
+              <button type="button" class="quick-date-chip" data-range="this_month">Ce mois</button>
+              <button type="button" class="quick-date-chip" data-range="last_month">Mois dernier</button>
+              <button type="button" class="quick-date-chip active" data-range="7m">7 mois</button>
+              <button type="button" class="quick-date-chip" data-range="this_year">Cette année</button>
+              <button type="button" class="quick-date-chip" data-range="all">Tout</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="statsCalendarCloseBtn" type="button" title="Fermer le panneau" style="padding:2px 8px; font-size:12px; color:var(--text-2); margin-left:4px;">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dedicated Dashboard Modes Selector (Overview / Insights / Classic) with Active Filter Pill & Quick Buttons -->
+        <div class="stats-modes-bar" style="display:flex; justify-content:space-between; align-items:center; margin:8px 0 16px 0; border-bottom:1px solid var(--border); padding-bottom:10px; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div id="statsActiveRangePill" style="display:flex; align-items:center; gap:8px;">
+              <span id="statsRangePillBtn" style="display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--text-0); background:rgba(255,255,255,0.06); border:1px solid var(--border); padding:4px 10px; border-radius:999px; cursor:pointer;" title="Cliquez pour ouvrir/fermer le calendrier">
+                <span style="color:#60a5fa;">📅</span>
+                <span id="statsActiveRangeText">7 derniers mois</span>
+                <button type="button" id="statsClearRangeBtn" style="display:none; background:none; border:none; color:var(--text-2); cursor:pointer; font-size:12px; padding:0 2px; margin-left:4px; line-height:1;" title="Réinitialiser à 7 mois">✕</button>
+              </span>
+            </div>
+
+            <!-- Quick Filter Buttons in the main toolbar -->
+            <div class="stats-quick-buttons-row" style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+              <button type="button" class="quick-date-chip" data-range="today">Aujourd'hui</button>
+              <button type="button" class="quick-date-chip" data-range="yesterday">Hier</button>
+              <button type="button" class="quick-date-chip" data-range="24h">24h</button>
+              <button type="button" class="quick-date-chip" data-range="7d">7j</button>
+              <button type="button" class="quick-date-chip" data-range="30d">30j</button>
+              <button type="button" class="quick-date-chip" data-range="this_month">Ce mois</button>
+              <button type="button" class="quick-date-chip" data-range="last_month">Mois dernier</button>
+              <button type="button" class="quick-date-chip active" data-range="7m">7 mois</button>
+              <button type="button" class="quick-date-chip" data-range="this_year">Cette année</button>
+              <button type="button" class="quick-date-chip" data-range="all">Tout</button>
+              <button type="button" class="quick-date-chip" data-range="custom" id="statsQuickCustomBtn" title="Choisir une période personnalisée avec calendrier">📅 Personnalisé</button>
+            </div>
+          </div>
+          <div class="token-mode-segmented-control" id="tokenModeSegmentedControl">
+            <button type="button" class="token-mode-btn" data-stats-mode="overview" id="btnModeOverview" title="Vue Cockpit & Télémétrie en temps réel">
+              <span class="mode-icon">&gt;_</span> <span>Overview</span>
+            </button>
+            <button type="button" class="token-mode-btn active" data-stats-mode="insights" id="btnModeInsights" title="Vue Apple Bento & Heatmap calendaire">
+              <span class="mode-icon">✨</span> <span>Insights</span>
+            </button>
+            <button type="button" class="token-mode-btn" data-stats-mode="classic" id="btnModeClassic" title="Vue Analytique & Tabulaire">
+              <span class="mode-icon">📊</span> <span>Classic</span>
+            </button>
+          </div>
         </div>
 
         <div id="tokenTabDashboardContent">
-          <!-- Antigravity Native Stats Shell (Exact Reference Match) -->
-          <div class="antigravity-stats-shell">
-            <!-- Top Controls: Quick Model Filters & Pricing Perspective Toggle -->
-            <div class="stats-filter-toolbar">
-              <div class="stats-filter-left-col">
-                <div class="stats-filter-group" id="statsModelFilterGroup">
-                  <span class="stats-filter-group-lbl">Modèle :</span>
-                  <button type="button" class="stats-filter-chip active" data-model-filter="all">
-                    <span>Tous les modèles</span>
-                    <span class="chip-count-badge" id="filterCountAll">100%</span>
-                  </button>
-                  <button type="button" class="stats-filter-chip" data-model-filter="gemini-3.8">
-                    <span>Gemini 3.8 Flash</span>
-                    <span class="chip-count-badge" id="filterCountGemini38">94.5%</span>
-                  </button>
-                  <button type="button" class="stats-filter-chip" data-model-filter="gemini-3.6">
-                    <span>Gemini 3.6 Flash</span>
-                    <span class="chip-count-badge" id="filterCountGemini36">5.3%</span>
-                  </button>
-                  <button type="button" class="stats-filter-chip" data-model-filter="other">
-                    <span>Claude / OpenAI / Autres</span>
-                    <span class="chip-count-badge" id="filterCountOther">0.2%</span>
-                  </button>
-                  <button type="button" class="stats-filter-reset-btn" id="statsFilterResetBtn" title="Réinitialiser tous les filtres" style="display:none;">
-                    ✕ Réinitialiser
-                  </button>
+          <!-- MODE 1: OVERVIEW / COCKPIT -->
+          <div class="stats-mode-section" id="statsModeOverview" style="display:none;">
+            <div class="cockpit-top-grid">
+              <!-- Dispatch & Consumption Report -->
+              <div class="cockpit-card cockpit-main-report">
+                <div class="cockpit-card-header">
+                  <div class="cockpit-title-row">
+                    <span class="cockpit-dot-live"></span>
+                    <h3 class="cockpit-title">DISPATCH &amp; CONSUMPTION REPORT</h3>
+                  </div>
+                  <span class="cockpit-period-badge" id="cockpitPeriodBadge">Period: Live</span>
                 </div>
-                <div class="stats-filter-active-summary" id="statsFilterActiveSummary">
-                  <span class="filter-summary-dot"></span>
-                  <span id="statsFilterSummaryText">Affichage : Tous les modèles &bull; 7 derniers mois</span>
+                <div class="cockpit-report-body">
+                  <div class="cockpit-stat-col">
+                    <div class="cockpit-metric-lbl">TOTAL USAGE</div>
+                    <div class="cockpit-metric-val" id="cockpitTotalTokens">0</div>
+                    <div class="cockpit-metric-sub" id="cockpitTokenRatio">In: 0 (50%) / Out: 0 (50%) / Thk: 0 (0%)</div>
+                  </div>
+
+                  <!-- Central Radial Summary Gauge -->
+                  <div class="cockpit-radial-wrap">
+                    <div class="radial-sunburst-container">
+                      <svg width="150" height="150" viewBox="0 0 150 150" class="radial-sunburst-svg" id="cockpitRadialSvg">
+                        <!-- Populated dynamically via JS -->
+                      </svg>
+                      <div class="radial-sunburst-center">
+                        <span class="radial-center-count" id="cockpitRadialCount">0</span>
+                        <span class="radial-center-label">SUMMARY</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cockpit-finops-col">
+                    <div class="cockpit-metric-lbl">PREDICTED SPEND <span style="font-size:9px; opacity:0.75; font-weight:500; margin-left:3px;">(VALEUR MARCHÉ)</span> <span class="cockpit-pricing-link" id="cockpitPricingLink">Pricing Matrix ↗</span></div>
+                    <div class="cockpit-spend-val" id="cockpitPredictedSpend">$0.00</div>
+                    <div class="cockpit-spend-sub" id="cockpitSpendSub">avg ~$0.0000 / req</div>
+                    <div class="cockpit-cache-save-block">
+                      <span class="cockpit-cache-save-lbl">CACHE SAVED</span>
+                      <div class="cockpit-cache-save-val" id="cockpitCacheSaved">+$0.00</div>
+                      <span class="cockpit-cache-save-pct" id="cockpitCacheHitPct">0.0% Hit</span>
+                    </div>
+                    <div class="cockpit-gateway-status">Gateway status <span style="color:#22c55e;">normal</span></div>
+                  </div>
                 </div>
               </div>
 
-              <div class="stats-filter-right-col">
-                <div class="stats-perspective-toggle" id="statsPerspectiveGroup">
-                  <button type="button" class="stats-perspective-btn active" id="btnPerspectivePool" title="Calcul basé sur l'arbitrage gratuit du pool de comptes Google">
-                    ⚡ Économies Pool (0$)
-                  </button>
-                  <button type="button" class="stats-perspective-btn" id="btnPerspectiveApi" title="Évaluation financière au tarif commercial Cloud standard">
-                    💵 Valeur Marchande API
-                  </button>
+              <!-- Live Account / Models / Users Sidebar Tabs -->
+              <div class="cockpit-card cockpit-sidebar-tabs">
+                <div class="cockpit-sidebar-nav">
+                  <button type="button" class="cockpit-nav-pill active" data-cockpit-tab="accounts" id="cockpitTabAccounts">Accounts</button>
+                  <button type="button" class="cockpit-nav-pill" data-cockpit-tab="models" id="cockpitTabModels">Models</button>
+                  <button type="button" class="cockpit-nav-pill" data-cockpit-tab="users" id="cockpitTabUsers">Users</button>
+                </div>
+                <div class="cockpit-sidebar-body" id="cockpitSidebarContent">
+                  <div class="cockpit-empty-state">No active telemetry</div>
+                </div>
+                <div class="cockpit-sidebar-footer">
+                  <span>Gateway Anti-abuse</span>
+                  <span class="cockpit-active-pill">● Active</span>
                 </div>
               </div>
             </div>
 
-            <!-- 1. Top 5-Metric Unified Strip Card -->
-            <div class="stats-strip-card">
-              <div class="strip-item">
-                <div class="strip-val" id="statsLifetimeTokens">--</div>
-                <div class="strip-lbl" id="statsLifetimeTokensLbl">Lifetime tokens</div>
-                <div class="caching-roi-pill" id="cachingRoiPill" title="Pool Antigravity &amp; Gemini Context Caching">--</div>
-              </div>
-              <div class="strip-item">
-                <div class="strip-val" id="statsPeakTokens">--</div>
-                <div class="strip-lbl">Peak tokens</div>
-              </div>
-              <div class="strip-item">
-                <div class="strip-val" id="statsLongestTask">--</div>
-                <div class="strip-lbl">Longest task</div>
-              </div>
-              <div class="strip-item featured">
-                <div class="strip-val" id="statsCurrentStreak">--</div>
-                <div class="strip-lbl">Current streak</div>
-                <div class="streak-goal-pill" id="streakGoalPill" title="Objectif de streak">🎯 En cours</div>
-              </div>
-              <div class="strip-item">
-                <div class="strip-val" id="statsLongestStreak">--</div>
-                <div class="strip-lbl">Longest streak</div>
-              </div>
-            </div>
-
-            <!-- 1b. FinOps & Quota Proactive Runway Strip -->
-            <div class="stats-finops-card">
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Valeur Marchande API</span>
-                  <span class="finops-badge" id="finopsModeBadge">Tarif Public Cloud</span>
-                </div>
-                <div class="finops-val" id="finopsMarketVal">$0.00</div>
-                <div class="finops-sub">Équivalent Vertex AI / Cloud</div>
-              </div>
-              <div class="finops-metric featured-savings">
-                <div class="finops-head">
-                  <span class="finops-lbl">Coût Réel Déboursé</span>
-                  <span class="finops-badge badge-green">100% Amorti</span>
-                </div>
-                <div class="finops-val green-val" id="finopsActualCost">$0.00</div>
-                <div class="finops-sub" id="finopsSavingsLbl">+$0.00 économisés (Pool 33 comptes)</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Autonomie / Runway</span>
-                  <span class="finops-badge badge-blue" id="finopsRunwayBadge">Optimal</span>
-                </div>
-                <div class="finops-val blue-val" id="finopsRunwayVal">~14h 30m</div>
-                <div class="finops-sub" id="finopsRunwaySub">À cadence 50% RPM · Risque 429: 0%</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Efficacité Cache</span>
-                  <span class="finops-badge badge-purple" id="finopsCacheBadge">Context Ready</span>
-                </div>
-                <div class="finops-val purple-val" id="finopsCacheRatio">~68%</div>
-                <div class="finops-sub" id="finopsCacheSavings">Latence TTFT réduite de ~40%</div>
-              </div>
-            </div>
-
-            <!-- 1c. Token Dynamics & Execution Flow Strip -->
-            <div class="stats-finops-card stats-dynamics-card" style="margin-top: 10px;">
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Vélocité &amp; Throughput</span>
-                  <span class="finops-badge badge-green" id="dynamicsThroughputBadge">Live Stream</span>
-                </div>
-                <div class="finops-val green-val" id="dynamicsThroughputVal">-- tok/s</div>
-                <div class="finops-sub" id="dynamicsThroughputSub">Latence moy. ~250ms · TTFT optimisé</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Ratio In / Out</span>
-                  <span class="finops-badge badge-blue" id="dynamicsRatioBadge">Prompt Inflation</span>
-                </div>
-                <div class="finops-val blue-val" id="dynamicsRatioVal">-- : 1</div>
-                <div class="finops-sub" id="dynamicsRatioSub">--% Contexte · --% Sortie</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Poids Moyen / Step</span>
-                  <span class="finops-badge" id="dynamicsStepWeightBadge">Agentic Density</span>
-                </div>
-                <div class="finops-val" id="dynamicsStepWeightVal">-- tok</div>
-                <div class="finops-sub" id="dynamicsStepWeightSub">Tokens consommés par action d'agent</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Projection 30 Jours</span>
-                  <span class="finops-badge badge-purple" id="dynamicsProjectionBadge">FinOps Forecast</span>
-                </div>
-                <div class="finops-val purple-val" id="dynamicsProjectionVal">$0.00</div>
-                <div class="finops-sub" id="dynamicsProjectionSub">Équiv. API sans arbitrage pool</div>
-              </div>
-            </div>
-
-            <!-- 2. Token activity Heatmap Card -->
-            <div class="stats-activity-card" style="position:relative;">
-              <div class="activity-header">
-                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                  <div class="activity-title">Token activity</div>
-                  <div class="activity-pills" id="activityPillsGroup">
-                    <button type="button" class="activity-pill active" data-mode="daily">Daily</button>
-                    <button type="button" class="activity-pill" data-mode="weekly">Weekly</button>
-                    <button type="button" class="activity-pill" data-mode="cumulative">Cumulative</button>
+            <!-- Cockpit Bottom 2-Card Row: 24H Activity Pulse & Efficiency Index -->
+            <div class="cockpit-bottom-row">
+              <div class="cockpit-card cockpit-pulse-card">
+                <div class="cockpit-card-header">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:#22c55e;">🕒</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">24H Activity Pulse</h4>
+                  </div>
+                  <div style="font-size:11px; color:var(--text-2);">
+                    Avg Load: <strong id="cockpitAvgLoad" style="color:var(--text-0);">0</strong> &bull; Peak: <span id="cockpitPeakHour">12:00</span>
                   </div>
                 </div>
-                <div class="heatmap-legend-pills">
-                  <span class="heatmap-legend-label">Moins</span>
-                  <span class="heatmap-legend-box level-0" title="0 token"></span>
-                  <span class="heatmap-legend-box level-1" title="Faible volume"></span>
-                  <span class="heatmap-legend-box level-2" title="Moyen volume"></span>
-                  <span class="heatmap-legend-box level-3" title="Fort volume"></span>
-                  <span class="heatmap-legend-box level-4" title="Pic d'activité"></span>
-                  <span class="heatmap-legend-label">Plus</span>
-                  <span class="heatmap-meta-summary" id="heatmapMetaSummary">Pic : --</span>
+                <div class="cockpit-pulse-bars-track" id="cockpitPulseBarsTrack">
+                  <!-- 24 hourly green bars populated dynamically -->
                 </div>
-              </div>
-              <div class="heatmap-scroll-wrap">
-                <div class="heatmap-matrix" id="statsHeatmapMatrix">
-                  <!-- Populated dynamically via JS -->
-                </div>
-                <div class="heatmap-months-row" id="statsHeatmapMonthsRow">
-                  <span>-</span>
-                </div>
-              </div>
-              <!-- Floating Day Inspector Popover -->
-              <div class="day-inspector-popover" id="dayInspectorPopover" style="display:none;"></div>
-              <!-- Instant Micro Tooltip on Cell Hover -->
-              <div class="heatmap-floating-tooltip" id="heatmapFloatingTooltip" style="display:none;"></div>
-            </div>
-
-            <!-- 3. Bottom 2-card Grid -->
-            <div class="stats-bottom-grid">
-              <!-- Activity insights -->
-              <div class="stats-insights-card">
-                <div style="display:flex; align-items:center; justify-content:space-between;">
-                  <div class="activity-title">Activity insights</div>
-                  <span class="insight-status-chip">⚡ 100% Observé</span>
-                </div>
-                <div class="insights-list">
-                  <div class="insight-row">
-                    <span class="insight-key">Pool de comptes</span>
-                    <span class="insight-val" id="insightFastMode">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Modèle principal</span>
-                    <span class="insight-val" id="insightReasoning">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Tâches totales (Steps)</span>
-                    <span class="insight-val" id="insightSkillsExplored">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Max étapes / session</span>
-                    <span class="insight-val" id="insightSkillsUsed">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Sessions SQLite</span>
-                    <span class="insight-val" id="insightThreads">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Ratio Cache Hit</span>
-                    <span class="insight-val" id="insightCacheHit" style="color:#c084fc;">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Headroom Contexte</span>
-                    <span class="insight-val" id="insightContextHeadroom" style="color:#60a5fa;">--</span>
-                  </div>
+                <div class="cockpit-pulse-footer">
+                  <span>⚖️ In/Out Ratio: <strong id="cockpitInOutRatio">1.0 : 1</strong></span>
+                  <span style="font-size:11px; color:var(--text-2);">Trough: <span id="cockpitTroughHour">13:00</span></span>
                 </div>
               </div>
 
-              <!-- Usage distribution -->
-              <div class="stats-donut-card">
-                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-                  <div class="activity-title">Usage distribution</div>
-                  <div class="donut-mode-toggle" id="donutModeToggleGroup">
-                    <button type="button" class="donut-mode-chip active" id="btnDonutModeTokens">Tokens</button>
-                    <button type="button" class="donut-mode-chip" id="btnDonutModeCost">Coût API</button>
-                    <button type="button" class="donut-mode-chip" id="btnDonutModeCalls">Appels</button>
+              <div class="cockpit-card cockpit-efficiency-card">
+                <div class="cockpit-card-header">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:#f59e0b;">🔥</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">Efficiency Index &bull; J23</h4>
                   </div>
+                  <span class="cockpit-latency-badge" id="cockpitZeroLatency">⚡ Zero Latency</span>
                 </div>
-                <div class="donut-content-wrap">
-                  <div class="donut-chart-box" id="donutChartBox">
-                    <svg width="140" height="140" viewBox="0 0 140 140">
-                      <circle cx="70" cy="70" r="54" fill="none" stroke="var(--bg-2)" stroke-width="16" />
-                      <circle id="donutSegmentReasoning" cx="70" cy="70" r="54" fill="none" stroke="#4285f4" stroke-width="16" stroke-dasharray="320 339" stroke-dashoffset="0" stroke-linecap="round" />
-                      <circle id="donutSegmentTool" cx="70" cy="70" r="54" fill="none" stroke="#8ab4f8" stroke-width="16" stroke-dasharray="18 339" stroke-dashoffset="-320" stroke-linecap="round" />
-                      <circle id="donutSegmentSystem" cx="70" cy="70" r="54" fill="none" stroke="#c2d7fc" stroke-width="16" stroke-dasharray="2 339" stroke-dashoffset="-338" stroke-linecap="round" />
+                <div class="cockpit-efficiency-body">
+                  <div class="cockpit-arc-gauge-wrap">
+                    <svg width="180" height="95" viewBox="0 0 180 95" class="cockpit-arc-svg" id="cockpitArcSvg">
+                      <!-- Semicircle radial gauge populated dynamically -->
                     </svg>
-                    <div class="donut-center-text">
-                      <span class="donut-center-val" id="donutCenterVal">--</span>
-                      <span class="donut-center-sub" id="donutCenterSub">tokens</span>
-                    </div>
-                  </div>
-                  <div class="donut-legend">
-                    <div class="legend-item" id="legendItemReasoning" data-segment="reasoning">
-                      <div class="legend-label-group">
-                        <span class="legend-dot dot-reasoning"></span>
-                        <span id="legendLblReasoning">Gemini 3.8 Flash</span>
-                      </div>
-                      <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="legend-val-secondary" id="legendValReasoning">--</span>
-                        <span class="legend-pct" id="legendPctReasoning">--</span>
-                      </div>
-                    </div>
-                    <div class="legend-item" id="legendItemTool" data-segment="tool">
-                      <div class="legend-label-group">
-                        <span class="legend-dot dot-tool"></span>
-                        <span id="legendLblTool">Gemini 3.6 Flash</span>
-                      </div>
-                      <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="legend-val-secondary" id="legendValTool">--</span>
-                        <span class="legend-pct" id="legendPctTool">--</span>
-                      </div>
-                    </div>
-                    <div class="legend-item" id="legendItemSystem" data-segment="system">
-                      <div class="legend-label-group">
-                        <span class="legend-dot dot-system"></span>
-                        <span id="legendLblSystem">Autres</span>
-                      </div>
-                      <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="legend-val-secondary" id="legendValSystem">--</span>
-                        <span class="legend-pct" id="legendPctSystem">--</span>
-                      </div>
+                    <div class="cockpit-arc-center">
+                      <div class="cockpit-arc-hit" id="cockpitArcHit">Hit Rate: 0.0%</div>
+                      <div class="cockpit-arc-cached" id="cockpitArcCached">0</div>
+                      <div class="cockpit-arc-sub">CACHED TOKENS</div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            <!-- 3b. Advanced Token Analytics & User-Specific Models Calculation Grid -->
-            <div class="stats-advanced-grid">
-              <!-- Card A: Anatomie du Trafic de Mes Modèles -->
-              <div class="advanced-calc-card">
-                <div class="advisor-header">
-                  <div class="advisor-title-group">
-                    <span class="advisor-icon">🧩</span>
-                    <h3 class="advisor-title">Anatomie du Trafic de Mes Modèles</h3>
-                    <span class="advisor-tag">Mes Modèles</span>
-                  </div>
-                  <span style="font-size:11px; color:var(--text-2);" id="compoundSessionCount">-- sessions</span>
+                <div class="cockpit-efficiency-footer">
+                  <span>Uncached Input: <strong id="cockpitUncachedInput">0</strong></span>
+                  <span style="color:#22c55e; font-weight:600;" id="cockpitSavingsGreen">+$0.00 Saved</span>
                 </div>
-
-                <!-- Dynamic Segmented Multi-Bar based on User's Models -->
-                <div>
-                  <div class="payload-bar-track" id="payloadBarTrack">
-                    <!-- Populated dynamically via JS -->
-                  </div>
-                </div>
-
-                <!-- Dynamic Legend Grid based on User's Models -->
-                <div class="payload-legend-grid" id="payloadLegendGrid">
-                  <!-- Populated dynamically via JS -->
-                </div>
-
-                <!-- Subgrid: Compounding Inflation Slope & Fournisseur Principal -->
-                <div class="compound-stats-subgrid">
-                  <div class="compound-sub-item">
-                    <span class="compound-sub-lbl">Pente d'inflation / step</span>
-                    <span class="compound-sub-val" id="compoundSlopeVal" style="color:#60a5fa;">-- tok</span>
-                  </div>
-                  <div class="compound-sub-item">
-                    <span class="compound-sub-lbl">Fournisseur dominant</span>
-                    <span class="compound-sub-val" id="compoundTopProviderVal" style="color:#34d399;">--</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Card B: Consommation & Calculs Financiers de Mes Modèles -->
-              <div class="advanced-calc-card">
-                <div class="advisor-header">
-                  <div class="advisor-title-group">
-                    <span class="advisor-icon">⚖️</span>
-                    <h3 class="advisor-title">Consommation &amp; Calculs de Mes Modèles</h3>
-                    <span class="advisor-tag">Mes Fournisseurs</span>
-                  </div>
-                  <span style="font-size:11px; color:#34d399; font-weight:600;" id="benchmarkSavingsBadge">100% Amorti</span>
-                </div>
-
-                <!-- Dynamic Model List based on User's Configured Models -->
-                <div class="benchmark-list" id="userModelsBenchmarkList">
-                  <!-- Populated dynamically via JS -->
-                </div>
-
-                <div style="font-size:11px; color:var(--text-2); display:flex; align-items:center; justify-content:space-between; padding-top:6px; border-top:1px dashed var(--border);">
-                  <span id="benchmarkSavingsSummary">Économies Pool : +$0.00</span>
-                  <span style="font-size:10px; opacity:0.8;" id="benchmarkConfiguredCount">-- modèles configurés</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- 4. Antigravity AI Advisor: Actions Préventives & Conseils en Direct -->
-            <div class="stats-advisor-card">
-              <div class="advisor-header">
-                <div class="advisor-title-group">
-                  <span class="advisor-icon">🧠</span>
-                  <h3 class="advisor-title">Recommandations &amp; Optimisation en Direct</h3>
-                  <span class="advisor-tag">Proactif</span>
-                </div>
-                <div class="advisor-health-status" id="advisorHealthStatus">
-                  <span class="advisor-health-dot"></span>
-                  <span id="advisorHealthStatusText">Santé du Pool : 100% Optimale</span>
-                </div>
-              </div>
-              <div class="advisor-grid" id="advisorRecommendationsGrid">
-                <!-- Populated dynamically via JS -->
               </div>
             </div>
           </div>
-        </div>
 
-
-        </div>
-
-        <!-- Tokenizer Tool Content Tab -->
-        <div id="tokenTabToolContent" style="display:none; padding:8px 0 24px 0;">
-          <div class="stats-activity-card" style="margin-bottom:16px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <label for="tokenizerModelSelect" style="font-weight:600; font-size:13px; color:var(--text-1);">Modèle BPE :</label>
-                <select id="tokenizerModelSelect" style="padding:6px 12px; font-weight:600; font-size:12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-1); color:var(--text-0); cursor:pointer;">
-                  <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (Vocabulaire 256k)</option>
-                  <option value="gemini-4-argon-medium">Gemini 4 Argon (Medium)</option>
-                  <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                  <option value="gemini-2.0-flash-thinking">Gemini 2.0 Flash Thinking</option>
-                  <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                  <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-                  <option value="gpt-4o">GPT-4o (o200k)</option>
-                  <option value="deepseek-r1">DeepSeek R1</option>
-                </select>
-              </div>
-              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <span style="font-size:12px; color:var(--text-2); font-weight:500;">Exemples prédéfinis :</span>
-                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetGeminiPro">Gemini Agent</button>
-                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetThinking">Thinking CoT</button>
-                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetTs">TypeScript</button>
-                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetPrompt">System Prompt</button>
-                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetChat">Chat</button>
-                <button type="button" class="btn btn-ghost btn-xs" id="tokenizerPresetJson">JSON Payload</button>
-              </div>
-            </div>
-
-            <!-- Tokenizer 7-Metric Strip -->
-            <div class="stats-top-strip" style="margin-bottom:14px;">
-              <div class="stats-strip-metric">
-                <span class="strip-metric-lbl">Jetons (Tokens)</span>
-                <span class="strip-metric-val" id="toolStatTokens" style="color:#60a5fa;">0</span>
-                <span class="strip-metric-sub">Unités lexicales BPE</span>
-              </div>
-              <div class="stats-strip-metric">
-                <span class="strip-metric-lbl">Caractères</span>
-                <span class="strip-metric-val" id="toolStatChars">0</span>
-                <span class="strip-metric-sub">Longueur brute UTF-8</span>
-              </div>
-              <div class="stats-strip-metric">
-                <span class="strip-metric-lbl">Mots</span>
-                <span class="strip-metric-val" id="toolStatWords">0</span>
-                <span class="strip-metric-sub">Séquences séparées</span>
-              </div>
-              <div class="stats-strip-metric">
-                <span class="strip-metric-lbl">Lignes</span>
-                <span class="strip-metric-val" id="toolStatLines">0</span>
-                <span class="strip-metric-sub">Sauts de ligne</span>
-              </div>
-              <div class="stats-strip-metric">
-                <span class="strip-metric-lbl">Densité</span>
-                <span class="strip-metric-val" id="toolStatRatio">0 car/tok</span>
-                <span class="strip-metric-sub">Compaction moyenne</span>
-              </div>
-              <div class="stats-strip-metric">
-                <span class="strip-metric-lbl">Coût In (Prompt)</span>
-                <span class="strip-metric-val" id="toolCostInput" style="color:#34d399;">$0.0000</span>
-                <span class="strip-metric-sub">Tarif API officiel</span>
-              </div>
-              <div class="stats-strip-metric">
-                <span class="strip-metric-lbl">Coût Out (Gén.)</span>
-                <span class="strip-metric-val" id="toolCostOutput" style="color:#f59e0b;">$0.0000</span>
-                <span class="strip-metric-sub">Tarif sortie estimé</span>
-              </div>
-            </div>
-
-            <!-- Gemini Context Window Capacity Meter -->
-            <div style="background:var(--bg-1); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
-              <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; margin-bottom:6px;">
-                <span style="font-weight:600; color:var(--text-1);">Capacité Fenêtre de Contexte Gemini (1 000 000 tokens)</span>
-                <span id="contextMeterText" style="font-family:var(--font-mono, monospace); font-size:11.5px; color:var(--text-2);">0 / 1 000 000 (0.00%)</span>
-              </div>
-              <div class="token-progress-bar" style="height:7px; background:var(--bg-2); border-radius:4px; overflow:hidden;">
-                <div class="token-progress-fill" id="contextMeterFill" style="width:0.2%; background:#3b82f6; height:100%; transition:width 0.2s ease;"></div>
-              </div>
-            </div>
-
-            <!-- Text Input Area & Action Buttons -->
-            <div style="margin-bottom:14px;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <label for="tokenizerInputText" style="font-size:12.5px; font-weight:600; color:var(--text-1);">Saisie de texte &amp; Code source :</label>
-                <div style="display:flex; gap:6px;">
-                  <button type="button" class="btn btn-ghost btn-xs" id="tokenizerClearTextBtn">✕ Effacer</button>
-                  <button type="button" class="btn btn-ghost btn-xs" id="tokenizerCopyTextBtn">📋 Copier Texte</button>
-                  <button type="button" class="btn btn-primary btn-xs" id="tokenizerCopyTokensBtn">📦 Copier Tokens (JSON)</button>
+          <!-- MODE 2: INSIGHTS (AUTHENTIC APPLE BENTO GRID) -->
+          <div class="stats-mode-section" id="statsModeInsights">
+            <!-- 1. Apple 4 Bento Top Cards (Total Usage, Estimated Spend, Cache Efficiency, Active Network) -->
+            <div class="bento-top-grid">
+              <!-- Bento 1: Total Usage -->
+              <div class="bento-card bento-card-tokens">
+                <div class="bento-card-head">
+                  <span class="bento-card-title">CONSOMMATION TOTALE</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,22 Q21,18 42,12 T84,6" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="6" r="3" fill="#3b82f6"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div class="bento-val-hero" id="bentoTotalUsageVal">0</div>
+                  <div class="bento-sub-hero" id="bentoInOutSub">In 0 / Out 0</div>
+                </div>
+                <div class="bento-card-foot">
+                  <div class="bento-progress-pill">
+                    <div class="bento-progress-fill-in" id="bentoFillIn" style="width:50%;"></div>
+                    <div class="bento-progress-fill-out" id="bentoFillOut" style="width:50%;"></div>
+                  </div>
+                  <div class="bento-ratio-labels">
+                    <span id="bentoInPct">50% In</span>
+                    <span id="bentoOutPct">50% Out</span>
+                  </div>
                 </div>
               </div>
-              <textarea id="tokenizerInputText" rows="8" style="width:100%; box-sizing:border-box; font-family:var(--font-mono, ui-monospace, monospace); font-size:12.5px; line-height:1.6; padding:12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-1); color:var(--text-0); resize:vertical;" placeholder="Entrez ou collez votre texte, code ou prompt ici pour analyser son découpage en tokens BPE en temps réel..."></textarea>
+
+              <!-- Bento 2: Estimated Spend -->
+              <div class="bento-card bento-card-spend">
+                <div class="bento-card-head">
+                  <span class="bento-card-title text-green">COÛT ESTIMÉ</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,24 Q28,20 56,10 T84,4" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="4" r="3" fill="#10b981"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div class="bento-val-hero text-green" id="bentoSpendVal">$0.00</div>
+                  <div class="bento-sub-hero">Accumulation pondérée en temps réel</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Base de facturation</span>
+                  <span class="bento-link text-green" id="bentoPricingMatrixLink">Grille tarifaire ↗</span>
+                </div>
+              </div>
+
+              <!-- Bento 3: Cache Efficiency -->
+              <div class="bento-card bento-card-cache">
+                <div class="bento-card-head">
+                  <span class="bento-card-title text-cyan">EFFICACITÉ DU CACHE</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,22 Q28,14 56,12 T84,8" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="8" r="3" fill="#06b6d4"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <div class="bento-val-hero" id="bentoCachedVal">0</div>
+                    <span class="bento-badge-cyan" id="bentoCacheHitBadge">0.0% Hit</span>
+                  </div>
+                  <div class="bento-sub-hero" id="bentoCacheSavedSub">Économie d'environ $0.00</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Réutilisation Contexte</span>
+                  <span class="text-cyan" style="font-size:11px; font-weight:600;">Zéro Latence</span>
+                </div>
+              </div>
+
+              <!-- Bento 4: Active Dispatch Network -->
+              <div class="bento-card bento-card-network">
+                <div class="bento-card-head">
+                  <span class="bento-card-title text-purple">RÉSEAU DE DISPATCH</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,20 Q28,18 56,14 T84,8" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="8" r="3" fill="#a855f7"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div style="display:flex; align-items:baseline; gap:12px;">
+                    <div><span class="bento-val-hero" id="bentoAccountsCount">0</span> <span style="font-size:11px; color:var(--text-2);">Account</span></div>
+                    <div><span class="bento-val-hero text-purple" id="bentoModelsCount">0</span> <span style="font-size:11px; color:var(--text-2);">Model</span></div>
+                  </div>
+                  <div class="bento-sub-hero" id="bentoInteractionsSub">0 total interactions</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Load Balance Ready</span>
+                  <span class="text-green" style="font-size:11px; font-weight:600;">100% Smooth</span>
+                </div>
+              </div>
             </div>
 
-            <!-- Interactive Token Chips Visualization -->
-            <div>
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <div style="font-size:13px; font-weight:600; color:var(--text-0); display:flex; align-items:center; gap:8px;">
-                  <span>Visualisation des Jetons BPE</span>
-                  <span class="badge" id="tokenizerChunkCount" style="background:rgba(59, 130, 246, 0.15); color:#60a5fa; border:1px solid rgba(59, 130, 246, 0.3);">0 jetons</span>
+            <!-- 2. Apple Bento Row: Activity 91-Day Matrix & 24-Hour Rhythm -->
+            <div class="bento-middle-grid">
+              <!-- Left Card: Activity 91-Day View -->
+              <div class="bento-card bento-heatmap-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#3b82f6;">📅</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Activité</span>
+                    <span style="font-size:11px; color:var(--text-2);">Vue 91 Jours</span>
+                  </div>
+                  <div id="bentoStreakBadgeWrap">
+                    <span style="font-size:11px; color:var(--text-2);">Grille 13 Semaines</span>
+                  </div>
                 </div>
-                <span style="font-size:11px; color:var(--text-2);">Cliquez sur un jeton pour le copier</span>
+
+                <div class="bento-heatmap-body">
+                  <div class="bento-heatmap-matrix-wrap">
+                    <div class="heatmap-matrix" id="statsHeatmapMatrix">
+                      <!-- 13 cols x 7 rows cells populated dynamically -->
+                    </div>
+                  </div>
+
+                  <div class="bento-heatmap-stat-col">
+                    <div style="font-size:11px; color:var(--text-2);">Volume 13 Semaines</div>
+                    <div style="font-size:20px; font-weight:800; font-family:monospace; color:var(--text-0); margin:2px 0 6px 0;" id="bentoRangeTokens">0 Tokens</div>
+                    <div style="font-size:12px; color:var(--text-1); display:flex; justify-content:space-between;">
+                      <span>Jours Actifs</span>
+                      <strong id="bentoActiveDays">0 (0%)</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bento-card-foot">
+                  <div class="bento-legend-levels">
+                    <span style="font-size:10px; color:var(--text-2); margin-right:4px;">Moins</span>
+                    <span class="bento-leg-box level-0"></span>
+                    <span class="bento-leg-box level-1"></span>
+                    <span class="bento-leg-box level-2"></span>
+                    <span class="bento-leg-box level-3"></span>
+                    <span class="bento-leg-box level-4"></span>
+                    <span style="font-size:10px; color:var(--text-2); margin-left:4px;">Plus</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);">Cadence cumulée</span>
+                </div>
               </div>
-              <div id="tokenizerChipsContainer" style="padding:14px; background:var(--bg-0); border-radius:8px; border:1px solid var(--border); min-height:100px; line-height:2.0; font-family:var(--font-mono, ui-monospace, monospace); font-size:12.5px; word-break:break-word;">
-                <span style="color:var(--text-3); font-style:italic;">Les jetons découpés apparaîtront ici avec des couleurs alternées...</span>
+
+              <!-- Right Card: 24-Hour Rhythm & Diagnostics -->
+              <div class="bento-card bento-rhythm-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#f59e0b;">✨</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Rythme 24 Heures</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoPeakRhythmSub">Pic : Aucun &bull; Jour : 0</span>
+                </div>
+
+                <!-- 24 Slim Vertical Bars -->
+                <div class="bento-rhythm-bars" id="bentoRhythmBars">
+                  <!-- Populated dynamically via JS -->
+                </div>
+
+                <!-- 2 Micro Metric Capsules -->
+                <div class="bento-capsules-grid">
+                  <div class="bento-capsule">
+                    <span class="bento-capsule-lbl">Tokens moyens / requête</span>
+                    <span class="bento-capsule-val" id="bentoAvgPerReq">0 Tokens</span>
+                  </div>
+                  <div class="bento-capsule">
+                    <span class="bento-capsule-lbl">Coût pour 1M Tokens</span>
+                    <span class="bento-capsule-val text-green" id="bentoCostPerM">$0.00 / 1M</span>
+                  </div>
+                </div>
+
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Pipeline Antigravity</span>
+                  <span class="text-green" style="font-size:11px; font-weight:600;">Haute Disponibilité</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Apple Bento Row: Core Models Share & Account Usage Leaderboard -->
+            <div class="bento-middle-grid">
+              <!-- Left Card: Core Models Share -->
+              <div class="bento-card bento-share-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#3b82f6;">⚙️</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Modèles Clés</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoCoreModelsCount">0 modèles</span>
+                </div>
+                <div class="bento-list-body" id="bentoCoreModelsList">
+                  <div class="bento-empty-text">Aucune activité enregistrée</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Top modèles en production</span>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoAccumulatedModelCost">Coût cumulé : $0.00</span>
+                </div>
+              </div>
+
+              <!-- Right Card: Account Usage Leaderboard -->
+              <div class="bento-card bento-leaderboard-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#a855f7;">👥</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Classement par Compte</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoTotalAccountsCount">0 compte au total</span>
+                </div>
+                <div class="bento-list-body" id="bentoAccountLeaderboardList">
+                  <div class="bento-empty-text">Aucun appel par compte</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Isolation au niveau compte</span>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoActiveAccountsFoot">Comptes actifs : 0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. Apple Bento Bottom: Model Token Timeline (Full Width) -->
+            <div class="bento-card bento-timeline-card">
+              <div class="bento-card-head" style="flex-wrap:wrap; gap:10px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="color:#3b82f6;">📈</span>
+                  <span style="font-size:13px; font-weight:700; color:var(--text-0);">Chronologie des Tokens par Modèle</span>
+                </div>
+
+                <!-- 3 Apple-Style Capsule Toggle Groups -->
+                <div class="bento-timeline-toggles">
+                  <div class="bento-toggle-pill-group" id="bentoChartTypeToggle">
+                    <button type="button" class="bento-toggle-btn active" data-chart="area">Area</button>
+                    <button type="button" class="bento-toggle-btn" data-chart="bar">Bar</button>
+                  </div>
+                  <div class="bento-toggle-pill-group" id="bentoMetricTypeToggle">
+                    <button type="button" class="bento-toggle-btn active" data-metric="tokens">Tokens</button>
+                    <button type="button" class="bento-toggle-btn" data-metric="cost">Cost ($)</button>
+                  </div>
+                  <div class="bento-toggle-pill-group" id="bentoGroupToggle">
+                    <button type="button" class="bento-toggle-btn active" data-group="model">By Model</button>
+                    <button type="button" class="bento-toggle-btn" data-group="account">By Account</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- SVG Interactive Timeline Area/Bar Chart -->
+              <div class="bento-timeline-chart-wrap" id="bentoTimelineChartWrap">
+                <svg width="100%" height="220" viewBox="0 0 900 220" preserveAspectRatio="none" id="bentoTimelineSvg">
+                  <!-- Rendered dynamically via JS -->
+                </svg>
               </div>
             </div>
           </div>
+          <!-- Fin MODE 2: INSIGHTS -->
+
+          <!-- MODE 3: CLASSIC (6 KPIS + USAGE TREND + BY ACCOUNT) -->
+          <div class="stats-mode-section" id="statsModeClassic" style="display:none;">
+            <!-- 6 Direct KPI Cards Bar -->
+            <div class="classic-kpis-grid">
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#60a5fa;">⚡</span>
+                  <span class="classic-kpi-lbl">Total Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicTotalTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#38bdf8;">📈</span>
+                  <span class="classic-kpi-lbl">Input Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicInputTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#c084fc;">📉</span>
+                  <span class="classic-kpi-lbl">Output Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicOutputTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#2dd4bf;">💾</span>
+                  <span class="classic-kpi-lbl">Cached Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicCachedTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#4ade80;">👥</span>
+                  <span class="classic-kpi-lbl">Active Accounts</span>
+                </div>
+                <div class="classic-kpi-val" id="classicActiveAccounts">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#fbbf24;">⚙️</span>
+                  <span class="classic-kpi-lbl">Models Used</span>
+                </div>
+                <div class="classic-kpi-val" id="classicModelsUsed">0</div>
+              </div>
+            </div>
+
+            <!-- Main Model Usage Trend Card -->
+            <div class="classic-card classic-trend-card">
+              <div class="classic-card-header">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="color:#60a5fa;">📊</span>
+                  <h4 style="margin:0; font-size:14px; font-weight:600; color:var(--text-0);">Model Usage Trend</h4>
+                </div>
+                <div class="classic-controls-row">
+                  <div class="classic-pill-toggle" id="classicChartTypeToggle">
+                    <button type="button" class="classic-pill-btn active" data-chart="bar">📊 Bar</button>
+                    <button type="button" class="classic-pill-btn" data-chart="area">📈 Area</button>
+                  </div>
+                  <div class="classic-pill-toggle" id="classicMetricTypeToggle">
+                    <button type="button" class="classic-pill-btn active" data-metric="tokens">⚡ Tokens</button>
+                    <button type="button" class="classic-pill-btn" data-metric="cost">💵 Cost ($)</button>
+                  </div>
+                  <div class="classic-pill-toggle" id="classicGroupingToggle">
+                    <button type="button" class="classic-pill-btn active" data-group="model">By Model</button>
+                    <button type="button" class="classic-pill-btn" data-group="account">By Account</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="classic-chart-container" id="classicTrendChartContainer">
+                <svg width="100%" height="240" viewBox="0 0 900 240" preserveAspectRatio="none" id="classicTrendChartSvg">
+                  <!-- Dynamic SVG Bar or Area chart populated via JS -->
+                </svg>
+              </div>
+            </div>
+
+            <!-- Bottom 2-card Grid: Token Usage Trend breakdown & By Account List -->
+            <div class="classic-bottom-row">
+              <div class="classic-card" style="flex:1;">
+                <div class="classic-card-header">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#38bdf8;">📊</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">Token Usage Trend</h4>
+                  </div>
+                </div>
+                <div class="classic-table-wrap" id="classicTokenUsageList">
+                  <!-- Model breakdown table populated dynamically -->
+                </div>
+              </div>
+
+              <div class="classic-card" style="flex:1;">
+                <div class="classic-card-header">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#4ade80;">👥</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">By Account</h4>
+                  </div>
+                </div>
+                <div class="classic-table-wrap" id="classicByAccountList">
+                  <!-- Account breakdown table populated dynamically -->
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Fin MODE 3: CLASSIC -->
         </div>
+
       </div>
 
       <!-- Token Log Detail Modal Backdrop -->

@@ -168,6 +168,10 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
       deleteStmt.run(id);
       prunedCount++;
     }
+    // Unstick any stale sessions left in running/non-idle state
+    try {
+      writeDb.exec("UPDATE conversation_summaries SET not_fully_idle = 0, status = 'CASCADE_RUN_STATUS_IDLE' WHERE not_fully_idle = 1 OR status = 'CASCADE_RUN_STATUS_RUNNING';");
+    } catch (_) {}
     writeDb.exec('COMMIT;');
 
     // Checkpoint WAL and VACUUM to reclaim space

@@ -121,6 +121,23 @@ export function detectSignatureFamily(modelOrSig?: string): 'gemini' | 'claude' 
 }
 
 /**
+ * Normalize and auto-repair thought signatures.
+ * Antigravity-Manager resilience trick: If the signature is sent as raw protobuf binary
+ * (first byte 0x12), auto-heal by encoding it to standard Base64.
+ */
+export function normalizeThoughtSignature(sig: string): string {
+  if (!sig || typeof sig !== 'string') return '';
+  if (sig.charCodeAt(0) === 0x12) {
+    try {
+      return Buffer.from(sig, 'binary').toString('base64');
+    } catch {
+      return sig;
+    }
+  }
+  return sig;
+}
+
+/**
  * Extracts thought_signature from response candidates and stores them in cache.
  * Scoped by convId:funcName and funcName, with rewind detection.
  */
@@ -149,7 +166,7 @@ export function extractAndCacheThoughtSignatures(
                 (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
                 (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature);
       if (s) {
-        turnSig = s;
+        turnSig = normalizeThoughtSignature(s);
         break;
       }
     }
@@ -158,11 +175,12 @@ export function extractAndCacheThoughtSignatures(
       const p = part as Record<string, unknown>;
       const fc = (p?.functionCall || p?.function_call) as Record<string, unknown> | undefined;
       const fnName = (fc?.name as string) || (p?.name as string);
-      const sig = (typeof p?.thought_signature === 'string' && p.thought_signature) ||
-                  (typeof p?.thoughtSignature === 'string' && p.thoughtSignature) ||
-                  (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
-                  (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature) ||
-                  turnSig;
+      const rawSig = (typeof p?.thought_signature === 'string' && p.thought_signature) ||
+                     (typeof p?.thoughtSignature === 'string' && p.thoughtSignature) ||
+                     (typeof fc?.thought_signature === 'string' && fc.thought_signature) ||
+                     (typeof fc?.thoughtSignature === 'string' && fc.thoughtSignature) ||
+                     turnSig;
+      const sig = normalizeThoughtSignature(rawSig);
       if (sig) {
         const meta: ThoughtSignatureMetadata = {
           signature: sig,
@@ -313,8 +331,9 @@ export function restoreThoughtSignatures(
       // causes Google's API to return INVALID_ARGUMENT (400).
       if (!cached) continue;
 
-      p.thought_signature = cached;
-      p.thoughtSignature = cached;
+      const finalSig = normalizeThoughtSignature(cached);
+      p.thought_signature = finalSig;
+      p.thoughtSignature = finalSig;
       restoredCount++;
     }
   }
@@ -419,6 +438,76 @@ export function flattenAllToolCallsToText(contents: unknown[]): boolean {
   }
 
   return modified;
+}
+
+/**
+ * Detects repetitive tool loops (e.g. agent re-reading the exact same file 3+ times consecutively)
+ * and appends an advisory anti-loop note into the latest turn to break the loop.
+ * Returns true if an advisory was injected.
+ */
+export function detectAndMitigateToolLoops(contents: unknown[]): boolean {
+  if (!Array.isArray(contents) || contents.length < 3) return false;
+
+  const recentCalls: Array<{ name: string; argsStr: string }> = [];
+
+  for (let i = contents.length - 1; i >= 0; i--) {
+    const turn = contents[i] as { role?: string; parts?: unknown[] };
+    if (!Array.isArray(turn?.parts)) continue;
+
+    for (let j = turn.parts.length - 1; j >= 0; j--) {
+      const p = turn.parts[j] as Record<string, unknown> | undefined;
+      if (!p || typeof p !== 'object') continue;
+      const fc = (p.functionCall || p.function_call) as Record<string, unknown> | undefined;
+      if (fc && typeof fc === 'object') {
+        const name = String(fc.name || '');
+        const argsStr = fc.args ? (typeof fc.args === 'string' ? fc.args : JSON.stringify(fc.args)) : '{}';
+        recentCalls.push({ name, argsStr });
+      }
+    }
+    // Only inspect the tail of recent activity (last ~6 tool calls)
+    if (recentCalls.length >= 6) break;
+  }
+
+  if (recentCalls.length < 3) return false;
+
+  const first = recentCalls[0];
+  let consecutiveCount = 1;
+  for (let k = 1; k < recentCalls.length; k++) {
+    if (recentCalls[k].name === first.name && recentCalls[k].argsStr === first.argsStr) {
+      consecutiveCount++;
+    } else {
+      break;
+    }
+  }
+
+  // Threshold: 3+ identical consecutive tool invocations
+  if (consecutiveCount >= 3) {
+    const lastTurn = contents[contents.length - 1] as { role?: string; parts?: unknown[] };
+    if (Array.isArray(lastTurn?.parts) && lastTurn.parts.length > 0) {
+      const antiLoopNote = `\n[System Guardrail: Redundant tool execution detected for '${first.name}'. Output is already present in context above. Synthesize findings and proceed to the next step immediately.]`;
+      const lastPart = lastTurn.parts[lastTurn.parts.length - 1] as Record<string, unknown>;
+      const fr = (lastPart.functionResponse || lastPart.function_response) as Record<string, unknown> | undefined;
+      if (fr && typeof fr === 'object') {
+        const resp = fr.response as Record<string, any> | undefined;
+        if (resp && typeof resp === 'object' && typeof resp.output === 'string') {
+          if (!resp.output.includes('[System Guardrail')) {
+            resp.output += antiLoopNote;
+            return true;
+          }
+        }
+      } else if (typeof lastPart.text === 'string') {
+        if (!lastPart.text.includes('[System Guardrail')) {
+          lastPart.text += antiLoopNote;
+          return true;
+        }
+      } else {
+        lastTurn.parts.push({ text: antiLoopNote });
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 // ─── Periodic Cleanup (managed lifecycle) ─────────────────────────────────

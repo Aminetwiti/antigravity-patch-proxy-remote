@@ -161,7 +161,8 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
           const isArgon = k.toLowerCase().includes('argon') || entryDisp.toLowerCase().includes('argon');
           const isUnavailable = entryTag.toLowerCase().includes('unavailable') || entryDesc.toLowerCase().includes('ultra') || entry.disabled === true;
 
-          if (isArgon || isUnavailable) {
+          // Keep Argon disabled if upstream returns it disabled (standard Google Cloud Code accounts have 0 Argon quota)
+          if (!isArgon && isUnavailable) {
             delete entry.disabled;
             if (entryTag.toLowerCase().includes('unavailable') || entryDesc.toLowerCase().includes('ultra')) {
               delete entry.tagTitle;
@@ -347,20 +348,6 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
 }
 
 export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unknown>> = {
-  'gemini-4-argon-medium': {
-    displayName: 'Gemini 4 Argon (Medium)',
-    maxTokens: 1048576,
-    maxOutputTokens: 65536,
-    model: 'gemini-4-argon-medium',
-    planModel: 'gemini-4-argon-medium',
-    requestedModel: 'gemini-4-argon-medium',
-    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-    supportsImages: true,
-    supportsVision: true,
-    supportsThinking: true,
-    supportsVideo: true,
-  },
   'gemini-3.8-flash': {
     displayName: 'Gemini 3.8 Flash High Fast',
     maxTokens: 1048576,
@@ -399,19 +386,6 @@ export const DEFAULT_CANONICAL_GOOGLE_MODELS: Record<string, Record<string, unkn
     supportsImages: true,
     supportsVision: true,
     supportsThinking: true,
-  },
-  'gpt-oss-120b': {
-    displayName: 'GPT-OSS 120B (Medium)',
-    maxTokens: 131072,
-    maxOutputTokens: 16384,
-    model: 'gpt-oss-120b',
-    planModel: 'gpt-oss-120b',
-    requestedModel: 'gpt-oss-120b',
-    apiProvider: 'API_PROVIDER_OPENAI',
-    modelProvider: 'MODEL_PROVIDER_OPENAI',
-    supportsImages: false,
-    supportsVision: false,
-    supportsThinking: false,
   },
 };
 
@@ -457,16 +431,17 @@ export function injectCustomSlugsIntoAgentModelSorts(
     if (sort.groups && Array.isArray(sort.groups)) {
       sort.groups.forEach((group) => {
         if (group.modelIds && Array.isArray(group.modelIds)) {
-          // Keep genuine original models first; filter out any duplicate or stale custom entries
+          // Keep genuine original models first; filter out obsolete, duplicate, or stale custom entries
           let originalModelIds = group.modelIds.filter(
             (id) =>
+              !isObsoleteModel(id) &&
               !customSlugs.includes(id) &&
               !id.startsWith('custom-') &&
               !id.startsWith('MODEL_PLACEHOLDER_') &&
               !customPlaceholders.has(id),
           );
           if (originalModelIds.length === 0) {
-            originalModelIds = [...DEFAULT_CANONICAL_MODEL_IDS];
+            originalModelIds = DEFAULT_CANONICAL_MODEL_IDS.filter((id) => !isObsoleteModel(id));
           }
           // Original models first, custom models appended cleanly after without repetition
           group.modelIds = [...originalModelIds, ...customSlugs];

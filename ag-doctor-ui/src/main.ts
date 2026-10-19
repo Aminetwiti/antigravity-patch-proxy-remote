@@ -37,24 +37,27 @@ import {
   switchActiveIdeAccount,
 } from './services/ideAccountDiscovery';
 import { startGoogleOAuthLogin } from './services/googleOAuthServer';
+import { randomizeAllDevices } from './services/deviceFingerprint';
+import {
+  detectAntigravityVerificationChallenge,
+  resetAntigravityOnboarding,
+} from './services/antigravityVerificationResolver';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 const activeStreams = new Map<string, ChildProcess>();
 
-// Disable hardware acceleration and GPU-dependent paths to avoid
-// startup crashes and noisy GLES3/GLES2 fallback warnings on some Windows setups
+// Post-Quantum TLS stability: prevent oversized Kyber handshakes dropping in Go backend
+process.env.GODEBUG = (process.env.GODEBUG ? process.env.GODEBUG + ',' : '') + 'tlsmlkem=0';
+
+// Disable hardware acceleration cleanly for software rendering
+// Suppress shader disk cache and program cache to prevent EACCES disk errors
+// Disable Windows occlusion calculation and spare renderer process to eliminate launch delays
 app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-gpu-compositing');
-app.commandLine.appendSwitch('disable-software-rasterizer');
-app.commandLine.appendSwitch('disable-3d-apis');
-app.commandLine.appendSwitch('in-process-gpu');
-app.commandLine.appendSwitch('disable-gpu-rasterization');
-app.commandLine.appendSwitch('disable-zero-copy');
-app.commandLine.appendSwitch('disable-gpu-vsync');
-app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+app.commandLine.appendSwitch('disable-gpu-program-cache');
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,SpareRendererForSitePerProcess');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cached paths (computed once)
@@ -66,9 +69,21 @@ let _configPath: string | null = null;
 
 function getAssetsPath(): string {
   if (_assetsPath === null) {
-    _assetsPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'assets')
-      : path.join(__dirname, '..', '..', 'assets');
+    const candidates = [
+      path.join(__dirname, 'assets'),
+      path.join(__dirname, '..', 'assets'),
+      path.join(process.resourcesPath, 'assets'),
+      path.join(app.getAppPath(), 'assets'),
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        _assetsPath = c;
+        break;
+      }
+    }
+    if (!_assetsPath) {
+      _assetsPath = path.join(__dirname, '..', 'assets');
+    }
   }
   return _assetsPath;
 }
@@ -100,17 +115,33 @@ const trayIconCache = new Map<'ok' | 'warn' | 'err', NativeImage>();
 function getTrayIcon(status: 'ok' | 'warn' | 'err'): NativeImage {
   const cached = trayIconCache.get(status);
   if (cached) return cached;
-  const svgPath = path.join(getAssetsPath(), `tray-${status}.svg`);
-  let img: NativeImage;
-  if (fs.existsSync(svgPath)) {
-    img = nativeImage.createFromPath(svgPath).resize({ width: 16, height: 16 });
-  } else {
-    const fallback = path.join(getAssetsPath(), 'icon.svg');
-    if (fs.existsSync(fallback)) {
-      img = nativeImage.createFromPath(fallback).resize({ width: 16, height: 16 });
-    } else {
-      img = nativeImage.createFromPath(svgPath);
+  const assets = getAssetsPath();
+  const pngPath = path.join(assets, `tray-${status}.png`);
+  let img: NativeImage | null = null;
+  if (fs.existsSync(pngPath)) {
+    const loaded = nativeImage.createFromPath(pngPath);
+    if (!loaded.isEmpty()) {
+      img = loaded;
     }
+  }
+  if (!img) {
+    const fallbacks = [
+      path.join(assets, 'icon-32.png'),
+      path.join(assets, 'icon-16.png'),
+      path.join(assets, 'icon.png'),
+    ];
+    for (const fb of fallbacks) {
+      if (fs.existsSync(fb)) {
+        const loaded = nativeImage.createFromPath(fb);
+        if (!loaded.isEmpty()) {
+          img = loaded;
+          break;
+        }
+      }
+    }
+  }
+  if (!img) {
+    img = nativeImage.createEmpty();
   }
   trayIconCache.set(status, img);
   return img;
@@ -353,22 +384,24 @@ function createWindow(): void {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
-      backgroundThrottling: true,
+      backgroundThrottling: false,
     },
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  const showFallback = setTimeout(() => {
-    if (mainWindow && !mainWindow.isVisible()) {
-      mainWindow.show();
-    }
-  }, 2000);
-
-  mainWindow.once('ready-to-show', () => {
+  let shown = false;
+  const showWindow = () => {
+    if (shown || !mainWindow || mainWindow.isDestroyed()) return;
+    shown = true;
     clearTimeout(showFallback);
-    mainWindow?.show();
-  });
+    mainWindow.show();
+  };
+
+  const showFallback = setTimeout(showWindow, 1200);
+
+  mainWindow.once('ready-to-show', showWindow);
+  mainWindow.webContents.once('dom-ready', showWindow);
 
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error(`[main] did-fail-load: ${code} ${desc} ${url}`);
@@ -855,15 +888,39 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           if (cacheEntry.claudeWeeklyReset) {
             acc.quotas.claudeWeeklyReset = cacheEntry.claudeWeeklyReset;
           }
+          if (typeof cacheEntry.argonFiveHourPct === 'number') {
+            acc.quotas.argonFiveHourPct = cacheEntry.argonFiveHourPct;
+          }
+          if (typeof cacheEntry.argonWeeklyPct === 'number') {
+            acc.quotas.argonWeeklyPct = cacheEntry.argonWeeklyPct;
+          }
+          if (cacheEntry.argonFiveHourReset) {
+            acc.quotas.argonFiveHourReset = cacheEntry.argonFiveHourReset;
+          }
+          if (cacheEntry.argonWeeklyReset) {
+            acc.quotas.argonWeeklyReset = cacheEntry.argonWeeklyReset;
+          }
           if (cacheEntry.updatedAt) {
             acc.quotas.updatedAt = cacheEntry.updatedAt;
           }
           if (cacheEntry.tier) acc.tier = cacheEntry.tier;
           if (cacheEntry.tierId) acc.tierId = cacheEntry.tierId;
-          if (cacheEntry.isUnlicensed) acc.isUnlicensed = true;
+          if (cacheEntry.isUnlicensed) {
+            acc.isUnlicensed = true;
+          } else {
+            delete acc.isUnlicensed;
+            if (acc.quotas) delete acc.quotas.isUnlicensed;
+          }
+          if (cacheEntry.errorDetails) {
+            acc.errorDetails = cacheEntry.errorDetails;
+            acc.quotas.errorDetails = cacheEntry.errorDetails;
+          } else {
+            delete acc.errorDetails;
+            if (acc.quotas) delete acc.quotas.errorDetails;
+          }
 
           // Rebuild groups with live bucket data so legacy group parser uses the real numbers
-          acc.quotas.groups = [
+          const builtGroups: any[] = [
             {
               displayName: 'Gemini Models',
               buckets: [
@@ -899,6 +956,41 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
               ],
             },
           ];
+
+          if (typeof acc.quotas.argonWeeklyPct === 'number' || typeof acc.quotas.argonFiveHourPct === 'number') {
+            const argonBuckets: any[] = [];
+            if (typeof acc.quotas.argonWeeklyPct === 'number') {
+              argonBuckets.push({
+                bucketId: 'argon-weekly',
+                window: 'weekly',
+                percentage: acc.quotas.argonWeeklyPct,
+                resetTime: acc.quotas.argonWeeklyReset,
+              });
+            }
+            if (typeof acc.quotas.argonFiveHourPct === 'number') {
+              argonBuckets.push({
+                bucketId: 'argon-5h',
+                window: '5h',
+                percentage: acc.quotas.argonFiveHourPct,
+                resetTime: acc.quotas.argonFiveHourReset,
+              });
+            }
+            builtGroups.push({
+              displayName: 'Gemini 4 Argon',
+              buckets: argonBuckets,
+            });
+          }
+
+          // Preserve any other groups returned dynamically from Google (e.g. future or experimental tiers)
+          const existingGroups = Array.isArray(cacheEntry.groups) ? cacheEntry.groups : (Array.isArray(acc.quotas.groups) ? acc.quotas.groups : []);
+          for (const eg of existingGroups) {
+            const egName = (eg.displayName || eg.name || '').toLowerCase();
+            if (!egName.includes('gemini') && !egName.includes('claude') && !egName.includes('3p') && !egName.includes('argon')) {
+              builtGroups.push(eg);
+            }
+          }
+
+          acc.quotas.groups = builtGroups;
         }
       }
     }
@@ -1812,7 +1904,13 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, async (_evt, tok
     }
 
     // Persist fresh quota to quota_cache.json if email is known
-    const emailToCache = typeof tokenOrKey === 'object' ? (tokenOrKey?.email || tokenOrKey?.accountEmail) : undefined;
+    let emailToCache = typeof tokenOrKey === 'object' ? (tokenOrKey?.email || tokenOrKey?.accountEmail) : undefined;
+    if (!emailToCache && effectiveToken) {
+      try {
+        const u = await fetchGoogleUserInfo(effectiveToken);
+        if (u?.email) emailToCache = u.email;
+      } catch {}
+    }
     if (emailToCache) {
       try {
         const qCachePath = path.join(app.getPath('home'), '.gemini', 'antigravity', 'quota_cache.json');
@@ -2077,6 +2175,104 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_PURGE_QUOTA_CACHE, async () => {
     return { success: true, cleared: clearedCount };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erreur lors de la purge du cache de quota' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_REPAIR_ADC, async (_evt, email?: string) => {
+  try {
+    // 1-Click Native In-App Repair: Directly performs Google OAuth flow & updates ADC credentials file
+    const res = await startGoogleOAuthLogin('antigravity', email);
+    if (res.success && res.account) {
+      mainWindow?.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
+      return {
+        success: true,
+        output: `Compte ${res.account.email} réhabilité avec succès. Jetons et identifiants Google ADC synchronisés.`,
+      };
+    } else {
+      return {
+        success: false,
+        error: (res as any).error || 'Autorisation annulée ou expirée',
+      };
+    }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la réparation du compte' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_PROBE_POOL, async (_evt, dryRun?: boolean) => {
+  try {
+    const probeScript = path.resolve(__dirname, '..', '..', 'scripts', 'probe-pool.js');
+    if (!fs.existsSync(probeScript)) {
+      return { success: false, error: 'probe-pool.js script not found' };
+    }
+    const { runProbe } = require(probeScript);
+    const data = await runProbe();
+    mainWindow?.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
+    return {
+      success: true,
+      results: data.results,
+      summary: {
+        healthy: data.healthyEmails.size,
+        quarantined: data.quarantinedEmails.size,
+        challenge: data.challengeEmails.size,
+        unlicensed: data.unlicensedEmails.size,
+        tos: data.tosEmails.size,
+      }
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la sonde du pool' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_UNLOCK_ACCOUNT, async (_evt, email: string) => {
+  try {
+    // Check if there is an active validation challenge from logs first
+    const challenge = await detectAntigravityVerificationChallenge();
+    if (challenge.found && challenge.validationUrl) {
+      await shell.openExternal(challenge.validationUrl);
+      return { success: true, url: challenge.validationUrl, fromLogs: true };
+    }
+    if (!email) return { success: false, error: 'Email requis' };
+    const url = `https://accounts.google.com/ServiceLogin?Email=${encodeURIComponent(email)}&continue=https://gemini.google.com/`;
+    await shell.openExternal(url);
+    return { success: true, url };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de l\'ouverture du navigateur' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.VERIFICATION_DETECT, async () => {
+  try {
+    return await detectAntigravityVerificationChallenge();
+  } catch (err: any) {
+    return { found: false, error: err?.message || String(err) };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.VERIFICATION_OPEN_URL, async (_evt, url: string) => {
+  try {
+    if (!url) return { success: false, error: 'URL requise' };
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.VERIFICATION_RESET_ONBOARDING, async () => {
+  try {
+    return resetAntigravityOnboarding();
+  } catch (err: any) {
+    return { success: false, message: 'Erreur lors de la réinitialisation', error: err?.message || String(err) };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.SYSTEM_RANDOMIZE_MACHINE_ID, async () => {
+  try {
+    const res = randomizeAllDevices();
+    return res;
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erreur lors du renouvellement de l\'empreinte machine' };
   }
 });
 

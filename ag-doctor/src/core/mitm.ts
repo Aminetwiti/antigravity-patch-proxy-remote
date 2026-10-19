@@ -178,7 +178,27 @@ export async function getMitmStatus(port = DEFAULT_MITM_PORT): Promise<MitmStatu
         caInstalled = false; // Force re-install state if expired
       }
     } catch (e) {
-      // Ignore X509 parsing errors
+      // Fallback DER parser for certificates that trigger OpenSSL 3 ASN.1 tag strictness
+      try {
+        const pem = fs.readFileSync(ca.certPath, 'utf8');
+        const b64 = pem.replace(/-----[^\n]+-----/g, '').replace(/\s+/g, '');
+        const der = Buffer.from(b64, 'base64');
+        const idx = der.indexOf(Buffer.from([0x17, 0x0d]));
+        if (idx !== -1) {
+          const secondIdx = der.indexOf(Buffer.from([0x17, 0x0d]), idx + 15);
+          if (secondIdx !== -1) {
+            const utcStr = der.slice(secondIdx + 2, secondIdx + 15).toString('ascii');
+            const yy = parseInt(utcStr.slice(0, 2), 10);
+            const year = yy < 50 ? 2000 + yy : 1900 + yy;
+            const month = utcStr.slice(2, 4);
+            const day = utcStr.slice(4, 6);
+            expiresAt = `${year}-${month}-${day}`;
+            isExpired = new Date(`${year}-${month}-${day}`).getTime() < Date.now();
+          }
+        }
+      } catch {
+        // Fallback also failed, keep null
+      }
     }
   }
 

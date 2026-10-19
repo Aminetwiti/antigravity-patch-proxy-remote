@@ -87,6 +87,29 @@ const api = {
       cleared: number;
       error?: string;
     }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_PURGE_QUOTA_CACHE),
+    repairAccountAdc: (email?: string): Promise<{
+      success: boolean;
+      output?: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_REPAIR_ADC, email),
+    probePool: (dryRun?: boolean): Promise<{
+      success: boolean;
+      results?: any[];
+      summary?: any;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_PROBE_POOL, dryRun),
+    unlockAccount: (email: string): Promise<{
+      success: boolean;
+      url?: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_UNLOCK_ACCOUNT, email),
+    randomizeMachineId: (): Promise<{
+      success: boolean;
+      profile?: any;
+      updatedFiles?: string[];
+      backups?: string[];
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.SYSTEM_RANDOMIZE_MACHINE_ID),
     onOAuthIntercepted: (handler: (data: { url: string; port?: number; redirectUri?: string; ts?: number }) => void): (() => void) => {
       const listener = (_: unknown, data: any) => handler(data);
       ipcRenderer.on(DOCTOR_IPC_CHANNELS.GOOGLE_OAUTH_INTERCEPTED, listener);
@@ -112,6 +135,24 @@ const api = {
     pongText: string;
     error?: string;
   }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.MODEL_PING_PONG, params),
+  verification: {
+    detect: (): Promise<{
+      found: boolean;
+      validationUrl?: string;
+      qrCodeDataUrl?: string;
+      logFile?: string;
+      timestamp?: string;
+      accountEmail?: string;
+      reason?: string;
+      message?: string;
+      carrierWarning?: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.VERIFICATION_DETECT),
+    openUrl: (url: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.VERIFICATION_OPEN_URL, url),
+    resetOnboarding: (): Promise<{ success: boolean; message: string; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.VERIFICATION_RESET_ONBOARDING),
+  },
   info: (): Promise<{
     platform: string;
     arch: string;

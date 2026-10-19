@@ -19,6 +19,7 @@ for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
   const fp = path.join(dir, f);
   const src = fs.readFileSync(fp, 'utf8');
   const out = src
+    .replace(/^export\s*\{[^}]*\}\s*;?\s*$/gm, '') // export { x } → (removed)
     .replace(/^export /gm, '')           // export function foo → function foo
     .replace(/^import .+;\s*$/gm, '');   // import { x } from './y.js'; → (removed)
 

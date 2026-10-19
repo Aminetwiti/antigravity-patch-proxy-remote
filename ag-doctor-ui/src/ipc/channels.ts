@@ -22,6 +22,7 @@ export const DOCTOR_IPC_CHANNELS = {
   NAVIGATE: 'ag:navigate',
   COMMAND_PALETTE: 'ag:command-palette',
   THEME_CHANGED: 'ag:theme-changed',
+  SYSTEM_RANDOMIZE_MACHINE_ID: 'ag:system:randomize-machine-id',
 
   // Providers
   PROVIDERS_GET: 'ag:providers:get',
@@ -44,6 +45,9 @@ export const DOCTOR_IPC_CHANNELS = {
   GOOGLE_LIFT_ACCOUNT_COOLDOWN: 'ag:google:lift-account-cooldown',
   GOOGLE_LIFT_BURST_COOLDOWNS: 'ag:google:lift-burst-cooldowns',
   GOOGLE_PURGE_QUOTA_CACHE: 'ag:google:purge-quota-cache',
+  GOOGLE_REPAIR_ADC: 'ag:google:repair-adc',
+  GOOGLE_PROBE_POOL: 'ag:google:probe-pool',
+  GOOGLE_UNLOCK_ACCOUNT: 'ag:google:unlock-account',
   MODEL_PING_PONG: 'ag:model:ping-pong',
 
   // Proxy & MITM
@@ -81,6 +85,11 @@ export const DOCTOR_IPC_CHANNELS = {
   // Streaming
   STREAM_START: 'ag:stream:start',
   STREAM_CANCEL: 'ag:stream:cancel',
+
+  // Antigravity Verification & Challenge Resolver
+  VERIFICATION_DETECT: 'ag:verification:detect',
+  VERIFICATION_OPEN_URL: 'ag:verification:open-url',
+  VERIFICATION_RESET_ONBOARDING: 'ag:verification:reset-onboarding',
 } as const;
 
 export type DoctorIpcChannel = typeof DOCTOR_IPC_CHANNELS[keyof typeof DOCTOR_IPC_CHANNELS];

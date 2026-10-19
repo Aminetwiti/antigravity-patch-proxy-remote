@@ -40,8 +40,12 @@ import {
   clearAccountBurst,
   _resetAccountBurst,
   verifyAndReconcileCooldowns,
+  isAccountNearExhaustion,
+  PREVENTIVE_QUOTA_THRESHOLD_PCT,
+  isAccountTrial,
 } from '../proxy/googlePool';
-import { updateLiveAccountQuota } from '../services/googleAuth';
+import { updateLiveAccountQuota, normalizeCloudCodeModelId } from '../services/googleAuth';
+import { detectAndMitigateToolLoops } from '../proxy/shared';
 import { GOOGLE_POOL_HEADER_TIMEOUT_MS, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, P2C_SCORE_DELTA } from '../constants';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -98,6 +102,19 @@ describe('Unlicensed accounts', () => {
     const m = makeModel({ accountEmail: 'locked@example.com' });
     markAccountUnlicensed(m);
     expect(isAccountUnlicensed(m)).toBe(true);
+  });
+
+  it('detects unlicensed from model property or quotas property', () => {
+    const m1 = makeModel({ accountEmail: 'prop@example.com' });
+    (m1 as any).isUnlicensed = true;
+    expect(isAccountUnlicensed(m1)).toBe(true);
+
+    const m2 = makeModel({
+      accountEmail: 'quota-prop@example.com',
+      quotas: { isUnlicensed: true, geminiFiveHourPct: 80, geminiWeeklyPct: 80 } as any,
+    });
+    expect(isAccountUnlicensed(m2)).toBe(true);
+    expect(getModelQuotaScore(m2)).toBe(0);
   });
 
   it('isAccountInCooldown returns true for unlicensed', () => {
@@ -215,6 +232,47 @@ describe('getModelQuotaScore', () => {
       quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 50 } as any,
     });
     expect(getModelQuotaScore(m)).toBe(0);
+  });
+
+  it('returns 0 when weekly is at or below PREVENTIVE_QUOTA_THRESHOLD_PCT to shield against 7-day lockout', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: PREVENTIVE_QUOTA_THRESHOLD_PCT } as any,
+    });
+    expect(getModelQuotaScore(m)).toBe(0);
+  });
+
+  it('allows positive score when weekly is above PREVENTIVE_QUOTA_THRESHOLD_PCT', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: PREVENTIVE_QUOTA_THRESHOLD_PCT + 5 } as any,
+    });
+    expect(getModelQuotaScore(m)).toBeGreaterThan(0);
+  });
+});
+
+describe('isAccountNearExhaustion', () => {
+  it('returns true when weekly quota is <= PREVENTIVE_QUOTA_THRESHOLD_PCT', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 8 } as any,
+    });
+    expect(isAccountNearExhaustion(m, 'gemini')).toBe(true);
+  });
+
+  it('returns false when weekly quota is above threshold', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 50 } as any,
+    });
+    expect(isAccountNearExhaustion(m, 'gemini')).toBe(false);
+  });
+
+  it('returns false when reset timestamp has already elapsed', () => {
+    const m = makeModel({
+      quotas: {
+        geminiFiveHourPct: 80,
+        geminiWeeklyPct: 5,
+        geminiWeeklyReset: new Date(Date.now() - 60_000).toISOString(),
+      } as any,
+    });
+    expect(isAccountNearExhaustion(m, 'gemini')).toBe(false);
   });
 });
 
@@ -374,6 +432,18 @@ describe('classifyGoogleCloudCode429', () => {
     const r = classifyGoogleCloudCode429('quota_exhausted: your quota was exhausted', String(93 * 3600));
     expect(r.category).toBe('quota_exhausted');
     expect(r.cooldownMs).toBe(5 * 3600 * 1000); // 93h > 5h15m → discard, use 5h default
+  });
+
+  it('preserves raw weekly reset duration (e.g. 160h55m50s) while capping 5h rolling cooldown', () => {
+    const r = classifyGoogleCloudCode429(
+      'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 160h55m50s.',
+    );
+    expect(r.category).toBe('quota_exhausted');
+    expect(r.cooldownMs).toBe(5 * 3600 * 1000); // rolling cooldown remains 5h
+    expect(r.isExplicitReset).toBe(false);
+    expect(r.rawRetryAfterMs).toBeNull();
+    // 160h 55m 50s = (160 * 3600 + 55 * 60 + 50) * 1000 = 579,350,000 ms
+    expect(r.weeklyResetMs).toBe((160 * 3600 + 55 * 60 + 50) * 1000);
   });
 
   it('parses RetryInfo JSON metadata', () => {
@@ -686,5 +756,103 @@ describe('Burst Rate Limit Governor & Constants', () => {
     expect(rem).toBeLessThanOrEqual(50_000);
     expect(rem).toBeGreaterThan(40_000);
   });
+
+  it('filters out disabled accounts from getGoogleAccountPool and returns 0 quota score', () => {
+    const enabledAcc = makeModel({
+      accountEmail: 'enabled@test.com',
+      quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+    });
+    const disabledAcc = makeModel({
+      accountEmail: 'disabled@test.com',
+      enabled: false,
+      quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+    } as any);
+
+    expect(getModelQuotaScore(disabledAcc)).toBe(0);
+
+    const pool = getGoogleAccountPool(enabledAcc, [enabledAcc, disabledAcc]);
+    expect(pool.map((m: any) => m.accountEmail)).toEqual(['enabled@test.com']);
+  });
+
+  it('selectCandidateP2C never selects disabled or unlicensed accounts', () => {
+    const disabledAcc = makeModel({
+      accountEmail: 'disabled@test.com',
+      enabled: false,
+      quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+    } as any);
+    const unlicensedAcc = makeModel({
+      accountEmail: 'unlicensed@test.com',
+      quotas: { isUnlicensed: true, geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+    } as any);
+
+    const chosen = selectCandidateP2C([disabledAcc, unlicensedAcc], 'gemini');
+    expect(chosen).toBeUndefined();
+  });
+
+  describe('Post-Forum Resilience & Optimization Upgrades', () => {
+    it('normalizes problematic forum slugs to gemini-3.8-flash-tiered', () => {
+      expect(normalizeCloudCodeModelId('gemini-3-preview')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-3.6-flash')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-3.1-flash-lite')).toBe('gemini-3.8-flash-tiered');
+    });
+
+    it('detectAndMitigateToolLoops does not trigger when tool calls are varied or < 3', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Check the file' }] },
+        { role: 'model', parts: [{ functionCall: { name: 'view_file', args: { path: 'a.ts' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'view_file', response: { output: 'content' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'run_command', args: { cmd: 'ls' } } }] },
+      ];
+      expect(detectAndMitigateToolLoops(contents)).toBe(false);
+    });
+
+    it('detectAndMitigateToolLoops intercepts 3 consecutive identical tool calls and injects guardrail note', () => {
+      const contents = [
+        { role: 'model', parts: [{ functionCall: { name: 'view_file', args: { path: 'loop.ts' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'view_file', response: { output: 'file contents' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'view_file', args: { path: 'loop.ts' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'view_file', response: { output: 'file contents' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'view_file', args: { path: 'loop.ts' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'view_file', response: { output: 'file contents' } } }] },
+      ];
+
+      const injected = detectAndMitigateToolLoops(contents);
+      expect(injected).toBe(true);
+
+      const lastTurn = contents[contents.length - 1] as any;
+      const lastOutput = lastTurn.parts[0].functionResponse.response.output;
+      expect(lastOutput).toContain('[System Guardrail: Redundant tool execution detected');
+    });
+
+    it('correctly identifies trial accounts and filters them out for Argon and Claude 5.5 in selectCandidateP2C', () => {
+      const trialAcc = makeModel({
+        accountEmail: 'student-trial@example.com',
+        isTrial: true,
+        quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } as any,
+      } as any);
+      const paidAcc = makeModel({
+        accountEmail: 'paid-dev@example.com',
+        isTrial: false,
+        quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+      } as any);
+
+      expect(isAccountTrial(trialAcc)).toBe(true);
+      expect(isAccountTrial(paidAcc)).toBe(false);
+
+      // Flash routing allows both trial and paid accounts
+      const flashChosen = selectCandidateP2C([trialAcc, paidAcc], 'gemini');
+      expect(flashChosen).toBeDefined();
+
+      // Argon routing filters out trial accounts and selects the paid account
+      const argonChosen = selectCandidateP2C([trialAcc, paidAcc], 'gemini-4-argon');
+      expect(argonChosen?.accountEmail).toBe('paid-dev@example.com');
+
+      // Claude 5.5 routing also filters out trial accounts
+      const claudeChosen = selectCandidateP2C([trialAcc, paidAcc], 'claude-5-5-sonnet');
+      expect(claudeChosen?.accountEmail).toBe('paid-dev@example.com');
+    });
+  });
 });
+
+
 

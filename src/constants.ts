@@ -130,23 +130,59 @@ export const DEFAULT_MAX_BODY_SIZE = getEnvInt(
 
 
 
-/** Timeout for Google proxy requests (120 seconds). */
-export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 120_000);
+/** Timeout for Google proxy requests (default: 90 seconds). */
+export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 90_000);
 
-/** Timeout for waiting for initial response headers in multi-account pools (default: 120 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 120_000);
+/** Timeout for waiting for initial response headers in multi-account pools (default: 25 seconds). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 25_000);
 
-/** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 120 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 120_000);
+/** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 10 seconds to cut black holes without premature drops on network jitter or prompt prefill). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 10_000);
 
-/** Timeout for waiting for initial response headers on large payloads or thinking models (default: 120 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 120_000);
+/** Timeout for waiting for initial response headers on large payloads or thinking models (default: 65 seconds). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 65_000);
+
+/** Background proactive pre-flight health check interval across Google account pool (default: 20 minutes). */
+export const PREFLIGHT_HEALTH_CHECK_INTERVAL_MS = getEnvInt('AG_PREFLIGHT_HEALTH_CHECK_INTERVAL_MS', 20 * 60_000);
+
+/** Strict per-account timeout for pre-flight ping probe (default: 3.5 seconds). */
+export const PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS = getEnvInt('AG_PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS', 3_500);
 
 /** P2C score delta for top-tier candidate eligibility in Google account pool (default: 45 points). */
 export const P2C_SCORE_DELTA = getEnvInt('AG_P2C_SCORE_DELTA', 45);
 
 /** Maximum time to wait for a 429 rate-limited account cooldown to expire before failing (default: 65 seconds). */
 export const RATE_LIMIT_RELIEF_WAIT_MS = getEnvInt('AG_RATE_LIMIT_RELIEF_WAIT_MS', 65_000);
+
+/** Speculative hedged request delay for streaming pools (default: 2,500ms). If no headers arrive in 2.5s, hedge with next candidate. */
+export const HEDGED_REQUEST_DELAY_MS = getEnvInt('AG_HEDGED_REQUEST_DELAY_MS', 2_500);
+
+/** Number of consecutive 503 Capacity Unavailable errors across different pool accounts before cascading to Claude (default: 2). */
+export const CAPACITY_503_CASCADE_THRESHOLD = getEnvInt('AG_CAPACITY_503_CASCADE_THRESHOLD', 2);
+
+/** Number of consecutive 504 Gateway Timeout errors across different pool accounts before cascading to Claude/fallback (default: 2). */
+export const CONSECUTIVE_504_CASCADE_THRESHOLD = getEnvInt('AG_CONSECUTIVE_504_CASCADE_THRESHOLD', 2);
+
+/**
+ * Preventive anti-lockout quota threshold percentage (default: 10%).
+ * Supports either integer percentage (e.g. 10) or fraction (e.g. 0.10).
+ * If an account's weekly quota falls to or below this threshold,
+ * the account is protected from selection to prevent hitting 0% and triggering
+ * Google's 7-day (167-hour) hard lockout.
+ */
+function parsePreventiveThreshold(): number {
+  const envVal = process.env.AG_QUOTA_PREVENTIVE_THRESHOLD || process.env.AG_QUOTA_PREVENTIVE_THRESHOLD_PCT;
+  if (!envVal) return 10;
+  const num = parseFloat(envVal);
+  if (isNaN(num)) return 10;
+  return num > 0 && num <= 1.0 ? Math.round(num * 100) : Math.round(num);
+}
+export const PREVENTIVE_QUOTA_THRESHOLD_PCT = parsePreventiveThreshold();
+
+/**
+ * Preventive cooldown duration when an account hits the preventive threshold (default: 4 hours).
+ */
+export const PREVENTIVE_COOLDOWN_MS = getEnvInt('AG_PREVENTIVE_COOLDOWN_MS', 4 * 60 * 60 * 1000);
 
 
 
@@ -478,8 +514,8 @@ export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = CORE_DETAILED
 });
 
 export const STANDARD_GOOGLE_MODELS = [
-  { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
   { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+  { id: 'gemini-4-argon-high', displayName: 'Gemini 4 Argon (High)', enabled: true },
   { id: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5 (Medium)', enabled: false },
   { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5 (Low)', enabled: false },
   { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },

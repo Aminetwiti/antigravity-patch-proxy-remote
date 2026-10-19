@@ -8,6 +8,7 @@ import {
   resolveWithSystemDns,
   resolveGoogleIp,
   clearDnsCache,
+  invalidateCachedDns,
   DNS_QUERY_TIMEOUT_MS,
 } from '../proxy/dnsResolver';
 
@@ -216,6 +217,15 @@ describe('resolveGoogleIp', () => {
     await vi.advanceTimersByTimeAsync(0);
     await expect(second).resolves.toBe('142.250.80.46');
     expect(resolverProto.resolve4).not.toHaveBeenCalled();
+
+    // Invalidate cached DNS specifically for this hostname
+    invalidateCachedDns('daily-cloudcode-pa.googleapis.com');
+
+    // Third call must re-query resolver because the cache was invalidated
+    const third = resolveGoogleIp('daily-cloudcode-pa.googleapis.com');
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(third).resolves.toBe('142.250.80.46');
+    expect(resolverProto.resolve4).toHaveBeenCalled();
   });
 
   it('uses dns.lookup for non-googleapis hostnames', async () => {

@@ -35,6 +35,9 @@ import {
   STREAM_IDLE_TIMEOUT_MS,
   ACTIVE_PORT_FILE,
   DEFAULT_MAX_BODY_SIZE,
+  HEDGED_REQUEST_DELAY_MS,
+  CAPACITY_503_CASCADE_THRESHOLD,
+  CONSECUTIVE_504_CASCADE_THRESHOLD,
 } from './constants';
 import { wrapCommandForRemoteExec } from './proxy/translators/utils';
 
@@ -54,6 +57,7 @@ import {
   restoreThoughtSignatures,
   sanitizeUnsignedToolCalls,
   flattenAllToolCallsToText,
+  detectAndMitigateToolLoops,
   markConvCorruptedSignatures,
   isConvCorruptedSignatures,
   touchStateTimestamp,
@@ -68,10 +72,10 @@ import { invalidateModelStoreCache } from './services/modelStore';
 import { invalidateHealthCache } from './proxy/modelHealthChecker';
 import { recordProviderUsage } from './customModelStore';
 import { classifyError, ErrorDiagnostic, type ErrorType } from './proxy/errorClassifier';
-import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from './proxy/retryStrategy';
+import { shouldRetryStatus, computeRetryDelay, isRetryableNetworkError, type RetryStrategy } from './proxy/retryStrategy';
 import { getOpenBreaker, recordFailure, recordSuccess, CIRCUIT_BREAKER_RESET_MS } from './proxy/circuitBreaker';
 import { IdleTimeoutGuard } from './proxy/idleTimeout';
-import { resolveClientForUrl, getHttpsAgent, disposeAll as disposeAgentPool } from './proxy/agentPool';
+import { resolveClientForUrl, getHttpsAgent, evictAgent, disposeAll as disposeAgentPool, warmTlsConnection } from './proxy/agentPool';
 import { EmptyStreamGuard } from './proxy/emptyStream';
 import { getRetryBudget, RETRY_BUDGET_BASE } from './proxy/retryBudget';
 import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from './proxy/diagnostics';
@@ -95,9 +99,9 @@ import {
 } from './proxy/urlBuilder';
 import { generateModelPlaceholderId, toSlug } from './proxy/idGenerator';
 import { expandModelsWithEffort } from './proxy/effortExpander';
-import { isNativeCloudCodeModel, extractModelNameFromPayload } from './proxy/modelUtils';
-export { isNativeCloudCodeModel, extractModelNameFromPayload };
-import { resolveGoogleIp } from './proxy/dnsResolver';
+import { isNativeCloudCodeModel, extractModelNameFromPayload, clampSubagentReasoning, isSubagentRequest } from './proxy/modelUtils';
+export { isNativeCloudCodeModel, extractModelNameFromPayload, clampSubagentReasoning, isSubagentRequest };
+import { resolveGoogleIp, invalidateCachedDns } from './proxy/dnsResolver';
 import { markProviderRateLimited, isProviderRateLimited } from './proxy/modelRouter';
 import { trimContextPayload } from './proxy/contextTrimmer';
 import { checkAllModelsHealth, getFastOrCachedHealth } from './proxy/modelHealthChecker';
@@ -129,6 +133,11 @@ import {
   getAccountQuotaKey,
   isAccountUnlicensed,
   markAccountUnlicensed,
+  unmarkAccountUnlicensed,
+  probeGoogleAccountPreflight,
+  probeAllGoogleAccountsPreflight,
+  startPreflightHealthCheckInterval,
+  stopPreflightHealthCheckInterval,
   getUnlicensedAccountKeys,
   restoreUnlicensedAccountKeys,
   markAccountQuotaExhausted,
@@ -166,6 +175,9 @@ import {
   recordAccountBurst,
   clearAccountBurst,
   _resetAccountBurst,
+  isAccountNearExhaustion,
+  PREVENTIVE_QUOTA_THRESHOLD_PCT,
+  PREVENTIVE_COOLDOWN_MS,
 } from './proxy/googlePool';
 import { safeWriteHead, safeEnd } from './proxy/httpUtils';
 import {
@@ -528,7 +540,7 @@ export async function executeOnRemoteDaemon(
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload),
           Authorization: `Bearer ${token || DEFAULT_REMOTE_TOKEN}`,
-          'User-Agent': 'AntigravityPatchProxy/3.7.4',
+          'User-Agent': 'AntigravityPatchProxy/3.7.5',
         },
         timeout: timeoutMs,
       },
@@ -938,6 +950,27 @@ export function transformGoogleStreamForRemote(
   delete headers['content-length'];
   delete headers['content-encoding'];
   safeWriteHead(clientRes, proxyRes.statusCode || 200, headers as Record<string, string>);
+  if (clientRes?.socket && typeof clientRes.socket.setNoDelay === 'function') {
+    try { clientRes.socket.setNoDelay(true); } catch (_) {}
+  }
+
+  const onClientClose = () => {
+    if (proxyRes && !proxyRes.destroyed && typeof proxyRes.destroy === 'function') {
+      try { proxyRes.destroy(); } catch (_) {}
+    }
+  };
+  if (typeof clientRes?.once === 'function') {
+    clientRes.once('close', onClientClose);
+  }
+
+  const idleGuard = new IdleTimeoutGuard(proxyRes, {
+    idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+    label: modelName || 'google-stream',
+    onTimeout: (err) => {
+      log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} — aborting socket`);
+      try { proxyRes.destroy(err); } catch (_) {}
+    },
+  });
 
   const encoding = (proxyRes.headers['content-encoding'] || '').toLowerCase();
   let stream: NodeJS.ReadableStream = proxyRes;
@@ -1107,9 +1140,17 @@ export function transformGoogleStreamForRemote(
         endpoint: '/v1internal:streamGenerateContent',
       });
     }
+    idleGuard.dispose();
+    if (typeof clientRes?.off === 'function') {
+      clientRes.off('close', onClientClose);
+    }
   });
 
   stream.on('error', (err) => {
+    idleGuard.dispose();
+    if (typeof clientRes?.off === 'function') {
+      clientRes.off('close', onClientClose);
+    }
     log.error('[Proxy] Upstream Google stream error:', err);
     if (!sawFinishReason && !clientRes.writableEnded && !clientRes.destroyed) {
       const finalChunk = {
@@ -1197,6 +1238,7 @@ export async function proxyToGoogle(
     method: req.method,
     headers: headers as Record<string, string>,
     servername: targetHost,
+    agent: getHttpsAgent({ host: targetHost }),
   };
 
   // Guard flag to prevent ERR_HTTP_HEADERS_SENT when timeout and response race
@@ -1273,14 +1315,25 @@ export async function proxyToGoogle(
         log.warn(
           `[Proxy] Google returned upstream error status ${proxyRes.statusCode} for model [${effectiveModel || 'unknown'}] (${req.url}). Forwarding official error directly to client.`
         );
-        // Synchronously record immediately so any racing fallback from the Language Server is blocked!
-        if (convId) {
-          recordNativeSessionError(convId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, Buffer.alloc(0), effectiveModel);
+        let isAuxiliaryReq = false;
+        try {
+          const parsed = typeof reqBody === 'string' ? JSON.parse(reqBody) : (Buffer.isBuffer(reqBody) ? JSON.parse(reqBody.toString('utf-8')) : reqBody);
+          const rType = String(parsed?.requestType || parsed?.request?.requestType || '').toUpperCase();
+          isAuxiliaryReq = rType === 'CONVERSATION_TITLE' || rType === 'TITLE' || rType === 'SUMMARY' || rType === 'CONVERSATION_SUMMARY' || rType === 'SEARCH' || rType === 'INDEX';
+        } catch {}
+
+        if (!isAuxiliaryReq) {
+          // Synchronously record immediately so any racing fallback from the Language Server is blocked!
+          if (convId) {
+            recordNativeSessionError(convId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, Buffer.alloc(0), effectiveModel);
+          }
+          if (sessId && sessId !== convId) {
+            recordNativeSessionError(sessId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, Buffer.alloc(0), effectiveModel);
+          }
+          if (!convId && !sessId) {
+            recordLatestNativeError(proxyRes.statusCode!, proxyRes.headers as Record<string, string>, Buffer.alloc(0), effectiveModel);
+          }
         }
-        if (sessId && sessId !== convId) {
-          recordNativeSessionError(sessId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, Buffer.alloc(0), effectiveModel);
-        }
-        recordLatestNativeError(proxyRes.statusCode!, proxyRes.headers as Record<string, string>, Buffer.alloc(0), effectiveModel);
 
         const errChunks: Buffer[] = [];
         proxyRes.on('data', (chunk) => errChunks.push(chunk));
@@ -1294,13 +1347,17 @@ export async function proxyToGoogle(
           if (errDetail) {
             log.warn(`[Proxy] Upstream Google error details for [${effectiveModel || 'unknown'}]: ${errDetail}`);
           }
-          if (convId) {
-            recordNativeSessionError(convId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr, effectiveModel);
+          if (!isAuxiliaryReq) {
+            if (convId) {
+              recordNativeSessionError(convId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr, effectiveModel);
+            }
+            if (sessId && sessId !== convId) {
+              recordNativeSessionError(sessId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr, effectiveModel);
+            }
+            if (!convId && !sessId) {
+              updateLatestNativeErrorBody(fullErr);
+            }
           }
-          if (sessId && sessId !== convId) {
-            recordNativeSessionError(sessId, proxyRes.statusCode!, proxyRes.headers as Record<string, string>, fullErr, effectiveModel);
-          }
-          updateLatestNativeErrorBody(fullErr);
         });
         if (safeHead(proxyRes.statusCode, proxyRes.headers as Record<string, string>)) {
           proxyRes.pipe(res);
@@ -1419,6 +1476,39 @@ export interface GoogleRequestOutcome {
   statusCode?: number;
   error?: string;
   headers?: http.IncomingHttpHeaders;
+  isTransportError?: boolean;
+}
+
+export interface ResponseClaimer {
+  claim(ownerId: string): boolean;
+  isClaimed(): boolean;
+  registerAbort(ownerId: string, abortFn: () => void): void;
+  abortOthers(winnerId: string): void;
+}
+
+export function createResponseClaimer(): ResponseClaimer {
+  let claimed = false;
+  const abortMap = new Map<string, () => void>();
+  return {
+    claim(ownerId: string): boolean {
+      if (claimed) return false;
+      claimed = true;
+      return true;
+    },
+    isClaimed(): boolean {
+      return claimed;
+    },
+    registerAbort(ownerId: string, fn: () => void): void {
+      abortMap.set(ownerId, fn);
+    },
+    abortOthers(winnerId: string): void {
+      for (const [id, fn] of abortMap.entries()) {
+        if (id !== winnerId) {
+          try { fn(); } catch (_) {}
+        }
+      }
+    },
+  };
 }
 
 export function executeGoogleCloudCodeRequest(
@@ -1432,6 +1522,7 @@ export function executeGoogleCloudCodeRequest(
   timeoutMs?: number,
   modelName = '',
   startTime = Date.now(),
+  responseClaimer?: ResponseClaimer,
 ): Promise<GoogleRequestOutcome> {
   return new Promise((resolve) => {
     const traceId = newTraceId();
@@ -1443,11 +1534,30 @@ export function executeGoogleCloudCodeRequest(
 
     let settled = false;
     let proxyReq: http.ClientRequest | undefined;
+
+    const onClientClose = () => {
+      // Only treat as genuine client abort if the downstream client response socket is genuinely ended/destroyed.
+      const clientTrulyClosed = res?.writableEnded || res?.destroyed || Boolean(res?.socket && res.socket.destroyed);
+      if (!settled && clientTrulyClosed) {
+        try { proxyReq?.destroy(); } catch (_) {}
+        finish({ success: false, statusCode: 499, error: 'Client closed request before completion' });
+      }
+    };
+    // Do NOT attach onClientClose to req.once('close')! In Node.js HTTP servers, req emits 'close'
+    // when incoming POST body is consumed, which would falsely report client aborts.
+    if (typeof res?.once === 'function') res.once('close', onClientClose);
+
     const finish = (outcome: GoogleRequestOutcome) => {
       if (settled) return;
       settled = true;
+      try {
+        if (typeof res?.off === 'function') res.off('close', onClientClose);
+      } catch (_) {}
       if (proxyReq) {
         try { proxyReq.setTimeout(0); } catch (_) {}
+        if (!outcome.success) {
+          try { proxyReq.destroy(); } catch (_) {}
+        }
       }
       resolve(outcome);
     };
@@ -1459,6 +1569,7 @@ export function executeGoogleCloudCodeRequest(
         ...(req.headers as Record<string, string | string[] | undefined>),
       };
       headers['host'] = targetHost;
+      log.info(`[CloudCode Dispatch Detail] host=${targetHost} ip=${realIp} url=${req.url} customAuth=${Boolean(customAuthHeader)} headers=${Object.keys(headers).join(',')}`);
       headers['content-length'] = String(reqBody.length);
       delete headers['connection'];
       delete headers['keep-alive'];
@@ -1488,6 +1599,11 @@ export function executeGoogleCloudCodeRequest(
       };
 
       proxyReq = https.request(parsedUrl, options, (proxyRes) => {
+        if (responseClaimer) {
+          responseClaimer.registerAbort(traceId, () => {
+            try { proxyReq?.destroy(); } catch (_) {}
+          });
+        }
         // Disable request socket timeout once response headers start streaming in
         proxyReq?.setTimeout(0);
 
@@ -1496,8 +1612,21 @@ export function executeGoogleCloudCodeRequest(
         // If upstream error (429, 400, 401, 403, 404, 500, 502, 503, 504):
         // Intercept BEFORE writing anything to client res!
         if (status >= 400) {
+          proxyReq?.setTimeout(15_000, () => {
+            try { proxyReq?.destroy(); } catch (_) {}
+            finish({ success: false, statusCode: status, error: 'Timed out waiting for error body', isTransportError: true });
+          });
           const errChunks: Buffer[] = [];
           proxyRes.on('data', (c: Buffer) => errChunks.push(c));
+          proxyRes.on('error', (err) => {
+            finish({ success: false, statusCode: status, error: 'Proxy response stream error: ' + (err?.message || 'unknown'), isTransportError: true });
+          });
+          proxyRes.on('close', () => {
+            if (!settled) {
+              const errText = Buffer.concat(errChunks).toString('utf-8');
+              finish({ success: false, statusCode: status, error: errText || 'Upstream error response closed prematurely', isTransportError: true });
+            }
+          });
           proxyRes.on('end', () => {
             const errText = Buffer.concat(errChunks).toString('utf-8');
             finish({ success: false, statusCode: status, error: errText, headers: proxyRes.headers });
@@ -1509,6 +1638,17 @@ export function executeGoogleCloudCodeRequest(
         if (shouldBufferAndModify) {
           const responseChunks: Buffer[] = [];
           proxyRes.on('data', (chunk: Buffer) => responseChunks.push(chunk));
+          proxyRes.on('error', (err) => {
+            if (safeWriteHead(res, 502, { 'Content-Type': 'application/json' })) {
+              safeEnd(res, JSON.stringify({ error: { message: `Upstream response stream error: ${err.message}` } }));
+            }
+            finish({ success: false, statusCode: 502, error: err.message, isTransportError: true });
+          });
+          proxyRes.on('close', () => {
+            if (!settled) {
+              finish({ success: false, statusCode: 502, error: 'Upstream connection closed prematurely', isTransportError: true });
+            }
+          });
           proxyRes.on('end', () => {
             if (res.headersSent || res.writableEnded) {
               finish({ success: true, statusCode: status });
@@ -1557,6 +1697,14 @@ export function executeGoogleCloudCodeRequest(
           } else {
             const responseChunks: Buffer[] = [];
             proxyRes.on('data', (chunk: Buffer) => responseChunks.push(chunk));
+            proxyRes.on('error', (err) => {
+              finish({ success: false, statusCode: 502, error: 'Upstream generation stream error: ' + err.message, isTransportError: true });
+            });
+            proxyRes.on('close', () => {
+              if (!settled) {
+                finish({ success: false, statusCode: 502, error: 'Upstream generation connection closed prematurely', isTransportError: true });
+              }
+            });
             proxyRes.on('end', () => {
               if (res.headersSent || res.writableEnded) {
                 finish({ success: true, statusCode: status });
@@ -1626,6 +1774,14 @@ export function executeGoogleCloudCodeRequest(
               delete modifiedHeaders['transfer-encoding'];
               const modifiedBuffer = Buffer.from(text, 'utf-8');
               modifiedHeaders['content-length'] = String(modifiedBuffer.length);
+              if (responseClaimer) {
+                if (!responseClaimer.claim(traceId)) {
+                  try { proxyReq?.destroy(); } catch (_) {}
+                  finish({ success: false, statusCode: 499, error: 'Cancelled by winning hedged request' });
+                  return;
+                }
+                responseClaimer.abortOthers(traceId);
+              }
               if (safeWriteHead(res, status, modifiedHeaders as Record<string, string>)) {
                 safeEnd(res, modifiedBuffer);
               }
@@ -1633,6 +1789,17 @@ export function executeGoogleCloudCodeRequest(
             });
           }
         } else {
+          proxyRes.on('error', (err) => {
+            finish({ success: false, statusCode: 502, error: 'Upstream stream error: ' + err.message, isTransportError: true });
+          });
+          if (responseClaimer) {
+            if (!responseClaimer.claim(traceId)) {
+              try { proxyReq?.destroy(); } catch (_) {}
+              finish({ success: false, statusCode: 499, error: 'Cancelled by winning hedged request' });
+              return;
+            }
+            responseClaimer.abortOthers(traceId);
+          }
           if (safeWriteHead(res, status, proxyRes.headers as Record<string, string>)) {
             proxyRes.pipe(res);
           }
@@ -1643,11 +1810,27 @@ export function executeGoogleCloudCodeRequest(
       let isTimedOut = false;
 
       proxyReq.on('error', (err) => {
-        if (isTimedOut) return;
+        if (settled || isTimedOut) return;
+        try { proxyReq?.destroy(); } catch (_) {}
         metricInc('proxy_errors_total', { upstream: targetHost, stage: 'forward', trace_id: traceId });
         const ms = endTimer();
         proxyLog.error('Google forwarding error traceId=', traceId, 'after', ms, 'ms:', err.message);
-        finish({ success: false, statusCode: 502, error: 'Proxy forwarding failed: ' + err.message });
+        const errMsg = err.message || '';
+        const isTransport =
+          isRetryableNetworkError(err) ||
+          /ENETUNREACH|EHOSTUNREACH|ENETDOWN|ECONNREFUSED|ECONNABORTED|ECONNRESET|socket hang up/i.test(errMsg);
+        if (isTransport) {
+          try {
+            evictAgent({ host: targetHost });
+            invalidateCachedDns(targetHost);
+          } catch (_) {}
+        }
+        finish({
+          success: false,
+          statusCode: 502,
+          error: 'Proxy forwarding failed: ' + errMsg,
+          isTransportError: isTransport,
+        });
       });
 
       proxyReq.on('close', () => {
@@ -1656,11 +1839,19 @@ export function executeGoogleCloudCodeRequest(
       });
 
       const effectiveTimeout = timeoutMs || GOOGLE_PROXY_TIMEOUT_MS;
-      proxyReq.setTimeout(effectiveTimeout, () => {
-        isTimedOut = true;
-        log.error(`[Proxy] Google pool request timed out waiting for response headers on ${targetHost} after ${effectiveTimeout / 1000}s`);
-        proxyReq?.destroy();
-        finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
+      if (typeof proxyReq?.setTimeout === 'function') {
+        proxyReq.setTimeout(effectiveTimeout, () => {
+          isTimedOut = true;
+          log.error(`[Proxy] Google pool request timed out waiting for response headers on ${targetHost} after ${effectiveTimeout / 1000}s`);
+          proxyReq?.destroy();
+          finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
+        });
+      }
+
+      proxyReq.on('socket', (socket) => {
+        try {
+          if (typeof socket.setNoDelay === 'function') socket.setNoDelay(true);
+        } catch (_) {}
       });
 
       if (reqBody) {
@@ -1671,7 +1862,10 @@ export function executeGoogleCloudCodeRequest(
       metricInc('proxy_errors_total', { upstream: targetHost, stage: 'dns', trace_id: traceId });
       const ms = endTimer();
       proxyLog.error('DNS resolution failed for', targetHost, 'traceId=', traceId, '(in', ms, 'ms)');
-      finish({ success: false, statusCode: 500, error: 'DNS resolution failed: ' + (dnsErr as Error).message });
+      try {
+        invalidateCachedDns(targetHost);
+      } catch (_) {}
+      finish({ success: false, statusCode: 500, error: 'DNS resolution failed: ' + (dnsErr as Error).message, isTransportError: true });
     });
   });
 }
@@ -1726,6 +1920,12 @@ export async function executeGoogleCloudCodeWithPool(
     }
     attemptedModels.add(resolvedTarget);
   }
+
+  if (resolvedTarget.includes('argon')) {
+    log.warn(`[Proxy] ⛔ Argon model [${resolvedTarget}] cannot be served by multi-account pool (not available on Google Cloud Code PA accounts). Refusing futile pool rotation.`);
+    return false;
+  }
+
   const isClaude = resolvedTarget.includes('claude');
   const modelFamily = isClaude ? 'claude' : 'gemini';
 
@@ -1764,9 +1964,9 @@ export async function executeGoogleCloudCodeWithPool(
   const activePool = accountPool.filter((a) => {
     const qKey = getAccountQuotaKey(a);
     const liveQ = (getLiveAccountQuota(qKey) || a.quotas) as Record<string, any> | undefined;
-    return !(a as any).isUnlicensed && !liveQ?.isUnlicensed;
+    return (a as any).enabled !== false && !(a as any).isUnlicensed && !liveQ?.isUnlicensed && !isAccountUnlicensed(a);
   });
-  let eligibleAccounts = activePool.length > 0 ? activePool : accountPool;
+  let eligibleAccounts = activePool.length > 0 ? activePool : accountPool.filter((a) => (a as any).enabled !== false && !isAccountUnlicensed(a));
   if (isClaude55) {
     const candidates55 = eligibleAccounts.filter((a) => isAccountEntitledToClaude55(a));
     const otherCandidates = eligibleAccounts.filter((a) => !isAccountEntitledToClaude55(a));
@@ -1885,18 +2085,28 @@ export async function executeGoogleCloudCodeWithPool(
   let consecutive429Count = 0;
   let consecutiveQuotaExhausted = 0;
   let consecutiveTimeoutCount = 0;
+  let consecutive504TimeoutCount = 0;
+  let consecutiveTransportErrorCount = 0;
+  let consecutive503CapacityCount = 0;
   let testedAccountsCount = 0;
 
   const initialHealthyCount = sortedAccounts.filter(
     (a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && getModelQuotaScore(a, modelFamily) > 0,
   ).length;
-  if (initialHealthyCount > 0 && initialHealthyCount < 3) {
+  if (initialHealthyCount === 0 && sortedAccounts.length > 0) {
+    lastStatus = 429;
+    lastErrorText = `All ${sortedAccounts.length} accounts in Google Cloud Code pool are in cooldown or near-exhaustion (<= ${PREVENTIVE_QUOTA_THRESHOLD_PCT}% quota) for ${modelFamily}`;
+    log.warn(
+      `[Proxy] All ${sortedAccounts.length} accounts in Google Cloud Code pool are unavailable (cooldown or <= ${PREVENTIVE_QUOTA_THRESHOLD_PCT}% quota) for ${modelFamily}. Fast-failing pool to trigger immediate fallback and prevent 7-day lockout.`,
+    );
+  } else if (initialHealthyCount > 0 && initialHealthyCount < 3) {
     log.warn(
       `[Proxy] ⚠️ Low pool headroom for ${modelFamily}: only ${initialHealthyCount} healthy account(s) available. Cascade fallback is armed.`,
     );
   }
 
   for (let i = 0; i < totalAttempts; i++) {
+    if (initialHealthyCount === 0) break;
     const candidate = sortedAccounts[i];
     const candidateName =
       candidate.accountEmail ||
@@ -1904,6 +2114,12 @@ export async function executeGoogleCloudCodeWithPool(
       (candidate.refreshToken ? `token:..${candidate.refreshToken.slice(-6)}` : '') ||
       candidate.displayName ||
       candidate.name;
+
+    // Fast-skip: if this candidate is disabled or unlicensed
+    if ((candidate as any).enabled === false || isAccountUnlicensed(candidate)) {
+      log.info(`[Proxy] Fast-skipping candidate ${candidateName}: account is disabled or unlicensed`);
+      continue;
+    }
 
     // Fast-skip: if this candidate is already in active cooldown for this model family
     if (isAccountInCooldown(candidate, modelFamily)) {
@@ -1920,19 +2136,17 @@ export async function executeGoogleCloudCodeWithPool(
     // Fast-skip: if this candidate has 0% quota remaining and reset has not passed
     const candidateQuotaScore = getModelQuotaScore(candidate, modelFamily);
     if (candidateQuotaScore <= 0) {
-      const hasPositiveRemaining = sortedAccounts.slice(i + 1).some((c) => getModelQuotaScore(c, modelFamily) > 0 && !isAccountInCooldown(c, modelFamily));
-      if (hasPositiveRemaining) {
-        log.info(`[Proxy] Fast-skipping candidate ${candidateName}: 0% quota remaining for ${modelFamily}`);
-        continue;
-      }
+      log.info(`[Proxy] Fast-skipping candidate ${candidateName}: 0% quota remaining for ${modelFamily}`);
+      continue;
     }
 
     // Fast-skip: if this candidate reached max concurrent in-flight slots (2, or 1 in probation)
     // and other healthy candidates have free slots available, divert to an idle account to prevent Google 504 overload.
     const candidateMaxSlots = isAccountInProbation(candidate, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
     if (getAccountInFlight(candidate) >= candidateMaxSlots) {
-      const hasOtherFreeAccount = sortedAccounts.slice(i + 1).some(
+      const hasOtherFreeAccount = sortedAccounts.some(
         (c) =>
+          c !== candidate &&
           !isAccountInCooldown(c, modelFamily) &&
           !getOpenBreaker(c) &&
           getModelQuotaScore(c, modelFamily) > 0 &&
@@ -1941,6 +2155,32 @@ export async function executeGoogleCloudCodeWithPool(
       if (hasOtherFreeAccount) {
         log.info(
           `[Proxy] Account [${candidateName}] reached max concurrent in-flight limit (${getAccountInFlight(candidate)}/${candidateMaxSlots}). Diverting to available idle account in pool.`,
+        );
+        continue;
+      }
+
+      // If no other account currently has free slots, wait briefly for any slot in the pool to release
+      log.debug(`[Proxy] Account [${candidateName}] at max capacity (${getAccountInFlight(candidate)}/${candidateMaxSlots}) with no idle accounts. Waiting for slot...`);
+      await waitForAccountSlot(sortedAccounts, modelFamily, 2000);
+
+      // Re-check after waiting: if this candidate is STILL at max capacity, check if another account freed up
+      if (getAccountInFlight(candidate) >= candidateMaxSlots) {
+        const freedAccount = sortedAccounts.some(
+          (c) =>
+            c !== candidate &&
+            !isAccountInCooldown(c, modelFamily) &&
+            !getOpenBreaker(c) &&
+            getModelQuotaScore(c, modelFamily) > 0 &&
+            getAccountInFlight(c) < (isAccountInProbation(c, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT),
+        );
+        if (freedAccount) {
+          log.info(`[Proxy] A slot freed up in pool after waiting. Diverting from [${candidateName}].`);
+          continue;
+        }
+
+        // Hard limit: do NOT send request if account is strictly at or over capacity
+        log.warn(
+          `[Proxy] Account [${candidateName}] is at maximum in-flight capacity (${getAccountInFlight(candidate)}/${candidateMaxSlots}) with no pool slots available. Skipping candidate.`,
         );
         continue;
       }
@@ -2016,6 +2256,15 @@ export async function executeGoogleCloudCodeWithPool(
       if (wantsAntiTrunc) {
         applyAntiTruncation(reqObj);
       }
+
+      // Anti-Loop Guardrail: detect repetitive tool calls (e.g. 3+ identical consecutive reads)
+      const targetContents = reqObj.contents || reqJson.contents;
+      if (Array.isArray(targetContents)) {
+        const loopMitigated = detectAndMitigateToolLoops(targetContents);
+        if (loopMitigated) {
+          log.warn(`[Proxy] 🛡️ [Anti-Loop Guardrail] Repetitive tool calls detected in conversation. Injected anti-loop advisory for ${candidateName}`);
+        }
+      }
     }
     reqJson.project = resolveGoogleProjectId(candidate);
     if (!isGeminiCliModel(candidate) && !reqJson.enabledCreditTypes) {
@@ -2034,7 +2283,6 @@ export async function executeGoogleCloudCodeWithPool(
         const u = new URL(candidate.apiUrl);
         const host = u.hostname;
         if (!host || host.includes('generativelanguage')) return undefined;
-        if (process.env.AG_GOOGLE_CLOUDCODE_HOST) return GOOGLE_HOSTS.CLOUD_CODE;
         if (!isGeminiCliModel(candidate) && host === 'cloudcode-pa.googleapis.com') return undefined;
         return host.includes('cloudcode') ? host : undefined;
       } catch { return undefined; }
@@ -2047,38 +2295,201 @@ export async function executeGoogleCloudCodeWithPool(
       (c) => !isAccountInCooldown(c, modelFamily) && !getOpenBreaker(c) && getModelQuotaScore(c, modelFamily) >= 50,
     ).length;
     const isStreamReq = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
-    const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel);
-    const isFlashModel = /flash/i.test(targetModel) && !isThinkingModel;
-    const isLargePayloadOrThinking = updatedBody.length > 60_000 || isThinkingModel;
-    // For streaming requests with healthy sibling accounts in pool, use fast header timeouts for quick failover:
-    // - Flash models: configurable via AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS (default 25s; or 20s if multiple healthy siblings exist)
-    // - Thinking / large prompts: 45-50s (allows reasoning budget without stalling the IDE)
-    // - Standard models: 30s-35s
-    const flashTimeoutMs = GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS;
-    const baseCandidateTimeout = isStreamReq
-      ? (isFlashModel ? flashTimeoutMs : (isLargePayloadOrThinking ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : GOOGLE_POOL_HEADER_TIMEOUT_MS))
-      : (isFlashModel ? GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS : (isLargePayloadOrThinking ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : GOOGLE_POOL_HEADER_TIMEOUT_MS));
+    const isFlash = /flash/i.test(targetModel);
+    const candidateReqObj = (reqJson.request && typeof reqJson.request === 'object') ? reqJson.request as Record<string, unknown> : undefined;
+    const candidateGenConfig = (candidateReqObj?.generationConfig || candidateReqObj?.generation_config || reqJson?.generationConfig || reqJson?.generation_config) as Record<string, unknown> | undefined;
+    const hasThinkingConfig = Boolean(candidateGenConfig?.thinkingConfig || candidateGenConfig?.thinking_config);
+    const reqContents = (candidateReqObj?.contents || reqJson.contents) as any[] | undefined;
+    const isMultiTurn = Array.isArray(reqContents) && reqContents.length > 1;
+    const isContextualPayload = updatedBody.length > 8_000 || isMultiTurn;
+    const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel) || hasThinkingConfig;
+    const isFlashModel = isFlash;
+    const isLargePayload = updatedBody.length > 35_000;
+    const isLargePayloadOrThinking = isLargePayload || isThinkingModel;
+    // For streaming requests with sibling accounts in pool, use calibrated header timeouts:
+    // - Large prompts / old conversations (>35k bytes) or Thinking models: 40-55s (allows prompt prefill & reasoning without premature timeout)
+    // - Multi-turn / contextual prompts (8k-35k bytes): 25-35s (allows Google KV-cache prefill without false 504 timeouts)
+    // - Small/fresh Flash requests (<8k bytes): calibrated TTFT (at least 7s) with speculative hedging at 2.5s
+    // - Standard models: 25-35s
+    const effectiveFlashTimeout = Math.max(7_000, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS);
+    const flashTimeoutMs = hasOtherCandidates
+      ? (isThinkingModel ? Math.min(30_000, GOOGLE_PROXY_TIMEOUT_MS) : (isContextualPayload ? Math.min(25_000, GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout))
+      : Math.min(25_000, GOOGLE_PROXY_TIMEOUT_MS);
+    const largeTimeoutMs = hasOtherCandidates
+      ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : 55_000)
+      : GOOGLE_PROXY_TIMEOUT_MS;
+    const standardTimeoutMs = hasOtherCandidates
+      ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_MS : 35_000)
+      : GOOGLE_PROXY_TIMEOUT_MS;
+
+    const baseCandidateTimeout = isFlashModel
+      ? flashTimeoutMs
+      : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs);
+
     // When no other candidates exist, fallback to the full proxy timeout.
-    const poolHeaderTimeout = hasOtherCandidates
+    let poolHeaderTimeout = hasOtherCandidates
       ? baseCandidateTimeout
       : GOOGLE_PROXY_TIMEOUT_MS;
+
+    // Escalating retry timeout on 504: If a prior candidate experienced a timeout on this payload,
+    // only give extended headroom when NO healthy sibling accounts remain.
+    // If sibling accounts are available, keep candidate timeout bounded so the pool can fail over quickly
+    // without exceeding the client's timeout (which results in HTTP 499 cancel).
+    if (consecutive504TimeoutCount > 0 && healthySiblingAccountsCount < 1) {
+      const escalatingTimeout = Math.min(80_000, GOOGLE_PROXY_TIMEOUT_MS);
+      if (escalatingTimeout > poolHeaderTimeout) {
+        log.info(`[Proxy] Prior candidate experienced 504 timeout and pool is depleted. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
+        poolHeaderTimeout = escalatingTimeout;
+      }
+    }
+
+    const canHedge =
+      isStreamReq &&
+      hasOtherCandidates &&
+      isFlashModel &&
+      !isLargePayloadOrThinking &&
+      !isContextualPayload &&
+      !res.headersSent &&
+      !res.writableEnded &&
+      poolHeaderTimeout > HEDGED_REQUEST_DELAY_MS;
+
     let outcome: GoogleRequestOutcome;
+    let successfulCandidate = candidate;
     try {
-      outcome = await executeGoogleCloudCodeRequest(
-        req,
-        res,
-        updatedBody,
-        isSessionRemote,
-        authHeader,
-        convId,
-        hostOverride,
-        poolHeaderTimeout,
-        targetModel,
-        startReqTime,
-      );
+      log.info(`[CloudCode Candidate Dispatch] acc=${candidateName} model=${targetModel} host=${hostOverride} project=${reqJson.project} cli=${isGeminiCliModel(candidate)}`);
+      if (!canHedge) {
+        outcome = await executeGoogleCloudCodeRequest(
+          req,
+          res,
+          updatedBody,
+          isSessionRemote,
+          authHeader,
+          convId,
+          hostOverride,
+          poolHeaderTimeout,
+          targetModel,
+          startReqTime,
+        );
+      } else {
+        const claimer = createResponseClaimer();
+        let hedgeTimer: NodeJS.Timeout | undefined;
+
+        const candidate1Promise = executeGoogleCloudCodeRequest(
+          req,
+          res,
+          updatedBody,
+          isSessionRemote,
+          authHeader,
+          convId,
+          hostOverride,
+          poolHeaderTimeout,
+          targetModel,
+          startReqTime,
+          claimer,
+        );
+
+        const hedgeDelay = Math.min(HEDGED_REQUEST_DELAY_MS, Math.floor(poolHeaderTimeout * 0.6));
+
+        const hedgePromise = new Promise<GoogleRequestOutcome>((resolveHedge) => {
+          hedgeTimer = setTimeout(async () => {
+            if (claimer.isClaimed() || res.headersSent || res.writableEnded) return;
+
+            const sibling = sortedAccounts.slice(i + 1).find(
+              (c) => !isAccountInCooldown(c, modelFamily) && getModelQuotaScore(c, modelFamily) > 0,
+            );
+            if (!sibling) return;
+
+            const siblingName = sibling.accountEmail || sibling.name || 'sibling';
+            log.info(
+              `[Proxy] ⚡ [Hedged Request] Account [${candidateName}] did not send headers within ${hedgeDelay}ms. Launching speculative candidate [${siblingName}]...`,
+            );
+
+            let siblingToken: string | null = null;
+            try {
+              siblingToken = await getValidGoogleAccessToken(sibling);
+            } catch (_) {}
+
+            if (!siblingToken || claimer.isClaimed() || res.headersSent || res.writableEnded) return;
+
+            const siblingReqJson = JSON.parse(JSON.stringify(reqJson));
+            siblingReqJson.project = resolveGoogleProjectId(sibling);
+            if (!isGeminiCliModel(sibling) && !siblingReqJson.enabledCreditTypes) {
+              siblingReqJson.enabledCreditTypes = ['GOOGLE_ONE_AI'];
+            }
+            const siblingBody = Buffer.from(JSON.stringify(siblingReqJson), 'utf-8');
+            const siblingAuth = `Bearer ${siblingToken}`;
+            const siblingHost = isGeminiCliModel(sibling) ? GOOGLE_HOSTS.CLOUD_CODE_PROD : GOOGLE_HOSTS.CLOUD_CODE;
+
+            testedAccountsCount++;
+            recordAccountRequest(sibling);
+            incrementAccountInFlight(sibling);
+            const siblingStart = Date.now();
+
+            try {
+              const siblingOutcome = await executeGoogleCloudCodeRequest(
+                req,
+                res,
+                siblingBody,
+                isSessionRemote,
+                siblingAuth,
+                convId,
+                siblingHost,
+                poolHeaderTimeout,
+                targetModel,
+                siblingStart,
+                claimer,
+              );
+              if (siblingOutcome.success) {
+                successfulCandidate = sibling;
+                recordAccountLatency(sibling, Date.now() - siblingStart);
+                recordSuccess(sibling);
+                unmarkAccountUnlicensed(sibling);
+                log.warn(
+                  `[Proxy] 🏆 [Hedged Request Winner] Speculative candidate [${siblingName}] won race against [${candidateName}]!`,
+                );
+                setAccountCooldown(candidate, 60_000, currentFamily, true);
+              }
+              resolveHedge(siblingOutcome);
+            } finally {
+              decrementAccountInFlight(sibling);
+            }
+          }, hedgeDelay);
+        });
+
+        let candidate1Settled = false;
+        let candidate1Result: GoogleRequestOutcome | undefined;
+        const candidate1Watched = candidate1Promise.then((res1) => {
+          candidate1Settled = true;
+          candidate1Result = res1;
+          if (res1.success && hedgeTimer) clearTimeout(hedgeTimer);
+          return res1;
+        });
+
+        const firstOutcome = await Promise.race([
+          candidate1Watched,
+          hedgePromise,
+        ]);
+
+        if (firstOutcome.success) {
+          outcome = firstOutcome;
+          if (hedgeTimer) clearTimeout(hedgeTimer);
+        } else {
+          // If the first candidate to settle failed (e.g. Candidate 1 timed out or 504'd),
+          // wait for the speculative candidate in hedgePromise before returning failure!
+          if (candidate1Settled && candidate1Result && !candidate1Result.success) {
+            log.info(`[Proxy] Candidate [${candidateName}] did not succeed. Awaiting speculative hedged candidate in flight...`);
+            const hedgeOutcome = await hedgePromise;
+            outcome = (hedgeOutcome && hedgeOutcome.success) ? hedgeOutcome : firstOutcome;
+          } else {
+            outcome = firstOutcome;
+          }
+        }
+        if (hedgeTimer) clearTimeout(hedgeTimer);
+      }
+
       const reqDuration = Date.now() - startReqTime;
       if (outcome.success || outcome.statusCode === 200) {
-        recordAccountLatency(candidate, reqDuration);
+        recordAccountLatency(successfulCandidate, reqDuration);
       } else if (outcome.statusCode === 504 || (outcome.error && /timed out/i.test(outcome.error))) {
         recordAccountLatency(candidate, Math.max(reqDuration, poolHeaderTimeout));
       }
@@ -2090,20 +2501,44 @@ export async function executeGoogleCloudCodeWithPool(
     const currentFamily = targetModel.toLowerCase().includes('claude') ? 'claude' : (targetModel ? 'gemini' : modelFamily);
     if (outcome.success) {
       consecutiveTimeoutCount = 0;
-      recordSuccess(candidate);
-      clearAccountCooldown(candidate, currentFamily);
-      endAccountProbation(candidate, currentFamily);
+      consecutiveTransportErrorCount = 0;
+      consecutive503CapacityCount = 0;
+      recordSuccess(successfulCandidate);
+      unmarkAccountUnlicensed(successfulCandidate);
+      clearAccountCooldown(successfulCandidate, currentFamily);
+      endAccountProbation(successfulCandidate, currentFamily);
       if (sessId && useStickySessions) {
-        bindSessionToModel(sessId, candidate);
+        bindSessionToModel(sessId, successfulCandidate);
       }
-      clearAccountBurst(candidate);
-      log.info(`[Proxy] ✅ [Feedback] Model: [${targetModel}] | Account: [${candidateName}] -> HTTP 200 OK (${elapsedMs}ms)`);
+      clearAccountBurst(successfulCandidate);
+      log.info(`[Proxy] ✅ [Feedback] Model: [${targetModel}] | Account: [${successfulCandidate.accountEmail || candidateName}] -> HTTP 200 OK (${elapsedMs}ms)`);
       return true;
+    }
+
+    const isClientSocketAlive = !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed && res.socket.writable !== false);
+
+    // If client actually dropped connection (IDE closed window, cancelled prompt):
+    if (!isClientSocketAlive) {
+      if (elapsedMs >= 3_000 || outcome.statusCode === 504) {
+        log.warn(`[Proxy] Account [${candidateName}] stalled connection for ${Math.round(elapsedMs / 1000)}s before client closed (HTTP 499). Placing in 120s cooldown to protect pool from black-hole accounts.`);
+        setAccountCooldown(candidate, 120_000, currentFamily, true);
+        recordAccountLatency(candidate, 60_000);
+      }
+      log.info(`[Proxy] 🛑 Client cancelled or closed connection (HTTP 499). Halting account rotation loop.`);
+      return false;
+    }
+
+    // Upstream reset / abort occurred while downstream client socket is STILL HEALTHY:
+    // Do NOT halt the rotation loop! Cool down candidate and try next account immediately.
+    if (outcome.statusCode === 499 || (outcome.error && /Client closed request/i.test(outcome.error))) {
+      log.warn(`[Proxy] Upstream socket disconnected on [${candidateName}] but downstream client is still active. Cooling down candidate and continuing rotation...`);
+      setAccountCooldown(candidate, 60_000, currentFamily, true);
+      continue;
     }
 
     if (outcome.statusCode === 429) {
       consecutiveTimeoutCount = 0;
-      consecutive429Count++;
+      consecutiveTransportErrorCount = 0;
       const retryAfterHeader = outcome.headers?.['retry-after'];
       let decision = classifyGoogleCloudCode429(outcome.error, retryAfterHeader);
 
@@ -2158,9 +2593,14 @@ export async function executeGoogleCloudCodeWithPool(
         }
 
         const existingQuota = getLiveAccountQuota(liveKey);
-        const isWeekly = decision.cooldownMs > 24 * 3600 * 1000;
+        const rawWeekly = decision.weeklyResetMs || ((decision.rawRetryAfterMs ?? 0) > 24 * 3600 * 1000 ? decision.rawRetryAfterMs! : null);
+        const isWeekly = decision.cooldownMs > 24 * 3600 * 1000 || rawWeekly !== null;
         const nowMs = Date.now();
-        const resetIso = new Date(nowMs + decision.cooldownMs).toISOString();
+        const weeklyDuration = rawWeekly || decision.cooldownMs;
+        const resetIso = new Date(nowMs + weeklyDuration).toISOString();
+        if (isWeekly) {
+          setAccountCooldown(candidate, Math.min(weeklyDuration, 7 * 24 * 3600 * 1000), currentFamily);
+        }
         if (currentFamily === 'gemini') {
           updateLiveAccountQuota(liveKey, {
             ...existingQuota,
@@ -2199,6 +2639,13 @@ export async function executeGoogleCloudCodeWithPool(
       }
 
       // Circuit breaker: Only stop rotation if there are NO remaining healthy accounts with positive quota (>20%).
+      const isGenuineQuotaExhausted = decision.category === 'quota_exhausted';
+      if (!isGenuineQuotaExhausted) {
+        consecutive429Count++;
+      } else {
+        consecutive429Count = 0;
+      }
+
       // Never abort early while healthy accounts with 100% quota are waiting in the pool!
       const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some(
         (c) => !isAccountInCooldown(c, currentFamily) && getModelQuotaScore(c, currentFamily) > 20,
@@ -2230,26 +2677,36 @@ export async function executeGoogleCloudCodeWithPool(
       }
 
       if (i + 1 < totalAttempts) {
-        // Anti-domino pacing: When Google triggers a burst 429 while account quota is positive,
-        // it is an IP / client-level rate limit. Pause 1000-2000ms to allow Google's token bucket
-        // for our IP to drain instead of burning through 33 accounts in 5 seconds.
-        const isBurst429 = decision.category !== 'quota_exhausted' || currentQuotaScore > 0;
+        // Anti-domino pacing: When Google triggers a burst/RPM rate limit, pause to allow Google's
+        // token bucket for our IP to drain instead of burning through pool accounts in milliseconds.
+        // For genuine quota exhaustion, rotate immediately (minimal 100ms jitter) so client socket doesn't abort.
+        const isBurst429 = !isGenuineQuotaExhausted;
         const pacingMs = isBurst429
           ? (consecutive429Count > 1
-              ? 2200 + Math.floor(Math.random() * 1000) // Multi-compte burst consécutif: 2.2s à 3.2s pour drainer le seau IP
-              : 1200 + Math.floor(Math.random() * 600))  // 1er burst isolé: pause préventive 1.2s à 1.8s pour protéger le compte suivant
-          : (consecutiveQuotaExhausted > 0 ? 300 + Math.floor(Math.random() * 200) : 1000 + Math.floor(Math.random() * 500));
+              ? 2000 + Math.floor(Math.random() * 800)
+              : 1000 + Math.floor(Math.random() * 400))
+          : 100 + Math.floor(Math.random() * 100);
 
         if (isBurst429) {
           log.info(
-            `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté (quota positif). Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
+            `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
           );
         } else {
           log.info(
-            `[Proxy] Rotation après épuisement de quota. Pause de ${pacingMs}ms avant le compte suivant.`
+            `[Proxy] Rotation après épuisement de quota. Rotation rapide (${pacingMs}ms) vers le compte suivant.`
           );
         }
+        const isClientAlive = !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed && res.socket.writable !== false);
+        if (!isClientAlive) {
+          log.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
+          return false;
+        }
         await new Promise((r) => setTimeout(r, pacingMs));
+        const isClientStillAlive = !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed && res.socket.writable !== false);
+        if (!isClientStillAlive) {
+          log.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
+          return false;
+        }
       }
       continue;
     } else {
@@ -2408,49 +2865,157 @@ export async function executeGoogleCloudCodeWithPool(
       `[Proxy] ⚠️ [Feedback] Model: [${targetModel}] | Account: [${candidateName}] -> HTTP ${lastStatus} (${lastErrorText.slice(0, 150)}) (${elapsedMs}ms). Rotating to next account...`
     );
 
-    if (lastStatus !== 429) {
+    if (lastStatus === 404) {
+      log.warn(
+        `[Proxy] 🛑 Model [${targetModel}] is not available on Cloud Code API (HTTP 404: ${lastErrorText.slice(0, 100)}). Halting account pool loop immediately to avoid futile rotations and trigger fast fallback.`
+      );
+      break;
+    }
+
+    const isTransportError =
+      !!outcome.isTransportError ||
+      /ENETUNREACH|EHOSTUNREACH|ENETDOWN|ECONNREFUSED|ECONNABORTED|ECONNRESET|socket hang up|DNS resolution failed/i.test(lastErrorText);
+
+    if (lastStatus !== 429 && !isTransportError) {
       recordFailure(candidate, 'server');
     }
 
-    // On HTTP 500 / 502 / 503 / 504 (Internal Error / Gateway Timeout / Service Unavailable / Bad Gateway / Overloaded):
-    const isServerOutage =
-      lastStatus === 500 ||
-      lastStatus === 502 ||
-      lastStatus === 503 ||
-      lastStatus === 504 ||
-      /timed out|unavailable|overloaded|service unavailable|backend error|internal error/i.test(lastErrorText);
-
-    if (isServerOutage) {
-      consecutiveTimeoutCount++;
-      const maxOutageLimit = Math.max(2, Math.min(4, sortedAccounts.length));
-      const upstreamOutageThreshold = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0) || maxOutageLimit;
-      const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
-      // For HTTP 500 internal errors, use a 20s cooldown so transient hiccups recover quickly; 504/outages use 30s-45s.
-      const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (isUpstreamOutage ? 30_000 : 45_000);
+    if (isTransportError) {
+      consecutiveTransportErrorCount++;
       log.warn(
-        `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
+        `[Proxy] Transport/network error on account ${candidateName} (${lastErrorText.slice(0, 120)}). Preserving account quota state without cooldown.`
       );
-      setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
+      // Evict cached socket and invalidate stale Anycast DNS
+      try {
+        evictAgent({ host: hostOverride || GOOGLE_HOSTS.CLOUD_CODE });
+        invalidateCachedDns(hostOverride || GOOGLE_HOSTS.CLOUD_CODE);
+      } catch (_) {}
 
-      if (isUpstreamOutage) {
-        lastStatus = lastStatus;
-        lastErrorText = `Google Cloud Code API upstream service failure (HTTP ${lastStatus}) across ${consecutiveTimeoutCount} consecutive accounts`;
+      // Short progressive backoff to allow network adapter / VPN to re-establish
+      const transportBackoffMs = Math.min(800, 200 * Math.pow(1.4, consecutiveTransportErrorCount));
+      await new Promise((r) => setTimeout(r, transportBackoffMs));
+
+      // Only trip the transport breaker if transport error persists across multiple distinct accounts
+      const maxTransportThreshold = Math.max(4, Math.min(6, sortedAccounts.length));
+      if (consecutiveTransportErrorCount >= maxTransportThreshold) {
         log.warn(
-          `[Proxy] 🛑 Upstream Server Failure Circuit Breaker: Model [${targetModel}] failed with HTTP ${lastStatus} across ${consecutiveTimeoutCount} consecutive accounts. Fast-failing pool to trigger immediate fallback cascade / AI Studio recovery.`,
+          `[Proxy] 🛑 Local Network Transport Circuit Breaker: Model [${targetModel}] encountered persistent transport failures across ${consecutiveTransportErrorCount} consecutive accounts. Halting pool loop to trigger recovery.`
         );
         break;
       }
     } else {
-      consecutiveTimeoutCount = 0;
+      consecutiveTransportErrorCount = 0;
+
+      // Specialized handler for Google Cloud Code per-account capacity exhaustion:
+      // Google returns HTTP 503 with reason "MODEL_CAPACITY_EXHAUSTED" / "No capacity available for model ... on the server"
+      // even when retrieveUserQuotaSummary reports positive quota. This is a per-account model allocation exhaustion,
+      // NOT a global Google service outage!
+      const isCapacityExhausted =
+        lastStatus === 503 ||
+        /MODEL_CAPACITY_EXHAUSTED|no capacity available|overloaded|unavailable/i.test(lastErrorText);
+
+      if (isCapacityExhausted) {
+        consecutive503CapacityCount++;
+        log.warn(
+          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED / 503 Overload for [${targetModel}]. Setting 0% quota for ${currentFamily} and cooling down for 15min. (Capacity 503 count: ${consecutive503CapacityCount}/${CAPACITY_503_CASCADE_THRESHOLD})`,
+        );
+        const liveKey = getAccountQuotaKey(candidate);
+        const existingQuota = getLiveAccountQuota(liveKey);
+        const nowMs = Date.now();
+        const resetIso = new Date(nowMs + 15 * 60_000).toISOString();
+        if (currentFamily === 'gemini') {
+          updateLiveAccountQuota(liveKey, {
+            ...existingQuota,
+            geminiFiveHourPct: 0,
+            geminiFiveHourReset: resetIso,
+            updatedAt: nowMs,
+          } as AccountLiveQuota);
+        } else if (currentFamily === 'claude') {
+          updateLiveAccountQuota(liveKey, {
+            ...existingQuota,
+            claudeFiveHourPct: 0,
+            claudeFiveHourReset: resetIso,
+            updatedAt: nowMs,
+          } as AccountLiveQuota);
+        }
+        setAccountCooldown(candidate, 15 * 60_000, currentFamily, true);
+        recordAccountLatency(candidate, 45_000);
+
+        const combinedOutageCount = consecutive503CapacityCount + consecutive504TimeoutCount;
+        if (consecutive503CapacityCount >= CAPACITY_503_CASCADE_THRESHOLD || combinedOutageCount >= Math.max(2, CAPACITY_503_CASCADE_THRESHOLD)) {
+          log.warn(
+            `[Proxy] ⚠️ Global TPU/Cluster Capacity Exhaustion detected on [${targetModel}] (${consecutive503CapacityCount} consecutive 503s, ${combinedOutageCount} total outages). Triggering immediate cross-family cascade to Claude...`,
+          );
+          lastStatus = 503;
+          lastErrorText = `Google Cloud Code API capacity unavailable across ${consecutive503CapacityCount} consecutive accounts`;
+          break;
+        }
+        continue;
+      }
+
+      // On HTTP 500 / 502 / 503 / 504 (Internal Error / Gateway Timeout / Service Unavailable / Bad Gateway / Overloaded):
+      const isServerOutage =
+        lastStatus === 500 ||
+        lastStatus === 502 ||
+        lastStatus === 503 ||
+        lastStatus === 504 ||
+        /timed out|unavailable|overloaded|service unavailable|backend error|internal error/i.test(lastErrorText);
+
+      if (isServerOutage) {
+        consecutiveTimeoutCount++;
+        const maxOutageLimit = Math.max(4, Math.min(6, Math.ceil(sortedAccounts.length * 0.4)));
+        const configuredOutage = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0);
+        const upstreamOutageThreshold = configuredOutage >= 4 ? configuredOutage : maxOutageLimit;
+        const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
+        // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (slow/busy/hanging): 120s cooldown to prevent ping-ponging into stalled accounts; outages: 30s-45s.
+        const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 120_000 : (isUpstreamOutage ? 60_000 : 45_000));
+        log.warn(
+          `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
+        );
+        setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
+        if (lastStatus === 504) {
+          recordAccountLatency(candidate, 60_000);
+        }
+
+        const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some(
+          (c) => !isAccountInCooldown(c, currentFamily) && getModelQuotaScore(c, currentFamily) > 20,
+        );
+        if (isUpstreamOutage && !remainingHealthyWithQuota) {
+          lastStatus = lastStatus;
+          lastErrorText = `Google Cloud Code API upstream service failure (HTTP ${lastStatus}) across ${consecutiveTimeoutCount} consecutive accounts with no healthy accounts remaining`;
+          log.warn(
+            `[Proxy] 🛑 Upstream Server Failure Circuit Breaker: Model [${targetModel}] failed with HTTP ${lastStatus} across ${consecutiveTimeoutCount} consecutive accounts. Fast-failing pool to trigger immediate fallback cascade / AI Studio recovery.`,
+          );
+          break;
+        }
+
+        // Fast-fail 504 timeout cascade: If multiple accounts consecutively time out on the same model/payload,
+        // the upstream TPU cluster is saturated. Trigger immediate fallback cascade instead of exhausting all accounts in the pool.
+        if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
+          consecutive504TimeoutCount++;
+          const combinedOutageCount = consecutive504TimeoutCount + consecutive503CapacityCount;
+          if (consecutive504TimeoutCount >= CONSECUTIVE_504_CASCADE_THRESHOLD || combinedOutageCount >= Math.max(2, CONSECUTIVE_504_CASCADE_THRESHOLD)) {
+            log.warn(
+              `[Proxy] ⚠️ Cluster Failure Spike on [${targetModel}] (${consecutive504TimeoutCount} consecutive 504 timeouts, ${combinedOutageCount} total outages). Triggering fast failover / cascade to prevent pool freeze across ${totalAttempts} accounts...`,
+            );
+            lastStatus = 504;
+            lastErrorText = `Google Cloud Code API gateway timeout (504) across ${consecutive504TimeoutCount} consecutive accounts`;
+            break;
+          }
+        }
+      } else {
+        consecutiveTimeoutCount = 0;
+        consecutive504TimeoutCount = 0;
+      }
     }
 
     // On HTTP 403 licensing/forbidden failure, immediately place the account in a
     // 7-day quarantine so subsequent requests don't waste round-trip time failing over.
     if (lastStatus === 403) {
-      const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid/i.test(lastErrorText);
+      const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid|verify.*account|verification.*required|account.*restricted|restricted|unavailable tier|suspended|denied access|validation_required/i.test(lastErrorText);
       const quarantineMs = isLicenseError ? 7 * 24 * 3600 * 1000 : 24 * 3600 * 1000;
       log.warn(
-        `[Proxy] Account ${candidateName} received HTTP 403 (${isLicenseError ? 'license/permission issue' : 'forbidden'}). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine to eliminate failover latency.`,
+        `[Proxy] Account ${candidateName} received HTTP 403 (${isLicenseError ? 'license/permission/verification challenge' : 'forbidden'}). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine to eliminate failover latency.`,
       );
       if (isLicenseError) {
         markAccountUnlicensed(candidate);
@@ -2459,13 +3024,37 @@ export async function executeGoogleCloudCodeWithPool(
       setAccountCooldown(candidate, quarantineMs, 'gemini');
       setAccountCooldown(candidate, quarantineMs, 'claude');
       if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+      continue;
     }
 
-    // On HTTP 400 (Bad Request / payload format error), trying other accounts in the pool will produce
-    // the exact same 400 error. Abort rotation to fast-trigger fallback model recovery.
-    // Exception: thought signature or invalid argument errors have already mutated reqJson into plain-text format, so the next
-    // account in the pool can succeed without needing an immediate fallback.
+    // On HTTP 402 payment / credit depletion, quarantine account for 24h to avoid wasting failovers
+    if (lastStatus === 402 || (lastStatus === 400 && /prepayment.*depleted|credit.*depleted|insufficient.*credit|billing.*closed/i.test(lastErrorText))) {
+      const quarantineMs = 24 * 3600 * 1000;
+      log.warn(`[Proxy] Account ${candidateName} hit HTTP 402 / credit depletion (${lastErrorText.slice(0, 100)}). Placing in 24h quarantine.`);
+      setAccountCooldown(candidate, quarantineMs);
+      setAccountCooldown(candidate, quarantineMs, 'gemini');
+      setAccountCooldown(candidate, quarantineMs, 'claude');
+      if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+      continue;
+    }
+
+    // On HTTP 400, distinguish between account-level precondition failure (e.g. location, regional eligibility, age)
+    // and true payload format errors. Account-level failures place that candidate in cooldown and continue pool rotation.
+    const isPrecondition400 = /failed_precondition|location is not supported|user location|unsupported region|underage|minor/i.test(lastErrorText);
     const isThoughtSignature400 = /thought.*signature|signature.*thought|corrupted.*signature|invalid.*signature|invalid.*argument|INVALID_ARGUMENT/i.test(lastErrorText);
+
+    if (lastStatus === 400 && isPrecondition400) {
+      log.warn(
+        `[Proxy] Account ${candidateName} failed precondition (location/eligibility: ${lastErrorText.slice(0, 100)}). Placing in 24h cooldown and continuing pool rotation.`,
+      );
+      const quarantineMs = 24 * 3600 * 1000;
+      setAccountCooldown(candidate, quarantineMs);
+      setAccountCooldown(candidate, quarantineMs, 'gemini');
+      setAccountCooldown(candidate, quarantineMs, 'claude');
+      if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+      continue;
+    }
+
     if (lastStatus === 400 && !isThoughtSignature400) {
       log.warn(`[Proxy] HTTP 400 indicates a payload format error on ${candidateName}. Aborting account pool rotation to trigger immediate fallback recovery.`);
       break;
@@ -2480,37 +3069,57 @@ export async function executeGoogleCloudCodeWithPool(
   // Strict Model Locking: NEVER cascade or degrade to another model family or version.
   // The user selected this exact model; when its pool accounts fail, report the error directly without substituting another model.
   const allowCrossModelFallback = process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
-  if (!allowCrossModelFallback) {
+  const allCustomModels = expandModelsWithEffort(loadCustomModels());
+  const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || (reqJson.request as any)?.model || '');
+  if (currentBase) attemptedModels.add(currentBase.toLowerCase());
+  const isClaudeRequest = currentBase.toLowerCase().includes('claude');
+
+  // Discover configured Google AI Studio keys for same-family Gemini recovery
+  const aiStudioRecoveryModels = allCustomModels.filter(
+    (m) =>
+      m.provider === 'google-gemini' &&
+      !m._poolOnly &&
+      !getOpenBreaker(m) &&
+      m.apiKey &&
+      m.apiKey !== 'auto',
+  );
+
+  const isPreconditionLocationError = /location is not supported|user location|unsupported region/i.test(lastErrorText);
+  const canAttemptSameFamilyRecovery = !isClaudeRequest && aiStudioRecoveryModels.length > 0;
+  const canAttemptFallback =
+    fallbackDepth === 0 &&
+    attemptedModels.size <= 3 &&
+    !res.writableEnded &&
+    !res.destroyed &&
+    (allowCrossModelFallback || canAttemptSameFamilyRecovery || isPreconditionLocationError);
+
+  if (!canAttemptFallback && !allowCrossModelFallback) {
     log.warn(`[Proxy] Strict model locking: Cross-model fallback disabled. Reporting error for [${targetRaw}] without model substitution.`);
-  } else if (fallbackDepth === 0 && attemptedModels.size <= 1 && !res.writableEnded && !res.destroyed) {
+  } else if (canAttemptFallback) {
     const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
-    const allCustomModels = expandModelsWithEffort(loadCustomModels());
-    // Dynamic fallback: discover all available Cloud Code model families,
-    // same family first (Gemini→other Gemini, Claude→other Claude), then cross-family.
-    const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || (reqJson.request as any)?.model || '');
-    if (currentBase) attemptedModels.add(currentBase.toLowerCase());
 
-    // Guard: prevent infinite recursive fallback cascades across models
-    if (attemptedModels.size > 3) {
-      log.warn(`[Proxy] Agent resilience: Max fallback depth reached (${attemptedModels.size} models attempted). Stopping fallback cascade.`);
-      return false;
-    }
+    if (allowCrossModelFallback && attemptedModels.size <= 1) {
+      // Dynamic fallback: discover all available Cloud Code model families,
+      // same family first (Gemini→other Gemini, Claude→other Claude), then cross-family.
+      // Guard: prevent infinite recursive fallback cascades across models
+      if (attemptedModels.size > 3) {
+        log.warn(`[Proxy] Agent resilience: Max fallback depth reached (${attemptedModels.size} models attempted). Stopping fallback cascade.`);
+        return false;
+      }
 
-    const isClaudeRequest = currentBase.toLowerCase().includes('claude');
-    // Emergency cross-family fallback: include ALL model IDs, including enabled:false ones.
-    // The enabled flag controls normal routing UI preference; it must not block emergency quota fallback.
-    const allModelBases = [...new Set(
-      allCustomModels
-        .filter(m => isGoogleCloudCodeModel(m) && !getOpenBreaker(m) && m.apiKey !== 'auto')
-        .map(m => normalizeCloudCodeModelId(m.externalModelName || m.name))
-        .filter(b => b && !b.includes('3.7') && !b.includes('3.6') && !attemptedModels.has(b.toLowerCase()) && !attemptedModels.has(b)),
-    )];
+      // Emergency cross-family fallback: include ALL model IDs, including enabled:false ones.
+      // The enabled flag controls normal routing UI preference; it must not block emergency quota fallback.
+      const allModelBases = [...new Set(
+        allCustomModels
+          .filter(m => isGoogleCloudCodeModel(m) && !getOpenBreaker(m) && m.apiKey !== 'auto')
+          .map(m => normalizeCloudCodeModelId(m.externalModelName || m.name))
+          .filter(b => b && !b.includes('3.7') && !b.includes('3.6') && !attemptedModels.has(b.toLowerCase()) && !attemptedModels.has(b)),
+      )];
     const sameFamily = allModelBases.filter(m => m.toLowerCase().includes('claude') === isClaudeRequest);
     const crossFamily = allModelBases.filter(m => m.toLowerCase().includes('claude') !== isClaudeRequest);
-    // On HTTP 429 quota exhaustion, sibling models in the same family share the exact same exhausted quota pool.
-    // Sibling accounts in Google Cloud Code will just hit the same 429.
+    // On HTTP 429 quota exhaustion, 503 capacity exhaustion, or 504 cluster timeouts, sibling models in the same family share the exact same exhausted quota pool or overloaded TPU cluster.
     // Skip same-family to avoid pointless ping-pong retry loops and cascade directly to cross-family (Gemini <-> Claude).
-    const eligibleFallbacks = lastStatus === 429 ? crossFamily : [...sameFamily, ...crossFamily];
+    const eligibleFallbacks = (lastStatus === 429 || lastStatus === 503 || lastStatus === 504) ? crossFamily : [...sameFamily, ...crossFamily];
 
     if (eligibleFallbacks.length > 0) {
       for (const fallbackModel of eligibleFallbacks) {
@@ -2528,6 +3137,8 @@ export async function executeGoogleCloudCodeWithPool(
         let fallbackCandidates = allCustomModels.filter(
           (m) =>
             isGoogleCloudCodeModel(m) &&
+            (m as any).enabled !== false &&
+            !isAccountUnlicensed(m) &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&
             normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === fallbackModel.toLowerCase() &&
@@ -2537,23 +3148,8 @@ export async function executeGoogleCloudCodeWithPool(
             getModelQuotaScore(m, fbFamily) > 0,
         );
 
-        // If no candidate with measured positive quota score, allow candidate accounts not in cooldown (excluding unlicensed)
         if (fallbackCandidates.length === 0) {
-          fallbackCandidates = allCustomModels.filter(
-            (m) =>
-              isGoogleCloudCodeModel(m) &&
-              (m as any).enabled !== false &&
-              !(m as any).isUnlicensed &&
-              !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
-              !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&
-              normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === fallbackModel.toLowerCase() &&
-              !getOpenBreaker(m) &&
-              !isAccountInCooldown(m, fbFamily),
-          );
-        }
-
-        if (fallbackCandidates.length === 0) {
-          log.info(`[Proxy] Skipping fallback model ${fallbackModel}: no available accounts in pool (all in cooldown or quota-exhausted for ${fbFamily})`);
+          log.info(`[Proxy] Skipping fallback model ${fallbackModel}: no available accounts in pool with positive quota for ${fbFamily}`);
           continue;
         }
 
@@ -2653,6 +3249,7 @@ export async function executeGoogleCloudCodeWithPool(
         }
       }
     }
+    }
 
     // If all Google accounts and internal Google Cloud Code fallbacks failed,
     // try configured Google AI Studio accounts first (independent quota, same Gemini family),
@@ -2663,7 +3260,8 @@ export async function executeGoogleCloudCodeWithPool(
         (m.provider !== 'google' || !isGoogleCloudCodeModel(m)) &&
         (!m._poolOnly || m.provider === 'google-gemini') &&
         !getOpenBreaker(m) &&
-        m.apiKey !== 'auto',
+        m.apiKey !== 'auto' &&
+        (allowCrossModelFallback || (!isClaudeRequest && m.provider === 'google-gemini') || isPreconditionLocationError),
     );
 
     if (nonGoogleFallbacks.length > 0) {
@@ -3116,6 +3714,9 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     })) {
       return;
     }
+    if (res?.socket && typeof res.socket.setNoDelay === 'function') {
+      try { res.socket.setNoDelay(true); } catch (_) {}
+    }
   }
 
   // Phase 2: Per-chunk idle timeout guard. Vendor pattern from
@@ -3140,16 +3741,45 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
   // gate from `vscode-unify-chat-provider`.
   const emptyGuard = new EmptyStreamGuard();
 
+  // 3s periodic SSE keepalive heartbeat (inspired by Antigravity-Manager stream lifecycle)
+  // Keeps downstream connections alive during long thinking pauses (e.g. Claude 3.7 Thinking, DeepSeek R1).
+  const HEARTBEAT_INTERVAL_MS = 3000;
+  let lastChunkTime = Date.now();
+  const heartbeatTimer = setInterval(() => {
+    if (res.writableEnded || res.destroyed) {
+      clearInterval(heartbeatTimer);
+      return;
+    }
+    if (Date.now() - lastChunkTime >= HEARTBEAT_INTERVAL_MS) {
+      try {
+        res.write(': ping\n\n');
+      } catch {
+        clearInterval(heartbeatTimer);
+      }
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+
+  const cleanupHeartbeat = () => {
+    clearInterval(heartbeatTimer);
+  };
+  res.on('close', cleanupHeartbeat);
+  res.on('finish', cleanupHeartbeat);
+  apiRes.on('close', cleanupHeartbeat);
+
+  let streamHasThought = false;
+  let streamHasTextOrToolCall = false;
+
   let buffer = '';
   apiRes.on('data', (chunk: Buffer) => {
+    lastChunkTime = Date.now();
     // Observe first, then forward. The guard splits SSE frames on
     // newlines so a frame that spans two chunks is still counted.
     emptyGuard.observe(chunk);
     buffer += chunk.toString('utf-8');
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
+    let lineEndIdx: number;
+    while ((lineEndIdx = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, lineEndIdx);
+      buffer = buffer.slice(lineEndIdx + 1);
       const trimmed = line.trim();
       if (!trimmed) continue;
       if (trimmed.startsWith('data: ')) {
@@ -3176,7 +3806,16 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
             const candidateParts = (mapped as any).content?.parts;
             if (Array.isArray(candidateParts)) {
               for (const p of candidateParts) {
-                if (p && typeof p.text === 'string') streamOutputChars += p.text.length;
+                if (p && (p.thought || p.type === 'thinking' || (p as any).thoughtSignature)) {
+                  streamHasThought = true;
+                }
+                if (p && typeof p.text === 'string' && p.text.trim().length > 0 && !p.thought) {
+                  streamHasTextOrToolCall = true;
+                  streamOutputChars += p.text.length;
+                }
+                if (p && (p.functionCall || p.function_call)) {
+                  streamHasTextOrToolCall = true;
+                }
               }
             }
             extractAndCacheThoughtSignatures({ candidates: [mapped] }, '');
@@ -3197,6 +3836,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
   });
 
   apiRes.on('end', () => {
+    cleanupHeartbeat();
     idleGuard.dispose();
     emptyGuard.observe(Buffer.from('')); // no-op, but tightens API
 
@@ -3253,6 +3893,28 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
           log.debug(`[Proxy] Stream buffer drain parse warning for ${model.name}:`, (e as Error).message);
         }
       }
+    }
+
+    // Thinking Dropout Auto-Healing (inspired by Antigravity-Manager auto_heal.rs):
+    // When a model finishes thinking but emits STOP with zero text and zero tool calls,
+    // inject a fallback non-empty content part so the Language Server state machine progresses smoothly.
+    if (streamHasThought && !streamHasTextOrToolCall) {
+      log.warn(`[Proxy] ⚠️ [Auto-Heal] Thinking dropout detected for ${model.name}: model emitted thinking but zero content/toolCall. Injecting auto-heal text frame.`);
+      const healChunk = {
+        response: {
+          candidates: [
+            {
+              content: { parts: [{ text: ' ' }], role: 'model' },
+              finishReason: 'STOP',
+              index: 0,
+            },
+          ],
+        },
+        traceId: '',
+        metadata: {},
+      };
+      sanitizeCandidatesInResponse(healChunk);
+      writeSafeSseChunk(res, healChunk);
     }
 
     const finalChunk = {
@@ -3504,6 +4166,11 @@ export {
   getAccountQuotaKey,
   isAccountUnlicensed,
   markAccountUnlicensed,
+  unmarkAccountUnlicensed,
+  probeGoogleAccountPreflight,
+  probeAllGoogleAccountsPreflight,
+  startPreflightHealthCheckInterval,
+  stopPreflightHealthCheckInterval,
   getUnlicensedAccountKeys,
   restoreUnlicensedAccountKeys,
   markAccountQuotaExhausted,
@@ -3549,6 +4216,9 @@ export {
   clearAccountBurst,
   liftBurstCooldowns,
   _resetAccountBurst,
+  isAccountNearExhaustion,
+  PREVENTIVE_QUOTA_THRESHOLD_PCT,
+  PREVENTIVE_COOLDOWN_MS,
 } from './proxy/googlePool';
 export type { Google429Category, Google429Decision } from './proxy/googlePool';
 
@@ -4108,6 +4778,11 @@ function handleCustomModelRequest(
   });
 
   request.setTimeout(REQUEST_TIMEOUT_MS, () => handleRequestTimeout(request, ctx));
+  request.on('socket', (socket) => {
+    try {
+      if (typeof socket.setNoDelay === 'function') socket.setNoDelay(true);
+    } catch (_) {}
+  });
 
   request.on('error', (err) => handleRequestError(err, ctx));
   request.write(JSON.stringify(payload));
@@ -4401,7 +5076,7 @@ export interface NativeSessionRecord {
 
 const nativeSessions = new Map<string, NativeSessionRecord>();
 export const NATIVE_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
-export const NATIVE_CASCADE_BLOCK_WINDOW_MS = 2 * 60 * 1000; // 2 minutes (covers Go LS exponential backoff cascade cycle)
+export const NATIVE_CASCADE_BLOCK_WINDOW_MS = 15 * 1000; // 15 seconds (Language Server automated fallback retry occurs within 1-5 seconds)
 
 export function markNativeSession(sessionKey: string, model: string): void {
   if (!sessionKey) return;
@@ -5490,6 +6165,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
               safeEnd(res, unlockedBody);
             }
+          } else if (
+            googleRes.statusCode === 403 ||
+            (googleRes.statusCode === 400 && (body.includes('LOCATION') || body.includes('1008') || body.toLowerCase().includes('location')))
+          ) {
+            log.warn(`[Proxy] Upstream loadCodeAssist rejected with HTTP ${googleRes.statusCode} (${body.slice(0, 150)}). Serving unlocked fallback to prevent IDE lockout.`);
+            fallback();
           } else if (googleRes.statusCode && googleRes.statusCode < 500) {
             if (safeWriteHead(res, googleRes.statusCode, { 'Content-Type': 'application/json' })) {
               safeEnd(res, body);
@@ -5570,17 +6251,6 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         googleRes.on('error', (err) => {
           googleResErrored = true;
           log.error('[Proxy] fetchAvailableModels upstream error:', err.message);
-        });
-
-        // P0-5: Timeout for fetchAvailableModels forward request (30s)
-        googleReq.setTimeout(30_000, () => {
-          log.error('[Proxy] fetchAvailableModels forward request timed out');
-          googleReq.destroy();
-          if (!res.headersSent && !res.writableEnded) {
-            const customModels = loadCustomModels();
-            safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
-            safeEnd(res, JSON.stringify(buildSyntheticModelsResponse(customModels)));
-          }
         });
 
         let googleBody = '';
@@ -5754,6 +6424,17 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         }
       });
 
+      // P0-5: Timeout for fetchAvailableModels forward request (30s)
+      googleReq.setTimeout(30_000, () => {
+        log.error('[Proxy] fetchAvailableModels forward request timed out');
+        googleReq.destroy();
+        if (!res.headersSent && !res.writableEnded) {
+          const customModels = loadCustomModels();
+          safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
+          safeEnd(res, JSON.stringify(buildSyntheticModelsResponse(customModels)));
+        }
+      });
+
       if (fullBody && fullBody.length > 0) {
         googleReq.write(fullBody);
       }
@@ -5797,27 +6478,6 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         googleRes.on('error', (err) => {
           googleResErrored = true;
           log.error('[Proxy] Models list upstream error:', err.message);
-        });
-
-        // P0-5: Timeout for models list forward request (30s)
-        googleReq.setTimeout(30_000, () => {
-          log.error('[Proxy] Models list forward request timed out');
-          googleReq.destroy();
-          if (!res.headersSent && !res.writableEnded) {
-            const customModels = loadCustomModels();
-            safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
-            safeEnd(
-              res,
-              JSON.stringify({
-                models: customModels.map((m) => ({
-                  name: m.name,
-                  displayName: m.displayName,
-                  description: m.description,
-                  supportedGenerationMethods: ['generateContent'],
-                })),
-              }),
-            );
-          }
         });
 
         let googleBody = '';
@@ -5880,6 +6540,27 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           );
         }
       });
+
+      // P0-5: Timeout for models list forward request (30s)
+      googleReq.setTimeout(30_000, () => {
+        log.error('[Proxy] Models list forward request timed out');
+        googleReq.destroy();
+        if (!res.headersSent && !res.writableEnded) {
+          const customModels = loadCustomModels();
+          safeWriteHead(res, 200, { 'Content-Type': 'application/json' });
+          safeEnd(
+            res,
+            JSON.stringify({
+              models: customModels.map((m) => ({
+                name: m.name,
+                displayName: m.displayName,
+                description: m.description,
+                supportedGenerationMethods: ['generateContent'],
+              })),
+            }),
+          );
+        }
+      });
       googleReq.end();
       return;
     }
@@ -5918,6 +6599,52 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           targetReq.agentModel,
         ].filter((x): x is string => typeof x === 'string' && Boolean(x));
 
+        // Fast-path for IDE internal command input detection (run_command_handler.go)
+        const isInputDetection = candidateNames.some((cn) =>
+          /2[_\-]5[_\-]flash[_\-]lite|flash[_\-]lite|input[_\-]detect/i.test(cn) ||
+          /MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE/i.test(cn)
+        );
+        if (isInputDetection) {
+          log.info(`[Proxy] ⚡ Instant mock resolution for input-detection model call (0ms)`);
+          const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+          if (isStream) {
+            if (safeWriteHead(res, 200, {
+              'Content-Type': 'text/event-stream; charset=utf-8',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            })) {
+              const sseChunk = `data: ${JSON.stringify({
+                response: {
+                  candidates: [{
+                    content: { parts: [{ text: 'false' }], role: 'model' },
+                    finishReason: 'STOP',
+                    index: 0,
+                  }],
+                },
+              })}\n\n`;
+              res.write(sseChunk);
+              safeEnd(res);
+            }
+          } else {
+            const jsonResp = Buffer.from(JSON.stringify({
+              response: {
+                candidates: [{
+                  content: { parts: [{ text: 'false' }], role: 'model' },
+                  finishReason: 'STOP',
+                  index: 0,
+                }],
+              },
+            }), 'utf-8');
+            if (safeWriteHead(res, 200, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Content-Length': String(jsonResp.length),
+            })) {
+              safeEnd(res, jsonResp);
+            }
+          }
+          return;
+        }
+
         log.debug(
           `[Proxy] Cloud Code generation request candidates: ${candidateNames.join(', ')}, url: ${req.url}, bodyKeys: ${Object.keys(reqJson).join(',')}`,
         );
@@ -5931,7 +6658,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           sessId = extractSessionId(actualGeminiBody as Record<string, unknown>, req.headers as Record<string, unknown>) || '';
           sessionKey = convId || sessId;
 
+          const customCandidate = candidateNames.find(
+            (cn) => /MODEL_PLACEHOLDER_/i.test(cn) || cn.startsWith('custom-') || customModels.some((m) => matchesCustomModel(m, cn))
+          );
           const requestedRaw = String(
+            customCandidate ||
+            reqJson.selectedModel ||
+            targetReq.selectedModel ||
             reqJson.model ||
             targetReq.model ||
             reqJson.requestedModel ||
@@ -5940,76 +6673,95 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             ''
           ).toLowerCase();
           const cleanRequested = requestedRaw.replace(/^models\//, '').trim();
-          const isExplicitCustom = candidateNames.some(
-            (cn) =>
-              /MODEL_PLACEHOLDER_/i.test(cn) ||
-              cn.startsWith('custom-') ||
-              customModels.some((m) => matchesCustomModel(m, cn))
-          );
-          const isNativeCloudCode = !isExplicitCustom && (
-            isNativeCloudCodeModel(cleanRequested) ||
+          const isExplicitCustom = Boolean(customCandidate);
+          const isPrimaryNative = !isExplicitCustom && (isNativeCloudCodeModel(cleanRequested) || cleanRequested.includes('argon'));
+          const isNativeCloudCode = isPrimaryNative || (!isExplicitCustom && (
+            cleanRequested.includes('argon') ||
             candidateNames.some((cn) => isNativeCloudCodeModel(cn.replace(/^models\//, '').trim()))
+          ));
+
+          // Check if this request is an automated Language Server fallback on a failed native session
+          const activeNative = (sessionKey ? getNativeSession(sessionKey) : undefined) ||
+                               (convId ? getNativeSession(convId) : undefined) ||
+                               (sessId ? getNativeSession(sessId) : undefined) ||
+                               (!sessionKey && !convId && !sessId ? getLatestNativeErrorAsSession() : undefined);
+          const isNativeProtected = Boolean(
+            activeNative &&
+            activeNative.lastError &&
+            activeNative.originalModel &&
+            isNativeCloudCodeModel(activeNative.originalModel)
           );
+          const normOrig = isNativeProtected ? (normalizeCloudCodeModelId(activeNative!.originalModel) || activeNative!.originalModel.toLowerCase()) : '';
+          const normCurrent = normalizeCloudCodeModelId(cleanRequested) || cleanRequested.toLowerCase();
+          const isSameModel = isNativeProtected && (
+            normOrig === normCurrent ||
+            (normOrig.includes('sonnet') && normCurrent.includes('sonnet')) ||
+            (normOrig.includes('opus') && normCurrent.includes('opus')) ||
+            (normOrig.includes('flash') && normCurrent.includes('flash') && !normOrig.includes('pro'))
+          );
+          const isExplicitUserCustom = isExplicitCustom;
+
+          if (isExplicitUserCustom) {
+            // User explicitly switched to a custom model from the UI!
+            // Clear any native session lock so user's explicit selection is honored immediately.
+            if (sessionKey) nativeSessions.delete(sessionKey);
+            if (convId) nativeSessions.delete(convId);
+            if (sessId) nativeSessions.delete(sessId);
+            latestNativeGlobalError = null;
+          }
+
+          const isFallbackToDifferentModel = isNativeProtected && !isSameModel && !isExplicitUserCustom;
+
+          if (isFallbackToDifferentModel) {
+            const timeSinceNative = Date.now() - activeNative!.lastSeen;
+            if (timeSinceNative < NATIVE_CASCADE_BLOCK_WINDOW_MS) {
+              log.warn(
+                `[Proxy] ⛔ Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey || convId || sessId || 'unknown'}] (original model: [${activeNative!.originalModel}], within cascade window). Strict ZERO fallback rule: rejecting fallback to report original error directly.`
+              );
+              const err = activeNative!.lastError;
+              if (err && err.body && err.body.length > 0) {
+                const respHeaders = { ...err.headers };
+                delete respHeaders['transfer-encoding'];
+                respHeaders['content-length'] = String(err.body.length);
+                if (safeWriteHead(res, err.statusCode, respHeaders)) {
+                  safeEnd(res, err.body);
+                }
+                return;
+              } else {
+                const errCode = err?.statusCode || 429;
+                const fallbackPayload = Buffer.from(
+                  JSON.stringify({
+                    error: {
+                      code: errCode,
+                      message: errCode === 404
+                        ? `Model ${activeNative!.originalModel || cleanRequested} is not available.`
+                        : `Resource has been exhausted (e.g. check quota) for model ${activeNative!.originalModel || cleanRequested}.`,
+                      status: errCode === 404 ? 'NOT_FOUND' : 'RESOURCE_EXHAUSTED',
+                    },
+                  }),
+                  'utf-8',
+                );
+                if (safeWriteHead(res, errCode, { 'Content-Type': 'application/json; charset=UTF-8', 'Content-Length': String(fallbackPayload.length) })) {
+                  safeEnd(res, fallbackPayload);
+                }
+                return;
+              }
+            }
+          }
 
           if (isNativeCloudCode) {
-            // Check if this request is an automated Language Server fallback on a failed native session
-            const activeNative = (sessionKey ? getNativeSession(sessionKey) : undefined) ||
-                                 (convId ? getNativeSession(convId) : undefined) ||
-                                 (sessId ? getNativeSession(sessId) : undefined) ||
-                                 getLatestNativeErrorAsSession();
-            const isNativeProtected = Boolean(
-              activeNative &&
-              activeNative.lastError &&
-              activeNative.originalModel &&
-              isNativeCloudCodeModel(activeNative.originalModel)
-            );
-            const normOrig = isNativeProtected ? (normalizeCloudCodeModelId(activeNative!.originalModel) || activeNative!.originalModel.toLowerCase()) : '';
-            const normCurrent = normalizeCloudCodeModelId(cleanRequested) || cleanRequested.toLowerCase();
-            const isSameModel = isNativeProtected && (
-              normOrig === normCurrent ||
-              (normOrig.includes('argon') && normCurrent.includes('argon')) ||
-              (normOrig.includes('sonnet') && normCurrent.includes('sonnet')) ||
-              (normOrig.includes('opus') && normCurrent.includes('opus')) ||
-              (normOrig.includes('flash') && normCurrent.includes('flash') && !normOrig.includes('pro'))
-            );
-            const isFallbackToDifferentModel = isNativeProtected && !isSameModel;
-
-            if (isFallbackToDifferentModel) {
-              const timeSinceNative = Date.now() - activeNative!.lastSeen;
-              if (timeSinceNative < NATIVE_CASCADE_BLOCK_WINDOW_MS) {
-                activeNative!.lastSeen = Date.now();
-                log.warn(
-                  `[Proxy] ⛔ Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey}] (original model: [${activeNative!.originalModel}], within cascade window). Strict ZERO fallback rule: rejecting fallback to report original error directly.`
-                );
-                const err = activeNative!.lastError;
-                if (err && err.body && err.body.length > 0) {
-                  const respHeaders = { ...err.headers };
-                  delete respHeaders['transfer-encoding'];
-                  respHeaders['content-length'] = String(err.body.length);
-                  if (safeWriteHead(res, err.statusCode, respHeaders)) {
-                    safeEnd(res, err.body);
-                  }
-                  return;
-                } else {
-                  const errCode = err?.statusCode || 429;
-                  const fallbackPayload = Buffer.from(
-                    JSON.stringify({
-                      error: {
-                        code: errCode,
-                        message: errCode === 404
-                          ? `Model ${activeNative!.originalModel || cleanRequested} is not available.`
-                          : `Resource has been exhausted (e.g. check quota) for model ${activeNative!.originalModel || cleanRequested}.`,
-                        status: errCode === 404 ? 'NOT_FOUND' : 'RESOURCE_EXHAUSTED',
-                      },
-                    }),
-                    'utf-8',
-                  );
-                  if (safeWriteHead(res, errCode, { 'Content-Type': 'application/json; charset=UTF-8', 'Content-Length': String(fallbackPayload.length) })) {
-                    safeEnd(res, fallbackPayload);
-                  }
-                  return;
-                }
+            reqJson.model = cleanRequested;
+            if (targetReq && typeof targetReq === 'object') {
+              targetReq.model = cleanRequested;
+            }
+            // Strip any stale custom placeholder models from previous conversation turns
+            for (let i = candidateNames.length - 1; i >= 0; i--) {
+              if (/MODEL_PLACEHOLDER_/i.test(candidateNames[i]) || candidateNames[i].startsWith('custom-')) {
+                candidateNames.splice(i, 1);
               }
+            }
+            if (!candidateNames.includes(cleanRequested)) {
+              candidateNames.unshift(cleanRequested);
             }
 
             // Fresh native turn: mark native session
@@ -6034,66 +6786,32 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             if (!allowCrossModel) {
               clearSessionModelFallback(sessionKey);
             } else {
-              const explicitSelected = (targetReq.selectedModel || reqJson.selectedModel || targetReq.requestedModel || reqJson.requestedModel) as string | undefined;
-              if (explicitSelected) {
-                const activeFallback = getSessionModelFallback(sessionKey);
-                const normExplicit = normalizeCloudCodeModelId(explicitSelected);
-                const isDifferentModel = activeFallback &&
-                  normExplicit !== normalizeCloudCodeModelId(activeFallback.originalModel) &&
-                  normExplicit !== normalizeCloudCodeModelId(activeFallback.fallbackModel);
-                if (activeFallback && isDifferentModel) {
-                  log.info(
-                    `[Proxy] 🎯 User explicitly selected different model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}] to honor user selection priority.`,
-                  );
-                  clearSessionModelFallback(sessionKey);
-                }
-              }
+              const explicitSelected = (
+                reqJson.model ||
+                reqJson.selectedModel ||
+                targetReq.model ||
+                targetReq.selectedModel ||
+                reqJson.requestedModel ||
+                targetReq.requestedModel
+              ) as string | undefined;
 
               const activeFallback = getSessionModelFallback(sessionKey);
-              if (activeFallback) {
-                const isOrigClaude = activeFallback.originalModel.toLowerCase().includes('claude');
-                const matchesOrig = candidateNames.some((cn) => {
-                  const norm = normalizeCloudCodeModelId(cn);
-                  return norm === normalizeCloudCodeModelId(activeFallback.originalModel) || (isOrigClaude && cn.toLowerCase().includes('claude'));
-                });
-                if (matchesOrig) {
-                  const origFamily = activeFallback.originalModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
-                  const fbFamily = activeFallback.fallbackModel.toLowerCase().includes('claude') ? 'claude' : 'gemini';
-
-                  const hasHealthyOriginal = customModels.some(
-                    (m) =>
-                      isGoogleCloudCodeModel(m) &&
-                      m.apiKey !== 'auto' &&
-                      !m.name?.includes(':auto-pool') &&
-                      normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === normalizeCloudCodeModelId(activeFallback.originalModel).toLowerCase() &&
-                      !getOpenBreaker(m) &&
-                      !isAccountInCooldown(m, origFamily) &&
-                      getModelQuotaScore(m, origFamily) > 0,
+              if (activeFallback && explicitSelected) {
+                const normExplicit = normalizeCloudCodeModelId(explicitSelected);
+                const isNative = isNativeCloudCodeModel(explicitSelected.replace(/^models\//, ''));
+                if (isNative) {
+                  log.info(
+                    `[Proxy] 🎯 User switched to native model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}].`,
                   );
-
-                  const hasHealthyFallback = customModels.some(
-                    (m) =>
-                      isGoogleCloudCodeModel(m) &&
-                      m.apiKey !== 'auto' &&
-                      !m.name?.includes(':auto-pool') &&
-                      normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase() === normalizeCloudCodeModelId(activeFallback.fallbackModel).toLowerCase() &&
-                      !getOpenBreaker(m) &&
-                      !isAccountInCooldown(m, fbFamily) &&
-                      getModelQuotaScore(m, fbFamily) > 0,
-                  );
-
-                  if (hasHealthyOriginal || !hasHealthyFallback) {
+                  clearSessionModelFallback(sessionKey);
+                } else {
+                  const isFallback = normExplicit === normalizeCloudCodeModelId(activeFallback.fallbackModel);
+                  const isOriginal = normExplicit === normalizeCloudCodeModelId(activeFallback.originalModel);
+                  if (!isFallback && !isOriginal) {
                     log.info(
-                      `[Proxy] 🟢 [Session Fallback] ${hasHealthyOriginal ? `Primary model [${activeFallback.originalModel}] recovered with healthy accounts` : `Fallback model [${activeFallback.fallbackModel}] exhausted`}. Reverting session ${sessionKey} to primary.`,
+                      `[Proxy] 🎯 User explicitly selected different model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}].`,
                     );
                     clearSessionModelFallback(sessionKey);
-                  } else {
-                    log.info(`[Proxy] 🔀 [Session Fallback] Active session ${sessionKey}: transparently routing [${activeFallback.originalModel}] -> [${activeFallback.fallbackModel}]`);
-                    candidateNames.unshift(activeFallback.fallbackModel);
-                    reqJson.model = activeFallback.fallbackModel;
-                    if (reqJson.request && typeof reqJson.request === 'object') {
-                      (reqJson.request as Record<string, unknown>).model = activeFallback.fallbackModel;
-                    }
                   }
                 }
               }
@@ -6101,7 +6819,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
         }
 
+        const customCandidate = candidateNames.find(
+          (cn) => /MODEL_PLACEHOLDER_/i.test(cn) || cn.startsWith('custom-') || customModels.some((m) => matchesCustomModel(m, cn))
+        );
         const requestedRaw = String(
+          customCandidate ||
+          reqJson.selectedModel ||
+          targetReq.selectedModel ||
           reqJson.model ||
           targetReq.model ||
           reqJson.requestedModel ||
@@ -6109,36 +6833,83 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           candidateNames[0] ||
           ''
         ).toLowerCase();
-        const cleanRequested = requestedRaw.replace(/^models\//, '').trim();
-        const isExplicitCustom = candidateNames.some(
-          (cn) =>
-            /MODEL_PLACEHOLDER_/i.test(cn) ||
-            cn.startsWith('custom-') ||
-            customModels.some((m) => matchesCustomModel(m, cn))
-        );
-        const isNativeCloudCode = !isExplicitCustom && (
-          isNativeCloudCodeModel(cleanRequested) ||
-          candidateNames.some((cn) => isNativeCloudCodeModel(cn.replace(/^models\//, '').trim()))
-        );
-
-        let matchingCandidates: typeof customModels = [];
-        if (isNativeCloudCode) {
-          log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
-        } else {
-          matchingCandidates = customModels.filter((m) =>
-            candidateNames.some((cn) => matchesCustomModel(m, cn)),
-          );
-          if (matchingCandidates.length === 0) {
-            matchingCandidates = customModels.filter((m) =>
-              candidateNames.some((cn) => {
-                if (/MODEL_PLACEHOLDER_/i.test(cn) || cn.startsWith('custom-')) return false;
-                const norm = normalizeGoogleModelId(cn);
-                return norm && (matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`));
-              }),
+        let cleanRequested = requestedRaw.replace(/^models\//, '').trim();
+        const activeFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
+        if (activeFallback) {
+          const normReq = normalizeCloudCodeModelId(cleanRequested);
+          const normOrig = normalizeCloudCodeModelId(activeFallback.originalModel);
+          const isOrigClaude = activeFallback.originalModel.toLowerCase().includes('claude');
+          const matchesOrig = normReq === normOrig || candidateNames.some((cn) => {
+            const norm = normalizeCloudCodeModelId(cn);
+            return norm === normOrig || (isOrigClaude && cn.toLowerCase().includes('claude'));
+          });
+          if (matchesOrig) {
+            log.info(
+              `[Proxy] 🔀 [Active Session Fallback] Seamlessly routing session ${sessionKey} to [${activeFallback.fallbackModel}] (primary [${activeFallback.originalModel}] in temporary fallback cooldown)`
             );
+            cleanRequested = activeFallback.fallbackModel;
           }
         }
-        let matchedCustomModel = isNativeCloudCode ? undefined : selectBestModelByQuota(matchingCandidates, customModels);
+        const isExplicitCustom = Boolean(customCandidate);
+        const isPrimaryNative = !isExplicitCustom && (isNativeCloudCodeModel(cleanRequested) || cleanRequested.includes('argon'));
+        const isNativeCloudCode = isPrimaryNative || (!isExplicitCustom && (
+          cleanRequested.includes('argon') ||
+          candidateNames.some((cn) => isNativeCloudCodeModel(cn.replace(/^models\//, '').trim()))
+        ));
+
+        let matchingCandidates: typeof customModels = [];
+        let isNativeRoutedToPool = false;
+        if (isNativeCloudCode) {
+          const googlePoolCandidates = customModels.filter(
+            (m) => (m.provider === 'google' || m.apiKey === 'auto') &&
+                   m.enabled !== false &&
+                   !(m as any)._poolOnly
+          );
+          if (googlePoolCandidates.length > 0 && process.env.AG_POOL_NATIVE_MODELS !== '0') {
+            const normReq = normalizeCloudCodeModelId(cleanRequested);
+            const matchedPool = googlePoolCandidates.filter((m) => {
+              const mTarget = (m.externalModelName || m.name || (m as any).id || '').replace(/^models\//, '').toLowerCase();
+              return mTarget === cleanRequested.toLowerCase() ||
+                     (normReq && normalizeCloudCodeModelId(mTarget) === normReq);
+            });
+            if (matchedPool.length > 0) {
+              log.info(`[Proxy] 🌐 Routing native model [${requestedRaw}] through Google multi-account pool (${matchedPool.length} candidate(s)).`);
+              matchingCandidates = matchedPool;
+              isNativeRoutedToPool = true;
+            } else {
+              log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+            }
+          } else {
+            log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+          }
+        } else {
+          // Strictly prioritize the model matching cleanRequested (the directly requested model)
+          matchingCandidates = customModels.filter((m) => matchesCustomModel(m, cleanRequested));
+          if (matchingCandidates.length === 0) {
+            // Check candidateNames in precedence order without mixing disparate models
+            for (const cn of candidateNames) {
+              const matched = customModels.filter((m) => matchesCustomModel(m, cn));
+              if (matched.length > 0) {
+                matchingCandidates = matched;
+                break;
+              }
+            }
+          }
+          if (matchingCandidates.length === 0) {
+            for (const cn of candidateNames) {
+              if (/MODEL_PLACEHOLDER_/i.test(cn) || cn.startsWith('custom-')) continue;
+              const norm = normalizeGoogleModelId(cn);
+              if (norm) {
+                const matched = customModels.filter((m) => matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`));
+                if (matched.length > 0) {
+                  matchingCandidates = matched;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        let matchedCustomModel = (isNativeCloudCode && !isNativeRoutedToPool) ? undefined : selectBestModelByQuota(matchingCandidates, customModels);
         // Fallback: if a conversation references a placeholder (e.g. M299/M298/M50/M319/M565)
         if (!isNativeCloudCode && !matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
           const activePool = customModels.filter((m) => !(m as any)._poolOnly && m.enabled !== false);
@@ -6177,6 +6948,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               normalizeConversationTurns(targetReq.contents);
             }
           }
+        }
+
+        // Subagent Effort Governor: automatically detect subagent tasks and clamp thinking budget
+        if (clampSubagentReasoning(targetReq)) {
+          log.info(`[Proxy] 🛡️ Subagent detected: clamped thinking budget to 2048 tokens to conserve quota`);
+          contentsNormalized = true;
         }
 
         if (signaturesRestored || contentsNormalized) {
@@ -6275,10 +7052,26 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       let matchedCustomModel: CustomModel | undefined;
       let customModels: CustomModel[] = [];
 
+      customModels = expandModelsWithEffort(loadCustomModels());
       if (isNative) {
-        log.info(`[Proxy] ⚡ Native Antigravity model requested on direct URL [${matchedModelName}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+        const googlePoolCandidates = customModels.filter(
+          (m) => (m.provider === 'google' || m.apiKey === 'auto') &&
+                 m.enabled !== false &&
+                 !(m as any)._poolOnly
+        );
+        const cleanMatched = matchedModelName.replace(/^models\//, '').toLowerCase();
+        const normMatched = normalizeCloudCodeModelId(cleanMatched);
+        const matchedPool = googlePoolCandidates.filter((m) => {
+          const mTarget = (m.externalModelName || m.name || (m as any).id || '').replace(/^models\//, '').toLowerCase();
+          return mTarget === cleanMatched || (normMatched && normalizeCloudCodeModelId(mTarget) === normMatched);
+        });
+        if (matchedPool.length > 0 && process.env.AG_POOL_NATIVE_MODELS !== '0') {
+          log.info(`[Proxy] 🌐 Routing native model [${matchedModelName}] on direct URL through Google multi-account pool.`);
+          matchedCustomModel = selectBestModelByQuota(matchedPool, customModels);
+        } else {
+          log.info(`[Proxy] ⚡ Native Antigravity model requested on direct URL [${matchedModelName}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+        }
       } else {
-        customModels = expandModelsWithEffort(loadCustomModels());
         let matchingCandidates = customModels.filter((m) =>
           matchesCustomModel(m, matchedModelName),
         );
@@ -6395,6 +7188,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         sanitizeCloudCodeGenerationConfig(fallbackReq, rawModelName);
         fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
       }
+      if (rawModelName.includes('2_5_flash_lite') || rawModelName.includes('2-5-flash-lite') || rawModelName.includes('flash_lite') || rawModelName.includes('flash-lite')) {
+        const rewrittenModel = 'gemini-3.8-flash-tiered';
+        fallbackJson.model = rewrittenModel;
+        if (fallbackJson.request && typeof fallbackJson.request === 'object') {
+          (fallbackJson.request as Record<string, unknown>).model = rewrittenModel;
+        }
+        rawModelName = rewrittenModel;
+        fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
+      }
     } catch { /* not JSON — continue as-is */ }
     await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || '', undefined, sessId || '', rawModelName);
 
@@ -6443,6 +7245,7 @@ export function setupCustomModelsWatcher(): void {
             log.info('[Proxy] custom_models.json changed on disk. Invalidating model caches...');
             invalidateModelStoreCache();
             invalidateHealthCache();
+            clearSessionAffinities();
             try {
               const models = loadCustomModels();
               if (models.length > 0) {
@@ -6522,6 +7325,7 @@ export function stopQuotaPollingInterval(): void {
     clearInterval(quotaPollTimer);
     quotaPollTimer = null;
   }
+  stopPreflightHealthCheckInterval();
 }
 
 // ─── Server Start/Stop ────────────────────────────────────────────────────
@@ -6610,8 +7414,15 @@ export function startProxy(): Promise<number> {
             .catch(() => {});
           startCleanupInterval();
           startQuotaPollingInterval();
+          startPreflightHealthCheckInterval();
           setupCustomModelsWatcher();
           prewarmGoogleAccounts(models);
+          resolveGoogleIp(GOOGLE_HOSTS.CLOUD_CODE).catch(() => {});
+          try {
+            warmTlsConnection(GOOGLE_HOSTS.CLOUD_CODE);
+            warmTlsConnection('daily-cloudcode-pa.googleapis.com');
+            warmTlsConnection('generativelanguage.googleapis.com');
+          } catch (_) {}
         } catch (err) {
           log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
         }

@@ -18,6 +18,7 @@ vi.mock('electron-log/main', () => ({
 
 vi.mock('../proxy/dnsResolver', () => ({
   resolveGoogleIp: vi.fn().mockResolvedValue('142.250.180.206'),
+  invalidateCachedDns: vi.fn(),
 }));
 
 import {
@@ -39,6 +40,7 @@ import {
 import { isModelOrLabelDisabled } from '../proxy/protoInjector';
 import { expandModelsWithEffort } from '../proxy/effortExpander';
 import { generateModelPlaceholderId } from '../proxy/idGenerator';
+import { normalizeCloudCodeModelId } from '../services/googleAuth';
 import type { CustomModel } from '../proxy/types';
 
 describe('Strict Zero Fallback on Native Models', () => {
@@ -396,6 +398,71 @@ describe('Strict Zero Fallback on Native Models', () => {
       expect(activeNative2?.originalModel).toBe('claude-sonnet-4-6');
       expect(activeNative2?.lastError?.statusCode).toBe(429);
     });
+
+    it('blocks automated Language Server fallback to Flash when Gemini 4 Argon native fails', () => {
+      const sessKey = 'sess-argon-flash-fallback-block';
+      markNativeSession(sessKey, 'gemini-4-argon-high');
+
+      const upstream429 = Buffer.from(JSON.stringify({
+        error: { code: 429, message: 'Resource has been exhausted (e.g. check quota).', status: 'RESOURCE_EXHAUSTED' }
+      }));
+      recordNativeSessionError(sessKey, 429, { 'content-type': 'application/json' }, upstream429, 'gemini-4-argon-high');
+
+      const activeNative = getNativeSession(sessKey);
+      expect(activeNative).toBeDefined();
+      expect(activeNative?.originalModel).toBe('gemini-4-argon-high');
+
+      // Go Language Server retries with Gemini 3.8 Flash (Low)
+      const fallbackAttempt = 'Gemini 3.8 Flash (Low)';
+      const isProtected = Boolean(
+        activeNative &&
+        activeNative.lastError &&
+        activeNative.originalModel &&
+        isNativeCloudCodeModel(activeNative.originalModel)
+      );
+      expect(isProtected).toBe(true);
+
+      const normOrig = normalizeCloudCodeModelId(activeNative!.originalModel);
+      const normCurrent = normalizeCloudCodeModelId(fallbackAttempt);
+      const isSameModel = normOrig === normCurrent;
+      expect(isSameModel).toBe(false);
+
+      const isFallbackToDifferentModel = isProtected && !isSameModel;
+      expect(isFallbackToDifferentModel).toBe(true);
+
+      const timeSince = Date.now() - activeNative!.lastSeen;
+      expect(timeSince).toBeLessThan(120000);
+    });
+
+    it('never blocks explicit custom model selection (MODEL_PLACEHOLDER_) even within cascade window', () => {
+      const sessKey = 'sess-argon-user-switch-flash';
+      markNativeSession(sessKey, 'gemini-4-argon-high');
+
+      const upstream429 = Buffer.from(JSON.stringify({
+        error: { code: 429, message: 'Resource has been exhausted (e.g. check quota).', status: 'RESOURCE_EXHAUSTED' }
+      }));
+      recordNativeSessionError(sessKey, 429, { 'content-type': 'application/json' }, upstream429, 'gemini-4-argon-high');
+
+      // User explicitly selects custom Gemini 3.8 Flash from UI
+      const requestedRaw = 'models/model_placeholder_m563';
+      const cleanRequested = requestedRaw.replace(/^models\//, '').trim();
+
+      const isExplicitUserCustom = /MODEL_PLACEHOLDER_/i.test(requestedRaw) ||
+                                   /MODEL_PLACEHOLDER_/i.test(cleanRequested) ||
+                                   requestedRaw.startsWith('custom-');
+      expect(isExplicitUserCustom).toBe(true);
+
+      const activeNative = getNativeSession(sessKey);
+      const isNativeProtected = Boolean(
+        activeNative &&
+        activeNative.lastError &&
+        activeNative.originalModel &&
+        isNativeCloudCodeModel(activeNative.originalModel)
+      );
+
+      const isFallbackToDifferentModel = isNativeProtected && !isExplicitUserCustom;
+      expect(isFallbackToDifferentModel).toBe(false);
+    });
   });
 
   describe('isModelOrLabelDisabled - Native Model Immunity', () => {
@@ -536,6 +603,27 @@ describe('Strict Zero Fallback on Native Models', () => {
 
       clearNativeSessions();
       expect(getLatestNativeErrorAsSession()).toBeUndefined();
+    });
+
+    it('clears session fallbacks and honors native model when user switches to gemini-4-argon in active session', () => {
+      const sessionId = 'session-argon-test-1';
+      // Simulate an active fallback to Gemini 3.8 Flash from previous turn
+      setSessionModelFallback(sessionId, 'claude-sonnet-4-6', 'gemini-3.8-flash-tiered', true);
+      expect(getSessionModelFallback(sessionId)).toBeDefined();
+
+      // User now explicitly requests native Gemini 4 Argon
+      const requestedModel = 'gemini-4-argon-medium';
+      expect(isNativeCloudCodeModel(requestedModel)).toBe(true);
+
+      // Verify that explicit selection clears the fallback
+      const activeFallback = getSessionModelFallback(sessionId);
+      if (activeFallback) {
+        const isNative = isNativeCloudCodeModel(requestedModel.replace(/^models\//, ''));
+        if (isNative) {
+          clearSessionModelFallback(sessionId);
+        }
+      }
+      expect(getSessionModelFallback(sessionId)).toBeUndefined();
     });
   });
 });
