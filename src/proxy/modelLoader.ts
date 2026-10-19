@@ -259,7 +259,7 @@ export function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel
         const accProvider = (acc as any).provider || (p.provider ?? 'openai');
         const isEffectiveGeminiCli = isGeminiCli || accProvider === 'gemini-cli';
         const accApiUrl = (acc as any).apiUrl as string | undefined;
-        const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ.')) && !acc.refreshToken);
+        const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ')) && !acc.refreshToken);
 
         // Google AI Studio does not support Claude models
         const isClaude = mId.includes('claude') || displayName.toLowerCase().includes('claude');

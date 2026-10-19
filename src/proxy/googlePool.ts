@@ -954,7 +954,7 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   if (!q) {
     // ponytail: reserve direct Google AI Studio developer keys (AIzaSy... / AQ...) as fallback by default (score 25),
     // ensuring healthy Cloud Code accounts (score 30-100) are used first to avoid burning direct API quotas.
-    const isAiStudioKey = m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ.'));
+    const isAiStudioKey = m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ'));
     return isAiStudioKey ? 25 : 50;
   }
   if (q.isUnlicensed) {

@@ -440,6 +440,76 @@ export function flattenAllToolCallsToText(contents: unknown[]): boolean {
   return modified;
 }
 
+/**
+ * Detects repetitive tool loops (e.g. agent re-reading the exact same file 3+ times consecutively)
+ * and appends an advisory anti-loop note into the latest turn to break the loop.
+ * Returns true if an advisory was injected.
+ */
+export function detectAndMitigateToolLoops(contents: unknown[]): boolean {
+  if (!Array.isArray(contents) || contents.length < 3) return false;
+
+  const recentCalls: Array<{ name: string; argsStr: string }> = [];
+
+  for (let i = contents.length - 1; i >= 0; i--) {
+    const turn = contents[i] as { role?: string; parts?: unknown[] };
+    if (!Array.isArray(turn?.parts)) continue;
+
+    for (let j = turn.parts.length - 1; j >= 0; j--) {
+      const p = turn.parts[j] as Record<string, unknown> | undefined;
+      if (!p || typeof p !== 'object') continue;
+      const fc = (p.functionCall || p.function_call) as Record<string, unknown> | undefined;
+      if (fc && typeof fc === 'object') {
+        const name = String(fc.name || '');
+        const argsStr = fc.args ? (typeof fc.args === 'string' ? fc.args : JSON.stringify(fc.args)) : '{}';
+        recentCalls.push({ name, argsStr });
+      }
+    }
+    // Only inspect the tail of recent activity (last ~6 tool calls)
+    if (recentCalls.length >= 6) break;
+  }
+
+  if (recentCalls.length < 3) return false;
+
+  const first = recentCalls[0];
+  let consecutiveCount = 1;
+  for (let k = 1; k < recentCalls.length; k++) {
+    if (recentCalls[k].name === first.name && recentCalls[k].argsStr === first.argsStr) {
+      consecutiveCount++;
+    } else {
+      break;
+    }
+  }
+
+  // Threshold: 3+ identical consecutive tool invocations
+  if (consecutiveCount >= 3) {
+    const lastTurn = contents[contents.length - 1] as { role?: string; parts?: unknown[] };
+    if (Array.isArray(lastTurn?.parts) && lastTurn.parts.length > 0) {
+      const antiLoopNote = `\n[System Guardrail: Redundant tool execution detected for '${first.name}'. Output is already present in context above. Synthesize findings and proceed to the next step immediately.]`;
+      const lastPart = lastTurn.parts[lastTurn.parts.length - 1] as Record<string, unknown>;
+      const fr = (lastPart.functionResponse || lastPart.function_response) as Record<string, unknown> | undefined;
+      if (fr && typeof fr === 'object') {
+        const resp = fr.response as Record<string, any> | undefined;
+        if (resp && typeof resp === 'object' && typeof resp.output === 'string') {
+          if (!resp.output.includes('[System Guardrail')) {
+            resp.output += antiLoopNote;
+            return true;
+          }
+        }
+      } else if (typeof lastPart.text === 'string') {
+        if (!lastPart.text.includes('[System Guardrail')) {
+          lastPart.text += antiLoopNote;
+          return true;
+        }
+      } else {
+        lastTurn.parts.push({ text: antiLoopNote });
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // ─── Periodic Cleanup (managed lifecycle) ─────────────────────────────────
 
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;

@@ -885,6 +885,10 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-3.8-flash-high': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
     'gemini-2.5-flash-lite': 'gemini-3.8-flash-tiered',
+    'gemini-3-preview': 'gemini-3.8-flash-tiered',
+    'gemini-3-flash-preview': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-flash-lite': 'gemini-3.8-flash-tiered',
     'model_google_gemini_2_5_flash_lite': 'gemini-3.8-flash-tiered',
     'model-google-gemini-2-5-flash-lite': 'gemini-3.8-flash-tiered',
     'model_tier_flash_lite': 'gemini-3.8-flash-tiered',
@@ -950,6 +954,10 @@ export function normalizeGoogleModelId(modelName: string): string {
     'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
     'gemini-3.8-flash-tiered': 'gemini-3.8-flash-tiered',
     'gemini-2.5-flash-lite': 'gemini-3.8-flash-tiered',
+    'gemini-3-preview': 'gemini-3.8-flash-tiered',
+    'gemini-3-flash-preview': 'gemini-3.8-flash-tiered',
+    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.1-flash-lite': 'gemini-3.8-flash-tiered',
     'model_google_gemini_2_5_flash_lite': 'gemini-3.8-flash-tiered',
     'model-google-gemini-2-5-flash-lite': 'gemini-3.8-flash-tiered',
     'model_tier_flash_lite': 'gemini-3.8-flash-tiered',
@@ -1052,7 +1060,7 @@ export function isGoogleCloudCodeModel(m: {
 }): boolean {
   if (m.provider !== 'google' && m.provider !== 'gemini-cli') return false;
   // If explicitly using an AI Studio Developer API key (AIzaSy... or AQ...), treat as AI Studio
-  if (m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ.'))) return false;
+  if (m.apiKey && (m.apiKey.startsWith('AIzaSy') || m.apiKey.startsWith('AQ'))) return false;
 
   return Boolean(
     m.refreshToken ||

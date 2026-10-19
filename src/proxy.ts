@@ -54,6 +54,7 @@ import {
   restoreThoughtSignatures,
   sanitizeUnsignedToolCalls,
   flattenAllToolCallsToText,
+  detectAndMitigateToolLoops,
   markConvCorruptedSignatures,
   isConvCorruptedSignatures,
   touchStateTimestamp,
