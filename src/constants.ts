@@ -136,11 +136,17 @@ export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 4
 /** Timeout for waiting for initial response headers in multi-account pools (default: 25 seconds). */
 export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 25_000);
 
-/** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 6 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 6_000);
+/** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 4.5 seconds to cut black holes immediately). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 4_500);
 
 /** Timeout for waiting for initial response headers on large payloads or thinking models (default: 40 seconds). */
 export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 40_000);
+
+/** Background proactive pre-flight health check interval across Google account pool (default: 20 minutes). */
+export const PREFLIGHT_HEALTH_CHECK_INTERVAL_MS = getEnvInt('AG_PREFLIGHT_HEALTH_CHECK_INTERVAL_MS', 20 * 60_000);
+
+/** Strict per-account timeout for pre-flight ping probe (default: 3.5 seconds). */
+export const PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS = getEnvInt('AG_PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS', 3_500);
 
 /** P2C score delta for top-tier candidate eligibility in Google account pool (default: 45 points). */
 export const P2C_SCORE_DELTA = getEnvInt('AG_P2C_SCORE_DELTA', 45);

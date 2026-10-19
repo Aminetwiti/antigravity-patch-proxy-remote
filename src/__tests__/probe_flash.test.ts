@@ -3,7 +3,7 @@ import fs from 'fs';
 import https from 'https';
 import { refreshGoogleToken } from '../services/googleAuth';
 
-describe('headers test', () => {
+describe.skipIf(!process.env.LIVE_GOOGLE_TEST)('headers test', () => {
   it('checks response headers from cloudcode-pa on 429', async () => {
     const raw = fs.readFileSync('C:/Users/amine/.gemini/antigravity/custom_models.json', 'utf-8');
     const data = JSON.parse(raw);

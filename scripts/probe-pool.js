@@ -2,12 +2,12 @@
 /**
  * scripts/probe-pool.js
  * 
- * High-speed parallel health-checker and sanitizer for Google Cloud Code accounts.
+ * High-speed parallel health-checker, 403/TOS diagnostic and sanitizer for Google Cloud Code accounts.
  * Probes all accounts with real Antigravity IDE signatures, isolates black-hole/captcha
- * accounts, and keeps custom_models.json in a 100% healthy, zero-latency state.
+ * accounts, classifies failure types, and keeps custom_models.json in a 100% healthy state.
  * 
  * Usage:
- *   node scripts/probe-pool.js [--dry-run]
+ *   node scripts/probe-pool.js [--dry-run] [--json]
  */
 
 'use strict';
@@ -32,13 +32,41 @@ if (!fs.existsSync(customModelsPath)) {
 }
 
 const isDryRun = process.argv.includes('--dry-run');
+const isJsonOutput = process.argv.includes('--json');
+
+function classifyError(status, reason) {
+  const r = (reason || '').toLowerCase();
+  if (status === 200) {
+    return { code: 'HEALTHY', label: 'Opérationnel (200 OK)', action: 'none' };
+  }
+  if (r.includes('verify your account') || r.includes('validation_required') || r.includes('challenge')) {
+    return { code: 'CHALLENGE_REQUIRED', label: 'Validation Sécurité Requise (SMS/Captcha)', action: 'browser_verify' };
+  }
+  if (r.includes('terms of service') || r.includes('tos') || r.includes('suspended') || r.includes('disabled')) {
+    return { code: 'TOS_SUSPENDED', label: 'Compte Suspendu / TOS', action: 'google_appeal' };
+  }
+  if (r.includes('license') || r.includes('#3501') || r.includes('unlicensed') || r.includes('whitelisted')) {
+    return { code: 'UNLICENSED', label: 'Non-Inscrit Antigravity Preview (#3501)', action: 'reauth_or_wait' };
+  }
+  if (status === 429 || r.includes('resource_exhausted') || r.includes('quota')) {
+    return { code: 'QUOTA_EXHAUSTED', label: 'Quota Épuisé (5h ou Hebdo)', action: 'wait_reset' };
+  }
+  if (status === 504 || r.includes('timeout') || r.includes('black hole')) {
+    return { code: 'BLACK_HOLE_TIMEOUT', label: 'Black-Hole (Hanging Socket >6s)', action: 'check_network_or_quarantine' };
+  }
+  if (r.includes('refresh') || r.includes('token') || status === 401) {
+    return { code: 'AUTH_TOKEN_EXPIRED', label: 'Session / Refresh Token Expiré', action: 'reauth' };
+  }
+  return { code: 'UNKNOWN_ERROR', label: `Erreur HTTP ${status}`, action: 'inspect' };
+}
 
 async function testAccount(acc) {
   const email = acc.email || acc.name || 'unknown';
   try {
     const token = await getValidGoogleAccessToken(acc);
     if (!token) {
-      return { email, status: 0, ms: 0, ok: false, reason: 'Failed to refresh OAuth token' };
+      const diagnosis = classifyError(401, 'Failed to refresh OAuth token');
+      return { email, status: 401, ms: 0, ok: false, reason: 'Failed to refresh OAuth token', diagnosis };
     }
 
     return new Promise((resolve) => {
@@ -51,7 +79,7 @@ async function testAccount(acc) {
       });
 
       const start = Date.now();
-      const req = https.request('https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse', {
+      const req = https.request('https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent', {
         method: 'POST',
         headers: {
           'Authorization': 'Bearer ' + token,
@@ -59,7 +87,7 @@ async function testAccount(acc) {
           'User-Agent': 'antigravity/2.23.0 windows/amd64',
           'X-Goog-Api-Client': 'google-cloud-sdk antigravity/2.23.0'
         },
-        timeout: 6000
+        timeout: 4000
       }, (res) => {
         let body = '';
         res.on('data', chunk => body += chunk);
@@ -70,77 +98,109 @@ async function testAccount(acc) {
           if (!ok) {
             try {
               const j = JSON.parse(body);
-              reason = j.error?.message || j.error?.details?.[0]?.reason || body.substring(0, 60);
+              reason = j.error?.message || j.error?.details?.[0]?.reason || body.substring(0, 80);
             } catch (_) {
-              reason = body.substring(0, 60);
+              reason = body.substring(0, 80);
             }
           }
-          resolve({ email, status: res.statusCode, ms, ok, reason });
+          const diagnosis = classifyError(res.statusCode, reason);
+          resolve({ email, status: res.statusCode, ms, ok, reason, diagnosis });
         });
       });
 
       req.on('timeout', () => {
         req.destroy();
-        resolve({ email, status: 504, ms: Date.now() - start, ok: false, reason: 'TIMEOUT (>6s - Black Hole)' });
+        const reason = 'TIMEOUT (>4s - Black Hole)';
+        const diagnosis = classifyError(504, reason);
+        resolve({ email, status: 504, ms: Date.now() - start, ok: false, reason, diagnosis });
       });
 
       req.on('error', (err) => {
-        resolve({ email, status: 0, ms: Date.now() - start, ok: false, reason: err.message });
+        const diagnosis = classifyError(0, err.message);
+        resolve({ email, status: 0, ms: Date.now() - start, ok: false, reason: err.message, diagnosis });
       });
 
       req.write(postData);
       req.end();
     });
   } catch (err) {
-    return { email, status: 0, ms: 0, ok: false, reason: err.message };
+    const diagnosis = classifyError(0, err.message);
+    return { email, status: 0, ms: 0, ok: false, reason: err.message, diagnosis };
   }
 }
 
-async function main() {
-  console.log('════════════════════════════════════════════════════════════════');
-  console.log(' [DOCTOR] Antigravity Google Multi-Account Pool Health Audit');
-  console.log(' Config: ' + customModelsPath);
-  console.log(' Mode:   ' + (isDryRun ? 'DRY RUN (inspect only)' : 'AUTO-HEAL & QUARANTINE'));
-  console.log('════════════════════════════════════════════════════════════════\n');
-
+async function runProbe() {
   const config = JSON.parse(fs.readFileSync(customModelsPath, 'utf8'));
   const googleProvider = (config.providers || []).find(p => p.id === 'provider-google' || p.provider === 'google');
   if (!googleProvider || !Array.isArray(googleProvider.accounts)) {
-    console.error('No Google provider or accounts found in custom_models.json');
-    process.exit(1);
+    throw new Error('No Google provider or accounts found in custom_models.json');
   }
 
   const accounts = googleProvider.accounts.filter(a => a.email);
-  console.log(`Probing ${accounts.length} Google account(s) concurrently with live IDE headers...\n`);
-
   const results = await Promise.all(accounts.map(testAccount));
 
   const healthyEmails = new Set();
   const quarantinedEmails = new Set();
-
-  console.log('┌─────┬──────────────────────────────┬────────────┬──────────┬────────────────────────────────────────────┐');
-  console.log('│ ST  │ Account Email                │ Status     │ Latency  │ Diagnosis / Details                        │');
-  console.log('├─────┼──────────────────────────────┼────────────┼──────────┼────────────────────────────────────────────┤');
+  const challengeEmails = new Set();
+  const unlicensedEmails = new Set();
+  const tosEmails = new Set();
 
   for (const r of results) {
-    const icon = r.ok ? '✅' : '❌';
-    const emailCol = (r.email || '').padEnd(28).substring(0, 28);
-    const statusCol = ('HTTP ' + r.status).padEnd(10);
-    const latencyCol = (r.ms + 'ms').padEnd(8);
-    const reasonCol = (r.reason || '').padEnd(42).substring(0, 42);
-
-    console.log(`│ ${icon} │ ${emailCol} │ ${statusCol} │ ${latencyCol} │ ${reasonCol} │`);
-
     if (r.ok) {
       healthyEmails.add(r.email);
     } else {
       quarantinedEmails.add(r.email);
+      if (r.diagnosis.code === 'CHALLENGE_REQUIRED') challengeEmails.add(r.email);
+      if (r.diagnosis.code === 'UNLICENSED') unlicensedEmails.add(r.email);
+      if (r.diagnosis.code === 'TOS_SUSPENDED') tosEmails.add(r.email);
     }
   }
 
-  console.log('└─────┴──────────────────────────────┴────────────┴──────────┴────────────────────────────────────────────┘');
+  return { config, googleProvider, results, healthyEmails, quarantinedEmails, challengeEmails, unlicensedEmails, tosEmails };
+}
 
-  console.log(`\nSummary: ${healthyEmails.size} Healthy (Active) | ${quarantinedEmails.size} Quarantined (Disabled)`);
+async function main() {
+  if (isJsonOutput) {
+    const data = await runProbe();
+    console.log(JSON.stringify(data.results, null, 2));
+    return;
+  }
+
+  console.log('═══════════════════════════════════════════════════════════════════════════════');
+  console.log(' [DOCTOR] Antigravity Google Multi-Account Diagnostic & Sanitizer');
+  console.log(' Config: ' + customModelsPath);
+  console.log(' Mode:   ' + (isDryRun ? 'DRY RUN (inspect only)' : 'AUTO-HEAL & QUARANTINE'));
+  console.log('═══════════════════════════════════════════════════════════════════════════════\n');
+
+  const { config, googleProvider, results, healthyEmails, quarantinedEmails, challengeEmails, unlicensedEmails, tosEmails } = await runProbe();
+
+  console.log('┌─────┬──────────────────────────────┬────────────┬──────────┬─────────────────────────────────────────────────┐');
+  console.log('│ ST  │ Account Email                │ Code / Lat │ Catégorie │ Diagnostic & Action Requise                     │');
+  console.log('├─────┼──────────────────────────────┼────────────┼──────────┼─────────────────────────────────────────────────┤');
+
+  for (const r of results) {
+    let icon = '❌';
+    if (r.ok) icon = '✅';
+    else if (r.diagnosis.code === 'CHALLENGE_REQUIRED') icon = '🟠';
+    else if (r.diagnosis.code === 'QUOTA_EXHAUSTED') icon = '⏳';
+    else if (r.diagnosis.code === 'UNLICENSED') icon = '⚪';
+
+    const emailCol = (r.email || '').padEnd(28).substring(0, 28);
+    const statusCol = (`H${r.status} ${r.ms}ms`).padEnd(10).substring(0, 10);
+    const catCol = (r.diagnosis.code).padEnd(10).substring(0, 10);
+    const diagCol = (r.diagnosis.label || r.reason || '').padEnd(47).substring(0, 47);
+
+    console.log(`│ ${icon} │ ${emailCol} │ ${statusCol} │ ${catCol} │ ${diagCol} │`);
+  }
+
+  console.log('└─────┴──────────────────────────────┴────────────┴──────────┴─────────────────────────────────────────────────┘');
+
+  console.log(`\n📊 Bilan Diagnostic :`);
+  console.log(`   🟢 Actifs & Sains (Healthy)       : ${healthyEmails.size}`);
+  console.log(`   🟠 Challenge Validation (Sécurité) : ${challengeEmails.size}  -> Action : Déblocage navigateur recommandé`);
+  console.log(`   ⚪ Non-Inscrits / Sans Licence     : ${unlicensedEmails.size}  -> Action : Ignoré ou re-inscription`);
+  console.log(`   🔴 TOS / Suspendus                 : ${tosEmails.size}`);
+  console.log(`   🛑 Total Quarantaine (Désactivés) : ${quarantinedEmails.size}`);
 
   if (!isDryRun) {
     let modified = false;
@@ -153,7 +213,7 @@ async function main() {
     }
 
     fs.writeFileSync(customModelsPath, JSON.stringify(config, null, 2), 'utf8');
-    console.log('💾 custom_models.json updated: quarantined accounts marked as enabled: false.');
+    console.log('\n💾 custom_models.json synchronisé : seuls les comptes sains restent actifs.');
 
     if (fs.existsSync(quotaCachePath)) {
       try {
@@ -165,17 +225,39 @@ async function main() {
               qc.quotas[email].weeklyPercentage = 0;
             }
           }
-          fs.writeFileSync(quotaCachePath, JSON.stringify(qc, null, 2), 'utf8');
-          console.log('💾 quota_cache.json synchronized: quarantined accounts quota zeroed.');
         }
+        if (Array.isArray(qc.unlicensedAccounts)) {
+          const unSet = new Set(qc.unlicensedAccounts);
+          for (const email of healthyEmails) {
+            unSet.delete(email);
+            unSet.delete(`google:${email}`);
+            unSet.delete(`gemini-cli:${email}`);
+          }
+          for (const email of quarantinedEmails) {
+            unSet.add(email);
+            unSet.add(`google:${email}`);
+          }
+          qc.unlicensedAccounts = Array.from(unSet);
+        }
+        fs.writeFileSync(quotaCachePath, JSON.stringify(qc, null, 2), 'utf8');
+        console.log('💾 quota_cache.json synchronisé : quotas et liste de quarantaine mis à jour.');
       } catch (_) {}
     }
   }
 
-  console.log('\n[probe-pool] Pool is healthy and ready for seamless parallel execution.');
+  if (challengeEmails.size > 0) {
+    console.log('\n💡 Astuce : Pour débloquer les comptes nécessitant une vérification de sécurité :');
+    console.log('   Exécutez : npm run doctor:fix-accounts');
+  }
+
+  console.log('\n[probe-pool] Diagnostic terminé.');
 }
 
-main().catch(err => {
-  console.error('[probe-pool] Fatal error:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error('[probe-pool] Fatal error:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { testAccount, runProbe, classifyError };

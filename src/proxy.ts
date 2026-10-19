@@ -129,6 +129,11 @@ import {
   getAccountQuotaKey,
   isAccountUnlicensed,
   markAccountUnlicensed,
+  unmarkAccountUnlicensed,
+  probeGoogleAccountPreflight,
+  probeAllGoogleAccountsPreflight,
+  startPreflightHealthCheckInterval,
+  stopPreflightHealthCheckInterval,
   getUnlicensedAccountKeys,
   restoreUnlicensedAccountKeys,
   markAccountQuotaExhausted,
@@ -1487,19 +1492,21 @@ export function executeGoogleCloudCodeRequest(
     let proxyReq: http.ClientRequest | undefined;
 
     const onClientClose = () => {
-      if (!settled) {
+      // Only treat as genuine client abort if the downstream client response socket is genuinely ended/destroyed.
+      const clientTrulyClosed = res?.writableEnded || res?.destroyed || Boolean(res?.socket && res.socket.destroyed);
+      if (!settled && clientTrulyClosed) {
         try { proxyReq?.destroy(); } catch (_) {}
         finish({ success: false, statusCode: 499, error: 'Client closed request before completion' });
       }
     };
-    if (typeof req?.once === 'function') req.once('close', onClientClose);
+    // Do NOT attach onClientClose to req.once('close')! In Node.js HTTP servers, req emits 'close'
+    // when incoming POST body is consumed, which would falsely report client aborts.
     if (typeof res?.once === 'function') res.once('close', onClientClose);
 
     const finish = (outcome: GoogleRequestOutcome) => {
       if (settled) return;
       settled = true;
       try {
-        if (typeof req?.off === 'function') req.off('close', onClientClose);
         if (typeof res?.off === 'function') res.off('close', onClientClose);
       } catch (_) {}
       if (proxyReq) {
@@ -2213,20 +2220,24 @@ export async function executeGoogleCloudCodeWithPool(
     const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel);
     const isFlashModel = /flash/i.test(targetModel) && !isThinkingModel;
     const isLargePayloadOrThinking = updatedBody.length > 60_000 || isThinkingModel;
-    // For streaming requests with healthy sibling accounts in pool, use fast header timeouts for quick failover:
-    // - Flash models: configurable via AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS (default 35s; or 25s if multiple healthy siblings exist)
-    // - Thinking / large prompts: 55-75s (allows reasoning budget without stalling the IDE)
-    // - Standard models: 45-60s
-    const defaultCandidateFlashMs = healthySiblingAccountsCount >= 2 ? 6_000 : 12_000;
-    const flashTimeoutMs = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS ? GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS : defaultCandidateFlashMs;
-    const defaultCandidateLargeMs = healthySiblingAccountsCount >= 2 ? 55_000 : 75_000;
-    const largeTimeoutMs = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : defaultCandidateLargeMs;
-    const defaultCandidateStandardMs = healthySiblingAccountsCount >= 2 ? 45_000 : 60_000;
-    const standardTimeoutMs = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_MS ? GOOGLE_POOL_HEADER_TIMEOUT_MS : defaultCandidateStandardMs;
+    // For streaming requests with sibling accounts in pool, use fast header timeouts for quick failover:
+    // - Flash models: strict 4.5s TTFT (GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS) when siblings exist to eliminate black-hole stalls immediately
+    // - Thinking / large prompts: 40-55s (allows reasoning budget without stalling the IDE)
+    // - Standard models: 25-35s
+    const flashTimeoutMs = hasOtherCandidates
+      ? GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS
+      : Math.min(12_000, GOOGLE_PROXY_TIMEOUT_MS);
+    const largeTimeoutMs = hasOtherCandidates
+      ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : 55_000)
+      : GOOGLE_PROXY_TIMEOUT_MS;
+    const standardTimeoutMs = hasOtherCandidates
+      ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_MS : 35_000)
+      : GOOGLE_PROXY_TIMEOUT_MS;
 
-    const baseCandidateTimeout = isStreamReq
-      ? (isFlashModel ? flashTimeoutMs : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs))
-      : (isFlashModel ? flashTimeoutMs : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs));
+    const baseCandidateTimeout = isFlashModel
+      ? flashTimeoutMs
+      : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs);
+
     // When no other candidates exist, fallback to the full proxy timeout.
     const poolHeaderTimeout = hasOtherCandidates
       ? baseCandidateTimeout
@@ -2272,14 +2283,25 @@ export async function executeGoogleCloudCodeWithPool(
       return true;
     }
 
-    if (outcome.statusCode === 499 || (outcome.error && /Client closed request/i.test(outcome.error)) || req.destroyed || res.writableEnded) {
-      if (elapsedMs >= 15_000) {
-        log.warn(`[Proxy] Account [${candidateName}] stalled connection for ${Math.round(elapsedMs / 1000)}s before client closed (HTTP 499). Placing in 60s cooldown to protect pool from black-hole accounts.`);
-        setAccountCooldown(candidate, 60_000, currentFamily, true);
+    const isClientSocketAlive = !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed && res.socket.writable !== false);
+
+    // If client actually dropped connection (IDE closed window, cancelled prompt):
+    if (!isClientSocketAlive) {
+      if (elapsedMs >= 4_000) {
+        log.warn(`[Proxy] Account [${candidateName}] stalled connection for ${Math.round(elapsedMs / 1000)}s before client closed (HTTP 499). Placing in 120s cooldown to protect pool from black-hole accounts.`);
+        setAccountCooldown(candidate, 120_000, currentFamily, true);
         recordAccountLatency(candidate, 60_000);
       }
       log.info(`[Proxy] 🛑 Client cancelled or closed connection (HTTP 499). Halting account rotation loop.`);
       return false;
+    }
+
+    // Upstream reset / abort occurred while downstream client socket is STILL HEALTHY:
+    // Do NOT halt the rotation loop! Cool down candidate and try next account immediately.
+    if (outcome.statusCode === 499 || (outcome.error && /Client closed request/i.test(outcome.error))) {
+      log.warn(`[Proxy] Upstream socket disconnected on [${candidateName}] but downstream client is still active. Cooling down candidate and continuing rotation...`);
+      setAccountCooldown(candidate, 60_000, currentFamily, true);
+      continue;
     }
 
     if (outcome.statusCode === 429) {
@@ -2685,11 +2707,11 @@ export async function executeGoogleCloudCodeWithPool(
 
       if (isServerOutage) {
         consecutiveTimeoutCount++;
-        const maxOutageLimit = Math.max(2, Math.min(4, sortedAccounts.length));
+        const maxOutageLimit = Math.max(3, Math.min(6, Math.ceil(sortedAccounts.length * 0.5)));
         const upstreamOutageThreshold = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0) || maxOutageLimit;
         const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
-        // For HTTP 500 internal errors, use a 20s cooldown so transient hiccups recover quickly; 504/outages use 30s-45s.
-        const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (isUpstreamOutage ? 30_000 : 45_000);
+        // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (black hole/slow): 120s; outages: 30s-45s.
+        const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 120_000 : (isUpstreamOutage ? 30_000 : 45_000));
         log.warn(
           `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
         );
@@ -3838,6 +3860,11 @@ export {
   getAccountQuotaKey,
   isAccountUnlicensed,
   markAccountUnlicensed,
+  unmarkAccountUnlicensed,
+  probeGoogleAccountPreflight,
+  probeAllGoogleAccountsPreflight,
+  startPreflightHealthCheckInterval,
+  stopPreflightHealthCheckInterval,
   getUnlicensedAccountKeys,
   restoreUnlicensedAccountKeys,
   markAccountQuotaExhausted,
@@ -6964,6 +6991,7 @@ export function stopQuotaPollingInterval(): void {
     clearInterval(quotaPollTimer);
     quotaPollTimer = null;
   }
+  stopPreflightHealthCheckInterval();
 }
 
 // ─── Server Start/Stop ────────────────────────────────────────────────────
@@ -7052,6 +7080,7 @@ export function startProxy(): Promise<number> {
             .catch(() => {});
           startCleanupInterval();
           startQuotaPollingInterval();
+          startPreflightHealthCheckInterval();
           setupCustomModelsWatcher();
           prewarmGoogleAccounts(models);
           resolveGoogleIp(GOOGLE_HOSTS.CLOUD_CODE).catch(() => {});

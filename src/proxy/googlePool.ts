@@ -3,6 +3,7 @@
 // proxy.ts re-exports everything; existing callers are unaffected.
 
 import { randomInt } from 'crypto';
+import https from 'https';
 import log from 'electron-log';
 import type { CustomModel } from './types';
 import { getOpenBreaker } from './circuitBreaker';
@@ -13,6 +14,7 @@ import {
   isGoogleCloudCodeModel,
   isTokenRevoked,
   normalizeCloudCodeModelId,
+  getValidGoogleAccessToken,
   type AccountLiveQuota,
 } from '../services/googleAuth';
 import { getBaseModelId } from './urlBuilder';
@@ -21,7 +23,12 @@ import {
   registerUnlicensedAccountsHandlers,
   registerAccountCooldownHandlers,
 } from '../services/quotaCacheStore';
-import { P2C_SCORE_DELTA } from '../constants';
+import {
+  P2C_SCORE_DELTA,
+  PREFLIGHT_HEALTH_CHECK_INTERVAL_MS,
+  PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS,
+} from '../constants';
+import { loadCustomModels } from './modelLoader';
 
 // ─── Multi-Account Session Affinity (Sticky Sessions) ─────────────────────────
 
@@ -95,6 +102,22 @@ export function markAccountUnlicensed(candidate: CustomModel): void {
     unlicensedAccountKeys.add(`gemini-cli:${email}`);
   }
   triggerQuotaCachePersist();
+}
+
+export function unmarkAccountUnlicensed(candidate: CustomModel | string): void {
+  const key = typeof candidate === 'string' ? candidate : getAccountQuotaKey(candidate);
+  const email = typeof candidate === 'string'
+    ? (candidate.includes('@') ? candidate.toLowerCase() : '')
+    : (candidate.accountEmail || '').toLowerCase();
+  let changed = unlicensedAccountKeys.delete(key);
+  if (email) {
+    if (unlicensedAccountKeys.delete(email)) changed = true;
+    if (unlicensedAccountKeys.delete(`google:${email}`)) changed = true;
+    if (unlicensedAccountKeys.delete(`gemini-cli:${email}`)) changed = true;
+  }
+  if (changed) {
+    triggerQuotaCachePersist();
+  }
 }
 
 export function getUnlicensedAccountKeys(): string[] {
@@ -1425,3 +1448,245 @@ export function getGoogleAccountPool(
 
   return distinctPool.length > 0 ? distinctPool : [matchedModel];
 }
+
+// ─── Proactive Pre-Flight Health Check & Quarantine ───────────────────────────
+
+export interface PreflightProbeResult {
+  email: string;
+  ok: boolean;
+  statusCode: number;
+  latencyMs: number;
+  reason: string;
+}
+
+/**
+ * Executes a fast non-streaming single-token health check on a Google account.
+ * Accounts that stall > timeoutMs (default 3.5s) are isolated as Black-Hole accounts
+ * and quarantined to protect IDE sessions from hangs.
+ */
+export async function probeGoogleAccountPreflight(
+  account: CustomModel,
+  timeoutMs = PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS,
+): Promise<PreflightProbeResult> {
+  const email = (account.accountEmail || account.name || 'unknown').toLowerCase();
+  const token = await getValidGoogleAccessToken(account).catch(() => null);
+
+  if (!token) {
+    if (account.refreshToken && isTokenRevoked(account.refreshToken)) {
+      markAccountUnlicensed(account);
+    }
+    return {
+      email,
+      ok: false,
+      statusCode: 401,
+      latencyMs: 0,
+      reason: 'Failed to obtain access token (revoked or expired)',
+    };
+  }
+
+  const projectId = resolveGoogleProjectId(account) || 'aicode-consumers';
+  const postData = JSON.stringify({
+    project: projectId,
+    model: 'gemini-3.8-flash-tiered',
+    request: {
+      contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+      generationConfig: { maxOutputTokens: 1, temperature: 0 },
+    },
+  });
+
+  const host = isGeminiCliModel(account) ? 'cloudcode-pa.googleapis.com' : 'daily-cloudcode-pa.googleapis.com';
+  const startTime = Date.now();
+
+  return new Promise<PreflightProbeResult>((resolve) => {
+    let settled = false;
+    const finish = (res: PreflightProbeResult) => {
+      if (settled) return;
+      settled = true;
+      resolve(res);
+    };
+
+    const req = https.request(
+      `https://${host}/v1internal:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'antigravity',
+          'X-Goog-Api-Client': 'google-cloud-sdk antigravity',
+          'Content-Length': Buffer.byteLength(postData),
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => {
+          const latencyMs = Date.now() - startTime;
+          const status = res.statusCode || 0;
+          const ok = status >= 200 && status < 300;
+
+          if (ok) {
+            unmarkAccountUnlicensed(account);
+            clearAccountCooldown(account, 'gemini');
+            clearAccountCooldown(account, 'claude');
+            recordAccountLatency(account, latencyMs);
+            log.info(`[PreFlight] ✅ Account [${email}] is healthy (HTTP 200, ${latencyMs}ms)`);
+            finish({ email, ok: true, statusCode: status, latencyMs, reason: 'OK' });
+            return;
+          }
+
+          let reason = '';
+          try {
+            const j = JSON.parse(body);
+            reason = j.error?.message || j.error?.details?.[0]?.reason || body.substring(0, 100);
+          } catch (_) {
+            reason = body.substring(0, 100);
+          }
+
+          const isSecurityChallenge = status === 403 || /verify your account|validation_required|permission_denied/i.test(reason);
+          if (isSecurityChallenge) {
+            markAccountUnlicensed(account);
+            setAccountCooldown(account, 7 * 24 * 3600 * 1000);
+            log.warn(`[PreFlight] ⚠️ Account [${email}] security challenge (HTTP ${status}): quarantined. (${reason})`);
+            finish({ email, ok: false, statusCode: status, latencyMs, reason: `Security challenge: ${reason}` });
+            return;
+          }
+
+          if (status === 429) {
+            setAccountCooldown(account, 30_000, 'gemini', true);
+            log.warn(`[PreFlight] ⚠️ Account [${email}] rate-limited (HTTP 429): paused 30s.`);
+            finish({ email, ok: false, statusCode: status, latencyMs, reason: 'HTTP 429' });
+            return;
+          }
+
+          setAccountCooldown(account, 60_000, 'gemini', true);
+          log.warn(`[PreFlight] ⚠️ Account [${email}] HTTP ${status}: placed in 60s cooldown.`);
+          finish({ email, ok: false, statusCode: status, latencyMs, reason: `HTTP ${status}: ${reason}` });
+        });
+      },
+    );
+
+    req.on('timeout', () => {
+      req.destroy();
+      const latencyMs = Date.now() - startTime;
+      // Socket stalled without response -> Black-Hole!
+      markAccountUnlicensed(account);
+      setAccountCooldown(account, 24 * 3600 * 1000, 'gemini', true);
+      setAccountCooldown(account, 24 * 3600 * 1000, 'claude', true);
+      log.warn(`[PreFlight] 🕳️ Black-Hole account detected: [${email}] stalled (> ${timeoutMs}ms). Quarantined for 24h.`);
+      finish({
+        email,
+        ok: false,
+        statusCode: 504,
+        latencyMs,
+        reason: `TIMEOUT (>${timeoutMs}ms - Black Hole)`,
+      });
+    });
+
+    req.on('error', (err) => {
+      const latencyMs = Date.now() - startTime;
+      log.warn(`[PreFlight] Transport error probing [${email}]: ${err.message}`);
+      finish({
+        email,
+        ok: false,
+        statusCode: 0,
+        latencyMs,
+        reason: err.message,
+      });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+/**
+ * Concurrently audits all unique Google accounts in the pool with bounded concurrency.
+ * Isolates and quarantines black-hole accounts so they are never picked during IDE sessions.
+ */
+export async function probeAllGoogleAccountsPreflight(
+  customModels?: CustomModel[],
+  concurrencyLimit = 4,
+): Promise<{ healthy: number; quarantined: number; results: PreflightProbeResult[] }> {
+  const models = customModels || loadCustomModels();
+  const googleAccounts = models.filter((m) => isGoogleCloudCodeModel(m) && (m.accountEmail || m.refreshToken));
+  if (googleAccounts.length === 0) {
+    return { healthy: 0, quarantined: 0, results: [] };
+  }
+
+  const uniqueMap = new Map<string, CustomModel>();
+  for (const acc of googleAccounts) {
+    const key = (acc.accountEmail || acc.refreshToken || '').toLowerCase();
+    if (key && !uniqueMap.has(key)) {
+      uniqueMap.set(key, acc);
+    }
+  }
+
+  const queue = Array.from(uniqueMap.values());
+  log.info(`[PreFlight] 🔍 Starting proactive health check across ${queue.length} unique Google account(s)...`);
+
+  const results: PreflightProbeResult[] = [];
+  const workers = Array.from({ length: Math.min(concurrencyLimit, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (!item) break;
+      try {
+        const res = await probeGoogleAccountPreflight(item);
+        results.push(res);
+      } catch (err) {
+        log.warn(`[PreFlight] Error probing ${(item.accountEmail || item.name)}:`, err);
+      }
+    }
+  });
+
+  await Promise.allSettled(workers);
+
+  const healthy = results.filter((r) => r.ok).length;
+  const quarantined = results.filter((r) => !r.ok && (r.statusCode === 504 || r.statusCode === 403 || r.statusCode === 401)).length;
+  log.info(`[PreFlight] Proactive audit finished: ${healthy} Healthy, ${quarantined} Quarantined out of ${results.length} accounts.`);
+
+  return { healthy, quarantined, results };
+}
+
+let preflightTimer: NodeJS.Timeout | null = null;
+let preflightBootTimer: NodeJS.Timeout | null = null;
+
+export function startPreflightHealthCheckInterval(intervalMs = PREFLIGHT_HEALTH_CHECK_INTERVAL_MS): void {
+  if (preflightTimer) {
+    clearInterval(preflightTimer);
+    preflightTimer = null;
+  }
+  if (preflightBootTimer) {
+    clearTimeout(preflightBootTimer);
+    preflightBootTimer = null;
+  }
+
+  // Pre-flight check at boot (after 3.5s to let initial token pre-warm begin)
+  preflightBootTimer = setTimeout(() => {
+    probeAllGoogleAccountsPreflight().catch((err) => {
+      log.debug('[PreFlight] Boot health check failed:', err?.message || err);
+    });
+  }, 3500);
+  if (preflightBootTimer.unref) preflightBootTimer.unref();
+
+  // Periodic recurring check (default every 20 minutes)
+  preflightTimer = setInterval(() => {
+    probeAllGoogleAccountsPreflight().catch((err) => {
+      log.debug('[PreFlight] Periodic health check tick failed:', err?.message || err);
+    });
+  }, intervalMs);
+  if (preflightTimer.unref) preflightTimer.unref();
+}
+
+export function stopPreflightHealthCheckInterval(): void {
+  if (preflightTimer) {
+    clearInterval(preflightTimer);
+    preflightTimer = null;
+  }
+  if (preflightBootTimer) {
+    clearTimeout(preflightBootTimer);
+    preflightBootTimer = null;
+  }
+}
+
