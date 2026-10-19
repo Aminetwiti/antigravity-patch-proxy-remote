@@ -241,8 +241,7 @@ const GOOGLE_FALLBACK_IPS: readonly string[] = [
   '216.58.212.46',
 ];
 
-async function tryFallbackIp(hostname: string, remainingMs: number): Promise<string | undefined> {
-  if (remainingMs <= 0) return undefined;
+async function tryFallbackIp(hostname: string, _remainingMs?: number): Promise<string | undefined> {
   // Simple heuristic: pick a deterministic IP based on hostname length so we
   // distribute load without adding state.
   const index = hostname.length % GOOGLE_FALLBACK_IPS.length;

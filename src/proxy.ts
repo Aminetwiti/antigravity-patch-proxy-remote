@@ -1810,7 +1810,7 @@ export function executeGoogleCloudCodeRequest(
       let isTimedOut = false;
 
       proxyReq.on('error', (err) => {
-        if (isTimedOut) return;
+        if (settled || isTimedOut) return;
         try { proxyReq?.destroy(); } catch (_) {}
         metricInc('proxy_errors_total', { upstream: targetHost, stage: 'forward', trace_id: traceId });
         const ms = endTimer();
@@ -2439,6 +2439,7 @@ export async function executeGoogleCloudCodeWithPool(
                 successfulCandidate = sibling;
                 recordAccountLatency(sibling, Date.now() - siblingStart);
                 recordSuccess(sibling);
+                unmarkAccountUnlicensed(sibling);
                 log.warn(
                   `[Proxy] 🏆 [Hedged Request Winner] Speculative candidate [${siblingName}] won race against [${candidateName}]!`,
                 );
@@ -2499,6 +2500,7 @@ export async function executeGoogleCloudCodeWithPool(
       consecutiveTransportErrorCount = 0;
       consecutive503CapacityCount = 0;
       recordSuccess(successfulCandidate);
+      unmarkAccountUnlicensed(successfulCandidate);
       clearAccountCooldown(successfulCandidate, currentFamily);
       endAccountProbation(successfulCandidate, currentFamily);
       if (sessId && useStickySessions) {

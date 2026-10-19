@@ -11801,112 +11801,112 @@ async function showAntigravityVerificationResolutionModal(initialData?: Verifica
   const activeLog = (logPath ? logPath.split(/[\\/]/).pop() : 'ls-main.log') || 'ls-main.log';
   const qrDataUrl = detection?.qrCodeDataUrl || detection?.qrDataUrl;
   const qrImageHtml = qrDataUrl
-    ? `<div style="text-align: center; margin: 12px 0;">
-        <div style="display: inline-block; padding: 10px; background: #ffffff; border-radius: 10px; border: 2px solid rgba(245, 158, 11, 0.4); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);">
-          <img src="${qrDataUrl}" alt="QR Code de Vérification" style="display: block; width: 165px; height: 165px;" />
+    ? `<div class="agv-qr-wrapper">
+        <div class="agv-qr-box">
+          <img src="${qrDataUrl}" alt="QR Code de Vérification" />
         </div>
-        <div style="font-size: 11px; color: #94a3b8; margin-top: 6px; font-weight: 500;">
+        <div class="agv-qr-caption">
           Scannez avec votre smartphone (Appareil Android / iPhone de confiance)
         </div>
       </div>`
     : '';
 
   const modalHtml = `
-    <div class="ag-verification-resolver-card" style="font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif); color: #f1f5f9; padding: 2px 4px; line-height: 1.5;">
+    <div class="agv-card">
       <!-- Header Banner -->
-      <div style="text-align: center; margin-bottom: 16px;">
-        <div style="width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle, rgba(245, 158, 11, 0.28) 0%, rgba(245, 158, 11, 0.05) 75%); border: 2px solid #f59e0b; color: #f59e0b; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 8px; box-shadow: 0 0 20px rgba(245, 158, 11, 0.35);">
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <div class="agv-header">
+        <div class="agv-icon-badge">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             <path d="M12 8v4"/><path d="M12 16h.01"/>
           </svg>
         </div>
-        <h2 style="font-size: 18.5px; font-weight: 700; color: #ffffff; margin: 0 0 4px 0; letter-spacing: -0.3px;">
+        <h2 class="agv-title">
           Assistant de Résolution · Vérification Antigravity
         </h2>
-        <div style="font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${hasChallenge ? '#f59e0b' : '#38bdf8'}; box-shadow: 0 0 6px ${hasChallenge ? '#f59e0b' : '#38bdf8'};"></span>
+        <div class="agv-subtitle">
+          <span class="agv-status-indicator ${hasChallenge ? 'detected' : 'clean'}"></span>
           <span>${hasChallenge ? 'Défi VALIDATION_REQUIRED (HTTP 403) Détecté dans les logs LS' : 'Scanner de Logs Antigravity & Résolution de Captcha'}</span>
         </div>
       </div>
 
       <!-- Detection Status Banner -->
-      <div style="margin-bottom: 14px; background: ${hasChallenge ? 'rgba(245, 158, 11, 0.1)' : 'rgba(30, 41, 59, 0.7)'}; border: 1px solid ${hasChallenge ? 'rgba(245, 158, 11, 0.35)' : 'rgba(255, 255, 255, 0.1)'}; border-radius: 8px; padding: 12px 14px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-          <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: ${hasChallenge ? '#fbbf24' : '#94a3b8'}; display: flex; align-items: center; gap: 6px;">
+      <div class="agv-section-box ${hasChallenge ? 'challenge-detected' : ''}">
+        <div class="agv-section-header">
+          <span class="agv-section-title ${hasChallenge ? 'amber' : 'muted'}">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             ${hasChallenge ? 'DÉFI INTERACTIF EXTRAIT DEPUIS LES LOGS' : 'AUCUN DÉFI ACTIF DANS LES LOGS RÉCENTS'}
           </span>
-          <span style="font-size: 11px; color: #94a3b8; font-family: var(--font-mono, monospace);">
+          <span class="agv-source-file">
             Source : ${escapeHtml(activeLog)}
           </span>
         </div>
 
         ${hasChallenge ? `
-          <div style="font-size: 12px; color: #e2e8f0; margin-bottom: 10px; word-break: break-all; background: rgba(0, 0, 0, 0.35); padding: 8px 10px; border-radius: 6px; font-family: var(--font-mono, monospace); border: 1px solid rgba(245, 158, 11, 0.25);" id="agvDetectedUrlDisplay">
+          <div class="agv-url-display" id="agvDetectedUrlDisplay">
             ${escapeHtml(validationUrl)}
           </div>
-          <div style="display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px;">
-            <button type="button" id="agvOpenBrowserBtn" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border: none; border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; box-shadow: 0 3px 12px rgba(245, 158, 11, 0.35); transition: all 0.15s ease;">
+          <div class="agv-btn-grid">
+            <button type="button" class="agv-btn-primary" id="agvOpenBrowserBtn">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
               <span>Ouvrir dans le Navigateur</span>
             </button>
-            <button type="button" id="agvCopyUrlBtn" style="background: rgba(255, 255, 255, 0.05); color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px;">
+            <button type="button" class="agv-btn-secondary" id="agvCopyUrlBtn">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               <span id="agvCopyUrlLabel">Copier le Lien</span>
             </button>
           </div>
           ${qrImageHtml}
         ` : `
-          <p style="margin: 0 0 10px 0; font-size: 12px; color: #cbd5e1; line-height: 1.45;">
+          <p style="margin: 0 0 10px 0; font-size: 12px; color: var(--text-1, #e4e4e7); line-height: 1.45;">
             L'IDE Antigravity n'a pas encore enregistré d'erreur <code>VALIDATION_REQUIRED</code> dans ses logs récents. Si l'IDE affiche un blocage, faites une requête de prompt dans l'IDE pour forcer l'événement ou collez l'URL Google manuellement ci-dessous.
           </p>
           <div style="display: flex; gap: 8px; margin-bottom: 6px;">
-            <input type="text" id="agvManualUrlInput" placeholder="https://accounts.google.com/signin/challenge/..." style="flex: 1; background: #070a12; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #f8fafc; font-family: var(--font-mono, monospace);" />
-            <button type="button" id="agvOpenManualBtn" style="background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;">Ouvrir</button>
+            <input type="text" class="agv-input" id="agvManualUrlInput" placeholder="https://accounts.google.com/signin/challenge/..." />
+            <button type="button" class="agv-btn-secondary" id="agvOpenManualBtn" style="padding: 8px 14px; font-size: 12px; white-space: nowrap;">Ouvrir</button>
           </div>
-          <button type="button" id="agvRescanBtn" style="width: 100%; margin-top: 6px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #cbd5e1; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <button type="button" class="agv-btn-secondary" id="agvRescanBtn" style="width: 100%; margin-top: 6px; padding: 8px 12px; font-size: 12px;">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            <span>Scanner à nouveau les logs Antigravity</span>
+            <span id="agvRescanLabel">Scanner à nouveau les logs Antigravity</span>
           </button>
         `}
       </div>
 
       <!-- Critical Anti-Lockout Warnings (Forum AI Discourse Insights) -->
-      <div style="margin-bottom: 14px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px 14px;">
-        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #f87171; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <div class="agv-section-box warning-anti-lockout">
+        <div class="agv-section-title red" style="margin-bottom: 6px;">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           ATTENTION : PIÈGE SMS &amp; ERREUR "USED TOO MANY TIMES"
         </div>
-        <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.55;">
-          <p style="margin: 0 0 6px 0;">
+        <div class="agv-warning-text">
+          <p>
             <strong style="color: #fca5a5;">1. Piège Numéros Courts US (244444 / 96831) :</strong> Si la page Google vous demande d'envoyer un code par SMS vers ces numéros, <strong>n'insistez pas</strong> avec un opérateur mobile hors USA. Chaque échec compte comme une tentative et verrouille irréversiblement votre numéro avec l'erreur : <em>"The device you used to scan the QR code was used too many times for verification"</em>.
           </p>
-          <p style="margin: 0 0 6px 0;">
-            <strong style="color: #38bdf8;">2. Méthode Recommandée :</strong> Sur la page Google, cliquez systématiquement sur <strong>"Essayer une autre méthode" (Try another way)</strong> et choisissez <strong>"Notification Google" (Google Prompt sur smartphone)</strong> ou l'application <strong>Google Authenticator</strong>.
+          <p>
+            <strong style="color: var(--accent-blue-bright, #38bdf8);">2. Méthode Recommandée :</strong> Sur la page Google, cliquez systématiquement sur <strong>"Essayer une autre méthode" (Try another way)</strong> et choisissez <strong>"Notification Google" (Google Prompt sur smartphone)</strong> ou l'application <strong>Google Authenticator</strong>.
           </p>
-          <p style="margin: 0;">
+          <p>
             <strong style="color: #fbbf24;">3. VPN &amp; Proxies :</strong> Désactivez tout VPN actif pendant la validation web afin d'éviter le déclenchement immédiat de protections antibot supplémentaires.
           </p>
         </div>
       </div>
 
       <!-- Remediation & Reset Actions -->
-      <div style="margin-bottom: 12px; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px;">
-        <div style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; margin-bottom: 8px;">
+      <div class="agv-section-box actions-panel">
+        <div class="agv-section-title muted" style="margin-bottom: 8px;">
           ACTIONS DE DÉBLOCAGE LOCAL (ONBOARDING &amp; PROCESSUS)
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-          <button type="button" id="agvResetOnboardingBtn" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #fca5a5; border-radius: 7px; padding: 9px 12px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s ease;">
+          <button type="button" class="agv-btn-danger" id="agvResetOnboardingBtn">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             <span id="agvResetOnboardingLabel">Purger Cache Onboarding</span>
           </button>
-          <button type="button" id="agvRestartIdeBtn" style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.35); color: #93c5fd; border-radius: 7px; padding: 9px 12px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s ease;">
+          <button type="button" class="agv-btn-secondary" id="agvRestartIdeBtn" style="font-size: 11.5px; padding: 9px 12px;">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
             <span id="agvRestartIdeLabel">Relancer Antigravity</span>
           </button>
         </div>
-        <div id="agvFeedback" style="display: none; margin-top: 10px; font-size: 11.5px; padding: 8px 10px; border-radius: 6px;"></div>
+        <div id="agvFeedback" class="agv-feedback"></div>
       </div>
     </div>
   `;
@@ -11986,18 +11986,26 @@ async function showAntigravityVerificationResolutionModal(initialData?: Verifica
         }
       });
 
-      // Re-scan logs
-      const rescanBtn = handle.bodyEl.querySelector('#agvRescanBtn');
+      // Re-scan logs with inline loading state
+      const rescanBtn = handle.bodyEl.querySelector('#agvRescanBtn') as HTMLButtonElement | null;
+      const rescanLabel = handle.bodyEl.querySelector('#agvRescanLabel');
       rescanBtn?.addEventListener('click', async () => {
+        if (rescanBtn) rescanBtn.disabled = true;
+        if (rescanLabel) rescanLabel.textContent = 'Analyse des logs en cours...';
         toast('Re-scan des logs en cours...', 'info');
-        if (window.ag?.verification?.detect) {
-          const fresh = await window.ag.verification.detect();
-          if (fresh.found && fresh.validationUrl) {
-            toast('Nouveau défi détecté !', 'ok');
-            void showAntigravityVerificationResolutionModal(fresh);
-          } else {
-            toast('Aucun défi actif trouvé dans les logs récents', 'warn');
+        try {
+          if (window.ag?.verification?.detect) {
+            const fresh = await window.ag.verification.detect();
+            if (fresh.found && fresh.validationUrl) {
+              toast('Nouveau défi détecté !', 'ok');
+              void showAntigravityVerificationResolutionModal(fresh);
+            } else {
+              toast('Aucun défi actif trouvé dans les logs récents', 'warn');
+            }
           }
+        } finally {
+          if (rescanBtn) rescanBtn.disabled = false;
+          if (rescanLabel) rescanLabel.textContent = 'Scanner à nouveau les logs Antigravity';
         }
       });
 

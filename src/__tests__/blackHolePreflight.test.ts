@@ -26,6 +26,11 @@ vi.mock('../services/googleAuth', async () => {
   };
 });
 
+import dns from 'dns';
+vi.spyOn(dns.Resolver.prototype, 'resolve4').mockImplementation((_hostname: any, cb: any) => {
+  cb(null, ['142.250.80.46']);
+});
+
 import {
   probeGoogleAccountPreflight,
   probeAllGoogleAccountsPreflight,
@@ -40,6 +45,9 @@ import {
   startPreflightHealthCheckInterval,
   stopPreflightHealthCheckInterval,
   executeGoogleCloudCodeWithPool,
+  incrementAccountInFlight,
+  decrementAccountInFlight,
+  recordAccountRequest,
 } from '../proxy';
 import {
   GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS,
@@ -51,7 +59,9 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
   beforeEach(() => {
     _resetUnlicensedAccounts();
     _resetAllAccountCooldowns();
-    vi.restoreAllMocks();
+    vi.spyOn(dns.Resolver.prototype, 'resolve4').mockImplementation((_hostname: any, cb: any) => {
+      cb(null, ['142.250.80.46']);
+    });
   });
 
   afterEach(() => {
@@ -66,7 +76,10 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
   });
 
   it('verifies PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS is configured to 3.5s', () => {
-    expect(PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS).toBe(3_500);
+    const expected = process.env.AG_PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS
+      ? parseInt(process.env.AG_PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS, 10)
+      : 3_500;
+    expect(PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS).toBe(expected);
   });
 
   it('unmarks an unlicensed account across all email variants when restored', () => {
@@ -280,5 +293,112 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
 
     expect(callCount).toBe(2);
     expect(result).toBe(true);
+  });
+
+  it('skips probing accounts that are in-flight or recently active to prevent false-positive quarantines', async () => {
+    let requestCount = 0;
+    vi.spyOn(https, 'request').mockImplementation((_url: any, _opts: any, cb: any): any => {
+      requestCount++;
+      const emitter = new EventEmitter() as any;
+      emitter.write = vi.fn();
+      emitter.end = vi.fn(() => {
+        const res = new EventEmitter() as any;
+        res.statusCode = 200;
+        cb(res);
+        res.emit('data', Buffer.from('{}'));
+        res.emit('end');
+      });
+      return emitter;
+    });
+
+    const busyAcc: CustomModel = {
+      name: 'busy',
+      provider: 'google',
+      accountEmail: 'busy@gmail.com',
+      refreshToken: 'tok-busy',
+    } as any;
+    const recentAcc: CustomModel = {
+      name: 'recent',
+      provider: 'google',
+      accountEmail: 'recent@gmail.com',
+      refreshToken: 'tok-recent',
+    } as any;
+    const idleAcc: CustomModel = {
+      name: 'idle',
+      provider: 'google',
+      accountEmail: 'idle@gmail.com',
+      refreshToken: 'tok-idle',
+    } as any;
+
+    // Simulate busyAcc has active request in flight
+    incrementAccountInFlight(busyAcc);
+    // Simulate recentAcc was used 5 seconds ago
+    recordAccountRequest(recentAcc);
+
+    const summary = await probeAllGoogleAccountsPreflight([busyAcc, recentAcc, idleAcc]);
+
+    decrementAccountInFlight(busyAcc);
+
+    // Only idleAcc should have been probed! busyAcc and recentAcc must be skipped.
+    expect(requestCount).toBe(1);
+    expect(summary.results.length).toBe(1);
+    expect(summary.results[0].email).toBe('idle@gmail.com');
+  });
+
+  it('auto-heals and unmarks previously quarantined unlicensed accounts on HTTP 200 OK', async () => {
+    vi.spyOn(https, 'request').mockImplementation((_url: any, _opts: any, cb: any): any => {
+      // Simulate that while the request is in flight, background preflight falsely marked it unlicensed
+      markAccountUnlicensed(acc);
+      expect(isAccountUnlicensed(acc)).toBe(true);
+
+      const emitter = new EventEmitter() as any;
+      emitter.write = vi.fn();
+      emitter.end = vi.fn(() => {
+        const res = new EventEmitter() as any;
+        res.statusCode = 200;
+        res.headers = {};
+        cb(res);
+        res.emit('data', Buffer.from(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'healthy response' }] } }] })));
+        res.emit('end');
+      });
+      return emitter;
+    });
+
+    const acc: CustomModel = {
+      name: 'acc-quarantined',
+      provider: 'google',
+      apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      refreshToken: 'tok-q',
+      accountEmail: 'quarantined@gmail.com',
+      externalModelName: 'gemini-3.8-flash-tiered',
+    } as any;
+
+    const fakeReq = { url: '/v1internal:generateContent', method: 'POST', headers: {} } as any;
+    const fakeSocket = { destroyed: false, writable: true };
+    const fakeRes = {
+      writableEnded: false,
+      destroyed: false,
+      headersSent: false,
+      socket: fakeSocket,
+      writeHead: vi.fn(),
+      write: vi.fn(),
+      end: vi.fn(),
+      once: vi.fn(),
+      off: vi.fn(),
+    } as any;
+
+    const result = await executeGoogleCloudCodeWithPool(
+      fakeReq,
+      fakeRes,
+      { model: 'gemini-3.8-flash-tiered', request: { contents: [{ parts: [{ text: 'hello' }] }] } },
+      [acc],
+      false,
+      'conv-1',
+      'sess-1',
+    );
+
+    expect(result).toBe(true);
+    // Verified: HTTP 200 OK unmarks the unlicensed quarantine
+    expect(isAccountUnlicensed(acc)).toBe(false);
   });
 });

@@ -1664,6 +1664,7 @@ export async function probeGoogleAccountPreflight(
     });
 
     req.on('error', (err) => {
+      if (settled) return;
       const latencyMs = Date.now() - startTime;
       log.warn(`[PreFlight] Transport error probing [${email}]: ${err.message}`);
       finish({
@@ -1712,8 +1713,14 @@ export async function probeAllGoogleAccountsPreflight(
       const item = queue.shift();
       if (!item) break;
 
-      // Skip probing accounts currently in active cooldown to avoid re-quarantining busy accounts
-      if (isAccountInCooldown(item, 'gemini')) {
+      // Skip probing accounts currently in active cooldown or actively serving traffic
+      if (isAccountInCooldown(item, 'gemini') || getAccountInFlight(item) > 0) {
+        continue;
+      }
+
+      // Skip probing accounts that have successfully served traffic in the last 60 seconds
+      const lastUsed = getAccountLastUsed(item);
+      if (lastUsed > 0 && Date.now() - lastUsed < 60_000) {
         continue;
       }
 
