@@ -9939,9 +9939,12 @@ function initGoogleAccountsToolbarOnce(): void {
   function showAccountErrorDetailsModal(account: any): void {
     if (!account) return;
     const err = account.errorDetails || account.quotas?.errorDetails || {};
-    const reason = err.reason || (account.lastError?.includes('Terms of Service') ? 'TOS_VIOLATION' : 'PERMISSION_DENIED');
-    const message = err.message || account.lastError || 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.';
+    const validationUrl = err.validationUrl || account.quotas?.errorDetails?.validationUrl;
+    const isValidationRequired = Boolean(validationUrl || (account as any).isValidationRequired || err.status === 'VALIDATION_REQUIRED' || err.reason === 'VALIDATION_REQUIRED');
+    const reason = err.reason || (isValidationRequired ? 'VALIDATION_REQUIRED' : (account.lastError?.includes('Terms of Service') ? 'TOS_VIOLATION' : 'PERMISSION_DENIED'));
+    const message = err.message || account.lastError || (isValidationRequired ? 'Une validation de sécurité interactive ou un captcha est requis par Google pour ce compte.' : 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.');
     const appealUrl = err.appealUrl || 'https://forms.gle/hGzM9MEUv2azZsrb9';
+    const actionValidationUrl = validationUrl || 'https://accounts.google.com';
     const detectionDate = err.detectionTime ? new Date(err.detectionTime) : new Date(account.lastTestedAt || Date.now());
     const pad = (n: number) => n.toString().padStart(2, '0');
     const detectionTimeStr = `${pad(detectionDate.getDate())}/${pad(detectionDate.getMonth() + 1)}/${detectionDate.getFullYear()} à ${pad(detectionDate.getHours())}:${pad(detectionDate.getMinutes())}:${pad(detectionDate.getSeconds())}`;
@@ -9950,17 +9953,15 @@ function initGoogleAccountsToolbarOnce(): void {
       error: {
         code: 403,
         message,
-        status: 'PERMISSION_DENIED',
+        status: isValidationRequired ? 'VALIDATION_REQUIRED' : 'PERMISSION_DENIED',
         details: [
           {
             '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
             reason,
             domain: 'cloudcode-pa.googleapis.com',
-            metadata: {
-              appeal_url: appealUrl,
-              appeal_url_link_text: 'Submit Appeal',
-              uiMessage: 'true'
-            }
+            metadata: isValidationRequired
+              ? { validation_url: actionValidationUrl, uiMessage: 'true' }
+              : { appeal_url: appealUrl, appeal_url_link_text: 'Submit Appeal', uiMessage: 'true' }
           }
         ]
       }
@@ -9973,13 +9974,13 @@ function initGoogleAccountsToolbarOnce(): void {
       <div class="ga-error-details-card" style="font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif); color: #f1f5f9; padding: 2px 4px; line-height: 1.5;">
         <!-- Header: Severity Banner & Comprehension -->
         <div style="text-align: center; margin-bottom: 20px; position: relative;">
-          <div style="width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle, rgba(239, 68, 68, 0.28) 0%, rgba(239, 68, 68, 0.05) 75%); border: 2px solid #ef4444; color: #ef4444; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 12px; box-shadow: 0 0 24px rgba(239, 68, 68, 0.35);">
-            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          <div style="width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle, ${isValidationRequired ? 'rgba(245, 158, 11, 0.28)' : 'rgba(239, 68, 68, 0.28)'} 0%, ${isValidationRequired ? 'rgba(245, 158, 11, 0.05)' : 'rgba(239, 68, 68, 0.05)'} 75%); border: 2px solid ${isValidationRequired ? '#f59e0b' : '#ef4444'}; color: ${isValidationRequired ? '#f59e0b' : '#ef4444'}; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 12px; box-shadow: 0 0 24px ${isValidationRequired ? 'rgba(245, 158, 11, 0.35)' : 'rgba(239, 68, 68, 0.35)'};">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${isValidationRequired ? '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' : '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'}</svg>
           </div>
           <h2 style="font-size: 20px; font-weight: 700; color: #ffffff; margin: 0 0 4px 0; letter-spacing: -0.3px;">Diagnostic &amp; Résolution de Compte</h2>
           <div style="font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 6px;">
-            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 6px #ef4444;"></span>
-            <span>Erreur HTTP 403 Forbidden · Violation des Conditions d'Utilisation (TOS)</span>
+            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${isValidationRequired ? '#f59e0b' : '#ef4444'}; box-shadow: 0 0 6px ${isValidationRequired ? '#f59e0b' : '#ef4444'};"></span>
+            <span>${isValidationRequired ? 'Erreur HTTP 403 · Vérification Interactive Requise (Challenge/Captcha)' : 'Erreur HTTP 403 Forbidden · Violation des Conditions d\'Utilisation (TOS)'}</span>
           </div>
         </div>
 
@@ -10062,6 +10063,17 @@ function initGoogleAccountsToolbarOnce(): void {
 
         <!-- Action Buttons: Fitts's Law & Clear Intent -->
         <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px; margin-bottom: 16px;">
+          ${isValidationRequired ? `
+          <button type="button" id="gaGoToValidationBtn" style="background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; border-radius: 8px; padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35); transition: transform 0.1s ease, box-shadow 0.15s ease;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <span>Valider le Compte (Captcha / Déblocage)</span>
+            <span style="font-size: 11px; opacity: 0.85;">↗</span>
+          </button>
+          <button type="button" id="gaCopyValidationBtn" style="background: rgba(255, 255, 255, 0.05); color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.15s ease;">
+            <svg id="gaCopyValidationIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="gaCopyValidationLabel">Copier Lien de Sécurité</span>
+          </button>
+          ` : `
           <button type="button" id="gaGoToAppealBtn" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border: none; border-radius: 8px; padding: 11px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35); transition: transform 0.1s ease, box-shadow 0.15s ease;">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             <span>Go to Appeal</span>
@@ -10071,6 +10083,7 @@ function initGoogleAccountsToolbarOnce(): void {
             <svg id="gaCopyAppealIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             <span id="gaCopyAppealLabel">Copy Appeal URL</span>
           </button>
+          `}
         </div>
 
         <!-- Appeal Copilot: Argumentaire de Recours prêt à copier -->
@@ -10290,6 +10303,32 @@ function initGoogleAccountsToolbarOnce(): void {
             toast('JSON brut copié dans le presse-papier !', 'ok');
           } catch {
             toast('Impossible de copier le JSON', 'err');
+          }
+        });
+
+        // Go to Validation (Interactive Challenge / Captcha)
+        const goToValidationBtn = handle.bodyEl.querySelector('#gaGoToValidationBtn');
+        goToValidationBtn?.addEventListener('click', () => {
+          if (window.ag?.openExternal) {
+            void window.ag.openExternal(actionValidationUrl);
+          } else {
+            window.open(actionValidationUrl, '_blank');
+          }
+        });
+
+        // Copy Validation URL
+        const copyValidationBtn = handle.bodyEl.querySelector('#gaCopyValidationBtn');
+        const copyValidationLabel = handle.bodyEl.querySelector('#gaCopyValidationLabel');
+        copyValidationBtn?.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(actionValidationUrl);
+            if (copyValidationLabel) copyValidationLabel.textContent = '✓ URL Copiée !';
+            toast('Lien de validation copié !', 'ok');
+            setTimeout(() => {
+              if (copyValidationLabel) copyValidationLabel.textContent = 'Copier Lien de Sécurité';
+            }, 2000);
+          } catch {
+            toast('Impossible de copier l\'URL', 'err');
           }
         });
 
