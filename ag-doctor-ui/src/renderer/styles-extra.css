@@ -3006,41 +3006,43 @@ th.sortable-th:hover {
   align-items: center;
   background: var(--bg-1);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 2px;
-  gap: 2px;
+  border-radius: var(--r-md, 8px);
+  padding: 3px;
+  gap: 3px;
 }
 
 .token-mode-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
+  padding: 6px 14px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-2);
   background: transparent;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm, 6px);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
 }
 
 .token-mode-btn .mode-icon {
   font-size: 13px;
   line-height: 1;
+  opacity: 0.85;
 }
 
 .token-mode-btn:hover {
   color: var(--text-0);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .token-mode-btn.active {
-  color: #60a5fa;
+  color: #93c5fd;
   background: var(--bg-2);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(96, 165, 250, 0.25);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(147, 197, 253, 0.35);
 }
 
 /* ── MODE 1: OVERVIEW / COCKPIT STYLES ── */
@@ -3058,13 +3060,18 @@ th.sortable-th:hover {
 }
 
 .cockpit-card {
-  background: #090d16;
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  background: var(--bg-1, #18181b);
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  border-radius: var(--r-lg, 12px);
+  padding: 18px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
+  transition: border-color 0.2s ease;
+}
+
+.cockpit-card:hover {
+  border-color: rgba(96, 165, 250, 0.35);
 }
 
 .cockpit-card-header {

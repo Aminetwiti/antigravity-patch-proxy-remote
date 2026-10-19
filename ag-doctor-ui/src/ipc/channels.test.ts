@@ -14,6 +14,7 @@ describe('ag-doctor-ui IPC Channels Registry', () => {
     expect(DOCTOR_IPC_CHANNELS.DETECT_INSTALLATION).toBe('ag:detect-installation');
     expect(DOCTOR_IPC_CHANNELS.STREAM_START).toBe('ag:stream:start');
     expect(DOCTOR_IPC_CHANNELS.GOOGLE_REPAIR_ADC).toBe('ag:google:repair-adc');
+    expect(DOCTOR_IPC_CHANNELS.SYSTEM_RANDOMIZE_MACHINE_ID).toBe('ag:system:randomize-machine-id');
   });
 
   it('ensures all channel values are unique', () => {

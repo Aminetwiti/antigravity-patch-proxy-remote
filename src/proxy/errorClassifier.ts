@@ -58,6 +58,32 @@ export function classifyError(
   const errorMsg = errorObj?.message ? errorObj.message.toLowerCase() : '';
   const errorCode = typeof errorObj === 'string' ? errorObj.toUpperCase() : (errorObj?.code ? String(errorObj.code).toUpperCase() : '');
 
+  // 0. Check for self-harm / internal gateway errors (Antigravity-Manager parity)
+  const isInternalGateway =
+    bodyText.includes('all accounts limited') ||
+    bodyText.includes('all accounts are currently in cooldown') ||
+    bodyText.includes('token pool is empty') ||
+    bodyText.includes('token pool empty') ||
+    bodyText.includes('pool exhausted') ||
+    bodyText.includes('no available accounts') ||
+    errorMsg.includes('all accounts limited') ||
+    errorMsg.includes('token pool is empty');
+
+  if (isInternalGateway) {
+    return {
+      errorType: 'server',
+      title: 'Pool Temporarily Exhausted',
+      message: 'All accounts in the active pool are momentarily busy or rate-limited. The proxy will auto-recover as soon as quota resets.',
+      suggestions: [
+        'Wait 1 to 5 minutes for account cooldowns to naturally expire.',
+        'Click "⚡ Réveil express" in ag-doctor-ui to reset burst cooldowns immediately.',
+        'Add additional backup accounts to expand the pool capacity.',
+      ],
+      retryable: true,
+      severity: 'warning',
+    };
+  }
+
   // Detect billing / insufficient tokens / credits errors
   const isBilling =
     status === 402 ||
@@ -131,6 +157,48 @@ export function classifyError(
     errorMsg.includes('forbidden');
 
   if (isForbidden) {
+    // Check if upstream included a validation URL, challenge, or appeal URL
+    const details = Array.isArray(bodyJson?.error?.details) ? bodyJson.error.details : [];
+    let appealUrl: string | undefined;
+    let validationUrl: string | undefined;
+    for (const d of details) {
+      if (d?.metadata?.appeal_url) appealUrl = d.metadata.appeal_url;
+      if (d?.metadata?.validation_url) validationUrl = d.metadata.validation_url;
+      if (d?.metadata?.challenge_url) validationUrl = d.metadata.challenge_url;
+    }
+
+    if (validationUrl || bodyText.includes('validation_required') || bodyText.includes('challenge')) {
+      return {
+        errorType: 'forbidden',
+        title: 'Validation Required',
+        message: 'Google requires interactive verification or captcha for this account.',
+        suggestions: [
+          'Open the verification URL in your browser to complete the challenge.',
+          'Verify your account phone number or solve the captcha.',
+          'Once verified, the account will resume normal operation.'
+        ],
+        retryable: false,
+        severity: 'warning',
+        actionUrl: validationUrl || 'https://accounts.google.com',
+      };
+    }
+
+    if (appealUrl || bodyText.includes('terms of service')) {
+      return {
+        errorType: 'forbidden',
+        title: 'Terms of Service Violation',
+        message: 'This account has been flagged for violation of Terms of Service by Google Cloud Code.',
+        suggestions: [
+          'Submit an appeal using the Google Appeal Form.',
+          'Switch to an alternate active account in your pool.',
+          'Regenerate your device fingerprint in ag-doctor-ui to prevent association.'
+        ],
+        retryable: false,
+        severity: 'error',
+        actionUrl: appealUrl || 'https://forms.gle/hGzM9MEUv2azZsrb9',
+      };
+    }
+
     return {
       errorType: 'forbidden',
       title: 'Access Denied',

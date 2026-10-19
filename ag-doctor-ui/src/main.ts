@@ -37,6 +37,7 @@ import {
   switchActiveIdeAccount,
 } from './services/ideAccountDiscovery';
 import { startGoogleOAuthLogin } from './services/googleOAuthServer';
+import { randomizeAllDevices } from './services/deviceFingerprint';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
@@ -2163,6 +2164,15 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_REPAIR_ADC, async (_evt, email?: strin
     }
   } catch (err: any) {
     return { success: false, error: err.message || 'Erreur lors de la réparation du compte' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.SYSTEM_RANDOMIZE_MACHINE_ID, async () => {
+  try {
+    const res = randomizeAllDevices();
+    return res;
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erreur lors du renouvellement de l\'empreinte machine' };
   }
 });
 

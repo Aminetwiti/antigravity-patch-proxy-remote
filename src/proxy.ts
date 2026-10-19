@@ -3452,7 +3452,6 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
                 }
               }
             }
-            }
             extractAndCacheThoughtSignatures({ candidates: [mapped] }, '');
             const cloudCodeResponse = {
               response: { candidates: [mapped] },
