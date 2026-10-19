@@ -6357,9 +6357,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
 
           if (isNativeCloudCode) {
-            reqJson.model = cleanRequested;
+            const normRequested = normalizeCloudCodeModelId(cleanRequested);
+            reqJson.model = normRequested;
             if (targetReq && typeof targetReq === 'object') {
-              targetReq.model = cleanRequested;
+              targetReq.model = normRequested;
             }
             // Strip any stale custom placeholder models from previous conversation turns
             for (let i = candidateNames.length - 1; i >= 0; i--) {
@@ -6367,8 +6368,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 candidateNames.splice(i, 1);
               }
             }
-            if (!candidateNames.includes(cleanRequested)) {
-              candidateNames.unshift(cleanRequested);
+            if (!candidateNames.includes(normRequested)) {
+              candidateNames.unshift(normRequested);
             }
 
             // Fresh native turn: mark native session

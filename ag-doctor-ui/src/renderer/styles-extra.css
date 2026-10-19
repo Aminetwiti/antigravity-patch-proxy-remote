@@ -4084,5 +4084,32 @@ th.sortable-th:hover {
   display: block;
 }
 
+.btn-wrapped-share {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.12), rgba(245, 158, 11, 0.08)) !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+  color: #fbbf24 !important;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-wrapped-share:hover {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.22), rgba(245, 158, 11, 0.15)) !important;
+  border-color: rgba(245, 158, 11, 0.5) !important;
+  color: #fef08a !important;
+}
+
+.badge-standby {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  padding: 1px 7px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 
 

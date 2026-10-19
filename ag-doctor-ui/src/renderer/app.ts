@@ -1988,7 +1988,7 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
             <span style="width:8px; height:8px; border-radius:2px; background:${item.color}; flex-shrink:0;"></span>
             <span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(item.displayName)}</span>
           </span>
-          <strong style="color:var(--text-0); margin-left:6px; flex-shrink:0;">${item.pct > 0 ? `${item.pct}%` : '0 tok'}</strong>
+          <strong style="color:var(--text-0); margin-left:6px; flex-shrink:0;">${item.pct > 0 ? `${item.pct}%` : '<span class="badge-standby" style="font-size:9.5px; padding:0 5px;">En veille</span>'}</strong>
         </div>
       `)
       .join('');
@@ -2090,8 +2090,11 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
     if (cockpitRadialCount) cockpitRadialCount.textContent = formatCompactTokens(displayedTokens);
     if (cockpitPredictedSpend) cockpitPredictedSpend.textContent = `$${marketCost.toFixed(2)}`;
     if (cockpitSpendSub) {
-      const avgCostPerReq = (stats?.requestCount || 1) > 0 ? (marketCost / Math.max(1, stats?.requestCount || 1)) : 0;
-      cockpitSpendSub.textContent = `avg ~$${avgCostPerReq.toFixed(4)} / req`;
+      const effectiveSteps = real?.totalSteps || (stats?.requestCount ? stats.requestCount * 2 : 0);
+      const avgCostPerStep = effectiveSteps > 0
+        ? (marketCost / effectiveSteps)
+        : (displayedTokens > 0 ? (marketCost / (displayedTokens / 85000)) : 0.024);
+      cockpitSpendSub.textContent = `moy. ~$${avgCostPerStep.toFixed(4)} / étape`;
     }
 
     const savingsVal = stats?.googleStats?.estimatedSavings || (cachedTk * 1.5273) / 1e6;
@@ -12784,20 +12787,21 @@ function renderGoogleAccountsList(accounts: any[]): void {
     const isEnabled = a.enabled !== false;
     const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
     const cdGemini = getAccountActiveCooldown(a, 'gemini');
+    const cdClaude = getAccountActiveCooldown(a, 'claude');
     const tier = getAccountTier(a).toLowerCase();
 
-    const eff = getAccountEffectiveQuotas(a);
-
     const isBlocked = isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'));
+    const isExh = isAccountCapExhausted(a);
+    const isTempCooldown = !isExh && ((cdGemini && !cdGemini.isWeeklyCap) || (cdClaude && !cdClaude.isWeeklyCap));
 
     if (gaCurrentFilter === 'status:ready') {
-      if (!isEnabled || cdGemini || isUnlicensed || eff.gemini5hPct <= 0) return false;
+      if (!isEnabled || isBlocked || isTempCooldown || isExh) return false;
     } else if (gaCurrentFilter === 'status:exhausted') {
-      if (!isEnabled || cdGemini || isUnlicensed || eff.gemini5hPct > 0) return false;
+      if (!isExh) return false;
     } else if (gaCurrentFilter === 'status:cooldown') {
-      if (!isEnabled || !cdGemini) return false;
+      if (!isTempCooldown) return false;
     } else if (gaCurrentFilter === 'status:paused') {
-      if (isEnabled && !isUnlicensed) return false;
+      if (isEnabled) return false;
     } else if (gaCurrentFilter === 'status:blocked') {
       if (!isBlocked) return false;
     } else if (gaCurrentFilter !== 'all' && tier !== gaCurrentFilter) {

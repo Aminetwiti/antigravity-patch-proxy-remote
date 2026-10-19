@@ -100,6 +100,19 @@ describe('Unlicensed accounts', () => {
     expect(isAccountUnlicensed(m)).toBe(true);
   });
 
+  it('detects unlicensed from model property or quotas property', () => {
+    const m1 = makeModel({ accountEmail: 'prop@example.com' });
+    (m1 as any).isUnlicensed = true;
+    expect(isAccountUnlicensed(m1)).toBe(true);
+
+    const m2 = makeModel({
+      accountEmail: 'quota-prop@example.com',
+      quotas: { isUnlicensed: true, geminiFiveHourPct: 80, geminiWeeklyPct: 80 } as any,
+    });
+    expect(isAccountUnlicensed(m2)).toBe(true);
+    expect(getModelQuotaScore(m2)).toBe(0);
+  });
+
   it('isAccountInCooldown returns true for unlicensed', () => {
     const m = makeModel({ accountEmail: 'locked2@example.com' });
     markAccountUnlicensed(m);
@@ -685,6 +698,38 @@ describe('Burst Rate Limit Governor & Constants', () => {
     const rem = getAccountCooldownRemaining(acc, 'gemini');
     expect(rem).toBeLessThanOrEqual(50_000);
     expect(rem).toBeGreaterThan(40_000);
+  });
+
+  it('filters out disabled accounts from getGoogleAccountPool and returns 0 quota score', () => {
+    const enabledAcc = makeModel({
+      accountEmail: 'enabled@test.com',
+      quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+    });
+    const disabledAcc = makeModel({
+      accountEmail: 'disabled@test.com',
+      enabled: false,
+      quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+    } as any);
+
+    expect(getModelQuotaScore(disabledAcc)).toBe(0);
+
+    const pool = getGoogleAccountPool(enabledAcc, [enabledAcc, disabledAcc]);
+    expect(pool.map((m: any) => m.accountEmail)).toEqual(['enabled@test.com']);
+  });
+
+  it('selectCandidateP2C never selects disabled or unlicensed accounts', () => {
+    const disabledAcc = makeModel({
+      accountEmail: 'disabled@test.com',
+      enabled: false,
+      quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+    } as any);
+    const unlicensedAcc = makeModel({
+      accountEmail: 'unlicensed@test.com',
+      quotas: { isUnlicensed: true, geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+    } as any);
+
+    const chosen = selectCandidateP2C([disabledAcc, unlicensedAcc], 'gemini');
+    expect(chosen).toBeUndefined();
   });
 });
 
