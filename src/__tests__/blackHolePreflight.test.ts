@@ -48,7 +48,7 @@ import {
   incrementAccountInFlight,
   decrementAccountInFlight,
   recordAccountRequest,
-} from '../proxy';
+} from '../proxy.ts';
 import {
   GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS,
   PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS,
@@ -352,6 +352,7 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
       expect(isAccountUnlicensed(acc)).toBe(true);
 
       const emitter = new EventEmitter() as any;
+      emitter.setTimeout = vi.fn();
       emitter.write = vi.fn();
       emitter.end = vi.fn(() => {
         const res = new EventEmitter() as any;

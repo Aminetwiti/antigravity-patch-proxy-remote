@@ -1839,12 +1839,14 @@ export function executeGoogleCloudCodeRequest(
       });
 
       const effectiveTimeout = timeoutMs || GOOGLE_PROXY_TIMEOUT_MS;
-      proxyReq.setTimeout(effectiveTimeout, () => {
-        isTimedOut = true;
-        log.error(`[Proxy] Google pool request timed out waiting for response headers on ${targetHost} after ${effectiveTimeout / 1000}s`);
-        proxyReq?.destroy();
-        finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
-      });
+      if (typeof proxyReq?.setTimeout === 'function') {
+        proxyReq.setTimeout(effectiveTimeout, () => {
+          isTimedOut = true;
+          log.error(`[Proxy] Google pool request timed out waiting for response headers on ${targetHost} after ${effectiveTimeout / 1000}s`);
+          proxyReq?.destroy();
+          finish({ success: false, statusCode: 504, error: 'Google API request timed out' });
+        });
+      }
 
       proxyReq.on('socket', (socket) => {
         try {

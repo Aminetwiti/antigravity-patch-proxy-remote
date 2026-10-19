@@ -74,9 +74,21 @@ let _configPath: string | null = null;
 
 function getAssetsPath(): string {
   if (_assetsPath === null) {
-    _assetsPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'assets')
-      : path.join(__dirname, '..', '..', 'assets');
+    const candidates = [
+      path.join(__dirname, 'assets'),
+      path.join(__dirname, '..', 'assets'),
+      path.join(process.resourcesPath, 'assets'),
+      path.join(app.getAppPath(), 'assets'),
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        _assetsPath = c;
+        break;
+      }
+    }
+    if (!_assetsPath) {
+      _assetsPath = path.join(__dirname, '..', 'assets');
+    }
   }
   return _assetsPath;
 }
@@ -108,17 +120,33 @@ const trayIconCache = new Map<'ok' | 'warn' | 'err', NativeImage>();
 function getTrayIcon(status: 'ok' | 'warn' | 'err'): NativeImage {
   const cached = trayIconCache.get(status);
   if (cached) return cached;
-  const svgPath = path.join(getAssetsPath(), `tray-${status}.svg`);
-  let img: NativeImage;
-  if (fs.existsSync(svgPath)) {
-    img = nativeImage.createFromPath(svgPath).resize({ width: 16, height: 16 });
-  } else {
-    const fallback = path.join(getAssetsPath(), 'icon.svg');
-    if (fs.existsSync(fallback)) {
-      img = nativeImage.createFromPath(fallback).resize({ width: 16, height: 16 });
-    } else {
-      img = nativeImage.createFromPath(svgPath);
+  const assets = getAssetsPath();
+  const pngPath = path.join(assets, `tray-${status}.png`);
+  let img: NativeImage | null = null;
+  if (fs.existsSync(pngPath)) {
+    const loaded = nativeImage.createFromPath(pngPath);
+    if (!loaded.isEmpty()) {
+      img = loaded;
     }
+  }
+  if (!img) {
+    const fallbacks = [
+      path.join(assets, 'icon-32.png'),
+      path.join(assets, 'icon-16.png'),
+      path.join(assets, 'icon.png'),
+    ];
+    for (const fb of fallbacks) {
+      if (fs.existsSync(fb)) {
+        const loaded = nativeImage.createFromPath(fb);
+        if (!loaded.isEmpty()) {
+          img = loaded;
+          break;
+        }
+      }
+    }
+  }
+  if (!img) {
+    img = nativeImage.createEmpty();
   }
   trayIconCache.set(status, img);
   return img;
