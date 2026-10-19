@@ -130,14 +130,14 @@ export const DEFAULT_MAX_BODY_SIZE = getEnvInt(
 
 
 
-/** Timeout for Google proxy requests (default: 45 seconds). */
-export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 45_000);
+/** Timeout for Google proxy requests (default: 60 seconds). */
+export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 60_000);
 
 /** Timeout for waiting for initial response headers in multi-account pools (default: 25 seconds). */
 export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 25_000);
 
-/** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 3.5 seconds to cut black holes before client abort). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 3_500);
+/** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 10 seconds to cut black holes without premature drops on network jitter or prompt prefill). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 10_000);
 
 /** Timeout for waiting for initial response headers on large payloads or thinking models (default: 40 seconds). */
 export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 40_000);

@@ -2292,17 +2292,20 @@ export async function executeGoogleCloudCodeWithPool(
     ).length;
     const isStreamReq = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
     const isFlash = /flash/i.test(targetModel);
-    const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel);
+    const candidateReqObj = (reqJson.request && typeof reqJson.request === 'object') ? reqJson.request as Record<string, unknown> : undefined;
+    const candidateGenConfig = (candidateReqObj?.generationConfig || candidateReqObj?.generation_config || reqJson?.generationConfig || reqJson?.generation_config) as Record<string, unknown> | undefined;
+    const hasThinkingConfig = Boolean(candidateGenConfig?.thinkingConfig || candidateGenConfig?.thinking_config);
+    const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel) || hasThinkingConfig;
     const isFlashModel = isFlash;
     const isLargePayload = updatedBody.length > 35_000;
     const isLargePayloadOrThinking = isLargePayload || isThinkingModel;
     // For streaming requests with sibling accounts in pool, use calibrated header timeouts:
     // - Large prompts / old conversations (>35k bytes) or Thinking models: 40-55s (allows prompt prefill & reasoning without premature timeout)
-    // - Small Flash requests (new conversations/short prompts): strict 3.5s TTFT to eliminate black-hole stalls immediately
+    // - Small Flash requests (new conversations/short prompts): calibrated 10s TTFT to eliminate black-hole stalls without premature drops
     // - Standard models: 25-35s
     const flashTimeoutMs = hasOtherCandidates
-      ? (isThinkingModel ? Math.min(10_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS)
-      : Math.min(15_000, GOOGLE_PROXY_TIMEOUT_MS);
+      ? (isThinkingModel ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS)
+      : Math.min(25_000, GOOGLE_PROXY_TIMEOUT_MS);
     const largeTimeoutMs = hasOtherCandidates
       ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : 55_000)
       : GOOGLE_PROXY_TIMEOUT_MS;
@@ -2901,19 +2904,22 @@ export async function executeGoogleCloudCodeWithPool(
 
       if (isServerOutage) {
         consecutiveTimeoutCount++;
-        const maxOutageLimit = Math.max(3, Math.min(6, Math.ceil(sortedAccounts.length * 0.5)));
+        const maxOutageLimit = Math.max(4, Math.min(6, Math.ceil(sortedAccounts.length * 0.5)));
         const upstreamOutageThreshold = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0) || maxOutageLimit;
         const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
-        // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (black hole/slow): 120s; outages: 30s-45s.
-        const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 120_000 : (isUpstreamOutage ? 30_000 : 45_000));
+        // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (slow/busy): 30s; outages: 30s-45s.
+        const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 30_000 : (isUpstreamOutage ? 30_000 : 45_000));
         log.warn(
           `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
         );
         setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
 
-        if (isUpstreamOutage) {
+        const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some(
+          (c) => !isAccountInCooldown(c, currentFamily) && getModelQuotaScore(c, currentFamily) > 20,
+        );
+        if (isUpstreamOutage && !remainingHealthyWithQuota) {
           lastStatus = lastStatus;
-          lastErrorText = `Google Cloud Code API upstream service failure (HTTP ${lastStatus}) across ${consecutiveTimeoutCount} consecutive accounts`;
+          lastErrorText = `Google Cloud Code API upstream service failure (HTTP ${lastStatus}) across ${consecutiveTimeoutCount} consecutive accounts with no healthy accounts remaining`;
           log.warn(
             `[Proxy] 🛑 Upstream Server Failure Circuit Breaker: Model [${targetModel}] failed with HTTP ${lastStatus} across ${consecutiveTimeoutCount} consecutive accounts. Fast-failing pool to trigger immediate fallback cascade / AI Studio recovery.`,
           );

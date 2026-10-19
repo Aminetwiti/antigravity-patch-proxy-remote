@@ -27,6 +27,7 @@
     "doctor:pool": "node scripts/probe-pool.js",
     "doctor:fix-accounts": "node scripts/fix-accounts.js",
     "doctor:backup": "node scripts/backup-sessions.js",
+    "doctor:unstick": "node scripts/unstick-sessions.js",
     "doctor:models": "node ag-doctor/bin/ag-doctor.js models list",
     "doctor:logs": "node ag-doctor/bin/ag-doctor.js logs -f -n 100",
     "doctor:ui:build": "cd ag-doctor-ui && npm run build",
