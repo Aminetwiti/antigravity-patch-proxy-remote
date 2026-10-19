@@ -37,6 +37,7 @@ import {
   DEFAULT_MAX_BODY_SIZE,
   HEDGED_REQUEST_DELAY_MS,
   CAPACITY_503_CASCADE_THRESHOLD,
+  CONSECUTIVE_504_CASCADE_THRESHOLD,
 } from './constants';
 import { wrapCommandForRemoteExec } from './proxy/translators/utils';
 
@@ -2082,6 +2083,7 @@ export async function executeGoogleCloudCodeWithPool(
   let consecutive429Count = 0;
   let consecutiveQuotaExhausted = 0;
   let consecutiveTimeoutCount = 0;
+  let consecutive504TimeoutCount = 0;
   let consecutiveTransportErrorCount = 0;
   let consecutive503CapacityCount = 0;
   let testedAccountsCount = 0;
@@ -2295,16 +2297,21 @@ export async function executeGoogleCloudCodeWithPool(
     const candidateReqObj = (reqJson.request && typeof reqJson.request === 'object') ? reqJson.request as Record<string, unknown> : undefined;
     const candidateGenConfig = (candidateReqObj?.generationConfig || candidateReqObj?.generation_config || reqJson?.generationConfig || reqJson?.generation_config) as Record<string, unknown> | undefined;
     const hasThinkingConfig = Boolean(candidateGenConfig?.thinkingConfig || candidateGenConfig?.thinking_config);
+    const reqContents = (candidateReqObj?.contents || reqJson.contents) as any[] | undefined;
+    const isMultiTurn = Array.isArray(reqContents) && reqContents.length > 1;
+    const isContextualPayload = updatedBody.length > 8_000 || isMultiTurn;
     const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel) || hasThinkingConfig;
     const isFlashModel = isFlash;
     const isLargePayload = updatedBody.length > 35_000;
     const isLargePayloadOrThinking = isLargePayload || isThinkingModel;
     // For streaming requests with sibling accounts in pool, use calibrated header timeouts:
     // - Large prompts / old conversations (>35k bytes) or Thinking models: 40-55s (allows prompt prefill & reasoning without premature timeout)
-    // - Small Flash requests (new conversations/short prompts): calibrated 10s TTFT to eliminate black-hole stalls without premature drops
+    // - Multi-turn / contextual prompts (8k-35k bytes): 25-35s (allows Google KV-cache prefill without false 504 timeouts)
+    // - Small/fresh Flash requests (<8k bytes): calibrated TTFT (at least 7s) with speculative hedging at 2.5s
     // - Standard models: 25-35s
+    const effectiveFlashTimeout = Math.max(7_000, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS);
     const flashTimeoutMs = hasOtherCandidates
-      ? (isThinkingModel ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS)
+      ? (isThinkingModel ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : (isContextualPayload ? Math.min(25_000, GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout))
       : Math.min(25_000, GOOGLE_PROXY_TIMEOUT_MS);
     const largeTimeoutMs = hasOtherCandidates
       ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : 55_000)
@@ -2318,15 +2325,26 @@ export async function executeGoogleCloudCodeWithPool(
       : (isFlashModel ? flashTimeoutMs : standardTimeoutMs);
 
     // When no other candidates exist, fallback to the full proxy timeout.
-    const poolHeaderTimeout = hasOtherCandidates
+    let poolHeaderTimeout = hasOtherCandidates
       ? baseCandidateTimeout
       : GOOGLE_PROXY_TIMEOUT_MS;
+
+    // Escalating retry timeout on 504: If a prior candidate experienced a timeout on this payload,
+    // give the next candidate extended headroom (up to 80s) to allow Google's slow cluster prefill to complete.
+    if (consecutive504TimeoutCount > 0) {
+      const escalatingTimeout = Math.min(80_000, GOOGLE_PROXY_TIMEOUT_MS);
+      if (escalatingTimeout > poolHeaderTimeout) {
+        log.info(`[Proxy] Prior candidate experienced 504 timeout. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
+        poolHeaderTimeout = escalatingTimeout;
+      }
+    }
 
     const canHedge =
       isStreamReq &&
       hasOtherCandidates &&
       isFlashModel &&
       !isLargePayloadOrThinking &&
+      !isContextualPayload &&
       !res.headersSent &&
       !res.writableEnded &&
       poolHeaderTimeout > HEDGED_REQUEST_DELAY_MS;
@@ -2433,13 +2451,34 @@ export async function executeGoogleCloudCodeWithPool(
           }, hedgeDelay);
         });
 
-        outcome = await Promise.race([
-          candidate1Promise.then((res1) => {
-            if (hedgeTimer) clearTimeout(hedgeTimer);
-            return res1;
-          }),
+        let candidate1Settled = false;
+        let candidate1Result: GoogleRequestOutcome | undefined;
+        const candidate1Watched = candidate1Promise.then((res1) => {
+          candidate1Settled = true;
+          candidate1Result = res1;
+          if (res1.success && hedgeTimer) clearTimeout(hedgeTimer);
+          return res1;
+        });
+
+        const firstOutcome = await Promise.race([
+          candidate1Watched,
           hedgePromise,
         ]);
+
+        if (firstOutcome.success) {
+          outcome = firstOutcome;
+          if (hedgeTimer) clearTimeout(hedgeTimer);
+        } else {
+          // If the first candidate to settle failed (e.g. Candidate 1 timed out or 504'd),
+          // wait for the speculative candidate in hedgePromise before returning failure!
+          if (candidate1Settled && candidate1Result && !candidate1Result.success) {
+            log.info(`[Proxy] Candidate [${candidateName}] did not succeed. Awaiting speculative hedged candidate in flight...`);
+            const hedgeOutcome = await hedgePromise;
+            outcome = (hedgeOutcome && hedgeOutcome.success) ? hedgeOutcome : firstOutcome;
+          } else {
+            outcome = firstOutcome;
+          }
+        }
         if (hedgeTimer) clearTimeout(hedgeTimer);
       }
 
@@ -2904,8 +2943,9 @@ export async function executeGoogleCloudCodeWithPool(
 
       if (isServerOutage) {
         consecutiveTimeoutCount++;
-        const maxOutageLimit = Math.max(4, Math.min(6, Math.ceil(sortedAccounts.length * 0.5)));
-        const upstreamOutageThreshold = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0) || maxOutageLimit;
+        const maxOutageLimit = Math.max(4, Math.min(6, Math.ceil(sortedAccounts.length * 0.4)));
+        const configuredOutage = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0);
+        const upstreamOutageThreshold = configuredOutage >= 4 ? configuredOutage : maxOutageLimit;
         const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
         // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (slow/busy): 30s; outages: 30s-45s.
         const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 30_000 : (isUpstreamOutage ? 30_000 : 45_000));
@@ -2925,8 +2965,25 @@ export async function executeGoogleCloudCodeWithPool(
           );
           break;
         }
+
+        // Fast-fail 504 timeout cascade: If multiple accounts consecutively time out on the same model/payload,
+        // the upstream TPU cluster is saturated. Trigger immediate fallback cascade instead of exhausting all accounts in the pool.
+        if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
+          consecutive504TimeoutCount++;
+          if (consecutive504TimeoutCount >= CONSECUTIVE_504_CASCADE_THRESHOLD) {
+            log.warn(
+              `[Proxy] ⚠️ Cluster Timeout Spike on [${targetModel}] (${consecutive504TimeoutCount} consecutive 504 timeouts). Triggering fast failover / cascade to prevent pool freeze across ${totalAttempts} accounts...`,
+            );
+            lastStatus = 504;
+            lastErrorText = `Google Cloud Code API gateway timeout (504) across ${consecutive504TimeoutCount} consecutive accounts`;
+            break;
+          }
+        } else {
+          consecutive504TimeoutCount = 0;
+        }
       } else {
         consecutiveTimeoutCount = 0;
+        consecutive504TimeoutCount = 0;
       }
     }
 
@@ -3038,9 +3095,9 @@ export async function executeGoogleCloudCodeWithPool(
       )];
     const sameFamily = allModelBases.filter(m => m.toLowerCase().includes('claude') === isClaudeRequest);
     const crossFamily = allModelBases.filter(m => m.toLowerCase().includes('claude') !== isClaudeRequest);
-    // On HTTP 429 quota exhaustion or 503 capacity exhaustion, sibling models in the same family share the exact same exhausted quota pool or overloaded TPU cluster.
+    // On HTTP 429 quota exhaustion, 503 capacity exhaustion, or 504 cluster timeouts, sibling models in the same family share the exact same exhausted quota pool or overloaded TPU cluster.
     // Skip same-family to avoid pointless ping-pong retry loops and cascade directly to cross-family (Gemini <-> Claude).
-    const eligibleFallbacks = (lastStatus === 429 || lastStatus === 503) ? crossFamily : [...sameFamily, ...crossFamily];
+    const eligibleFallbacks = (lastStatus === 429 || lastStatus === 503 || lastStatus === 504) ? crossFamily : [...sameFamily, ...crossFamily];
 
     if (eligibleFallbacks.length > 0) {
       for (const fallbackModel of eligibleFallbacks) {

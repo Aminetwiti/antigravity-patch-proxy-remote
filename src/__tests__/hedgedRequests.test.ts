@@ -1,8 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createResponseClaimer, type ResponseClaimer } from '../proxy';
-import { HEDGED_REQUEST_DELAY_MS, CAPACITY_503_CASCADE_THRESHOLD } from '../constants';
+import {
+  HEDGED_REQUEST_DELAY_MS,
+  CAPACITY_503_CASCADE_THRESHOLD,
+  CONSECUTIVE_504_CASCADE_THRESHOLD,
+  GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS,
+  GOOGLE_PROXY_TIMEOUT_MS,
+} from '../constants';
 
-describe('Speculative Hedged Requests & 503 Cascade Architecture', () => {
+describe('Speculative Hedged Requests, 503 & 504 Timeout Cascade Architecture', () => {
   it('verifies HEDGED_REQUEST_DELAY_MS is configured to 2,500ms', () => {
     const expected = process.env.AG_HEDGED_REQUEST_DELAY_MS
       ? parseInt(process.env.AG_HEDGED_REQUEST_DELAY_MS, 10)
@@ -15,6 +21,27 @@ describe('Speculative Hedged Requests & 503 Cascade Architecture', () => {
       ? parseInt(process.env.AG_CAPACITY_503_CASCADE_THRESHOLD, 10)
       : 2;
     expect(CAPACITY_503_CASCADE_THRESHOLD).toBe(expected);
+  });
+
+  it('verifies CONSECUTIVE_504_CASCADE_THRESHOLD is configured to 2', () => {
+    const expected = process.env.AG_CONSECUTIVE_504_CASCADE_THRESHOLD
+      ? parseInt(process.env.AG_CONSECUTIVE_504_CASCADE_THRESHOLD, 10)
+      : 2;
+    expect(CONSECUTIVE_504_CASCADE_THRESHOLD).toBe(expected);
+  });
+
+  it('verifies GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS is calibrated to 65s for KV-cache prefill', () => {
+    const expected = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS
+      ? parseInt(process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS, 10)
+      : 65_000;
+    expect(GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS).toBe(expected);
+  });
+
+  it('verifies GOOGLE_PROXY_TIMEOUT_MS accommodates 90s requests', () => {
+    const expected = process.env.AG_GOOGLE_PROXY_TIMEOUT_MS
+      ? parseInt(process.env.AG_GOOGLE_PROXY_TIMEOUT_MS, 10)
+      : 90_000;
+    expect(GOOGLE_PROXY_TIMEOUT_MS).toBe(expected);
   });
 
   describe('ResponseClaimer', () => {
