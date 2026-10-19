@@ -1565,362 +1565,257 @@
             </div>
           </div>
 
-          <!-- MODE 2: INSIGHTS (BENTO GRID + HEATMAP 91-DAY) -->
+          <!-- MODE 2: INSIGHTS (AUTHENTIC APPLE BENTO GRID) -->
           <div class="stats-mode-section" id="statsModeInsights">
-          <!-- Antigravity Native Stats Shell (Exact Reference Match) -->
-          <div class="antigravity-stats-shell">
-            <!-- Top Controls: Quick Model Filters & Pricing Perspective Toggle -->
-            <div class="stats-filter-toolbar">
-              <div class="stats-filter-left-col">
-                <div class="stats-filter-group" id="statsModelFilterGroup">
-                  <span class="stats-filter-group-lbl">Modèle :</span>
-                  <button type="button" class="stats-filter-chip active" data-model-filter="all">
-                    <span>Tous les modèles</span>
-                    <span class="chip-count-badge" id="filterCountAll">100%</span>
-                  </button>
-                  <button type="button" class="stats-filter-chip" data-model-filter="gemini-3.8">
-                    <span>Gemini 3.8 Flash</span>
-                    <span class="chip-count-badge" id="filterCountGemini38">94.5%</span>
-                  </button>
-                  <button type="button" class="stats-filter-chip" data-model-filter="gemini-3.6">
-                    <span>Gemini 3.6 Flash</span>
-                    <span class="chip-count-badge" id="filterCountGemini36">5.3%</span>
-                  </button>
-                  <button type="button" class="stats-filter-chip" data-model-filter="other">
-                    <span>Claude / OpenAI / Autres</span>
-                    <span class="chip-count-badge" id="filterCountOther">0.2%</span>
-                  </button>
-                  <button type="button" class="stats-filter-reset-btn" id="statsFilterResetBtn" title="Réinitialiser tous les filtres" style="display:none;">
-                    ✕ Réinitialiser
-                  </button>
-                </div>
-                <div class="stats-filter-active-summary" id="statsFilterActiveSummary">
-                  <span class="filter-summary-dot"></span>
-                  <span id="statsFilterSummaryText">Affichage : Tous les modèles &bull; 7 derniers mois</span>
-                </div>
-              </div>
-
-              <div class="stats-filter-right-col">
-                <div class="stats-perspective-toggle" id="statsPerspectiveGroup">
-                  <button type="button" class="stats-perspective-btn active" id="btnPerspectivePool" title="Calcul basé sur l'arbitrage gratuit du pool de comptes Google">
-                    ⚡ Économies Pool (0$)
-                  </button>
-                  <button type="button" class="stats-perspective-btn" id="btnPerspectiveApi" title="Évaluation financière au tarif commercial Cloud standard">
-                    💵 Valeur Marchande API
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- 1. Top 5-Metric Unified Strip Card -->
-            <div class="stats-strip-card">
-              <div class="strip-item">
-                <div class="strip-val" id="statsLifetimeTokens">--</div>
-                <div class="strip-lbl" id="statsLifetimeTokensLbl">Lifetime tokens</div>
-                <div class="caching-roi-pill" id="cachingRoiPill" title="Pool Antigravity &amp; Gemini Context Caching">--</div>
-              </div>
-              <div class="strip-item">
-                <div class="strip-val" id="statsPeakTokens">--</div>
-                <div class="strip-lbl">Peak tokens</div>
-              </div>
-              <div class="strip-item">
-                <div class="strip-val" id="statsLongestTask">--</div>
-                <div class="strip-lbl">Longest task</div>
-              </div>
-              <div class="strip-item featured">
-                <div class="strip-val" id="statsCurrentStreak">--</div>
-                <div class="strip-lbl">Current streak</div>
-                <div class="streak-goal-pill" id="streakGoalPill" title="Objectif de streak">🎯 En cours</div>
-              </div>
-              <div class="strip-item">
-                <div class="strip-val" id="statsLongestStreak">--</div>
-                <div class="strip-lbl">Longest streak</div>
-              </div>
-            </div>
-
-            <!-- 1b. FinOps & Quota Proactive Runway Strip -->
-            <div class="stats-finops-card">
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Valeur Marchande API</span>
-                  <span class="finops-badge" id="finopsModeBadge">Tarif Public Cloud</span>
-                </div>
-                <div class="finops-val" id="finopsMarketVal">$0.00</div>
-                <div class="finops-sub">Équivalent Vertex AI / Cloud</div>
-              </div>
-              <div class="finops-metric featured-savings">
-                <div class="finops-head">
-                  <span class="finops-lbl">Coût Réel Déboursé</span>
-                  <span class="finops-badge badge-green">100% Amorti</span>
-                </div>
-                <div class="finops-val green-val" id="finopsActualCost">$0.00</div>
-                <div class="finops-sub" id="finopsSavingsLbl">+$0.00 économisés (Pool 33 comptes)</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Autonomie / Runway</span>
-                  <span class="finops-badge badge-blue" id="finopsRunwayBadge">Optimal</span>
-                </div>
-                <div class="finops-val blue-val" id="finopsRunwayVal">~14h 30m</div>
-                <div class="finops-sub" id="finopsRunwaySub">À cadence 50% RPM · Risque 429: 0%</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Efficacité Cache</span>
-                  <span class="finops-badge badge-purple" id="finopsCacheBadge">Context Ready</span>
-                </div>
-                <div class="finops-val purple-val" id="finopsCacheRatio">~68%</div>
-                <div class="finops-sub" id="finopsCacheSavings">Latence TTFT réduite de ~40%</div>
-              </div>
-            </div>
-
-            <!-- 1c. Token Dynamics & Execution Flow Strip -->
-            <div class="stats-finops-card stats-dynamics-card" style="margin-top: 10px;">
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Vélocité &amp; Throughput</span>
-                  <span class="finops-badge badge-green" id="dynamicsThroughputBadge">Live Stream</span>
-                </div>
-                <div class="finops-val green-val" id="dynamicsThroughputVal">-- tok/s</div>
-                <div class="finops-sub" id="dynamicsThroughputSub">Latence moy. ~250ms · TTFT optimisé</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Ratio In / Out</span>
-                  <span class="finops-badge badge-blue" id="dynamicsRatioBadge">Prompt Inflation</span>
-                </div>
-                <div class="finops-val blue-val" id="dynamicsRatioVal">-- : 1</div>
-                <div class="finops-sub" id="dynamicsRatioSub">--% Contexte · --% Sortie</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Poids Moyen / Step</span>
-                  <span class="finops-badge" id="dynamicsStepWeightBadge">Agentic Density</span>
-                </div>
-                <div class="finops-val" id="dynamicsStepWeightVal">-- tok</div>
-                <div class="finops-sub" id="dynamicsStepWeightSub">Tokens consommés par action d'agent</div>
-              </div>
-              <div class="finops-metric">
-                <div class="finops-head">
-                  <span class="finops-lbl">Projection 30 Jours</span>
-                  <span class="finops-badge badge-purple" id="dynamicsProjectionBadge">FinOps Forecast</span>
-                </div>
-                <div class="finops-val purple-val" id="dynamicsProjectionVal">$0.00</div>
-                <div class="finops-sub" id="dynamicsProjectionSub">Équiv. API sans arbitrage pool</div>
-              </div>
-            </div>
-
-            <!-- 2. Token activity Heatmap Card -->
-            <div class="stats-activity-card" style="position:relative;">
-              <div class="activity-header">
-                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                  <div class="activity-title">Token activity</div>
-                  <div class="activity-pills" id="activityPillsGroup">
-                    <button type="button" class="activity-pill active" data-mode="daily">Daily</button>
-                    <button type="button" class="activity-pill" data-mode="weekly">Weekly</button>
-                    <button type="button" class="activity-pill" data-mode="cumulative">Cumulative</button>
-                  </div>
-                </div>
-                <div class="heatmap-legend-pills">
-                  <span class="heatmap-legend-label">Moins</span>
-                  <span class="heatmap-legend-box level-0" title="0 token"></span>
-                  <span class="heatmap-legend-box level-1" title="Faible volume"></span>
-                  <span class="heatmap-legend-box level-2" title="Moyen volume"></span>
-                  <span class="heatmap-legend-box level-3" title="Fort volume"></span>
-                  <span class="heatmap-legend-box level-4" title="Pic d'activité"></span>
-                  <span class="heatmap-legend-label">Plus</span>
-                  <span class="heatmap-meta-summary" id="heatmapMetaSummary">Pic : --</span>
-                </div>
-              </div>
-              <div class="heatmap-scroll-wrap">
-                <div class="heatmap-matrix" id="statsHeatmapMatrix">
-                  <!-- Populated dynamically via JS -->
-                </div>
-                <div class="heatmap-months-row" id="statsHeatmapMonthsRow">
-                  <span>-</span>
-                </div>
-              </div>
-              <!-- Floating Day Inspector Popover -->
-              <div class="day-inspector-popover" id="dayInspectorPopover" style="display:none;"></div>
-              <!-- Instant Micro Tooltip on Cell Hover -->
-              <div class="heatmap-floating-tooltip" id="heatmapFloatingTooltip" style="display:none;"></div>
-            </div>
-
-            <!-- 3. Bottom 2-card Grid -->
-            <div class="stats-bottom-grid">
-              <!-- Activity insights -->
-              <div class="stats-insights-card">
-                <div style="display:flex; align-items:center; justify-content:space-between;">
-                  <div class="activity-title">Activity insights</div>
-                  <span class="insight-status-chip">⚡ 100% Observé</span>
-                </div>
-                <div class="insights-list">
-                  <div class="insight-row">
-                    <span class="insight-key">Pool de comptes</span>
-                    <span class="insight-val" id="insightFastMode">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Modèle principal</span>
-                    <span class="insight-val" id="insightReasoning">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Tâches totales (Steps)</span>
-                    <span class="insight-val" id="insightSkillsExplored">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Max étapes / session</span>
-                    <span class="insight-val" id="insightSkillsUsed">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Sessions SQLite</span>
-                    <span class="insight-val" id="insightThreads">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Ratio Cache Hit</span>
-                    <span class="insight-val" id="insightCacheHit" style="color:#c084fc;">--</span>
-                  </div>
-                  <div class="insight-row">
-                    <span class="insight-key">Headroom Contexte</span>
-                    <span class="insight-val" id="insightContextHeadroom" style="color:#60a5fa;">--</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Usage distribution -->
-              <div class="stats-donut-card">
-                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-                  <div class="activity-title">Usage distribution</div>
-                  <div class="donut-mode-toggle" id="donutModeToggleGroup">
-                    <button type="button" class="donut-mode-chip active" id="btnDonutModeTokens">Tokens</button>
-                    <button type="button" class="donut-mode-chip" id="btnDonutModeCost">Coût API</button>
-                    <button type="button" class="donut-mode-chip" id="btnDonutModeCalls">Appels</button>
-                  </div>
-                </div>
-                <div class="donut-content-wrap">
-                  <div class="donut-chart-box" id="donutChartBox">
-                    <svg width="140" height="140" viewBox="0 0 140 140">
-                      <circle cx="70" cy="70" r="54" fill="none" stroke="var(--bg-2)" stroke-width="16" />
-                      <circle id="donutSegmentReasoning" cx="70" cy="70" r="54" fill="none" stroke="#4285f4" stroke-width="16" stroke-dasharray="320 339" stroke-dashoffset="0" stroke-linecap="round" />
-                      <circle id="donutSegmentTool" cx="70" cy="70" r="54" fill="none" stroke="#8ab4f8" stroke-width="16" stroke-dasharray="18 339" stroke-dashoffset="-320" stroke-linecap="round" />
-                      <circle id="donutSegmentSystem" cx="70" cy="70" r="54" fill="none" stroke="#c2d7fc" stroke-width="16" stroke-dasharray="2 339" stroke-dashoffset="-338" stroke-linecap="round" />
+            <!-- 1. Apple 4 Bento Top Cards (Total Usage, Estimated Spend, Cache Efficiency, Active Network) -->
+            <div class="bento-top-grid">
+              <!-- Bento 1: Total Usage -->
+              <div class="bento-card bento-card-tokens">
+                <div class="bento-card-head">
+                  <span class="bento-card-title">TOTAL USAGE</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,22 Q21,18 42,12 T84,6" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="6" r="3" fill="#3b82f6"/>
                     </svg>
-                    <div class="donut-center-text">
-                      <span class="donut-center-val" id="donutCenterVal">--</span>
-                      <span class="donut-center-sub" id="donutCenterSub">tokens</span>
-                    </div>
                   </div>
-                  <div class="donut-legend">
-                    <div class="legend-item" id="legendItemReasoning" data-segment="reasoning">
-                      <div class="legend-label-group">
-                        <span class="legend-dot dot-reasoning"></span>
-                        <span id="legendLblReasoning">Gemini 3.8 Flash</span>
-                      </div>
-                      <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="legend-val-secondary" id="legendValReasoning">--</span>
-                        <span class="legend-pct" id="legendPctReasoning">--</span>
-                      </div>
-                    </div>
-                    <div class="legend-item" id="legendItemTool" data-segment="tool">
-                      <div class="legend-label-group">
-                        <span class="legend-dot dot-tool"></span>
-                        <span id="legendLblTool">Gemini 3.6 Flash</span>
-                      </div>
-                      <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="legend-val-secondary" id="legendValTool">--</span>
-                        <span class="legend-pct" id="legendPctTool">--</span>
-                      </div>
-                    </div>
-                    <div class="legend-item" id="legendItemSystem" data-segment="system">
-                      <div class="legend-label-group">
-                        <span class="legend-dot dot-system"></span>
-                        <span id="legendLblSystem">Autres</span>
-                      </div>
-                      <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="legend-val-secondary" id="legendValSystem">--</span>
-                        <span class="legend-pct" id="legendPctSystem">--</span>
-                      </div>
-                    </div>
+                </div>
+                <div class="bento-card-body">
+                  <div class="bento-val-hero" id="bentoTotalUsageVal">0</div>
+                  <div class="bento-sub-hero" id="bentoInOutSub">In 0 / Out 0</div>
+                </div>
+                <div class="bento-card-foot">
+                  <div class="bento-progress-pill">
+                    <div class="bento-progress-fill-in" id="bentoFillIn" style="width:50%;"></div>
+                    <div class="bento-progress-fill-out" id="bentoFillOut" style="width:50%;"></div>
                   </div>
+                  <div class="bento-ratio-labels">
+                    <span id="bentoInPct">50% In</span>
+                    <span id="bentoOutPct">50% Out</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bento 2: Estimated Spend -->
+              <div class="bento-card bento-card-spend">
+                <div class="bento-card-head">
+                  <span class="bento-card-title text-green">ESTIMATED SPEND</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,24 Q28,20 56,10 T84,4" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="4" r="3" fill="#10b981"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div class="bento-val-hero text-green" id="bentoSpendVal">$0.00</div>
+                  <div class="bento-sub-hero">Weighted snapshot accumulation</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Real-time Billing Baseline</span>
+                  <span class="bento-link text-green" id="bentoPricingMatrixLink">Pricing Matrix ↗</span>
+                </div>
+              </div>
+
+              <!-- Bento 3: Cache Efficiency -->
+              <div class="bento-card bento-card-cache">
+                <div class="bento-card-head">
+                  <span class="bento-card-title text-cyan">CACHE EFFICIENCY</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,22 Q28,14 56,12 T84,8" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="8" r="3" fill="#06b6d4"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <div class="bento-val-hero" id="bentoCachedVal">0</div>
+                    <span class="bento-badge-cyan" id="bentoCacheHitBadge">0.0% Hit</span>
+                  </div>
+                  <div class="bento-sub-hero" id="bentoCacheSavedSub">Saved approx. $0.00</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Context Reuse</span>
+                  <span class="text-cyan" style="font-size:11px; font-weight:600;">Zero Latency</span>
+                </div>
+              </div>
+
+              <!-- Bento 4: Active Dispatch Network -->
+              <div class="bento-card bento-card-network">
+                <div class="bento-card-head">
+                  <span class="bento-card-title text-purple">ACTIVE DISPATCH NETWORK</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,20 Q28,18 56,14 T84,8" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="8" r="3" fill="#a855f7"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div style="display:flex; align-items:baseline; gap:12px;">
+                    <div><span class="bento-val-hero" id="bentoAccountsCount">0</span> <span style="font-size:11px; color:var(--text-2);">Account</span></div>
+                    <div><span class="bento-val-hero text-purple" id="bentoModelsCount">0</span> <span style="font-size:11px; color:var(--text-2);">Model</span></div>
+                  </div>
+                  <div class="bento-sub-hero" id="bentoInteractionsSub">0 total interactions</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Load Balance Ready</span>
+                  <span class="text-green" style="font-size:11px; font-weight:600;">100% Smooth</span>
                 </div>
               </div>
             </div>
 
-            <!-- 3b. Advanced Token Analytics & User-Specific Models Calculation Grid -->
-            <div class="stats-advanced-grid">
-              <!-- Card A: Anatomie du Trafic de Mes Modèles -->
-              <div class="advanced-calc-card">
-                <div class="advisor-header">
-                  <div class="advisor-title-group">
-                    <span class="advisor-icon">🧩</span>
-                    <h3 class="advisor-title">Anatomie du Trafic de Mes Modèles</h3>
-                    <span class="advisor-tag">Mes Modèles</span>
+            <!-- 2. Apple Bento Row: Activity 91-Day Matrix & 24-Hour Rhythm -->
+            <div class="bento-middle-grid">
+              <!-- Left Card: Activity 91-Day View -->
+              <div class="bento-card bento-heatmap-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#3b82f6;">📅</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Activity</span>
+                    <span style="font-size:11px; color:var(--text-2);">91-Day View</span>
                   </div>
-                  <span style="font-size:11px; color:var(--text-2);" id="compoundSessionCount">-- sessions</span>
-                </div>
-
-                <!-- Dynamic Segmented Multi-Bar based on User's Models -->
-                <div>
-                  <div class="payload-bar-track" id="payloadBarTrack">
-                    <!-- Populated dynamically via JS -->
+                  <div id="bentoStreakBadgeWrap">
+                    <span style="font-size:11px; color:var(--text-2);">13-Week Grid</span>
                   </div>
                 </div>
 
-                <!-- Dynamic Legend Grid based on User's Models -->
-                <div class="payload-legend-grid" id="payloadLegendGrid">
-                  <!-- Populated dynamically via JS -->
+                <div class="bento-heatmap-body">
+                  <div class="bento-heatmap-matrix-wrap">
+                    <div class="heatmap-matrix" id="statsHeatmapMatrix">
+                      <!-- 13 cols x 7 rows cells populated dynamically -->
+                    </div>
+                  </div>
+
+                  <div class="bento-heatmap-stat-col">
+                    <div style="font-size:11px; color:var(--text-2);">13-Week Activity</div>
+                    <div style="font-size:20px; font-weight:800; font-family:monospace; color:var(--text-0); margin:2px 0 6px 0;" id="bentoRangeTokens">0 Tokens</div>
+                    <div style="font-size:12px; color:var(--text-1); display:flex; justify-content:space-between;">
+                      <span>Active Days</span>
+                      <strong id="bentoActiveDays">0 (0%)</strong>
+                    </div>
+                  </div>
                 </div>
 
-                <!-- Subgrid: Compounding Inflation Slope & Fournisseur Principal -->
-                <div class="compound-stats-subgrid">
-                  <div class="compound-sub-item">
-                    <span class="compound-sub-lbl">Pente d'inflation / step</span>
-                    <span class="compound-sub-val" id="compoundSlopeVal" style="color:#60a5fa;">-- tok</span>
+                <div class="bento-card-foot">
+                  <div class="bento-legend-levels">
+                    <span style="font-size:10px; color:var(--text-2); margin-right:4px;">Less</span>
+                    <span class="bento-leg-box level-0"></span>
+                    <span class="bento-leg-box level-1"></span>
+                    <span class="bento-leg-box level-2"></span>
+                    <span class="bento-leg-box level-3"></span>
+                    <span class="bento-leg-box level-4"></span>
+                    <span style="font-size:10px; color:var(--text-2); margin-left:4px;">More</span>
                   </div>
-                  <div class="compound-sub-item">
-                    <span class="compound-sub-lbl">Fournisseur dominant</span>
-                    <span class="compound-sub-val" id="compoundTopProviderVal" style="color:#34d399;">--</span>
-                  </div>
+                  <span style="font-size:11px; color:var(--text-2);">Cadence Accumulation</span>
                 </div>
               </div>
 
-              <!-- Card B: Consommation & Calculs Financiers de Mes Modèles -->
-              <div class="advanced-calc-card">
-                <div class="advisor-header">
-                  <div class="advisor-title-group">
-                    <span class="advisor-icon">⚖️</span>
-                    <h3 class="advisor-title">Consommation &amp; Calculs de Mes Modèles</h3>
-                    <span class="advisor-tag">Mes Fournisseurs</span>
+              <!-- Right Card: 24-Hour Rhythm & Diagnostics -->
+              <div class="bento-card bento-rhythm-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#f59e0b;">✨</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">24-Hour Rhythm</span>
                   </div>
-                  <span style="font-size:11px; color:#34d399; font-weight:600;" id="benchmarkSavingsBadge">100% Amorti</span>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoPeakRhythmSub">Peak: None &bull; Day: 0</span>
                 </div>
 
-                <!-- Dynamic Model List based on User's Configured Models -->
-                <div class="benchmark-list" id="userModelsBenchmarkList">
+                <!-- 24 Slim Vertical Bars -->
+                <div class="bento-rhythm-bars" id="bentoRhythmBars">
                   <!-- Populated dynamically via JS -->
                 </div>
 
-                <div style="font-size:11px; color:var(--text-2); display:flex; align-items:center; justify-content:space-between; padding-top:6px; border-top:1px dashed var(--border);">
-                  <span id="benchmarkSavingsSummary">Économies Pool : +$0.00</span>
-                  <span style="font-size:10px; opacity:0.8;" id="benchmarkConfiguredCount">-- modèles configurés</span>
+                <!-- 2 Micro Metric Capsules -->
+                <div class="bento-capsules-grid">
+                  <div class="bento-capsule">
+                    <span class="bento-capsule-lbl">Avg Tokens / Request</span>
+                    <span class="bento-capsule-val" id="bentoAvgPerReq">0 Tokens</span>
+                  </div>
+                  <div class="bento-capsule">
+                    <span class="bento-capsule-lbl">Cost per 1M Tokens</span>
+                    <span class="bento-capsule-val text-green" id="bentoCostPerM">$0.00 / 1M</span>
+                  </div>
+                </div>
+
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Antigravity Pipeline Accel</span>
+                  <span class="text-green" style="font-size:11px; font-weight:600;">High Availability Ready</span>
                 </div>
               </div>
             </div>
 
-            <!-- 4. Antigravity AI Advisor: Actions Préventives & Conseils en Direct -->
-            <div class="stats-advisor-card">
-              <div class="advisor-header">
-                <div class="advisor-title-group">
-                  <span class="advisor-icon">🧠</span>
-                  <h3 class="advisor-title">Recommandations &amp; Optimisation en Direct</h3>
-                  <span class="advisor-tag">Proactif</span>
+            <!-- 3. Apple Bento Row: Core Models Share & Account Usage Leaderboard -->
+            <div class="bento-middle-grid">
+              <!-- Left Card: Core Models Share -->
+              <div class="bento-card bento-share-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#3b82f6;">⚙️</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Core Models Share</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoCoreModelsCount">0 models</span>
                 </div>
-                <div class="advisor-health-status" id="advisorHealthStatus">
-                  <span class="advisor-health-dot"></span>
-                  <span id="advisorHealthStatusText">Santé du Pool : 100% Optimale</span>
+                <div class="bento-list-body" id="bentoCoreModelsList">
+                  <div class="bento-empty-text">No model activity</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Top 5 models handle bulk load</span>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoAccumulatedModelCost">Accumulated Cost: $0.00</span>
                 </div>
               </div>
-              <div class="advisor-grid" id="advisorRecommendationsGrid">
-                <!-- Populated dynamically via JS -->
+
+              <!-- Right Card: Account Usage Leaderboard -->
+              <div class="bento-card bento-leaderboard-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#a855f7;">👥</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Account Usage Leaderboard</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoTotalAccountsCount">0 accounts total</span>
+                </div>
+                <div class="bento-list-body" id="bentoAccountLeaderboardList">
+                  <div class="bento-empty-text">No account requests</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Account-level Isolation</span>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoActiveAccountsFoot">Active Accounts: 0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. Apple Bento Bottom: Model Token Timeline (Full Width) -->
+            <div class="bento-card bento-timeline-card">
+              <div class="bento-card-head" style="flex-wrap:wrap; gap:10px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="color:#3b82f6;">📈</span>
+                  <span style="font-size:13px; font-weight:700; color:var(--text-0);">Model Token Timeline</span>
+                </div>
+
+                <!-- 3 Apple-Style Capsule Toggle Groups -->
+                <div class="bento-timeline-toggles">
+                  <div class="bento-toggle-pill-group" id="bentoChartTypeToggle">
+                    <button type="button" class="bento-toggle-btn active" data-chart="area">Area</button>
+                    <button type="button" class="bento-toggle-btn" data-chart="bar">Bar</button>
+                  </div>
+                  <div class="bento-toggle-pill-group" id="bentoMetricTypeToggle">
+                    <button type="button" class="bento-toggle-btn active" data-metric="tokens">Tokens</button>
+                    <button type="button" class="bento-toggle-btn" data-metric="cost">Cost ($)</button>
+                  </div>
+                  <div class="bento-toggle-pill-group" id="bentoGroupToggle">
+                    <button type="button" class="bento-toggle-btn active" data-group="model">By Model</button>
+                    <button type="button" class="bento-toggle-btn" data-group="account">By Account</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- SVG Interactive Timeline Area/Bar Chart -->
+              <div class="bento-timeline-chart-wrap" id="bentoTimelineChartWrap">
+                <svg width="100%" height="220" viewBox="0 0 900 220" preserveAspectRatio="none" id="bentoTimelineSvg">
+                  <!-- Rendered dynamically via JS -->
+                </svg>
+              </div>
             </div>
           </div>
           <!-- Fin MODE 2: INSIGHTS -->

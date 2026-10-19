@@ -48,6 +48,7 @@ export interface AccountQuotaSummary {
   argonWeeklyPct?: number;
   argonWeeklyReset?: string;
   isUnlicensed?: boolean;
+  isValidationRequired?: boolean;
   tier?: string;
   errorDetails?: AccountErrorDetails;
   groups: QuotaGroup[];
@@ -59,6 +60,7 @@ export interface AccountErrorDetails {
   reason: string;
   message: string;
   appealUrl?: string;
+  validationUrl?: string;
   detectionTime: string;
   raw?: any;
 }
