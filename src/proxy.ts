@@ -1518,6 +1518,7 @@ export function executeGoogleCloudCodeRequest(
         ...(req.headers as Record<string, string | string[] | undefined>),
       };
       headers['host'] = targetHost;
+      log.info(`[CloudCode Dispatch Detail] host=${targetHost} ip=${realIp} url=${req.url} customAuth=${Boolean(customAuthHeader)} headers=${Object.keys(headers).join(',')}`);
       headers['content-length'] = String(reqBody.length);
       delete headers['connection'];
       delete headers['keep-alive'];
@@ -2217,6 +2218,7 @@ export async function executeGoogleCloudCodeWithPool(
       : GOOGLE_PROXY_TIMEOUT_MS;
     let outcome: GoogleRequestOutcome;
     try {
+      log.info(`[CloudCode Candidate Dispatch] acc=${candidateName} model=${targetModel} host=${hostOverride} project=${reqJson.project} cli=${isGeminiCliModel(candidate)}`);
       outcome = await executeGoogleCloudCodeRequest(
         req,
         res,

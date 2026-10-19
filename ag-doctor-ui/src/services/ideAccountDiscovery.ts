@@ -476,6 +476,7 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
       ? 'https://daily-cloudcode-pa.googleapis.com'
       : 'https://cloudcode-pa.googleapis.com',
   ];
+  let nonTos403Error: any = null;
   for (const host of hosts) {
     try {
       const res = await fetch(`${host}/v1internal:retrieveUserQuotaSummary`, {
@@ -503,32 +504,45 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
           const reason = errDetail?.reason || (errJson?.error?.message?.includes('Terms of Service') ? 'TOS_VIOLATION' : 'PERMISSION_DENIED');
           const message = errJson?.error?.message || 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.';
 
-          return {
-            fiveHourPercentage: 0,
-            weeklyPercentage: 0,
-            geminiFiveHourPct: 0,
-            geminiWeeklyPct: 0,
-            claudeFiveHourPct: 0,
-            claudeWeeklyPct: 0,
-            isUnlicensed: true,
-            errorDetails: {
-              code: 403,
-              status: errJson?.error?.status || 'PERMISSION_DENIED',
-              reason,
-              message,
-              appealUrl,
-              detectionTime: new Date().toISOString(),
-              raw: errJson || { error: { code: 403, status: 'PERMISSION_DENIED', message, details: [{ reason, metadata: { appeal_url: appealUrl } }] } }
-            },
-            groups: [
-              {
-                displayName: reason === 'TOS_VIOLATION' ? 'Violation TOS (HTTP 403)' : 'Licence requise (HTTP 403)',
-                buckets: [
-                  { bucketId: 'unlicensed', window: 'none', percentage: 0 }
-                ]
-              }
-            ]
+          if (reason === 'TOS_VIOLATION' || errJson?.error?.message?.includes('Terms of Service')) {
+            return {
+              fiveHourPercentage: 0,
+              weeklyPercentage: 0,
+              geminiFiveHourPct: 0,
+              geminiWeeklyPct: 0,
+              claudeFiveHourPct: 0,
+              claudeWeeklyPct: 0,
+              isUnlicensed: true,
+              errorDetails: {
+                code: 403,
+                status: errJson?.error?.status || 'PERMISSION_DENIED',
+                reason: 'TOS_VIOLATION',
+                message,
+                appealUrl,
+                detectionTime: new Date().toISOString(),
+                raw: errJson || { error: { code: 403, status: 'PERMISSION_DENIED', message, details: [{ reason: 'TOS_VIOLATION', metadata: { appeal_url: appealUrl } }] } }
+              },
+              groups: [
+                {
+                  displayName: 'Violation TOS (HTTP 403)',
+                  buckets: [
+                    { bucketId: 'unlicensed', window: 'none', percentage: 0 }
+                  ]
+                }
+              ]
+            };
+          }
+
+          nonTos403Error = {
+            code: 403,
+            status: errJson?.error?.status || 'PERMISSION_DENIED',
+            reason,
+            message,
+            appealUrl,
+            detectionTime: new Date().toISOString(),
+            raw: errJson || { error: { code: 403, status: 'PERMISSION_DENIED', message, details: [{ reason, metadata: { appeal_url: appealUrl } }] } }
           };
+          continue;
         }
         continue;
       }
@@ -693,6 +707,27 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
     }
   } catch {
     // Ignore fallback error
+  }
+
+  if (nonTos403Error) {
+    return {
+      fiveHourPercentage: 0,
+      weeklyPercentage: 0,
+      geminiFiveHourPct: 0,
+      geminiWeeklyPct: 0,
+      claudeFiveHourPct: 0,
+      claudeWeeklyPct: 0,
+      isUnlicensed: true,
+      errorDetails: nonTos403Error,
+      groups: [
+        {
+          displayName: 'Licence requise (HTTP 403)',
+          buckets: [
+            { bucketId: 'unlicensed', window: 'none', percentage: 0 }
+          ]
+        }
+      ]
+    };
   }
 
   return null;

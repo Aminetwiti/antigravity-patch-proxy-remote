@@ -872,10 +872,18 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           }
           if (cacheEntry.tier) acc.tier = cacheEntry.tier;
           if (cacheEntry.tierId) acc.tierId = cacheEntry.tierId;
-          if (cacheEntry.isUnlicensed) acc.isUnlicensed = true;
+          if (cacheEntry.isUnlicensed) {
+            acc.isUnlicensed = true;
+          } else {
+            delete acc.isUnlicensed;
+            if (acc.quotas) delete acc.quotas.isUnlicensed;
+          }
           if (cacheEntry.errorDetails) {
             acc.errorDetails = cacheEntry.errorDetails;
             acc.quotas.errorDetails = cacheEntry.errorDetails;
+          } else {
+            delete acc.errorDetails;
+            if (acc.quotas) delete acc.quotas.errorDetails;
           }
 
           // Rebuild groups with live bucket data so legacy group parser uses the real numbers

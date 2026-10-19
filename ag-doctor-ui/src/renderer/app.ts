@@ -6795,6 +6795,7 @@ interface ProviderEntry {
   createdAt?: number;
   label?: string;
   isUnlicensed?: boolean;
+  errorDetails?: any;
 }
 
 const pmBackdrop = $('#providerManagerModalBackdrop') as HTMLDivElement;
@@ -9193,7 +9194,12 @@ function initGoogleAccountsToolbarOnce(): void {
             const res = await window.ag.providers.fetchAccountQuotas(acc.apiKey || acc.refreshToken, acc.refreshToken);
             if (res.success && res.quotas) {
               acc.quotas = res.quotas;
-              if (res.quotas.isUnlicensed) acc.isUnlicensed = true;
+              if (res.quotas.isUnlicensed) {
+                acc.isUnlicensed = true;
+              } else {
+                delete acc.isUnlicensed;
+                delete acc.errorDetails;
+              }
               updatedCount++;
             }
           } catch {}
@@ -10288,7 +10294,12 @@ function initGoogleAccountsToolbarOnce(): void {
               const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse || account.refreshToken, account.refreshToken);
               if (qRes.success && qRes.quotas) {
                 account.quotas = qRes.quotas;
-                if (qRes.quotas.isUnlicensed) account.isUnlicensed = true;
+                if (qRes.quotas.isUnlicensed) {
+                  account.isUnlicensed = true;
+                } else {
+                  delete account.isUnlicensed;
+                  delete account.errorDetails;
+                }
               }
             }
             await window.ag.providers.save(account);
@@ -10311,7 +10322,12 @@ function initGoogleAccountsToolbarOnce(): void {
             const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse || account.refreshToken, account.refreshToken);
             if (qRes.success && qRes.quotas) {
               account.quotas = qRes.quotas;
-              if (qRes.quotas.isUnlicensed) account.isUnlicensed = true;
+              if (qRes.quotas.isUnlicensed) {
+                account.isUnlicensed = true;
+              } else {
+                delete account.isUnlicensed;
+                delete account.errorDetails;
+              }
             }
           }
           await window.ag.providers.save(account);
@@ -11063,7 +11079,12 @@ async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> 
             const qRes = await window.ag.providers.fetchAccountQuotas(acc.apiKey || acc.refreshToken, acc.refreshToken);
             if (qRes && qRes.success && qRes.quotas) {
               acc.quotas = qRes.quotas;
-              if (qRes.quotas.isUnlicensed) acc.isUnlicensed = true;
+              if (qRes.quotas.isUnlicensed) {
+                acc.isUnlicensed = true;
+              } else {
+                delete acc.isUnlicensed;
+                delete acc.errorDetails;
+              }
             }
           } catch {}
         }
@@ -11583,9 +11604,21 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
     : (typeof calculatePoolRunway === 'function' ? calculatePoolRunway(accounts) : { formattedRunway: '> 24h', burnState: 'healthy' as const, totalAvailableTokens: 0, totalAvailableTokens5h: 0, totalAvailableTokensWeekly: 0, hourlyBurnRate: 120000, runwayHours: 24, runwayMinutes: 0 });
 
   const isWeekly = gaCurrentQuotaWindow === 'weekly';
-  const availToks = isWeekly
+  let availToks = isWeekly
     ? (runway.totalAvailableTokensWeekly || runway.totalAvailableTokens)
     : (runway.totalAvailableTokens5h || runway.totalAvailableTokens);
+
+  if ((!availToks || availToks <= 0) && Array.isArray(accounts)) {
+    let fallbackToks = 0;
+    for (const acc of accounts) {
+      if (!acc || acc.enabled === false) continue;
+      if (acc.isUnlicensed || acc.quotas?.isUnlicensed) continue;
+      if (isAiStudioAccount(acc) || isGeminiCliAccount(acc)) continue;
+      const est = estimateAccountTokens(acc);
+      fallbackToks += isWeekly ? est.geminiAvailableWeekly : est.geminiAvailable5h;
+    }
+    if (fallbackToks > 0) availToks = fallbackToks;
+  }
 
   const timelineItems = (typeof getUpcomingResetsTimeline === 'function')
     ? getUpcomingResetsTimeline(accounts, Date.now(), 4, gaActiveCooldownsCache)
