@@ -11184,8 +11184,8 @@ function renderDynamicExtraQuotaGroups(quotas: any, showAll: boolean, isWeekly: 
   for (const g of quotas.groups) {
     const gName = (g.displayName || g.name || '').trim();
     const gLower = gName.toLowerCase();
-    // Skip standard groups already handled (Gemini, Claude, Argon)
-    if (gLower.includes('gemini models') || gLower.includes('claude and gpt') || gLower.includes('argon')) {
+    // Skip standard groups already handled (Gemini, Claude, Argon, Models Live Quota)
+    if (gLower.includes('gemini models') || gLower.includes('claude and gpt') || gLower.includes('argon') || gLower.includes('models live quota')) {
       continue;
     }
     if ((gLower.includes('gemini') && !gLower.includes('ultra')) || gLower.includes('claude') || gLower.includes('3p') || gLower.includes('gpt')) {
@@ -13217,6 +13217,33 @@ document.addEventListener('keydown', (e: KeyboardEvent) => {
     }
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proactive Zero-Friction Telemetry Auto-Sync (No Ctrl+R required)
+// ─────────────────────────────────────────────────────────────────────────────
+let gaAutoSyncDebounce: any = null;
+function triggerAutoSyncGoogleAccounts(): void {
+  if (gaAutoSyncDebounce) clearTimeout(gaAutoSyncDebounce);
+  gaAutoSyncDebounce = setTimeout(() => {
+    if (document.visibilityState === 'visible') {
+      void loadGoogleAccounts(false);
+    }
+  }, 300);
+}
+
+// Auto-sync whenever the user switches to the Doctor UI window
+window.addEventListener('focus', triggerAutoSyncGoogleAccounts);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') triggerAutoSyncGoogleAccounts();
+});
+
+// Active background telemetry heartbeat (every 20s while window is visible)
+setInterval(() => {
+  if (document.visibilityState === 'visible' && !document.hidden) {
+    triggerAutoSyncGoogleAccounts();
+  }
+}, 20_000);
+
 
 
 

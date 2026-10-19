@@ -414,20 +414,55 @@ export async function fetchRealGoogleModelQuotas(accessToken: string): Promise<A
       }
 
       if (buckets.length > 0) {
+        const effGem5h = geminiFiveHourPct ?? Math.round(minRemainingFrac * 100);
+        const effGemReset = geminiFiveHourReset ?? earliestReset;
+        const effClaude5h = claudeFiveHourPct ?? 100;
+        const effClaudeReset = claudeFiveHourReset;
+
         return {
           fiveHourPercentage: Math.round(minRemainingFrac * 100),
           fiveHourResetTime: earliestReset,
           weeklyPercentage: 100,
-          geminiFiveHourPct: geminiFiveHourPct ?? Math.round(minRemainingFrac * 100),
-          geminiFiveHourReset: geminiFiveHourReset ?? earliestReset,
+          geminiFiveHourPct: effGem5h,
+          geminiFiveHourReset: effGemReset,
           geminiWeeklyPct: 100,
-          claudeFiveHourPct: claudeFiveHourPct ?? 100,
-          claudeFiveHourReset,
+          claudeFiveHourPct: effClaude5h,
+          claudeFiveHourReset: effClaudeReset,
           claudeWeeklyPct: 100,
           groups: [
             {
-              displayName: 'Models Live Quota',
-              buckets,
+              displayName: 'Gemini Models',
+              buckets: [
+                {
+                  bucketId: 'gemini-5h',
+                  window: '5h',
+                  percentage: effGem5h,
+                  resetTime: effGemReset,
+                },
+                {
+                  bucketId: 'gemini-weekly',
+                  window: 'weekly',
+                  percentage: 100,
+                  resetTime: effGemReset,
+                },
+              ],
+            },
+            {
+              displayName: 'Claude and GPT models',
+              buckets: [
+                {
+                  bucketId: '3p-5h',
+                  window: '5h',
+                  percentage: effClaude5h,
+                  resetTime: effClaudeReset,
+                },
+                {
+                  bucketId: '3p-weekly',
+                  window: 'weekly',
+                  percentage: 100,
+                  resetTime: effClaudeReset,
+                },
+              ],
             },
           ],
         };

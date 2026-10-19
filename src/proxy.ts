@@ -2182,7 +2182,6 @@ export async function executeGoogleCloudCodeWithPool(
         const u = new URL(candidate.apiUrl);
         const host = u.hostname;
         if (!host || host.includes('generativelanguage')) return undefined;
-        if (process.env.AG_GOOGLE_CLOUDCODE_HOST) return GOOGLE_HOSTS.CLOUD_CODE;
         if (!isGeminiCliModel(candidate) && host === 'cloudcode-pa.googleapis.com') return undefined;
         return host.includes('cloudcode') ? host : undefined;
       } catch { return undefined; }
@@ -2255,6 +2254,11 @@ export async function executeGoogleCloudCodeWithPool(
       clearAccountBurst(candidate);
       log.info(`[Proxy] ✅ [Feedback] Model: [${targetModel}] | Account: [${candidateName}] -> HTTP 200 OK (${elapsedMs}ms)`);
       return true;
+    }
+
+    if (outcome.statusCode === 499 || (outcome.error && /Client closed request/i.test(outcome.error)) || req.destroyed || res.writableEnded) {
+      log.info(`[Proxy] 🛑 Client cancelled or closed connection (HTTP 499). Halting account rotation loop.`);
+      return false;
     }
 
     if (outcome.statusCode === 429) {
@@ -2406,7 +2410,15 @@ export async function executeGoogleCloudCodeWithPool(
             `[Proxy] Rotation après épuisement de quota. Pause de ${pacingMs}ms avant le compte suivant.`
           );
         }
+        if (req.destroyed || res.writableEnded) {
+          log.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
+          return false;
+        }
         await new Promise((r) => setTimeout(r, pacingMs));
+        if (req.destroyed || res.writableEnded) {
+          log.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
+          return false;
+        }
       }
       continue;
     } else {

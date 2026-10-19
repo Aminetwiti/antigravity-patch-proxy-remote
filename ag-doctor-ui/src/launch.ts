@@ -20,6 +20,12 @@ function shouldFilter(line: string): boolean {
 }
 
 function resolveElectronBin(): string {
+  try {
+    const electron = require('electron');
+    if (typeof electron === 'string' && require('fs').existsSync(electron)) {
+      return electron;
+    }
+  } catch {}
   // On Windows, npm creates .cmd shims that cmd.exe can execute directly.
   // The extensionless shim is a shell script and will ENOENT under spawn(shell:false).
   const isWin = process.platform === 'win32';
@@ -44,9 +50,13 @@ function launch(): void {
   const args = ['.', '--disable-gpu'];
 
   const isWin = process.platform === 'win32';
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+
   const opts: SpawnOptions = {
     stdio: ['inherit', 'inherit', 'pipe'],
     shell: isWin,
+    env,
   };
 
   // When shell=true on Windows, pass the full command as a single string
