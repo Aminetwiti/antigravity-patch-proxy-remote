@@ -6252,6 +6252,52 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           targetReq.agentModel,
         ].filter((x): x is string => typeof x === 'string' && Boolean(x));
 
+        // Fast-path for IDE internal command input detection (run_command_handler.go)
+        const isInputDetection = candidateNames.some((cn) =>
+          /2[_\-]5[_\-]flash[_\-]lite|flash[_\-]lite|input[_\-]detect/i.test(cn) ||
+          /MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE/i.test(cn)
+        );
+        if (isInputDetection) {
+          log.info(`[Proxy] ⚡ Instant mock resolution for input-detection model call (0ms)`);
+          const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+          if (isStream) {
+            if (safeWriteHead(res, 200, {
+              'Content-Type': 'text/event-stream; charset=utf-8',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            })) {
+              const sseChunk = `data: ${JSON.stringify({
+                response: {
+                  candidates: [{
+                    content: { parts: [{ text: 'false' }], role: 'model' },
+                    finishReason: 'STOP',
+                    index: 0,
+                  }],
+                },
+              })}\n\n`;
+              res.write(sseChunk);
+              safeEnd(res);
+            }
+          } else {
+            const jsonResp = Buffer.from(JSON.stringify({
+              response: {
+                candidates: [{
+                  content: { parts: [{ text: 'false' }], role: 'model' },
+                  finishReason: 'STOP',
+                  index: 0,
+                }],
+              },
+            }), 'utf-8');
+            if (safeWriteHead(res, 200, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Content-Length': String(jsonResp.length),
+            })) {
+              safeEnd(res, jsonResp);
+            }
+          }
+          return;
+        }
+
         log.debug(
           `[Proxy] Cloud Code generation request candidates: ${candidateNames.join(', ')}, url: ${req.url}, bodyKeys: ${Object.keys(reqJson).join(',')}`,
         );
@@ -6357,10 +6403,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
 
           if (isNativeCloudCode) {
-            const normRequested = normalizeCloudCodeModelId(cleanRequested);
-            reqJson.model = normRequested;
+            reqJson.model = cleanRequested;
             if (targetReq && typeof targetReq === 'object') {
-              targetReq.model = normRequested;
+              targetReq.model = cleanRequested;
             }
             // Strip any stale custom placeholder models from previous conversation turns
             for (let i = candidateNames.length - 1; i >= 0; i--) {
@@ -6368,8 +6413,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 candidateNames.splice(i, 1);
               }
             }
-            if (!candidateNames.includes(normRequested)) {
-              candidateNames.unshift(normRequested);
+            if (!candidateNames.includes(cleanRequested)) {
+              candidateNames.unshift(cleanRequested);
             }
 
             // Fresh native turn: mark native session
@@ -6458,8 +6503,30 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         ));
 
         let matchingCandidates: typeof customModels = [];
+        let isNativeRoutedToPool = false;
         if (isNativeCloudCode) {
-          log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+          const googlePoolCandidates = customModels.filter(
+            (m) => (m.provider === 'google' || m.apiKey === 'auto') &&
+                   m.enabled !== false &&
+                   !(m as any)._poolOnly
+          );
+          if (googlePoolCandidates.length > 0 && process.env.AG_POOL_NATIVE_MODELS !== '0') {
+            const normReq = normalizeCloudCodeModelId(cleanRequested);
+            const matchedPool = googlePoolCandidates.filter((m) => {
+              const mTarget = (m.externalModelName || m.name || (m as any).id || '').replace(/^models\//, '').toLowerCase();
+              return mTarget === cleanRequested.toLowerCase() ||
+                     (normReq && normalizeCloudCodeModelId(mTarget) === normReq);
+            });
+            if (matchedPool.length > 0) {
+              log.info(`[Proxy] 🌐 Routing native model [${requestedRaw}] through Google multi-account pool (${matchedPool.length} candidate(s)).`);
+              matchingCandidates = matchedPool;
+              isNativeRoutedToPool = true;
+            } else {
+              log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+            }
+          } else {
+            log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+          }
         } else {
           // Strictly prioritize the model matching cleanRequested (the directly requested model)
           matchingCandidates = customModels.filter((m) => matchesCustomModel(m, cleanRequested));
@@ -6487,7 +6554,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             }
           }
         }
-        let matchedCustomModel = isNativeCloudCode ? undefined : selectBestModelByQuota(matchingCandidates, customModels);
+        let matchedCustomModel = (isNativeCloudCode && !isNativeRoutedToPool) ? undefined : selectBestModelByQuota(matchingCandidates, customModels);
         // Fallback: if a conversation references a placeholder (e.g. M299/M298/M50/M319/M565)
         if (!isNativeCloudCode && !matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
           const activePool = customModels.filter((m) => !(m as any)._poolOnly && m.enabled !== false);
@@ -6624,10 +6691,26 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       let matchedCustomModel: CustomModel | undefined;
       let customModels: CustomModel[] = [];
 
+      customModels = expandModelsWithEffort(loadCustomModels());
       if (isNative) {
-        log.info(`[Proxy] ⚡ Native Antigravity model requested on direct URL [${matchedModelName}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+        const googlePoolCandidates = customModels.filter(
+          (m) => (m.provider === 'google' || m.apiKey === 'auto') &&
+                 m.enabled !== false &&
+                 !(m as any)._poolOnly
+        );
+        const cleanMatched = matchedModelName.replace(/^models\//, '').toLowerCase();
+        const normMatched = normalizeCloudCodeModelId(cleanMatched);
+        const matchedPool = googlePoolCandidates.filter((m) => {
+          const mTarget = (m.externalModelName || m.name || (m as any).id || '').replace(/^models\//, '').toLowerCase();
+          return mTarget === cleanMatched || (normMatched && normalizeCloudCodeModelId(mTarget) === normMatched);
+        });
+        if (matchedPool.length > 0 && process.env.AG_POOL_NATIVE_MODELS !== '0') {
+          log.info(`[Proxy] 🌐 Routing native model [${matchedModelName}] on direct URL through Google multi-account pool.`);
+          matchedCustomModel = selectBestModelByQuota(matchedPool, customModels);
+        } else {
+          log.info(`[Proxy] ⚡ Native Antigravity model requested on direct URL [${matchedModelName}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+        }
       } else {
-        customModels = expandModelsWithEffort(loadCustomModels());
         let matchingCandidates = customModels.filter((m) =>
           matchesCustomModel(m, matchedModelName),
         );

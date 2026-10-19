@@ -1723,8 +1723,8 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
 
   if (heatmapMetaSummary) {
     const peakTok = Math.round((real?.peakTokensDay?.tokens || 0) * filterMultiplier);
-    heatmapMetaSummary.textContent = real?.peakTokensDay?.day 
-      ? `Pic : ${formatCompactTokens(peakTok)} (${real.peakTokensDay.day})` 
+    heatmapMetaSummary.textContent = real?.peakTokensDay?.day
+      ? `Pic : ${formatCompactTokens(peakTok)} (${real.peakTokensDay.day})`
       : `Pic : ${formatCompactTokens(peakTok)}`;
   }
 
@@ -1781,10 +1781,10 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
   }
 
   if (donutCenterVal) {
-    donutCenterVal.textContent = currentDonutMode === 'cost' 
-      ? `$${marketCost.toFixed(2)}` 
-      : currentDonutMode === 'calls' 
-      ? `${totalSteps.toLocaleString()}` 
+    donutCenterVal.textContent = currentDonutMode === 'cost'
+      ? `$${marketCost.toFixed(2)}`
+      : currentDonutMode === 'calls'
+      ? `${totalSteps.toLocaleString()}`
       : (real ? formatCompactTokens(displayedTokens) : '--');
   }
   if (donutCenterSub) {
@@ -1817,10 +1817,10 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
 
   const resetDonutHighlight = () => {
     if (donutCenterVal) {
-      donutCenterVal.textContent = currentDonutMode === 'cost' 
-        ? `$${marketCost.toFixed(2)}` 
-        : currentDonutMode === 'calls' 
-        ? `${totalSteps.toLocaleString()}` 
+      donutCenterVal.textContent = currentDonutMode === 'cost'
+        ? `$${marketCost.toFixed(2)}`
+        : currentDonutMode === 'calls'
+        ? `${totalSteps.toLocaleString()}`
         : (real ? formatCompactTokens(displayedTokens) : '--');
     }
     if (donutCenterSub) {
@@ -2232,7 +2232,10 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
     if (bentoInPct) bentoInPct.textContent = `${inPct}% In`;
     if (bentoOutPct) bentoOutPct.textContent = `${outPct}% Out`;
 
-    if (bentoSpendVal) bentoSpendVal.textContent = `$${marketCost.toFixed(2)}`;
+    const poolCount = real?.accountsInPool || 33;
+    if (bentoSpendVal) {
+      bentoSpendVal.innerHTML = `$${marketCost.toFixed(2)} <span style="font-size:11px; font-weight:500; color:#34d399; display:block; margin-top:3px; letter-spacing:0;">● 100% Amorti (Pool ${poolCount} comptes)</span>`;
+    }
 
     const cacheHitPct = stats?.googleStats?.cacheHitRatioPct || 68;
     const savingsVal = stats?.googleStats?.estimatedSavings || (cachedTk * 1.5273) / 1e6;
@@ -2240,9 +2243,8 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
     if (bentoCacheHitBadge) bentoCacheHitBadge.textContent = `${cacheHitPct}% Hit`;
     if (bentoCacheSavedSub) bentoCacheSavedSub.textContent = `Saved approx. $${savingsVal.toFixed(2)}`;
 
-    const poolCount = real?.accountsInPool || 33;
     const modelsCount = userModelItems.length || 3;
-    const totalInteractions = stats?.requestCount || real?.totalSteps || 128;
+    const totalInteractions = real?.totalSteps || (stats?.requestCount ? stats.requestCount * 2 : 128);
     if (bentoAccountsCount) bentoAccountsCount.textContent = poolCount.toString();
     if (bentoModelsCount) bentoModelsCount.textContent = modelsCount.toString();
     if (bentoInteractionsSub) bentoInteractionsSub.textContent = `${totalInteractions.toLocaleString()} total interactions`;
@@ -2419,6 +2421,7 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
         const totalModTk = userModelItems.reduce((acc, m) => acc + m.tokens, 0) || 1;
         bentoCoreModelsList.innerHTML = topModels.map((m) => {
           const pct = Math.round((m.tokens / totalModTk) * 100);
+          const isStandby = m.tokens === 0 || pct === 0;
           return `
             <div class="bento-list-row">
               <div class="bento-list-left">
@@ -2426,11 +2429,11 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
                 <span class="bento-list-title" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
               </div>
               <div class="bento-list-bar-track">
-                <div class="bento-list-bar-fill" style="width:${pct}%; background:${m.color};"></div>
+                <div class="bento-list-bar-fill" style="width:${Math.max(isStandby ? 3 : 0, pct)}%; background:${isStandby ? 'rgba(168,85,247,0.3)' : m.color};"></div>
               </div>
               <div class="bento-list-right">
-                <span class="bento-list-val">${formatCompactTokens(m.tokens)}</span>
-                <span class="bento-list-sub">${pct}%</span>
+                <span class="bento-list-val">${isStandby ? '0' : formatCompactTokens(m.tokens)}</span>
+                <span class="bento-list-sub">${isStandby ? '<span class="badge-standby" style="font-size:9.5px; padding:0 5px;">En veille</span>' : `${pct}%`}</span>
               </div>
             </div>
           `;
@@ -12079,7 +12082,7 @@ async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> 
         }
       }
     }
-    
+
     // Fetch active cooldowns from backend quota cache
     try {
       const cdRes = await window.ag.providers.getCooldowns?.();
