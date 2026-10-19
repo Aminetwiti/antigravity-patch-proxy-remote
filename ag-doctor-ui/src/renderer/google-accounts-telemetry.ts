@@ -19,7 +19,8 @@ export interface PoolRunwayResult {
 export const GEMINI_5H_QUOTA_TOKENS = 250_000_000;
 export const GEMINI_WEEKLY_RATIO = 0.13;
 export const GEMINI_WEEKLY_QUOTA_TOKENS = Math.round(GEMINI_5H_QUOTA_TOKENS / GEMINI_WEEKLY_RATIO); // ~1,923,076,923 tokens
-export const CLAUDE_5H_TO_WEEKLY_RATIO = 0.50;
+import { CLAUDE_5H_TO_WEEKLY_RATIO } from './token-tracker';
+export { CLAUDE_5H_TO_WEEKLY_RATIO };
 
 export const GEMINI_TOKENS_PER_5H_PCT = GEMINI_5H_QUOTA_TOKENS / 100; // 2,500,000 tokens per 1% 5h
 export const GEMINI_TOKENS_PER_WEEKLY_PCT = GEMINI_WEEKLY_QUOTA_TOKENS / 100; // ~19,230,769 tokens per 1% weekly

@@ -51,18 +51,13 @@ const activeStreams = new Map<string, ChildProcess>();
 // Post-Quantum TLS stability: prevent oversized Kyber handshakes dropping in Go backend
 process.env.GODEBUG = (process.env.GODEBUG ? process.env.GODEBUG + ',' : '') + 'tlsmlkem=0';
 
-// Disable hardware acceleration and GPU-dependent paths to avoid
-// startup crashes and noisy GLES3/GLES2 fallback warnings on some Windows setups
+// Disable hardware acceleration cleanly for software rendering
+// Suppress shader disk cache and program cache to prevent EACCES disk errors
+// Disable Windows occlusion calculation and spare renderer process to eliminate launch delays
 app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-gpu-compositing');
-app.commandLine.appendSwitch('disable-software-rasterizer');
-app.commandLine.appendSwitch('disable-3d-apis');
-app.commandLine.appendSwitch('in-process-gpu');
-app.commandLine.appendSwitch('disable-gpu-rasterization');
-app.commandLine.appendSwitch('disable-zero-copy');
-app.commandLine.appendSwitch('disable-gpu-vsync');
-app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+app.commandLine.appendSwitch('disable-gpu-program-cache');
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,SpareRendererForSitePerProcess');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cached paths (computed once)
@@ -389,22 +384,24 @@ function createWindow(): void {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
-      backgroundThrottling: true,
+      backgroundThrottling: false,
     },
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  const showFallback = setTimeout(() => {
-    if (mainWindow && !mainWindow.isVisible()) {
-      mainWindow.show();
-    }
-  }, 2000);
-
-  mainWindow.once('ready-to-show', () => {
+  let shown = false;
+  const showWindow = () => {
+    if (shown || !mainWindow || mainWindow.isDestroyed()) return;
+    shown = true;
     clearTimeout(showFallback);
-    mainWindow?.show();
-  });
+    mainWindow.show();
+  };
+
+  const showFallback = setTimeout(showWindow, 1200);
+
+  mainWindow.once('ready-to-show', showWindow);
+  mainWindow.webContents.once('dom-ready', showWindow);
 
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error(`[main] did-fail-load: ${code} ${desc} ${url}`);

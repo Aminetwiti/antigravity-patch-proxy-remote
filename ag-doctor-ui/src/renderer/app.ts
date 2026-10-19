@@ -7664,7 +7664,7 @@ if (statusTheme) {
   } catch {
     setStatus('Ready');
   }
-  whenIdle(() => void runDoctor(), 250);
+  whenIdle(() => void runDoctor(), 1200);
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────

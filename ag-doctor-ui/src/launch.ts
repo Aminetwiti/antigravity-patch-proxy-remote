@@ -50,18 +50,20 @@ function launch(): void {
   const args = ['.', '--disable-gpu'];
 
   const isWin = process.platform === 'win32';
+  const isExe = electronBin.toLowerCase().endsWith('.exe');
+  const useShell = isWin && !isExe;
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
 
   const opts: SpawnOptions = {
     stdio: ['inherit', 'inherit', 'pipe'],
-    shell: isWin,
+    shell: useShell,
     env,
   };
 
   // When shell=true on Windows, pass the full command as a single string
   // so Node doesn't emit the DEP0190 deprecation warning.
-  const child = isWin
+  const child = useShell
     ? spawn(`"${electronBin}" ${args.map((a) => `"${a}"`).join(' ')}`, opts)
     : spawn(electronBin, args, opts);
 
