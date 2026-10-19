@@ -38,6 +38,10 @@ import {
 } from './services/ideAccountDiscovery';
 import { startGoogleOAuthLogin } from './services/googleOAuthServer';
 import { randomizeAllDevices } from './services/deviceFingerprint';
+import {
+  detectAntigravityVerificationChallenge,
+  resetAntigravityOnboarding,
+} from './services/antigravityVerificationResolver';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
@@ -2197,12 +2201,44 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_PROBE_POOL, async (_evt, dryRun?: bool
 
 ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_UNLOCK_ACCOUNT, async (_evt, email: string) => {
   try {
+    // Check if there is an active validation challenge from logs first
+    const challenge = await detectAntigravityVerificationChallenge();
+    if (challenge.found && challenge.validationUrl) {
+      await shell.openExternal(challenge.validationUrl);
+      return { success: true, url: challenge.validationUrl, fromLogs: true };
+    }
     if (!email) return { success: false, error: 'Email requis' };
     const url = `https://accounts.google.com/ServiceLogin?Email=${encodeURIComponent(email)}&continue=https://gemini.google.com/`;
     await shell.openExternal(url);
     return { success: true, url };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erreur lors de l\'ouverture du navigateur' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.VERIFICATION_DETECT, async () => {
+  try {
+    return await detectAntigravityVerificationChallenge();
+  } catch (err: any) {
+    return { found: false, error: err?.message || String(err) };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.VERIFICATION_OPEN_URL, async (_evt, url: string) => {
+  try {
+    if (!url) return { success: false, error: 'URL requise' };
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.VERIFICATION_RESET_ONBOARDING, async () => {
+  try {
+    return resetAntigravityOnboarding();
+  } catch (err: any) {
+    return { success: false, message: 'Erreur lors de la réinitialisation', error: err?.message || String(err) };
   }
 });
 

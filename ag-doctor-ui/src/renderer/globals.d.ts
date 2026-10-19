@@ -219,6 +219,24 @@ interface AgAPI {
     };
     error?: string;
   }>;
+
+  // Antigravity Verification & Challenge Resolver
+  verification?: {
+    detect(): Promise<{
+      found: boolean;
+      validationUrl?: string;
+      qrCodeDataUrl?: string;
+      logFile?: string;
+      timestamp?: string;
+      accountEmail?: string;
+      reason?: string;
+      message?: string;
+      carrierWarning?: string;
+      error?: string;
+    }>;
+    openUrl(url: string): Promise<{ success: boolean; error?: string }>;
+    resetOnboarding(): Promise<{ success: boolean; message: string; error?: string }>;
+  };
 }
 
 interface Window {

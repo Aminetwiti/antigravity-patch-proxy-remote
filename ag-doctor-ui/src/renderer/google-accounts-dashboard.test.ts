@@ -73,13 +73,6 @@ function estimateAccountTokens(acc: any) {
     claudePct5h = 0;
   }
 
-  if (acc.enabled === false) {
-    pct5h = 0;
-    pctWk = 0;
-    claudePct5h = 0;
-    claudePctWk = 0;
-  }
-
   const geminiAvailable5h = Math.round((geminiCap5h * Math.max(0, Math.min(100, pct5h))) / 100);
   const geminiAvailableWeekly = Math.round((geminiCapWeekly * Math.max(0, Math.min(100, pctWk))) / 100);
 
@@ -460,6 +453,25 @@ describe('Google Accounts High-Density Dashboard Logic', () => {
       expect(est.claudeCapacityWeekly).toBe(1_000_000);
       expect(est.claudeAvailable5h).toBe(112_000); // 80% of 140k
       expect(est.claudeAvailableWeekly).toBe(500_000); // 50% of 1M
+    });
+
+    it('preserves real quotas and token estimates when account is paused (enabled: false)', () => {
+      const acc = {
+        name: 'paused-user@gmail.com',
+        tier: 'PRO',
+        enabled: false,
+        quotas: {
+          geminiFiveHourPct: 80,
+          geminiWeeklyPct: 70,
+          claudeFiveHourPct: 90,
+          claudeWeeklyPct: 85,
+        },
+      };
+      const est = estimateAccountTokens(acc);
+      expect(est.availableTokens5h).toBe(280_000); // 80% of 350k
+      expect(est.availableTokensWeekly).toBe(1_750_000); // 70% of 2.5M
+      expect(est.claudeAvailable5h).toBe(126_000); // 90% of 140k
+      expect(est.claudeAvailableWeekly).toBe(850_000); // 85% of 1M
     });
 
     it('aggregates multi-account pool token capacity and dollar value correctly', () => {

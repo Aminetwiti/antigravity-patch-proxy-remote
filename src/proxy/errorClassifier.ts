@@ -215,6 +215,28 @@ export function classifyError(
       };
     }
 
+    if (
+      bodyText.includes('ineligible for higher rate limits') ||
+      bodyText.includes('ineligible for higher') ||
+      bodyText.includes('starter quota') ||
+      errorMsg.includes('ineligible for higher rate limits')
+    ) {
+      return {
+        errorType: 'forbidden',
+        title: 'Account Ineligible for Higher Rate Limits',
+        message: 'Antigravity licensing service (loadCodeAssist) rejected Pro/Ultra tier upgrade (Account ineligible / Starter Quota).',
+        suggestions: [
+          'Align your Google Pay billing address and country with your physical IP/country.',
+          'Verify that the account is not under Google Workspace or Family Member restrictions.',
+          'Use ag-doctor pool:probe to prune ineligible accounts and prioritize healthy Pro accounts.',
+          'Configure Google AI Studio (generativelanguage.googleapis.com) to bypass Cloud Code licensing restrictions.'
+        ],
+        retryable: false,
+        severity: 'error',
+        actionUrl: 'https://discuss.ai.google.dev/search?q=ineligible%20%23antigravity',
+      };
+    }
+
     return {
       errorType: 'forbidden',
       title: 'Access Denied',
@@ -239,6 +261,25 @@ export function classifyError(
     bodyText.includes('rate limit');
 
   if (isRateLimit) {
+    const isEntitlementDesync =
+      (bodyText.includes('resource_exhausted') || bodyText.includes('resource has been exhausted')) &&
+      (bodyText.includes('free-tier') || bodyText.includes('currenttier') || bodyText.includes('loadcodeassist'));
+
+    if (isEntitlementDesync) {
+      return {
+        errorType: 'rate_limit',
+        title: 'Entitlement Desynchronization (Faux 429)',
+        message: 'Google Cloud Code treated an active subscription as Free-Tier (loadCodeAssist entitlement desynchronization).',
+        suggestions: [
+          'Run "node ag-doctor/bin/ag-doctor.js pool:probe" to rotate to a healthy synchronized account.',
+          'Revoke and re-authenticate Google Antigravity tokens at https://myaccount.google.com/permissions.',
+          'Enable cross-model cascade to Claude Sonnet or Google AI Studio to maintain coding continuity.'
+        ],
+        retryable: true,
+        severity: 'error',
+      };
+    }
+
     return {
       errorType: 'rate_limit',
       title: 'Rate Limited',
@@ -329,6 +370,29 @@ export function classifyError(
   // Detect server errors (5xx)
   if (status && status >= 500 && status < 600) {
     const upstreamDetail = bodyJson?.error?.message || (typeof bodyJson?.error === 'string' ? bodyJson.error : '') || bodyJson?.message || '';
+
+    // Detect 503 TPU capacity saturation on Gemini Flash / cluster pinning
+    const isCapacity503 =
+      status === 503 ||
+      bodyText.includes('no capacity available') ||
+      bodyText.includes('experiencing high traffic') ||
+      errorMsg.includes('no capacity available');
+
+    if (isCapacity503) {
+      return {
+        errorType: 'server',
+        title: 'TPU Capacity Overload (HTTP 503)',
+        message: 'Google Cloud Code inference clusters are currently saturated for this Gemini model (503 UNAVAILABLE: No capacity available).',
+        suggestions: [
+          'The proxy will automatically cascade to healthy pool accounts or Claude/GPT fallback models.',
+          'Switch to another account in your pool or enable cross-model fallback in Antigravity.',
+          'Use a direct Google AI Studio API key, which runs on dedicated non-IDE quota.'
+        ],
+        retryable: true,
+        severity: 'warning',
+      };
+    }
+
     return {
       errorType: 'server',
       title: 'Provider Server Error',

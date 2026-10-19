@@ -135,6 +135,24 @@ const api = {
     pongText: string;
     error?: string;
   }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.MODEL_PING_PONG, params),
+  verification: {
+    detect: (): Promise<{
+      found: boolean;
+      validationUrl?: string;
+      qrCodeDataUrl?: string;
+      logFile?: string;
+      timestamp?: string;
+      accountEmail?: string;
+      reason?: string;
+      message?: string;
+      carrierWarning?: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.VERIFICATION_DETECT),
+    openUrl: (url: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.VERIFICATION_OPEN_URL, url),
+    resetOnboarding: (): Promise<{ success: boolean; message: string; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.VERIFICATION_RESET_ONBOARDING),
+  },
   info: (): Promise<{
     platform: string;
     arch: string;

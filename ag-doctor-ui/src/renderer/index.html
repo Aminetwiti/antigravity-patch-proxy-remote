@@ -328,6 +328,10 @@
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
               Repair
             </button>
+            <button class="btn btn-ghost" id="dashboardResolveVerificationBtn" type="button" title="Scanner les logs et résoudre le blocage de vérification Antigravity (VALIDATION_REQUIRED)" aria-label="Résoudre Vérification">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v3"/></svg>
+              Résoudre Vérification
+            </button>
             <button class="btn btn-warning" id="fixAllBtn" type="button" title="Run full auto-repair with admin elevation (UAC)" aria-label="Run full auto-repair with admin elevation">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.5 0 4.76 1.02 6.39 2.66"/></svg>
               Fix All
@@ -471,6 +475,10 @@
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
               Restart
             </button>
+            <button class="btn btn-warning" id="agResolveVerificationBtn" type="button" title="Scanner les logs récents pour extraire la validation URL et débloquer Antigravity" aria-label="Résoudre la vérification">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v3"/></svg>
+              Résoudre Vérification
+            </button>
           </div>
         </div>
 
@@ -564,10 +572,10 @@
             <p class="subtitle">Manage the local TLS proxy and CA certificate</p>
           </div>
           <div class="header-actions">
-            <button class="btn btn-ghost" id="mitmInstallBtn" type="button" aria-label="Install MITM CA certificate">Install CA certificate</button>
-            <button class="btn btn-ghost" id="mitmUninstallBtn" type="button" aria-label="Remove MITM CA certificate">Remove CA certificate</button>
+            <button class="btn btn-secondary" id="mitmInstallBtn" type="button" aria-label="Install MITM CA certificate">Install CA certificate</button>
+            <button class="btn btn-danger btn-ghost" id="mitmUninstallBtn" type="button" aria-label="Remove MITM CA certificate" style="display:none;">Remove CA certificate</button>
             <button class="btn btn-primary" id="mitmProxyOnBtn" type="button" aria-label="Enable MITM proxy">Enable proxy</button>
-            <button class="btn btn-ghost" id="mitmProxyOffBtn" type="button" aria-label="Disable MITM proxy">Disable proxy</button>
+            <button class="btn btn-secondary" id="mitmProxyOffBtn" type="button" aria-label="Disable MITM proxy" style="display:none;">Disable proxy</button>
             <button class="btn btn-ghost" id="mitmExportCaBtn" type="button" aria-label="Export MITM CA certificate">Export CA certificate</button>
           </div>
         </div>
@@ -1077,33 +1085,7 @@
               </div>
             </div>
 
-            <details class="patch-legend" open aria-label="Patch detection legend">
-              <summary class="patch-legend-summary">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="patch-legend-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                <span class="patch-legend-title">Understanding detection signals</span>
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="patch-legend-chevron"><polyline points="6 9 12 15 18 9"/></svg>
-              </summary>
-              <dl class="patch-legend-list">
-                <div class="patch-legend-row">
-                  <dt class="patch-legend-term">
-                    <span class="badge badge-info">Binary signature</span>
-                  </dt>
-                  <dd class="patch-legend-def">
-                    URL pattern found in <code>language_server.exe</code> (stock or patched). Primary signal that the binary is patchable.
-                  </dd>
-                </div>
-                <div class="patch-legend-row">
-                  <dt class="patch-legend-term">
-                    <span class="badge badge-muted">JS overlay footprint</span>
-                  </dt>
-                  <dd class="patch-legend-def">
-                    Presence/absence of specific JS files (<code>proxy-runner.js</code>, <code>cryptoStore.js</code>) in <code>app.asar</code> to distinguish 2.2.x from 2.3.x and 2.4.x (up to 2.4.2).
-                  </dd>
-                </div>
-              </dl>
-            </details>
-
-            <!-- Three patch range cards (2.1 / 2.2 / 2.3) -->
+            <!-- Patch family selection grid -->
             <div class="patch-range-grid" id="patchRangeGrid">
               <div class="skeleton skeleton-card"></div>
               <div class="skeleton skeleton-card"></div>

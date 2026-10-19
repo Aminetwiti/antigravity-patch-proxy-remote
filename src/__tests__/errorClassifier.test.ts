@@ -253,6 +253,30 @@ describe('Error Classifier', () => {
       expect(res.actionUrl).toBe('https://forms.gle/custom-appeal');
       expect(res.severity).toBe('error');
     });
+
+    it('classifies account ineligible for higher rate limits error', () => {
+      const res = classifyError(403, null, 'This account is ineligible for higher rate limits through a Google AI plan at this time');
+      expect(res.errorType).toBe('forbidden');
+      expect(res.title).toBe('Account Ineligible for Higher Rate Limits');
+      expect(res.retryable).toBe(false);
+      expect(res.severity).toBe('error');
+    });
+
+    it('classifies faux 429 entitlement desynchronization', () => {
+      const res = classifyError(429, null, 'RESOURCE_EXHAUSTED: loadCodeAssist currentTier=free-tier');
+      expect(res.errorType).toBe('rate_limit');
+      expect(res.title).toBe('Entitlement Desynchronization (Faux 429)');
+      expect(res.retryable).toBe(true);
+      expect(res.severity).toBe('error');
+    });
+
+    it('classifies 503 TPU capacity overload on Gemini Flash', () => {
+      const res = classifyError(503, null, 'UNAVAILABLE (code 503): No capacity available for model gemini-3.8-flash');
+      expect(res.errorType).toBe('server');
+      expect(res.title).toBe('TPU Capacity Overload (HTTP 503)');
+      expect(res.retryable).toBe(true);
+      expect(res.severity).toBe('warning');
+    });
   });
 
   describe('generateDiagnosticCardMarkdown', () => {

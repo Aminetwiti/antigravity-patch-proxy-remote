@@ -2533,7 +2533,6 @@ export async function executeGoogleCloudCodeWithPool(
     if (outcome.statusCode === 429) {
       consecutiveTimeoutCount = 0;
       consecutiveTransportErrorCount = 0;
-      consecutive429Count++;
       const retryAfterHeader = outcome.headers?.['retry-after'];
       let decision = classifyGoogleCloudCode429(outcome.error, retryAfterHeader);
 
@@ -2588,9 +2587,14 @@ export async function executeGoogleCloudCodeWithPool(
         }
 
         const existingQuota = getLiveAccountQuota(liveKey);
-        const isWeekly = decision.cooldownMs > 24 * 3600 * 1000;
+        const rawWeekly = (decision.rawRetryAfterMs ?? 0) > 24 * 3600 * 1000 ? decision.rawRetryAfterMs! : null;
+        const isWeekly = decision.cooldownMs > 24 * 3600 * 1000 || rawWeekly !== null;
         const nowMs = Date.now();
-        const resetIso = new Date(nowMs + decision.cooldownMs).toISOString();
+        const weeklyDuration = rawWeekly || decision.cooldownMs;
+        const resetIso = new Date(nowMs + weeklyDuration).toISOString();
+        if (isWeekly) {
+          setAccountCooldown(candidate, Math.min(weeklyDuration, 7 * 24 * 3600 * 1000), currentFamily);
+        }
         if (currentFamily === 'gemini') {
           updateLiveAccountQuota(liveKey, {
             ...existingQuota,
@@ -2629,6 +2633,13 @@ export async function executeGoogleCloudCodeWithPool(
       }
 
       // Circuit breaker: Only stop rotation if there are NO remaining healthy accounts with positive quota (>20%).
+      const isGenuineQuotaExhausted = decision.category === 'quota_exhausted';
+      if (!isGenuineQuotaExhausted) {
+        consecutive429Count++;
+      } else {
+        consecutive429Count = 0;
+      }
+
       // Never abort early while healthy accounts with 100% quota are waiting in the pool!
       const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some(
         (c) => !isAccountInCooldown(c, currentFamily) && getModelQuotaScore(c, currentFamily) > 20,
@@ -2660,23 +2671,23 @@ export async function executeGoogleCloudCodeWithPool(
       }
 
       if (i + 1 < totalAttempts) {
-        // Anti-domino pacing: When Google triggers a burst 429 while account quota is positive,
-        // it is an IP / client-level rate limit. Pause 1000-2000ms to allow Google's token bucket
-        // for our IP to drain instead of burning through 33 accounts in 5 seconds.
-        const isBurst429 = decision.category !== 'quota_exhausted' || currentQuotaScore > 0;
+        // Anti-domino pacing: When Google triggers a burst/RPM rate limit, pause to allow Google's
+        // token bucket for our IP to drain instead of burning through pool accounts in milliseconds.
+        // For genuine quota exhaustion, rotate immediately (minimal 100ms jitter) so client socket doesn't abort.
+        const isBurst429 = !isGenuineQuotaExhausted;
         const pacingMs = isBurst429
           ? (consecutive429Count > 1
-              ? 2200 + Math.floor(Math.random() * 1000) // Multi-compte burst consécutif: 2.2s à 3.2s pour drainer le seau IP
-              : 1200 + Math.floor(Math.random() * 600))  // 1er burst isolé: pause préventive 1.2s à 1.8s pour protéger le compte suivant
-          : (consecutiveQuotaExhausted > 0 ? 300 + Math.floor(Math.random() * 200) : 1000 + Math.floor(Math.random() * 500));
+              ? 2000 + Math.floor(Math.random() * 800)
+              : 1000 + Math.floor(Math.random() * 400))
+          : 100 + Math.floor(Math.random() * 100);
 
         if (isBurst429) {
           log.info(
-            `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté (quota positif). Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
+            `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
           );
         } else {
           log.info(
-            `[Proxy] Rotation après épuisement de quota. Pause de ${pacingMs}ms avant le compte suivant.`
+            `[Proxy] Rotation après épuisement de quota. Rotation rapide (${pacingMs}ms) vers le compte suivant.`
           );
         }
         if (req.destroyed || res.writableEnded) {
@@ -6772,33 +6783,25 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 reqJson.requestedModel ||
                 targetReq.requestedModel
               ) as string | undefined;
-              if (explicitSelected) {
-                const activeFallback = getSessionModelFallback(sessionKey);
-                if (activeFallback) {
-                  const normExplicit = normalizeCloudCodeModelId(explicitSelected);
-                  const isNative = isNativeCloudCodeModel(explicitSelected.replace(/^models\//, ''));
-                  const isFallbackModel = !isNative && normExplicit === normalizeCloudCodeModelId(activeFallback.fallbackModel);
-                  if (!isFallbackModel) {
+
+              const activeFallback = getSessionModelFallback(sessionKey);
+              if (activeFallback && explicitSelected) {
+                const normExplicit = normalizeCloudCodeModelId(explicitSelected);
+                const isNative = isNativeCloudCodeModel(explicitSelected.replace(/^models\//, ''));
+                if (isNative) {
+                  log.info(
+                    `[Proxy] 🎯 User switched to native model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}].`,
+                  );
+                  clearSessionModelFallback(sessionKey);
+                } else {
+                  const isFallback = normExplicit === normalizeCloudCodeModelId(activeFallback.fallbackModel);
+                  const isOriginal = normExplicit === normalizeCloudCodeModelId(activeFallback.originalModel);
+                  if (!isFallback && !isOriginal) {
                     log.info(
-                      `[Proxy] 🎯 User explicitly selected model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}] to honor user selection priority.`,
+                      `[Proxy] 🎯 User explicitly selected different model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}].`,
                     );
                     clearSessionModelFallback(sessionKey);
                   }
-                }
-              }
-
-              const activeFallback = getSessionModelFallback(sessionKey);
-              if (activeFallback) {
-                const isOrigClaude = activeFallback.originalModel.toLowerCase().includes('claude');
-                const matchesOrig = candidateNames.some((cn) => {
-                  const norm = normalizeCloudCodeModelId(cn);
-                  return norm === normalizeCloudCodeModelId(activeFallback.originalModel) || (isOrigClaude && cn.toLowerCase().includes('claude'));
-                });
-                if (matchesOrig) {
-                  log.info(
-                    `[Proxy] 🟢 [Session Fallback] User explicitly selected primary model [${activeFallback.originalModel}]. Clearing fallback to [${activeFallback.fallbackModel}] to honor user selection priority.`,
-                  );
-                  clearSessionModelFallback(sessionKey);
                 }
               }
             }
@@ -6819,7 +6822,23 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           candidateNames[0] ||
           ''
         ).toLowerCase();
-        const cleanRequested = requestedRaw.replace(/^models\//, '').trim();
+        let cleanRequested = requestedRaw.replace(/^models\//, '').trim();
+        const activeFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
+        if (activeFallback) {
+          const normReq = normalizeCloudCodeModelId(cleanRequested);
+          const normOrig = normalizeCloudCodeModelId(activeFallback.originalModel);
+          const isOrigClaude = activeFallback.originalModel.toLowerCase().includes('claude');
+          const matchesOrig = normReq === normOrig || candidateNames.some((cn) => {
+            const norm = normalizeCloudCodeModelId(cn);
+            return norm === normOrig || (isOrigClaude && cn.toLowerCase().includes('claude'));
+          });
+          if (matchesOrig) {
+            log.info(
+              `[Proxy] 🔀 [Active Session Fallback] Seamlessly routing session ${sessionKey} to [${activeFallback.fallbackModel}] (primary [${activeFallback.originalModel}] in temporary fallback cooldown)`
+            );
+            cleanRequested = activeFallback.fallbackModel;
+          }
+        }
         const isExplicitCustom = Boolean(customCandidate);
         const isPrimaryNative = !isExplicitCustom && (isNativeCloudCodeModel(cleanRequested) || cleanRequested.includes('argon'));
         const isNativeCloudCode = isPrimaryNative || (!isExplicitCustom && (

@@ -222,6 +222,22 @@ interface AgAPI {
     pongText?: string;
     error?: string;
   }>;
+  verification?: {
+    detect(): Promise<{
+      found: boolean;
+      validationUrl?: string;
+      qrCodeDataUrl?: string;
+      logFile?: string;
+      timestamp?: string;
+      accountEmail?: string;
+      reason?: string;
+      message?: string;
+      carrierWarning?: string;
+      error?: string;
+    }>;
+    openUrl(url: string): Promise<{ success: boolean; error?: string }>;
+    resetOnboarding(): Promise<{ success: boolean; message: string; error?: string }>;
+  };
 }
 
 interface Window {
@@ -5670,10 +5686,12 @@ async function loadMitmStatus(): Promise<void> {
       );
     const s = JSON.parse(r.stdout) as MitmStatus;
 
-    // Dynamically toggle top required warning banner based on actual interception health
+    // Dynamically toggle top required warning banner based on actual interception health:
+    // If interception is bypassed (binary patch active), MITM on port 443 is NOT required.
     const reqBanner = document.getElementById('mitmRequiredBanner') as HTMLDivElement | null;
     if (reqBanner) {
-      const isFullyFunctional = (s.interception.reachable || s.interception.bypassed) && s.ca.installed && !s.ca.isExpired;
+      const isBypassed = s.interception.bypassed;
+      const isFullyFunctional = isBypassed || (s.interception.reachable && s.ca.installed && !s.ca.isExpired);
       reqBanner.style.display = isFullyFunctional ? 'none' : 'flex';
     }
 
@@ -5682,24 +5700,41 @@ async function loadMitmStatus(): Promise<void> {
     const proxyOffBtn = document.getElementById('mitmProxyOffBtn') as HTMLButtonElement | null;
     if (proxyOnBtn && proxyOffBtn) {
       if (s.proxy.redirected) {
-        proxyOnBtn.className = 'btn btn-ghost';
-        proxyOffBtn.className = 'btn btn-primary';
+        proxyOnBtn.style.display = 'none';
+        proxyOffBtn.style.display = 'inline-flex';
+        proxyOffBtn.className = 'btn btn-secondary';
       } else {
+        proxyOnBtn.style.display = 'inline-flex';
+        proxyOffBtn.style.display = 'none';
         proxyOnBtn.className = 'btn btn-primary';
-        proxyOffBtn.className = 'btn btn-ghost';
+      }
+    }
+
+    // Toggle uninstall button visibility depending on whether CA is installed
+    const caUninstallBtn = document.getElementById('mitmUninstallBtn') as HTMLButtonElement | null;
+    const caInstallBtn = document.getElementById('mitmInstallBtn') as HTMLButtonElement | null;
+    if (caUninstallBtn && caInstallBtn) {
+      if (s.ca.installed) {
+        caUninstallBtn.style.display = 'inline-flex';
+        caInstallBtn.textContent = 'Reinstall CA';
+        caInstallBtn.className = 'btn btn-ghost';
+      } else {
+        caUninstallBtn.style.display = 'none';
+        caInstallBtn.textContent = 'Install CA certificate';
+        caInstallBtn.className = 'btn btn-secondary';
       }
     }
 
     const caBanner = s.ca.installed && !s.ca.isExpired
       ? `<div class="patch-banner ok">
-           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
            <div class="patch-banner-body">
              <div class="patch-banner-title">CA certificate installed</div>
              <div class="patch-banner-text">Your system trusts the local MITM certificate.</div>
            </div>
          </div>`
       : `<div class="patch-banner warn">
-           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
            <div class="patch-banner-body">
              <div class="patch-banner-title">${s.ca.isExpired ? 'CA certificate expired' : 'CA certificate not installed'}</div>
              <div class="patch-banner-text">${s.ca.isExpired ? 'The certificate has expired. Run Repair all to regenerate it.' : 'Install the CA to avoid TLS errors in intercepted apps.'}</div>
@@ -5708,43 +5743,64 @@ async function loadMitmStatus(): Promise<void> {
 
     const proxyBanner = s.proxy.redirected
       ? `<div class="patch-banner ok">
-           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
            <div class="patch-banner-body">
              <div class="patch-banner-title">System proxy active</div>
-             <div class="patch-banner-text">Traffic is being redirected to ${escapeHtml(s.proxy.host ?? 'localhost')}:${s.proxy.port ?? '—'}.</div>
+             <div class="patch-banner-text">Traffic redirected to ${escapeHtml(s.proxy.host ?? 'localhost')}:${s.proxy.port ?? '—'}.</div>
            </div>
          </div>`
       : `<div class="patch-banner warn">
-           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
            <div class="patch-banner-body">
              <div class="patch-banner-title">System proxy inactive</div>
-             <div class="patch-banner-text">Click <strong>Proxy ON</strong> above to start redirecting traffic.</div>
+             <div class="patch-banner-text">Click <strong>Enable proxy</strong> above to start redirecting traffic.</div>
            </div>
          </div>`;
 
     const interceptionBanner = (s.interception.reachable || s.interception.bypassed)
       ? (s.interception.bypassed
         ? `<div class="patch-banner ok">
-           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
            <div class="patch-banner-body">
              <div class="patch-banner-title">Interception bypassed</div>
-             <div class="patch-banner-text">The binary patch redirects the language server to the local proxy — MITM interception is not required.</div>
+             <div class="patch-banner-text">The binary patch redirects Language Server directly to the local proxy — TLS MITM is not required.</div>
            </div>
          </div>`
         : `<div class="patch-banner ok">
-           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
            <div class="patch-banner-body">
              <div class="patch-banner-title">Interception reachable</div>
              <div class="patch-banner-text">The proxy is listening and responding to requests.</div>
            </div>
          </div>`)
       : `<div class="patch-banner err">
-           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
            <div class="patch-banner-body">
              <div class="patch-banner-title">Interception unreachable</div>
              <div class="patch-banner-text">The proxy does not appear to be listening. Try Repair all.</div>
            </div>
          </div>`;
+
+    const pathHtml = s.ca.path
+      ? `<div class="mono-path-box">
+           <span class="mono-path-text">${escapeHtml(s.ca.path)}</span>
+           <button class="btn btn-ghost btn-xs" type="button" data-copy="${escapeHtml(s.ca.path)}" title="Copy certificate path">Copy</button>
+         </div>`
+      : `<span class="patch-row-value">—</span>`;
+
+    const fpHtml = s.ca.fingerprint
+      ? `<div class="mono-path-box">
+           <span class="mono-path-text" style="font-size:10px;">${escapeHtml(s.ca.fingerprint)}</span>
+           <button class="btn btn-ghost btn-xs" type="button" data-copy="${escapeHtml(s.ca.fingerprint)}" title="Copy fingerprint">Copy</button>
+         </div>`
+      : `<span class="patch-row-value">—</span>`;
+
+    const connectivityLabel = s.interception.bypassed
+      ? 'bypassed'
+      : (s.interception.reachable ? 'ok' : 'failed');
+    const connectivityClass = s.interception.bypassed
+      ? 'ok'
+      : (s.interception.reachable ? 'ok' : 'err');
 
     mitmTpl.innerHTML = `
       <div class="mitm-grid">
@@ -5753,8 +5809,8 @@ async function loadMitmStatus(): Promise<void> {
           <div class="mitm-card-body">
             <div class="patch-row"><div class="patch-row-label">Generated</div><div class="patch-row-value ${s.ca.generated ? 'ok' : ''}">${s.ca.generated ? 'yes' : 'no'}</div></div>
             <div class="patch-row"><div class="patch-row-label">Expires</div><div class="patch-row-value ${s.ca.isExpired ? 'err' : ''}">${escapeHtml(s.ca.expiresAt ?? '—')}</div></div>
-            <div class="patch-row"><div class="patch-row-label">Path</div><div class="patch-row-value">${escapeHtml(s.ca.path ?? '—')}</div></div>
-            <div class="patch-row"><div class="patch-row-label">Fingerprint</div><div class="patch-row-value">${escapeHtml(s.ca.fingerprint ?? '—')}</div></div>
+            <div class="patch-row patch-row-stacked"><div class="patch-row-label">Certificate Path</div>${pathHtml}</div>
+            <div class="patch-row patch-row-stacked"><div class="patch-row-label">Fingerprint (SHA-256)</div>${fpHtml}</div>
           </div>
           ${caBanner}
         </div>
@@ -5770,7 +5826,7 @@ async function loadMitmStatus(): Promise<void> {
           <div class="mitm-card-header"><h3>Interception status</h3><span class="badge ${s.interception.bypassed ? 'ok' : s.interception.reachable ? 'ok' : 'err'}">${s.interception.bypassed ? 'bypassed' : s.interception.reachable ? 'reachable' : 'unreachable'}</span></div>
           <div class="mitm-card-body">
             <div class="patch-row"><div class="patch-row-label">Listening</div><div class="patch-row-value ${s.interception.listening ? 'ok' : ''}">${s.interception.listening ? 'yes' : 'no'}</div></div>
-            <div class="patch-row"><div class="patch-row-label">Connectivity</div><div class="patch-row-value ${s.interception.reachable ? 'ok' : 'err'}">${s.interception.reachable ? 'ok' : 'failed'}</div></div>
+            <div class="patch-row"><div class="patch-row-label">Connectivity</div><div class="patch-row-value ${connectivityClass}">${connectivityLabel}</div></div>
           </div>
           ${interceptionBanner}
         </div>
@@ -5784,6 +5840,20 @@ async function loadMitmStatus(): Promise<void> {
       </div>
       ` : ''}`;
     mitmStatusEl.replaceChildren(mitmTpl.content);
+
+    // Attach click listeners for inline copy buttons
+    mitmStatusEl.querySelectorAll<HTMLButtonElement>('button[data-copy]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const val = btn.dataset.copy;
+        if (!val) return;
+        try {
+          await navigator.clipboard.writeText(val);
+          toast('Copied to clipboard', 'ok', 2000);
+        } catch {
+          toast('Failed to copy to clipboard', 'err', 2000);
+        }
+      });
+    });
 
     const repairBtn = document.getElementById('repair-all-btn');
     if (repairBtn) {
@@ -5999,10 +6069,14 @@ function patchSourceLabel(s: PatchStatus): string {
 }
 
 function patchFamilyLabel(range: string): string {
-  if (range.includes('2.4')) return 'Family 2.4 (2.4.2)';
-  if (range.includes('2.3')) return 'Family 2.3';
-  if (range.includes('2.2')) return 'Family 2.2';
-  return 'Family 2.1';
+  if (range.includes('2.6') || range.includes('2.14') || range.includes('2.15') || range.includes('2.17') || range.includes('2.18') || range.includes('2.23')) {
+    return 'Famille 2.6.0+ (Moderne)';
+  }
+  if (range.includes('2.4')) return 'Famille 2.4 (2.4.2)';
+  if (range.includes('2.3')) return 'Famille 2.3';
+  if (range.includes('2.2')) return 'Famille 2.2';
+  if (range.includes('2.0') || range.includes('2.1')) return 'Famille 2.0 - 2.1';
+  return range ? `Famille ${range}` : 'Famille standard';
 }
 
 function patchConfidenceLabel(confidence?: PatchStatus['detectionConfidence']): string {
@@ -6018,14 +6092,14 @@ function patchConfidenceTone(confidence?: PatchStatus['detectionConfidence']): '
 }
 
 function patchSignatureLabel(s: PatchStatus): string {
-  if (s.binarySignatureState === 'patched') return 'Binary signature: patch already present';
-  if (s.binarySignatureState === 'original') return 'Binary signature: stock binary detected';
-  return 'Binary signature missing';
+  if (s.binarySignatureState === 'patched') return 'Patch déjà actif';
+  if (s.binarySignatureState === 'original') return 'Binaire original détecté';
+  return 'Signature binaire introuvable';
 }
 
 function patchOverlayLabel(s: PatchStatus): string {
-  if (!s.overlayFingerprintDetected || !s.overlayFingerprintRange) return 'JS overlay footprint missing or inconclusive';
-  return `JS overlay footprint: ${s.overlayFingerprintRange}`;
+  if (!s.overlayFingerprintDetected || !s.overlayFingerprintRange) return 'Modules d\'intégration non détectés';
+  return `Modules d'intégration vérifiés (${s.overlayFingerprintRange})`;
 }
 
 function patchNeedsMetadataWithoutBinaryWarning(s: PatchStatus): boolean {
@@ -6033,31 +6107,24 @@ function patchNeedsMetadataWithoutBinaryWarning(s: PatchStatus): boolean {
 }
 
 function renderPatchSelector(s: PatchStatus): void {
-  patchDetectedVersionEl.textContent = s.antigravityVersion ?? 'unknown';
+  patchDetectedVersionEl.textContent = s.antigravityVersion ? `Antigravity ${s.antigravityVersion}` : 'Version non détectée';
   patchDetectedSourceEl.className = `badge ${s.overrideActive ? 'badge-warn' : 'badge-muted'}`;
   patchDetectedSourceEl.textContent = patchSourceLabel(s);
   patchRecommendedBadgeEl.className = `badge ${s.compatible ? 'badge-ok' : 'badge-warn'}`;
   patchRecommendedBadgeEl.textContent = s.recommendedPatch
     ? `${patchFamilyLabel(s.recommendedPatch.versionRange)} · ${patchConfidenceLabel(s.detectionConfidence)}`
-    : 'no recommended family';
+    : 'aucune famille recommandée';
 
-  const detectorMeta = [
-    `<span class="badge badge-${patchConfidenceTone(s.detectionConfidence)}">${escapeHtml(patchConfidenceLabel(s.detectionConfidence))}</span>`,
-    `<span class="badge ${s.binarySignatureDetected ? 'badge-ok' : 'badge-warn'}">${escapeHtml(patchSignatureLabel(s))}</span>`,
-    s.overlayFingerprintDetected
-      ? `<span class="badge ${s.overlayFingerprintConfidence === 'high' ? 'badge-ok' : 'badge-warn'}">${escapeHtml(patchOverlayLabel(s))}</span>`
-      : '',
-    s.detectionReason ? `<span class="badge badge-muted">${escapeHtml(s.detectionReason)}</span>` : '',
-  ].filter(Boolean).join('');
   patchDetectedMetaEl.innerHTML = `
     <span class="badge ${s.overrideActive ? 'badge-warn' : 'badge-muted'}">${escapeHtml(patchSourceLabel(s))}</span>
-    <span class="badge ${s.compatible ? 'badge-ok' : 'badge-warn'}">${escapeHtml(s.recommendedPatch ? `${patchFamilyLabel(s.recommendedPatch.versionRange)} · ${patchConfidenceLabel(s.detectionConfidence)}` : 'no recommended family')}</span>
-    ${detectorMeta}`;
+    <span class="badge ${s.compatible ? 'badge-ok' : 'badge-warn'}">${escapeHtml(s.recommendedPatch ? `${patchFamilyLabel(s.recommendedPatch.versionRange)} · ${patchConfidenceLabel(s.detectionConfidence)}` : 'Vérification requise')}</span>
+    <span class="badge ${s.binarySignatureDetected ? 'badge-ok' : 'badge-warn'}">${escapeHtml(patchSignatureLabel(s))}</span>
+    ${s.detectionReason ? `<span class="patch-detector-reason">${escapeHtml(s.detectionReason)}</span>` : ''}`;
 
   if (s.overrideActive && s.overrideInfo?.range) {
     patchOverrideBannerEl.hidden = false;
     const reason = s.overrideInfo.reason ? ` — ${s.overrideInfo.reason}` : '';
-    patchOverrideBannerTextEl.textContent = `Forced family: ${s.overrideInfo.range}${reason}`;
+    patchOverrideBannerTextEl.textContent = `Famille sélectionnée manuellement : ${s.overrideInfo.range}${reason}`;
   } else {
     patchOverrideBannerEl.hidden = true;
     patchOverrideBannerTextEl.textContent = '—';
@@ -6079,34 +6146,41 @@ function renderPatchSelector(s: PatchStatus): void {
       isDetected ? 'detected' : '',
       !s.compatible && isRecommended ? 'incompatible' : '',
     ].filter(Boolean).join(' ');
-    const tags = [
-      patchBadge(patchFamilyLabel(range.versionRange), 'muted'),
-      isRecommended ? patchBadge('recommended', 'ok') : '',
-      isSelected ? patchBadge('manual', 'warn') : '',
-      isDetected && s.overlayFingerprintRange === range.versionRange
-        ? patchBadge(`JS overlay footprint · ${patchConfidenceLabel(s.overlayFingerprintConfidence)}`, s.overlayFingerprintConfidence === 'high' ? 'ok' : 'warn')
-        : '',
-      isDetected && s.overlayFingerprintRange !== range.versionRange ? patchBadge('specific signature detected', 'ok') : '',
-      !isDetected && s.binarySignatureDetected ? patchBadge('metadata-guided version', 'muted') : patchBadge('test manually', 'muted'),
-    ].filter(Boolean).join('');
+
+    const statusBadge = isSelected
+      ? patchBadge('Sélection active', 'warn')
+      : isRecommended
+        ? patchBadge('Recommandé', 'ok')
+        : isDetected
+          ? patchBadge('Compatible', 'muted')
+          : '';
+
+    const actionButton = isSelected
+      ? `<span class="badge badge-warn" style="width:100%; text-align:center; padding:6px 0; font-weight:600;">Sélection manuelle active</span>`
+      : (isRecommended && !s.overrideActive)
+        ? `<span class="badge badge-ok" style="width:100%; text-align:center; padding:6px 0; font-weight:600;">Recommandé (Auto-détecté)</span>`
+        : `<button class="btn btn-ghost btn-sm" type="button" data-patch-range="${escapeHtml(range.versionRange)}">Sélectionner cette famille</button>`;
+
+    const cleanOrig = range.originalUrl.replace('https://', '').replace('/v1internal', '');
+    const cleanPatch = range.patchedUrl.replace('http://', '').replace('/v1internal', '');
+
     return `
       <div class="${classes}">
         <div class="patch-range-card-header">
           <div class="patch-range-card-title">${escapeHtml(range.versionRange)}</div>
-          ${isRecommended ? patchBadge(s.overrideActive ? 'forced' : 'auto target', s.overrideActive ? 'warn' : 'ok') : ''}
+          ${statusBadge}
         </div>
         <div class="patch-range-card-body">
           <div class="patch-range-card-description">${escapeHtml(range.description)}</div>
-          <div class="patch-range-card-tags">${tags}</div>
-          <div class="patch-inline-note">${escapeHtml(range.originalUrl)} → ${escapeHtml(range.patchedUrl)}</div>
+          <div class="patch-inline-note"><code>${escapeHtml(cleanOrig)}</code> ➔ <code>${escapeHtml(cleanPatch)}</code></div>
         </div>
         <div class="patch-range-card-actions">
-          <button class="btn ${isSelected ? 'btn-secondary' : 'btn-ghost'} btn-sm" type="button" data-patch-range="${escapeHtml(range.versionRange)}">${isSelected ? 'Selected' : 'Select family'}</button>
+          ${actionButton}
         </div>
       </div>`;
   }).join('');
 
-  patchRangeGridEl.innerHTML = cards || '<div class="empty-state"><p>No patch families available.</p></div>';
+  patchRangeGridEl.innerHTML = cards || '<div class="empty-state"><p>Aucune famille de patch disponible.</p></div>';
 }
 
 async function applyPatchRangeSelection(range: string | null): Promise<void> {
@@ -6137,153 +6211,140 @@ async function loadPatchStatus(): Promise<void> {
       );
     const s = JSON.parse(r.stdout) as PatchStatus;
     renderPatchSelector(s);
+
+    // Update Apply patch button styling to avoid aggressive CTA when already active
+    const applyBtn = document.getElementById('patchApplyBtn') as HTMLButtonElement | null;
+    if (applyBtn) {
+      if (s.applied) {
+        applyBtn.className = 'btn btn-secondary';
+        applyBtn.innerHTML = `
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px"><polyline points="20 6 9 17 4 12"/></svg>
+          Patch déjà actif
+        `;
+        applyBtn.title = 'Le patch binaire est déjà actif. Cliquez pour forcer une réapplication.';
+      } else {
+        applyBtn.className = 'btn btn-primary';
+        applyBtn.innerHTML = 'Apply patch';
+        applyBtn.title = 'Appliquer le patch binaire sélectionné';
+      }
+    }
+
     const banner =
       s.applied
         ? `<div class="patch-banner ok">
              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
              <div class="patch-banner-body">
-               <div class="patch-banner-title">Patch active</div>
-               <div class="patch-banner-text"><code>language_server</code> is redirecting requests to the local proxy.</div>
+               <div class="patch-banner-title">Patch actif</div>
+               <div class="patch-banner-text"><code>language_server</code> redirige les requêtes vers le proxy local.</div>
              </div>
            </div>`
         : s.exists
           ? `<div class="patch-banner warn">
                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                <div class="patch-banner-body">
-                 <div class="patch-banner-title">Patch not applied</div>
-                 <div class="patch-banner-text">Custom models will not appear in the menu until this step is applied.</div>
+                 <div class="patch-banner-title">Patch non appliqué</div>
+                 <div class="patch-banner-text">Les modèles personnalisés ne seront pas routés tant que le patch n'est pas appliqué.</div>
                </div>
              </div>`
           : `<div class="patch-banner err">
                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                <div class="patch-banner-body">
-                 <div class="patch-banner-title">Binary not found</div>
-                 <div class="patch-banner-text">Could not locate <code>language_server</code> in the Antigravity installation.</div>
+                 <div class="patch-banner-title">Binaire introuvable</div>
+                 <div class="patch-banner-text">Impossible de localiser <code>language_server</code> dans l'installation Antigravity.</div>
                </div>
              </div>`;
-
-    const confidenceHero = `
-      <div class="patch-confidence patch-confidence-${patchConfidenceTone(s.detectionConfidence)}">
-        <div class="patch-confidence-eyebrow">Confidence level</div>
-        <div class="patch-confidence-value">${escapeHtml(patchConfidenceLabel(s.detectionConfidence))}</div>
-        <div class="patch-confidence-text">${escapeHtml(s.detectionReason ?? 'No detailed explanation provided by auto-detection yet.')}</div>
-      </div>`;
 
     const metadataWithoutBinaryBanner = patchNeedsMetadataWithoutBinaryWarning(s)
       ? `<div class="patch-banner err">
            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
            <div class="patch-banner-body">
-             <div class="patch-banner-title">Version detected, binary signature missing</div>
-             <div class="patch-banner-text">Antigravity <code>${escapeHtml(s.antigravityVersion ?? 'unknown')}</code> was recognized via <code>${escapeHtml(s.antigravityVersionSource ?? 'metadata')}</code>, but the <code>language_server</code> binary does not contain the expected signature. This can indicate a different build, a pre-modified binary, or a mixed installation.</div>
+             <div class="patch-banner-title">Version détectée mais signature binaire absente</div>
+             <div class="patch-banner-text">Antigravity <code>${escapeHtml(s.antigravityVersion ?? 'inconnue')}</code> a été identifié via <code>${escapeHtml(s.antigravityVersionSource ?? 'métadonnées')}</code>, mais le binaire <code>language_server</code> ne contient pas la signature attendue. Restaurez depuis la sauvegarde avant d'appliquer.</div>
            </div>
          </div>`
       : '';
 
-    const recommendationRow = s.recommendedPatch
-      ? `
-      <div class="patch-row">
-        <div class="patch-row-label">Recommended family</div>
-        <div class="patch-row-value">${escapeHtml(s.recommendedPatch.versionRange)}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Recommendation source</div>
-        <div class="patch-row-value ${s.overrideActive ? 'warn' : 'ok'}">${escapeHtml(s.overrideActive ? 'manual selection' : 'auto-detection')}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Confidence</div>
-        <div class="patch-row-value ${patchConfidenceTone(s.detectionConfidence)}">${escapeHtml(patchConfidenceLabel(s.detectionConfidence))}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Binary signature</div>
-        <div class="patch-row-value ${s.binarySignatureDetected ? 'ok' : 'warn'}">${escapeHtml(patchSignatureLabel(s))}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">JS overlay footprint</div>
-        <div class="patch-row-value ${s.overlayFingerprintDetected ? (s.overlayFingerprintConfidence === 'high' ? 'ok' : 'warn') : 'warn'}">${escapeHtml(patchOverlayLabel(s))}</div>
-      </div>
-      ${s.overlayFingerprintReason ? `
-      <div class="patch-row">
-        <div class="patch-row-label">JS footprint reason</div>
-        <div class="patch-row-value">${escapeHtml(s.overlayFingerprintReason)}</div>
-      </div>` : ''}
-      <div class="patch-row">
-        <div class="patch-row-label">Original URL</div>
-        <div class="patch-row-value">${escapeHtml(s.recommendedPatch.originalUrl)}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Patched URL</div>
-        <div class="patch-row-value">${escapeHtml(s.recommendedPatch.patchedUrl)}</div>
-      </div>`
-      : '';
+    const binaryFileName: string = s.binaryPath?.split(/[\\/]/).pop() ?? 'language_server.exe';
 
-    const overrideRow = s.overrideInfo?.range
-      ? `
-      <div class="patch-row">
-        <div class="patch-row-label">Manual selection</div>
-        <div class="patch-row-value warn">${escapeHtml(s.overrideInfo.range)}</div>
-      </div>
-      ${s.overrideInfo.reason ? `
-      <div class="patch-row">
-        <div class="patch-row-label">Reason</div>
-        <div class="patch-row-value warn">${escapeHtml(s.overrideInfo.reason)}</div>
-      </div>` : ''}`
-      : '';
+    const binaryCard = `
+      <div class="patch-summary-card">
+        <div class="patch-summary-card-title">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/></svg>
+          Binaire &amp; Installation
+        </div>
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">Version Antigravity</span>
+          <span class="patch-summary-value">${escapeHtml(s.antigravityVersion ?? 'inconnue')}</span>
+        </div>
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">Fichier binaire</span>
+          <span class="patch-summary-value" title="${escapeHtml(s.binaryPath ?? '—')}">${escapeHtml(binaryFileName)}</span>
+        </div>
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">Binaire présent</span>
+          <span class="patch-summary-value ${s.exists ? 'ok' : 'err'}">${s.exists ? 'Oui' : 'Non'}</span>
+        </div>
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">État du patch</span>
+          <span class="patch-summary-value ${s.applied ? 'ok' : 'warn'}">${s.applied ? 'Patch appliqué' : 'Binaire original'}</span>
+        </div>
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">Sauvegarde originale</span>
+          <span class="patch-summary-value ${s.backupExists ? 'ok' : 'warn'}">${s.backupExists ? 'Disponible (.bak)' : 'Aucune'}</span>
+        </div>
+      </div>`;
+
+    const routingCard = `
+      <div class="patch-summary-card">
+        <div class="patch-summary-card-title">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Configuration &amp; Routage
+        </div>
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">Famille cible</span>
+          <span class="patch-summary-value">${escapeHtml(s.recommendedPatch?.versionRange ?? 'Aucune')}</span>
+        </div>
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">Mode de sélection</span>
+          <span class="patch-summary-value ${s.overrideActive ? 'warn' : 'ok'}">${s.overrideActive ? 'Sélection manuelle' : 'Auto-détection'}</span>
+        </div>
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">Niveau de confiance</span>
+          <span class="patch-summary-value ${patchConfidenceTone(s.detectionConfidence)}">${escapeHtml(patchConfidenceLabel(s.detectionConfidence))}</span>
+        </div>
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">Compatibilité globale</span>
+          <span class="patch-summary-value ${s.compatible ? 'ok' : 'warn'}">${s.compatible ? 'Compatible' : 'Vérification requise'}</span>
+        </div>
+        ${s.recommendedPatch ? `
+        <div class="patch-summary-row">
+          <span class="patch-summary-label">Redirection</span>
+          <span class="patch-summary-value" style="font-family:var(--font-mono); font-size:11px;">${escapeHtml(s.recommendedPatch.originalUrl.replace('https://', '').replace('/v1internal', ''))} ➔ ${escapeHtml(s.recommendedPatch.patchedUrl.replace('http://', '').replace('/v1internal', ''))}</span>
+        </div>` : ''}
+      </div>`;
 
     const suggestions = `
-      <div class="patch-row patch-suggestions">
-        <div class="patch-row-label">Guidance</div>
+      <div class="patch-row patch-suggestions" style="margin-top:14px">
+        <div class="patch-row-label">Recommandations</div>
         <div class="patch-row-value" style="max-width:100%; text-align:left;">
           <ul class="patch-suggestion-list">
-            <li>Keep auto-detection active by default and only force a family if the detected version is incorrect.</li>
-            <li>Always keep a clean backup before switching between 2.1, 2.2, 2.3, or 2.4 patch families.</li>
-            <li>For 2.2.x, 2.3.x, and 2.4.x (up to 2.4.2), check MITM status and CA certificate installation before applying the patch.</li>
-            <li>If metadata and binary signature disagree, restore from backup first before trying a manual family.</li>
+            <li>Laissez l'auto-détection active par défaut ; ne forcez une famille que si la version détectée est erronée.</li>
+            <li>Une sauvegarde automatique (.bak) est créée avant toute modification binaire.</li>
+            <li>Fermez puis relancez Antigravity après l'application du patch pour charger les modifications.</li>
           </ul>
         </div>
       </div>`;
 
     patchTpl.innerHTML = `
       ${banner}
-      ${confidenceHero}
       ${metadataWithoutBinaryBanner}
-      <div class="patch-row">
-        <div class="patch-row-label">Antigravity version</div>
-        <div class="patch-row-value">${escapeHtml(s.antigravityVersion ?? 'unknown')}</div>
+      <div class="patch-summary-grid">
+        ${binaryCard}
+        ${routingCard}
       </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Version source</div>
-        <div class="patch-row-value">${escapeHtml(s.antigravityVersionSource ?? 'unknown')}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Binary path</div>
-        <div class="patch-row-value">${escapeHtml(s.binaryPath ?? '—')}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Present</div>
-        <div class="patch-row-value ${s.exists ? 'ok' : 'err'}">${s.exists ? 'yes' : 'no'}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Already patched</div>
-        <div class="patch-row-value ${s.applied ? 'ok' : 'warn'}">${s.applied ? 'yes' : 'no'}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Backup</div>
-        <div class="patch-row-value ${s.backupExists ? 'ok' : ''}">${s.backupExists ? 'yes' : 'no'}</div>
-      </div>
-      <div class="patch-row">
-        <div class="patch-row-label">Compatibility</div>
-        <div class="patch-row-value ${s.compatible ? 'ok' : 'warn'}">${s.compatible ? 'ok' : 'needs verification'}</div>
-      </div>
-      ${s.detectionReason ? `
-      <div class="patch-row">
-        <div class="patch-row-label">Recommendation reason</div>
-        <div class="patch-row-value">${escapeHtml(s.detectionReason)}</div>
-      </div>` : ''}
-      ${recommendationRow}
-      ${overrideRow}
       ${s.warningMessage ? `
-      <div class="patch-row">
-        <div class="patch-row-label">Warning</div>
+      <div class="patch-row" style="margin-top:12px">
+        <div class="patch-row-label">Avertissement</div>
         <div class="patch-row-value warn">${escapeHtml(s.warningMessage)}</div>
       </div>` : ''}
       ${suggestions}`;
@@ -6419,9 +6480,15 @@ $('#patchApplyBtn').addEventListener('click', async () => {
   }
 
   const ok = await confirmModal(
-    'Apply binary patch',
-    `This will modify <code>language_server</code> to redirect API calls to the local proxy.<br><br>A backup will be created automatically.${sizeInfo}${backupWarn}${validateBlockHtml}`,
-    { confirmLabel: isBlocked ? 'Blocked — incompatible' : 'Apply patch', confirmDisabled: isBlocked },
+    'Appliquer le patch binaire',
+    `<p style="margin-bottom:10px">Cette opération modifie <code>language_server.exe</code> pour acheminer les requêtes du modèle vers votre proxy local.</p>
+     <ul style="margin: 0 0 12px 18px; padding: 0; line-height: 1.6; font-size: 12px;">
+       <li><strong>Sauvegarde automatique :</strong> Une copie originale (<code>.bak</code>) sera créée.</li>
+       <li><strong>Redirection :</strong> Requêtes orientées vers le proxy local.</li>
+       <li><strong>Redémarrage requis :</strong> Fermez et relancez Antigravity pour appliquer le changement.</li>
+     </ul>
+     ${sizeInfo}${backupWarn}${validateBlockHtml}`,
+    { confirmLabel: isBlocked ? 'Bloqué — Incompatible' : 'Appliquer le patch', confirmDisabled: isBlocked },
   );
   if (!ok) {
     setStatus('Ready');
@@ -7034,6 +7101,11 @@ agRestartBtn.addEventListener('click', async () => {
     setAgHero('err', 'Failed', (e as Error).message);
     toast(`Restart failed: ${(e as Error).message}`, 'err');
   }
+});
+
+const agResolveVerificationBtn = $('#agResolveVerificationBtn') as HTMLButtonElement | null;
+agResolveVerificationBtn?.addEventListener('click', () => {
+  void showAntigravityVerificationResolutionModal();
 });
 // remove unused buttons
 
@@ -8477,6 +8549,9 @@ if (pmModelsSearchClear) {
 
 // Bind all Add Model buttons across views
 $('#dashboardAddModelBtn')?.addEventListener('click', openProviderManagerModal);
+$('#dashboardResolveVerificationBtn')?.addEventListener('click', () => {
+  void showAntigravityVerificationResolutionModal();
+});
 $('#modelsAddBtn')?.addEventListener('click', openProviderManagerModal);
 $('#providerManagerBtn')?.addEventListener('click', openProviderManagerModal);
 $('#emptyAddModelBtn')?.addEventListener('click', openProviderManagerModal);
@@ -9435,15 +9510,6 @@ export function getAccountEffectiveQuotas(acc: any): {
   if (tier === 'FREE') {
     claudeWkPct = 0;
     claude5hPct = 0;
-  }
-
-  if (acc?.enabled === false) {
-    gemini5hPct = 0;
-    geminiWkPct = 0;
-    claude5hPct = 0;
-    claudeWkPct = 0;
-    if (typeof argonWkPct === 'number') argonWkPct = 0;
-    if (typeof argon5hPct === 'number') argon5hPct = 0;
   }
 
   const is5hWindowReset = (iso?: string) => {
@@ -10554,6 +10620,12 @@ function initGoogleAccountsToolbarOnce(): void {
               <span id="gaCopyValidationLabel">Copier le Lien</span>
             </button>
           </div>
+          <div style="margin-top: 8px;">
+            <button type="button" id="gaOpenVerificationCenterBtn" style="width: 100%; background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 7px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; transition: all 0.15s ease;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span>Ouvrir l'Assistant de Résolution &amp; QR Code Antigravity</span>
+            </button>
+          </div>
         </div>
         ` : `
         <!-- Recours Officiel & Appeal Copilot (Primary for TOS Violation) -->
@@ -10823,6 +10895,12 @@ function initGoogleAccountsToolbarOnce(): void {
           } catch {
             toast('Impossible de copier l\'URL', 'err');
           }
+        });
+
+        // Open Antigravity Verification Resolution Modal
+        const openVerificationCenterBtn = handle.bodyEl.querySelector('#gaOpenVerificationCenterBtn');
+        openVerificationCenterBtn?.addEventListener('click', () => {
+          void showAntigravityVerificationResolutionModal({ validationUrl: actionValidationUrl, hasChallenge: true });
         });
 
         // Go to Appeal
@@ -11684,6 +11762,305 @@ Le compte <strong>${escapeHtml(account.name)}</strong> est actuellement utilisé
 
     setupGoogleAccountsLiveTicker();
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Antigravity Verification & Captcha Resolver (Discourse Forum Analysis)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface VerificationDetectionData {
+  found?: boolean;
+  hasChallenge?: boolean;
+  logFile?: string;
+  activeLogFile?: string;
+  validationUrl?: string;
+  rawLogLine?: string;
+  qrCodeDataUrl?: string;
+  qrDataUrl?: string;
+  timestamp?: string;
+  accountEmail?: string;
+  reason?: string;
+  message?: string;
+  carrierWarning?: string;
+  error?: string;
+}
+
+async function showAntigravityVerificationResolutionModal(initialData?: VerificationDetectionData): Promise<void> {
+  let detection = initialData;
+  if (!detection && window.ag?.verification?.detect) {
+    try {
+      detection = await window.ag.verification.detect();
+    } catch (err: any) {
+      detection = { found: false, error: err?.message || String(err) };
+    }
+  }
+
+  const hasChallenge = Boolean(detection?.found || detection?.hasChallenge || detection?.validationUrl);
+  const validationUrl = detection?.validationUrl || '';
+  const logPath = detection?.logFile || detection?.activeLogFile || 'ls-main.log';
+  const activeLog = (logPath ? logPath.split(/[\\/]/).pop() : 'ls-main.log') || 'ls-main.log';
+  const qrDataUrl = detection?.qrCodeDataUrl || detection?.qrDataUrl;
+  const qrImageHtml = qrDataUrl
+    ? `<div style="text-align: center; margin: 12px 0;">
+        <div style="display: inline-block; padding: 10px; background: #ffffff; border-radius: 10px; border: 2px solid rgba(245, 158, 11, 0.4); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);">
+          <img src="${qrDataUrl}" alt="QR Code de Vérification" style="display: block; width: 165px; height: 165px;" />
+        </div>
+        <div style="font-size: 11px; color: #94a3b8; margin-top: 6px; font-weight: 500;">
+          Scannez avec votre smartphone (Appareil Android / iPhone de confiance)
+        </div>
+      </div>`
+    : '';
+
+  const modalHtml = `
+    <div class="ag-verification-resolver-card" style="font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif); color: #f1f5f9; padding: 2px 4px; line-height: 1.5;">
+      <!-- Header Banner -->
+      <div style="text-align: center; margin-bottom: 16px;">
+        <div style="width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle, rgba(245, 158, 11, 0.28) 0%, rgba(245, 158, 11, 0.05) 75%); border: 2px solid #f59e0b; color: #f59e0b; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 8px; box-shadow: 0 0 20px rgba(245, 158, 11, 0.35);">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="M12 8v4"/><path d="M12 16h.01"/>
+          </svg>
+        </div>
+        <h2 style="font-size: 18.5px; font-weight: 700; color: #ffffff; margin: 0 0 4px 0; letter-spacing: -0.3px;">
+          Assistant de Résolution · Vérification Antigravity
+        </h2>
+        <div style="font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${hasChallenge ? '#f59e0b' : '#38bdf8'}; box-shadow: 0 0 6px ${hasChallenge ? '#f59e0b' : '#38bdf8'};"></span>
+          <span>${hasChallenge ? 'Défi VALIDATION_REQUIRED (HTTP 403) Détecté dans les logs LS' : 'Scanner de Logs Antigravity & Résolution de Captcha'}</span>
+        </div>
+      </div>
+
+      <!-- Detection Status Banner -->
+      <div style="margin-bottom: 14px; background: ${hasChallenge ? 'rgba(245, 158, 11, 0.1)' : 'rgba(30, 41, 59, 0.7)'}; border: 1px solid ${hasChallenge ? 'rgba(245, 158, 11, 0.35)' : 'rgba(255, 255, 255, 0.1)'}; border-radius: 8px; padding: 12px 14px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+          <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: ${hasChallenge ? '#fbbf24' : '#94a3b8'}; display: flex; align-items: center; gap: 6px;">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            ${hasChallenge ? 'DÉFI INTERACTIF EXTRAIT DEPUIS LES LOGS' : 'AUCUN DÉFI ACTIF DANS LES LOGS RÉCENTS'}
+          </span>
+          <span style="font-size: 11px; color: #94a3b8; font-family: var(--font-mono, monospace);">
+            Source : ${escapeHtml(activeLog)}
+          </span>
+        </div>
+
+        ${hasChallenge ? `
+          <div style="font-size: 12px; color: #e2e8f0; margin-bottom: 10px; word-break: break-all; background: rgba(0, 0, 0, 0.35); padding: 8px 10px; border-radius: 6px; font-family: var(--font-mono, monospace); border: 1px solid rgba(245, 158, 11, 0.25);" id="agvDetectedUrlDisplay">
+            ${escapeHtml(validationUrl)}
+          </div>
+          <div style="display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px;">
+            <button type="button" id="agvOpenBrowserBtn" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border: none; border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; box-shadow: 0 3px 12px rgba(245, 158, 11, 0.35); transition: all 0.15s ease;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span>Ouvrir dans le Navigateur</span>
+            </button>
+            <button type="button" id="agvCopyUrlBtn" style="background: rgba(255, 255, 255, 0.05); color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span id="agvCopyUrlLabel">Copier le Lien</span>
+            </button>
+          </div>
+          ${qrImageHtml}
+        ` : `
+          <p style="margin: 0 0 10px 0; font-size: 12px; color: #cbd5e1; line-height: 1.45;">
+            L'IDE Antigravity n'a pas encore enregistré d'erreur <code>VALIDATION_REQUIRED</code> dans ses logs récents. Si l'IDE affiche un blocage, faites une requête de prompt dans l'IDE pour forcer l'événement ou collez l'URL Google manuellement ci-dessous.
+          </p>
+          <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+            <input type="text" id="agvManualUrlInput" placeholder="https://accounts.google.com/signin/challenge/..." style="flex: 1; background: #070a12; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #f8fafc; font-family: var(--font-mono, monospace);" />
+            <button type="button" id="agvOpenManualBtn" style="background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;">Ouvrir</button>
+          </div>
+          <button type="button" id="agvRescanBtn" style="width: 100%; margin-top: 6px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #cbd5e1; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            <span>Scanner à nouveau les logs Antigravity</span>
+          </button>
+        `}
+      </div>
+
+      <!-- Critical Anti-Lockout Warnings (Forum AI Discourse Insights) -->
+      <div style="margin-bottom: 14px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #f87171; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          ATTENTION : PIÈGE SMS &amp; ERREUR "USED TOO MANY TIMES"
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.55;">
+          <p style="margin: 0 0 6px 0;">
+            <strong style="color: #fca5a5;">1. Piège Numéros Courts US (244444 / 96831) :</strong> Si la page Google vous demande d'envoyer un code par SMS vers ces numéros, <strong>n'insistez pas</strong> avec un opérateur mobile hors USA. Chaque échec compte comme une tentative et verrouille irréversiblement votre numéro avec l'erreur : <em>"The device you used to scan the QR code was used too many times for verification"</em>.
+          </p>
+          <p style="margin: 0 0 6px 0;">
+            <strong style="color: #38bdf8;">2. Méthode Recommandée :</strong> Sur la page Google, cliquez systématiquement sur <strong>"Essayer une autre méthode" (Try another way)</strong> et choisissez <strong>"Notification Google" (Google Prompt sur smartphone)</strong> ou l'application <strong>Google Authenticator</strong>.
+          </p>
+          <p style="margin: 0;">
+            <strong style="color: #fbbf24;">3. VPN &amp; Proxies :</strong> Désactivez tout VPN actif pendant la validation web afin d'éviter le déclenchement immédiat de protections antibot supplémentaires.
+          </p>
+        </div>
+      </div>
+
+      <!-- Remediation & Reset Actions -->
+      <div style="margin-bottom: 12px; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; margin-bottom: 8px;">
+          ACTIONS DE DÉBLOCAGE LOCAL (ONBOARDING &amp; PROCESSUS)
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button type="button" id="agvResetOnboardingBtn" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #fca5a5; border-radius: 7px; padding: 9px 12px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s ease;">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <span id="agvResetOnboardingLabel">Purger Cache Onboarding</span>
+          </button>
+          <button type="button" id="agvRestartIdeBtn" style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.35); color: #93c5fd; border-radius: 7px; padding: 9px 12px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s ease;">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            <span id="agvRestartIdeLabel">Relancer Antigravity</span>
+          </button>
+        </div>
+        <div id="agvFeedback" style="display: none; margin-top: 10px; font-size: 11.5px; padding: 8px 10px; border-radius: 6px;"></div>
+      </div>
+    </div>
+  `;
+
+  void modals.confirm('Assistant de Résolution Antigravity', modalHtml, {
+    confirmLabel: 'Fermer',
+    hideCancel: true,
+    onMount: (handle) => {
+      const modalEl = handle.bodyEl.closest('.modal') as HTMLElement | null;
+      if (modalEl) {
+        modalEl.classList.add('modal-lg');
+        modalEl.style.maxWidth = '620px';
+        modalEl.style.maxHeight = '88vh';
+        modalEl.style.display = 'flex';
+        modalEl.style.flexDirection = 'column';
+        modalEl.style.margin = 'auto';
+      }
+      if (handle.bodyEl) {
+        handle.bodyEl.style.overflowY = 'auto';
+        handle.bodyEl.style.maxHeight = 'calc(88vh - 120px)';
+        handle.bodyEl.style.padding = '16px 20px';
+      }
+      handle.confirmBtn.style.width = '100%';
+      handle.confirmBtn.style.padding = '10px 18px';
+      handle.confirmBtn.style.fontSize = '13.5px';
+      handle.confirmBtn.style.fontWeight = '600';
+      handle.confirmBtn.style.borderRadius = '7px';
+      handle.confirmBtn.style.background = '#2563eb';
+
+      // Open in browser
+      const openBrowserBtn = handle.bodyEl.querySelector('#agvOpenBrowserBtn');
+      openBrowserBtn?.addEventListener('click', async () => {
+        if (validationUrl) {
+          if (window.ag?.verification?.openUrl) {
+            await window.ag.verification.openUrl(validationUrl);
+          } else if (window.ag?.openExternal) {
+            await window.ag.openExternal(validationUrl);
+          } else {
+            window.open(validationUrl, '_blank');
+          }
+        }
+      });
+
+      // Copy validation URL
+      const copyUrlBtn = handle.bodyEl.querySelector('#agvCopyUrlBtn');
+      const copyUrlLabel = handle.bodyEl.querySelector('#agvCopyUrlLabel');
+      copyUrlBtn?.addEventListener('click', async () => {
+        if (validationUrl) {
+          try {
+            await navigator.clipboard.writeText(validationUrl);
+            if (copyUrlLabel) copyUrlLabel.textContent = '✓ Copié !';
+            toast('URL de validation copiée dans le presse-papier !', 'ok');
+            setTimeout(() => {
+              if (copyUrlLabel) copyUrlLabel.textContent = 'Copier le Lien';
+            }, 2000);
+          } catch {
+            toast('Impossible de copier le lien', 'err');
+          }
+        }
+      });
+
+      // Open manual URL
+      const openManualBtn = handle.bodyEl.querySelector('#agvOpenManualBtn');
+      const manualInput = handle.bodyEl.querySelector('#agvManualUrlInput') as HTMLInputElement | null;
+      openManualBtn?.addEventListener('click', async () => {
+        const val = manualInput?.value.trim();
+        if (!val) {
+          toast('Veuillez entrer une URL valide', 'warn');
+          return;
+        }
+        if (window.ag?.verification?.openUrl) {
+          await window.ag.verification.openUrl(val);
+        } else if (window.ag?.openExternal) {
+          await window.ag.openExternal(val);
+        } else {
+          window.open(val, '_blank');
+        }
+      });
+
+      // Re-scan logs
+      const rescanBtn = handle.bodyEl.querySelector('#agvRescanBtn');
+      rescanBtn?.addEventListener('click', async () => {
+        toast('Re-scan des logs en cours...', 'info');
+        if (window.ag?.verification?.detect) {
+          const fresh = await window.ag.verification.detect();
+          if (fresh.found && fresh.validationUrl) {
+            toast('Nouveau défi détecté !', 'ok');
+            void showAntigravityVerificationResolutionModal(fresh);
+          } else {
+            toast('Aucun défi actif trouvé dans les logs récents', 'warn');
+          }
+        }
+      });
+
+      // Reset Onboarding
+      const resetBtn = handle.bodyEl.querySelector('#agvResetOnboardingBtn') as HTMLButtonElement | null;
+      const resetLabel = handle.bodyEl.querySelector('#agvResetOnboardingLabel');
+      const feedbackEl = handle.bodyEl.querySelector('#agvFeedback') as HTMLElement | null;
+      resetBtn?.addEventListener('click', async () => {
+        if (resetBtn) resetBtn.disabled = true;
+        if (resetLabel) resetLabel.textContent = 'Purge en cours...';
+        try {
+          if (window.ag?.verification?.resetOnboarding) {
+            const res = await window.ag.verification.resetOnboarding();
+            if (res.success) {
+              if (feedbackEl) {
+                feedbackEl.style.display = 'block';
+                feedbackEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                feedbackEl.style.border = '1px solid rgba(16, 185, 129, 0.35)';
+                feedbackEl.style.color = '#34d399';
+                feedbackEl.innerHTML = `✅ ${escapeHtml(res.message || 'Cache réinitialisé et session remise à zéro.')}`;
+              }
+              toast('Onboarding Antigravity purgé avec succès !', 'ok');
+            } else {
+              throw new Error(res.error || 'Échec de la purge');
+            }
+          }
+        } catch (e: any) {
+          if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            feedbackEl.style.border = '1px solid rgba(239, 68, 68, 0.35)';
+            feedbackEl.style.color = '#fca5a5';
+            feedbackEl.innerHTML = `⚠️ Erreur : ${escapeHtml(e?.message || String(e))}`;
+          }
+          toast(`Erreur purge : ${e?.message}`, 'err');
+        } finally {
+          if (resetBtn) resetBtn.disabled = false;
+          if (resetLabel) resetLabel.textContent = 'Purger Cache Onboarding';
+        }
+      });
+
+      // Restart Antigravity
+      const restartBtn = handle.bodyEl.querySelector('#agvRestartIdeBtn') as HTMLButtonElement | null;
+      const restartLabel = handle.bodyEl.querySelector('#agvRestartIdeLabel');
+      restartBtn?.addEventListener('click', async () => {
+        if (restartBtn) restartBtn.disabled = true;
+        if (restartLabel) restartLabel.textContent = 'Relance en cours...';
+        try {
+          const res = await window.ag.antigravityRestart();
+          if (res.ok) {
+            toast('Antigravity relancé avec succès !', 'ok');
+          } else {
+            throw new Error(res.error || 'Échec du redémarrage');
+          }
+        } catch (e: any) {
+          toast(`Erreur redémarrage : ${e?.message}`, 'err');
+        } finally {
+          if (restartBtn) restartBtn.disabled = false;
+          if (restartLabel) restartLabel.textContent = 'Relancer Antigravity';
+        }
+      });
+    }
+  });
 }
 
 let gaLiveTickerInterval: any = null;

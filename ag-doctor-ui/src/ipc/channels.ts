@@ -85,6 +85,11 @@ export const DOCTOR_IPC_CHANNELS = {
   // Streaming
   STREAM_START: 'ag:stream:start',
   STREAM_CANCEL: 'ag:stream:cancel',
+
+  // Antigravity Verification & Challenge Resolver
+  VERIFICATION_DETECT: 'ag:verification:detect',
+  VERIFICATION_OPEN_URL: 'ag:verification:open-url',
+  VERIFICATION_RESET_ONBOARDING: 'ag:verification:reset-onboarding',
 } as const;
 
 export type DoctorIpcChannel = typeof DOCTOR_IPC_CHANNELS[keyof typeof DOCTOR_IPC_CHANNELS];

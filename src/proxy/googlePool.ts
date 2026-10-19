@@ -502,9 +502,9 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
     }
 
     if (quota) {
-      const geminiResetStr = quota.geminiResetTime || quota.geminiFiveHourReset || (quota as any).fiveHourResetTime;
+      const geminiResetStr = quota.geminiResetTime || quota.geminiFiveHourReset || (quota as any).fiveHourResetTime || quota.geminiWeeklyReset;
       const geminiResetPassed = geminiResetStr ? Date.parse(geminiResetStr) <= now : false;
-      const claudeResetStr = quota.claudeResetTime || quota.claudeFiveHourReset || (quota as any).fiveHourResetTime;
+      const claudeResetStr = quota.claudeResetTime || quota.claudeFiveHourReset || (quota as any).fiveHourResetTime || quota.claudeWeeklyReset;
       const claudeResetPassed = claudeResetStr ? Date.parse(claudeResetStr) <= now : false;
 
       let shouldWakeUp = false;
@@ -529,15 +529,14 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const weekStr = geminiWeekVal !== null ? `, week=${geminiWeekVal}%` : '';
         const geminiWeeklyDepleted = geminiWeekVal !== null && geminiWeekVal < 5 && !geminiResetPassed;
 
-        const canWakeQuota = quotaIsFresh || !isQuotaExhausted;
         const isFullyRestored = quota.geminiFiveHourPct === 100 && (geminiWeekVal === null || geminiWeekVal >= 50);
-        if (geminiResetPassed && quota.geminiFiveHourPct >= 5 && canWakeQuota) {
+        if (geminiResetPassed && quota.geminiFiveHourPct >= 5) {
           shouldWakeUp = true;
           reason = `Gemini reset timestamp elapsed (${geminiResetStr}${weekStr})`;
-        } else if (isFullyRestored && canWakeQuota) {
+        } else if (!isQuotaExhausted && isFullyRestored) {
           shouldWakeUp = true;
           reason = `full quota restored (5h=100%${weekStr})`;
-        } else if (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted && canWakeQuota) {
+        } else if (!isQuotaExhausted && quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted) {
           shouldWakeUp = true;
           reason = `${quotaIsFresh ? 'fresh live' : 'healthy'} quota (5h=${quota.geminiFiveHourPct}%${weekStr})`;
         }
@@ -548,15 +547,14 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const weekStr = claudeWeekVal !== null ? `, week=${claudeWeekVal}%` : '';
         const claudeWeeklyDepleted = claudeWeekVal !== null && claudeWeekVal < 5 && !claudeResetPassed;
 
-        const canWakeQuota = quotaIsFresh || !isQuotaExhausted;
         const isFullyRestored = quota.claudeFiveHourPct === 100 && (claudeWeekVal === null || claudeWeekVal >= 50);
-        if (claudeResetPassed && quota.claudeFiveHourPct >= 5 && canWakeQuota) {
+        if (claudeResetPassed && quota.claudeFiveHourPct >= 5) {
           shouldWakeUp = true;
           reason = `Claude reset timestamp elapsed (${claudeResetStr}${weekStr})`;
-        } else if (isFullyRestored && canWakeQuota) {
+        } else if (!isQuotaExhausted && isFullyRestored) {
           shouldWakeUp = true;
           reason = `full quota restored (5h=100%${weekStr})`;
-        } else if (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted && canWakeQuota) {
+        } else if (!isQuotaExhausted && quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted) {
           shouldWakeUp = true;
           reason = `${quotaIsFresh ? 'fresh live' : 'healthy'} quota (5h=${quota.claudeFiveHourPct}%${weekStr})`;
         }
@@ -573,9 +571,8 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const claudeWeekStr = claudeWeekVal !== null ? `, week=${claudeWeekVal}%` : '';
         const claudeWeeklyDepleted = claudeWeekVal !== null && claudeWeekVal < 5 && !claudeResetPassed;
 
-        const canWakeQuota = quotaIsFresh || !isQuotaExhausted;
-        const geminiOk = canWakeQuota && (geminiResetPassed || (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted));
-        const claudeOk = canWakeQuota && (claudeResetPassed || (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted));
+        const geminiOk = geminiResetPassed || (!isQuotaExhausted && quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted);
+        const claudeOk = claudeResetPassed || (!isQuotaExhausted && quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted);
 
         if (geminiOk && claudeOk) {
           shouldWakeUp = true;
@@ -1709,13 +1706,23 @@ export async function probeAllGoogleAccountsPreflight(
   log.info(`[PreFlight] 🔍 Starting proactive health check across ${queue.length} unique Google account(s)...`);
 
   const results: PreflightProbeResult[] = [];
-  const workers = Array.from({ length: Math.min(concurrencyLimit, queue.length) }, async () => {
+  const safeConcurrency = Math.min(2, concurrencyLimit, queue.length);
+  const workers = Array.from({ length: safeConcurrency }, async () => {
     while (queue.length > 0) {
       const item = queue.shift();
       if (!item) break;
+
+      // Skip probing accounts currently in active cooldown to avoid re-quarantining busy accounts
+      if (isAccountInCooldown(item, 'gemini')) {
+        continue;
+      }
+
       try {
-        const res = await probeGoogleAccountPreflight(item);
+        const probeTimeout = Math.max(10_000, PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS);
+        const res = await probeGoogleAccountPreflight(item, probeTimeout);
         results.push(res);
+        // Pacing delay between probes to avoid Google IP token bucket burst drop
+        await new Promise((r) => setTimeout(r, 200));
       } catch (err) {
         log.warn(`[PreFlight] Error probing ${(item.accountEmail || item.name)}:`, err);
       }

@@ -55,8 +55,11 @@ function classifyError(status, reason) {
   if (r.includes('terms of service') || r.includes('tos') || r.includes('suspended') || r.includes('disabled')) {
     return { code: 'TOS_SUSPENDED', label: 'Compte Suspendu / TOS', action: 'google_appeal' };
   }
-  if (r.includes('license') || r.includes('#3501') || r.includes('unlicensed') || r.includes('whitelisted')) {
-    return { code: 'UNLICENSED', label: 'Non-Inscrit Antigravity Preview (#3501)', action: 'reauth_or_wait' };
+  if (r.includes('ineligible') || r.includes('ineligible for higher')) {
+    return { code: 'INELIGIBLE_TIER', label: 'Compte Inéligible Quotas Supérieurs (#loadCodeAssist)', action: 'fix_billing_or_ai_studio' };
+  }
+  if (status === 503 || r.includes('capacity') || r.includes('high traffic')) {
+    return { code: 'CAPACITY_503', label: 'Saturation TPU Cluster (503 No Capacity)', action: 'retry_or_cascade' };
   }
   if (status === 429 || r.includes('resource_exhausted') || r.includes('quota')) {
     return { code: 'QUOTA_EXHAUSTED', label: 'Quota Épuisé (5h ou Hebdo)', action: 'wait_reset' };
