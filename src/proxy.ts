@@ -2217,7 +2217,7 @@ export async function executeGoogleCloudCodeWithPool(
     // - Flash models: configurable via AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS (default 35s; or 25s if multiple healthy siblings exist)
     // - Thinking / large prompts: 55-75s (allows reasoning budget without stalling the IDE)
     // - Standard models: 45-60s
-    const defaultCandidateFlashMs = healthySiblingAccountsCount >= 2 ? 35_000 : 50_000;
+    const defaultCandidateFlashMs = healthySiblingAccountsCount >= 2 ? 6_000 : 12_000;
     const flashTimeoutMs = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS ? GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS : defaultCandidateFlashMs;
     const defaultCandidateLargeMs = healthySiblingAccountsCount >= 2 ? 55_000 : 75_000;
     const largeTimeoutMs = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : defaultCandidateLargeMs;
@@ -2711,10 +2711,10 @@ export async function executeGoogleCloudCodeWithPool(
     // On HTTP 403 licensing/forbidden failure, immediately place the account in a
     // 7-day quarantine so subsequent requests don't waste round-trip time failing over.
     if (lastStatus === 403) {
-      const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid/i.test(lastErrorText);
+      const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid|verify your account|validation_required/i.test(lastErrorText);
       const quarantineMs = isLicenseError ? 7 * 24 * 3600 * 1000 : 24 * 3600 * 1000;
       log.warn(
-        `[Proxy] Account ${candidateName} received HTTP 403 (${isLicenseError ? 'license/permission issue' : 'forbidden'}). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine to eliminate failover latency.`,
+        `[Proxy] Account ${candidateName} received HTTP 403 (${isLicenseError ? 'license/permission/verification challenge' : 'forbidden'}). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine to eliminate failover latency.`,
       );
       if (isLicenseError) {
         markAccountUnlicensed(candidate);
