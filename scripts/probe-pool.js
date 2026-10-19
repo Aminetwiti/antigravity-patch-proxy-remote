@@ -70,72 +70,96 @@ function classifyError(status, reason) {
   return { code: 'UNKNOWN_ERROR', label: `Erreur HTTP ${status}`, action: 'inspect' };
 }
 
+async function probeSingle(token, projectId, model) {
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({
+      project: projectId || 'aicode-consumers',
+      model,
+      request: {
+        contents: [{ role: 'user', parts: [{ text: 'ping' }] }]
+      }
+    });
+
+    const start = Date.now();
+    const req = https.request('https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        'User-Agent': 'antigravity/2.24.0 windows/amd64',
+        'X-Goog-Api-Client': 'google-cloud-sdk antigravity/2.24.0'
+      },
+      timeout: 4000
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        const ms = Date.now() - start;
+        const ok = res.statusCode === 200;
+        let reason = ok ? 'OK' : '';
+        if (!ok) {
+          try {
+            const j = JSON.parse(body);
+            reason = j.error?.message || j.error?.details?.[0]?.reason || body.substring(0, 80);
+          } catch (_) {
+            reason = body.substring(0, 80);
+          }
+        }
+        resolve({ status: res.statusCode, ms, ok, reason });
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ status: 504, ms: 4000, ok: false, reason: 'TIMEOUT (>4s - Black Hole)' });
+    });
+
+    req.on('error', (err) => {
+      resolve({ status: 0, ms: Date.now() - start, ok: false, reason: err.message });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 async function testAccount(acc) {
   const email = acc.email || acc.name || 'unknown';
   try {
     const token = await getValidGoogleAccessToken(acc);
     if (!token) {
       const diagnosis = classifyError(401, 'Failed to refresh OAuth token');
-      return { email, status: 401, ms: 0, ok: false, reason: 'Failed to refresh OAuth token', diagnosis };
+      return { email, status: 401, ms: 0, ok: false, isTrial: false, reason: 'Failed to refresh OAuth token', diagnosis };
     }
 
-    return new Promise((resolve) => {
-      const postData = JSON.stringify({
-        project: acc.projectId || 'aicode-consumers',
-        model: 'gemini-3.8-flash-tiered',
-        request: {
-          contents: [{ role: 'user', parts: [{ text: 'ping' }] }]
+    const flashRes = await probeSingle(token, acc.projectId, 'gemini-3.8-flash-tiered');
+    let isTrial = false;
+    let diagnosis = classifyError(flashRes.status, flashRes.reason);
+
+    // If flash succeeded and not in fast mode, verify Argon/Pro eligibility
+    if (flashRes.ok && !isFast) {
+      const argonRes = await probeSingle(token, acc.projectId, 'gemini-4-argon');
+      if (!argonRes.ok) {
+        const r = (argonRes.reason || '').toLowerCase();
+        if (r.includes('upgrade') || r.includes('ultra') || r.includes('trial') || argonRes.status === 403 || argonRes.status === 400) {
+          isTrial = true;
+          diagnosis = { code: 'TRIAL_RESTRICTED', label: 'Pro (Trial / Promo) — Flash uniquement', action: 'use_flash_only_or_upgrade' };
         }
-      });
+      }
+    }
 
-      const start = Date.now();
-      const req = https.request('https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-          'User-Agent': 'antigravity/2.23.0 windows/amd64',
-          'X-Goog-Api-Client': 'google-cloud-sdk antigravity/2.23.0'
-        },
-        timeout: 4000
-      }, (res) => {
-        let body = '';
-        res.on('data', chunk => body += chunk);
-        res.on('end', () => {
-          const ms = Date.now() - start;
-          const ok = res.statusCode === 200;
-          let reason = ok ? 'OK' : '';
-          if (!ok) {
-            try {
-              const j = JSON.parse(body);
-              reason = j.error?.message || j.error?.details?.[0]?.reason || body.substring(0, 80);
-            } catch (_) {
-              reason = body.substring(0, 80);
-            }
-          }
-          const diagnosis = classifyError(res.statusCode, reason);
-          resolve({ email, status: res.statusCode, ms, ok, reason, diagnosis });
-        });
-      });
-
-      req.on('timeout', () => {
-        req.destroy();
-        const reason = 'TIMEOUT (>4s - Black Hole)';
-        const diagnosis = classifyError(504, reason);
-        resolve({ email, status: 504, ms: Date.now() - start, ok: false, reason, diagnosis });
-      });
-
-      req.on('error', (err) => {
-        const diagnosis = classifyError(0, err.message);
-        resolve({ email, status: 0, ms: Date.now() - start, ok: false, reason: err.message, diagnosis });
-      });
-
-      req.write(postData);
-      req.end();
-    });
+    return {
+      email,
+      status: flashRes.status,
+      ms: flashRes.ms,
+      ok: flashRes.ok,
+      isTrial,
+      reason: flashRes.reason,
+      diagnosis,
+    };
   } catch (err) {
     const diagnosis = classifyError(0, err.message);
-    return { email, status: 0, ms: 0, ok: false, reason: err.message, diagnosis };
+    return { email, status: 0, ms: 0, ok: false, isTrial: false, reason: err.message, diagnosis };
   }
 }
 
@@ -150,6 +174,7 @@ async function runProbe() {
   const results = await Promise.all(accounts.map(testAccount));
 
   const healthyEmails = new Set();
+  const trialEmails = new Set();
   const quarantinedEmails = new Set();
   const challengeEmails = new Set();
   const unlicensedEmails = new Set();
@@ -158,6 +183,7 @@ async function runProbe() {
   for (const r of results) {
     if (r.ok) {
       healthyEmails.add(r.email);
+      if (r.isTrial) trialEmails.add(r.email);
     } else {
       quarantinedEmails.add(r.email);
       if (r.diagnosis.code === 'CHALLENGE_REQUIRED') challengeEmails.add(r.email);
@@ -166,7 +192,7 @@ async function runProbe() {
     }
   }
 
-  return { config, googleProvider, results, healthyEmails, quarantinedEmails, challengeEmails, unlicensedEmails, tosEmails };
+  return { config, googleProvider, results, healthyEmails, trialEmails, quarantinedEmails, challengeEmails, unlicensedEmails, tosEmails };
 }
 
 async function main() {
@@ -179,10 +205,10 @@ async function main() {
   console.log('═══════════════════════════════════════════════════════════════════════════════');
   console.log(' [DOCTOR] Antigravity Google Multi-Account Diagnostic & Sanitizer');
   console.log(' Config: ' + customModelsPath);
-  console.log(' Mode:   ' + (isDryRun ? 'DRY RUN (inspect only)' : 'AUTO-HEAL & QUARANTINE'));
+  console.log(' Mode:   ' + (isDryRun ? 'DRY RUN (inspect only)' : 'AUTO-HEAL & QUARANTINE') + (isFast ? ' [FAST]' : ' [MULTI-TIER]'));
   console.log('═══════════════════════════════════════════════════════════════════════════════\n');
 
-  const { config, googleProvider, results, healthyEmails, quarantinedEmails, challengeEmails, unlicensedEmails, tosEmails } = await runProbe();
+  const { config, googleProvider, results, healthyEmails, trialEmails, quarantinedEmails, challengeEmails, unlicensedEmails, tosEmails } = await runProbe();
 
   console.log('┌─────┬──────────────────────────────┬────────────┬──────────┬─────────────────────────────────────────────────┐');
   console.log('│ ST  │ Account Email                │ Code / Lat │ Catégorie │ Diagnostic & Action Requise                     │');
@@ -190,10 +216,13 @@ async function main() {
 
   for (const r of results) {
     let icon = '❌';
-    if (r.ok) icon = '✅';
+    if (r.ok && r.isTrial) icon = '🎓';
+    else if (r.ok) icon = '✅';
     else if (r.diagnosis.code === 'CHALLENGE_REQUIRED') icon = '🟠';
     else if (r.diagnosis.code === 'QUOTA_EXHAUSTED') icon = '⏳';
     else if (r.diagnosis.code === 'UNLICENSED') icon = '⚪';
+    else if (r.diagnosis.code === 'GEO_BLOCKED_LOCATION') icon = '🌐';
+    else if (r.diagnosis.code === 'PERMISSION_DENIED_FLAGGED') icon = '🚫';
 
     const emailCol = (r.email || '').padEnd(28).substring(0, 28);
     const statusCol = (`H${r.status} ${r.ms}ms`).padEnd(10).substring(0, 10);
@@ -207,6 +236,7 @@ async function main() {
 
   console.log(`\n📊 Bilan Diagnostic :`);
   console.log(`   🟢 Actifs & Sains (Healthy)       : ${healthyEmails.size}`);
+  console.log(`   🎓 Comptes Trial (Flash uniq.)    : ${trialEmails.size}`);
   console.log(`   🟠 Challenge Validation (Sécurité) : ${challengeEmails.size}  -> Action : Déblocage navigateur recommandé`);
   console.log(`   ⚪ Non-Inscrits / Sans Licence     : ${unlicensedEmails.size}  -> Action : Ignoré ou re-inscription`);
   console.log(`   🔴 TOS / Suspendus                 : ${tosEmails.size}`);
@@ -217,6 +247,11 @@ async function main() {
     for (const a of googleProvider.accounts) {
       if (healthyEmails.has(a.email)) {
         if (a.enabled === false) { a.enabled = true; modified = true; }
+        if (trialEmails.has(a.email)) {
+          if (a.isTrial !== true) { a.isTrial = true; modified = true; }
+        } else {
+          if (a.isTrial === true) { a.isTrial = false; modified = true; }
+        }
       } else if (quarantinedEmails.has(a.email)) {
         if (a.enabled !== false) { a.enabled = false; modified = true; }
       }

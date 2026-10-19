@@ -1474,6 +1474,38 @@ export interface GoogleRequestOutcome {
   isTransportError?: boolean;
 }
 
+export interface ResponseClaimer {
+  claim(ownerId: string): boolean;
+  isClaimed(): boolean;
+  registerAbort(ownerId: string, abortFn: () => void): void;
+  abortOthers(winnerId: string): void;
+}
+
+export function createResponseClaimer(): ResponseClaimer {
+  let claimed = false;
+  const abortMap = new Map<string, () => void>();
+  return {
+    claim(ownerId: string): boolean {
+      if (claimed) return false;
+      claimed = true;
+      return true;
+    },
+    isClaimed(): boolean {
+      return claimed;
+    },
+    registerAbort(ownerId: string, fn: () => void): void {
+      abortMap.set(ownerId, fn);
+    },
+    abortOthers(winnerId: string): void {
+      for (const [id, fn] of abortMap.entries()) {
+        if (id !== winnerId) {
+          try { fn(); } catch (_) {}
+        }
+      }
+    },
+  };
+}
+
 export function executeGoogleCloudCodeRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -1485,6 +1517,7 @@ export function executeGoogleCloudCodeRequest(
   timeoutMs?: number,
   modelName = '',
   startTime = Date.now(),
+  responseClaimer?: ResponseClaimer,
 ): Promise<GoogleRequestOutcome> {
   return new Promise((resolve) => {
     const traceId = newTraceId();
@@ -1561,6 +1594,11 @@ export function executeGoogleCloudCodeRequest(
       };
 
       proxyReq = https.request(parsedUrl, options, (proxyRes) => {
+        if (responseClaimer) {
+          responseClaimer.registerAbort(traceId, () => {
+            try { proxyReq?.destroy(); } catch (_) {}
+          });
+        }
         // Disable request socket timeout once response headers start streaming in
         proxyReq?.setTimeout(0);
 
@@ -1731,6 +1769,14 @@ export function executeGoogleCloudCodeRequest(
               delete modifiedHeaders['transfer-encoding'];
               const modifiedBuffer = Buffer.from(text, 'utf-8');
               modifiedHeaders['content-length'] = String(modifiedBuffer.length);
+              if (responseClaimer) {
+                if (!responseClaimer.claim(traceId)) {
+                  try { proxyReq?.destroy(); } catch (_) {}
+                  finish({ success: false, statusCode: 499, error: 'Cancelled by winning hedged request' });
+                  return;
+                }
+                responseClaimer.abortOthers(traceId);
+              }
               if (safeWriteHead(res, status, modifiedHeaders as Record<string, string>)) {
                 safeEnd(res, modifiedBuffer);
               }
@@ -1741,6 +1787,14 @@ export function executeGoogleCloudCodeRequest(
           proxyRes.on('error', (err) => {
             finish({ success: false, statusCode: 502, error: 'Upstream stream error: ' + err.message, isTransportError: true });
           });
+          if (responseClaimer) {
+            if (!responseClaimer.claim(traceId)) {
+              try { proxyReq?.destroy(); } catch (_) {}
+              finish({ success: false, statusCode: 499, error: 'Cancelled by winning hedged request' });
+              return;
+            }
+            responseClaimer.abortOthers(traceId);
+          }
           if (safeWriteHead(res, status, proxyRes.headers as Record<string, string>)) {
             proxyRes.pipe(res);
           }
@@ -2025,6 +2079,7 @@ export async function executeGoogleCloudCodeWithPool(
   let consecutiveQuotaExhausted = 0;
   let consecutiveTimeoutCount = 0;
   let consecutiveTransportErrorCount = 0;
+  let consecutive503CapacityCount = 0;
   let testedAccountsCount = 0;
 
   const initialHealthyCount = sortedAccounts.filter(
@@ -2258,24 +2313,130 @@ export async function executeGoogleCloudCodeWithPool(
     const poolHeaderTimeout = hasOtherCandidates
       ? baseCandidateTimeout
       : GOOGLE_PROXY_TIMEOUT_MS;
+
+    const canHedge =
+      isStreamReq &&
+      hasOtherCandidates &&
+      isFlashModel &&
+      !res.headersSent &&
+      !res.writableEnded &&
+      poolHeaderTimeout > HEDGED_REQUEST_DELAY_MS;
+
     let outcome: GoogleRequestOutcome;
+    let successfulCandidate = candidate;
     try {
       log.info(`[CloudCode Candidate Dispatch] acc=${candidateName} model=${targetModel} host=${hostOverride} project=${reqJson.project} cli=${isGeminiCliModel(candidate)}`);
-      outcome = await executeGoogleCloudCodeRequest(
-        req,
-        res,
-        updatedBody,
-        isSessionRemote,
-        authHeader,
-        convId,
-        hostOverride,
-        poolHeaderTimeout,
-        targetModel,
-        startReqTime,
-      );
+      if (!canHedge) {
+        outcome = await executeGoogleCloudCodeRequest(
+          req,
+          res,
+          updatedBody,
+          isSessionRemote,
+          authHeader,
+          convId,
+          hostOverride,
+          poolHeaderTimeout,
+          targetModel,
+          startReqTime,
+        );
+      } else {
+        const claimer = createResponseClaimer();
+        let hedgeTimer: NodeJS.Timeout | undefined;
+
+        const candidate1Promise = executeGoogleCloudCodeRequest(
+          req,
+          res,
+          updatedBody,
+          isSessionRemote,
+          authHeader,
+          convId,
+          hostOverride,
+          poolHeaderTimeout,
+          targetModel,
+          startReqTime,
+          claimer,
+        );
+
+        const hedgeDelay = Math.min(HEDGED_REQUEST_DELAY_MS, Math.floor(poolHeaderTimeout * 0.6));
+
+        const hedgePromise = new Promise<GoogleRequestOutcome>((resolveHedge) => {
+          hedgeTimer = setTimeout(async () => {
+            if (claimer.isClaimed() || res.headersSent || res.writableEnded) return;
+
+            const sibling = sortedAccounts.slice(i + 1).find(
+              (c) => !isAccountInCooldown(c, modelFamily) && getModelQuotaScore(c, modelFamily) > 0,
+            );
+            if (!sibling) return;
+
+            const siblingName = sibling.accountEmail || sibling.name || 'sibling';
+            log.info(
+              `[Proxy] ⚡ [Hedged Request] Account [${candidateName}] did not send headers within ${hedgeDelay}ms. Launching speculative candidate [${siblingName}]...`,
+            );
+
+            let siblingToken: string | null = null;
+            try {
+              siblingToken = await getValidGoogleAccessToken(sibling);
+            } catch (_) {}
+
+            if (!siblingToken || claimer.isClaimed() || res.headersSent || res.writableEnded) return;
+
+            const siblingReqJson = JSON.parse(JSON.stringify(reqJson));
+            siblingReqJson.project = resolveGoogleProjectId(sibling);
+            if (!isGeminiCliModel(sibling) && !siblingReqJson.enabledCreditTypes) {
+              siblingReqJson.enabledCreditTypes = ['GOOGLE_ONE_AI'];
+            }
+            const siblingBody = Buffer.from(JSON.stringify(siblingReqJson), 'utf-8');
+            const siblingAuth = `Bearer ${siblingToken}`;
+            const siblingHost = isGeminiCliModel(sibling) ? GOOGLE_HOSTS.CLOUD_CODE_PROD : GOOGLE_HOSTS.CLOUD_CODE;
+
+            testedAccountsCount++;
+            recordAccountRequest(sibling);
+            incrementAccountInFlight(sibling);
+            const siblingStart = Date.now();
+
+            try {
+              const siblingOutcome = await executeGoogleCloudCodeRequest(
+                req,
+                res,
+                siblingBody,
+                isSessionRemote,
+                siblingAuth,
+                convId,
+                siblingHost,
+                poolHeaderTimeout,
+                targetModel,
+                siblingStart,
+                claimer,
+              );
+              if (siblingOutcome.success) {
+                successfulCandidate = sibling;
+                recordAccountLatency(sibling, Date.now() - siblingStart);
+                recordSuccess(sibling);
+                log.warn(
+                  `[Proxy] 🏆 [Hedged Request Winner] Speculative candidate [${siblingName}] won race against [${candidateName}]!`,
+                );
+                setAccountCooldown(candidate, 60_000, currentFamily, true);
+              }
+              resolveHedge(siblingOutcome);
+            } finally {
+              decrementAccountInFlight(sibling);
+            }
+          }, hedgeDelay);
+        });
+
+        outcome = await Promise.race([
+          candidate1Promise.then((res1) => {
+            if (hedgeTimer) clearTimeout(hedgeTimer);
+            return res1;
+          }),
+          hedgePromise,
+        ]);
+        if (hedgeTimer) clearTimeout(hedgeTimer);
+      }
+
       const reqDuration = Date.now() - startReqTime;
       if (outcome.success || outcome.statusCode === 200) {
-        recordAccountLatency(candidate, reqDuration);
+        recordAccountLatency(successfulCandidate, reqDuration);
       } else if (outcome.statusCode === 504 || (outcome.error && /timed out/i.test(outcome.error))) {
         recordAccountLatency(candidate, Math.max(reqDuration, poolHeaderTimeout));
       }
@@ -2288,14 +2449,15 @@ export async function executeGoogleCloudCodeWithPool(
     if (outcome.success) {
       consecutiveTimeoutCount = 0;
       consecutiveTransportErrorCount = 0;
-      recordSuccess(candidate);
-      clearAccountCooldown(candidate, currentFamily);
-      endAccountProbation(candidate, currentFamily);
+      consecutive503CapacityCount = 0;
+      recordSuccess(successfulCandidate);
+      clearAccountCooldown(successfulCandidate, currentFamily);
+      endAccountProbation(successfulCandidate, currentFamily);
       if (sessId && useStickySessions) {
-        bindSessionToModel(sessId, candidate);
+        bindSessionToModel(sessId, successfulCandidate);
       }
-      clearAccountBurst(candidate);
-      log.info(`[Proxy] ✅ [Feedback] Model: [${targetModel}] | Account: [${candidateName}] -> HTTP 200 OK (${elapsedMs}ms)`);
+      clearAccountBurst(successfulCandidate);
+      log.info(`[Proxy] ✅ [Feedback] Model: [${targetModel}] | Account: [${successfulCandidate.accountEmail || candidateName}] -> HTTP 200 OK (${elapsedMs}ms)`);
       return true;
     }
 
@@ -2686,8 +2848,9 @@ export async function executeGoogleCloudCodeWithPool(
         (lastStatus === 503 && /capacity/i.test(lastErrorText));
 
       if (isCapacityExhausted) {
+        consecutive503CapacityCount++;
         log.warn(
-          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED for [${targetModel}]. Setting 0% quota for ${currentFamily} and cooling down for 15min. Seamlessly rotating to next candidate...`,
+          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED for [${targetModel}]. Setting 0% quota for ${currentFamily} and cooling down for 15min. (Capacity 503 count: ${consecutive503CapacityCount}/${CAPACITY_503_CASCADE_THRESHOLD})`,
         );
         const liveKey = getAccountQuotaKey(candidate);
         const existingQuota = getLiveAccountQuota(liveKey);
@@ -2710,6 +2873,15 @@ export async function executeGoogleCloudCodeWithPool(
         }
         setAccountCooldown(candidate, 15 * 60_000, currentFamily, true);
         recordAccountLatency(candidate, 45_000);
+
+        if (consecutive503CapacityCount >= CAPACITY_503_CASCADE_THRESHOLD) {
+          log.warn(
+            `[Proxy] ⚠️ Global TPU/Cluster Capacity Exhaustion detected on [${targetModel}] (${consecutive503CapacityCount} consecutive 503s). Triggering immediate cross-family cascade to Claude...`,
+          );
+          lastStatus = 503;
+          lastErrorText = `Google Cloud Code API capacity unavailable across ${consecutive503CapacityCount} consecutive accounts`;
+          break;
+        }
         continue;
       }
 
@@ -2854,10 +3026,9 @@ export async function executeGoogleCloudCodeWithPool(
       )];
     const sameFamily = allModelBases.filter(m => m.toLowerCase().includes('claude') === isClaudeRequest);
     const crossFamily = allModelBases.filter(m => m.toLowerCase().includes('claude') !== isClaudeRequest);
-    // On HTTP 429 quota exhaustion, sibling models in the same family share the exact same exhausted quota pool.
-    // Sibling accounts in Google Cloud Code will just hit the same 429.
+    // On HTTP 429 quota exhaustion or 503 capacity exhaustion, sibling models in the same family share the exact same exhausted quota pool or overloaded TPU cluster.
     // Skip same-family to avoid pointless ping-pong retry loops and cascade directly to cross-family (Gemini <-> Claude).
-    const eligibleFallbacks = lastStatus === 429 ? crossFamily : [...sameFamily, ...crossFamily];
+    const eligibleFallbacks = (lastStatus === 429 || lastStatus === 503) ? crossFamily : [...sameFamily, ...crossFamily];
 
     if (eligibleFallbacks.length > 0) {
       for (const fallbackModel of eligibleFallbacks) {

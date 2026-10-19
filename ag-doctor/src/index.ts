@@ -3,6 +3,7 @@
  * ag-doctor — entry point.
  * Routes argv to the right command module.
  */
+import path from 'path';
 import { parseArgs } from './cli/parser';
 import type { CommandContext } from './types';
 import { c } from './cli/output';

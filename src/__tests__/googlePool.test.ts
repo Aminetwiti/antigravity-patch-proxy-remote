@@ -42,8 +42,10 @@ import {
   verifyAndReconcileCooldowns,
   isAccountNearExhaustion,
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
+  isAccountTrial,
 } from '../proxy/googlePool';
-import { updateLiveAccountQuota } from '../services/googleAuth';
+import { updateLiveAccountQuota, normalizeCloudCodeModelId } from '../services/googleAuth';
+import { detectAndMitigateToolLoops } from '../proxy/shared';
 import { GOOGLE_POOL_HEADER_TIMEOUT_MS, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, P2C_SCORE_DELTA } from '../constants';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -774,5 +776,71 @@ describe('Burst Rate Limit Governor & Constants', () => {
     const chosen = selectCandidateP2C([disabledAcc, unlicensedAcc], 'gemini');
     expect(chosen).toBeUndefined();
   });
+
+  describe('Post-Forum Resilience & Optimization Upgrades', () => {
+    it('normalizes problematic forum slugs to gemini-3.8-flash-tiered', () => {
+      expect(normalizeCloudCodeModelId('gemini-3-preview')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-3.6-flash')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-3.1-flash-lite')).toBe('gemini-3.8-flash-tiered');
+    });
+
+    it('detectAndMitigateToolLoops does not trigger when tool calls are varied or < 3', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Check the file' }] },
+        { role: 'model', parts: [{ functionCall: { name: 'view_file', args: { path: 'a.ts' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'view_file', response: { output: 'content' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'run_command', args: { cmd: 'ls' } } }] },
+      ];
+      expect(detectAndMitigateToolLoops(contents)).toBe(false);
+    });
+
+    it('detectAndMitigateToolLoops intercepts 3 consecutive identical tool calls and injects guardrail note', () => {
+      const contents = [
+        { role: 'model', parts: [{ functionCall: { name: 'view_file', args: { path: 'loop.ts' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'view_file', response: { output: 'file contents' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'view_file', args: { path: 'loop.ts' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'view_file', response: { output: 'file contents' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'view_file', args: { path: 'loop.ts' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'view_file', response: { output: 'file contents' } } }] },
+      ];
+
+      const injected = detectAndMitigateToolLoops(contents);
+      expect(injected).toBe(true);
+
+      const lastTurn = contents[contents.length - 1] as any;
+      const lastOutput = lastTurn.parts[0].functionResponse.response.output;
+      expect(lastOutput).toContain('[System Guardrail: Redundant tool execution detected');
+    });
+
+    it('correctly identifies trial accounts and filters them out for Argon and Claude 5.5 in selectCandidateP2C', () => {
+      const trialAcc = makeModel({
+        accountEmail: 'student-trial@example.com',
+        isTrial: true,
+        quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } as any,
+      } as any);
+      const paidAcc = makeModel({
+        accountEmail: 'paid-dev@example.com',
+        isTrial: false,
+        quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+      } as any);
+
+      expect(isAccountTrial(trialAcc)).toBe(true);
+      expect(isAccountTrial(paidAcc)).toBe(false);
+
+      // Flash routing allows both trial and paid accounts
+      const flashChosen = selectCandidateP2C([trialAcc, paidAcc], 'gemini');
+      expect(flashChosen).toBeDefined();
+
+      // Argon routing filters out trial accounts and selects the paid account
+      const argonChosen = selectCandidateP2C([trialAcc, paidAcc], 'gemini-4-argon');
+      expect(argonChosen?.accountEmail).toBe('paid-dev@example.com');
+
+      // Claude 5.5 routing also filters out trial accounts
+      const claudeChosen = selectCandidateP2C([trialAcc, paidAcc], 'claude-5-5-sonnet');
+      expect(claudeChosen?.accountEmail).toBe('paid-dev@example.com');
+    });
+  });
 });
+
+
 

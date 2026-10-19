@@ -32,6 +32,18 @@ export async function checkAntigravity(): Promise<CheckResult> {
     parts.push(`IDE ${ideVersion ? `v${ideVersion}` : 'installed'}`);
   }
 
+  // Check if Antigravity version is below 2.24.0 (known authentication loops and signin/continue 500s)
+  if (v !== 'unknown') {
+    const semverMatch = v.match(/^(\d+)\.(\d+)/);
+    if (semverMatch) {
+      const major = parseInt(semverMatch[1], 10);
+      const minor = parseInt(semverMatch[2], 10);
+      if (major < 2 || (major === 2 && minor < 24)) {
+        parts.push('⚠️ < v2.24.0 (mise à jour v2.24.0+ conseillée contre boucles auth)');
+      }
+    }
+  }
+
   // The system is operational when either the app is running OR the local
   // proxy answers (the proxy is what actually serves the custom models, and
   // it can keep running after the IDE window is closed or via the stub).

@@ -86,6 +86,20 @@ describe('Error Classifier', () => {
       const result = classifyError(200, null, 'permission_denied to model resource');
       expect(result.errorType).toBe('forbidden');
     });
+
+    it('classifies project has been denied access as free-tier security flag', () => {
+      const result = classifyError(403, null, '403 PERMISSION_DENIED: Your project has been denied access. Please contact support.');
+      expect(result.errorType).toBe('forbidden');
+      expect(result.title).toBe('Project Denied Access (Free-Tier Security Flag)');
+      expect(result.actionUrl).toBe('https://console.cloud.google.com/billing');
+    });
+
+    it('classifies location is not supported as geo-blocked error', () => {
+      const result = classifyError(400, null, 'User location is not supported for the API use.');
+      expect(result.errorType).toBe('forbidden');
+      expect(result.title).toBe('Location Not Supported (Geo-Blocked)');
+      expect(result.actionUrl).toContain('available-regions');
+    });
   });
 
   describe('Rate limit errors', () => {
