@@ -2313,7 +2313,7 @@ export async function executeGoogleCloudCodeWithPool(
     // - Standard models: 25-35s
     const effectiveFlashTimeout = Math.max(7_000, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS);
     const flashTimeoutMs = hasOtherCandidates
-      ? (isThinkingModel ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : (isContextualPayload ? Math.min(25_000, GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout))
+      ? (isThinkingModel ? Math.min(30_000, GOOGLE_PROXY_TIMEOUT_MS) : (isContextualPayload ? Math.min(25_000, GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout))
       : Math.min(25_000, GOOGLE_PROXY_TIMEOUT_MS);
     const largeTimeoutMs = hasOtherCandidates
       ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : 55_000)
@@ -2322,9 +2322,9 @@ export async function executeGoogleCloudCodeWithPool(
       ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_MS : 35_000)
       : GOOGLE_PROXY_TIMEOUT_MS;
 
-    const baseCandidateTimeout = isLargePayloadOrThinking
-      ? largeTimeoutMs
-      : (isFlashModel ? flashTimeoutMs : standardTimeoutMs);
+    const baseCandidateTimeout = isFlashModel
+      ? flashTimeoutMs
+      : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs);
 
     // When no other candidates exist, fallback to the full proxy timeout.
     let poolHeaderTimeout = hasOtherCandidates
@@ -2332,11 +2332,13 @@ export async function executeGoogleCloudCodeWithPool(
       : GOOGLE_PROXY_TIMEOUT_MS;
 
     // Escalating retry timeout on 504: If a prior candidate experienced a timeout on this payload,
-    // give the next candidate extended headroom (up to 80s) to allow Google's slow cluster prefill to complete.
-    if (consecutive504TimeoutCount > 0) {
+    // only give extended headroom when NO healthy sibling accounts remain.
+    // If sibling accounts are available, keep candidate timeout bounded so the pool can fail over quickly
+    // without exceeding the client's timeout (which results in HTTP 499 cancel).
+    if (consecutive504TimeoutCount > 0 && healthySiblingAccountsCount < 1) {
       const escalatingTimeout = Math.min(80_000, GOOGLE_PROXY_TIMEOUT_MS);
       if (escalatingTimeout > poolHeaderTimeout) {
-        log.info(`[Proxy] Prior candidate experienced 504 timeout. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
+        log.info(`[Proxy] Prior candidate experienced 504 timeout and pool is depleted. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
         poolHeaderTimeout = escalatingTimeout;
       }
     }
@@ -2591,7 +2593,7 @@ export async function executeGoogleCloudCodeWithPool(
         }
 
         const existingQuota = getLiveAccountQuota(liveKey);
-        const rawWeekly = (decision.rawRetryAfterMs ?? 0) > 24 * 3600 * 1000 ? decision.rawRetryAfterMs! : null;
+        const rawWeekly = decision.weeklyResetMs || ((decision.rawRetryAfterMs ?? 0) > 24 * 3600 * 1000 ? decision.rawRetryAfterMs! : null);
         const isWeekly = decision.cooldownMs > 24 * 3600 * 1000 || rawWeekly !== null;
         const nowMs = Date.now();
         const weeklyDuration = rawWeekly || decision.cooldownMs;
@@ -2694,12 +2696,14 @@ export async function executeGoogleCloudCodeWithPool(
             `[Proxy] Rotation après épuisement de quota. Rotation rapide (${pacingMs}ms) vers le compte suivant.`
           );
         }
-        if (req.destroyed || res.writableEnded) {
+        const isClientAlive = !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed && res.socket.writable !== false);
+        if (!isClientAlive) {
           log.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
           return false;
         }
         await new Promise((r) => setTimeout(r, pacingMs));
-        if (req.destroyed || res.writableEnded) {
+        const isClientStillAlive = !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed && res.socket.writable !== false);
+        if (!isClientStillAlive) {
           log.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
           return false;
         }
@@ -2907,13 +2911,13 @@ export async function executeGoogleCloudCodeWithPool(
       // even when retrieveUserQuotaSummary reports positive quota. This is a per-account model allocation exhaustion,
       // NOT a global Google service outage!
       const isCapacityExhausted =
-        /MODEL_CAPACITY_EXHAUSTED|no capacity available/i.test(lastErrorText) ||
-        (lastStatus === 503 && /capacity/i.test(lastErrorText));
+        lastStatus === 503 ||
+        /MODEL_CAPACITY_EXHAUSTED|no capacity available|overloaded|unavailable/i.test(lastErrorText);
 
       if (isCapacityExhausted) {
         consecutive503CapacityCount++;
         log.warn(
-          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED for [${targetModel}]. Setting 0% quota for ${currentFamily} and cooling down for 15min. (Capacity 503 count: ${consecutive503CapacityCount}/${CAPACITY_503_CASCADE_THRESHOLD})`,
+          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED / 503 Overload for [${targetModel}]. Setting 0% quota for ${currentFamily} and cooling down for 15min. (Capacity 503 count: ${consecutive503CapacityCount}/${CAPACITY_503_CASCADE_THRESHOLD})`,
         );
         const liveKey = getAccountQuotaKey(candidate);
         const existingQuota = getLiveAccountQuota(liveKey);
@@ -2937,9 +2941,10 @@ export async function executeGoogleCloudCodeWithPool(
         setAccountCooldown(candidate, 15 * 60_000, currentFamily, true);
         recordAccountLatency(candidate, 45_000);
 
-        if (consecutive503CapacityCount >= CAPACITY_503_CASCADE_THRESHOLD) {
+        const combinedOutageCount = consecutive503CapacityCount + consecutive504TimeoutCount;
+        if (consecutive503CapacityCount >= CAPACITY_503_CASCADE_THRESHOLD || combinedOutageCount >= Math.max(2, CAPACITY_503_CASCADE_THRESHOLD)) {
           log.warn(
-            `[Proxy] ⚠️ Global TPU/Cluster Capacity Exhaustion detected on [${targetModel}] (${consecutive503CapacityCount} consecutive 503s). Triggering immediate cross-family cascade to Claude...`,
+            `[Proxy] ⚠️ Global TPU/Cluster Capacity Exhaustion detected on [${targetModel}] (${consecutive503CapacityCount} consecutive 503s, ${combinedOutageCount} total outages). Triggering immediate cross-family cascade to Claude...`,
           );
           lastStatus = 503;
           lastErrorText = `Google Cloud Code API capacity unavailable across ${consecutive503CapacityCount} consecutive accounts`;
@@ -2962,12 +2967,15 @@ export async function executeGoogleCloudCodeWithPool(
         const configuredOutage = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0);
         const upstreamOutageThreshold = configuredOutage >= 4 ? configuredOutage : maxOutageLimit;
         const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
-        // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (slow/busy): 30s; outages: 30s-45s.
-        const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 30_000 : (isUpstreamOutage ? 30_000 : 45_000));
+        // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (slow/busy/hanging): 120s cooldown to prevent ping-ponging into stalled accounts; outages: 30s-45s.
+        const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 120_000 : (isUpstreamOutage ? 60_000 : 45_000));
         log.warn(
           `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
         );
         setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
+        if (lastStatus === 504) {
+          recordAccountLatency(candidate, 60_000);
+        }
 
         const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some(
           (c) => !isAccountInCooldown(c, currentFamily) && getModelQuotaScore(c, currentFamily) > 20,
@@ -2985,16 +2993,15 @@ export async function executeGoogleCloudCodeWithPool(
         // the upstream TPU cluster is saturated. Trigger immediate fallback cascade instead of exhausting all accounts in the pool.
         if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
           consecutive504TimeoutCount++;
-          if (consecutive504TimeoutCount >= CONSECUTIVE_504_CASCADE_THRESHOLD) {
+          const combinedOutageCount = consecutive504TimeoutCount + consecutive503CapacityCount;
+          if (consecutive504TimeoutCount >= CONSECUTIVE_504_CASCADE_THRESHOLD || combinedOutageCount >= Math.max(2, CONSECUTIVE_504_CASCADE_THRESHOLD)) {
             log.warn(
-              `[Proxy] ⚠️ Cluster Timeout Spike on [${targetModel}] (${consecutive504TimeoutCount} consecutive 504 timeouts). Triggering fast failover / cascade to prevent pool freeze across ${totalAttempts} accounts...`,
+              `[Proxy] ⚠️ Cluster Failure Spike on [${targetModel}] (${consecutive504TimeoutCount} consecutive 504 timeouts, ${combinedOutageCount} total outages). Triggering fast failover / cascade to prevent pool freeze across ${totalAttempts} accounts...`,
             );
             lastStatus = 504;
             lastErrorText = `Google Cloud Code API gateway timeout (504) across ${consecutive504TimeoutCount} consecutive accounts`;
             break;
           }
-        } else {
-          consecutive504TimeoutCount = 0;
         }
       } else {
         consecutiveTimeoutCount = 0;

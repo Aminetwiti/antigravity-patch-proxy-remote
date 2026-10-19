@@ -541,19 +541,57 @@ export class TokenTrackerEngine {
     const mod = model.toLowerCase();
 
     let minTimestamp = 0;
+    let maxTimestamp = 0;
     const now = Date.now();
-    if (range === '24h') {
+    if (range === 'today') {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      minTimestamp = startOfToday.getTime();
+    } else if (range === 'yesterday') {
+      const startOfYesterday = new Date();
+      startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+      startOfYesterday.setHours(0, 0, 0, 0);
+      minTimestamp = startOfYesterday.getTime();
+      const endOfYesterday = new Date(startOfYesterday);
+      endOfYesterday.setHours(23, 59, 59, 999);
+      maxTimestamp = endOfYesterday.getTime();
+    } else if (range === '24h') {
       minTimestamp = now - 24 * 3600 * 1000;
     } else if (range === '7d') {
       minTimestamp = now - 7 * 86400 * 1000;
     } else if (range === '30d') {
       minTimestamp = now - 30 * 86400 * 1000;
+    } else if (range === 'this_month') {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      minTimestamp = startOfMonth.getTime();
+    } else if (range === 'last_month') {
+      const nowD = new Date();
+      const startOfLastMonth = new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1, 0, 0, 0, 0);
+      minTimestamp = startOfLastMonth.getTime();
+      const endOfLastMonth = new Date(nowD.getFullYear(), nowD.getMonth(), 0, 23, 59, 59, 999);
+      maxTimestamp = endOfLastMonth.getTime();
     } else if (range === '7m') {
       minTimestamp = now - 210 * 86400 * 1000;
+    } else if (range === 'this_year') {
+      const startOfYear = new Date(new Date().getFullYear(), 0, 1, 0, 0, 0, 0);
+      minTimestamp = startOfYear.getTime();
+    } else if (range.startsWith('custom:')) {
+      const parts = range.split(':');
+      const startStr = parts[1];
+      const endStr = parts[2];
+      if (startStr) {
+        minTimestamp = new Date(`${startStr}T00:00:00`).getTime();
+      }
+      if (endStr) {
+        maxTimestamp = new Date(`${endStr}T23:59:59.999`).getTime();
+      }
     }
 
     const filtered = this.entries.filter((entry) => {
       if (minTimestamp > 0 && entry.timestamp < minTimestamp) return false;
+      if (maxTimestamp > 0 && entry.timestamp > maxTimestamp) return false;
 
       // Smart Provider Matching
       let matchProv = false;
@@ -739,19 +777,22 @@ export class TokenTrackerEngine {
     }
   }
 
-  public exportJson(): string {
+  public exportJson(entries?: TokenUsageEntry[]): string {
+    const list = entries || this.entries;
     return JSON.stringify(
       {
         exportedAt: new Date().toISOString(),
+        totalEntries: list.length,
         stats: this.getStats(),
-        entries: this.entries,
+        entries: list,
       },
       null,
       2,
     );
   }
 
-  public exportCsv(): string {
+  public exportCsv(entries?: TokenUsageEntry[]): string {
+    const list = entries || this.entries;
     const headers = [
       'ID',
       'Timestamp',
@@ -767,7 +808,7 @@ export class TokenTrackerEngine {
       'Status',
     ];
 
-    const rows = this.entries.map((e) => [
+    const rows = list.map((e) => [
       e.id,
       e.timestamp,
       new Date(e.timestamp).toISOString(),

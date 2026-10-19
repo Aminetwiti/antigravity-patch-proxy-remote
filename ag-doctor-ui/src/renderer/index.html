@@ -1469,14 +1469,31 @@
           </div>
         </div>
 
-        <!-- Dedicated Dashboard Modes Selector (Overview / Insights / Classic) with Active Filter Pill -->
-        <div class="stats-modes-bar" style="display:flex; justify-content:space-between; align-items:center; margin:8px 0 16px 0; border-bottom:1px solid var(--border); padding-bottom:10px; flex-wrap:wrap; gap:8px;">
-          <div id="statsActiveRangePill" style="display:flex; align-items:center; gap:8px;">
-            <span style="display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:500; color:var(--text-1); background:rgba(255,255,255,0.04); border:1px solid var(--border); padding:4px 10px; border-radius:999px;">
-              <span style="color:#60a5fa;">📅</span>
-              <span id="statsActiveRangeText">7 derniers mois</span>
-              <button type="button" id="statsClearRangeBtn" style="display:none; background:none; border:none; color:var(--text-2); cursor:pointer; font-size:12px; padding:0 2px; margin-left:4px; line-height:1;" title="Réinitialiser à 7 mois">✕</button>
-            </span>
+        <!-- Dedicated Dashboard Modes Selector (Overview / Insights / Classic) with Active Filter Pill & Quick Buttons -->
+        <div class="stats-modes-bar" style="display:flex; justify-content:space-between; align-items:center; margin:8px 0 16px 0; border-bottom:1px solid var(--border); padding-bottom:10px; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div id="statsActiveRangePill" style="display:flex; align-items:center; gap:8px;">
+              <span id="statsRangePillBtn" style="display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--text-0); background:rgba(255,255,255,0.06); border:1px solid var(--border); padding:4px 10px; border-radius:999px; cursor:pointer;" title="Cliquez pour ouvrir/fermer le calendrier">
+                <span style="color:#60a5fa;">📅</span>
+                <span id="statsActiveRangeText">7 derniers mois</span>
+                <button type="button" id="statsClearRangeBtn" style="display:none; background:none; border:none; color:var(--text-2); cursor:pointer; font-size:12px; padding:0 2px; margin-left:4px; line-height:1;" title="Réinitialiser à 7 mois">✕</button>
+              </span>
+            </div>
+
+            <!-- Quick Filter Buttons in the main toolbar -->
+            <div class="stats-quick-buttons-row" style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+              <button type="button" class="quick-date-chip" data-range="today">Aujourd'hui</button>
+              <button type="button" class="quick-date-chip" data-range="yesterday">Hier</button>
+              <button type="button" class="quick-date-chip" data-range="24h">24h</button>
+              <button type="button" class="quick-date-chip" data-range="7d">7j</button>
+              <button type="button" class="quick-date-chip" data-range="30d">30j</button>
+              <button type="button" class="quick-date-chip" data-range="this_month">Ce mois</button>
+              <button type="button" class="quick-date-chip" data-range="last_month">Mois dernier</button>
+              <button type="button" class="quick-date-chip active" data-range="7m">7 mois</button>
+              <button type="button" class="quick-date-chip" data-range="this_year">Cette année</button>
+              <button type="button" class="quick-date-chip" data-range="all">Tout</button>
+              <button type="button" class="quick-date-chip" data-range="custom" id="statsQuickCustomBtn" title="Choisir une période personnalisée avec calendrier">📅 Personnalisé</button>
+            </div>
           </div>
           <div class="token-mode-segmented-control" id="tokenModeSegmentedControl">
             <button type="button" class="token-mode-btn" data-stats-mode="overview" id="btnModeOverview" title="Vue Cockpit & Télémétrie en temps réel">

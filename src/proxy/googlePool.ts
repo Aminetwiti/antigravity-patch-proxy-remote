@@ -1204,6 +1204,7 @@ export interface Google429Decision {
   reason: string;
   isExplicitReset?: boolean;
   rawRetryAfterMs?: number | null;
+  weeklyResetMs?: number | null;
 }
 
 export function classifyGoogleCloudCode429(
@@ -1277,7 +1278,7 @@ export function classifyGoogleCloudCode429(
   // 429 bodies. A 5h rolling window can never exceed 5h15m, so anything larger is the weekly cycle
   // marker — discard it and let the quota_exhausted branch apply the standard 5h cooldown.
   const FIVE_H_15_MS = 5 * 3600_000 + 15 * 60_000; // 5h 15min ceiling
-  let rawParsedResetMs: number | null = retryAfterMs;
+  let weeklyResetMs: number | null = null;
   if (retryAfterMs === null) {
     const resetMatch = msg.match(/resets?\s+in\s+(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
     if (resetMatch && (resetMatch[1] || resetMatch[2] || resetMatch[3])) {
@@ -1286,11 +1287,16 @@ export function classifyGoogleCloudCode429(
       const s = parseInt(resetMatch[3] || '0', 10);
       const parsed = (h * 3600 + m * 60 + s) * 1000;
       if (parsed > 0) {
-        rawParsedResetMs = parsed;
-        // Ignore weekly-reset markers embedded in quota-exhausted messages for the 5h rolling window
-        if (parsed <= FIVE_H_15_MS) retryAfterMs = parsed;
+        if (parsed <= FIVE_H_15_MS) {
+          retryAfterMs = parsed;
+        } else {
+          weeklyResetMs = parsed;
+        }
       }
     }
+  } else if (retryAfterMs > FIVE_H_15_MS) {
+    weeklyResetMs = retryAfterMs;
+    retryAfterMs = null;
   }
 
   // 1. Soft / burst rate limit (micro-throttle, e.g. reset in 0s, try again, or retryAfter <= 3s)
@@ -1366,9 +1372,12 @@ export function classifyGoogleCloudCode429(
       return {
         category: 'quota_exhausted',
         cooldownMs: quotaCooldownMs,
-        reason: `Quota exhausted — ${Math.round(quotaCooldownMs / 3_600_000)}h cooldown and switch account`,
+        reason: weeklyResetMs !== null
+          ? `Quota exhausted (weekly reset in ${Math.round(weeklyResetMs / 3_600_000)}h) — 5h cooldown and switch account`
+          : `Quota exhausted — ${Math.round(quotaCooldownMs / 3_600_000)}h cooldown and switch account`,
         isExplicitReset: retryAfterMs !== null,
         rawRetryAfterMs: retryAfterMs,
+        weeklyResetMs,
       };
     }
   }
@@ -1651,7 +1660,6 @@ export async function probeGoogleAccountPreflight(
     );
 
     req.on('timeout', () => {
-      req.destroy();
       const latencyMs = Date.now() - startTime;
       // Socket stalled without response -> Black-Hole!
       markAccountUnlicensed(account);
@@ -1665,6 +1673,7 @@ export async function probeGoogleAccountPreflight(
         latencyMs,
         reason: `TIMEOUT (>${timeoutMs}ms - Black Hole)`,
       });
+      try { req.destroy(); } catch (_) {}
     });
 
     req.on('error', (err) => {

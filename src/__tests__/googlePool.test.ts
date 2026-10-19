@@ -434,6 +434,18 @@ describe('classifyGoogleCloudCode429', () => {
     expect(r.cooldownMs).toBe(5 * 3600 * 1000); // 93h > 5h15m → discard, use 5h default
   });
 
+  it('preserves raw weekly reset duration (e.g. 160h55m50s) while capping 5h rolling cooldown', () => {
+    const r = classifyGoogleCloudCode429(
+      'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 160h55m50s.',
+    );
+    expect(r.category).toBe('quota_exhausted');
+    expect(r.cooldownMs).toBe(5 * 3600 * 1000); // rolling cooldown remains 5h
+    expect(r.isExplicitReset).toBe(false);
+    expect(r.rawRetryAfterMs).toBeNull();
+    // 160h 55m 50s = (160 * 3600 + 55 * 60 + 50) * 1000 = 579,350,000 ms
+    expect(r.weeklyResetMs).toBe((160 * 3600 + 55 * 60 + 50) * 1000);
+  });
+
   it('parses RetryInfo JSON metadata', () => {
     const body = JSON.stringify({
       error: {

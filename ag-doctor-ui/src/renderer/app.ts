@@ -914,8 +914,8 @@ interface TokenTrackerEngineInstance {
     byModel: Record<string, { totalTokens: number; promptTokens: number; completionTokens: number; count: number; cost: number }>;
   };
   clear(): void;
-  exportJson(): string;
-  exportCsv(): string;
+  exportJson(entries?: TokenUsageEntryItem[]): string;
+  exportCsv(entries?: TokenUsageEntryItem[]): string;
   seedDemoData(): void;
   loadRealSessions(sessions: unknown[]): void;
 }
@@ -951,6 +951,18 @@ const tokenClearBtn = $('#tokenClearBtn') as HTMLButtonElement | null;
 
 // Antigravity Native Stats Board DOM References
 const statsRangeSelect = $('#statsRangeSelect') as HTMLSelectElement | null;
+const tokenCalendarBtn = $('#tokenCalendarBtn') as HTMLButtonElement | null;
+const statsCalendarBar = $('#statsCalendarBar') as HTMLDivElement | null;
+const statsDateStart = $('#statsDateStart') as HTMLInputElement | null;
+const statsDateEnd = $('#statsDateEnd') as HTMLInputElement | null;
+const statsDateApplyBtn = $('#statsDateApplyBtn') as HTMLButtonElement | null;
+const statsDateResetBtn = $('#statsDateResetBtn') as HTMLButtonElement | null;
+const statsCalendarCloseBtn = $('#statsCalendarCloseBtn') as HTMLButtonElement | null;
+const statsActiveRangeText = $('#statsActiveRangeText') as HTMLElement | null;
+const statsClearRangeBtn = $('#statsClearRangeBtn') as HTMLButtonElement | null;
+
+let customRangeStart = '';
+let customRangeEnd = '';
 const statsLifetimeTokens = $('#statsLifetimeTokens') as HTMLElement | null;
 const statsLifetimeTokensLbl = $('#statsLifetimeTokensLbl') as HTMLElement | null;
 const statsPeakTokens = $('#statsPeakTokens') as HTMLElement | null;
@@ -1270,7 +1282,36 @@ function showDayInspector(
 function renderHeatmapMatrix(range: string, mode: 'daily' | 'weekly' | 'cumulative'): void {
   if (!statsHeatmapMatrix) return;
 
-  const totalCols = range === '30d' ? 5 : range === '7d' ? 1 : range === 'all' ? 52 : 32;
+  let totalCols = 32;
+  let customEndDateObj: Date | null = null;
+  if (range === 'today' || range === 'yesterday' || range === '24h') {
+    totalCols = 1;
+    if (range === 'yesterday') {
+      customEndDateObj = new Date(Date.now() - 86400000);
+    }
+  } else if (range === '7d') {
+    totalCols = 2;
+  } else if (range === '30d' || range === 'this_month' || range === 'last_month') {
+    totalCols = 5;
+    if (range === 'last_month') {
+      const d = new Date();
+      customEndDateObj = new Date(d.getFullYear(), d.getMonth(), 0);
+    }
+  } else if (range === '7m') {
+    totalCols = 32;
+  } else if (range === 'all' || range === 'this_year') {
+    totalCols = 52;
+  } else if (range === 'custom') {
+    if (customRangeStart && customRangeEnd) {
+      const diffMs = Math.abs(new Date(customRangeEnd).getTime() - new Date(customRangeStart).getTime());
+      const diffDays = Math.max(1, Math.ceil(diffMs / 86400000));
+      totalCols = Math.max(2, Math.min(52, Math.ceil(diffDays / 7)));
+      customEndDateObj = new Date(customRangeEnd + 'T23:59:59');
+    } else {
+      totalCols = 16;
+    }
+  }
+
   const daysPerCol = 7;
   const totalCells = totalCols * daysPerCol;
 
@@ -1285,7 +1326,7 @@ function renderHeatmapMatrix(range: string, mode: 'daily' | 'weekly' | 'cumulati
   const peakDayTokens = cachedRealStats?.peakTokensDay?.tokens || 45_000_000;
   const lifetimeTotal = cachedRealStats?.estimatedLifetimeTokens || 97_000_000;
 
-  const now = new Date();
+  const now = customEndDateObj || new Date();
   const frag = document.createDocumentFragment();
 
   const toYmd = (d: Date) => {
@@ -1465,11 +1506,17 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
 
   // Update active summary text & reset button
   const rangeLabels: Record<string, string> = {
-    '7m': '7 derniers mois',
-    '30d': '30 derniers jours',
-    '7d': '7 derniers jours',
+    'today': "Aujourd'hui",
+    'yesterday': 'Hier',
     '24h': 'Dernières 24 heures',
+    '7d': '7 derniers jours',
+    '30d': '30 derniers jours',
+    'this_month': 'Ce mois-ci',
+    'last_month': 'Mois dernier',
+    '7m': '7 derniers mois',
+    'this_year': 'Cette année',
     'all': 'Tout l’historique',
+    'custom': (customRangeStart && customRangeEnd) ? `Du ${customRangeStart} au ${customRangeEnd}` : 'Période personnalisée',
   };
   const modelLabels: Record<string, string> = {
     'all': 'Tous les modèles',
@@ -1485,6 +1532,15 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
   if (statsFilterSummaryText) {
     statsFilterSummaryText.innerHTML = `Affichage : <strong>${modelLabels[currentModelFilter] || currentModelFilter}</strong> &bull; <span>${rangeLabels[range] || range}</span>`;
   }
+  if (statsActiveRangeText) {
+    statsActiveRangeText.textContent = rangeLabels[range] || range;
+  }
+  if (statsClearRangeBtn) {
+    statsClearRangeBtn.style.display = range !== '7m' ? 'inline-block' : 'none';
+  }
+  $$<HTMLButtonElement>('.quick-date-chip').forEach((chip) => {
+    chip.classList.toggle('active', chip.getAttribute('data-range') === range);
+  });
 
   // 1. Time-Range Filtering calculation
   const now = new Date();
@@ -1492,7 +1548,13 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
   const todayYmd = toYmd(now);
 
   let rangeFilteredActivity = cachedRealStats?.activityByDay || [];
-  if (range === '24h') {
+  if (range === 'today') {
+    rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day === todayYmd);
+  } else if (range === 'yesterday') {
+    const yesterday = new Date(now.getTime() - 86400 * 1000);
+    const yesterdayYmd = toYmd(yesterday);
+    rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day === yesterdayYmd);
+  } else if (range === '24h') {
     const yesterday = new Date(now.getTime() - 24 * 3600 * 1000);
     const yesterdayYmd = toYmd(yesterday);
     rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day === todayYmd || d.day === yesterdayYmd);
@@ -1504,10 +1566,30 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
     const cutoff = new Date(now.getTime() - 30 * 86400 * 1000);
     const cutoffYmd = toYmd(cutoff);
     rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= cutoffYmd);
+  } else if (range === 'this_month') {
+    const thisMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= thisMonthStart && d.day <= todayYmd);
+  } else if (range === 'last_month') {
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    const lastMonthStartYmd = toYmd(lastMonthDate);
+    const lastMonthEndYmd = toYmd(lastMonthEnd);
+    rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= lastMonthStartYmd && d.day <= lastMonthEndYmd);
   } else if (range === '7m') {
     const cutoff = new Date(now.getTime() - 210 * 86400 * 1000);
     const cutoffYmd = toYmd(cutoff);
     rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= cutoffYmd);
+  } else if (range === 'this_year') {
+    const thisYearStart = `${now.getFullYear()}-01-01`;
+    rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= thisYearStart && d.day <= todayYmd);
+  } else if (range === 'custom') {
+    if (customRangeStart && customRangeEnd) {
+      rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= customRangeStart && d.day <= customRangeEnd);
+    } else if (customRangeStart) {
+      rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day >= customRangeStart);
+    } else if (customRangeEnd) {
+      rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day <= customRangeEnd);
+    }
   }
 
   const liveTokens = stats?.totalTokens || 0;
@@ -1517,16 +1599,23 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
   let rangePeakDay = real?.peakTokensDay?.day || '';
   let rangePeakSteps = real?.peakTokensDay?.steps || 0;
 
-  if (range !== 'all' && range !== '7m' && rangeFilteredActivity.length > 0) {
-    baseRangeTokens = rangeFilteredActivity.reduce((acc, d) => acc + (d.estimatedTokens || 0), 0);
-    let curMax = 0;
-    for (const d of rangeFilteredActivity) {
-      if ((d.estimatedTokens || 0) > curMax) {
-        curMax = d.estimatedTokens;
-        rangePeakTok = d.estimatedTokens;
-        rangePeakDay = d.day;
-        rangePeakSteps = d.steps || (d as any).requests || 0;
+  if (range !== 'all' && range !== '7m') {
+    if (rangeFilteredActivity.length > 0) {
+      baseRangeTokens = rangeFilteredActivity.reduce((acc, d) => acc + (d.estimatedTokens || 0), 0);
+      let curMax = 0;
+      for (const d of rangeFilteredActivity) {
+        if ((d.estimatedTokens || 0) > curMax) {
+          curMax = d.estimatedTokens;
+          rangePeakTok = d.estimatedTokens;
+          rangePeakDay = d.day;
+          rangePeakSteps = d.steps || (d as any).requests || 0;
+        }
       }
+    } else {
+      baseRangeTokens = 0;
+      rangePeakTok = 0;
+      rangePeakDay = '';
+      rangePeakSteps = 0;
     }
   }
 
@@ -1539,10 +1628,16 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
   // Update dynamic card label based on selected range
   if (statsLifetimeTokensLbl) {
     statsLifetimeTokensLbl.textContent =
+      range === 'today' ? "Tokens (Aujourd'hui)" :
+      range === 'yesterday' ? 'Tokens (Hier)' :
       range === '24h' ? 'Tokens (24h)' :
       range === '7d' ? 'Tokens (7 jours)' :
       range === '30d' ? 'Tokens (30 jours)' :
-      range === '7m' ? 'Tokens (7 mois)' : 'Lifetime tokens';
+      range === 'this_month' ? 'Tokens (Ce mois)' :
+      range === 'last_month' ? 'Tokens (Mois dernier)' :
+      range === '7m' ? 'Tokens (7 mois)' :
+      range === 'this_year' ? 'Tokens (Cette année)' :
+      range === 'custom' ? 'Tokens (Période personnalisée)' : 'Lifetime tokens';
   }
 
   const pulseEl = (el: HTMLElement | null) => {
@@ -3081,8 +3176,11 @@ function renderTokenDashboard(): void {
       modFilter = currentModelFilter;
     }
     const rangeFilter = statsRangeSelect?.value || 'all';
+    const rangeParam = rangeFilter === 'custom' && customRangeStart && customRangeEnd
+      ? `custom:${customRangeStart}:${customRangeEnd}`
+      : rangeFilter;
 
-    const entries = tokenTracker.filterEntries(query, provFilter, modFilter, currentTokenSortField, currentTokenSortOrder, rangeFilter);
+    const entries = tokenTracker.filterEntries(query, provFilter, modFilter, currentTokenSortField, currentTokenSortOrder, rangeParam);
     const totalEntries = entries.length;
 
     if (totalEntries === 0) {
@@ -3270,14 +3368,220 @@ async function loadTokenizer(): Promise<void> {
     }, 8000);
   }
 
-  // Antigravity Native Stats Board Interactions
+  // Antigravity Native Stats Board & Calendar Interactions
   if (statsRangeSelect && !statsRangeSelect.dataset.bound) {
     statsRangeSelect.dataset.bound = '1';
     statsRangeSelect.addEventListener('change', () => {
+      const val = statsRangeSelect.value;
+      if (val === 'custom') {
+        if (statsCalendarBar) statsCalendarBar.style.display = 'block';
+        tokenCalendarBtn?.classList.add('active');
+        const nowD = new Date();
+        const toYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (statsDateStart && !statsDateStart.value) {
+          const past30 = new Date(nowD.getTime() - 30 * 86400 * 1000);
+          statsDateStart.value = toYmd(past30);
+        }
+        if (statsDateEnd && !statsDateEnd.value) {
+          statsDateEnd.value = toYmd(nowD);
+        }
+        customRangeStart = statsDateStart?.value || '';
+        customRangeEnd = statsDateEnd?.value || '';
+        statsDateStart?.focus();
+      } else {
+        const nowD = new Date();
+        const toYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        let sDate = '';
+        let eDate = toYmd(nowD);
+        if (val === 'today') {
+          sDate = eDate;
+        } else if (val === 'yesterday') {
+          sDate = toYmd(new Date(nowD.getTime() - 86400000));
+          eDate = sDate;
+        } else if (val === '24h') {
+          sDate = toYmd(new Date(nowD.getTime() - 86400000));
+        } else if (val === '7d') {
+          sDate = toYmd(new Date(nowD.getTime() - 7 * 86400000));
+        } else if (val === '30d') {
+          sDate = toYmd(new Date(nowD.getTime() - 30 * 86400000));
+        } else if (val === 'this_month') {
+          sDate = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-01`;
+        } else if (val === 'last_month') {
+          sDate = toYmd(new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1));
+          eDate = toYmd(new Date(nowD.getFullYear(), nowD.getMonth(), 0));
+        } else if (val === '7m') {
+          sDate = toYmd(new Date(nowD.getTime() - 210 * 86400000));
+        } else if (val === 'this_year') {
+          sDate = `${nowD.getFullYear()}-01-01`;
+        }
+        if (statsDateStart && sDate) statsDateStart.value = sDate;
+        if (statsDateEnd && eDate) statsDateEnd.value = eDate;
+        customRangeStart = '';
+        customRangeEnd = '';
+      }
       currentTokenLogsPage = 1;
       renderTokenDashboard();
     });
   }
+
+  // Calendar Bar Toggle Button
+  if (tokenCalendarBtn && !tokenCalendarBtn.dataset.bound) {
+    tokenCalendarBtn.dataset.bound = '1';
+    tokenCalendarBtn.addEventListener('click', () => {
+      if (!statsCalendarBar) return;
+      const isHidden = statsCalendarBar.style.display === 'none' || !statsCalendarBar.style.display;
+      statsCalendarBar.style.display = isHidden ? 'block' : 'none';
+      tokenCalendarBtn.classList.toggle('active', isHidden);
+      if (isHidden) {
+        const nowD = new Date();
+        const toYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (statsDateStart && !statsDateStart.value) {
+          statsDateStart.value = toYmd(new Date(nowD.getTime() - 30 * 86400 * 1000));
+        }
+        if (statsDateEnd && !statsDateEnd.value) {
+          statsDateEnd.value = toYmd(nowD);
+        }
+      }
+    });
+  }
+
+  // Calendar Apply Button
+  if (statsDateApplyBtn && !statsDateApplyBtn.dataset.bound) {
+    statsDateApplyBtn.dataset.bound = '1';
+    statsDateApplyBtn.addEventListener('click', () => {
+      const s = statsDateStart?.value || '';
+      const e = statsDateEnd?.value || '';
+      if (!s || !e) {
+        toast('Veuillez renseigner une date de début et de fin', 'warn', 1800);
+        return;
+      }
+      if (s > e) {
+        toast('La date de début doit précéder la date de fin', 'warn', 2000);
+        return;
+      }
+      customRangeStart = s;
+      customRangeEnd = e;
+      if (statsRangeSelect) statsRangeSelect.value = 'custom';
+      tokenCalendarBtn?.classList.add('active');
+      currentTokenLogsPage = 1;
+      renderTokenDashboard();
+      toast(`Période filtrée : du ${s} au ${e}`, 'ok', 1600);
+    });
+  }
+
+  // Calendar Reset & Clear Functions
+  const resetCalendarFilter = () => {
+    customRangeStart = '';
+    customRangeEnd = '';
+    if (statsRangeSelect) statsRangeSelect.value = '7m';
+    if (statsCalendarBar) statsCalendarBar.style.display = 'none';
+    tokenCalendarBtn?.classList.remove('active');
+    const nowD = new Date();
+    const toYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (statsDateStart) statsDateStart.value = toYmd(new Date(nowD.getTime() - 210 * 86400000));
+    if (statsDateEnd) statsDateEnd.value = toYmd(nowD);
+    currentTokenLogsPage = 1;
+    renderTokenDashboard();
+    toast('Période réinitialisée à 7 mois', 'info', 1400);
+  };
+
+  if (statsDateResetBtn && !statsDateResetBtn.dataset.bound) {
+    statsDateResetBtn.dataset.bound = '1';
+    statsDateResetBtn.addEventListener('click', resetCalendarFilter);
+  }
+
+  if (statsClearRangeBtn && !statsClearRangeBtn.dataset.bound) {
+    statsClearRangeBtn.dataset.bound = '1';
+    statsClearRangeBtn.addEventListener('click', resetCalendarFilter);
+  }
+
+  if (statsCalendarCloseBtn && !statsCalendarCloseBtn.dataset.bound) {
+    statsCalendarCloseBtn.dataset.bound = '1';
+    statsCalendarCloseBtn.addEventListener('click', () => {
+      if (statsCalendarBar) statsCalendarBar.style.display = 'none';
+      tokenCalendarBtn?.classList.remove('active');
+    });
+  }
+
+  // Pill Click to toggle calendar bar
+  const statsRangePillBtn = $('#statsRangePillBtn') as HTMLElement | null;
+  if (statsRangePillBtn && !statsRangePillBtn.dataset.bound) {
+    statsRangePillBtn.dataset.bound = '1';
+    statsRangePillBtn.addEventListener('click', (ev) => {
+      if ((ev.target as HTMLElement)?.id === 'statsClearRangeBtn') return;
+      if (!statsCalendarBar) return;
+      const isHidden = statsCalendarBar.style.display === 'none' || !statsCalendarBar.style.display;
+      statsCalendarBar.style.display = isHidden ? 'block' : 'none';
+      tokenCalendarBtn?.classList.toggle('active', isHidden);
+      if (isHidden) {
+        statsDateStart?.focus();
+      }
+    });
+  }
+
+  // Quick Date Range Chips
+  $$<HTMLButtonElement>('.quick-date-chip').forEach((chip) => {
+    if (!chip.dataset.bound) {
+      chip.dataset.bound = '1';
+      chip.addEventListener('click', () => {
+        const target = chip.getAttribute('data-range') || '7m';
+        if (target === 'custom') {
+          if (statsCalendarBar) {
+            const isHidden = statsCalendarBar.style.display === 'none' || !statsCalendarBar.style.display;
+            statsCalendarBar.style.display = isHidden ? 'block' : 'none';
+            tokenCalendarBtn?.classList.toggle('active', isHidden);
+            if (isHidden) {
+              const nowD = new Date();
+              const toYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              if (statsDateStart && !statsDateStart.value) {
+                statsDateStart.value = toYmd(new Date(nowD.getTime() - 30 * 86400 * 1000));
+              }
+              if (statsDateEnd && !statsDateEnd.value) {
+                statsDateEnd.value = toYmd(nowD);
+              }
+              statsDateStart?.focus();
+            }
+          }
+          return;
+        }
+
+        if (statsRangeSelect) statsRangeSelect.value = target;
+        customRangeStart = '';
+        customRangeEnd = '';
+
+        const nowD = new Date();
+        const toYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        let sDate = '';
+        let eDate = toYmd(nowD);
+        if (target === 'today') {
+          sDate = eDate;
+        } else if (target === 'yesterday') {
+          sDate = toYmd(new Date(nowD.getTime() - 86400000));
+          eDate = sDate;
+        } else if (target === '24h') {
+          sDate = toYmd(new Date(nowD.getTime() - 86400000));
+        } else if (target === '7d') {
+          sDate = toYmd(new Date(nowD.getTime() - 7 * 86400000));
+        } else if (target === '30d') {
+          sDate = toYmd(new Date(nowD.getTime() - 30 * 86400000));
+        } else if (target === 'this_month') {
+          sDate = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-01`;
+        } else if (target === 'last_month') {
+          sDate = toYmd(new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1));
+          eDate = toYmd(new Date(nowD.getFullYear(), nowD.getMonth(), 0));
+        } else if (target === '7m') {
+          sDate = toYmd(new Date(nowD.getTime() - 210 * 86400000));
+        } else if (target === 'this_year') {
+          sDate = `${nowD.getFullYear()}-01-01`;
+        }
+        if (statsDateStart && sDate) statsDateStart.value = sDate;
+        if (statsDateEnd && eDate) statsDateEnd.value = eDate;
+
+        currentTokenLogsPage = 1;
+        renderTokenDashboard();
+      });
+    }
+  });
 
   // Quick Model Filter Chips
   $$<HTMLButtonElement>('#statsModelFilterGroup .stats-filter-chip').forEach((chip) => {
@@ -3298,7 +3602,11 @@ async function loadTokenizer(): Promise<void> {
     statsFilterResetBtn.dataset.bound = '1';
     statsFilterResetBtn.addEventListener('click', () => {
       currentModelFilter = 'all';
+      customRangeStart = '';
+      customRangeEnd = '';
       if (statsRangeSelect) statsRangeSelect.value = '7m';
+      if (statsCalendarBar) statsCalendarBar.style.display = 'none';
+      tokenCalendarBtn?.classList.remove('active');
       if (tokenLogsSearchInput) tokenLogsSearchInput.value = '';
       if (tokenLogsProviderSelect) tokenLogsProviderSelect.value = 'all';
       if (tokenLogsModelSelect) tokenLogsModelSelect.value = 'all';
@@ -3568,7 +3876,14 @@ async function loadTokenizer(): Promise<void> {
         toast('Aucun journal de tokens à exporter', 'warn', 1800);
         return;
       }
-      const csv = tokenTracker.exportCsv();
+      const activeRange = statsRangeSelect?.value || 'all';
+      const rangeParam = activeRange === 'custom' && customRangeStart && customRangeEnd
+        ? `custom:${customRangeStart}:${customRangeEnd}`
+        : activeRange;
+      const entries = rangeParam === 'all'
+        ? tokenTracker.getEntries()
+        : tokenTracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', rangeParam);
+      const csv = tokenTracker.exportCsv(entries);
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -3578,7 +3893,7 @@ async function loadTokenizer(): Promise<void> {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast('Export CSV généré avec succès', 'ok', 2000);
+      toast(`Export CSV généré (${entries.length} entrées)`, 'ok', 2000);
     });
   }
 
@@ -3590,7 +3905,14 @@ async function loadTokenizer(): Promise<void> {
         toast('Aucun journal de tokens à exporter', 'warn', 1800);
         return;
       }
-      const jsonStr = tokenTracker.exportJson();
+      const activeRange = statsRangeSelect?.value || 'all';
+      const rangeParam = activeRange === 'custom' && customRangeStart && customRangeEnd
+        ? `custom:${customRangeStart}:${customRangeEnd}`
+        : activeRange;
+      const entries = rangeParam === 'all'
+        ? tokenTracker.getEntries()
+        : tokenTracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', rangeParam);
+      const jsonStr = tokenTracker.exportJson(entries);
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -3600,7 +3922,7 @@ async function loadTokenizer(): Promise<void> {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast('Export JSON généré avec succès', 'ok', 2000);
+      toast(`Export JSON généré (${entries.length} entrées)`, 'ok', 2000);
     });
   }
 

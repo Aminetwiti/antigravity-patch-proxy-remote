@@ -306,5 +306,40 @@ describe('token-tracker', () => {
       expect(reconstructed).toBe(complexText);
       expect(res.tokenCount).toBeGreaterThan(15);
     });
+
+    it('filters entries using calendar presets and custom date ranges', () => {
+      const tracker = new TokenTrackerEngine('test-calendar-tracker');
+      const now = Date.now();
+      const oneHourAgo = now - 3600 * 1000;
+      const threeDaysAgo = now - 3 * 86400 * 1000;
+      const twentyDaysAgo = now - 20 * 86400 * 1000;
+      const twoMonthsAgo = now - 60 * 86400 * 1000;
+
+      tracker.logUsage({ timestamp: oneHourAgo, provider: 'google', model: 'gemini-3.8-flash', promptTokens: 100, completionTokens: 50, latencyMs: 120, status: 200 });
+      tracker.logUsage({ timestamp: threeDaysAgo, provider: 'google', model: 'gemini-3.8-flash', promptTokens: 200, completionTokens: 50, latencyMs: 150, status: 200 });
+      tracker.logUsage({ timestamp: twentyDaysAgo, provider: 'anthropic', model: 'claude-sonnet-4-6', promptTokens: 300, completionTokens: 100, latencyMs: 300, status: 200 });
+      tracker.logUsage({ timestamp: twoMonthsAgo, provider: 'openai', model: 'gpt-4o', promptTokens: 400, completionTokens: 200, latencyMs: 500, status: 200 });
+
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', 'all').length).toBe(4);
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', '24h').length).toBe(1);
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', '7d').length).toBe(2);
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', '30d').length).toBe(3);
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', '7m').length).toBe(4);
+
+      // Custom range test: YYYY-MM-DD
+      const dStart = new Date(twentyDaysAgo - 86400 * 1000).toISOString().slice(0, 10);
+      const dEnd = new Date(threeDaysAgo + 86400 * 1000).toISOString().slice(0, 10);
+      const customMatches = tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', `custom:${dStart}:${dEnd}`);
+      expect(customMatches.length).toBe(2);
+
+      // Export with filtered entries
+      const csv = tracker.exportCsv(customMatches);
+      expect(csv.includes('claude-sonnet-4-6')).toBe(true);
+      expect(csv.includes('gpt-4o')).toBe(false);
+
+      const json = JSON.parse(tracker.exportJson(customMatches));
+      expect(json.totalEntries).toBe(2);
+      expect(json.entries.length).toBe(2);
+    });
   });
 });
