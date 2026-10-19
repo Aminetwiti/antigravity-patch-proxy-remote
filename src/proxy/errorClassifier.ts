@@ -199,6 +199,22 @@ export function classifyError(
       };
     }
 
+    if (bodyText.includes('project has been denied access') || bodyText.includes('project denied access')) {
+      return {
+        errorType: 'forbidden',
+        title: 'Project Denied Access (Free-Tier Security Flag)',
+        message: 'Google automated security checks placed an anti-abuse flag on your project (403 PERMISSION_DENIED).',
+        suggestions: [
+          'Add billing or prepay $10 on Google Cloud Platform to automatically lift the Free-Tier security flag.',
+          'If staying on Free Tier, request manual review on https://discuss.ai.google.dev with your Project ID.',
+          'Or switch to a Google Cloud Code account in the pool or an alternative provider.'
+        ],
+        retryable: false,
+        severity: 'error',
+        actionUrl: 'https://console.cloud.google.com/billing',
+      };
+    }
+
     return {
       errorType: 'forbidden',
       title: 'Access Denied',
@@ -326,6 +342,30 @@ export function classifyError(
       ],
       retryable: true,
       severity: 'error',
+    };
+  }
+
+  // Detect location / geo-blocking errors (HTTP 400/403 with location not supported / FAILED_PRECONDITION)
+  const isGeoBlocked =
+    (status === 400 || status === 403) &&
+    (bodyText.includes('location is not supported') ||
+     bodyText.includes('user location') ||
+     (bodyText.includes('failed_precondition') && bodyText.includes('location')) ||
+     errorMsg.includes('location is not supported'));
+
+  if (isGeoBlocked) {
+    return {
+      errorType: 'forbidden',
+      title: 'Location Not Supported (Geo-Blocked)',
+      message: 'Google Cloud Code has rejected this request because your network/VPN egress IP is recognized as an unsupported region or commercial VPN/datacenter IP.',
+      suggestions: [
+        'Disable commercial VPN, TUN, or datacenter proxy egress and retry with a standard direct ISP connection.',
+        'Configure a Google AI Studio API key (google-gemini) in custom_models.json, which is not subject to Cloud Code IP restrictions.',
+        'Use an alternative provider (Claude, DeepSeek, OpenRouter) or enable cross-model fallback.'
+      ],
+      retryable: false,
+      severity: 'error',
+      actionUrl: 'https://ai.google.dev/gemini-api/docs/available-regions',
     };
   }
 

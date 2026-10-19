@@ -35,6 +35,8 @@ import {
   STREAM_IDLE_TIMEOUT_MS,
   ACTIVE_PORT_FILE,
   DEFAULT_MAX_BODY_SIZE,
+  HEDGED_REQUEST_DELAY_MS,
+  CAPACITY_503_CASCADE_THRESHOLD,
 } from './constants';
 import { wrapCommandForRemoteExec } from './proxy/translators/utils';
 
@@ -2191,6 +2193,15 @@ export async function executeGoogleCloudCodeWithPool(
       if (wantsAntiTrunc) {
         applyAntiTruncation(reqObj);
       }
+
+      // Anti-Loop Guardrail: detect repetitive tool calls (e.g. 3+ identical consecutive reads)
+      const targetContents = reqObj.contents || reqJson.contents;
+      if (Array.isArray(targetContents)) {
+        const loopMitigated = detectAndMitigateToolLoops(targetContents);
+        if (loopMitigated) {
+          log.warn(`[Proxy] 🛡️ [Anti-Loop Guardrail] Repetitive tool calls detected in conversation. Injected anti-loop advisory for ${candidateName}`);
+        }
+      }
     }
     reqJson.project = resolveGoogleProjectId(candidate);
     if (!isGeminiCliModel(candidate) && !reqJson.enabledCreditTypes) {
@@ -2221,15 +2232,16 @@ export async function executeGoogleCloudCodeWithPool(
       (c) => !isAccountInCooldown(c, modelFamily) && !getOpenBreaker(c) && getModelQuotaScore(c, modelFamily) >= 50,
     ).length;
     const isStreamReq = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
+    const isFlash = /flash/i.test(targetModel);
     const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel);
-    const isFlashModel = /flash/i.test(targetModel) && !isThinkingModel;
-    const isLargePayloadOrThinking = updatedBody.length > 60_000 || isThinkingModel;
+    const isFlashModel = isFlash;
+    const isLargePayloadOrThinking = updatedBody.length > 60_000 || (isThinkingModel && !isFlash);
     // For streaming requests with sibling accounts in pool, use fast header timeouts for quick failover:
-    // - Flash models: strict 4.5s TTFT (GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS) when siblings exist to eliminate black-hole stalls immediately
+    // - Flash models: strict 4.5s TTFT (or 8s if thinking budget) when siblings exist to eliminate black-hole stalls immediately
     // - Thinking / large prompts: 40-55s (allows reasoning budget without stalling the IDE)
     // - Standard models: 25-35s
     const flashTimeoutMs = hasOtherCandidates
-      ? GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS
+      ? (isThinkingModel ? Math.min(8_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS)
       : Math.min(12_000, GOOGLE_PROXY_TIMEOUT_MS);
     const largeTimeoutMs = hasOtherCandidates
       ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : 55_000)
@@ -2291,7 +2303,7 @@ export async function executeGoogleCloudCodeWithPool(
 
     // If client actually dropped connection (IDE closed window, cancelled prompt):
     if (!isClientSocketAlive) {
-      if (elapsedMs >= 4_000) {
+      if (elapsedMs >= 3_000 || outcome.statusCode === 504) {
         log.warn(`[Proxy] Account [${candidateName}] stalled connection for ${Math.round(elapsedMs / 1000)}s before client closed (HTTP 499). Placing in 120s cooldown to protect pool from black-hole accounts.`);
         setAccountCooldown(candidate, 120_000, currentFamily, true);
         recordAccountLatency(candidate, 60_000);
@@ -2737,7 +2749,7 @@ export async function executeGoogleCloudCodeWithPool(
     // On HTTP 403 licensing/forbidden failure, immediately place the account in a
     // 7-day quarantine so subsequent requests don't waste round-trip time failing over.
     if (lastStatus === 403) {
-      const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid|verify your account|validation_required/i.test(lastErrorText);
+      const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid|verify.*account|verification.*required|account.*restricted|restricted|unavailable tier|suspended|denied access|validation_required/i.test(lastErrorText);
       const quarantineMs = isLicenseError ? 7 * 24 * 3600 * 1000 : 24 * 3600 * 1000;
       log.warn(
         `[Proxy] Account ${candidateName} received HTTP 403 (${isLicenseError ? 'license/permission/verification challenge' : 'forbidden'}). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine to eliminate failover latency.`,
@@ -2749,13 +2761,37 @@ export async function executeGoogleCloudCodeWithPool(
       setAccountCooldown(candidate, quarantineMs, 'gemini');
       setAccountCooldown(candidate, quarantineMs, 'claude');
       if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+      continue;
     }
 
-    // On HTTP 400 (Bad Request / payload format error), trying other accounts in the pool will produce
-    // the exact same 400 error. Abort rotation to fast-trigger fallback model recovery.
-    // Exception: thought signature or invalid argument errors have already mutated reqJson into plain-text format, so the next
-    // account in the pool can succeed without needing an immediate fallback.
+    // On HTTP 402 payment / credit depletion, quarantine account for 24h to avoid wasting failovers
+    if (lastStatus === 402 || (lastStatus === 400 && /prepayment.*depleted|credit.*depleted|insufficient.*credit|billing.*closed/i.test(lastErrorText))) {
+      const quarantineMs = 24 * 3600 * 1000;
+      log.warn(`[Proxy] Account ${candidateName} hit HTTP 402 / credit depletion (${lastErrorText.slice(0, 100)}). Placing in 24h quarantine.`);
+      setAccountCooldown(candidate, quarantineMs);
+      setAccountCooldown(candidate, quarantineMs, 'gemini');
+      setAccountCooldown(candidate, quarantineMs, 'claude');
+      if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+      continue;
+    }
+
+    // On HTTP 400, distinguish between account-level precondition failure (e.g. location, regional eligibility, age)
+    // and true payload format errors. Account-level failures place that candidate in cooldown and continue pool rotation.
+    const isPrecondition400 = /failed_precondition|location is not supported|user location|unsupported region|underage|minor/i.test(lastErrorText);
     const isThoughtSignature400 = /thought.*signature|signature.*thought|corrupted.*signature|invalid.*signature|invalid.*argument|INVALID_ARGUMENT/i.test(lastErrorText);
+
+    if (lastStatus === 400 && isPrecondition400) {
+      log.warn(
+        `[Proxy] Account ${candidateName} failed precondition (location/eligibility: ${lastErrorText.slice(0, 100)}). Placing in 24h cooldown and continuing pool rotation.`,
+      );
+      const quarantineMs = 24 * 3600 * 1000;
+      setAccountCooldown(candidate, quarantineMs);
+      setAccountCooldown(candidate, quarantineMs, 'gemini');
+      setAccountCooldown(candidate, quarantineMs, 'claude');
+      if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+      continue;
+    }
+
     if (lastStatus === 400 && !isThoughtSignature400) {
       log.warn(`[Proxy] HTTP 400 indicates a payload format error on ${candidateName}. Aborting account pool rotation to trigger immediate fallback recovery.`);
       break;
@@ -2785,13 +2821,14 @@ export async function executeGoogleCloudCodeWithPool(
       m.apiKey !== 'auto',
   );
 
+  const isPreconditionLocationError = /location is not supported|user location|unsupported region/i.test(lastErrorText);
   const canAttemptSameFamilyRecovery = !isClaudeRequest && aiStudioRecoveryModels.length > 0;
   const canAttemptFallback =
     fallbackDepth === 0 &&
     attemptedModels.size <= 3 &&
     !res.writableEnded &&
     !res.destroyed &&
-    (allowCrossModelFallback || canAttemptSameFamilyRecovery);
+    (allowCrossModelFallback || canAttemptSameFamilyRecovery || isPreconditionLocationError);
 
   if (!canAttemptFallback && !allowCrossModelFallback) {
     log.warn(`[Proxy] Strict model locking: Cross-model fallback disabled. Reporting error for [${targetRaw}] without model substitution.`);
@@ -2962,7 +2999,7 @@ export async function executeGoogleCloudCodeWithPool(
         (!m._poolOnly || m.provider === 'google-gemini') &&
         !getOpenBreaker(m) &&
         m.apiKey !== 'auto' &&
-        (allowCrossModelFallback || (!isClaudeRequest && m.provider === 'google-gemini')),
+        (allowCrossModelFallback || (!isClaudeRequest && m.provider === 'google-gemini') || isPreconditionLocationError),
     );
 
     if (nonGoogleFallbacks.length > 0) {

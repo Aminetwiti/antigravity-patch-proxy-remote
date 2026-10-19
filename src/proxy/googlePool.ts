@@ -96,6 +96,22 @@ export function isAccountUnlicensed(candidate: CustomModel): boolean {
                            unlicensedAccountKeys.has(`gemini-cli:${email}`)));
 }
 
+export function isAccountTrial(candidate: CustomModel): boolean {
+  if (!candidate) return false;
+  if ((candidate as any).isTrial === true || (candidate as any).planType === 'trial') {
+    return true;
+  }
+  const liveQ = getLiveAccountQuota(getAccountQuotaKey(candidate));
+  if ((liveQ as any)?.isTrial === true || (liveQ as any)?.planType === 'trial') {
+    return true;
+  }
+  const quotas = (candidate as any).quotas;
+  if (quotas?.isTrial === true || quotas?.planType === 'trial') {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Checks whether an account is near quota exhaustion (at or below PREVENTIVE_QUOTA_THRESHOLD_PCT).
  * Used to avoid selecting this account when healthier alternatives exist, protecting against
@@ -1372,9 +1388,17 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
   if (!candidates || candidates.length === 0) return undefined;
   if (candidates.length === 1) return candidates[0];
 
+  const fam = (modelFamily || '').toLowerCase();
+  const isRestrictedTarget = fam.includes('argon') || fam.includes('claude-5-5') || fam.includes('claude-5.5') || fam.includes('5.5') || fam.includes('5-5');
+
   const available = candidates.filter((m) => (m as any).enabled !== false && !isAccountInCooldown(m, modelFamily) && !getOpenBreaker(m) && !isAccountUnlicensed(m));
-  const availableWithQuota = available.filter((m) => getModelQuotaScore(m, modelFamily) > 0);
-  const pool = availableWithQuota.length > 0 ? availableWithQuota : (available.length > 0 ? available : candidates.filter((m) => (m as any).enabled !== false && !isAccountUnlicensed(m)));
+  const tierFiltered = isRestrictedTarget
+    ? available.filter((m) => !isAccountTrial(m))
+    : available;
+  const targetCandidates = tierFiltered.length > 0 ? tierFiltered : available;
+
+  const availableWithQuota = targetCandidates.filter((m) => getModelQuotaScore(m, modelFamily) > 0);
+  const pool = availableWithQuota.length > 0 ? availableWithQuota : (targetCandidates.length > 0 ? targetCandidates : candidates.filter((m) => (m as any).enabled !== false && !isAccountUnlicensed(m)));
   if (pool.length === 0) return undefined;
   // Exclude accounts saturated with concurrent in-flight requests (>= MAX_CONCURRENT_PER_ACCOUNT, or 1 in probation)
   // if other idle/available accounts exist in the pool.
@@ -1593,6 +1617,13 @@ export async function probeGoogleAccountPreflight(
             reason = j.error?.message || j.error?.details?.[0]?.reason || body.substring(0, 100);
           } catch (_) {
             reason = body.substring(0, 100);
+          }
+
+          const isLocationBlock = (status === 400 || status === 403) && /location is not supported|user location|failed_precondition/i.test(reason);
+          if (isLocationBlock) {
+            log.warn(`[PreFlight] ⚠️ Account [${email}] network location blocked (HTTP ${status}): ${reason}`);
+            finish({ email, ok: false, statusCode: status, latencyMs, reason: `Location not supported: ${reason}` });
+            return;
           }
 
           const isSecurityChallenge = status === 403 || /verify your account|validation_required|permission_denied/i.test(reason);

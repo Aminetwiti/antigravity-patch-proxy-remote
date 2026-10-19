@@ -39,6 +39,7 @@ import { runProfile } from './commands/profile';
 import { runDaemon } from './commands/daemon';
 import { runAntigravity } from './commands/antigravity';
 import { runPrune } from './commands/prune';
+import { runExportSessions } from './commands/export-sessions';
 import { runDevice } from './commands/device';
 import { getActiveProfile, resolveActiveProfile } from './core/profile';
 
@@ -94,6 +95,8 @@ Commands:
   daemon {start|stop|status|run|rules|enable|disable|trigger|log|reset}
                          Auto-recovery daemon (continuous monitoring)
   db:prune [--dry-run]   Purge orphan conversation trajectories & vacuum database
+  sessions:export [--all] [--json] [--dest <dir>]
+                         Export conversation trajectories to Markdown/JSON
   pool:probe [--dry-run] Fast audit & quarantine for Google account pool
   device {show|reset}    Inspect or reset hardware/telemetry identity (storage.json)
   antigravity {status|version|launch|kill|restart}
@@ -302,6 +305,9 @@ export async function main(argv: string[]): Promise<number> {
       case 'db:prune':
       case 'prune':
         return await runPrune(ctx, sub, rest);
+      case 'sessions:export':
+      case 'sessions':
+        return await runExportSessions(ctx, sub, rest);
       case 'pool:probe':
       case 'pool': {
         const { fork } = require('child_process');

@@ -33,11 +33,21 @@ if (!fs.existsSync(customModelsPath)) {
 
 const isDryRun = process.argv.includes('--dry-run');
 const isJsonOutput = process.argv.includes('--json');
+const isFast = process.argv.includes('--fast');
 
 function classifyError(status, reason) {
   const r = (reason || '').toLowerCase();
   if (status === 200) {
     return { code: 'HEALTHY', label: 'Opérationnel (200 OK)', action: 'none' };
+  }
+  if (status === 400 && (r.includes('location is not supported') || r.includes('failed_precondition') || r.includes('user location'))) {
+    return { code: 'GEO_BLOCKED_LOCATION', label: 'Réseau / VPN Datacenter Non Supporté (Géo-bloqué)', action: 'disable_vpn_or_use_ai_studio' };
+  }
+  if (status === 403 && (r.includes('project has been denied access') || r.includes('project denied access') || r.includes('permission_denied'))) {
+    return { code: 'PERMISSION_DENIED_FLAGGED', label: 'Projet Free-Tier sous Flag Anti-Abus Google (403)', action: 'upgrade_paid_tier_or_prepay' };
+  }
+  if (r.includes('upgrade to ai ultra') || r.includes('ai pro (trial)') || r.includes('trial plan') || r.includes('trial subscription')) {
+    return { code: 'TRIAL_RESTRICTED', label: 'Compte Pro (Trial / Promo) — Flash uniquement', action: 'use_flash_only_or_upgrade' };
   }
   if (r.includes('verify your account') || r.includes('validation_required') || r.includes('challenge')) {
     return { code: 'CHALLENGE_REQUIRED', label: 'Validation Sécurité Requise (SMS/Captcha)', action: 'browser_verify' };
