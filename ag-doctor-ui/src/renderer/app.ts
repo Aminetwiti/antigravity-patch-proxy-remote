@@ -5733,13 +5733,21 @@ async function loadMitmStatus(): Promise<void> {
              <div class="patch-banner-text">Your system trusts the local MITM certificate.</div>
            </div>
          </div>`
-      : `<div class="patch-banner warn">
+      : (s.interception.bypassed
+        ? `<div class="patch-banner info">
+             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+             <div class="patch-banner-body">
+               <div class="patch-banner-title">Certificat non requis (Patch binaire actif)</div>
+               <div class="patch-banner-text">Le patch binaire redirige directement le trafic sans nécessiter d'interception TLS locale.</div>
+             </div>
+           </div>`
+        : `<div class="patch-banner warn">
            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
            <div class="patch-banner-body">
              <div class="patch-banner-title">${s.ca.isExpired ? 'CA certificate expired' : 'CA certificate not installed'}</div>
              <div class="patch-banner-text">${s.ca.isExpired ? 'The certificate has expired. Run Repair all to regenerate it.' : 'Install the CA to avoid TLS errors in intercepted apps.'}</div>
            </div>
-         </div>`;
+         </div>`);
 
     const proxyBanner = s.proxy.redirected
       ? `<div class="patch-banner ok">
@@ -5782,15 +5790,15 @@ async function loadMitmStatus(): Promise<void> {
          </div>`;
 
     const pathHtml = s.ca.path
-      ? `<div class="mono-path-box">
+      ? `<div class="mono-path-box" title="${escapeHtml(s.ca.path)}">
            <span class="mono-path-text">${escapeHtml(s.ca.path)}</span>
            <button class="btn btn-ghost btn-xs" type="button" data-copy="${escapeHtml(s.ca.path)}" title="Copy certificate path">Copy</button>
          </div>`
       : `<span class="patch-row-value">—</span>`;
 
     const fpHtml = s.ca.fingerprint
-      ? `<div class="mono-path-box">
-           <span class="mono-path-text" style="font-size:10px;">${escapeHtml(s.ca.fingerprint)}</span>
+      ? `<div class="mono-path-box" title="${escapeHtml(s.ca.fingerprint)}">
+           <span class="mono-fp-text">${escapeHtml(s.ca.fingerprint)}</span>
            <button class="btn btn-ghost btn-xs" type="button" data-copy="${escapeHtml(s.ca.fingerprint)}" title="Copy fingerprint">Copy</button>
          </div>`
       : `<span class="patch-row-value">—</span>`;
@@ -5802,10 +5810,13 @@ async function loadMitmStatus(): Promise<void> {
       ? 'ok'
       : (s.interception.reachable ? 'ok' : 'err');
 
+    const caBadgeClass = s.ca.installed ? 'ok' : (s.interception.bypassed ? 'badge-muted' : 'warn');
+    const caBadgeLabel = s.ca.installed ? 'installed' : (s.interception.bypassed ? 'optionnel' : 'not installed');
+
     mitmTpl.innerHTML = `
       <div class="mitm-grid">
         <div class="mitm-card">
-          <div class="mitm-card-header"><h3>CA certificate</h3><span class="badge ${s.ca.installed ? 'ok' : 'warn'}">${s.ca.installed ? 'installed' : 'not installed'}</span></div>
+          <div class="mitm-card-header"><h3>CA certificate</h3><span class="badge ${caBadgeClass}">${caBadgeLabel}</span></div>
           <div class="mitm-card-body">
             <div class="patch-row"><div class="patch-row-label">Generated</div><div class="patch-row-value ${s.ca.generated ? 'ok' : ''}">${s.ca.generated ? 'yes' : 'no'}</div></div>
             <div class="patch-row"><div class="patch-row-label">Expires</div><div class="patch-row-value ${s.ca.isExpired ? 'err' : ''}">${escapeHtml(s.ca.expiresAt ?? '—')}</div></div>

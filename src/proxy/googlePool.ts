@@ -1277,6 +1277,7 @@ export function classifyGoogleCloudCode429(
   // 429 bodies. A 5h rolling window can never exceed 5h15m, so anything larger is the weekly cycle
   // marker — discard it and let the quota_exhausted branch apply the standard 5h cooldown.
   const FIVE_H_15_MS = 5 * 3600_000 + 15 * 60_000; // 5h 15min ceiling
+  let rawParsedResetMs: number | null = retryAfterMs;
   if (retryAfterMs === null) {
     const resetMatch = msg.match(/resets?\s+in\s+(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
     if (resetMatch && (resetMatch[1] || resetMatch[2] || resetMatch[3])) {
@@ -1284,8 +1285,11 @@ export function classifyGoogleCloudCode429(
       const m = parseInt(resetMatch[2] || '0', 10);
       const s = parseInt(resetMatch[3] || '0', 10);
       const parsed = (h * 3600 + m * 60 + s) * 1000;
-      // Ignore weekly-reset markers embedded in quota-exhausted messages
-      if (parsed > 0 && parsed <= FIVE_H_15_MS) retryAfterMs = parsed;
+      if (parsed > 0) {
+        rawParsedResetMs = parsed;
+        // Ignore weekly-reset markers embedded in quota-exhausted messages for the 5h rolling window
+        if (parsed <= FIVE_H_15_MS) retryAfterMs = parsed;
+      }
     }
   }
 
