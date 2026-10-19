@@ -114,6 +114,17 @@ interface AgAPI {
       cleared: number;
       error?: string;
     }>;
+    probePool?(dryRun?: boolean): Promise<{
+      success: boolean;
+      results?: any[];
+      summary?: any;
+      error?: string;
+    }>;
+    unlockAccount?(email: string): Promise<{
+      success: boolean;
+      url?: string;
+      error?: string;
+    }>;
   };
 
   // MITM Proxy Server Management

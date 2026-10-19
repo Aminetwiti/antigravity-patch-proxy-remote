@@ -44,6 +44,9 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 const activeStreams = new Map<string, ChildProcess>();
 
+// Post-Quantum TLS stability: prevent oversized Kyber handshakes dropping in Go backend
+process.env.GODEBUG = (process.env.GODEBUG ? process.env.GODEBUG + ',' : '') + 'tlsmlkem=0';
+
 // Disable hardware acceleration and GPU-dependent paths to avoid
 // startup crashes and noisy GLES3/GLES2 fallback warnings on some Windows setups
 app.disableHardwareAcceleration();
@@ -2164,6 +2167,42 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_REPAIR_ADC, async (_evt, email?: strin
     }
   } catch (err: any) {
     return { success: false, error: err.message || 'Erreur lors de la réparation du compte' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_PROBE_POOL, async (_evt, dryRun?: boolean) => {
+  try {
+    const probeScript = path.resolve(__dirname, '..', '..', 'scripts', 'probe-pool.js');
+    if (!fs.existsSync(probeScript)) {
+      return { success: false, error: 'probe-pool.js script not found' };
+    }
+    const { runProbe } = require(probeScript);
+    const data = await runProbe();
+    mainWindow?.webContents.send(DOCTOR_IPC_CHANNELS.PROVIDERS_CHANGED);
+    return {
+      success: true,
+      results: data.results,
+      summary: {
+        healthy: data.healthyEmails.size,
+        quarantined: data.quarantinedEmails.size,
+        challenge: data.challengeEmails.size,
+        unlicensed: data.unlicensedEmails.size,
+        tos: data.tosEmails.size,
+      }
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de la sonde du pool' };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_UNLOCK_ACCOUNT, async (_evt, email: string) => {
+  try {
+    if (!email) return { success: false, error: 'Email requis' };
+    const url = `https://accounts.google.com/ServiceLogin?Email=${encodeURIComponent(email)}&continue=https://gemini.google.com/`;
+    await shell.openExternal(url);
+    return { success: true, url };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erreur lors de l\'ouverture du navigateur' };
   }
 });
 

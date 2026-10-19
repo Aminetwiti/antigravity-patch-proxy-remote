@@ -94,6 +94,7 @@ Commands:
   daemon {start|stop|status|run|rules|enable|disable|trigger|log|reset}
                          Auto-recovery daemon (continuous monitoring)
   db:prune [--dry-run]   Purge orphan conversation trajectories & vacuum database
+  pool:probe [--dry-run] Fast audit & quarantine for Google account pool
   device {show|reset}    Inspect or reset hardware/telemetry identity (storage.json)
   antigravity {status|version|launch|kill|restart}
                          Manage the Antigravity install (version, launch, close)
@@ -301,6 +302,15 @@ export async function main(argv: string[]): Promise<number> {
       case 'db:prune':
       case 'prune':
         return await runPrune(ctx, sub, rest);
+      case 'pool:probe':
+      case 'pool': {
+        const { fork } = require('child_process');
+        const scriptPath = path.resolve(__dirname, '..', '..', 'scripts', 'probe-pool.js');
+        return new Promise<number>((resolve) => {
+          const child = fork(scriptPath, process.argv.slice(3), { stdio: 'inherit' });
+          child.on('exit', (code: number) => resolve(code || 0));
+        });
+      }
       case 'device':
         return await runDevice(ctx, sub, rest);
       case 'help':

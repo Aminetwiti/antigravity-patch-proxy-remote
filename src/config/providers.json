@@ -22,9 +22,11 @@
     "provider": "anthropic",
     "defaultApiUrl": "https://api.anthropic.com/v1",
     "chatUrl": "https://api.anthropic.com/v1/messages",
-    "description": "Anthropic Claude Sonnet 4.6, Claude Opus 4.6",
+    "description": "Anthropic Claude Sonnet 4.6 / 5.5, Claude Opus 4.6 / 5.5",
     "docsUrl": "https://console.anthropic.com",
     "suggestedModels": [
+      { "id": "claude-sonnet-5-5", "displayName": "Claude Sonnet 5.5" },
+      { "id": "claude-opus-5-5", "displayName": "Claude Opus 5.5" },
       { "id": "claude-sonnet-4-6", "displayName": "Claude Sonnet 4.6" },
       { "id": "claude-opus-4-6-thinking", "displayName": "Claude Opus 4.6 (Thinking)" }
     ]
@@ -85,9 +87,11 @@
     "provider": "google",
     "defaultApiUrl": "https://generativelanguage.googleapis.com/v1beta/models/",
     "chatUrl": "https://generativelanguage.googleapis.com/v1beta/models/",
-    "description": "Google Gemini 3.8 Flash Tiered via AI Studio API key",
+    "description": "Google Gemini 3.8 Flash & Gemini 4 Argon via AI Studio API key",
     "docsUrl": "https://aistudio.google.com",
     "suggestedModels": [
+      { "id": "gemini-4-argon", "displayName": "Gemini 4 Argon" },
+      { "id": "gemini-4-argon-thinking", "displayName": "Gemini 4 Argon (Thinking)" },
       { "id": "gemini-3.8-flash-tiered", "displayName": "Gemini 3.8 Flash" }
     ]
   },

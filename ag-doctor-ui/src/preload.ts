@@ -92,6 +92,17 @@ const api = {
       output?: string;
       error?: string;
     }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_REPAIR_ADC, email),
+    probePool: (dryRun?: boolean): Promise<{
+      success: boolean;
+      results?: any[];
+      summary?: any;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_PROBE_POOL, dryRun),
+    unlockAccount: (email: string): Promise<{
+      success: boolean;
+      url?: string;
+      error?: string;
+    }> => ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.GOOGLE_UNLOCK_ACCOUNT, email),
     randomizeMachineId: (): Promise<{
       success: boolean;
       profile?: any;
