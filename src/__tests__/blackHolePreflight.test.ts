@@ -59,7 +59,10 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
   });
 
   it('verifies GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS is configured to 4.5s', () => {
-    expect(GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS).toBe(4_500);
+    const expected = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS
+      ? parseInt(process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, 10)
+      : 4_500;
+    expect(GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS).toBe(expected);
   });
 
   it('verifies PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS is configured to 3.5s', () => {

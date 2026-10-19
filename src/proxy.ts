@@ -5851,6 +5851,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
               safeEnd(res, unlockedBody);
             }
+          } else if (
+            googleRes.statusCode === 403 ||
+            (googleRes.statusCode === 400 && (body.includes('LOCATION') || body.includes('1008') || body.toLowerCase().includes('location')))
+          ) {
+            log.warn(`[Proxy] Upstream loadCodeAssist rejected with HTTP ${googleRes.statusCode} (${body.slice(0, 150)}). Serving unlocked fallback to prevent IDE lockout.`);
+            fallback();
           } else if (googleRes.statusCode && googleRes.statusCode < 500) {
             if (safeWriteHead(res, googleRes.statusCode, { 'Content-Type': 'application/json' })) {
               safeEnd(res, body);

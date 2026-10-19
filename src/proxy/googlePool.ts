@@ -27,8 +27,12 @@ import {
   P2C_SCORE_DELTA,
   PREFLIGHT_HEALTH_CHECK_INTERVAL_MS,
   PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS,
+  PREVENTIVE_QUOTA_THRESHOLD_PCT,
+  PREVENTIVE_COOLDOWN_MS,
 } from '../constants';
 import { loadCustomModels } from './modelLoader';
+
+export { PREVENTIVE_QUOTA_THRESHOLD_PCT, PREVENTIVE_COOLDOWN_MS };
 
 // ─── Multi-Account Session Affinity (Sticky Sessions) ─────────────────────────
 
@@ -90,6 +94,46 @@ export function isAccountUnlicensed(candidate: CustomModel): boolean {
          (email !== '' && (unlicensedAccountKeys.has(email) ||
                            unlicensedAccountKeys.has(`google:${email}`) ||
                            unlicensedAccountKeys.has(`gemini-cli:${email}`)));
+}
+
+/**
+ * Checks whether an account is near quota exhaustion (at or below PREVENTIVE_QUOTA_THRESHOLD_PCT).
+ * Used to avoid selecting this account when healthier alternatives exist, protecting against
+ * Google's 7-day (167-hour) hard lockout.
+ */
+export function isAccountNearExhaustion(candidate: CustomModel, modelFamily?: string): boolean {
+  if (!candidate) return false;
+  const key = getAccountQuotaKey(candidate);
+  const live = getLiveAccountQuota(key);
+  const q = (live || candidate.quotas) as Record<string, any> | undefined;
+  if (!q) return false;
+
+  const isArgon = modelFamily
+    ? modelFamily.toLowerCase().includes('argon')
+    : (candidate.externalModelName || candidate.name || '').toLowerCase().includes('argon');
+  const isClaude = !isArgon && (modelFamily
+    ? modelFamily.toLowerCase().includes('claude')
+    : (candidate.externalModelName || candidate.name || '').toLowerCase().includes('claude'));
+
+  const weekly = isArgon
+    ? (typeof q.argonWeeklyPct === 'number'
+        ? q.argonWeeklyPct
+        : (typeof q.geminiWeeklyPct === 'number'
+          ? q.geminiWeeklyPct
+          : (typeof q.weeklyPercentage === 'number' ? q.weeklyPercentage : 100)))
+    : (typeof (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct) === 'number'
+      ? (isClaude ? q.claudeWeeklyPct : q.geminiWeeklyPct)
+      : typeof q.weeklyPercentage === 'number'
+        ? q.weeklyPercentage
+        : 100);
+
+  const now = Date.now();
+  const weeklyResetStr = isArgon
+    ? (q.argonWeeklyReset || q.geminiWeeklyReset || q.weeklyResetTime)
+    : (isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime));
+  const weeklyResetPassed = weeklyResetStr ? new Date(weeklyResetStr).getTime() <= now : false;
+
+  return typeof weekly === 'number' && weekly <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !weeklyResetPassed;
 }
 
 export function markAccountUnlicensed(candidate: CustomModel): void {

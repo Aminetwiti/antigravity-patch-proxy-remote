@@ -10122,6 +10122,33 @@ function initGoogleAccountsToolbarOnce(): void {
     }
   });
 
+  const probeHealthBtn = $('#gaToolbarProbeHealthBtn') as HTMLButtonElement | null;
+  probeHealthBtn?.addEventListener('click', async () => {
+    if (!window.ag?.providers?.probePool) {
+      toast('Méthode de diagnostic non disponible', 'err');
+      return;
+    }
+    probeHealthBtn.setAttribute('disabled', 'true');
+    const origHtml = probeHealthBtn.innerHTML;
+    probeHealthBtn.innerHTML = `<span class="spinner"></span> Diagnostic...`;
+    try {
+      toast('🩺 Lancement du diagnostic santé du pool en parallèle...', 'info', 4000);
+      const res = await window.ag.providers.probePool();
+      if (res && res.success) {
+        const s = res.summary || {};
+        toast(`✅ Diagnostic terminé : ${s.healthy || 0} sains, ${s.challenge || 0} challenge(s), ${s.tos || 0} TOS.`, 'ok', 6000);
+        await loadGoogleAccounts(true);
+      } else {
+        toast(`Échec du diagnostic : ${res?.error || 'Erreur inconnue'}`, 'err');
+      }
+    } catch (err: any) {
+      toast(`Erreur diagnostic : ${err?.message || err}`, 'err');
+    } finally {
+      probeHealthBtn.removeAttribute('disabled');
+      probeHealthBtn.innerHTML = origHtml;
+    }
+  });
+
   const warmupBtn = $('#gaToolbarWarmupBtn') as HTMLButtonElement | null;
   warmupBtn?.addEventListener('click', async () => {
     if (googleAccountsCache.length === 0) {

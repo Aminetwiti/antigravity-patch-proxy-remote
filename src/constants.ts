@@ -154,6 +154,27 @@ export const P2C_SCORE_DELTA = getEnvInt('AG_P2C_SCORE_DELTA', 45);
 /** Maximum time to wait for a 429 rate-limited account cooldown to expire before failing (default: 65 seconds). */
 export const RATE_LIMIT_RELIEF_WAIT_MS = getEnvInt('AG_RATE_LIMIT_RELIEF_WAIT_MS', 65_000);
 
+/**
+ * Preventive anti-lockout quota threshold percentage (default: 10%).
+ * Supports either integer percentage (e.g. 10) or fraction (e.g. 0.10).
+ * If an account's weekly quota falls to or below this threshold,
+ * the account is protected from selection to prevent hitting 0% and triggering
+ * Google's 7-day (167-hour) hard lockout.
+ */
+function parsePreventiveThreshold(): number {
+  const envVal = process.env.AG_QUOTA_PREVENTIVE_THRESHOLD || process.env.AG_QUOTA_PREVENTIVE_THRESHOLD_PCT;
+  if (!envVal) return 10;
+  const num = parseFloat(envVal);
+  if (isNaN(num)) return 10;
+  return num > 0 && num <= 1.0 ? Math.round(num * 100) : Math.round(num);
+}
+export const PREVENTIVE_QUOTA_THRESHOLD_PCT = parsePreventiveThreshold();
+
+/**
+ * Preventive cooldown duration when an account hits the preventive threshold (default: 4 hours).
+ */
+export const PREVENTIVE_COOLDOWN_MS = getEnvInt('AG_PREVENTIVE_COOLDOWN_MS', 4 * 60 * 60 * 1000);
+
 
 
 /** Timeout for downloading file content from external URIs (30 seconds). */
@@ -503,14 +524,4 @@ export function isObsoleteModel(idOrName?: string, displayName?: string): boolea
 
   // Deprecated Gemini / Google models: 1.x, 2.x, 3.0, 3.1, 3.5, 3.6, 3.7
   if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[01567])/i.test(str)) return true;
-  if (/\bgemini[-_\s]*(?:3(?:\.0)?(?:-pro|-flash|\b)|pro-agent)/i.test(str) && !str.includes('3.8')) return true;
-
-  // GPT models (gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5, gpt-oss, etc.)
-  if (/\bgpt[-_\s]*(?:3\.5|4o|4|oss|3)/i.test(str) || str.startsWith('gpt-')) return true;
-
-  // Old Claude 3.5
-  if (/claude[-_\s]*3[-_\s]*5/i.test(str)) return true;
-
-  return false;
-}
-
+  if (
