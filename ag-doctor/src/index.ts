@@ -40,8 +40,10 @@ import { runProfile } from './commands/profile';
 import { runDaemon } from './commands/daemon';
 import { runAntigravity } from './commands/antigravity';
 import { runPrune } from './commands/prune';
+import { runRebuildSidebar } from './commands/rebuild-sidebar';
 import { runExportSessions } from './commands/export-sessions';
 import { runDevice } from './commands/device';
+import { runAuth } from './commands/auth';
 import { getActiveProfile, resolveActiveProfile } from './core/profile';
 
 const USAGE = `ag-doctor — Antigravity diagnostic & management CLI
@@ -96,10 +98,14 @@ Commands:
   daemon {start|stop|status|run|rules|enable|disable|trigger|log|reset}
                          Auto-recovery daemon (continuous monitoring)
   db:prune [--dry-run]   Purge orphan conversation trajectories & vacuum database
+  db:rebuild-sidebar [--dry-run] [--yes]
+                         Rebuild VS Code conversation index (titles, order, workspaces)
   sessions:export [--all] [--json] [--dest <dir>]
                          Export conversation trajectories to Markdown/JSON
   pool:probe [--dry-run] Fast audit & quarantine for Google account pool
   device {show|reset}    Inspect or reset hardware/telemetry identity (storage.json)
+  auth {status|fix|purge}
+                         Inspect or repair Antigravity authentication & 403 errors
   antigravity {status|version|launch|kill|restart}
                          Manage the Antigravity install (version, launch, close)
   update                 Re-run the parent deploy script
@@ -306,6 +312,10 @@ export async function main(argv: string[]): Promise<number> {
       case 'db:prune':
       case 'prune':
         return await runPrune(ctx, sub, rest);
+      case 'db:rebuild-sidebar':
+      case 'rebuild-sidebar':
+      case 'db:repair-sidebar':
+        return await runRebuildSidebar(ctx, sub, rest);
       case 'sessions:export':
       case 'sessions':
         return await runExportSessions(ctx, sub, rest);
@@ -320,6 +330,9 @@ export async function main(argv: string[]): Promise<number> {
       }
       case 'device':
         return await runDevice(ctx, sub, rest);
+      case 'auth':
+      case 'account':
+        return await runAuth(ctx, sub, rest);
       case 'help':
       case '--help':
       case '-h':

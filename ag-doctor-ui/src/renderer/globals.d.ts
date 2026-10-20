@@ -173,6 +173,9 @@ interface AgAPI {
   antigravityKill(): Promise<{ ok: boolean; data?: { killed: number; message: string }; error?: string }>;
   antigravityRestart(): Promise<{ ok: boolean; data?: { ok: boolean; message: string; pid?: number }; error?: string }>;
   antigravityLaunchLogs(): Promise<string | null>;
+  antigravityCpuOptStatus(): Promise<{ ok: boolean; data?: any; error?: string }>;
+  antigravityCpuOptApply(): Promise<{ ok: boolean; data?: any; error?: string }>;
+  antigravityCpuOptRevert(): Promise<{ ok: boolean; data?: any; error?: string }>;
   repairRun(): Promise<{ ok: boolean; proxy?: boolean; ca?: boolean; error?: string }>;
 
   // Proxy stub lifecycle — emergency fallback when Antigravity's bundled proxy fails
@@ -237,6 +240,41 @@ interface AgAPI {
     openUrl(url: string): Promise<{ success: boolean; error?: string }>;
     resetOnboarding(): Promise<{ success: boolean; message: string; error?: string }>;
   };
+
+  // Auto-Update
+  updater?: {
+    check(channel?: 'stable' | 'beta'): Promise<{
+      hasUpdate: boolean;
+      currentVersion: string;
+      latestVersion: string;
+      releaseNotes: string;
+      publishedAt: string;
+      downloadUrl: string;
+      assetName?: string;
+      assetSize?: number;
+      channel: 'stable' | 'beta';
+      isPrerelease: boolean;
+    }>;
+    download(downloadUrl?: string): Promise<{ success: boolean; filePath?: string; error?: string }>;
+    install(filePath?: string, silent?: boolean): Promise<{ success: boolean; error?: string }>;
+    getSettings(): Promise<{
+      autoCheck: boolean;
+      lastCheckTime: number;
+      checkIntervalHours: number;
+      channel: 'stable' | 'beta';
+      repo: string;
+    }>;
+    saveSettings(settings: any): Promise<{
+      autoCheck: boolean;
+      lastCheckTime: number;
+      checkIntervalHours: number;
+      channel: 'stable' | 'beta';
+      repo: string;
+    }>;
+    onUpdateAvailable(handler: (info: any) => void): () => void;
+    onProgress(handler: (progress: { percent: number; transferred: number; total: number }) => void): () => void;
+    openReleasePage?(url: string): Promise<{ success: boolean; error?: string }>;
+  };
 }
 
 interface Window {
@@ -245,6 +283,9 @@ interface Window {
 
 // Real-time proxy error bridge — defined in native-quota-card.ts.
 declare function startProxyErrorBridge(): () => void;
+
+// Auto-Update trigger — defined in update-notification.ts.
+declare function triggerUpdateCheck(manual?: boolean): Promise<void>;
 
 // NOTE: SmartBannerManager is declared as a top-level class in
 // src/renderer/smart-banner.ts (script-mode → global). We intentionally do

@@ -43,6 +43,8 @@ import {
   isAccountInCooldown,
   setAccountCooldown,
   clearAccountCooldown,
+  getAccountCooldownRemaining,
+  restoreActiveAccountCooldowns,
   _resetUnlicensedAccounts,
   _resetAllAccountCooldowns,
   startPreflightHealthCheckInterval,
@@ -131,8 +133,8 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
     expect(result.statusCode).toBe(504);
     expect(result.reason).toContain('TIMEOUT');
 
-    // Verified: Account is immediately placed in quarantine and cooldown
-    expect(isAccountUnlicensed(blackHoleAcc)).toBe(true);
+    // Verified: Account is placed in transient cooldown, but NOT falsely marked unlicensed
+    expect(isAccountUnlicensed(blackHoleAcc)).toBe(false);
     expect(isAccountInCooldown(blackHoleAcc, 'gemini')).toBe(true);
   });
 
@@ -403,5 +405,73 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
     expect(result).toBe(true);
     // Verified: HTTP 200 OK unmarks the unlicensed quarantine
     expect(isAccountUnlicensed(acc)).toBe(false);
+  });
+
+  it('classifies quota-exhausted 429 in preflight and applies multi-hour cooldown instead of 30s', async () => {
+    const acc: CustomModel = {
+      name: 'gemini-flash',
+      provider: 'google',
+      apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      accountEmail: 'quota-exhausted@gmail.com',
+      refreshToken: 'rt-quota',
+    } as any;
+
+    vi.spyOn(https, 'request').mockImplementation((_url: any, _opts: any, cb: any): any => {
+      const emitter = new EventEmitter() as any;
+      emitter.write = vi.fn();
+      emitter.end = vi.fn(() => {
+        const res = new EventEmitter() as any;
+        res.statusCode = 429;
+        res.headers = {};
+        cb(res);
+        res.emit('data', Buffer.from(JSON.stringify({
+          error: {
+            code: 429,
+            message: 'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 140h50m33s.',
+            status: 'RESOURCE_EXHAUSTED',
+          },
+        })));
+        res.emit('end');
+      });
+      return emitter;
+    });
+
+    const result = await probeGoogleAccountPreflight(acc, 100);
+    expect(result.ok).toBe(false);
+    expect(result.statusCode).toBe(429);
+    expect(result.reason).toContain('quota_exhausted');
+
+    // Must be in a multi-hour cooldown, NOT a 30s burst pause
+    expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+    // Verify cooldown is >= 5h (quota exhaustion floor), not 30s
+    const remaining = getAccountCooldownRemaining(acc, 'gemini');
+    expect(remaining).toBeGreaterThan(4 * 3600 * 1000); // at least 4h remaining
+  });
+
+  it('restores weekly-depleted cooldown at boot even when 5h shows 100%', () => {
+    _resetAllAccountCooldowns();
+
+    const now = Date.now();
+    const cooldownUntil = now + 5 * 3600_000; // 5h from now
+
+    // Simulate persisted quotas: 5h=100% but weekly=0% (weekly exhaustion)
+    const persistedQuotas = new Map();
+    persistedQuotas.set('google:weekly-depleted@gmail.com', {
+      geminiFiveHourPct: 100,
+      geminiWeeklyPct: 0,
+      updatedAt: now - 60_000, // 1 min old = fresh
+    });
+
+    restoreActiveAccountCooldowns(
+      { 'google:weekly-depleted@gmail.com:gemini': cooldownUntil },
+      persistedQuotas,
+    );
+
+    // The cooldown should NOT have been skipped because weekly is 0%
+    const fakeAcc = { accountEmail: 'weekly-depleted@gmail.com', provider: 'google', apiUrl: 'https://daily-cloudcode-pa.googleapis.com' } as any;
+    expect(isAccountInCooldown(fakeAcc, 'gemini')).toBe(true);
+
+    _resetAllAccountCooldowns();
   });
 });

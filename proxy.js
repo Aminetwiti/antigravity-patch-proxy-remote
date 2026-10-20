@@ -2417,27 +2417,26 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
             if (i + 1 < totalAttempts) {
                 // Anti-domino pacing: When Google triggers a burst/RPM rate limit, pause to allow Google's
                 // token bucket for our IP to drain instead of burning through pool accounts in milliseconds.
-                // For genuine quota exhaustion, rotate immediately (minimal 100ms jitter) so client socket doesn't abort.
+                // For genuine quota exhaustion, skip pacing entirely — the account is already in 5h cooldown,
+                // and even 100ms of delay causes premature client disconnects that abort the rotation before
+                // the proxy can try the next healthy account or trigger the cross-model fallback cascade.
                 const isBurst429 = !isGenuineQuotaExhausted;
-                const pacingMs = isBurst429
-                    ? (consecutive429Count > 1
-                        ? 2000 + Math.floor(Math.random() * 800)
-                        : 1000 + Math.floor(Math.random() * 400))
-                    : 100 + Math.floor(Math.random() * 100);
                 if (isBurst429) {
+                    const pacingMs = consecutive429Count > 1
+                        ? 2000 + Math.floor(Math.random() * 800)
+                        : 1000 + Math.floor(Math.random() * 400);
                     electron_log_1.default.info(`[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`);
-                }
-                else {
-                    electron_log_1.default.info(`[Proxy] Rotation après épuisement de quota. Rotation rapide (${pacingMs}ms) vers le compte suivant.`);
-                }
-                if (req.destroyed || res.writableEnded) {
-                    electron_log_1.default.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
-                    return false;
-                }
-                await new Promise((r) => setTimeout(r, pacingMs));
-                if (req.destroyed || res.writableEnded) {
-                    electron_log_1.default.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
-                    return false;
+                    const isClientAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
+                    if (!isClientAlive) {
+                        electron_log_1.default.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
+                        return false;
+                    }
+                    await new Promise((r) => setTimeout(r, pacingMs));
+                    const isClientAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
+                    if (!isClientAlive) {
+                        electron_log_1.default.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
+                        return false;
+                    }
                 }
             }
             continue;

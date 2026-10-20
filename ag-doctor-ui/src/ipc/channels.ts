@@ -81,6 +81,9 @@ export const DOCTOR_IPC_CHANNELS = {
   ANTIGRAVITY_RESTART: 'ag:antigravity:restart',
   ANTIGRAVITY_LAUNCH_LOGS: 'ag:antigravity:launch-logs',
   DETECT_INSTALLATION: 'ag:detect-installation',
+  ANTIGRAVITY_CPU_OPT_STATUS: 'ag:antigravity:cpu-opt-status',
+  ANTIGRAVITY_CPU_OPT_APPLY: 'ag:antigravity:cpu-opt-apply',
+  ANTIGRAVITY_CPU_OPT_REVERT: 'ag:antigravity:cpu-opt-revert',
 
   // Streaming
   STREAM_START: 'ag:stream:start',
@@ -90,6 +93,15 @@ export const DOCTOR_IPC_CHANNELS = {
   VERIFICATION_DETECT: 'ag:verification:detect',
   VERIFICATION_OPEN_URL: 'ag:verification:open-url',
   VERIFICATION_RESET_ONBOARDING: 'ag:verification:reset-onboarding',
+
+  // Auto-Update System
+  UPDATE_CHECK: 'ag:update:check',
+  UPDATE_DOWNLOAD: 'ag:update:download',
+  UPDATE_INSTALL: 'ag:update:install',
+  UPDATE_GET_SETTINGS: 'ag:update:get-settings',
+  UPDATE_SAVE_SETTINGS: 'ag:update:save-settings',
+  UPDATE_AVAILABLE: 'ag:update:available',
+  UPDATE_PROGRESS: 'ag:update:progress',
 } as const;
 
 export type DoctorIpcChannel = typeof DOCTOR_IPC_CHANNELS[keyof typeof DOCTOR_IPC_CHANNELS];

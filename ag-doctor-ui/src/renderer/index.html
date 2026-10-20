@@ -22,9 +22,15 @@
         </div>
       </div>
     </div>
-    <div class="status-pill" id="statusPill">
-      <span class="status-dot" id="statusDot"></span>
-      <span class="status-text" id="statusText">Ready</span>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <button class="btn btn-ghost btn-xs" id="headerCheckUpdateBtn" type="button" title="Check for updates" style="font-size: 11px; padding: 3px 8px; border-radius: var(--r-sm); border: 1px solid var(--border); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.85"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Check updates</span>
+      </button>
+      <div class="status-pill" id="statusPill">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-text" id="statusText">Ready</span>
+      </div>
     </div>
   </header>
 
@@ -44,7 +50,7 @@
         </div>
       </div>
 
-      <div class="sidebar-cta-wrap">
+      <div class="sidebar-cta-wrap" style="display: none;">
         <button class="btn sidebar-cta" id="sidebarRunBtn" type="button" aria-label="Run doctor diagnostic">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           Run doctor
@@ -321,20 +327,20 @@
             <p class="subtitle">Antigravity diagnostic &amp; repair dashboard</p>
           </div>
           <div class="header-actions">
-            <button class="btn btn-ghost agy-icon-btn-text" id="refreshBtn" type="button" aria-label="Refresh all panels" title="Refresh">
+            <button class="btn btn-ghost agy-icon-btn-text" id="refreshBtn" type="button" aria-label="Refresh diagnostics" title="Refresh diagnostics">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             </button>
-            <button class="btn btn-ghost" id="repairBtn" type="button" aria-label="Run repair">
+            <button class="btn btn-ghost" id="repairBtn" type="button" title="Quick patch repair (no admin elevation)" aria-label="Quick repair">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-              Repair
+              Quick repair
             </button>
-            <button class="btn btn-ghost" id="dashboardResolveVerificationBtn" type="button" title="Scanner les logs et résoudre le blocage de vérification Antigravity (VALIDATION_REQUIRED)" aria-label="Résoudre Vérification">
+            <button class="btn btn-ghost" id="dashboardResolveVerificationBtn" type="button" title="Scan logs and resolve Antigravity verification challenge (VALIDATION_REQUIRED)" aria-label="Resolve verification" style="display: none;">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v3"/></svg>
-              Résoudre Vérification
+              Resolve verification
             </button>
             <button class="btn btn-warning" id="fixAllBtn" type="button" title="Run full auto-repair with admin elevation (UAC)" aria-label="Run full auto-repair with admin elevation">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.5 0 4.76 1.02 6.39 2.66"/></svg>
-              Fix All
+              Fix All (UAC)
             </button>
             <button class="btn btn-primary" id="runDoctorBtn" type="button" aria-label="Run doctor diagnostic">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -429,6 +435,7 @@
         <div class="panel" style="margin-top:24px">
           <div class="panel-header">
             <h2>Health overview</h2>
+            <span id="healthFilterBadge" class="badge" style="display: none; cursor: pointer;" title="Click to clear filter"></span>
           </div>
           <div class="panel-body">
             <div id="healthList" class="health-list">
@@ -478,6 +485,18 @@
             <button class="btn btn-warning" id="agResolveVerificationBtn" type="button" title="Scanner les logs récents pour extraire la validation URL et débloquer Antigravity" aria-label="Résoudre la vérification">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v3"/></svg>
               Résoudre Vérification
+            </button>
+            <button class="btn btn-ghost" id="agHeaderAuthBtn" type="button" title="Vérifier et réparer l'éligibilité de compte Google et les erreurs 403" aria-label="Fixer Auth 403">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+              Auth / 403 Fix
+            </button>
+            <button class="btn btn-ghost" id="agRebuildSidebarBtn" type="button" title="Reconstruire l'index de la sidebar des conversations Antigravity" aria-label="Reconstruire la sidebar">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Rebuild Sidebar
+            </button>
+            <button class="btn btn-ghost" id="agHeaderCpuOptBtn" type="button" title="Optimiser CPU et réduire la charge en veille" aria-label="Optimiser CPU">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              Optimiser CPU
             </button>
           </div>
         </div>
@@ -562,6 +581,86 @@
             </div>
           </div>
         </div>
+
+        <div class="panel" id="agCpuOptPanel" style="margin-top:24px">
+          <div class="panel-header">
+            <div>
+              <h2>Performance &amp; Optimisation CPU</h2>
+              <p style="font-size:12px; color:var(--text-2); margin-top:2px;">
+                Exclusion des watchers (node_modules, caches, build) et réglages mémoire/polling LSP
+              </p>
+            </div>
+            <span class="badge" id="agCpuOptBadge">—</span>
+          </div>
+          <div class="panel-body">
+            <div class="patch-row">
+              <div class="patch-row-label">Statut CPU Fix</div>
+              <div class="patch-row-value" id="agCpuOptStatus">—</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">Fichiers surveillés</div>
+              <div class="patch-row-value" id="agCpuOptWatchers">node_modules, .git, .venv, __pycache__, dist, build, .next, target, .cache</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">Serveurs LSP</div>
+              <div class="patch-row-value" id="agCpuOptLsp">TypeScript (2048 MB, useFsEvents) · Python (indexation allégée)</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">Profils détectés</div>
+              <div class="patch-row-value" id="agCpuOptProfiles">—</div>
+            </div>
+            <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center;">
+              <button class="btn btn-primary" id="agApplyCpuOptBtn" type="button" aria-label="Optimiser CPU">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Appliquer l'optimisation CPU
+              </button>
+              <button class="btn btn-ghost" id="agRevertCpuOptBtn" type="button" style="display:none;" aria-label="Restaurer sauvegarde">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Restaurer sauvegarde
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" id="agAuthPanel" style="margin-top:24px">
+          <div class="panel-header">
+            <div>
+              <h2>Authentification &amp; Éligibilité Compte (Erreurs 403)</h2>
+              <p style="font-size:12px; color:var(--text-2); margin-top:2px;">
+                Résolution des blocages 403 VALIDATION_REQUIRED, vérification d'âge Google et purge des jetons du trousseau OS
+              </p>
+            </div>
+            <span class="badge" id="agAuthBadge">—</span>
+          </div>
+          <div class="panel-body">
+            <div class="patch-row">
+              <div class="patch-row-label">Trousseau OS (Credentials)</div>
+              <div class="patch-row-value" id="agAuthCredentialsValue">—</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">Éligibilité &amp; Logs 403</div>
+              <div class="patch-row-value" id="agAuthStatusValue">—</div>
+            </div>
+            <div style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+              <button class="btn btn-primary" id="agAuthFixBtn" type="button" aria-label="Réparer l'Authentification">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                Réparer l'Authentification (Auth Fix)
+              </button>
+              <button class="btn btn-secondary" id="agAuthAgeCheckBtn" type="button" aria-label="Vérification Âge Google">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Vérification d'Âge Google (Selfie / ID)
+              </button>
+              <button class="btn btn-ghost" id="agAuthPurgeBtn" type="button" aria-label="Purger Trousseau OS">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                Purger Trousseau OS
+              </button>
+              <button class="btn btn-ghost" id="agAuthCheckBtn" type="button" aria-label="Actualiser Statut">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Actualiser
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- MITM Proxy view -->
@@ -599,6 +698,10 @@
             <p class="subtitle">Detailed output from <code>ag-doctor doctor</code></p>
           </div>
           <div class="header-actions">
+            <button class="btn btn-ghost" id="doctorRebuildSidebarBtn" type="button" title="Reconstruire l'index de la sidebar des conversations, restaurer les titres et l'ordre chronologique" aria-label="Rebuild sidebar">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Rebuild Sidebar
+            </button>
             <button class="btn btn-ghost" id="doctorPruneBtn" type="button" title="Purge orphan conversation trajectories & vacuum SQLite database" aria-label="Prune database">Prune Database</button>
             <button class="btn btn-ghost" id="doctorJsonBtn" type="button" title="Show the raw JSON returned by the doctor command" aria-label="Show raw JSON output">Show JSON</button>
             <button class="btn btn-primary" id="doctorRunBtn" type="button" aria-label="Run doctor diagnostic again">Run doctor again</button>
@@ -1276,6 +1379,43 @@
                 <span class="toggle-slider" aria-hidden="true"></span>
               </span>
             </label>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:24px" id="settingsUpdatePanel">
+          <div class="panel-header"><h2>Mises à jour automatiques</h2></div>
+          <div class="panel-body">
+            <label class="toggle-row" for="autoUpdateToggle">
+              <span class="toggle-label">
+                <span class="toggle-title">Recherche automatique en arrière-plan</span>
+                <span class="toggle-subtitle">Vérifie périodiquement la présence de nouvelles versions sur GitHub et télécharge automatiquement les binaires.</span>
+              </span>
+              <span class="toggle-control">
+                <input type="checkbox" id="autoUpdateToggle" aria-label="Activer les mises à jour automatiques" checked />
+                <span class="toggle-slider" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Canal de diffusion</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Choisissez entre les versions certifiées (Stable) ou les préversions (Beta).</div>
+              </div>
+              <select id="updateChannelSelect" class="input" style="width:140px; padding:4px 8px; font-size:12px; border-radius:var(--r-sm);">
+                <option value="stable">Stable</option>
+                <option value="beta">Beta / Préversion</option>
+              </select>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Vérification manuelle</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;" id="updateSettingsStatus">Prêt à vérifier</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="updateSettingsCheckBtn" type="button" style="border-radius:var(--r-sm);">
+                Rechercher maintenant
+              </button>
+            </div>
           </div>
         </div>
         <div class="panel" style="margin-top:24px">
@@ -2535,6 +2675,7 @@
   <script src="ping-pong-tester.js"></script>
   <script src="token-tracker.js"></script>
   <script src="google-accounts-telemetry.js"></script>
+  <script src="update-notification.js"></script>
   <script src="app.js"></script>
   <script src="features.js"></script>
 </body>

@@ -6,6 +6,8 @@ import { getAntigravityStatus } from '../core/antigravity';
 import { findAntigravityIdeInstallDir, getIdeExecutable } from '../core/paths';
 import { getIdeVersion } from '../core/ide-patch';
 
+import { scanAuthEligibilityErrors } from '../core/auth';
+
 export async function checkAntigravity(): Promise<CheckResult> {
   const status = await getAntigravityStatus();
   if (!status.installed) {
@@ -44,13 +46,19 @@ export async function checkAntigravity(): Promise<CheckResult> {
     }
   }
 
+  // Scan recent LS logs for Google account 403 / eligibility failures
+  const authScan = scanAuthEligibilityErrors();
+  if (authScan.hasError) {
+    parts.push('⚠️ Erreur 403 / Éligibilité compte détectée (exécuter: ag-doctor auth fix)');
+  }
+
   // The system is operational when either the app is running OR the local
   // proxy answers (the proxy is what actually serves the custom models, and
   // it can keep running after the IDE window is closed or via the stub).
   // Only warn when the service is genuinely down — not running AND proxy
-  // unreachable.
+  // unreachable — or when an auth eligibility error is present.
   const operational = status.running || status.proxyReachable;
-  const overall: 'ok' | 'warn' | 'error' = operational ? 'ok' : 'warn';
+  const overall: 'ok' | 'warn' | 'error' = (!operational || authScan.hasError) ? 'warn' : 'ok';
 
   return {
     id: 'antigravity',

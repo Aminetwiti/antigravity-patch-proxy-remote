@@ -10,6 +10,7 @@ import { getOpenBreaker } from './circuitBreaker';
 import {
   getLiveAccountQuota,
   getAllLiveAccountQuotas,
+  updateLiveAccountQuota,
   isGeminiCliModel,
   isGoogleCloudCodeModel,
   isTokenRevoked,
@@ -338,9 +339,12 @@ export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>,
           const age = now - q.updatedAt;
           const family = k.endsWith(':gemini') ? 'gemini' : k.endsWith(':claude') ? 'claude' : null;
           const fiveHourPct = family === 'claude' ? q.claudeFiveHourPct : q.geminiFiveHourPct;
-          // If quota is fresh (< 6h) and shows >= 5%, don't restore the cooldown
-          if (age < 6 * 3600_000 && typeof fiveHourPct === 'number' && fiveHourPct >= 5) {
-            log.info(`[GooglePool] Skipping stale quota-exhausted cooldown restore for ${k} (live quota: ${fiveHourPct}%, age=${Math.round(age / 60_000)}min)`);
+          const weeklyPct = family === 'claude' ? q.claudeWeeklyPct : q.geminiWeeklyPct;
+          // If quota is fresh (<6h), 5h shows >= 5%, AND weekly also shows >= 5%, don't restore the cooldown.
+          // If weekly is 0% (or near-zero), the cooldown is a real weekly exhaustion — always restore it.
+          const weeklyOk = typeof weeklyPct !== 'number' || weeklyPct >= 5;
+          if (age < 6 * 3600_000 && typeof fiveHourPct === 'number' && fiveHourPct >= 5 && weeklyOk) {
+            log.info(`[GooglePool] Skipping stale quota-exhausted cooldown restore for ${k} (live quota: 5h=${fiveHourPct}%, wk=${weeklyPct ?? '?'}%, age=${Math.round(age / 60_000)}min)`);
             continue;
           }
         }
@@ -626,8 +630,13 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
   const rawAccountKey = accountKey.replace(/^google:/, '');
 
   if (unlicensedAccountKeys.has(normAccountKey) || unlicensedAccountKeys.has(rawAccountKey) || unlicensedAccountKeys.has(accountKey)) {
-    log.debug(`[Proxy] Skipping auto-heal for unlicensed account: ${accountKey}`);
-    return;
+    if (quota.geminiFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT || quota.claudeFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT) {
+      log.info(`[Proxy] Account ${accountKey} was marked unlicensed, but live quota returned positive quota. Lifting quarantine.`);
+      unmarkAccountUnlicensed(accountKey);
+    } else {
+      log.debug(`[Proxy] Skipping auto-heal for unlicensed account: ${accountKey}`);
+      return;
+    }
   }
 
   const getCooldownRemainingForFamily = (family: string): number => {
@@ -1646,9 +1655,31 @@ export async function probeGoogleAccountPreflight(
           }
 
           if (status === 429) {
-            setAccountCooldown(account, 30_000, 'gemini', true);
-            log.warn(`[PreFlight] ⚠️ Account [${email}] rate-limited (HTTP 429): paused 30s.`);
-            finish({ email, ok: false, statusCode: status, latencyMs, reason: 'HTTP 429' });
+            const retryAfterRaw = res.headers['retry-after'] || null;
+            const decision = classifyGoogleCloudCode429(body, retryAfterRaw);
+            const isQuotaExhausted = decision.category === 'quota_exhausted';
+            const cooldownMs = isQuotaExhausted ? decision.cooldownMs : Math.min(decision.cooldownMs, 30_000);
+            setAccountCooldown(account, cooldownMs, 'gemini', !isQuotaExhausted);
+            if (isQuotaExhausted) {
+              const accKey = getAccountQuotaKey(account);
+              markAccountQuotaExhausted(accKey, 'gemini');
+              // Update live quota to 0% so dashboard reflects the real state
+              const existingQuota = getLiveAccountQuota(accKey);
+              const nowMs = Date.now();
+              const resetIso = new Date(nowMs + decision.cooldownMs).toISOString();
+              updateLiveAccountQuota(accKey, {
+                ...existingQuota,
+                geminiFiveHourPct: 0,
+                geminiWeeklyPct: decision.weeklyResetMs ? 0 : existingQuota?.geminiWeeklyPct ?? 100,
+                geminiFiveHourReset: resetIso,
+                geminiWeeklyReset: decision.weeklyResetMs ? new Date(nowMs + decision.weeklyResetMs).toISOString() : existingQuota?.geminiWeeklyReset,
+                updatedAt: nowMs,
+              } as AccountLiveQuota);
+              log.warn(`[PreFlight] ⚠️ Account [${email}] quota exhausted (HTTP 429, ${decision.reason}): cooldown ${Math.round(cooldownMs / 3600_000)}h.`);
+            } else {
+              log.warn(`[PreFlight] ⚠️ Account [${email}] rate-limited (HTTP 429, ${decision.category}): paused ${Math.round(cooldownMs / 1000)}s.`);
+            }
+            finish({ email, ok: false, statusCode: status, latencyMs, reason: `HTTP 429 (${decision.category})` });
             return;
           }
 
@@ -1661,17 +1692,17 @@ export async function probeGoogleAccountPreflight(
 
     req.on('timeout', () => {
       const latencyMs = Date.now() - startTime;
-      // Socket stalled without response -> Black-Hole!
-      markAccountUnlicensed(account);
-      setAccountCooldown(account, 24 * 3600 * 1000, 'gemini', true);
-      setAccountCooldown(account, 24 * 3600 * 1000, 'claude', true);
-      log.warn(`[PreFlight] 🕳️ Black-Hole account detected: [${email}] stalled (> ${timeoutMs}ms). Quarantined for 24h.`);
+      // Socket stalled without response -> transient latency, NOT unlicensed!
+      // Do NOT call markAccountUnlicensed: a network timeout is not a 403 licensing error.
+      setAccountCooldown(account, 60_000, 'gemini', true);
+      setAccountCooldown(account, 60_000, 'claude', true);
+      log.warn(`[PreFlight] ⚠️ Preflight probe timed out for [${email}] (> ${timeoutMs}ms). Placed in 60s transient cooldown.`);
       finish({
         email,
         ok: false,
         statusCode: 504,
         latencyMs,
-        reason: `TIMEOUT (>${timeoutMs}ms - Black Hole)`,
+        reason: `TIMEOUT (>${timeoutMs}ms - High Latency)`,
       });
       try { req.destroy(); } catch (_) {}
     });

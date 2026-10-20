@@ -92,7 +92,7 @@ async function probeSingle(token, projectId, model) {
         'User-Agent': 'antigravity/2.24.0 windows/amd64',
         'X-Goog-Api-Client': 'google-cloud-sdk antigravity/2.24.0'
       },
-      timeout: 4000
+      timeout: 10000
     }, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
@@ -114,7 +114,7 @@ async function probeSingle(token, projectId, model) {
 
     req.on('timeout', () => {
       req.destroy();
-      resolve({ status: 504, ms: 4000, ok: false, reason: 'TIMEOUT (>4s - Black Hole)' });
+      resolve({ status: 504, ms: 10000, ok: false, reason: 'TIMEOUT (>10s - High Latency)' });
     });
 
     req.on('error', (err) => {
@@ -188,10 +188,13 @@ async function runProbe() {
       healthyEmails.add(r.email);
       if (r.isTrial) trialEmails.add(r.email);
     } else {
-      quarantinedEmails.add(r.email);
       if (r.diagnosis.code === 'CHALLENGE_REQUIRED') challengeEmails.add(r.email);
-      if (r.diagnosis.code === 'UNLICENSED') unlicensedEmails.add(r.email);
+      if (r.diagnosis.code === 'UNLICENSED' || r.diagnosis.code === 'PERMISSION_DENIED_FLAGGED') unlicensedEmails.add(r.email);
       if (r.diagnosis.code === 'TOS_SUSPENDED') tosEmails.add(r.email);
+      // Only accounts that are permanently broken (TOS, unauthenticated, denied) are quarantined & disabled
+      if (['TOS_SUSPENDED', 'AUTH_TOKEN_EXPIRED', 'PERMISSION_DENIED_FLAGGED', 'CHALLENGE_REQUIRED'].includes(r.diagnosis.code)) {
+        quarantinedEmails.add(r.email);
+      }
     }
   }
 
@@ -281,7 +284,7 @@ async function main() {
             unSet.delete(`google:${email}`);
             unSet.delete(`gemini-cli:${email}`);
           }
-          for (const email of quarantinedEmails) {
+          for (const email of unlicensedEmails) {
             unSet.add(email);
             unSet.add(`google:${email}`);
           }

@@ -42,6 +42,19 @@ import {
   detectAntigravityVerificationChallenge,
   resetAntigravityOnboarding,
 } from './services/antigravityVerificationResolver';
+import {
+  checkForUpdates,
+  downloadUpdate,
+  installUpdate,
+  loadUpdateSettings,
+  saveUpdateSettings,
+  initAutoUpdateScheduler,
+} from './services/updateService';
+import {
+  getCpuOptimizationStatus,
+  applyCpuOptimizations,
+  revertCpuOptimizations,
+} from './services/cpuOptimizer';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
@@ -2276,6 +2289,48 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.SYSTEM_RANDOMIZE_MACHINE_ID, async () => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-Update Handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.UPDATE_CHECK, async (_evt, channel?: 'stable' | 'beta') => {
+  try {
+    return await checkForUpdates(channel, true);
+  } catch (err: any) {
+    return {
+      hasUpdate: false,
+      currentVersion: app.getVersion(),
+      latestVersion: app.getVersion(),
+      releaseNotes: '',
+      publishedAt: new Date().toISOString(),
+      downloadUrl: '',
+      channel: channel || 'stable',
+      isPrerelease: false,
+      error: err?.message || String(err),
+    };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.UPDATE_DOWNLOAD, async (_evt, downloadUrl?: string) => {
+  return downloadUpdate(downloadUrl, (progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(DOCTOR_IPC_CHANNELS.UPDATE_PROGRESS, progress);
+    }
+  });
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.UPDATE_INSTALL, async (_evt, filePath?: string, silent?: boolean) => {
+  return installUpdate(filePath, silent ?? false);
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.UPDATE_GET_SETTINGS, async () => {
+  return loadUpdateSettings();
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.UPDATE_SAVE_SETTINGS, async (_evt, settings: any) => {
+  return saveUpdateSettings(settings);
+});
+
 ipcMain.handle(DOCTOR_IPC_CHANNELS.RUN, async (_evt, args: string[]) => {
   return getCliPool().run(args);
 });
@@ -2518,6 +2573,42 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_RESTART, async () => {
     return { ok: true, data: JSON.parse(r.stdout) };
   } catch {
     return { ok: true, data: { ok: r.code === 0, message: r.stdout.trim() } };
+  }
+});
+
+// Antigravity CPU Optimization handlers
+ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_CPU_OPT_STATUS, async () => {
+  try {
+    const status = getCpuOptimizationStatus();
+    return { ok: true, data: status };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_CPU_OPT_APPLY, async () => {
+  try {
+    const result = applyCpuOptimizations();
+    return {
+      ok: result.success,
+      data: result,
+      error: result.errors.length > 0 ? result.errors.join('; ') : undefined,
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_CPU_OPT_REVERT, async () => {
+  try {
+    const result = revertCpuOptimizations();
+    return {
+      ok: result.success,
+      data: result,
+      error: result.errors.length > 0 ? result.errors.join('; ') : undefined,
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
   }
 });
 
@@ -3527,6 +3618,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.STREAM_CANCEL, (_evt, streamId: string) => {
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  initAutoUpdateScheduler(() => mainWindow?.webContents ?? null);
 
   mainWindow?.webContents.on('before-input-event', (_e, input) => {
     if (input.type === 'keyDown') {

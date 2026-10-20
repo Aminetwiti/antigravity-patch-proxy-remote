@@ -4189,5 +4189,246 @@ th.sortable-th:hover {
   color: #60a5fa !important;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Auto-Update Notification Floating Card (Quiet Console compliant)
+ * ───────────────────────────────────────────────────────────────────────────── */
+.update-notification-container {
+  position: fixed;
+  top: 50px;
+  right: 24px;
+  z-index: 10000;
+  max-width: 380px;
+  width: calc(100vw - 48px);
+  pointer-events: auto;
+  animation: updateSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
 
+@keyframes updateSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
+.update-card {
+  background: var(--bg-1, #18181b);
+  border: 1px solid var(--border-strong, #3f3f46);
+  border-radius: var(--r-lg, 12px);
+  padding: 16px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+.update-card.ready {
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+.update-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.update-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.update-icon-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-md, 8px);
+  background: var(--bg-2, #27272a);
+  border: 1px solid var(--border, #3f3f46);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: var(--accent, #3b82f6);
+  flex-shrink: 0;
+}
+
+.update-icon-badge.ready {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: var(--ok, #22c55e);
+}
+
+.update-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-0, #f4f4f5);
+  line-height: 1.2;
+}
+
+.update-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.update-version-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent, #3b82f6);
+  font-family: var(--font-mono);
+}
+
+.update-channel-badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: var(--r-sm, 4px);
+  letter-spacing: 0.04em;
+}
+
+.update-channel-badge.beta {
+  background: rgba(234, 179, 8, 0.12);
+  color: var(--warn, #eab308);
+  border: 1px solid rgba(234, 179, 8, 0.28);
+}
+
+.update-channel-badge.stable {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--ok, #22c55e);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+}
+
+.update-current-hint {
+  font-size: 10.5px;
+  color: var(--text-2, #a1a1aa);
+}
+
+.update-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-2, #a1a1aa);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--r-sm, 4px);
+  font-size: 12px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.update-close-btn:hover {
+  color: var(--text-0, #f4f4f5);
+  background: var(--bg-3, #3f3f46);
+}
+
+.update-card-body {
+  font-size: 12px;
+  color: var(--text-1, #e4e4e7);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.update-notes-preview {
+  background: var(--bg-2, #27272a);
+  padding: 8px 10px;
+  border-radius: var(--r-sm, 4px);
+  border: 1px solid var(--border, #3f3f46);
+  font-size: 11px;
+  max-height: 80px;
+  overflow-y: auto;
+  color: var(--text-2, #a1a1aa);
+}
+
+.update-github-link {
+  font-size: 11px;
+  color: var(--accent, #3b82f6);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.update-github-link:hover {
+  text-decoration: underline;
+}
+
+.update-ready-msg {
+  color: var(--ok, #22c55e);
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  padding: 8px 10px;
+  border-radius: var(--r-sm, 4px);
+  font-size: 11.5px;
+}
+
+.update-error-msg {
+  color: var(--err, #ef4444);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  padding: 8px 10px;
+  border-radius: var(--r-sm, 4px);
+  font-size: 11.5px;
+}
+
+.update-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.update-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-1, #e4e4e7);
+}
+
+.update-progress-percent {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent, #3b82f6);
+}
+
+.update-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-2, #27272a);
+  border-radius: var(--r-sm, 4px);
+  overflow: hidden;
+  border: 1px solid var(--border, #3f3f46);
+}
+
+.update-progress-bar-fill {
+  height: 100%;
+  background: var(--accent, #3b82f6);
+  border-radius: var(--r-sm, 4px);
+  transition: width 0.2s ease;
+}
+
+.update-card-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.update-action-btn {
+  font-weight: 600;
+  border-radius: var(--r-sm, 4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-notification-container {
+    animation: none !important;
+  }
+  .update-progress-bar-fill {
+    transition: none !important;
+  }
+}

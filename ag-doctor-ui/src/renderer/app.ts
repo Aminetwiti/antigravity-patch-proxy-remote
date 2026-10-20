@@ -10,6 +10,20 @@
  *  - rAF-batched log streaming
  */
 
+// ponytail: temporary diagnostic — remove once the frozen-UI issue is resolved
+window.addEventListener('error', (e) => {
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#dc2626;color:#fff;padding:12px 16px;font:13px/1.5 monospace;white-space:pre-wrap;';
+  banner.textContent = `[app.ts ERROR] ${e.message}\nat ${e.filename}:${e.lineno}:${e.colno}`;
+  document.body.prepend(banner);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#dc2626;color:#fff;padding:12px 16px;font:13px/1.5 monospace;white-space:pre-wrap;';
+  banner.textContent = `[app.ts UNHANDLED REJECTION] ${e.reason}`;
+  document.body.prepend(banner);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Type definitions for the preload bridge
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,6 +227,9 @@ interface AgAPI {
   antigravityKill(): Promise<{ ok: boolean; data?: { killed: number; message: string }; error?: string }>;
   antigravityRestart(): Promise<{ ok: boolean; data?: { ok: boolean; message: string; pid?: number }; error?: string }>;
   antigravityLaunchLogs(): Promise<string>;
+  antigravityCpuOptStatus?(): Promise<{ ok: boolean; data?: any; error?: string }>;
+  antigravityCpuOptApply?(): Promise<{ ok: boolean; data?: any; error?: string }>;
+  antigravityCpuOptRevert?(): Promise<{ ok: boolean; data?: any; error?: string }>;
   repairRun(): Promise<{ ok: boolean; proxy?: boolean; ca?: boolean; error?: string }>;
   onOAuthIntercepted?(handler: (data: { url: string; port?: string; redirectUri?: string; ts?: number }) => void): () => void;
   modelPingPong?(params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
@@ -4170,6 +4187,13 @@ $('#sidebarRunBtn')?.addEventListener('click', () => {
   void runDoctor();
 });
 
+// Titlebar check for updates CTA
+$('#headerCheckUpdateBtn')?.addEventListener('click', () => {
+  if (typeof triggerUpdateCheck === 'function') {
+    void triggerUpdateCheck(true);
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Doctor / dashboard
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4182,6 +4206,36 @@ const statModels = $('#statModels') as HTMLDivElement;
 const lastRunBadge = $('#lastRunBadge') as HTMLSpanElement;
 
 let lastResults: CheckResult[] = [];
+let healthFilter: 'all' | 'ok' | 'warn' | 'error' = 'all';
+
+function renderFilteredHealthList(): void {
+  const badge = $('#healthFilterBadge') as HTMLElement | null;
+  const filtered = healthFilter === 'all'
+    ? lastResults
+    : lastResults.filter((r) => r.status === healthFilter);
+
+  if (badge) {
+    if (healthFilter === 'all') {
+      badge.style.display = 'none';
+      badge.textContent = '';
+    } else {
+      badge.style.display = 'inline-flex';
+      const label = healthFilter === 'warn' ? 'Warnings only' : healthFilter === 'error' ? 'Issues only' : 'Healthy only';
+      badge.textContent = `${label} (${filtered.length}) · Click to show all`;
+    }
+  }
+
+  $$('.stat-card').forEach((card) => {
+    const statType = card.getAttribute('data-stat');
+    if (statType === healthFilter) {
+      card.classList.add('active-filter');
+    } else {
+      card.classList.remove('active-filter');
+    }
+  });
+
+  renderHealthList(filtered);
+}
 
 // Event delegation: bind once for expand toggles (avoids N listeners per item)
 healthList.addEventListener('click', (e) => {
@@ -4199,12 +4253,13 @@ const healthTpl = document.createElement('template');
 
 function renderHealthList(results: CheckResult[]): void {
   if (results.length === 0) {
+    const isFiltered = healthFilter !== 'all' && lastResults.length > 0;
     healthList.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">
           <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
         </div>
-        <p>Click <strong>Run doctor</strong> to scan Antigravity, MITM, patches, and models.</p>
+        <p>${isFiltered ? 'No items matching the selected filter.' : 'Click <strong>Run doctor</strong> to scan Antigravity, MITM, patches, and models.'}</p>
       </div>`;
     return;
   }
@@ -4262,8 +4317,16 @@ async function runDoctor(): Promise<void> {
       throw new Error(result.stderr || `Exited with code ${result.code}`);
     }
     const results = JSON.parse(result.stdout) as CheckResult[];
+    lastResults = results;
+    healthFilter = 'all';
     updateStats(results);
     updateObjectives(results);
+    renderFilteredHealthList();
+
+    // Show "Resolve verification" button only when a VALIDATION_REQUIRED issue is detected
+    const hasValidation = results.some((r) => r.id === 'validation' || r.message?.includes('VALIDATION_REQUIRED'));
+    const resolveBtn = $('#dashboardResolveVerificationBtn');
+    if (resolveBtn) resolveBtn.style.display = hasValidation ? '' : 'none';
 
     setStatus('Ready', 'ready');
   } catch (e) {
@@ -4313,6 +4376,24 @@ $('#fixAllBtn')?.addEventListener('click', () => void runFixAll());
 
 // Start Stub: emergency proxy stub (no admin needed)
 $('#startStubBtn')?.addEventListener('click', () => void runStartStub());
+
+// Stat-card click-to-filter: clicking a KPI card filters the health list by that status
+const statFilterMap: Record<string, 'ok' | 'warn' | 'error'> = { ok: 'ok', warn: 'warn', err: 'error' };
+$$('.stat-card[data-stat]').forEach((card) => {
+  card.addEventListener('click', () => {
+    const stat = card.getAttribute('data-stat') ?? '';
+    const mapped = statFilterMap[stat];
+    if (!mapped || lastResults.length === 0) return;
+    healthFilter = healthFilter === mapped ? 'all' : mapped;
+    renderFilteredHealthList();
+  });
+});
+
+// Clear filter when badge is clicked
+$('#healthFilterBadge')?.addEventListener('click', () => {
+  healthFilter = 'all';
+  renderFilteredHealthList();
+});
 
 async function runRepair(): Promise<void> {
   const ok = await confirmModal(
@@ -4762,6 +4843,36 @@ async function runDoctorView(): Promise<void> {
     setStatus('Error', 'err');
   }
 }
+
+async function handleRebuildSidebarAction(): Promise<void> {
+  setStatus('Rebuilding sidebar…', 'busy');
+  try {
+    const result = await window.ag.run(['db:rebuild-sidebar', '--yes', '--json']);
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(result.stdout);
+    } catch {
+      parsed = null;
+    }
+
+    if (parsed) {
+      toast(`Sidebar rebuilt! ${parsed.totalConversations} conversations indexed across ${parsed.databasesUpdated} database(s)`, 'ok');
+    } else {
+      toast(result.stdout.trim() || 'Sidebar rebuilt successfully', 'ok');
+    }
+    const docOut = $('#doctorOutput');
+    if (docOut) {
+      docOut.textContent = result.stdout || result.stderr;
+    }
+    setStatus('Ready');
+  } catch (e) {
+    toast(`Sidebar rebuild failed: ${(e as Error).message}`, 'err');
+    setStatus('Error', 'err');
+  }
+}
+
+$('#doctorRebuildSidebarBtn')?.addEventListener('click', () => void handleRebuildSidebarAction());
+$('#agRebuildSidebarBtn')?.addEventListener('click', () => void handleRebuildSidebarAction());
 
 $('#doctorRunBtn').addEventListener('click', () => void runDoctorView());
 $('#doctorPruneBtn')?.addEventListener('click', async () => {
@@ -7536,6 +7647,14 @@ async function loadAntigravityStatus(): Promise<void> {
         if (agProxyValue) agProxyValue.textContent = 'Unknown';
     }
 
+    try {
+        await loadAntigravityCpuOptStatus();
+    } catch {}
+
+    try {
+        await loadAuthStatus();
+    } catch {}
+
     setStatus('Ready');
   } catch (e) {
     setAgHero('err', 'Error', (e as Error).message);
@@ -7543,6 +7662,235 @@ async function loadAntigravityStatus(): Promise<void> {
   }
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Antigravity CPU Optimization Controls
+// ─────────────────────────────────────────────────────────────────────────────
+
+const agApplyCpuOptBtn = $('#agApplyCpuOptBtn') as HTMLButtonElement | null;
+const agHeaderCpuOptBtn = $('#agHeaderCpuOptBtn') as HTMLButtonElement | null;
+const agRevertCpuOptBtn = $('#agRevertCpuOptBtn') as HTMLButtonElement | null;
+
+async function loadAntigravityCpuOptStatus(): Promise<void> {
+  const badge = $('#agCpuOptBadge') as HTMLSpanElement | null;
+  const statusEl = $('#agCpuOptStatus') as HTMLDivElement | null;
+  const profilesEl = $('#agCpuOptProfiles') as HTMLDivElement | null;
+
+  try {
+    const res = await window.ag.antigravityCpuOptStatus?.();
+    if (!res?.ok || !res.data) {
+      if (badge) {
+        badge.textContent = 'Inconnu';
+        badge.className = 'badge';
+      }
+      if (statusEl) statusEl.textContent = res?.error ?? 'Impossible de vérifier';
+      return;
+    }
+
+    const { isOptimized, profiles } = res.data;
+    const existing = Array.isArray(profiles) ? profiles.filter((p: any) => p.exists) : [];
+    const hasBackups = existing.some((p: any) => p.backupExists);
+
+    if (badge) {
+      badge.textContent = isOptimized ? 'Optimisé' : 'Non optimisé';
+      badge.className = isOptimized ? 'badge badge-ok' : 'badge badge-warn';
+    }
+
+    if (statusEl) {
+      statusEl.textContent = isOptimized
+        ? 'Actif · Watchers allégés et mémoire LSP plafonnée'
+        : 'Inactif · Paramètres par défaut non optimisés';
+    }
+
+    if (profilesEl) {
+      if (existing.length === 0) {
+        profilesEl.textContent = 'Aucun fichier settings.json détecté';
+      } else {
+        profilesEl.textContent = existing.map((p: any) => {
+          const name = p.path.includes('Antigravity IDE') ? 'Antigravity IDE' : 'Antigravity';
+          return `${name}: ${p.optimized ? 'Optimisé ✓' : 'Non optimisé ⚠'}`;
+        }).join(' · ');
+      }
+    }
+
+    if (agRevertCpuOptBtn) {
+      agRevertCpuOptBtn.style.display = hasBackups ? 'inline-flex' : 'none';
+    }
+
+    if (agApplyCpuOptBtn) {
+      agApplyCpuOptBtn.textContent = isOptimized ? 'Ré-appliquer l\'optimisation CPU' : 'Appliquer l\'optimisation CPU';
+    }
+  } catch (err) {
+    if (badge) {
+      badge.textContent = 'Erreur';
+      badge.className = 'badge badge-err';
+    }
+    if (statusEl) statusEl.textContent = (err as Error).message;
+  }
+}
+
+async function handleApplyCpuOpt(): Promise<void> {
+  if (agApplyCpuOptBtn) agApplyCpuOptBtn.disabled = true;
+  if (agHeaderCpuOptBtn) agHeaderCpuOptBtn.disabled = true;
+  toast('Application des optimisations CPU…', 'info', 2000);
+  try {
+    const res = await window.ag.antigravityCpuOptApply?.();
+    if (!res?.ok) throw new Error(res?.error ?? 'Échec');
+    toast('Optimisations CPU appliquées avec succès !', 'ok', 3000);
+    await loadAntigravityCpuOptStatus();
+  } catch (e) {
+    toast(`Erreur optimisation CPU: ${(e as Error).message}`, 'err', 4000);
+  } finally {
+    if (agApplyCpuOptBtn) agApplyCpuOptBtn.disabled = false;
+    if (agHeaderCpuOptBtn) agHeaderCpuOptBtn.disabled = false;
+  }
+}
+
+agApplyCpuOptBtn?.addEventListener('click', () => void handleApplyCpuOpt());
+agHeaderCpuOptBtn?.addEventListener('click', () => void handleApplyCpuOpt());
+
+agRevertCpuOptBtn?.addEventListener('click', async () => {
+  if (agRevertCpuOptBtn) agRevertCpuOptBtn.disabled = true;
+  toast('Restauration des réglages sauvegardés…', 'info', 2000);
+  try {
+    const res = await window.ag.antigravityCpuOptRevert?.();
+    if (!res?.ok) throw new Error(res?.error ?? 'Échec restauration');
+    toast('Sauvegarde restaurée avec succès', 'ok', 3000);
+    await loadAntigravityCpuOptStatus();
+  } catch (e) {
+    toast(`Erreur restauration: ${(e as Error).message}`, 'err', 4000);
+  } finally {
+    if (agRevertCpuOptBtn) agRevertCpuOptBtn.disabled = false;
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Antigravity Authentication & Eligibility (403 Fix) Controls
+// ─────────────────────────────────────────────────────────────────────────────
+
+const agHeaderAuthBtn = $('#agHeaderAuthBtn') as HTMLButtonElement | null;
+const agAuthCheckBtn = $('#agAuthCheckBtn') as HTMLButtonElement | null;
+const agAuthAgeCheckBtn = $('#agAuthAgeCheckBtn') as HTMLButtonElement | null;
+const agAuthPurgeBtn = $('#agAuthPurgeBtn') as HTMLButtonElement | null;
+const agAuthFixBtn = $('#agAuthFixBtn') as HTMLButtonElement | null;
+
+async function loadAuthStatus(): Promise<void> {
+  const badge = $('#agAuthBadge') as HTMLSpanElement | null;
+  const credsEl = $('#agAuthCredentialsValue') as HTMLDivElement | null;
+  const statusEl = $('#agAuthStatusValue') as HTMLDivElement | null;
+
+  try {
+    const res = await window.ag.run(['auth', 'status', '--json']);
+    if (!res?.stdout) {
+      if (badge) { badge.textContent = 'Inconnu'; badge.className = 'badge'; }
+      if (statusEl) statusEl.textContent = res?.stderr || 'Statut inconnu';
+      return;
+    }
+
+    const data = JSON.parse(res.stdout) as {
+      credentialsFound?: string[];
+      hasEligibilityError?: boolean;
+      lastErrorLine?: string;
+    };
+
+    const hasCreds = Array.isArray(data.credentialsFound) && data.credentialsFound.length > 0;
+    const hasError = Boolean(data.hasEligibilityError);
+
+    if (badge) {
+      if (hasError) {
+        badge.textContent = '403 / Non Éligible';
+        badge.className = 'badge badge-err';
+      } else if (hasCreds) {
+        badge.textContent = 'Connecté (Trousseau OK)';
+        badge.className = 'badge badge-ok';
+      } else {
+        badge.textContent = 'Aucun jeton';
+        badge.className = 'badge';
+      }
+    }
+
+    if (credsEl) {
+      if (hasCreds) {
+        credsEl.textContent = data.credentialsFound!.join(', ');
+      } else {
+        credsEl.textContent = 'Aucun identifiant Antigravity stocké dans le trousseau OS';
+      }
+    }
+
+    if (statusEl) {
+      if (hasError) {
+        statusEl.innerHTML = `<span style="color:#f87171;">⚠️ Erreur 403 / Éligibilité détectée : ${escapeHtml(data.lastErrorLine || 'Validation requise')}</span>`;
+      } else {
+        statusEl.innerHTML = `<span style="color:#34d399;">✓ Aucun blocage 403 détecté dans les logs récents</span>`;
+      }
+    }
+  } catch (err) {
+    if (badge) { badge.textContent = 'Erreur'; badge.className = 'badge badge-err'; }
+    if (statusEl) statusEl.textContent = (err as Error).message;
+  }
+}
+
+agHeaderAuthBtn?.addEventListener('click', () => {
+  const panel = $('#agAuthPanel');
+  if (panel) {
+    panel.scrollIntoView({ behavior: 'smooth' });
+    toast('Accès au panneau Authentification & Éligibilité 403', 'info', 2000);
+  } else {
+    void showAntigravityVerificationResolutionModal();
+  }
+});
+
+agAuthCheckBtn?.addEventListener('click', async () => {
+  toast('Actualisation du statut auth…', 'info', 1500);
+  await loadAuthStatus();
+  toast('Statut d\'authentification actualisé', 'ok', 2000);
+});
+
+agAuthAgeCheckBtn?.addEventListener('click', async () => {
+  const url = 'https://myaccount.google.com/age-verification';
+  if (window.ag?.openExternal) {
+    await window.ag.openExternal(url);
+  } else {
+    window.open(url, '_blank');
+  }
+  toast('Page de vérification d\'âge Google ouverte dans le navigateur', 'ok', 3000);
+});
+
+agAuthPurgeBtn?.addEventListener('click', async () => {
+  const confirmed = await modals.confirm(
+    'Purger le Trousseau OS',
+    'Voulez-vous supprimer les identifiants Antigravity du trousseau de clés Windows / OS ?\n(Vos modèles et proxies personnalisés ne seront pas affectés).',
+    { confirmLabel: 'Purger', danger: true }
+  );
+  if (!confirmed) return;
+
+  toast('Purge des credentials en cours…', 'info', 2000);
+  try {
+    await window.ag.run(['auth', 'purge', '--yes', '--json']);
+    toast('Trousseau OS purgé avec succès', 'ok', 3000);
+    await loadAuthStatus();
+  } catch (e) {
+    toast(`Échec de la purge: ${(e as Error).message}`, 'err', 4000);
+  }
+});
+
+agAuthFixBtn?.addEventListener('click', async () => {
+  const confirmed = await modals.confirm(
+    'Réparer l\'Authentification (Auth Fix)',
+    'Cette action va :\n1. Fermer les processus Antigravity et agy en cours\n2. Purger les anciens jetons stale du trousseau OS\n3. Ouvrir la page officielle de vérification d\'âge Google\n\nContinuer ?',
+    { confirmLabel: 'Exécuter la Réparation' }
+  );
+  if (!confirmed) return;
+
+  toast('Exécution de la réparation auth en cours…', 'info', 3000);
+  try {
+    await window.ag.run(['auth', 'fix', '--yes', '--json']);
+    toast('Réparation terminée ! Complétez la vérification selfie dans le navigateur.', 'ok', 5000);
+    await loadAuthStatus();
+  } catch (e) {
+    toast(`Erreur lors de la réparation: ${(e as Error).message}`, 'err', 4000);
+  }
+});
 
 // Backward compat alias
 const loadInfo = loadAntigravityStatus;
@@ -7821,6 +8169,70 @@ async function loadSettingsExtras(): Promise<void> {
         invalidateCache('config');
         await window.ag.setChatEnhancements({ suggestions: currentChatSuggestions });
         toast(`Added suggestion "${label}"`, 'ok', 1800);
+      });
+    }
+  }
+
+  // Auto-Update Settings
+  const autoUpdateToggle = $('#autoUpdateToggle') as HTMLInputElement | null;
+  const updateChannelSelect = $('#updateChannelSelect') as HTMLSelectElement | null;
+  const updateSettingsCheckBtn = $('#updateSettingsCheckBtn') as HTMLButtonElement | null;
+  const updateSettingsStatus = $('#updateSettingsStatus') as HTMLDivElement | null;
+
+  if (window.ag?.updater) {
+    try {
+      const upSettings = await window.ag.updater.getSettings();
+      if (autoUpdateToggle) autoUpdateToggle.checked = upSettings.autoCheck !== false;
+      if (updateChannelSelect) updateChannelSelect.value = upSettings.channel || 'stable';
+      if (updateSettingsStatus) {
+        if (upSettings.lastCheckTime) {
+          const d = new Date(upSettings.lastCheckTime);
+          updateSettingsStatus.textContent = `Dernière vérification : ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+        } else {
+          updateSettingsStatus.textContent = 'Aucune vérification récente';
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (autoUpdateToggle && !autoUpdateToggle.dataset.bound) {
+      autoUpdateToggle.dataset.bound = 'true';
+      const _upd = window.ag.updater!;
+      autoUpdateToggle.addEventListener('change', async () => {
+        const val = autoUpdateToggle.checked;
+        await _upd.saveSettings({ autoCheck: val });
+        toast(val ? 'Mises à jour automatiques activées' : 'Mises à jour automatiques désactivées', 'ok', 1800);
+      });
+    }
+
+    if (updateChannelSelect && !updateChannelSelect.dataset.bound) {
+      updateChannelSelect.dataset.bound = 'true';
+      const _upd = window.ag.updater!;
+      updateChannelSelect.addEventListener('change', async () => {
+        const ch = updateChannelSelect.value as 'stable' | 'beta';
+        await _upd.saveSettings({ channel: ch });
+        toast(`Canal configuré sur : ${ch === 'beta' ? 'Beta' : 'Stable'}`, 'ok', 1800);
+      });
+    }
+
+    if (updateSettingsCheckBtn && !updateSettingsCheckBtn.dataset.bound) {
+      updateSettingsCheckBtn.dataset.bound = 'true';
+      updateSettingsCheckBtn.addEventListener('click', async () => {
+        if (typeof triggerUpdateCheck === 'function') {
+          updateSettingsCheckBtn.disabled = true;
+          updateSettingsCheckBtn.textContent = 'Vérification...';
+          try {
+            await triggerUpdateCheck(true);
+            if (updateSettingsStatus) {
+              const d = new Date();
+              updateSettingsStatus.textContent = `Dernière vérification : ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+            }
+          } finally {
+            updateSettingsCheckBtn.disabled = false;
+            updateSettingsCheckBtn.textContent = 'Rechercher maintenant';
+          }
+        }
       });
     }
   }
@@ -9841,6 +10253,20 @@ export function getAccountEffectiveQuotas(acc: any): {
   // Free accounts do not have access to Claude/GPT models
   const tier = getAccountTier(acc);
   if (tier === 'FREE') {
+    claudeWkPct = 0;
+    claude5hPct = 0;
+  }
+
+  // Cooldown reality override: when the proxy has a confirmed weekly-cap cooldown active
+  // (from a real-time 429 response), the Google quota API may still report 100% (stale data).
+  // The cooldown is ground truth — force quotas to 0% so the UI doesn't show contradictory data.
+  const cdGemini = getAccountActiveCooldown(acc, 'gemini');
+  const cdClaude = getAccountActiveCooldown(acc, 'claude');
+  if (cdGemini?.isCooldown && cdGemini.isWeeklyCap) {
+    geminiWkPct = 0;
+    gemini5hPct = 0;
+  }
+  if (cdClaude?.isCooldown && cdClaude.isWeeklyCap) {
     claudeWkPct = 0;
     claude5hPct = 0;
   }
@@ -12229,6 +12655,16 @@ async function showAntigravityVerificationResolutionModal(initialData?: Verifica
         <div class="agv-section-title muted" style="margin-bottom: 8px;">
           ACTIONS DE DÉBLOCAGE LOCAL (ONBOARDING &amp; PROCESSUS)
         </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+          <button type="button" class="agv-btn-secondary" id="agvAgeVerifyBtn" style="font-size: 11.5px; padding: 9px 12px; border-color: #38bdf8; color: #38bdf8;">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            <span id="agvAgeVerifyLabel">Vérif. Âge Google (Selfie)</span>
+          </button>
+          <button type="button" class="agv-btn-secondary" id="agvPurgeCredsBtn" style="font-size: 11.5px; padding: 9px 12px;">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+            <span id="agvPurgeCredsLabel">Purger Trousseau OS</span>
+          </button>
+        </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
           <button type="button" class="agv-btn-danger" id="agvResetOnboardingBtn">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -12398,6 +12834,37 @@ async function showAntigravityVerificationResolutionModal(initialData?: Verifica
         } finally {
           if (restartBtn) restartBtn.disabled = false;
           if (restartLabel) restartLabel.textContent = 'Relancer Antigravity';
+        }
+      });
+
+      // Google Age Verification (Selfie)
+      const ageVerifyBtn = handle.bodyEl.querySelector('#agvAgeVerifyBtn') as HTMLButtonElement | null;
+      ageVerifyBtn?.addEventListener('click', async () => {
+        const url = 'https://myaccount.google.com/age-verification';
+        if (window.ag?.openExternal) {
+          await window.ag.openExternal(url);
+        } else {
+          window.open(url, '_blank');
+        }
+        toast('Page de vérification d\'âge Google ouverte dans le navigateur', 'ok', 3000);
+      });
+
+      // Purge Credentials from OS
+      const purgeCredsBtn = handle.bodyEl.querySelector('#agvPurgeCredsBtn') as HTMLButtonElement | null;
+      purgeCredsBtn?.addEventListener('click', async () => {
+        toast('Purge des credentials en cours…', 'info', 2000);
+        try {
+          await window.ag.run(['auth', 'purge', '--yes', '--json']);
+          toast('Trousseau OS purgé avec succès !', 'ok', 3000);
+          if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(16, 185, 129, 0.15)';
+            feedbackEl.style.border = '1px solid rgba(16, 185, 129, 0.35)';
+            feedbackEl.style.color = '#34d399';
+            feedbackEl.innerHTML = `✅ Trousseau OS purgé. Relancez maintenant la connexion dans Antigravity.`;
+          }
+        } catch (e: any) {
+          toast(`Erreur purge trousseau : ${e?.message}`, 'err');
         }
       });
     }

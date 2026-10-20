@@ -222,6 +222,12 @@ const api = {
     ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_RESTART),
   antigravityLaunchLogs: (): Promise<string> =>
     ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_LAUNCH_LOGS),
+  antigravityCpuOptStatus: (): Promise<{ ok: boolean; data?: any; error?: string }> =>
+    ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_CPU_OPT_STATUS),
+  antigravityCpuOptApply: (): Promise<{ ok: boolean; data?: any; error?: string }> =>
+    ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_CPU_OPT_APPLY),
+  antigravityCpuOptRevert: (): Promise<{ ok: boolean; data?: any; error?: string }> =>
+    ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.ANTIGRAVITY_CPU_OPT_REVERT),
 
   // Proxy stub lifecycle — emergency fallback when Antigravity's bundled proxy fails
   proxyStartStub: (): Promise<{ ok: boolean; pid?: number; port?: number; note?: string; error?: string }> =>
@@ -370,6 +376,32 @@ const api = {
     const listener = (_: unknown, payload: any) => handler(payload);
     ipcRenderer.on(DOCTOR_IPC_CHANNELS.PROXY_ERROR, listener);
     return () => ipcRenderer.removeListener(DOCTOR_IPC_CHANNELS.PROXY_ERROR, listener);
+  },
+
+  // Auto-Update APIs
+  updater: {
+    check: (channel?: 'stable' | 'beta'): Promise<any> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.UPDATE_CHECK, channel),
+    download: (downloadUrl?: string): Promise<{ success: boolean; filePath?: string; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.UPDATE_DOWNLOAD, downloadUrl),
+    install: (filePath?: string, silent?: boolean): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.UPDATE_INSTALL, filePath, silent),
+    getSettings: (): Promise<any> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.UPDATE_GET_SETTINGS),
+    saveSettings: (settings: any): Promise<any> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.UPDATE_SAVE_SETTINGS, settings),
+    onUpdateAvailable: (handler: (info: any) => void): (() => void) => {
+      const listener = (_: unknown, info: any) => handler(info);
+      ipcRenderer.on(DOCTOR_IPC_CHANNELS.UPDATE_AVAILABLE, listener);
+      return () => ipcRenderer.removeListener(DOCTOR_IPC_CHANNELS.UPDATE_AVAILABLE, listener);
+    },
+    onProgress: (handler: (progress: { percent: number; transferred: number; total: number }) => void): (() => void) => {
+      const listener = (_: unknown, progress: any) => handler(progress);
+      ipcRenderer.on(DOCTOR_IPC_CHANNELS.UPDATE_PROGRESS, listener);
+      return () => ipcRenderer.removeListener(DOCTOR_IPC_CHANNELS.UPDATE_PROGRESS, listener);
+    },
+    openReleasePage: (url: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke(DOCTOR_IPC_CHANNELS.VERIFICATION_OPEN_URL, url),
   },
 };
 
