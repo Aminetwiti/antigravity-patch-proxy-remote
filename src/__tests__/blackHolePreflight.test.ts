@@ -26,9 +26,12 @@ vi.mock('../services/googleAuth', async () => {
   };
 });
 
-import dns from 'dns';
-vi.spyOn(dns.Resolver.prototype, 'resolve4').mockImplementation((_hostname: any, cb: any) => {
-  cb(null, ['142.250.80.46']);
+vi.mock('../proxy/dnsResolver', async () => {
+  const actual = await vi.importActual<any>('../proxy/dnsResolver');
+  return {
+    ...actual,
+    resolveGoogleIp: vi.fn().mockResolvedValue('142.250.80.46'),
+  };
 });
 
 import {
@@ -59,12 +62,6 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
   beforeEach(() => {
     _resetUnlicensedAccounts();
     _resetAllAccountCooldowns();
-    vi.spyOn(dns, 'resolve4').mockImplementation((_hostname: any, cb: any) => {
-      cb(null, ['142.250.80.46']);
-    });
-    vi.spyOn(dns.Resolver.prototype, 'resolve4').mockImplementation((_hostname: any, cb: any) => {
-      cb(null, ['142.250.80.46']);
-    });
   });
 
   afterEach(() => {
@@ -237,6 +234,8 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
       callCount++;
       const emitter = new EventEmitter() as any;
       emitter.write = vi.fn();
+      emitter.setTimeout = vi.fn();
+      emitter.destroy = vi.fn();
       emitter.end = vi.fn(() => {
         if (callCount === 1) {
           // Account 1: upstream socket hang up
