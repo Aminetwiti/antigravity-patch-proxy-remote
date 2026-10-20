@@ -59,6 +59,9 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
   beforeEach(() => {
     _resetUnlicensedAccounts();
     _resetAllAccountCooldowns();
+    vi.spyOn(dns, 'resolve4').mockImplementation((_hostname: any, cb: any) => {
+      cb(null, ['142.250.80.46']);
+    });
     vi.spyOn(dns.Resolver.prototype, 'resolve4').mockImplementation((_hostname: any, cb: any) => {
       cb(null, ['142.250.80.46']);
     });
@@ -68,10 +71,10 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
     stopPreflightHealthCheckInterval();
   });
 
-  it('verifies GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS is configured to 4.5s', () => {
+  it('verifies GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS is configured to 10s', () => {
     const expected = process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS
       ? parseInt(process.env.AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, 10)
-      : 4_500;
+      : 10_000;
     expect(GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS).toBe(expected);
   });
 

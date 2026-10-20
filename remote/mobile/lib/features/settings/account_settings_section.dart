@@ -145,7 +145,10 @@ class _AccountSettingsSectionState extends State<AccountSettingsSection> {
   List<Map<String, dynamic>> _filterKeyQuotas(List<Map<String, dynamic>> all) {
     if (all.isEmpty) return const [];
     final pro = all.firstWhere(
-      (q) => (q['name'] as String? ?? '').contains('pro') && !(q['name'] as String? ?? '').contains('flash'),
+      (q) =>
+          ((q['name'] as String? ?? '').contains('pro') ||
+              (q['name'] as String? ?? '').contains('argon')) &&
+          !(q['name'] as String? ?? '').contains('flash'),
       orElse: () => all.first,
     );
     final claude = all.firstWhere(
@@ -171,7 +174,7 @@ class _AccountSettingsSectionState extends State<AccountSettingsSection> {
   String _formatModelName(String raw) {
     final lower = raw.toLowerCase();
     if (lower.contains('claude')) return 'Claude';
-    if (lower.contains('pro')) return 'Pro';
+    if (lower.contains('pro') || lower.contains('argon')) return 'Pro';
     if (lower.contains('flash')) return 'Flash';
     if (lower.contains('gpt')) return 'GPT';
     return raw.length > 8 ? raw.substring(0, 8) : raw;

@@ -76,9 +76,8 @@ jobs:
           cache-dependency-path: remote/daemon/go.sum
 
       - name: Run Go Unit Tests
-        run: |
-          cd remote/daemon
-          go test -v ./...
+        working-directory: remote/daemon
+        run: go test -v -timeout 10m ./...
 
   test-mobile:
     name: Flutter Mobile Tests & Analysis
