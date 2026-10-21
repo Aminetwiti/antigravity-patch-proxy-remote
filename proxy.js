@@ -2691,6 +2691,9 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 (0, googlePool_1.setAccountCooldown)(candidate, timeoutCooldownMs, currentFamily, true);
                 if (lastStatus === 504) {
                     (0, googlePool_1.recordAccountLatency)(candidate, 60000);
+                    if (sessId) {
+                        sessionAffinities.delete(sessId);
+                    }
                 }
                 const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some((c) => !(0, googlePool_1.isAccountInCooldown)(c, currentFamily) && (0, googlePool_1.getModelQuotaScore)(c, currentFamily) > 20);
                 if (isUpstreamOutage && !remainingHealthyWithQuota) {
@@ -2720,6 +2723,9 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
         // On HTTP 403 licensing/forbidden failure, immediately place the account in a
         // 7-day quarantine so subsequent requests don't waste round-trip time failing over.
         if (lastStatus === 403) {
+            if (sessId) {
+                sessionAffinities.delete(sessId);
+            }
             const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid|verify.*account|verification.*required|account.*restricted|restricted|unavailable tier|suspended|denied access|validation_required/i.test(lastErrorText);
             const quarantineMs = isLicenseError ? 7 * 24 * 3600 * 1000 : 24 * 3600 * 1000;
             electron_log_1.default.warn(`[Proxy] Account ${candidateName} received HTTP 403 (${isLicenseError ? 'license/permission/verification challenge' : 'forbidden'}). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine to eliminate failover latency.`);
@@ -2735,6 +2741,9 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
         }
         // On HTTP 402 payment / credit depletion, quarantine account for 24h to avoid wasting failovers
         if (lastStatus === 402 || (lastStatus === 400 && /prepayment.*depleted|credit.*depleted|insufficient.*credit|billing.*closed/i.test(lastErrorText))) {
+            if (sessId) {
+                sessionAffinities.delete(sessId);
+            }
             const quarantineMs = 24 * 3600 * 1000;
             electron_log_1.default.warn(`[Proxy] Account ${candidateName} hit HTTP 402 / credit depletion (${lastErrorText.slice(0, 100)}). Placing in 24h quarantine.`);
             (0, googlePool_1.setAccountCooldown)(candidate, quarantineMs);
@@ -2838,7 +2847,7 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                     }
                     electron_log_1.default.warn(`[Proxy] 🔀 [Model Fallback] Pool exhausted for [${currentBase}] across candidate accounts (${lastErrorText.slice(0, 80)}). Switching to fallback model: [${fallbackModel}]...`);
                     if (fallbackCandidates.length > 0) {
-                        const selectedFallback = (0, googlePool_1.selectBestModelByQuota)(fallbackCandidates, allCustomModels) || fallbackCandidates[0];
+                        const selectedFallback = (0, googlePool_1.selectBestModelByQuota)(fallbackCandidates, allCustomModels, fbFamily) || fallbackCandidates[0];
                         const fallbackPool = (0, googlePool_1.getGoogleAccountPool)(selectedFallback, allCustomModels);
                         reqJson.model = fallbackModel;
                         if (reqJson.request && typeof reqJson.request === 'object') {
@@ -3866,10 +3875,17 @@ function getSessionBoundModel(sessionId, targetModel, allModels) {
         const mEffort = m._effortSuffix || m.reasoningEffort || '';
         return mBase === targetBase && mEffort === targetEffort && (0, googlePool_1.getAccountQuotaKey)(m) === affinity.accountKey;
     });
-    if (bound && !(0, circuitBreaker_1.getOpenBreaker)(bound) && (0, googlePool_1.getModelQuotaScore)(bound) > 0) {
+    const fam = (targetModel.externalModelName || targetModel.name || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
+    if (bound &&
+        bound.enabled !== false &&
+        !(0, googlePool_1.isAccountUnlicensed)(bound) &&
+        !(0, circuitBreaker_1.getOpenBreaker)(bound) &&
+        !(0, googlePool_1.isAccountInCooldown)(bound, fam) &&
+        (0, googlePool_1.getModelQuotaScore)(bound, fam) > 0) {
         affinity.lastUsed = now;
         return bound;
     }
+    sessionAffinities.delete(sessionId);
     return targetModel;
 }
 function bindSessionToModel(sessionId, model) {
@@ -6200,11 +6216,12 @@ function handleRequest(req, res) {
                         }
                     }
                 }
-                let matchedCustomModel = (isNativeCloudCode && !isNativeRoutedToPool) ? undefined : (0, googlePool_1.selectBestModelByQuota)(matchingCandidates, customModels);
+                const targetFam = (cleanRequested || candidateNames[0] || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
+                let matchedCustomModel = (isNativeCloudCode && !isNativeRoutedToPool) ? undefined : (0, googlePool_1.selectBestModelByQuota)(matchingCandidates, customModels, targetFam);
                 // Fallback: if a conversation references a placeholder (e.g. M299/M298/M50/M319/M565)
                 if (!isNativeCloudCode && !matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
                     const activePool = customModels.filter((m) => !m._poolOnly && m.enabled !== false);
-                    matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
+                    matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(activePool.length > 0 ? activePool : customModels, customModels, targetFam) || activePool[0] || customModels[0];
                 }
                 const effectiveModelName = (matchedCustomModel?.externalModelName ||
                     matchedCustomModel?.name ||
@@ -6268,7 +6285,7 @@ function handleRequest(req, res) {
                         const mEffort = m._effortSuffix || m.reasoningEffort || '';
                         return (mBase === baseName || (baseNorm && mNorm === baseNorm)) && mEffort === targetEffort;
                     });
-                    matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(realSiblings, customModels) || matchedCustomModel;
+                    matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(realSiblings, customModels, isClaudeRequest ? 'claude' : 'gemini') || matchedCustomModel;
                 }
                 if (matchedCustomModel) {
                     const isStream = req.url.includes('streamGenerateContent') || req.url.includes('alt=sse');
@@ -6368,10 +6385,11 @@ function handleRequest(req, res) {
                         matchingCandidates = customModels.filter((m) => matchesCustomModel(m, norm) || matchesCustomModel(m, `models/${norm}`));
                     }
                 }
-                matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(matchingCandidates, customModels);
+                const directFam = (matchedModelName || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
+                matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(matchingCandidates, customModels, directFam);
                 if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
                     const activePool = customModels.filter((m) => !m._poolOnly && m.enabled !== false);
-                    matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
+                    matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(activePool.length > 0 ? activePool : customModels, customModels, directFam) || activePool[0] || customModels[0];
                 }
                 if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
                     const baseName = (0, urlBuilder_1.getBaseModelId)(matchedCustomModel.externalModelName || matchedCustomModel.name);
@@ -6383,7 +6401,7 @@ function handleRequest(req, res) {
                         const mNorm = (0, googleAuth_1.normalizeCloudCodeModelId)(mBase);
                         return mBase === baseName || (baseNorm && mNorm === baseNorm);
                     });
-                    matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(realSiblings, customModels) || matchedCustomModel;
+                    matchedCustomModel = (0, googlePool_1.selectBestModelByQuota)(realSiblings, customModels, directFam) || matchedCustomModel;
                 }
             }
             if (matchedCustomModel) {
