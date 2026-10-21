@@ -628,18 +628,10 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
   const normAccountKey = accountKey.startsWith('google:') ? accountKey : `google:${accountKey}`;
   const rawAccountKey = accountKey.replace(/^google:/, '');
 
-  const rawEmail = rawAccountKey.includes('@') ? rawAccountKey.toLowerCase() : '';
-  const isUnlicensed =
-    unlicensedAccountKeys.has(normAccountKey) ||
-    unlicensedAccountKeys.has(rawAccountKey) ||
-    unlicensedAccountKeys.has(accountKey) ||
-    (rawEmail !== '' && (unlicensedAccountKeys.has(rawEmail) || unlicensedAccountKeys.has(`google:${rawEmail}`) || unlicensedAccountKeys.has(`gemini-cli:${rawEmail}`)));
-
-  if (isUnlicensed) {
+  if (unlicensedAccountKeys.has(normAccountKey) || unlicensedAccountKeys.has(rawAccountKey) || unlicensedAccountKeys.has(accountKey)) {
     if (quota.geminiFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT || quota.claudeFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT) {
       log.info(`[Proxy] Account ${accountKey} was marked unlicensed, but live quota returned positive quota. Lifting quarantine.`);
       unmarkAccountUnlicensed(accountKey);
-      if (rawEmail) unmarkAccountUnlicensed(rawEmail);
     } else {
       log.debug(`[Proxy] Skipping auto-heal for unlicensed account: ${accountKey}`);
       return;
