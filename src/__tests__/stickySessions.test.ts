@@ -164,17 +164,17 @@ describe('Sticky Sessions (Multi-Account Session Affinity)', () => {
 
     it('clears session affinity and falls back to targetModel if bound account enters cooldown or is unlicensed', () => {
       bindSessionToModel('session-cooldown', account1Model);
-      expect(getSessionBoundModel('session-cooldown', account2Model, allModels).name).toBe('account-1');
+      expect(getSessionBoundModel('session-cooldown', account2Model, allModels).name).toBe('google-perso-gemini');
 
-      // Now account1 enters cooldown
+      // Now account1 is disabled
       (account1Model as any).enabled = false;
       const fallback = getSessionBoundModel('session-cooldown', account2Model, allModels);
-      expect(fallback.name).toBe('account-2');
+      expect(fallback.name).toBe('google-work-gemini');
 
       // Re-enable account1, but session affinity must have been deleted
       (account1Model as any).enabled = true;
       const subsequent = getSessionBoundModel('session-cooldown', account2Model, allModels);
-      expect(subsequent.name).toBe('account-2');
+      expect(subsequent.name).toBe('google-work-gemini');
     });
   });
 
