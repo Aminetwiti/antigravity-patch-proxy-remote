@@ -2750,6 +2750,7 @@ export async function executeGoogleCloudCodeWithPool(
             log.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
             return false;
           }
+          }
         }
       }
       continue;

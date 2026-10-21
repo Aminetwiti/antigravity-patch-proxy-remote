@@ -2399,6 +2399,10 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                         updatedAt: nowMs,
                     });
                 }
+                const targetEmail = candidate.accountEmail || (candidateName.includes('@') ? candidateName : '');
+                if (targetEmail) {
+                    (0, googlePool_1.persistAccountQuotaExhaustedToDisk)(targetEmail, resetIso);
+                }
                 else if (currentFamily === 'claude') {
                     (0, googleAuth_1.updateLiveAccountQuota)(liveKey, {
                         ...existingQuota,
@@ -2456,23 +2460,25 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 // healthy idle sibling accounts. If other idle accounts exist in the pool, NEVER PAUSE: rotate immediately
                 // so the downstream client (IDE Language Server) does not experience a timeout or drop connection.
                 // For genuine quota exhaustion, skip pacing entirely.
-                const isBurst429 = !isGenuineQuotaExhausted && decision.category !== 'quota_exhausted';
-                const hasIdleAccount = sortedAccounts.slice(i + 1).some((c) => !(0, googlePool_1.isAccountInCooldown)(c, currentFamily) && !(0, circuitBreaker_1.getOpenBreaker)(c) && (0, googlePool_1.getAccountInFlight)(c) === 0);
-                if (isBurst429 && !hasIdleAccount) {
-                    const pacingMs = consecutive429Count > 1
-                        ? 2000 + Math.floor(Math.random() * 800)
-                        : 1000 + Math.floor(Math.random() * 400);
-                    electron_log_1.default.info(`[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté sans compte libre. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`);
-                    const isClientAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
-                    if (!isClientAlive) {
-                        electron_log_1.default.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
-                        return false;
-                    }
-                    await new Promise((r) => setTimeout(r, pacingMs));
-                    const isClientStillAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
-                    if (!isClientStillAlive) {
-                        electron_log_1.default.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
-                        return false;
+                const hasHealthyAvailable = sortedAccounts.slice(i + 1).some((c) => (0, googlePool_1.isAccountEligibleForPool)(c, currentFamily));
+                if (!hasHealthyAvailable) {
+                    const isBurst429 = !isGenuineQuotaExhausted && decision.category !== 'quota_exhausted';
+                    if (isBurst429) {
+                        const pacingMs = consecutive429Count > 1
+                            ? 2000 + Math.floor(Math.random() * 800)
+                            : 1000 + Math.floor(Math.random() * 400);
+                        electron_log_1.default.info(`[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté sans compte libre. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`);
+                        const isClientAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
+                        if (!isClientAlive) {
+                            electron_log_1.default.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
+                            return false;
+                        }
+                        await new Promise((r) => setTimeout(r, pacingMs));
+                        const isClientStillAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
+                        if (!isClientStillAlive) {
+                            electron_log_1.default.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
+                            return false;
+                        }
                     }
                 }
             }

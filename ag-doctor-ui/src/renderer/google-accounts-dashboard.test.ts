@@ -874,6 +874,159 @@ describe('Google Accounts High-Density Dashboard Logic', () => {
       const isExh = isAccountCapExhausted(studioAcc);
       expect(isExh).toBe(false);
     });
+
+    it('returns Cooldown 429 badge for an account in active 429 cooldown, never Santé 100%', () => {
+      const getActiveCd = (acc: any, family: 'gemini' | 'claude') => {
+        if (acc.email === 'cooldown@gmail.com' && family === 'gemini') {
+          return { isCooldown: true, isWeeklyCap: false, until: Date.now() + 60000, text: '429 Rate Limit' };
+        }
+        return null;
+      };
+
+      const getRecommendation = (a: any) => {
+        const cdGemini = getActiveCd(a, 'gemini');
+        if (cdGemini) {
+          return {
+            type: 'cooldown',
+            text: 'En cooldown Gemini temporaire',
+            badge: cdGemini.isWeeklyCap ? '📅 Plafond Hebdo' : '⏳ Cooldown 429',
+          };
+        }
+        const eff = getAccountEffectiveQuotas(a);
+        const healthScore = Math.min(eff.gemini5hPct, eff.geminiWkPct);
+        if (healthScore <= 0) {
+          return { type: 'warn', text: 'Quota épuisé', badge: '⚠️ Quota Épuisé' };
+        }
+        return { type: 'ok', text: 'Prêt', badge: `🟢 Santé ${healthScore}%` };
+      };
+
+      const cdAcc = {
+        id: 'cd-1',
+        email: 'cooldown@gmail.com',
+        tier: 'PRO',
+        quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 }, // Google returned 100%
+      };
+
+      const recom = getRecommendation(cdAcc);
+      expect(recom.type).toBe('cooldown');
+      expect(recom.badge).toBe('⏳ Cooldown 429');
+      expect(recom.badge).not.toContain('Santé 100%');
+    });
+
+    it('recommends Switch Claude when Gemini 5h is 0% but Claude has quota (>20%)', () => {
+      const getRecommendation = (a: any) => {
+        const eff = getAccountEffectiveQuotas(a);
+        if (a.status === 'exhausted' || (eff.gemini5hPct <= 0 && eff.claude5hPct <= 0)) {
+          return { type: 'warn', text: 'Plafond atteint', badge: '⚠️ Quota Épuisé' };
+        }
+        if (eff.gemini5hPct <= 0 && eff.claude5hPct > 20) {
+          return {
+            type: 'info',
+            text: `Gemini 5h épuisé (0%) mais Claude disponible (${eff.claude5hPct}%).`,
+            badge: '💡 Switch Claude',
+          };
+        }
+        const health = Math.min(eff.gemini5hPct, eff.geminiWkPct);
+        if (health <= 0) return { type: 'warn', text: 'Quota épuisé', badge: '⚠️ Quota Épuisé' };
+        return { type: 'ok', text: 'Prêt', badge: `🟢 Santé ${health}%` };
+      };
+
+      const accGeminiExhausted = {
+        id: 'acc-switch-claude',
+        email: 'user@example.com',
+        tier: 'PRO',
+        quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 80, claudeFiveHourPct: 75, claudeWeeklyPct: 90 },
+      };
+
+      const recom = getRecommendation(accGeminiExhausted);
+      expect(recom.type).toBe('info');
+      expect(recom.badge).toBe('💡 Switch Claude');
+      expect(recom.badge).not.toContain('Santé');
+    });
+
+    it('returns Quota Épuisé (type: warn) when both Gemini and Claude 5h quotas are 0%', () => {
+      const getRecommendation = (a: any) => {
+        const eff = getAccountEffectiveQuotas(a);
+        if (a.status === 'exhausted' || (eff.gemini5hPct <= 0 && eff.claude5hPct <= 0)) {
+          return { type: 'warn', text: 'Plafond atteint', badge: '⚠️ Quota Épuisé' };
+        }
+        const health = Math.min(eff.gemini5hPct, eff.geminiWkPct);
+        if (health <= 0) return { type: 'warn', text: 'Quota épuisé', badge: '⚠️ Quota Épuisé' };
+        return { type: 'ok', text: 'Prêt', badge: `🟢 Santé ${health}%` };
+      };
+
+      const totallyDepleted = {
+        id: 'acc-zero',
+        email: 'zero@example.com',
+        tier: 'PRO',
+        quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 0, claudeFiveHourPct: 0, claudeWeeklyPct: 0 },
+      };
+
+      const recom = getRecommendation(totallyDepleted);
+      expect(recom.type).toBe('warn');
+      expect(recom.badge).toBe('⚠️ Quota Épuisé');
+      expect(recom.badge).not.toContain('Santé 0%');
+    });
+
+    it('returns Maître Épuisé when primary account has critical 0% quota', () => {
+      const getRecommendation = (a: any) => {
+        const eff = getAccountEffectiveQuotas(a);
+        if (a.isCurrent) {
+          if (eff.gemini5hPct <= 10 && eff.claude5hPct <= 10) {
+            return { type: 'warn', text: 'Compte Maître épuisé', badge: '⚠️ Maître Épuisé' };
+          }
+          return { type: 'ok', text: 'Compte Maître', badge: '👑 Compte Maître' };
+        }
+        return { type: 'ok', text: 'Standby', badge: '🟢 Santé' };
+      };
+
+      const masterDepleted = {
+        id: 'master-acc',
+        isCurrent: true,
+        tier: 'PRO',
+        quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 5, claudeFiveHourPct: 0, claudeWeeklyPct: 0 },
+      };
+
+      const recom = getRecommendation(masterDepleted);
+      expect(recom.type).toBe('warn');
+      expect(recom.badge).toBe('⚠️ Maître Épuisé');
+    });
+
+    it('excludes accounts in active cooldown or with 0% quota from top rotation candidate (P2C)', () => {
+      const activeCooldowns: Record<string, any> = {
+        'google:cooled@gmail.com:gemini': { until: Date.now() + 60000 },
+      };
+
+      const accounts = [
+        { id: 'a1', email: 'cooled@gmail.com', enabled: true, tier: 'PRO', quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } },
+        { id: 'a2', email: 'depleted@gmail.com', enabled: true, tier: 'PRO', quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 50 } },
+        { id: 'a3', email: 'healthy@gmail.com', enabled: true, tier: 'PRO', quotas: { geminiFiveHourPct: 60, geminiWeeklyPct: 80 } },
+      ];
+
+      const getCandidate = (accs: any[], family: 'gemini' | 'claude' = 'gemini') => {
+        const eligible = accs.filter(a => {
+          if (a.enabled === false) return false;
+          const cd = activeCooldowns[`google:${a.email}:${family}`];
+          if (cd && cd.until > Date.now()) return false;
+          const eff = getAccountEffectiveQuotas(a);
+          if (family === 'gemini') {
+            if (eff.gemini5hPct < 5 || eff.geminiWkPct <= 0) return false;
+          }
+          return true;
+        });
+        if (eligible.length === 0) return null;
+        return eligible.reduce((best, curr) => {
+          if (!best) return curr;
+          const qBest = getAccountEffectiveQuotas(best).gemini5hPct;
+          const qCurr = getAccountEffectiveQuotas(curr).gemini5hPct;
+          return qCurr > qBest ? curr : best;
+        }, null);
+      };
+
+      const best = getCandidate(accounts, 'gemini');
+      expect(best).not.toBeNull();
+      expect(best.id).toBe('a3'); // a1 is in cooldown, a2 is depleted, only a3 is eligible!
+    });
   });
 });
 

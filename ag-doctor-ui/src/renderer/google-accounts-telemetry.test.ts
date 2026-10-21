@@ -11,6 +11,7 @@ import {
   calculateBurnProjection,
   calculateAccountTokens,
   calculatePoolConsumedTokens,
+  isAccountInCooldownTelemetry,
   GEMINI_5H_QUOTA_TOKENS,
   GEMINI_WEEKLY_RATIO,
   CLAUDE_5H_TO_WEEKLY_RATIO,
@@ -394,4 +395,67 @@ describe('google-accounts-telemetry', () => {
       expect(timeline[0].accountName).toBe('cooldown-test');
     });
   });
+
+  describe('isAccountInCooldownTelemetry & Cooldown Integration', () => {
+    const fixedNow = 1000000;
+
+    it('correctly matches account by email, id, or name with prefixes stripped', () => {
+      const cooldowns = {
+        'google:alice@gmail.com:gemini': { until: fixedNow + 300000 },
+        'gemini-cli:acc-bob:claude': { until: fixedNow + 600000 },
+      };
+
+      const alice = { email: 'alice@gmail.com', name: 'Alice Pro' };
+      const bob = { id: 'acc-bob', name: 'Bob Pro' };
+
+      expect(isAccountInCooldownTelemetry(alice, 'gemini', cooldowns, fixedNow)).toBe(true);
+      expect(isAccountInCooldownTelemetry(alice, 'claude', cooldowns, fixedNow)).toBe(false);
+
+      expect(isAccountInCooldownTelemetry(bob, 'claude', cooldowns, fixedNow)).toBe(true);
+      expect(isAccountInCooldownTelemetry(bob, 'gemini', cooldowns, fixedNow)).toBe(false);
+    });
+
+    it('ignores expired cooldowns where until <= nowMs', () => {
+      const cooldowns = {
+        'google:charlie@gmail.com:gemini': { until: fixedNow - 1000 },
+      };
+      const charlie = { email: 'charlie@gmail.com' };
+      expect(isAccountInCooldownTelemetry(charlie, 'gemini', cooldowns, fixedNow)).toBe(false);
+    });
+
+    it('performs case-insensitive matching across IDs and emails', () => {
+      const cooldowns = {
+        'google:Alice.Upper@Gmail.COM:gemini': { until: fixedNow + 300000 },
+      };
+      const alice = { email: 'alice.upper@gmail.com' };
+      expect(isAccountInCooldownTelemetry(alice, 'gemini', cooldowns, fixedNow)).toBe(true);
+    });
+
+    it('blocks gemini-pool in fallback chain when account has active cooldown despite 100% quota', () => {
+      const accounts = [
+        { id: 'cd-acc', email: 'cd@gmail.com', enabled: true, quotas: { geminiFiveHourPct: 100, claudeFiveHourPct: 100 } },
+      ];
+      const cooldowns = {
+        'google:cd@gmail.com:gemini': { until: fixedNow + 500000 },
+      };
+
+      const chain = getPoolFallbackChain(accounts, cooldowns, fixedNow);
+      // Level 0 (gemini-pool) and Level 1 (gemini-flash) should be blocked because Gemini is in cooldown
+      expect(chain[0].status).toBe('blocked');
+      expect(chain[1].status).toBe('blocked');
+      // Level 2 (claude-bridge) should remain ready
+      expect(chain[2].status).toBe('ready');
+    });
+
+    it('penalizes pool resilience score when account is in cooldown even if raw quota is 100%', () => {
+      const accounts = [
+        { id: 'acc-1', email: 'a1@gmail.com', enabled: true, tier: 'PRO', quotas: { geminiFiveHourPct: 100, claudeFiveHourPct: 100 } },
+      ];
+      const resWithoutCd = calculatePoolResilienceScore(accounts, {}, fixedNow);
+      const resWithCd = calculatePoolResilienceScore(accounts, { 'google:a1@gmail.com:gemini': { until: fixedNow + 60000 } }, fixedNow);
+
+      expect(resWithCd.score).toBeLessThan(resWithoutCd.score);
+    });
+  });
 });
+

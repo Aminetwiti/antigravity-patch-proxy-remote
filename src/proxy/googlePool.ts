@@ -191,7 +191,7 @@ export function persistAccountChallengeToDisk(accountEmail: string, errorMsg: st
             if (email === cleanTarget) {
               a.isValidationRequired = true;
               a.status = 'validation_required';
-              a.lastError = HTTP 403: VALIDATION_REQUIRED ();
+              a.lastError = `HTTP 403: VALIDATION_REQUIRED (${errorMsg || 'Challenge requis'})`;
               a.errorDetails = {
                 status: 'VALIDATION_REQUIRED',
                 reason: 'VALIDATION_REQUIRED',
@@ -206,10 +206,10 @@ export function persistAccountChallengeToDisk(accountEmail: string, errorMsg: st
     }
     if (mutated) {
       fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2), 'utf-8');
-      log.info([GooglePool] 💾 Persisted validation challenge state to custom_models.json for \);
+      log.info(`[GooglePool] 💾 Persisted validation challenge state to custom_models.json for ${cleanTarget}`);
     }
   } catch (err) {
-    log.error([GooglePool] Failed to persist account challenge for :, err);
+    log.error(`[GooglePool] Failed to persist account challenge for ${accountEmail}:`, err);
   }
 }
 
@@ -247,10 +247,10 @@ export function persistAccountQuotaExhaustedToDisk(accountEmail: string, resetIs
     }
     if (mutated) {
       fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2), 'utf-8');
-      log.info([GooglePool] 💾 Persisted exhausted quota status to custom_models.json for \);
+      log.info(`[GooglePool] 💾 Persisted exhausted quota status to custom_models.json for ${cleanTarget}`);
     }
   } catch (err) {
-    log.error([GooglePool] Failed to persist exhausted quota for :, err);
+    log.error(`[GooglePool] Failed to persist exhausted quota for ${accountEmail}:`, err);
   }
 }
 
