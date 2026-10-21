@@ -54,8 +54,9 @@ export function runModelsList(ctx: CommandContext): number {
       if (activeCds.length > 0) {
         info(`Cooldowns: ${c.yellow(String(activeCds.length))} account cooldown(s) active:`);
         for (const [k, until] of activeCds) {
-          const remH = Math.round(((until as number) - now) / 3600000);
-          console.log(`  ${c.gray('•')} ${k.padEnd(45)} ${c.yellow(`${remH}h remaining`)}`);
+          const remMs = (until as number) - now;
+          const remText = remMs >= 3600000 ? `${(remMs / 3600000).toFixed(1)}h remaining` : `${Math.ceil(remMs / 60000)}m remaining`;
+          console.log(`  ${c.gray('•')} ${k.padEnd(45)} ${c.yellow(remText)}`);
         }
         console.log('');
       } else {

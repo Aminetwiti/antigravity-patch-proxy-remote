@@ -154,6 +154,106 @@ export function isAccountNearExhaustion(candidate: CustomModel, modelFamily?: st
   return typeof weekly === 'number' && weekly <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !weeklyResetPassed;
 }
 
+/**
+ * Evaluates whether an account is healthy, eligible, and available to be pooled/dispatched.
+ * Accounts requiring challenge validation, in active cooldown, suspended, or at 0% quota
+ * are strictly disqualified.
+ */
+export function isAccountEligibleForPool(candidate: CustomModel, modelFamily = 'gemini'): boolean {
+  if (!candidate) return false;
+  if ((candidate as any).enabled === false) return false;
+  if ((candidate as any).isValidationRequired === true) return false;
+  if (isAccountUnlicensed(candidate)) return false;
+  if (isAccountInCooldown(candidate, modelFamily)) return false;
+  if (getOpenBreaker(candidate)) return false;
+  if (getModelQuotaScore(candidate, modelFamily) <= 0) return false;
+  return true;
+}
+
+/**
+ * Persists validation challenge state (403 VALIDATION_REQUIRED) to custom_models.json
+ * so Doctor UI immediately visualizes it in the Validation Requise category.
+ */
+export function persistAccountChallengeToDisk(accountEmail: string, errorMsg: string): void {
+  if (!accountEmail) return;
+  try {
+    const filePath = getCustomModelsPath();
+    if (!fs.existsSync(filePath)) return;
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content);
+    let mutated = false;
+    const cleanTarget = accountEmail.trim().toLowerCase();
+    if (parsed.providers && Array.isArray(parsed.providers)) {
+      for (const pr of parsed.providers) {
+        if (Array.isArray(pr.accounts)) {
+          for (const a of pr.accounts) {
+            const email = (a.email || '').trim().toLowerCase();
+            if (email === cleanTarget) {
+              a.isValidationRequired = true;
+              a.status = 'validation_required';
+              a.lastError = HTTP 403: VALIDATION_REQUIRED ();
+              a.errorDetails = {
+                status: 'VALIDATION_REQUIRED',
+                reason: 'VALIDATION_REQUIRED',
+                message: 'Validation Sécurité Requise (SMS/Captcha)',
+                validationUrl: 'https://accounts.google.com/signin/continue',
+              };
+              mutated = true;
+            }
+          }
+        }
+      }
+    }
+    if (mutated) {
+      fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2), 'utf-8');
+      log.info([GooglePool] 💾 Persisted validation challenge state to custom_models.json for \);
+    }
+  } catch (err) {
+    log.error([GooglePool] Failed to persist account challenge for :, err);
+  }
+}
+
+/**
+ * Persists quota exhausted state (429) to custom_models.json
+ * so Doctor UI immediately reflects the account status.
+ */
+export function persistAccountQuotaExhaustedToDisk(accountEmail: string, resetIso: string): void {
+  if (!accountEmail) return;
+  try {
+    const filePath = getCustomModelsPath();
+    if (!fs.existsSync(filePath)) return;
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content);
+    let mutated = false;
+    const cleanTarget = accountEmail.trim().toLowerCase();
+    if (parsed.providers && Array.isArray(parsed.providers)) {
+      for (const pr of parsed.providers) {
+        if (Array.isArray(pr.accounts)) {
+          for (const a of pr.accounts) {
+            const email = (a.email || '').trim().toLowerCase();
+            if (email === cleanTarget) {
+              if (a.status !== 'exhausted') {
+                a.status = 'exhausted';
+                if (!a.quotas) a.quotas = {};
+                a.quotas.geminiFiveHourPct = 0;
+                a.quotas.fiveHourPercentage = 0;
+                a.quotas.geminiFiveHourReset = resetIso;
+                mutated = true;
+              }
+            }
+          }
+        }
+      }
+    }
+    if (mutated) {
+      fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2), 'utf-8');
+      log.info([GooglePool] 💾 Persisted exhausted quota status to custom_models.json for \);
+    }
+  } catch (err) {
+    log.error([GooglePool] Failed to persist exhausted quota for :, err);
+  }
+}
+
 export function markAccountUnlicensed(candidate: CustomModel): void {
   const key = getAccountQuotaKey(candidate);
   const email = (candidate.accountEmail || '').toLowerCase();
@@ -1574,6 +1674,8 @@ export function getGoogleAccountPool(
     if (m.name?.includes(':auto-pool') || m.apiKey === 'auto') return false;
     // Disabled accounts must not be pooled
     if ((m as any).enabled === false) return false;
+    // Accounts requiring security validation (challenge) must not be pooled
+    if ((m as any).isValidationRequired === true) return false;
     // Unlicensed accounts (HTTP 403) must not be pooled
     if (isAccountUnlicensed(m)) return false;
     const mRaw = (m.externalModelName || m.name)

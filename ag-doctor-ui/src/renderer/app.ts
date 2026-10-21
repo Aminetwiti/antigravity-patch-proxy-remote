@@ -11484,13 +11484,20 @@ function initGoogleAccountsToolbarOnce(): void {
             <!-- Step 2 -->
             <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
               <div>
-                <strong style="font-size: 11.5px; color: #f8fafc;">2. Valider l'âge du compte</strong>
-                <div style="font-size: 10.5px; color: #94a3b8;">Validez la majorité (carte ou selfie) pour débloquer l'accès.</div>
+                <strong style="font-size: 11.5px; color: #f8fafc;">${validationUrl ? '2. Résoudre le Challenge Google Sécurité Direct' : '2. Valider l\'âge du compte'}</strong>
+                <div style="font-size: 10.5px; color: ${validationUrl ? '#fbbf24' : '#94a3b8'}; font-weight: ${validationUrl ? '600' : 'normal'};">${validationUrl ? 'Challenge de sécurité interactif requis par Google (SMS/Captcha).' : 'Validez la majorité (carte ou selfie) pour débloquer l\'accès.'}</div>
               </div>
-              <button type="button" id="gaOpenAgeVerificationBtn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                Validation Âge
-              </button>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button type="button" id="gaOpenAgeVerificationBtn" style="background: ${validationUrl ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'rgba(245, 158, 11, 0.15)'}; color: ${validationUrl ? '#ffffff' : '#fbbf24'}; border: ${validationUrl ? 'none' : '1px solid rgba(245, 158, 11, 0.35)'}; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: ${validationUrl ? '0 2px 8px rgba(245, 158, 11, 0.3)' : 'none'};">
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  ${validationUrl ? 'Ouvrir Challenge Direct' : 'Validation Âge'}
+                </button>
+                ${validationUrl ? `
+                <button type="button" id="gaCopyChallengeUrlBtn" style="background: rgba(255, 255, 255, 0.08); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 4px 7px; font-size: 10.5px; cursor: pointer;" title="Copier le lien direct du challenge">
+                  Copier Lien
+                </button>
+                ` : ''}
+              </div>
             </div>
 
             <!-- Step 3 -->
@@ -11770,9 +11777,18 @@ function initGoogleAccountsToolbarOnce(): void {
         });
 
         handle.bodyEl.querySelector('#gaOpenAgeVerificationBtn')?.addEventListener('click', () => {
-          const url = 'https://myaccount.google.com/age-verification';
+          const url = actionValidationUrl;
           if (window.ag?.openExternal) void window.ag.openExternal(url);
           else window.open(url, '_blank');
+        });
+
+        handle.bodyEl.querySelector('#gaCopyChallengeUrlBtn')?.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(actionValidationUrl);
+            toast('Lien direct de validation copié !', 'ok');
+          } catch {
+            toast('Impossible de copier le lien', 'err');
+          }
         });
 
         handle.bodyEl.querySelector('#gaNativeLoginBtn')?.addEventListener('click', () => {
@@ -12313,6 +12329,9 @@ function initGoogleAccountsToolbarOnce(): void {
                 } else {
                   delete account.isUnlicensed;
                   delete account.errorDetails;
+                  delete (account as any).isValidationRequired;
+                  delete (account as any).lastError;
+                  (account as any).status = 'healthy';
                 }
               }
             }

@@ -172,6 +172,9 @@ import {
   selectCandidateP2C,
   selectBestModelByQuota,
   getGoogleAccountPool,
+  isAccountEligibleForPool,
+  persistAccountChallengeToDisk,
+  persistAccountQuotaExhaustedToDisk,
   recordAccountBurst,
   clearAccountBurst,
   _resetAccountBurst,
@@ -2648,6 +2651,11 @@ export async function executeGoogleCloudCodeWithPool(
             geminiWeeklyReset: isWeekly ? resetIso : existingQuota?.geminiWeeklyReset,
             updatedAt: nowMs,
           } as AccountLiveQuota);
+        }
+
+        const targetEmail = candidate.accountEmail || (candidateName.includes('@') ? candidateName : '');
+        if (targetEmail) {
+          persistAccountQuotaExhaustedToDisk(targetEmail, resetIso);
         } else if (currentFamily === 'claude') {
           updateLiveAccountQuota(liveKey, {
             ...existingQuota,
@@ -2719,11 +2727,12 @@ export async function executeGoogleCloudCodeWithPool(
         // healthy idle sibling accounts. If other idle accounts exist in the pool, NEVER PAUSE: rotate immediately
         // so the downstream client (IDE Language Server) does not experience a timeout or drop connection.
         // For genuine quota exhaustion, skip pacing entirely.
-        const isBurst429 = !isGenuineQuotaExhausted && decision.category !== 'quota_exhausted';
-        const hasIdleAccount = sortedAccounts.slice(i + 1).some(
-          (c) => !isAccountInCooldown(c, currentFamily) && !getOpenBreaker(c) && getAccountInFlight(c) === 0,
+        const hasHealthyAvailable = sortedAccounts.slice(i + 1).some(
+          (c) => isAccountEligibleForPool(c, currentFamily),
         );
-        if (isBurst429 && !hasIdleAccount) {
+        if (!hasHealthyAvailable) {
+          const isBurst429 = !isGenuineQuotaExhausted && decision.category !== 'quota_exhausted';
+          if (isBurst429) {
           const pacingMs = consecutive429Count > 1
             ? 2000 + Math.floor(Math.random() * 800)
             : 1000 + Math.floor(Math.random() * 400);

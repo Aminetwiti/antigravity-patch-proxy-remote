@@ -261,10 +261,28 @@ async function main() {
     for (const a of googleProvider.accounts) {
       if (healthyEmails.has(a.email)) {
         if (a.enabled === false) { a.enabled = true; modified = true; }
+        delete a.isValidationRequired;
+        delete a.errorDetails;
+        delete a.lastError;
+        a.status = 'healthy';
         if (trialEmails.has(a.email)) {
           if (a.isTrial !== true) { a.isTrial = true; modified = true; }
         } else {
           if (a.isTrial === true) { a.isTrial = false; modified = true; }
+        }
+      } else if (challengeEmails.has(a.email)) {
+        a.isValidationRequired = true;
+        a.status = 'validation_required';
+        const res = results.find(x => x.email === a.email);
+        if (res && res.validationUrl) {
+          a.errorDetails = {
+            code: 403,
+            status: 'VALIDATION_REQUIRED',
+            reason: 'VALIDATION_REQUIRED',
+            message: res.reason || 'Verify your account to continue.',
+            validationUrl: res.validationUrl,
+            detectionTime: Date.now()
+          };
         }
       } else if (quarantinedEmails.has(a.email)) {
         if (a.enabled !== false) { a.enabled = false; modified = true; }
