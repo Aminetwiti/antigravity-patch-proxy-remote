@@ -848,21 +848,27 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
     const c = await fs.promises.readFile(p, 'utf8');
     const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
 
-    // Merge quota_cache.json live quotas into accounts so Doctor UI reflects real, up-to-date quotas.
+    // Merge quota_cache.json live quotas and unlicensed quarantine into accounts so Doctor UI reflects real, up-to-date quotas.
     let quotaCache: Record<string, any> = {};
+    let unlicensedAccountsList: string[] = [];
     try {
       const qCachePath = path.join(app.getPath('home'), '.gemini', 'antigravity', 'quota_cache.json');
       const qRaw = await fs.promises.readFile(qCachePath, 'utf8');
-      quotaCache = JSON.parse(qRaw).quotas || {};
+      const parsedCache = JSON.parse(qRaw);
+      quotaCache = parsedCache.quotas || {};
+      unlicensedAccountsList = Array.isArray(parsedCache.unlicensedAccounts) ? parsedCache.unlicensedAccounts : [];
     } catch { /* quota_cache.json absent or unreadable — skip */ }
 
-    if (parsed.providers && Array.isArray(parsed.providers) && Object.keys(quotaCache).length > 0) {
+    if (parsed.providers && Array.isArray(parsed.providers) && (Object.keys(quotaCache).length > 0 || unlicensedAccountsList.length > 0)) {
+      const unSet = new Set(unlicensedAccountsList.map((s) => s.toLowerCase().trim()));
       for (const prov of parsed.providers) {
         if (!Array.isArray(prov.accounts)) continue;
         for (const acc of prov.accounts) {
-          const email = acc.email || '';
+          const email = (acc.email || '').toLowerCase().trim();
+          const id = (acc.id || '').toLowerCase().trim();
+          const isMarkedUnlicensed = unSet.has(email) || unSet.has(`google:${email}`) || unSet.has(`gemini-cli:${email}`) || unSet.has(id);
           const cacheEntry = quotaCache[`google:${email}`] || quotaCache[email] || quotaCache[acc.id];
-          if (!cacheEntry) continue;
+          if (!cacheEntry && !isMarkedUnlicensed) continue;
           if (!acc.quotas) acc.quotas = {};
           
           if (typeof cacheEntry.geminiFiveHourPct === 'number') {
@@ -918,15 +924,19 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           }
           if (cacheEntry.tier) acc.tier = cacheEntry.tier;
           if (cacheEntry.tierId) acc.tierId = cacheEntry.tierId;
-          if (cacheEntry.isUnlicensed) {
+          if (isMarkedUnlicensed || cacheEntry?.isUnlicensed) {
             acc.isUnlicensed = true;
+            if (acc.quotas) acc.quotas.isUnlicensed = true;
           } else {
             delete acc.isUnlicensed;
             if (acc.quotas) delete acc.quotas.isUnlicensed;
           }
-          if (cacheEntry.errorDetails) {
+          if (cacheEntry?.errorDetails) {
             acc.errorDetails = cacheEntry.errorDetails;
             acc.quotas.errorDetails = cacheEntry.errorDetails;
+          } else if (isMarkedUnlicensed) {
+            acc.errorDetails = 'Compte bloqué (HTTP 403 / Challenge Sécurité)';
+            if (acc.quotas) acc.quotas.errorDetails = acc.errorDetails;
           } else {
             delete acc.errorDetails;
             if (acc.quotas) delete acc.quotas.errorDetails;
@@ -2139,6 +2149,13 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_LIFT_ACCOUNT_COOLDOWN, async (_evt, ac
         cleared++;
         removedKeys.push(k);
       }
+    }
+    if (Array.isArray(qData.unlicensedAccounts)) {
+      const unSet = new Set(qData.unlicensedAccounts);
+      for (const item of [needle, needleEmail, `google:${needle}`, `google:${needleEmail}`, `gemini-cli:${needle}`, `gemini-cli:${needleEmail}`]) {
+        if (item && unSet.delete(item)) cleared++;
+      }
+      qData.unlicensedAccounts = Array.from(unSet);
     }
     if (cleared > 0) {
       qData.accountCooldowns = cds;
