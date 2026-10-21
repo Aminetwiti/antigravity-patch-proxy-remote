@@ -16,7 +16,7 @@ export const GEMINI_CLI_CLIENT_ID =
   _unmaskSecret('HBIbGB8fEhoTGRMfB0VFEkxeGEVaWE5YRFoTTxlLW0wcS1wZQkdOQ0gbGR9ABEtaWlkETUVFTUZPX1lPWElFRF5PRF4ESUVH');
 export const GEMINI_CLI_CLIENT_SECRET =
   process.env.GEMINI_CLI_OAUTH_CLIENT_SECRET ||
-  _unmaskSecret('bWVpeXpyBx5fYk1nZkcHG0UdeUEHTU98HGlfH0lGcmxZUkY=');
+  _unmaskSecret('bWVpeXpyBx5fYk1nekcHG0UdeUEHTU98HGlfH0lGcmxZUkY=');
 // New Antigravity AuthProvider client — extracted from language_server.exe (current build).
 // Accounts authenticated via the IDE sign-in flow use this client for token refresh.
 export const ANTIGRAVITY_V2_CLIENT_ID =
@@ -247,7 +247,10 @@ export async function refreshGoogleToken(
     }
 
     if (!result.success) {
-      if (result.statusCode === 400 && (result.rawData.includes('invalid_grant') || result.rawData.includes('revoked'))) {
+      if (
+        (result.statusCode === 400 && (result.rawData.includes('invalid_grant') || result.rawData.includes('revoked'))) ||
+        (result.statusCode === 401 && (result.rawData.includes('unauthorized_client') || result.rawData.includes('invalid_grant')))
+      ) {
         markTokenRevoked(cleanRefresh);
       }
     }
@@ -265,7 +268,7 @@ export async function refreshGoogleToken(
       return result.accessToken;
     }
 
-    log.warn(`[GoogleAuth] Token refresh failed with status ${result.statusCode}: ${result.rawData.substring(0, 150)}`);
+    log.warn(`[GoogleAuth] Token refresh failed for [${cleanRefresh.substring(0, 10)}...] with status ${result.statusCode}: ${result.rawData.substring(0, 150)}`);
     return null;
   })().finally(() => {
     inFlightRefreshes.delete(cleanRefresh);
@@ -319,7 +322,7 @@ export function prewarmGoogleAccounts(
   let queued = 0;
   for (const acc of accounts) {
     const token = (acc.refreshToken || '').trim();
-    if (!token || seen.has(token) || isTokenCached(token)) continue;
+    if (!token || seen.has(token) || isTokenCached(token) || isTokenRevoked(token)) continue;
     seen.add(token);
     queued++;
     const identifier = acc.accountEmail || acc.email || 'account';
@@ -377,7 +380,13 @@ export interface AccountLiveQuota {
 const accountLiveQuotas = new Map<string, AccountLiveQuota>();
 
 export function getLiveAccountQuota(accountKey: string): AccountLiveQuota | undefined {
-  return accountLiveQuotas.get(accountKey);
+  if (!accountKey) return undefined;
+  const direct = accountLiveQuotas.get(accountKey);
+  if (direct) return direct;
+  const altKey = accountKey.startsWith('google:')
+    ? accountKey.replace(/^google:/, '')
+    : `google:${accountKey}`;
+  return accountLiveQuotas.get(altKey);
 }
 
 export function updateLiveAccountQuota(accountKey: string, quota: AccountLiveQuota): void {
@@ -793,20 +802,54 @@ export async function pollAllGoogleQuotas(
       if (!accessToken) continue;
       const quota = await fetchLiveUserQuota(accessToken);
       if (quota) {
-        const prevQuota = accountLiveQuotas.get(accountKey);
+        const prevQuota = getLiveAccountQuota(accountKey) || accountLiveQuotas.get(accountKey);
         if (prevQuota) {
           const now = Date.now();
-          if (prevQuota.geminiFiveHourPct === 0 && prevQuota.geminiFiveHourReset && Date.parse(prevQuota.geminiFiveHourReset) > now) {
+          const gemini5hReset = prevQuota.geminiFiveHourReset ? Date.parse(prevQuota.geminiFiveHourReset) : 0;
+          const geminiWeeklyReset = prevQuota.geminiWeeklyReset ? Date.parse(prevQuota.geminiWeeklyReset) : 0;
+          const isGeminiWeeklyExhausted = (prevQuota.geminiWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) && geminiWeeklyReset > now;
+          const isGemini5hExhausted = prevQuota.geminiFiveHourPct === 0 && gemini5hReset > now;
+
+          if (isGeminiWeeklyExhausted || isGemini5hExhausted) {
             quota.geminiFiveHourPct = 0;
-            quota.geminiFiveHourReset = prevQuota.geminiFiveHourReset;
-            if (prevQuota.geminiWeeklyPct === 0) quota.geminiWeeklyPct = 0;
-            if (prevQuota.geminiWeeklyReset) quota.geminiWeeklyReset = prevQuota.geminiWeeklyReset;
+            quota.fiveHourPercentage = 0;
+            if (isGeminiWeeklyExhausted) {
+              quota.geminiWeeklyPct = 0;
+              quota.weeklyPercentage = 0;
+              quota.geminiWeeklyReset = prevQuota.geminiWeeklyReset;
+              quota.geminiFiveHourReset = prevQuota.geminiWeeklyReset;
+              quota.geminiResetTime = prevQuota.geminiWeeklyReset;
+            } else {
+              quota.geminiFiveHourReset = prevQuota.geminiFiveHourReset;
+              quota.geminiResetTime = prevQuota.geminiFiveHourReset;
+              if (prevQuota.geminiWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) {
+                quota.geminiWeeklyPct = 0;
+                quota.weeklyPercentage = 0;
+              }
+              if (prevQuota.geminiWeeklyReset) quota.geminiWeeklyReset = prevQuota.geminiWeeklyReset;
+            }
           }
-          if (prevQuota.claudeFiveHourPct === 0 && prevQuota.claudeFiveHourReset && Date.parse(prevQuota.claudeFiveHourReset) > now) {
+
+          const claude5hReset = prevQuota.claudeFiveHourReset ? Date.parse(prevQuota.claudeFiveHourReset) : 0;
+          const claudeWeeklyReset = prevQuota.claudeWeeklyReset ? Date.parse(prevQuota.claudeWeeklyReset) : 0;
+          const isClaudeWeeklyExhausted = (prevQuota.claudeWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) && claudeWeeklyReset > now;
+          const isClaude5hExhausted = prevQuota.claudeFiveHourPct === 0 && claude5hReset > now;
+
+          if (isClaudeWeeklyExhausted || isClaude5hExhausted) {
             quota.claudeFiveHourPct = 0;
-            quota.claudeFiveHourReset = prevQuota.claudeFiveHourReset;
-            if (prevQuota.claudeWeeklyPct === 0) quota.claudeWeeklyPct = 0;
-            if (prevQuota.claudeWeeklyReset) quota.claudeWeeklyReset = prevQuota.claudeWeeklyReset;
+            if (isClaudeWeeklyExhausted) {
+              quota.claudeWeeklyPct = 0;
+              quota.claudeWeeklyReset = prevQuota.claudeWeeklyReset;
+              quota.claudeFiveHourReset = prevQuota.claudeWeeklyReset;
+              quota.claudeResetTime = prevQuota.claudeWeeklyReset;
+            } else {
+              quota.claudeFiveHourReset = prevQuota.claudeFiveHourReset;
+              quota.claudeResetTime = prevQuota.claudeFiveHourReset;
+              if (prevQuota.claudeWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) {
+                quota.claudeWeeklyPct = 0;
+              }
+              if (prevQuota.claudeWeeklyReset) quota.claudeWeeklyReset = prevQuota.claudeWeeklyReset;
+            }
           }
         }
         const quotaChanged = !prevQuota ||

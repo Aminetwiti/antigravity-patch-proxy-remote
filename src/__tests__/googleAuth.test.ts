@@ -411,6 +411,30 @@ describe('googleAuth service', () => {
         ])
       ).resolves.not.toThrow();
     });
+    it('prevents background polls from overwriting active 0% quota exhaustion until future reset', async () => {
+      _clearLiveQuotasForTests();
+      const accountKey = 'google:amine.twiti39@gmail.com';
+      const futureReset = new Date(Date.now() + 68 * 3600 * 1000).toISOString();
+
+      // Set active exhaustion
+      updateLiveAccountQuota(accountKey, {
+        fiveHourPercentage: 0,
+        weeklyPercentage: 0,
+        geminiFiveHourPct: 0,
+        geminiWeeklyPct: 0,
+        geminiFiveHourReset: futureReset,
+        geminiWeeklyReset: futureReset,
+        geminiResetTime: futureReset,
+        updatedAt: Date.now(),
+      });
+
+      const live = getLiveAccountQuota(accountKey);
+      expect(live?.geminiFiveHourPct).toBe(0);
+      expect(live?.geminiWeeklyPct).toBe(0);
+
+      _clearLiveQuotasForTests();
+    });
+
   });
 
   describe('Proactive Token Renewal & Expiration Helpers', () => {

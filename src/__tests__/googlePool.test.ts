@@ -40,11 +40,12 @@ import {
   clearAccountBurst,
   _resetAccountBurst,
   verifyAndReconcileCooldowns,
+  autoHealAccountOnQuotaRecovery,
   isAccountNearExhaustion,
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
   isAccountTrial,
 } from '../proxy/googlePool';
-import { updateLiveAccountQuota, normalizeCloudCodeModelId } from '../services/googleAuth';
+import { updateLiveAccountQuota, _clearLiveQuotasForTests, normalizeCloudCodeModelId } from '../services/googleAuth';
 import { detectAndMitigateToolLoops } from '../proxy/shared';
 import { GOOGLE_POOL_HEADER_TIMEOUT_MS, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, P2C_SCORE_DELTA } from '../constants';
 
@@ -888,6 +889,57 @@ describe('Burst Rate Limit Governor & Constants', () => {
       const cooledClaude = selectBestModelByQuota([accA, accB], undefined, 'claude');
       expect(cooledClaude?.accountEmail).toBe('accA@example.com');
     });
+    it('absolute protection: amine.twiti39@gmail.com with 68h quota exhaustion never wakes up from stale 5h morning reset or background poll', () => {
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+
+      const acc: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:twiti39',
+        provider: 'google',
+        accountEmail: 'amine.twiti39@gmail.com',
+        refreshToken: 'twiti_refresh_token',
+      };
+      const key = getAccountQuotaKey(acc);
+
+      // Account hits 429 quota exhaustion: "Individual quota reached. Resets in 68h42m52s."
+      const SIXTY_EIGHT_HOURS_MS = (68 * 3600 + 42 * 60 + 52) * 1000;
+      setAccountCooldown(acc, SIXTY_EIGHT_HOURS_MS, 'gemini');
+      markAccountQuotaExhausted(key, 'gemini');
+
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      // Background poll from Google returns stale 100% quota with a 5h reset timestamp from this morning
+      const staleLiveQuota = {
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 100,
+        geminiFiveHourReset: '2026-10-21T06:18:30Z', // Past morning reset
+        geminiResetTime: '2026-10-21T06:18:30Z',
+        geminiWeeklyReset: new Date(Date.now() + SIXTY_EIGHT_HOURS_MS).toISOString(),
+        fiveHourPercentage: 100,
+        weeklyPercentage: 100,
+        updatedAt: Date.now(),
+      } as any;
+      updateLiveAccountQuota(key, staleLiveQuota);
+
+      // 1. autoHealAccountOnQuotaRecovery must NOT lift the cooldown
+      autoHealAccountOnQuotaRecovery(key, staleLiveQuota);
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      // 2. verifyAndReconcileCooldowns must NOT lift the cooldown
+      const report = verifyAndReconcileCooldowns(Date.now(), [acc]);
+      expect(report.cleared).toBe(0);
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+      // 3. When time has actually passed beyond the weekly reset (natural expiration)
+      const afterWeeklyReset = Date.now() + SIXTY_EIGHT_HOURS_MS + 10_000;
+      const expireReport = verifyAndReconcileCooldowns(afterWeeklyReset, [acc]);
+      expect(expireReport.cleared).toBe(1);
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
+
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+    });
+
   });
 });
 

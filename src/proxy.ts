@@ -2647,8 +2647,23 @@ export async function executeGoogleCloudCodeWithPool(
             ...existingQuota,
             geminiFiveHourPct: 0,
             geminiWeeklyPct: isWeekly ? 0 : (existingQuota?.geminiWeeklyPct ?? 100),
+            fiveHourPercentage: 0,
+            weeklyPercentage: isWeekly ? 0 : (existingQuota?.weeklyPercentage ?? 100),
             geminiFiveHourReset: resetIso,
             geminiWeeklyReset: isWeekly ? resetIso : existingQuota?.geminiWeeklyReset,
+            geminiResetTime: resetIso,
+            updatedAt: nowMs,
+          } as AccountLiveQuota);
+        } else if (currentFamily === 'claude') {
+          updateLiveAccountQuota(liveKey, {
+            ...existingQuota,
+            claudeFiveHourPct: 0,
+            claudeWeeklyPct: isWeekly ? 0 : (existingQuota?.claudeWeeklyPct ?? 100),
+            fiveHourPercentage: 0,
+            weeklyPercentage: isWeekly ? 0 : (existingQuota?.weeklyPercentage ?? 100),
+            claudeFiveHourReset: resetIso,
+            claudeWeeklyReset: isWeekly ? resetIso : existingQuota?.claudeWeeklyReset,
+            claudeResetTime: resetIso,
             updatedAt: nowMs,
           } as AccountLiveQuota);
         }
@@ -2656,15 +2671,6 @@ export async function executeGoogleCloudCodeWithPool(
         const targetEmail = candidate.accountEmail || (candidateName.includes('@') ? candidateName : '');
         if (targetEmail) {
           persistAccountQuotaExhaustedToDisk(targetEmail, resetIso);
-        } else if (currentFamily === 'claude') {
-          updateLiveAccountQuota(liveKey, {
-            ...existingQuota,
-            claudeFiveHourPct: 0,
-            claudeWeeklyPct: isWeekly ? 0 : (existingQuota?.claudeWeeklyPct ?? 100),
-            claudeFiveHourReset: resetIso,
-            claudeWeeklyReset: isWeekly ? resetIso : existingQuota?.claudeWeeklyReset,
-            updatedAt: nowMs,
-          } as AccountLiveQuota);
         }
 
         // Fast-fail if 3 consecutive accounts hit quota exhaustion for this model in a larger pool
@@ -2723,33 +2729,37 @@ export async function executeGoogleCloudCodeWithPool(
       }
 
       if (i + 1 < totalAttempts) {
+        // Genuine quota exhaustion: NEVER pace, rotate immediately (0ms) to next candidate
+        if (isGenuineQuotaExhaustion || decision.category === 'quota_exhausted') {
+          log.info(`[Proxy] ⚡ Quota exhausted on [${candidateName}] (${currentFamily}). Immediate 0ms rotation to next available account.`);
+          continue;
+        }
+
         // Anti-domino pacing: When Google triggers a burst/RPM rate limit, pause ONLY if there are NO OTHER
-        // healthy idle sibling accounts. If other idle accounts exist in the pool, NEVER PAUSE: rotate immediately
-        // so the downstream client (IDE Language Server) does not experience a timeout or drop connection.
-        // For genuine quota exhaustion, skip pacing entirely.
-        const hasHealthyAvailable = sortedAccounts.slice(i + 1).some(
-          (c) => isAccountEligibleForPool(c, currentFamily),
+        // healthy sibling accounts available in the pool. If other healthy accounts exist, rotate immediately (0ms).
+        const hasAvailableSibling = sortedAccounts.slice(i + 1).some(
+          (c) => !isAccountInCooldown(c, currentFamily) && !getOpenBreaker(c) && !isAccountUnlicensed(c) && (c as any).enabled !== false,
         );
-        if (!hasHealthyAvailable) {
-          const isBurst429 = !isGenuineQuotaExhausted && decision.category !== 'quota_exhausted';
+        if (!hasAvailableSibling) {
+          const isBurst429 = decision.category === 'rate_limited' || decision.category === 'soft_rate_limit';
           if (isBurst429) {
-          const pacingMs = consecutive429Count > 1
-            ? 2000 + Math.floor(Math.random() * 800)
-            : 1000 + Math.floor(Math.random() * 400);
-          log.info(
-            `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté sans compte libre. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
-          );
-          const isClientAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
-          if (!isClientAlive) {
-            log.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
-            return false;
-          }
-          await new Promise((r) => setTimeout(r, pacingMs));
-          const isClientStillAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
-          if (!isClientStillAlive) {
-            log.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
-            return false;
-          }
+            const pacingMs = consecutive429Count > 1
+              ? 2000 + Math.floor(Math.random() * 800)
+              : 1000 + Math.floor(Math.random() * 400);
+            log.info(
+              `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté sans compte libre. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
+            );
+            const clientTrulyClosed = res.destroyed || Boolean(res.socket && res.socket.destroyed);
+            if (clientTrulyClosed) {
+              log.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
+              return false;
+            }
+            await new Promise((r) => setTimeout(r, pacingMs));
+            const clientStillClosed = res.destroyed || Boolean(res.socket && res.socket.destroyed);
+            if (clientStillClosed) {
+              log.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
+              return false;
+            }
           }
         }
       }
