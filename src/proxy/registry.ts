@@ -187,7 +187,7 @@ export function getProviderHeaders(
     headers['x-api-key'] = apiKey;
     headers['anthropic-version'] = '2025-04-01';
     if (provider === 'anthropic') {
-      headers['anthropic-beta'] = 'prompt-caching-2024-07-31';
+      headers['anthropic-beta'] = 'prompt-caching-2024-07-31,token-efficient-tools-2025-02-19';
     }
   } else if (provider === 'google' || provider === 'google-gemini' || provider === 'gemini-cli') {
     if (apiKey.startsWith('ya29.')) {

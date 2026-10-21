@@ -394,6 +394,9 @@ export async function startGoogleOAuthLogin(
 
   const redirectUri = `http://localhost:${chosenPort}/oauth2callback`;
   const scopes = [
+    'https://www.googleapis.com/auth/aicode',
+    'https://www.googleapis.com/auth/cclog',
+    'https://www.googleapis.com/auth/experimentsandconfigs',
     'https://www.googleapis.com/auth/cloud-platform',
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',

@@ -266,6 +266,19 @@ try {
       /if \(!logStreamEnded\) \{\s*logStream\.write\(line \+ '\\n'\);\s*\}/,
       "if (!logStreamEnded) { if (!line.includes('skipping component during resolution: empty component:') && !line.includes('Truncating suggested_prompts from')) { logStream.write(line + '\\n'); } }"
     );
+    // Inject High-Performance runtime flags (disable DeepMind telemetry, uncap Go CPU cores, unlock sidecars)
+    lsJs = lsJs.replace(
+      /'--enable_sidecars',/,
+      `'--enable_sidecars',
+      '--disable_telemetry=true',
+      '--limit_go_max_procs=' + String(require('os').cpus().length || 8),
+      '--allow_all_sidecars=true',`
+    );
+    // Inject High-Performance environment overrides (cut Sentry sampling, fast Go memory release)
+    lsJs = lsJs.replace(
+      /const env = \{ \.\.\.process\.env, \.\.\.\(0, shell_env_1\.shellEnvSync\)\(\) \};/,
+      "const env = { ...process.env, ...(0, shell_env_1.shellEnvSync)(), ANTIGRAVITY_SENTRY_SAMPLE_RATE: '0', GODEBUG: 'madvdontneed=1' };"
+    );
     fs.writeFileSync(lsJsPath, lsJs, 'utf8');
   }
 

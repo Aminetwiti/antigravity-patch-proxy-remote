@@ -18,11 +18,11 @@
         </div>
         <div class="brand-text">
           <span class="brand-name">Antigravity Doctor</span>
-          <span class="brand-tag">Diagnostic &amp; repair</span>
+          <span class="brand-tag">Diagnostic · repair</span>
         </div>
       </div>
     </div>
-    <div style="display: flex; align-items: center; gap: 8px;">
+    <div class="titlebar-actions">
       <button class="btn btn-ghost btn-xs" id="headerCheckUpdateBtn" type="button" title="Check for updates" style="font-size: 11px; padding: 3px 8px; border-radius: var(--r-sm); border: 1px solid var(--border); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.85"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span>Check updates</span>
@@ -40,16 +40,6 @@
   <div class="app">
     <!-- Sidebar -->
     <nav class="sidebar" aria-label="Main navigation">
-      <div class="sidebar-brand-row">
-        <div class="brand-mark">
-          <img src="assets/icon-64.png" width="24" height="24" alt="Antigravity Doctor logo" style="border-radius:5px; display:block;" />
-        </div>
-        <div class="sidebar-brand-text">
-          <div class="sidebar-brand-name">Antigravity</div>
-          <div class="sidebar-brand-tag">Diagnostic · repair</div>
-        </div>
-      </div>
-
       <div class="sidebar-cta-wrap" style="display: none;">
         <button class="btn sidebar-cta" id="sidebarRunBtn" type="button" aria-label="Run doctor diagnostic">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -103,7 +93,7 @@
           <ul>
             <li><span class="nav-group-label">Configuration</span></li>
             <li><button class="nav-item" id="nav-tab-google-accounts" data-view="google-accounts" type="button" role="tab" aria-selected="false" aria-controls="view-google-accounts" title="Google Accounts">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><circle cx="12" cy="12" r="2"/></svg>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               <span>Google Accounts</span>
             </button></li>
             <li><button class="nav-item" id="nav-tab-models" data-view="models" type="button" role="tab" aria-selected="false" aria-controls="view-models" title="Models">
@@ -134,9 +124,12 @@
 
       <div class="sidebar-footer">
         <div class="sidebar-footer-card">
-          <div class="sidebar-footer-title">Antigravity doctor</div>
-          <p style="font-size:11px; color:var(--text-2); margin:0; line-height:1.5;">
-            One-click diagnostics and repair for your Antigravity install.
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+            <span class="sidebar-footer-title" style="margin:0;">AG Doctor</span>
+            <span style="font-size:10px; font-family:var(--font-mono); color:var(--text-3); background:var(--bg-2); padding:1px 5px; border-radius:var(--r-sm); border:1px solid var(--border);">v3.7.5</span>
+          </div>
+          <p style="font-size:11px; color:var(--text-2); margin:0; line-height:1.4;">
+            Diagnostics &amp; model injection suite.
           </p>
         </div>
       </div>
@@ -2299,7 +2292,7 @@
           <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           <span id="statusPlatformText">Desktop</span>
         </span>
-        <span class="statusbar-item" id="statusVersion">v3.4.2</span>
+        <span class="statusbar-item" id="statusVersion">v3.7.5</span>
       </div>
     </footer>
   </div>

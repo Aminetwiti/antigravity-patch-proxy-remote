@@ -488,6 +488,129 @@ export function fetchAccountTierAndProject(
   });
 }
 
+
+/**
+ * Automates the 'Get started' consent & onboarding sequence on Google Cloud Code.
+ * 1. POST /v1internal:setUserSettings { userSettings: { telemetryEnabled: true } }
+ * 2. POST /v1internal:onboardUser { tierId: 'free-tier' }
+ * This clears VALIDATION_REQUIRED and provisions cloudaicompanionProject for new/unactivated accounts.
+ */
+export async function onboardUserAndAcceptTerms(accessToken: string): Promise<{ success: boolean; projectId?: string; error?: string }> {
+  if (!accessToken) return { success: false, error: 'No access token provided' };
+  const host = 'https://cloudcode-pa.googleapis.com';
+
+  const makePost = (endpoint: string, bodyObj: any): Promise<{ statusCode: number; data: any }> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const u = new URL(`${host}/${endpoint}`);
+        const body = JSON.stringify(bodyObj);
+        const req = https.request(
+          {
+            protocol: u.protocol,
+            hostname: u.hostname,
+            port: u.port ? Number(u.port) : 443,
+            path: u.pathname,
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(body),
+              'User-Agent': 'antigravity',
+            },
+            timeout: 10000,
+          },
+          (res) => {
+            let rawData = '';
+            res.on('data', (chunk) => (rawData += chunk));
+            res.on('end', () => {
+              try {
+                const parsed = rawData ? JSON.parse(rawData) : {};
+                resolve({ statusCode: res.statusCode || 200, data: parsed });
+              } catch {
+                resolve({ statusCode: res.statusCode || 200, data: rawData });
+              }
+            });
+          },
+        );
+        req.on('error', reject);
+        req.on('timeout', () => {
+          req.destroy();
+          reject(new Error('Request timed out'));
+        });
+        req.write(body);
+        req.end();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  };
+
+  try {
+    // Step 1: Set user settings (Consent & Telemetry Agreement)
+    log.info('[GoogleAuth] Automatically registering user consent (Security Notice & Data Use)...');
+    await makePost('v1internal:setUserSettings', {
+      userSettings: {
+        telemetryEnabled: true,
+        marketingEmailsEnabled: false,
+      },
+    }).catch((err) => {
+      log.debug('[GoogleAuth] setUserSettings non-fatal error:', err?.message || err);
+    });
+
+    // Step 2: Onboard user into free-tier to provision companion project
+    log.info('[GoogleAuth] Automatically executing onboardUser(free-tier) to unlock Google Cloud Code...');
+    const onboardRes = await makePost('v1internal:onboardUser', {
+      tierId: 'free-tier',
+      metadata: { ideType: 'ANTIGRAVITY' },
+    });
+
+    let projectId = onboardRes.data?.response?.cloudaicompanionProject?.id || onboardRes.data?.cloudaicompanionProject?.id;
+    
+    // If long-running operation, poll briefly
+    if (onboardRes.data?.name && !onboardRes.data?.done) {
+      const opName = onboardRes.data.name;
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const opRes = await new Promise<{ statusCode: number; data: any }>((resolve) => {
+          const u = new URL(`${host}/v1internal/${opName}`);
+          https.get(
+            u,
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'User-Agent': 'antigravity',
+              },
+              timeout: 5000,
+            },
+            (res) => {
+              let raw = '';
+              res.on('data', (c) => (raw += c));
+              res.on('end', () => {
+                try {
+                  resolve({ statusCode: res.statusCode || 200, data: JSON.parse(raw) });
+                } catch {
+                  resolve({ statusCode: res.statusCode || 200, data: raw });
+                }
+              });
+            },
+          ).on('error', () => resolve({ statusCode: 500, data: {} }));
+        });
+
+        if (opRes.data?.done) {
+          projectId = opRes.data?.response?.cloudaicompanionProject?.id;
+          break;
+        }
+      }
+    }
+
+    log.info(`[GoogleAuth] Successfully onboarded user to Google Cloud Code! Project: ${projectId || 'default'}`);
+    return { success: true, projectId };
+  } catch (err: any) {
+    log.warn('[GoogleAuth] Automatic onboarding attempt failed:', err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
 const claude55CapabilityCache = new Map<string, { has55: boolean; timestamp: number }>();
 
 /**
@@ -805,10 +928,10 @@ export async function pollAllGoogleQuotas(
         const prevQuota = getLiveAccountQuota(accountKey) || accountLiveQuotas.get(accountKey);
         if (prevQuota) {
           const now = Date.now();
-          const gemini5hReset = prevQuota.geminiFiveHourReset ? Date.parse(prevQuota.geminiFiveHourReset) : 0;
+          const gemini5hReset = (prevQuota.geminiFiveHourReset || prevQuota.geminiResetTime) ? Date.parse(prevQuota.geminiFiveHourReset || prevQuota.geminiResetTime!) : 0;
           const geminiWeeklyReset = prevQuota.geminiWeeklyReset ? Date.parse(prevQuota.geminiWeeklyReset) : 0;
           const isGeminiWeeklyExhausted = (prevQuota.geminiWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) && geminiWeeklyReset > now;
-          const isGemini5hExhausted = prevQuota.geminiFiveHourPct === 0 && gemini5hReset > now;
+          const isGemini5hExhausted = prevQuota.geminiFiveHourPct === 0 && (gemini5hReset > now || isGeminiWeeklyExhausted);
 
           if (isGeminiWeeklyExhausted || isGemini5hExhausted) {
             quota.geminiFiveHourPct = 0;
@@ -820,8 +943,8 @@ export async function pollAllGoogleQuotas(
               quota.geminiFiveHourReset = prevQuota.geminiWeeklyReset;
               quota.geminiResetTime = prevQuota.geminiWeeklyReset;
             } else {
-              quota.geminiFiveHourReset = prevQuota.geminiFiveHourReset;
-              quota.geminiResetTime = prevQuota.geminiFiveHourReset;
+              quota.geminiFiveHourReset = prevQuota.geminiFiveHourReset || prevQuota.geminiResetTime;
+              quota.geminiResetTime = prevQuota.geminiResetTime || prevQuota.geminiFiveHourReset;
               if (prevQuota.geminiWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) {
                 quota.geminiWeeklyPct = 0;
                 quota.weeklyPercentage = 0;
@@ -830,10 +953,10 @@ export async function pollAllGoogleQuotas(
             }
           }
 
-          const claude5hReset = prevQuota.claudeFiveHourReset ? Date.parse(prevQuota.claudeFiveHourReset) : 0;
+          const claude5hReset = (prevQuota.claudeFiveHourReset || prevQuota.claudeResetTime) ? Date.parse(prevQuota.claudeFiveHourReset || prevQuota.claudeResetTime!) : 0;
           const claudeWeeklyReset = prevQuota.claudeWeeklyReset ? Date.parse(prevQuota.claudeWeeklyReset) : 0;
           const isClaudeWeeklyExhausted = (prevQuota.claudeWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) && claudeWeeklyReset > now;
-          const isClaude5hExhausted = prevQuota.claudeFiveHourPct === 0 && claude5hReset > now;
+          const isClaude5hExhausted = prevQuota.claudeFiveHourPct === 0 && (claude5hReset > now || isClaudeWeeklyExhausted);
 
           if (isClaudeWeeklyExhausted || isClaude5hExhausted) {
             quota.claudeFiveHourPct = 0;

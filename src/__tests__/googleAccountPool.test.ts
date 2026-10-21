@@ -1480,6 +1480,64 @@ describe('Google Multi-Account Pool & Failover', () => {
 
       _resetAllAccountCooldowns();
     });
+
+    it('restoreActiveAccountCooldowns preserves multi-day weekly cooldowns (82h) without clamping to 5h', () => {
+      _resetAllAccountCooldowns();
+      const now = Date.now();
+      const weeklyDurationMs = 82 * 3600_000;
+      const targetUntil = now + weeklyDurationMs;
+
+      restoreActiveAccountCooldowns({
+        'google:weekly-acc@example.com:gemini': targetUntil,
+      });
+
+      const active = getActiveAccountCooldowns();
+      expect(active['google:weekly-acc@example.com:gemini']).toBe(targetUntil);
+
+      const candidate: CustomModel = {
+        name: 'models/google:weekly-acc@example.com:gemini',
+        provider: 'google',
+        accountEmail: 'weekly-acc@example.com',
+      };
+      expect(isAccountInCooldown(candidate, 'gemini')).toBe(true);
+
+      _resetAllAccountCooldowns();
+    });
+
+    it('verifyAndReconcileCooldowns prevents premature wake-up on weekly exhaustion with stale 5h quota', () => {
+      _resetAllAccountCooldowns();
+      const now = Date.now();
+      const weeklyDurationMs = 82 * 3600_000;
+      const targetUntil = now + weeklyDurationMs;
+
+      restoreActiveAccountCooldowns({
+        'google:weekly-acc2@example.com:gemini': targetUntil,
+      });
+
+      // Update quota store with stale 100% 5h quota and past morning 5h reset timestamp
+      updateLiveAccountQuota('google:weekly-acc2@example.com', {
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 0,
+        geminiResetTime: new Date(now - 3600_000).toISOString(), // 1h ago in past
+        geminiFiveHourReset: new Date(now - 3600_000).toISOString(),
+        geminiWeeklyReset: new Date(now + weeklyDurationMs).toISOString(), // 82h in future
+        updatedAt: now,
+      } as any);
+
+      const result = verifyAndReconcileCooldowns(now);
+      // Account should NOT be cleared / woken up
+      expect(result.cleared).toBe(0);
+
+      const candidate: CustomModel = {
+        name: 'models/google:weekly-acc2@example.com:gemini',
+        provider: 'google',
+        accountEmail: 'weekly-acc2@example.com',
+      };
+      expect(isAccountInCooldown(candidate, 'gemini')).toBe(true);
+
+      _resetAllAccountCooldowns();
+    });
   });
 });
+
 

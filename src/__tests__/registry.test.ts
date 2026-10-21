@@ -77,7 +77,8 @@ describe('Registry - OpenRouter support', () => {
     const headers = getProviderHeaders('anthropic', 'sk-ant-key-123');
     expect(headers['x-api-key']).toBe('sk-ant-key-123');
     expect(headers['anthropic-version']).toBe('2025-04-01');
-    expect(headers['anthropic-beta']).toBe('prompt-caching-2024-07-31');
+    expect(headers['anthropic-beta']).toContain('prompt-caching-2024-07-31');
+    expect(headers['anthropic-beta']).toContain('token-efficient-tools-2025-02-19');
   });
 });
 

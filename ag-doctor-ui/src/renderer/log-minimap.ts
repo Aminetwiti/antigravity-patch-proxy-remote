@@ -28,12 +28,24 @@ export class LogMinimap {
   }
 
   public setEntries(entries: MinimapEntry[]): void {
-    this.entries = entries;
+    this.entries = entries.slice(-2000);
     this.requestRender();
   }
 
   public appendEntry(entry: MinimapEntry): void {
     this.entries.push(entry);
+    if (this.entries.length > 2000) {
+      this.entries.splice(0, this.entries.length - 2000);
+    }
+    this.requestRender();
+  }
+
+  public appendEntries(newEntries: MinimapEntry[]): void {
+    if (!newEntries || newEntries.length === 0) return;
+    this.entries.push(...newEntries);
+    if (this.entries.length > 2000) {
+      this.entries.splice(0, this.entries.length - 2000);
+    }
     this.requestRender();
   }
 

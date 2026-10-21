@@ -206,12 +206,16 @@ body {
 .titlebar {
   display: flex; align-items: center; justify-content: space-between;
   height: var(--h-titlebar);
-  padding: 0 12px 0 80px;
+  padding: 0 140px 0 12px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--border);
   position: relative; z-index: 10;
 }
-.titlebar-drag { -webkit-app-region: drag; flex: 1; display: flex; align-items: center; height: 100%; padding-left: 12px; }
+.titlebar-drag { -webkit-app-region: drag; flex: 1; display: flex; align-items: center; height: 100%; }
+.titlebar-actions {
+  display: flex; align-items: center; gap: 8px;
+  -webkit-app-region: no-drag;
+}
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark {
   display: grid; place-items: center;
@@ -286,8 +290,8 @@ body {
   background: var(--bg-1);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
-  padding: 18px 12px 14px;
-  gap: 18px;
+  padding: 12px 10px 14px;
+  gap: 14px;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
@@ -488,9 +492,12 @@ body {
 
 .view {
   display: none;
+  content-visibility: hidden;
 }
 .view.active {
   display: block;
+  content-visibility: visible;
+  contain: layout style;
 }
 /* Honor user's reduced-motion preference */
 @media (prefers-reduced-motion: reduce) {

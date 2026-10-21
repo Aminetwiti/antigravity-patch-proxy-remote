@@ -160,8 +160,65 @@ try { home = app.getPath('home'); } catch (e) { w('runner: getPath(home) failed:
 try { userData = app.getPath('userData'); } catch (e) { w('runner: getPath(userData) failed: ' + e.message); }
 w('runner: home=' + home + ' userData=' + userData + ' isPackaged=' + app.isPackaged);
 
+// Pre-validate onboarding & consent in app_storage.json so Antigravity never blocks on "Security Notice & Data Use"
+function ensureOnboardingCompleted() {
+  try {
+    const appData = process.env.APPDATA || (process.platform === 'darwin'
+      ? path.join(os.homedir(), 'Library', 'Application Support')
+      : path.join(os.homedir(), '.config'));
+    const storagePath = path.join(appData, 'Antigravity', 'app_storage.json');
+    if (!fs.existsSync(path.dirname(storagePath))) {
+      fs.mkdirSync(path.dirname(storagePath), { recursive: true });
+    }
+
+    let primaryEmail = '';
+    const customModelsPath = path.join(os.homedir(), '.gemini', 'antigravity', 'custom_models.json');
+    if (fs.existsSync(customModelsPath)) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(customModelsPath, 'utf8'));
+        const googleProvider = (raw.providers || []).find((p) => p.id === 'provider-google' || p.provider === 'google');
+        const accounts = googleProvider?.accounts || [];
+        const activeAcc = accounts.find((a) => !a.disabled && a.email) || accounts[0];
+        if (activeAcc && activeAcc.email) primaryEmail = activeAcc.email;
+      } catch (_) {}
+    }
+
+    let data = {};
+    if (fs.existsSync(storagePath)) {
+      try {
+        data = JSON.parse(fs.readFileSync(storagePath, 'utf8'));
+      } catch (_) {
+        data = {};
+      }
+    }
+
+    let modified = false;
+    const emailToSet = primaryEmail || data['jetski.onboarding.lastLoginUsername'] || 'user@google.com';
+    if (data['jetski.onboarding.lastLoginUsername'] !== emailToSet) {
+      data['jetski.onboarding.lastLoginUsername'] = emailToSet;
+      modified = true;
+    }
+    if (data['jetski.onboarding.lastLoginIsGcpTos'] !== 'false') {
+      data['jetski.onboarding.lastLoginIsGcpTos'] = 'false';
+      modified = true;
+    }
+    if (!data['ide-install-wizard-shown']) {
+      data['ide-install-wizard-shown'] = true;
+      modified = true;
+    }
+
+    if (modified) {
+      fs.writeFileSync(storagePath, JSON.stringify(data, null, 2), 'utf8');
+      w('runner: auto-onboarding ensured for ' + emailToSet + ' in app_storage.json');
+    }
+  } catch (e) {
+    w('runner: ensureOnboardingCompleted error: ' + (e && e.message || e));
+  }
+}
+
 app.whenReady().then(async () => {
   w('runner: app ready');
+  ensureOnboardingCompleted();
   // MITM-443 auto-launch — only if explicitly enabled via AG_ENABLE_MITM
   if (process.env.AG_ENABLE_MITM === '1') {
     try { spawnAntigravityMitm443(); } catch (e) { w('runner: MITM-443 dispatch threw: ' + (e && e.stack || e)); }

@@ -269,7 +269,8 @@ export async function ensureCloudCodeProject(accessToken: string): Promise<Cloud
             'User-Agent': 'antigravity',
           },
           body: JSON.stringify({
-            tier_id: baseTier,
+            tierId: baseTier,
+            cloudaicompanionProject: 'aicode-consumers',
             metadata: metadataPayload,
           }),
           signal: AbortSignal.timeout(8000),

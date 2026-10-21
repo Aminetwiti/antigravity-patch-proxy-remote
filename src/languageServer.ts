@@ -3,6 +3,7 @@ import { execFile, spawn, ChildProcess } from 'child_process';
 import { app, session } from 'electron';
 import { shellEnvSync } from 'shell-env';
 import * as fs from 'fs';
+import * as os from 'os';
 import path from 'path';
 import * as readline from 'readline';
 import { PassThrough } from 'stream';
@@ -242,6 +243,9 @@ export async function startLanguageServer(port: number, csrf: string, headless?:
     '--inference_api_server_url',
     apiServerUrl,
     '--enable_sidecars',
+    '--disable_telemetry=true',
+    '--limit_go_max_procs',
+    String(Math.max(4, os.cpus()?.length || 4)),
   ];
   if (headless) {
     args.push('--headless');

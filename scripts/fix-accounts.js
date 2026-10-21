@@ -81,6 +81,8 @@ async function main() {
     console.log('  [P]       Afficher le protocole complet en 4 étapes (Bypass limite smartphone)');
     console.log('  [C]       Ouvrir la gestion des connexions Google (Révoquer accès Antigravity)');
     console.log('  [V]       Ouvrir la validation d\'âge Google (myaccount.google.com/age-verification)');
+    console.log('  [O]       Pré-valider l\'onboarding Antigravity 2.0 (app_storage.json)');
+    console.log('  [F]       Renouveler l\'empreinte matérielle (Anti-Syndication Google Machine ID)');
     console.log('  [A]       Ouvrir les 3 premiers comptes bloqués dans le navigateur');
     console.log('  [R]       Re-tester tous les comptes pour vérifier les déblocages');
     console.log('  [Q]       Quitter\n');
@@ -90,6 +92,45 @@ async function main() {
 
       if (choice === 'Q') {
         rl.close();
+        return;
+      }
+
+      if (choice === 'O') {
+        const appData = process.env.APPDATA || (process.platform === 'darwin'
+          ? path.join(os.homedir(), 'Library', 'Application Support')
+          : path.join(os.homedir(), '.config'));
+        const storagePath = path.join(appData, 'Antigravity', 'app_storage.json');
+        try {
+          if (!fs.existsSync(path.dirname(storagePath))) fs.mkdirSync(path.dirname(storagePath), { recursive: true });
+          let data = fs.existsSync(storagePath) ? JSON.parse(fs.readFileSync(storagePath, 'utf8')) : {};
+          const primary = (accounts.find(a => !a.disabled && a.email) || accounts[0])?.email || 'user@google.com';
+          data['jetski.onboarding.lastLoginUsername'] = primary;
+          data['jetski.onboarding.lastLoginIsGcpTos'] = 'false';
+          data['ide-install-wizard-shown'] = true;
+          fs.writeFileSync(storagePath, JSON.stringify(data, null, 2), 'utf8');
+          console.log(`\n✅ Onboarding pré-validé avec succès pour ${primary} dans ${storagePath}`);
+        } catch (e) {
+          console.error('\n❌ Échec pré-validation onboarding:', e.message);
+        }
+        promptUser();
+        return;
+      }
+
+      if (choice === 'F') {
+        try {
+          const { randomizeAllDevices } = require(path.join(repoRoot, 'ag-doctor', 'dist', 'core', 'device-fingerprint.js'));
+          const res = randomizeAllDevices();
+          if (res.success) {
+            console.log('\n✅ Empreinte matérielle renouvelée avec succès !');
+            console.log(`   Nouveau Machine ID : ${res.profile.machineId.substring(0, 16)}...`);
+            console.log(`   Fichiers mis à jour : ${res.updatedFiles.length}`);
+          } else {
+            console.warn('\n⚠️ Aucun fichier de télémétrie trouvé à renouveler.');
+          }
+        } catch (e) {
+          console.error('\n❌ Échec renouvellement empreinte :', e.message);
+        }
+        promptUser();
         return;
       }
 

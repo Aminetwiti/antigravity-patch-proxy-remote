@@ -601,6 +601,10 @@ function navigate(viewName: string): void {
   if (viewName === 'traffic') void loadTraffic();
   if (viewName === 'failures') loadFailures();
   if (viewName === 'tokenizer') void loadTokenizer();
+  if (viewName === 'remote') {
+    void syncDaemonUiStatus();
+    void syncIdeStatus();
+  }
 }
 
 // Traffic Inspector — uses the TrafficInspectorEngine exposed via
@@ -2895,10 +2899,10 @@ const kpiSpeedTierBadge = $('#kpiSpeedTierBadge') as HTMLElement | null;
 const tokenProviderBreakdown = $('#tokenProviderBreakdown') as HTMLDivElement | null;
 const tokenModelBreakdown = $('#tokenModelBreakdown') as HTMLDivElement | null;
 
-const tokenLogsSearchInput = $('#tokenLogsSearchInput') as HTMLInputElement | null;
-const tokenLogsProviderSelect = $('#tokenLogsProviderSelect') as HTMLSelectElement | null;
-const tokenLogsModelSelect = $('#tokenLogsModelSelect') as HTMLSelectElement | null;
-const tokenLogsTbody = $('#tokenLogsTbody') as HTMLTableSectionElement | null;
+const tokenLogsSearchInput = document.querySelector<HTMLInputElement>('#tokenLogsSearchInput');
+const tokenLogsProviderSelect = document.querySelector<HTMLSelectElement>('#tokenLogsProviderSelect');
+const tokenLogsModelSelect = document.querySelector<HTMLSelectElement>('#tokenLogsModelSelect');
+const tokenLogsTbody = document.querySelector<HTMLTableSectionElement>('#tokenLogsTbody');
 
 // Detail Modal references
 const tokenDetailBackdrop = $('#tokenDetailBackdrop') as HTMLDivElement | null;
@@ -2919,11 +2923,11 @@ let currentTokenSortOrder: 'desc' | 'asc' = 'desc';
 let currentTokenLogsPage = 1;
 let currentTokenLogsPageSize = 25;
 
-const tokenLogsCountLabel = $('#tokenLogsCountLabel') as HTMLElement | null;
-const tokenLogsPageSizeSelect = $('#tokenLogsPageSizeSelect') as HTMLSelectElement | null;
-const tokenLogsPrevBtn = $('#tokenLogsPrevBtn') as HTMLButtonElement | null;
-const tokenLogsNextBtn = $('#tokenLogsNextBtn') as HTMLButtonElement | null;
-const tokenLogsPageIndicator = $('#tokenLogsPageIndicator') as HTMLElement | null;
+const tokenLogsCountLabel = document.querySelector<HTMLElement>('#tokenLogsCountLabel');
+const tokenLogsPageSizeSelect = document.querySelector<HTMLSelectElement>('#tokenLogsPageSizeSelect');
+const tokenLogsPrevBtn = document.querySelector<HTMLButtonElement>('#tokenLogsPrevBtn');
+const tokenLogsNextBtn = document.querySelector<HTMLButtonElement>('#tokenLogsNextBtn');
+const tokenLogsPageIndicator = document.querySelector<HTMLElement>('#tokenLogsPageIndicator');
 
 // Tokenizer Tool DOM references
 const tokenizerModelSelect = $('#tokenizerModelSelect') as HTMLSelectElement | null;
@@ -3188,7 +3192,7 @@ function renderTokenDashboard(): void {
   }
 
   // 4. Update Model Select Filter
-  if (tokenLogsModelSelect && (!tokenLogsModelSelect.dataset.populated || tokenLogsModelSelect.options.length <= 1)) {
+  if (tokenLogsModelSelect && (!tokenLogsModelSelect.dataset.populated || (tokenLogsModelSelect.options?.length ?? 0) <= 1)) {
     const currentVal = tokenLogsModelSelect.value;
     const allModels = Array.from(new Set(tokenTracker.getEntries().map((e) => e.model)));
     if (allModels.length > 0) {
@@ -4618,6 +4622,8 @@ function appendLogLines(container: HTMLElement, raw: string): void {
     logsDedupState.count = 1;
   }
 
+  const chunkMinimapEntries: Array<{ level: string }> = [];
+
   for (const rawLine of lines) {
     const cleanLine = rawLine.replace(ANSI_RE, '').trimEnd();
     if (!cleanLine) continue;
@@ -4632,9 +4638,7 @@ function appendLogLines(container: HTMLElement, raw: string): void {
     }
     if (parsed.isNoise) logsCounters.noise += repeatInc;
     logsVelocityCount += repeatInc;
-    if (logsMinimapInstance) {
-      logsMinimapInstance.appendEntry({ level: parsed.level });
-    }
+    chunkMinimapEntries.push({ level: parsed.level });
 
     // Dedup: collapse consecutive identical messages (ignoring timestamp differences) into ×N badge
     if (dedupKey === logsDedupState.lastKey && logsDedupState.lastEl) {
@@ -4744,6 +4748,10 @@ function appendLogLines(container: HTMLElement, raw: string): void {
     logsDedupState.lastKey = dedupKey;
     logsDedupState.lastEl = div;
     logsDedupState.count = repeatInc;
+  }
+
+  if (logsMinimapInstance && chunkMinimapEntries.length > 0) {
+    logsMinimapInstance.appendEntries(chunkMinimapEntries);
   }
 
   container.appendChild(fragment);
@@ -5839,10 +5847,15 @@ modelsClearSelectionBtn?.addEventListener('click', () => {
   renderModelsView();
 });
 
+let providersCache: ProviderEntry[] = [];
+
 window.ag.providers.onChanged(() => {
-  // Synchronize models list whenever providers change
-  void loadModels();
-  void renderProviderList();
+  providersCache = [];
+  const modelsViewActive = Boolean(document.getElementById('view-models')?.classList.contains('active'));
+  if (modelsViewActive) void loadModels();
+  const pmModal = document.getElementById('providerManagerModal');
+  const isPmModalOpen = Boolean(pmModal && !pmModal.hidden && pmModal.style.display !== 'none');
+  if (isPmModalOpen) void renderProviderList();
 });
 
 // Helper for finding provider
@@ -8528,18 +8541,6 @@ const pmFormFetchModelsBtn = $('#pmFormFetchModels') as HTMLButtonElement;
 const pmModalClose2 = $('#pmModalClose2') as HTMLButtonElement;
 const pmFormTest = $('#pmFormTest') as HTMLButtonElement;
 
-let providersCache: ProviderEntry[] = [];
-
-// Live sync: react to external custom_models.json changes (CLI add/remove,
-// file edits, proxy migrations). The main process broadcasts
-// ag:providers:changed via its file watcher; without this subscription the
-// UI only refreshes on navigation, so CLI-side changes would stay invisible
-// until the user re-navigates. Register once at boot.
-window.ag.providers.onChanged(() => {
-  providersCache = [];
-  const modelsViewActive = !!document.getElementById('view-models')?.classList.contains('active');
-  if (modelsViewActive) void loadModels();
-});
 let editingProviderId: string | null = null;
 let currentFetchedModels: Array<{ id: string; displayName?: string; enabled: boolean }> = [];
 let pmModelsSearchQuery = '';
@@ -9325,12 +9326,6 @@ $('#modelsAddBtn')?.addEventListener('click', openProviderManagerModal);
 $('#providerManagerBtn')?.addEventListener('click', openProviderManagerModal);
 $('#emptyAddModelBtn')?.addEventListener('click', openProviderManagerModal);
 
-// Real-time synchronization listener: re-render provider list whenever custom_models.json changes
-window.ag?.providers?.onChanged(() => {
-  void renderProviderList();
-  void loadModels();
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Remote Server (QR Code)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9781,15 +9776,16 @@ if (startRemoteBtn) {
   });
 }
 
-// Auto-détection de l'état du daemon et de l'IDE au chargement et rafraîchissement périodique
-void syncDaemonUiStatus();
-void syncIdeStatus();
+// Auto-détection de l'état du daemon et de l'IDE au rafraîchissement périodique (seulement quand l'onglet remote est actif)
 setInterval(() => {
-  if (isDaemonRunning) {
-    void syncDaemonUiStatus();
+  const isRemoteActive = Boolean(document.getElementById('view-remote')?.classList.contains('active'));
+  if (isRemoteActive) {
+    if (isDaemonRunning) {
+      void syncDaemonUiStatus();
+    }
+    void syncIdeStatus();
   }
-  void syncIdeStatus();
-}, 4000);
+}, 5000);
 
 setInterval(() => {
   if (Array.isArray(googleAccountsCache) && googleAccountsCache.length > 0) {
@@ -11503,8 +11499,11 @@ function initGoogleAccountsToolbarOnce(): void {
             <!-- Step 3 -->
             <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
               <div>
-                <strong style="font-size: 11.5px; color: #f8fafc;">3. Reconnexion native Antigravity 2.0 (PC)</strong>
+                <strong style="font-size: 11.5px; color: #f8fafc;">3. Reconnexion native Antigravity 2.0 (Consentement Onboarding)</strong>
                 <div style="font-size: 10.5px; color: #fbbf24;">Ne scannez pas le QR mobile saturé ! Authentifiez-vous sur PC.</div>
+                <div style="font-size: 10px; color: #cbd5e1; margin-top: 3px; background: rgba(245, 158, 11, 0.12); padding: 3px 6px; border-radius: 4px; border-left: 2px solid #f59e0b;">
+                  💡 <strong>Crucial :</strong> Sur l'écran <em>"Security Notice & Data Use"</em>, cochez la case et cliquez sur <strong>[Get started]</strong> pour valider l'onboarding Google.
+                </div>
               </div>
               <button type="button" id="gaNativeLoginBtn" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);">
                 <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
@@ -13531,9 +13530,23 @@ async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> 
       });
       await Promise.all(workers);
       try {
-        const provs = await window.ag.providers.get();
-        const googleProv = provs.find((p: any) => p.provider === 'google');
-        if (googleProv) await window.ag.providers.save(googleProv);
+        const provs = (await window.ag.providers.get()) as any[];
+        const googleProv = provs?.find((p: any) => p && (p.provider === 'google' || p.provider === 'gemini'));
+        if (googleProv && Array.isArray(googleProv.accounts)) {
+          let hasQuotaUpdates = false;
+          googleProv.accounts.forEach((existingAcc: any) => {
+            const updated = aggregatedAccounts.find((a) => a.id === existingAcc.id);
+            if (updated && updated.quotas && updated.quotas !== existingAcc.quotas) {
+              existingAcc.quotas = updated.quotas;
+              if (updated.isUnlicensed) existingAcc.isUnlicensed = true;
+              else { delete existingAcc.isUnlicensed; delete existingAcc.errorDetails; }
+              hasQuotaUpdates = true;
+            }
+          });
+          if (hasQuotaUpdates) {
+            await window.ag.providers.save(googleProv);
+          }
+        }
       } catch {}
     }
 

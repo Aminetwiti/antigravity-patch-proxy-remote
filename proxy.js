@@ -2143,35 +2143,33 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
         const isLargePayload = updatedBody.length > 35000;
         const isLargePayloadOrThinking = isLargePayload || isThinkingModel;
         // For streaming requests with sibling accounts in pool, use calibrated header timeouts:
-        // - Large prompts / old conversations (>35k bytes) or Thinking models: 40-55s (allows prompt prefill & reasoning without premature timeout)
-        // - Multi-turn / contextual prompts (8k-35k bytes): 25-35s (allows Google KV-cache prefill without false 504 timeouts)
-        // - Small/fresh Flash requests (<8k bytes): calibrated TTFT (at least 7s) with speculative hedging at 2.5s
-        // - Standard models: 25-35s
-        const effectiveFlashTimeout = Math.max(7000, constants_1.GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS);
+        // - Thinking models (Flash Thinking, Pro Thinking) or Large prompts (>35k bytes): 65-75s (allows reasoning tokens and KV-cache prefill without premature 504)
+        // - Multi-turn / contextual prompts (8k-35k bytes): 45s
+        // - Small/fresh non-thinking Flash requests (<8k bytes): calibrated TTFT (at least 10s) with speculative hedging
+        // - Standard models: 35-45s
+        const effectiveFlashTimeout = Math.max(10000, constants_1.GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS);
         const flashTimeoutMs = hasOtherCandidates
-            ? (isThinkingModel ? Math.min(30000, constants_1.GOOGLE_PROXY_TIMEOUT_MS) : (isContextualPayload ? Math.min(25000, constants_1.GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout))
-            : Math.min(25000, constants_1.GOOGLE_PROXY_TIMEOUT_MS);
+            ? (isContextualPayload ? Math.min(45000, constants_1.GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout)
+            : constants_1.GOOGLE_PROXY_TIMEOUT_MS;
         const largeTimeoutMs = hasOtherCandidates
-            ? (healthySiblingAccountsCount >= 2 ? constants_1.GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS : 55000)
+            ? (healthySiblingAccountsCount >= 2 ? Math.max(65000, constants_1.GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS) : 75000)
             : constants_1.GOOGLE_PROXY_TIMEOUT_MS;
         const standardTimeoutMs = hasOtherCandidates
-            ? (healthySiblingAccountsCount >= 2 ? constants_1.GOOGLE_POOL_HEADER_TIMEOUT_MS : 35000)
+            ? (healthySiblingAccountsCount >= 2 ? constants_1.GOOGLE_POOL_HEADER_TIMEOUT_MS : 45000)
             : constants_1.GOOGLE_PROXY_TIMEOUT_MS;
-        const baseCandidateTimeout = isFlashModel
-            ? flashTimeoutMs
-            : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs);
+        const baseCandidateTimeout = isLargePayloadOrThinking
+            ? largeTimeoutMs
+            : (isFlashModel ? flashTimeoutMs : standardTimeoutMs);
         // When no other candidates exist, fallback to the full proxy timeout.
         let poolHeaderTimeout = hasOtherCandidates
             ? baseCandidateTimeout
             : constants_1.GOOGLE_PROXY_TIMEOUT_MS;
         // Escalating retry timeout on 504: If a prior candidate experienced a timeout on this payload,
-        // only give extended headroom when NO healthy sibling accounts remain.
-        // If sibling accounts are available, keep candidate timeout bounded so the pool can fail over quickly
-        // without exceeding the client's timeout (which results in HTTP 499 cancel).
-        if (consecutive504TimeoutCount > 0 && healthySiblingAccountsCount < 1) {
-            const escalatingTimeout = Math.min(80000, constants_1.GOOGLE_PROXY_TIMEOUT_MS);
+        // escalate timeout so the subsequent candidates get enough headroom to complete thinking / prefill
+        if (consecutive504TimeoutCount > 0) {
+            const escalatingTimeout = Math.min(85000, constants_1.GOOGLE_PROXY_TIMEOUT_MS);
             if (escalatingTimeout > poolHeaderTimeout) {
-                electron_log_1.default.info(`[Proxy] Prior candidate experienced 504 timeout and pool is depleted. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
+                electron_log_1.default.info(`[Proxy] Prior candidate experienced 504 timeout. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
                 poolHeaderTimeout = escalatingTimeout;
             }
         }
@@ -2301,7 +2299,12 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
             electron_log_1.default.info(`[Proxy] ✅ [Feedback] Model: [${targetModel}] | Account: [${successfulCandidate.accountEmail || candidateName}] -> HTTP 200 OK (${elapsedMs}ms)`);
             return true;
         }
-        const isClientSocketAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
+        // If response was already sent or committed, we cannot rotate to another account
+        if (res.headersSent || res.writableEnded) {
+            return outcome.success;
+        }
+        // Downstream client socket check: only halt rotation if the IDE genuinely destroyed the connection
+        const isClientSocketAlive = !res.destroyed && !(res.socket && res.socket.destroyed) && !(req && req.destroyed);
         // If client actually dropped connection (IDE closed window, cancelled prompt):
         if (!isClientSocketAlive) {
             if (elapsedMs >= 3000 || outcome.statusCode === 504) {
@@ -2377,6 +2380,10 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 consecutiveQuotaExhausted++;
                 const liveKey = (0, googlePool_1.getAccountQuotaKey)(candidate);
                 (0, googlePool_1.markAccountQuotaExhausted)(liveKey, currentFamily);
+                const targetEmail = candidate.accountEmail || (candidateName.includes('@') ? candidateName : '');
+                if (targetEmail) {
+                    (0, googlePool_1.markAccountQuotaExhausted)(targetEmail, currentFamily);
+                }
                 if (sessId) {
                     sessionAffinities.delete(sessId);
                 }
@@ -2394,24 +2401,29 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                         ...existingQuota,
                         geminiFiveHourPct: 0,
                         geminiWeeklyPct: isWeekly ? 0 : (existingQuota?.geminiWeeklyPct ?? 100),
+                        fiveHourPercentage: 0,
+                        weeklyPercentage: isWeekly ? 0 : (existingQuota?.weeklyPercentage ?? 100),
                         geminiFiveHourReset: resetIso,
                         geminiWeeklyReset: isWeekly ? resetIso : existingQuota?.geminiWeeklyReset,
+                        geminiResetTime: resetIso,
                         updatedAt: nowMs,
                     });
-                }
-                const targetEmail = candidate.accountEmail || (candidateName.includes('@') ? candidateName : '');
-                if (targetEmail) {
-                    (0, googlePool_1.persistAccountQuotaExhaustedToDisk)(targetEmail, resetIso);
                 }
                 else if (currentFamily === 'claude') {
                     (0, googleAuth_1.updateLiveAccountQuota)(liveKey, {
                         ...existingQuota,
                         claudeFiveHourPct: 0,
                         claudeWeeklyPct: isWeekly ? 0 : (existingQuota?.claudeWeeklyPct ?? 100),
+                        fiveHourPercentage: 0,
+                        weeklyPercentage: isWeekly ? 0 : (existingQuota?.weeklyPercentage ?? 100),
                         claudeFiveHourReset: resetIso,
                         claudeWeeklyReset: isWeekly ? resetIso : existingQuota?.claudeWeeklyReset,
+                        claudeResetTime: resetIso,
                         updatedAt: nowMs,
                     });
+                }
+                if (targetEmail) {
+                    (0, googlePool_1.persistAccountQuotaExhaustedToDisk)(targetEmail, resetIso);
                 }
                 // Fast-fail if 3 consecutive accounts hit quota exhaustion for this model in a larger pool
                 // only when no healthy accounts with positive quota remain
@@ -2456,26 +2468,29 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 break;
             }
             if (i + 1 < totalAttempts) {
+                // Genuine quota exhaustion: NEVER pace, rotate immediately (0ms) to next candidate
+                if (isGenuineQuotaExhaustion || decision.category === 'quota_exhausted') {
+                    electron_log_1.default.info(`[Proxy] ⚡ Quota exhausted on [${candidateName}] (${currentFamily}). Immediate 0ms rotation to next available account.`);
+                    continue;
+                }
                 // Anti-domino pacing: When Google triggers a burst/RPM rate limit, pause ONLY if there are NO OTHER
-                // healthy idle sibling accounts. If other idle accounts exist in the pool, NEVER PAUSE: rotate immediately
-                // so the downstream client (IDE Language Server) does not experience a timeout or drop connection.
-                // For genuine quota exhaustion, skip pacing entirely.
-                const hasHealthyAvailable = sortedAccounts.slice(i + 1).some((c) => (0, googlePool_1.isAccountEligibleForPool)(c, currentFamily));
-                if (!hasHealthyAvailable) {
-                    const isBurst429 = !isGenuineQuotaExhausted && decision.category !== 'quota_exhausted';
+                // healthy sibling accounts available in the pool. If other healthy accounts exist, rotate immediately (0ms).
+                const hasAvailableSibling = sortedAccounts.slice(i + 1).some((c) => !(0, googlePool_1.isAccountInCooldown)(c, currentFamily) && !(0, circuitBreaker_1.getOpenBreaker)(c) && !(0, googlePool_1.isAccountUnlicensed)(c) && c.enabled !== false);
+                if (!hasAvailableSibling) {
+                    const isBurst429 = decision.category === 'rate_limited' || decision.category === 'soft_rate_limit';
                     if (isBurst429) {
                         const pacingMs = consecutive429Count > 1
                             ? 2000 + Math.floor(Math.random() * 800)
                             : 1000 + Math.floor(Math.random() * 400);
                         electron_log_1.default.info(`[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté sans compte libre. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`);
-                        const isClientAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
-                        if (!isClientAlive) {
+                        const clientTrulyClosed = res.destroyed || Boolean(res.socket && res.socket.destroyed);
+                        if (clientTrulyClosed) {
                             electron_log_1.default.info(`[Proxy] 🛑 Client disconnected before pacing. Halting rotation.`);
                             return false;
                         }
                         await new Promise((r) => setTimeout(r, pacingMs));
-                        const isClientStillAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
-                        if (!isClientStillAlive) {
+                        const clientStillClosed = res.destroyed || Boolean(res.socket && res.socket.destroyed);
+                        if (clientStillClosed) {
                             electron_log_1.default.info(`[Proxy] 🛑 Client disconnected after pacing. Halting rotation.`);
                             return false;
                         }
@@ -2691,8 +2706,8 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 const configuredOutage = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0);
                 const upstreamOutageThreshold = configuredOutage >= 4 ? configuredOutage : maxOutageLimit;
                 const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
-                // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (slow/busy/hanging): 120s cooldown to prevent ping-ponging into stalled accounts; outages: 30s-45s.
-                const timeoutCooldownMs = lastStatus === 500 ? 20000 : (lastStatus === 504 ? 120000 : (isUpstreamOutage ? 60000 : 45000));
+                // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (transient server/thinking latency): 30s cooldown; outages: 30s-45s.
+                const timeoutCooldownMs = lastStatus === 500 ? 20000 : (lastStatus === 504 ? 30000 : (isUpstreamOutage ? 45000 : 30000));
                 electron_log_1.default.warn(`[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`);
                 (0, googlePool_1.setAccountCooldown)(candidate, timeoutCooldownMs, currentFamily, true);
                 if (lastStatus === 504) {
@@ -2713,7 +2728,8 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
                     consecutive504TimeoutCount++;
                     const combinedOutageCount = consecutive504TimeoutCount + consecutive503CapacityCount;
-                    if (consecutive504TimeoutCount >= constants_1.CONSECUTIVE_504_CASCADE_THRESHOLD || combinedOutageCount >= Math.max(2, constants_1.CONSECUTIVE_504_CASCADE_THRESHOLD)) {
+                    const outageThreshold = Math.max(constants_1.CONSECUTIVE_504_CASCADE_THRESHOLD, Math.min(8, Math.ceil(sortedAccounts.length * 0.25)));
+                    if (consecutive504TimeoutCount >= outageThreshold || combinedOutageCount >= outageThreshold) {
                         electron_log_1.default.warn(`[Proxy] ⚠️ Cluster Failure Spike on [${targetModel}] (${consecutive504TimeoutCount} consecutive 504 timeouts, ${combinedOutageCount} total outages). Triggering fast failover / cascade to prevent pool freeze across ${totalAttempts} accounts...`);
                         lastStatus = 504;
                         lastErrorText = `Google Cloud Code API gateway timeout (504) across ${consecutive504TimeoutCount} consecutive accounts`;

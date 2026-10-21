@@ -631,6 +631,12 @@ class CliWorkerPool {
     }
   }
 
+  warmUp(): void {
+    if (this.workers.length === 0) {
+      this.spawnWorker();
+    }
+  }
+
   shutdown(): void {
     const shutdownErr = new Error('Worker pool is shutting down');
     for (const item of this.waitQueue) {
@@ -648,7 +654,10 @@ class CliWorkerPool {
 
 let cliPool: CliWorkerPool | null = null;
 function getCliPool(): CliWorkerPool {
-  if (!cliPool) cliPool = new CliWorkerPool(getCliPath());
+  if (!cliPool) {
+    cliPool = new CliWorkerPool(getCliPath());
+    cliPool.warmUp();
+  }
   return cliPool;
 }
 
@@ -3747,6 +3756,7 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.STREAM_CANCEL, (_evt, streamId: string) => {
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  getCliPool().warmUp();
   initAutoUpdateScheduler(() => mainWindow?.webContents ?? null);
 
   mainWindow?.webContents.on('before-input-event', (_e, input) => {
