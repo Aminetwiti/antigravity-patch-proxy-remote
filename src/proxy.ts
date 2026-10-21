@@ -7151,10 +7151,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           const mTarget = (m.externalModelName || m.name || (m as any).id || '').replace(/^models\//, '').toLowerCase();
           return mTarget === cleanMatched || (normMatched && normalizeCloudCodeModelId(mTarget) === normMatched);
         });
-        const nativeFam = cleanMatched.includes('claude') ? 'claude' : 'gemini';
         if (matchedPool.length > 0 && process.env.AG_POOL_NATIVE_MODELS !== '0') {
           log.info(`[Proxy] 🌐 Routing native model [${matchedModelName}] on direct URL through Google multi-account pool.`);
-          matchedCustomModel = selectBestModelByQuota(matchedPool, customModels, nativeFam);
+          matchedCustomModel = selectBestModelByQuota(matchedPool, customModels);
         } else {
           log.info(`[Proxy] ⚡ Native Antigravity model requested on direct URL [${matchedModelName}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
         }
