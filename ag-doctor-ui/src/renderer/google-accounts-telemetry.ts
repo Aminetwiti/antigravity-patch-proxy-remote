@@ -412,6 +412,42 @@ export interface StrategicAdviceResult {
 }
 
 /**
+ * Robust cooldown check for telemetry and strategy calculations across Google/CLI accounts.
+ */
+export function isAccountInCooldownTelemetry(
+  a: any,
+  family: 'gemini' | 'claude' = 'gemini',
+  activeCooldowns: Record<string, { until: number }> = {},
+  nowMs: number = Date.now()
+): boolean {
+  if (!a || !activeCooldowns || typeof activeCooldowns !== 'object') return false;
+  const email = (a.email || '').toLowerCase().trim();
+  const name = (a.name || '').toLowerCase().trim();
+  const id = (a.id || '').toLowerCase().trim();
+  const cleanId = id.replace(/^(google|gemini-cli):/, '');
+  const cleanName = name.replace(/^(google|gemini-cli):/, '');
+
+  for (const [k, v] of Object.entries(activeCooldowns)) {
+    if (!v || typeof v.until !== 'number' || v.until <= nowMs) continue;
+    const lowerK = k.toLowerCase();
+    if (family === 'gemini' && lowerK.endsWith(':claude')) continue;
+    if (family === 'claude' && lowerK.endsWith(':gemini')) continue;
+
+    const cleanK = lowerK.replace(/^(google|gemini-cli):/, '').replace(/:(gemini|claude)$/, '');
+    if (
+      (email && cleanK === email) ||
+      (cleanId && cleanK === cleanId) ||
+      (cleanName && cleanK === cleanName) ||
+      (email && lowerK.includes(email)) ||
+      (cleanId && lowerK.includes(cleanId))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Derives a single actionable situation advice for the Google pool based on live health.
  */
 export function getPoolStrategicAdvice(
@@ -429,9 +465,7 @@ export function getPoolStrategicAdvice(
     const isStudio = a.provider === 'google-gemini' || (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
     const isCli = a.provider === 'gemini-cli' || (typeof a.id === 'string' && a.id.startsWith('gemini-cli'));
     if (isStudio || isCli) return true;
-    const cdKey = `google:${a.email || a.name || a.id}:gemini`;
-    const cd = activeCooldowns[cdKey];
-    if (cd && cd.until > nowMs) return false;
+    if (isAccountInCooldownTelemetry(a, 'gemini', activeCooldowns, nowMs)) return false;
     const gWk = a.quotas?.geminiWeeklyPct ?? a.quotas?.weeklyPercentage;
     if (typeof gWk === 'number' && gWk <= 0) return false;
     const gPct = a.quotas?.geminiFiveHourPct ?? a.quotas?.fiveHourPercentage;
@@ -445,9 +479,7 @@ export function getPoolStrategicAdvice(
     const isStudio = a.provider === 'google-gemini' || (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
     const isCli = a.provider === 'gemini-cli' || (typeof a.id === 'string' && a.id.startsWith('gemini-cli'));
     if (isStudio || isCli) return false;
-    const cdKey = `google:${a.email || a.name || a.id}:claude`;
-    const cd = activeCooldowns[cdKey];
-    if (cd && cd.until > nowMs) return false;
+    if (isAccountInCooldownTelemetry(a, 'claude', activeCooldowns, nowMs)) return false;
     const cWk = a.quotas?.claudeWeeklyPct;
     if (typeof cWk === 'number' && cWk <= 0) return false;
     const cPct = a.quotas?.claudeFiveHourPct;
@@ -556,17 +588,17 @@ export function calculatePoolResilienceScore(
 
     if (a.isUnlicensed || a.quotas?.isUnlicensed) continue;
 
-    const gCd = activeCooldowns[`google:${a.email || a.name || a.id}:gemini`];
+    const inGeminiCd = isAccountInCooldownTelemetry(a, 'gemini', activeCooldowns, nowMs);
     const gWk = a.quotas?.geminiWeeklyPct ?? a.quotas?.weeklyPercentage ?? 100;
-    const gPct = gWk <= 0 ? 0 : (a.quotas?.geminiFiveHourPct ?? a.quotas?.fiveHourPercentage ?? 100);
-    if ((!gCd || gCd.until <= nowMs) && gPct > 0) {
+    const gPct = (gWk <= 0 || inGeminiCd) ? 0 : (a.quotas?.geminiFiveHourPct ?? a.quotas?.fiveHourPercentage ?? 100);
+    if (!inGeminiCd && gPct > 0) {
       readyGemini++;
     }
 
-    const cCd = activeCooldowns[`google:${a.email || a.name || a.id}:claude`];
+    const inClaudeCd = isAccountInCooldownTelemetry(a, 'claude', activeCooldowns, nowMs);
     const cWk = a.quotas?.claudeWeeklyPct ?? 100;
-    const cPct = cWk <= 0 ? 0 : (a.quotas?.claudeFiveHourPct ?? 100);
-    if ((!cCd || cCd.until <= nowMs) && cPct > 0) {
+    const cPct = (cWk <= 0 || inClaudeCd) ? 0 : (a.quotas?.claudeFiveHourPct ?? 100);
+    if (!inClaudeCd && cPct > 0) {
       readyClaude++;
     }
   }
@@ -659,13 +691,13 @@ export function getPoolFallbackChain(
     const isCli = a.provider === 'gemini-cli' || (typeof a.id === 'string' && a.id.startsWith('gemini-cli'));
     if (isCli) continue;
 
-    const gCd = activeCooldowns[`google:${a.email || a.name || a.id}:gemini`];
-    const gPct = a.quotas?.geminiFiveHourPct ?? a.quotas?.fiveHourPercentage ?? 100;
-    if ((!gCd || gCd.until <= nowMs) && gPct > 0) readyGemini++;
+    const inGeminiCd = isAccountInCooldownTelemetry(a, 'gemini', activeCooldowns, nowMs);
+    const gPct = inGeminiCd ? 0 : (a.quotas?.geminiFiveHourPct ?? a.quotas?.fiveHourPercentage ?? 100);
+    if (!inGeminiCd && gPct > 0) readyGemini++;
 
-    const cCd = activeCooldowns[`google:${a.email || a.name || a.id}:claude`];
-    const cPct = a.quotas?.claudeFiveHourPct ?? 100;
-    if ((!cCd || cCd.until <= nowMs) && cPct > 0) readyClaude++;
+    const inClaudeCd = isAccountInCooldownTelemetry(a, 'claude', activeCooldowns, nowMs);
+    const cPct = inClaudeCd ? 0 : (a.quotas?.claudeFiveHourPct ?? 100);
+    if (!inClaudeCd && cPct > 0) readyClaude++;
   }
 
   const steps: FallbackStep[] = [

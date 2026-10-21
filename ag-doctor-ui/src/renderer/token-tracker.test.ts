@@ -341,5 +341,17 @@ describe('token-tracker', () => {
       expect(json.totalEntries).toBe(2);
       expect(json.entries.length).toBe(2);
     });
+
+    it('safely handles empty, null or undefined inputs without throwing', () => {
+      const tracker = new TokenTrackerEngine('test-empty-tracker');
+      const emptyRes = tracker.filterEntries();
+      expect(Array.isArray(emptyRes)).toBe(true);
+      expect(emptyRes.length).toBe(0);
+
+      const nullTokenize = tokenizeText('');
+      expect(Array.isArray(nullTokenize.tokens)).toBe(true);
+      expect(nullTokenize.tokens.length).toBe(0);
+      expect(nullTokenize.tokenCount).toBe(0);
+    });
   });
 });

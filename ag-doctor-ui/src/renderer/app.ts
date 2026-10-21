@@ -9896,6 +9896,8 @@ function getAccountActiveCooldown(
   const email = (account.email || '').toLowerCase().trim();
   const name = (account.name || '').toLowerCase().trim();
   const id = (account.id || '').toLowerCase().trim();
+  const cleanId = id.replace(/^(google|gemini-cli):/, '');
+  const cleanName = name.replace(/^(google|gemini-cli):/, '');
 
   let foundKey = '';
   let cdData: { until: number; remainingMs: number; remainingMin: number; remainingHours: string } | null = null;
@@ -9903,12 +9905,19 @@ function getAccountActiveCooldown(
 
   for (const [k, v] of Object.entries(gaActiveCooldownsCache)) {
     if (!v || v.until <= now) continue;
+    const lowerK = k.toLowerCase();
     // Decouple by model family if requested
-    if (family === 'gemini' && k.endsWith(':claude')) continue;
-    if (family === 'claude' && k.endsWith(':gemini')) continue;
+    if (family === 'gemini' && lowerK.endsWith(':claude')) continue;
+    if (family === 'claude' && lowerK.endsWith(':gemini')) continue;
 
-    const cleanK = k.toLowerCase().replace(/^(google|gemini-cli):/, '').replace(/:(gemini|claude)$/, '');
-    if ((email && cleanK === email) || (name && cleanK === name) || (id && cleanK === id) || (email && k.toLowerCase().includes(email))) {
+    const cleanK = lowerK.replace(/^(google|gemini-cli):/, '').replace(/:(gemini|claude)$/, '');
+    if (
+      (email && cleanK === email) ||
+      (cleanId && cleanK === cleanId) ||
+      (cleanName && cleanK === cleanName) ||
+      (email && lowerK.includes(email)) ||
+      (cleanId && lowerK.includes(cleanId))
+    ) {
       foundKey = k;
       cdData = v;
       break;
@@ -10311,17 +10320,20 @@ export function getAccountEffectiveQuotas(acc: any): {
     claude5hPct = 0;
   }
 
-  // Cooldown reality override: when the proxy has a confirmed weekly-cap cooldown active
-  // Cooldown reality override: only apply when live quota is already near-zero (avoid overwriting fresh 100% quota)
+  // Cooldown reality override: when the proxy has an active cooldown, the account is NOT ready for that model family
   const cdGemini = getAccountActiveCooldown(acc, 'gemini');
   const cdClaude = getAccountActiveCooldown(acc, 'claude');
-  if (cdGemini?.isCooldown && cdGemini.isWeeklyCap && geminiWkPct <= 5) {
-    geminiWkPct = 0;
+  if (cdGemini?.isCooldown) {
     gemini5hPct = 0;
+    if (cdGemini.isWeeklyCap) {
+      geminiWkPct = 0;
+    }
   }
-  if (cdClaude?.isCooldown && cdClaude.isWeeklyCap && claudeWkPct <= 5) {
-    claudeWkPct = 0;
+  if (cdClaude?.isCooldown) {
     claude5hPct = 0;
+    if (cdClaude.isWeeklyCap) {
+      claudeWkPct = 0;
+    }
   }
 
   const is5hWindowReset = (iso?: string) => {
@@ -10330,10 +10342,18 @@ export function getAccountEffectiveQuotas(acc: any): {
     return diff > 0 && diff <= 5.5 * 3600 * 1000;
   };
 
-  const rawGemini5hReset = foundGemini5hReset || q.geminiFiveHourReset || (is5hWindowReset(q.geminiResetTime) ? q.geminiResetTime : (is5hWindowReset(q.fiveHourResetTime) ? q.fiveHourResetTime : undefined));
-  const rawGeminiWkReset = foundGeminiWkReset || q.geminiWeeklyReset || q.weeklyResetTime || (!is5hWindowReset(q.geminiResetTime) ? q.geminiResetTime : undefined);
-  const rawClaude5hReset = foundClaude5hReset || q.claudeFiveHourReset || (is5hWindowReset(q.claudeResetTime) ? q.claudeResetTime : undefined);
-  const rawClaudeWkReset = foundClaudeWkReset || q.claudeWeeklyReset || (!is5hWindowReset(q.claudeWeeklyReset) ? q.claudeWeeklyReset : rawGeminiWkReset);
+  const rawGemini5hReset = (cdGemini?.until && cdGemini.until > Date.now())
+    ? new Date(cdGemini.until).toISOString()
+    : (foundGemini5hReset || q.geminiFiveHourReset || (is5hWindowReset(q.geminiResetTime) ? q.geminiResetTime : (is5hWindowReset(q.fiveHourResetTime) ? q.fiveHourResetTime : undefined)));
+  const rawGeminiWkReset = (cdGemini?.isWeeklyCap && cdGemini?.until && cdGemini.until > Date.now())
+    ? new Date(cdGemini.until).toISOString()
+    : (foundGeminiWkReset || q.geminiWeeklyReset || q.weeklyResetTime || (!is5hWindowReset(q.geminiResetTime) ? q.geminiResetTime : undefined));
+  const rawClaude5hReset = (cdClaude?.until && cdClaude.until > Date.now())
+    ? new Date(cdClaude.until).toISOString()
+    : (foundClaude5hReset || q.claudeFiveHourReset || (is5hWindowReset(q.claudeResetTime) ? q.claudeResetTime : undefined));
+  const rawClaudeWkReset = (cdClaude?.isWeeklyCap && cdClaude?.until && cdClaude.until > Date.now())
+    ? new Date(cdClaude.until).toISOString()
+    : (foundClaudeWkReset || q.claudeWeeklyReset || (!is5hWindowReset(q.claudeWeeklyReset) ? q.claudeWeeklyReset : rawGeminiWkReset));
   const rawArgon5hReset = foundArgon5hReset || q.argonFiveHourReset;
   const rawArgonWkReset = foundArgonWkReset || q.argonWeeklyReset;
 
@@ -13212,20 +13232,21 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
 
   // Real Gemini Cooldown (429/504)
   if (cdGemini) {
+    const badge = cdGemini.isWeeklyCap ? '📅 Plafond Hebdo' : '⏳ Cooldown 429';
     return {
       type: 'cooldown',
-      text: `En cooldown Gemini temporaire (${cdGemini.text}). Le proxy bascule automatiquement sur un compte standby.`,
-      badge: '⏳ Cooldown 429',
+      text: cdGemini.details || `En cooldown Gemini temporaire (${cdGemini.text}). Le proxy bascule automatiquement sur un compte standby.`,
+      badge,
     };
   }
 
   const { gemini5hPct, geminiWkPct, claude5hPct, claudeWkPct } = getAccountEffectiveQuotas(a);
 
   // Status Unhealthy ou Quota Épuisé
-  if (a.status === 'exhausted' || (geminiWkPct <= 0 && claudeWkPct <= 0)) {
+  if (a.status === 'exhausted' || (geminiWkPct <= 0 && claudeWkPct <= 0) || (gemini5hPct <= 0 && claude5hPct <= 0)) {
     return {
       type: 'warn',
-      text: a.lastError || 'Plafond hebdomadaire atteint (Gemini 0%, Claude 0%). Compte bloqué par Google.',
+      text: a.lastError || 'Plafond de quota atteint (Gemini 0%, Claude 0%). Le proxy bascule automatiquement sur vos autres comptes disponibles.',
       badge: '⚠️ Quota Épuisé',
     };
   }
@@ -13236,6 +13257,15 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
       type: 'warn',
       text: 'Plafond hebdomadaire Gemini atteint (0%). Requêtes Gemini bloquées.',
       badge: '⚠️ Gemini Hebdo 0%',
+    };
+  }
+
+  // Gemini 5h exhausted with Claude still available
+  if (gemini5hPct <= 0 && claude5hPct > 20) {
+    return {
+      type: 'info',
+      text: `Gemini 5h épuisé (0%) mais Claude disponible (${claude5hPct}%). Recommandation : privilégier Claude Sonnet 4.6.`,
+      badge: '💡 Switch Claude',
     };
   }
 
@@ -13250,7 +13280,15 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
   }
 
   // General or Claude Cooldown
-  if (cdClaude || claudeWkPct <= 0) {
+  if (cdClaude || claudeWkPct <= 0 || claude5hPct <= 0) {
+    if (gemini5hPct >= 20) {
+      const geminiBadge = gemini5hPct >= 95 ? '⚡ Gemini 100% Prêt' : `⚡ Gemini ${gemini5hPct}% Prêt`;
+      return {
+        type: 'info',
+        text: `Claude temporairement indisponible (${cdClaude ? cdClaude.text : '0%'}), mais Gemini est opérationnel (${gemini5hPct}%).`,
+        badge: geminiBadge,
+      };
+    }
     return {
       type: 'warn',
       text: `Plafond de quota Claude atteint (${cdClaude ? cdClaude.text : '0% restant'}). Les requêtes Claude basculeront sur d'autres comptes du pool.`,
@@ -13275,6 +13313,13 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
   }
 
   if (a.isCurrent) {
+    if (gemini5hPct <= 10 && claude5hPct <= 10) {
+      return {
+        type: 'warn',
+        text: `Compte Maître avec quota critique (Gemini ${gemini5hPct}%, Claude ${claude5hPct}%). Bascule automatique en cours.`,
+        badge: '⚠️ Maître Épuisé',
+      };
+    }
     return {
       type: 'ok',
       text: 'Compte Maître IDE en production. Les requêtes interactives l’utilisent en priorité.',
@@ -13283,6 +13328,20 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
   }
 
   const healthScore = Math.min(gemini5hPct, geminiWkPct);
+  if (healthScore <= 0) {
+    return {
+      type: 'warn',
+      text: `Quota épuisé (Gemini 0%). En attente de réinitialisation.`,
+      badge: '⚠️ Quota Épuisé',
+    };
+  }
+  if (healthScore <= 15) {
+    return {
+      type: 'warn',
+      text: `Quota critique (${healthScore}% restant). Prêt pour requêtes limitées.`,
+      badge: `🟠 Santé ${healthScore}%`,
+    };
+  }
   if (healthScore < 100) {
     return {
       type: 'ok',
@@ -13485,25 +13544,12 @@ async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> 
       gaActiveCooldownsCache = {};
     }
 
-    // Auto-Purge Ghost Cooldowns: if account quotas recovered to 100%, lift obsolete cooldown
-    for (const a of googleAccountsCache) {
-      const q = a.quotas || {};
-      const geminiPct = q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100;
-      const claudePct = q.claudeFiveHourPct ?? 100;
-      if (geminiPct >= 95 && claudePct >= 95) {
-        const cd = getAccountActiveCooldown(a);
-        if (cd) {
-          void window.ag.providers.liftAccountCooldown?.(a.email || a.id);
-          const email = (a.email || '').toLowerCase().trim();
-          const name = (a.name || '').toLowerCase().trim();
-          const id = (a.id || '').toLowerCase().trim().replace(/^(google|gemini-cli):/, '');
-          for (const k of Object.keys(gaActiveCooldownsCache)) {
-            const cleanK = k.toLowerCase().replace(/^(google|gemini-cli):/, '').replace(/:(gemini|claude)$/, '');
-            if ((email && cleanK === email) || (name && cleanK === name) || (id && cleanK === id) || (email && k.toLowerCase().includes(email))) {
-              delete gaActiveCooldownsCache[k];
-            }
-          }
-        }
+    // Reconcile expired cooldowns: only purge entries whose cooldown duration has actually ended
+    const nowCdCheck = Date.now();
+    for (const [k, cdEntry] of Object.entries(gaActiveCooldownsCache)) {
+      if (!cdEntry || typeof cdEntry.until !== 'number' || cdEntry.until <= nowCdCheck) {
+        delete gaActiveCooldownsCache[k];
+        void window.ag.providers.liftAccountCooldown?.(k);
       }
     }
 
@@ -13853,23 +13899,24 @@ function getTopRotationCandidate(accounts: any[], family: 'gemini' | 'claude' = 
     if (isBlocked) return false;
     // Only check cooldown for the requested model family!
     if (getAccountActiveCooldown(a, family)) return false;
-    // Check minimum quota
+    // Check minimum effective quota
+    const eff = getAccountEffectiveQuotas(a);
     if (family === 'gemini') {
-      const gPct = a.quotas?.geminiFiveHourPct ?? a.quotas?.fiveHourPercentage ?? 100;
-      if (gPct < 5) return false;
+      if (eff.gemini5hPct < 5 || eff.geminiWkPct <= 0) return false;
     } else {
-      const cPct = a.quotas?.claudeFiveHourPct ?? 100;
-      if (cPct < 5) return false;
+      if (eff.claude5hPct < 5 || eff.claudeWkPct <= 0) return false;
     }
     return true;
   });
   if (eligible.length === 0) return null;
 
-  // Score candidate: highest 5h quota, least recently used
+  // Score candidate: highest effective 5h quota, least recently used
   return eligible.reduce((best, curr) => {
     if (!best) return curr;
-    const qBest = best.quotas?.geminiFiveHourPct ?? best.quotas?.fiveHourPercentage ?? 100;
-    const qCurr = curr.quotas?.geminiFiveHourPct ?? curr.quotas?.fiveHourPercentage ?? 100;
+    const effBest = getAccountEffectiveQuotas(best);
+    const effCurr = getAccountEffectiveQuotas(curr);
+    const qBest = family === 'gemini' ? effBest.gemini5hPct : effBest.claude5hPct;
+    const qCurr = family === 'gemini' ? effCurr.gemini5hPct : effCurr.claude5hPct;
     if (qCurr > qBest) return curr;
     if (qCurr === qBest) {
       const lastUsedBest = best.lastUsed || best.updatedAt || 0;
@@ -14355,8 +14402,11 @@ function renderGoogleAccountsList(accounts: any[]): void {
       } else if (isCli) {
         unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>`;
       } else if (isCurrent) {
+        const effCurrent = getAccountEffectiveQuotas(a);
         if (cdInfo) {
           unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35);" title="Compte principal Antigravity (actuellement en cooldown)">● PRINCIPAL (Cooldown)</span>`;
+        } else if (effCurrent.gemini5hPct <= 0 && effCurrent.claude5hPct <= 0) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (quota 5h épuisé)">⚠️ PRINCIPAL (Épuisé)</span>`;
         } else if (isBlocked) {
           unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (bloqué / 403)">⚠️ PRINCIPAL (Bloqué)</span>`;
         } else if (!isEnabled) {
@@ -14542,8 +14592,11 @@ function renderGoogleAccountsList(accounts: any[]): void {
       } else if (isCli) {
         unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>`;
       } else if (isCurrent) {
+        const effCurrent = getAccountEffectiveQuotas(a);
         if (cdInfo) {
           unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35);" title="Compte principal Antigravity (actuellement en cooldown)">● PRINCIPAL (Cooldown)</span>`;
+        } else if (effCurrent.gemini5hPct <= 0 && effCurrent.claude5hPct <= 0) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (quota 5h épuisé)">⚠️ PRINCIPAL (Épuisé)</span>`;
         } else if (isBlocked) {
           unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (bloqué / 403)">⚠️ PRINCIPAL (Bloqué)</span>`;
         } else if (!isEnabled) {

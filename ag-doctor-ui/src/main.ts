@@ -848,82 +848,149 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
     const c = await fs.promises.readFile(p, 'utf8');
     const parsed = JSON.parse(c.replace(/^\uFEFF/, ''));
 
-    // Merge quota_cache.json live quotas and unlicensed quarantine into accounts so Doctor UI reflects real, up-to-date quotas.
+    // Merge quota_cache.json live quotas, unlicensed quarantine, and active cooldowns into accounts so Doctor UI reflects real, up-to-date proxy reality.
     let quotaCache: Record<string, any> = {};
     let unlicensedAccountsList: string[] = [];
+    let accountCooldownsMap: Record<string, number> = {};
     try {
       const qCachePath = path.join(app.getPath('home'), '.gemini', 'antigravity', 'quota_cache.json');
       const qRaw = await fs.promises.readFile(qCachePath, 'utf8');
       const parsedCache = JSON.parse(qRaw);
       quotaCache = parsedCache.quotas || {};
       unlicensedAccountsList = Array.isArray(parsedCache.unlicensedAccounts) ? parsedCache.unlicensedAccounts : [];
+      accountCooldownsMap = parsedCache.accountCooldowns || {};
     } catch { /* quota_cache.json absent or unreadable — skip */ }
 
-    if (parsed.providers && Array.isArray(parsed.providers) && (Object.keys(quotaCache).length > 0 || unlicensedAccountsList.length > 0)) {
+    if (parsed.providers && Array.isArray(parsed.providers) && (Object.keys(quotaCache).length > 0 || unlicensedAccountsList.length > 0 || Object.keys(accountCooldownsMap).length > 0)) {
       const unSet = new Set(unlicensedAccountsList.map((s) => s.toLowerCase().trim()));
+      const now = Date.now();
       for (const prov of parsed.providers) {
         if (!Array.isArray(prov.accounts)) continue;
         for (const acc of prov.accounts) {
           const email = (acc.email || '').toLowerCase().trim();
           const id = (acc.id || '').toLowerCase().trim();
-          const isMarkedUnlicensed = unSet.has(email) || unSet.has(`google:${email}`) || unSet.has(`gemini-cli:${email}`) || unSet.has(id);
-          const cacheEntry = quotaCache[`google:${email}`] || quotaCache[email] || quotaCache[acc.id];
-          if (!cacheEntry && !isMarkedUnlicensed) continue;
+          const cleanId = id.replace(/^(google|gemini-cli):/, '');
+          const isMarkedUnlicensed = unSet.has(email) || unSet.has(`google:${email}`) || unSet.has(`gemini-cli:${email}`) || unSet.has(id) || unSet.has(cleanId);
+          let cacheEntry = quotaCache[`google:${email}`] || quotaCache[`gemini-cli:${email}`] || quotaCache[email] || quotaCache[acc.id] || quotaCache[cleanId];
+          if (!cacheEntry && (email || cleanId)) {
+            for (const [ck, cv] of Object.entries(quotaCache)) {
+              const lck = ck.toLowerCase();
+              if ((email && lck.includes(email)) || (cleanId && lck.includes(cleanId))) {
+                cacheEntry = cv;
+                break;
+              }
+            }
+          }
+
+          // Check for active proxy cooldowns on this account
+          let hasGeminiCd = false;
+          let isGeminiWk = false;
+          let cdGeminiUntil = 0;
+          let hasClaudeCd = false;
+          let isClaudeWk = false;
+          let cdClaudeUntil = 0;
+
+          for (const [cdK, until] of Object.entries(accountCooldownsMap)) {
+            if (typeof until !== 'number' || until <= now) continue;
+            const lcdk = cdK.toLowerCase();
+            const cleanCdk = lcdk.replace(/^(google|gemini-cli):/, '').replace(/:(gemini|claude)$/, '');
+            const matchesAcc = (email && cleanCdk === email) || (cleanId && cleanCdk === cleanId) || (email && lcdk.includes(email)) || (cleanId && lcdk.includes(cleanId));
+            if (!matchesAcc) continue;
+            const isWkCap = (until - now) > 5 * 3600000;
+            if (lcdk.endsWith(':claude')) {
+              hasClaudeCd = true;
+              if (isWkCap) isClaudeWk = true;
+              cdClaudeUntil = Math.max(cdClaudeUntil, until);
+            } else if (lcdk.endsWith(':gemini')) {
+              hasGeminiCd = true;
+              if (isWkCap) isGeminiWk = true;
+              cdGeminiUntil = Math.max(cdGeminiUntil, until);
+            } else {
+              hasGeminiCd = true;
+              hasClaudeCd = true;
+              if (isWkCap) { isGeminiWk = true; isClaudeWk = true; }
+              cdGeminiUntil = Math.max(cdGeminiUntil, until);
+              cdClaudeUntil = Math.max(cdClaudeUntil, until);
+            }
+          }
+
+          if (!cacheEntry && !isMarkedUnlicensed && !hasGeminiCd && !hasClaudeCd) continue;
           if (!acc.quotas) acc.quotas = {};
           
-          if (typeof cacheEntry.geminiFiveHourPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.geminiFiveHourPct === 'number') {
             acc.quotas.geminiFiveHourPct = cacheEntry.geminiFiveHourPct;
           }
-          if (typeof cacheEntry.geminiWeeklyPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.geminiWeeklyPct === 'number') {
             acc.quotas.geminiWeeklyPct = cacheEntry.geminiWeeklyPct;
           }
-          if (typeof cacheEntry.fiveHourPercentage === 'number') {
+          if (cacheEntry && typeof cacheEntry.fiveHourPercentage === 'number') {
             acc.quotas.fiveHourPercentage = cacheEntry.fiveHourPercentage;
-          } else if (typeof cacheEntry.geminiFiveHourPct === 'number') {
+          } else if (cacheEntry && typeof cacheEntry.geminiFiveHourPct === 'number') {
             acc.quotas.fiveHourPercentage = cacheEntry.geminiFiveHourPct;
           }
-          if (typeof cacheEntry.weeklyPercentage === 'number') {
+          if (cacheEntry && typeof cacheEntry.weeklyPercentage === 'number') {
             acc.quotas.weeklyPercentage = cacheEntry.weeklyPercentage;
-          } else if (typeof cacheEntry.geminiWeeklyPct === 'number') {
+          } else if (cacheEntry && typeof cacheEntry.geminiWeeklyPct === 'number') {
             acc.quotas.weeklyPercentage = cacheEntry.geminiWeeklyPct;
           }
-          if (cacheEntry.geminiFiveHourReset || cacheEntry.geminiResetTime) {
+          if (cacheEntry && (cacheEntry.geminiFiveHourReset || cacheEntry.geminiResetTime)) {
             acc.quotas.geminiFiveHourReset = cacheEntry.geminiFiveHourReset || cacheEntry.geminiResetTime;
             acc.quotas.geminiResetTime = acc.quotas.geminiFiveHourReset;
           }
-          if (cacheEntry.geminiWeeklyReset) {
+          if (cacheEntry && cacheEntry.geminiWeeklyReset) {
             acc.quotas.geminiWeeklyReset = cacheEntry.geminiWeeklyReset;
           }
-          if (typeof cacheEntry.claudeFiveHourPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.claudeFiveHourPct === 'number') {
             acc.quotas.claudeFiveHourPct = cacheEntry.claudeFiveHourPct;
           }
-          if (typeof cacheEntry.claudeWeeklyPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.claudeWeeklyPct === 'number') {
             acc.quotas.claudeWeeklyPct = cacheEntry.claudeWeeklyPct;
           }
-          if (cacheEntry.claudeFiveHourReset || cacheEntry.claudeResetTime) {
+          if (cacheEntry && (cacheEntry.claudeFiveHourReset || cacheEntry.claudeResetTime)) {
             acc.quotas.claudeFiveHourReset = cacheEntry.claudeFiveHourReset || cacheEntry.claudeResetTime;
             acc.quotas.claudeResetTime = acc.quotas.claudeFiveHourReset;
           }
-          if (cacheEntry.claudeWeeklyReset) {
+          if (cacheEntry && cacheEntry.claudeWeeklyReset) {
             acc.quotas.claudeWeeklyReset = cacheEntry.claudeWeeklyReset;
           }
-          if (typeof cacheEntry.argonFiveHourPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.argonFiveHourPct === 'number') {
             acc.quotas.argonFiveHourPct = cacheEntry.argonFiveHourPct;
           }
-          if (typeof cacheEntry.argonWeeklyPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.argonWeeklyPct === 'number') {
             acc.quotas.argonWeeklyPct = cacheEntry.argonWeeklyPct;
           }
-          if (cacheEntry.argonFiveHourReset) {
+          if (cacheEntry && cacheEntry.argonFiveHourReset) {
             acc.quotas.argonFiveHourReset = cacheEntry.argonFiveHourReset;
           }
-          if (cacheEntry.argonWeeklyReset) {
+          if (cacheEntry && cacheEntry.argonWeeklyReset) {
             acc.quotas.argonWeeklyReset = cacheEntry.argonWeeklyReset;
           }
-          if (cacheEntry.updatedAt) {
+          if (cacheEntry && cacheEntry.updatedAt) {
             acc.quotas.updatedAt = cacheEntry.updatedAt;
           }
-          if (cacheEntry.tier) acc.tier = cacheEntry.tier;
-          if (cacheEntry.tierId) acc.tierId = cacheEntry.tierId;
+          if (cacheEntry && cacheEntry.tier) acc.tier = cacheEntry.tier;
+          if (cacheEntry && cacheEntry.tierId) acc.tierId = cacheEntry.tierId;
+
+          // Cooldown reality sync: if proxy has an active cooldown, reflect 0% in account quotas
+          if (hasGeminiCd) {
+            acc.quotas.geminiFiveHourPct = 0;
+            acc.quotas.fiveHourPercentage = 0;
+            acc.quotas.geminiFiveHourReset = new Date(cdGeminiUntil).toISOString();
+            if (isGeminiWk) {
+              acc.quotas.geminiWeeklyPct = 0;
+              acc.quotas.weeklyPercentage = 0;
+              acc.quotas.geminiWeeklyReset = new Date(cdGeminiUntil).toISOString();
+            }
+          }
+          if (hasClaudeCd) {
+            acc.quotas.claudeFiveHourPct = 0;
+            acc.quotas.claudeFiveHourReset = new Date(cdClaudeUntil).toISOString();
+            if (isClaudeWk) {
+              acc.quotas.claudeWeeklyPct = 0;
+              acc.quotas.claudeWeeklyReset = new Date(cdClaudeUntil).toISOString();
+            }
+          }
+
           if (isMarkedUnlicensed || cacheEntry?.isUnlicensed) {
             acc.isUnlicensed = true;
             if (acc.quotas) acc.quotas.isUnlicensed = true;
@@ -1942,6 +2009,41 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_FETCH_ACCOUNT_QUOTAS, async (_evt, tok
           try { qData = JSON.parse(fs.readFileSync(qCachePath, 'utf8')); } catch {}
         }
         if (!qData.quotas) qData.quotas = {};
+        const cds = qData.accountCooldowns || {};
+        const now = Date.now();
+        const lowerEmail = emailToCache.toLowerCase();
+        let activeGeminiUntil = 0;
+        let activeClaudeUntil = 0;
+        for (const [cdK, until] of Object.entries(cds)) {
+          if (typeof until !== 'number' || until <= now) continue;
+          const lcdk = cdK.toLowerCase();
+          const clean = lcdk.replace(/^(google|gemini-cli):/, '').replace(/:(gemini|claude)$/, '');
+          if (clean === lowerEmail || lcdk.includes(lowerEmail)) {
+            if (lcdk.endsWith(':claude')) activeClaudeUntil = Math.max(activeClaudeUntil, until);
+            else if (lcdk.endsWith(':gemini')) activeGeminiUntil = Math.max(activeGeminiUntil, until);
+            else { activeGeminiUntil = Math.max(activeGeminiUntil, until); activeClaudeUntil = Math.max(activeClaudeUntil, until); }
+          }
+        }
+        if (activeGeminiUntil > now) {
+          const isWk = (activeGeminiUntil - now) > 5 * 3600000;
+          quotas.geminiFiveHourPct = 0;
+          quotas.fiveHourPercentage = 0;
+          quotas.geminiFiveHourReset = new Date(activeGeminiUntil).toISOString();
+          if (isWk) {
+            quotas.geminiWeeklyPct = 0;
+            quotas.weeklyPercentage = 0;
+            quotas.geminiWeeklyReset = new Date(activeGeminiUntil).toISOString();
+          }
+        }
+        if (activeClaudeUntil > now) {
+          const isWk = (activeClaudeUntil - now) > 5 * 3600000;
+          quotas.claudeFiveHourPct = 0;
+          quotas.claudeFiveHourReset = new Date(activeClaudeUntil).toISOString();
+          if (isWk) {
+            quotas.claudeWeeklyPct = 0;
+            quotas.claudeWeeklyReset = new Date(activeClaudeUntil).toISOString();
+          }
+        }
         qData.quotas[`google:${emailToCache}`] = {
           ...qData.quotas[`google:${emailToCache}`],
           ...quotas,

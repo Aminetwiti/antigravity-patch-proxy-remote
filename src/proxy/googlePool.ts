@@ -3,6 +3,7 @@
 // proxy.ts re-exports everything; existing callers are unaffected.
 
 import { randomInt } from 'crypto';
+import fs from 'fs';
 import https from 'https';
 import log from 'electron-log';
 import type { CustomModel } from './types';
@@ -31,7 +32,7 @@ import {
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
   PREVENTIVE_COOLDOWN_MS,
 } from '../constants';
-import { loadCustomModels } from './modelLoader';
+import { loadCustomModels, getCustomModelsPath } from './modelLoader';
 
 export { PREVENTIVE_QUOTA_THRESHOLD_PCT, PREVENTIVE_COOLDOWN_MS };
 
