@@ -88,13 +88,13 @@ Google security algorithms flagged the account with a security challenge (`al_al
    - Complétez la vérification demandée (par carte bancaire ou selfie vidéo).
    - Confirmez que le compte est débloqué et reconnu majeur.
 
-3. **Reconnexion native via Antigravity 2.0 (Bypass de la limite smartphone)**
+3. **Reconnexion native via Antigravity 2.0 (Validation du Consentement Onboarding)**
    - Ne scannez **pas** de QR code avec un smartphone déjà saturé de requêtes !
-   - Utilisez l'authentification native sur votre PC :
-     - Soit lancez l'IDE Antigravity 2.0 et connectez-vous directement via la fenêtre native de l'IDE.
-     - Soit exécutez dans un terminal : `ag-doctor auth fix` ou `agy` (Option 1).
-     - Soit cliquez sur le bouton de connexion native dans `ag-doctor-ui`.
-   - Cette authentification native sur PC contourne l'erreur *"Cet appareil a été utilisé pour trop de requêtes"*.
+   - Lancez l'IDE Antigravity 2.0 sur votre PC et connectez-vous directement via la fenêtre native de l'IDE (ou via `ag-doctor auth fix` / `agy` Option 1).
+   - **Étape cruciale (Écran "Security Notice & Data Use")** :
+     Après la connexion, Antigravity affiche obligatoirement la carte de consentement :
+     > *"Yes, I agree to help improve Antigravity by allowing Google to collect and use my Interactions data..."*
+     **Cochez cette case et cliquez sur le bouton bleu `[Get started]`**. C'est cet appel d'onboarding qui enregistre le compte comme actif sur les serveurs Google et lève définitivement le verrou `VALIDATION_REQUIRED`.
 
 4. **Synchronisation avec le Patch Proxy**
    - Ouvrez `ag-doctor-ui` ou rafraîchissez les quotas (`npm run doctor` / bouton *Actualiser tout*).

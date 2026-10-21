@@ -615,9 +615,9 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
       let shouldWakeUp = false;
       let reason = '';
 
-      const isMultiDayCooldown = (until - now) > 5 * 3600_000;
+
       const isQuotaExhausted =
-        isMultiDayCooldown ||
+
         quotaExhaustedAccountKeys.has(key) ||
         quotaExhaustedAccountKeys.has(accKey) ||
         quotaExhaustedAccountKeys.has(normAcc) ||
@@ -630,7 +630,7 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
 
       const claudeWeeklyResetStr = quota.claudeWeeklyReset || (quota as any).weeklyResetTime;
       const claudeWeeklyResetTs = claudeWeeklyResetStr ? Date.parse(claudeWeeklyResetStr) : 0;
-      const claudeWeeklyResetPassed = Boolean(claudeWeeklyResetTs > 0 && claudeWeeklyResetTs <= now && (claudeWeeklyResetTs >= (until - 300_000)));
+      const claudeWeeklyResetPassed = Boolean(claudeWeeklyResetTs > 0 && claudeWeeklyResetTs <= now);
 
       // If live quota was updated within 10 minutes, it is ground truth.
       const LIVE_QUOTA_FRESH_MS = 10 * 60_000;

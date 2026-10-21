@@ -178,8 +178,8 @@ async function runAuthFix(ctx: CommandContext): Promise<number> {
   console.log(`1. On ${c.cyan(GOOGLE_CONNECTIONS_URL)}: delete any old Antigravity links to clear session conflicts.`);
   console.log(`2. On ${c.cyan(GOOGLE_AGE_VERIFICATION_URL)}: complete the age check (e.g. selfie or card).`);
   console.log(`3. Re-authenticate natively on PC via Antigravity 2.0 or ${c.cyan('agy')} (select Option 1).`);
-  console.log(`   ${c.bold('Important:')} Do NOT scan QR codes with a phone showing "too many requests" — use native PC auth!`);
-  console.log(`4. Once authenticated, refresh the patch proxy. Quotas will restore to 100% 🟢.\n`);
+  console.log(`   ${c.bold(c.green('-> IMPORTANT:'))} On the screen ${c.cyan('"Security Notice & Data Use"')}, check the box and click ${c.bold('[Get started]')}.`);
+  console.log(`4. Once authenticated, open ${c.cyan('ag-doctor-ui')} and click "Actualiser". Quotas will restore to 100% 🟢.\n`);
 
   if (!ctx.yes) {
     const launchNow = await confirm('Launch Antigravity CLI (agy) now in a new terminal window?');
