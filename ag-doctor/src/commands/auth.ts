@@ -125,10 +125,10 @@ async function runAuthFix(ctx: CommandContext): Promise<number> {
   if (!ctx.json) {
     header('Antigravity Auth & Eligibility Fix');
     console.log(`This tool resolves ${c.bold('403 Forbidden / VALIDATION_REQUIRED')} errors:`);
-    console.log(`  1. Terminate running Antigravity and agy processes`);
-    console.log(`  2. Purge stale credentials from OS Credential Manager`);
-    console.log(`  3. Open official Google Age Verification page in your browser`);
-    console.log(`  4. Launch clean Antigravity CLI (agy) login\n`);
+    console.log(`  1. Revoke existing Antigravity links at ${c.cyan(GOOGLE_CONNECTIONS_URL)}`);
+    console.log(`  2. Complete Google Age & Identity Verification at ${c.cyan(GOOGLE_AGE_VERIFICATION_URL)}`);
+    console.log(`  3. Terminate stuck processes and purge stale OS credentials`);
+    console.log(`  4. Re-authenticate natively via PC Antigravity 2.0 / agy (bypasses mobile QR limits)\n`);
   }
 
   if (!ctx.yes) {
@@ -153,11 +153,14 @@ async function runAuthFix(ctx: CommandContext): Promise<number> {
     ok(`Purged credentials: ${purgeRes.purged.join(', ')}`);
   }
 
-  // 3. Open Age verification in browser
-  info('Opening Google Age Verification in default browser...');
+  // 3. Open Age verification and Connections in browser
+  info('Opening Google Verification pages in default browser...');
+  await openInBrowser(GOOGLE_CONNECTIONS_URL);
   const opened = await openInBrowser(GOOGLE_AGE_VERIFICATION_URL);
   if (!opened && !ctx.json) {
-    warn(`Could not launch browser automatically. Please open: ${c.cyan(GOOGLE_AGE_VERIFICATION_URL)}`);
+    warn(`Could not launch browser automatically. Please open:`);
+    warn(`  1. ${c.cyan(GOOGLE_CONNECTIONS_URL)} (remove Antigravity app access)`);
+    warn(`  2. ${c.cyan(GOOGLE_AGE_VERIFICATION_URL)} (verify age/identity)`);
   }
 
   if (ctx.json) {
@@ -171,10 +174,12 @@ async function runAuthFix(ctx: CommandContext): Promise<number> {
     return 0;
   }
 
-  console.log(`\n${c.bold(c.yellow('--- INSTRUCTIONS ---'))}`);
-  console.log(`1. In the browser that just opened, complete the age check (e.g. ${c.bold('Take a selfie')}).`);
-  console.log(`2. If you still encounter issues, check ${c.cyan(GOOGLE_CONNECTIONS_URL)} and remove old Antigravity links.`);
-  console.log(`3. Once verified, run ${c.cyan('agy')} in a terminal (select Option 1) to authenticate cleanly.\n`);
+  console.log(`\n${c.bold(c.yellow('--- 4-STEP PROTOCOL INSTRUCTIONS ---'))}`);
+  console.log(`1. On ${c.cyan(GOOGLE_CONNECTIONS_URL)}: delete any old Antigravity links to clear session conflicts.`);
+  console.log(`2. On ${c.cyan(GOOGLE_AGE_VERIFICATION_URL)}: complete the age check (e.g. selfie or card).`);
+  console.log(`3. Re-authenticate natively on PC via Antigravity 2.0 or ${c.cyan('agy')} (select Option 1).`);
+  console.log(`   ${c.bold('Important:')} Do NOT scan QR codes with a phone showing "too many requests" — use native PC auth!`);
+  console.log(`4. Once authenticated, refresh the patch proxy. Quotas will restore to 100% 🟢.\n`);
 
   if (!ctx.yes) {
     const launchNow = await confirm('Launch Antigravity CLI (agy) now in a new terminal window?');

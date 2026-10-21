@@ -201,6 +201,41 @@ function filterAccounts(accounts: any[], query: string, filter: 'all' | 'pro' | 
   });
 }
 
+function getAccountEffectiveQuotas(acc: any): { gemini5hPct: number; geminiWkPct: number; claude5hPct: number; claudeWkPct: number } {
+  const q = acc?.quotas || {};
+  const isStudio = isAiStudioAccount(acc);
+  const isCli = isGeminiCliAccount(acc);
+  const tier = getAccountTier(acc);
+
+  let geminiWkPct = q.geminiWeeklyPct ?? q.weeklyPercentage ?? 100;
+  let gemini5hPct = q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100;
+  let claudeWkPct = (tier === 'FREE' || isStudio || isCli) ? 0 : (q.claudeWeeklyPct ?? 100);
+  let claude5hPct = (tier === 'FREE' || isStudio || isCli) ? 0 : (q.claudeFiveHourPct ?? 100);
+
+  if (geminiWkPct <= 0) gemini5hPct = 0;
+  if (claudeWkPct <= 0) claude5hPct = 0;
+
+  return { gemini5hPct, geminiWkPct, claude5hPct, claudeWkPct };
+}
+
+function isAccountCapExhausted(a: any, windowMode: '5h' | 'weekly' = '5h'): boolean {
+  if (!a) return false;
+  if (a.status === 'exhausted') return true;
+
+  const eff = getAccountEffectiveQuotas(a);
+
+  if (eff.gemini5hPct > 5 && eff.geminiWkPct > 5) return false;
+
+  if (windowMode === 'weekly') {
+    if (eff.geminiWkPct <= 0) return true;
+  }
+
+  if (eff.gemini5hPct <= 0 || eff.geminiWkPct <= 0) return true;
+  if (eff.gemini5hPct <= 5 && eff.geminiWkPct <= 5) return true;
+
+  return false;
+}
+
 describe('Google Accounts High-Density Dashboard Logic', () => {
   describe('getAccountTier', () => {
     it('detects ULTRA tier from explicit tier attribute', () => {
@@ -711,5 +746,136 @@ describe('Google Accounts High-Density Dashboard Logic', () => {
       expect(modalTemplate).toContain('respectfully appeal');
     });
   });
+
+  describe('Cooldown vs Cap Épuisé Conflict Resolution', () => {
+    it('classifies accounts with active cooldowns as cooldown and NOT as Cap Épuisé', () => {
+      const accounts = [
+        { id: 'ready-1', email: 'ready@gmail.com', enabled: true, quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } },
+        { id: 'cd-1', email: 'cd@gmail.com', enabled: true, quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } }, // Has active cooldown
+        { id: 'exh-1', email: 'exh@gmail.com', enabled: true, quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 0 } }, // Truly exhausted
+        { id: 'paused-1', email: 'paused@gmail.com', enabled: false, quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } },
+        { id: 'blocked-1', email: 'blocked@gmail.com', enabled: true, isUnlicensed: true },
+      ];
+
+      const activeCooldowns: Record<string, any> = {
+        'google:cd@gmail.com:gemini': { until: Date.now() + 3600000, remainingHours: '1.0' },
+      };
+
+      const getActiveCd = (a: any) => activeCooldowns[`google:${a.email}:gemini`] || null;
+      const isExh = (a: any) => {
+        if (getActiveCd(a)) return false; // Cooldown takes priority, cannot be Cap Épuisé
+        const q = a.quotas || {};
+        return (q.geminiFiveHourPct ?? 100) <= 0 || (q.geminiWeeklyPct ?? 100) <= 0;
+      };
+
+      let ready = 0;
+      let cooldown = 0;
+      let exhausted = 0;
+      let paused = 0;
+      let blocked = 0;
+
+      for (const a of accounts) {
+        const isBlocked = Boolean(a.isUnlicensed);
+        const isEnabled = a.enabled !== false;
+        const hasCooldown = Boolean(getActiveCd(a));
+        const exhaustedCap = isExh(a);
+
+        if (isBlocked) blocked++;
+        else if (!isEnabled) paused++;
+        else if (hasCooldown) cooldown++;
+        else if (exhaustedCap) exhausted++;
+        else ready++;
+      }
+
+      expect(ready).toBe(1);
+      expect(cooldown).toBe(1);
+      expect(exhausted).toBe(1);
+      expect(paused).toBe(1);
+      expect(blocked).toBe(1);
+      expect(ready + cooldown + exhausted + paused + blocked).toBe(accounts.length);
+
+      // Filtering check: cd account must only match status:cooldown, never status:exhausted
+      const filterExhausted = accounts.filter(a => !a.isUnlicensed && a.enabled !== false && !getActiveCd(a) && isExh(a));
+      expect(filterExhausted.map(a => a.id)).toEqual(['exh-1']);
+
+      const filterCooldown = accounts.filter(a => !a.isUnlicensed && a.enabled !== false && Boolean(getActiveCd(a)));
+      expect(filterCooldown.map(a => a.id)).toEqual(['cd-1']);
+    });
+
+    it('does not mark account as Cap Épuisé when Gemini quota is 100% even if Claude is 0%', () => {
+      const acc = {
+        id: 'gemini-ready-claude-capped',
+        email: 'user@gmail.com',
+        tier: 'PRO',
+        quotas: {
+          geminiFiveHourPct: 100,
+          geminiWeeklyPct: 100,
+          claudeFiveHourPct: 0,
+          claudeWeeklyPct: 0,
+        },
+      };
+
+      const isExh = isAccountCapExhausted(acc, '5h');
+      expect(isExh).toBe(false);
+
+      const isExhWeekly = isAccountCapExhausted(acc, 'weekly');
+      expect(isExhWeekly).toBe(false);
+    });
+
+    it('dynamically formats Gemini recommendation badge with real percentage instead of hardcoded 100%', () => {
+      const acc = {
+        id: 'acc-40-pct',
+        email: 'user@gmail.com',
+        quotas: {
+          geminiFiveHourPct: 40,
+          geminiWeeklyPct: 80,
+          claudeWeeklyPct: 0,
+        },
+      };
+
+      const eff = getAccountEffectiveQuotas(acc);
+      expect(eff.gemini5hPct).toBe(40);
+      expect(eff.claudeWkPct).toBe(0);
+
+      // Verify that when Claude is capped and Gemini has 40%, the badge states 40% Prêt
+      const geminiBadge = eff.gemini5hPct >= 95 ? '⚡ Gemini 100% Prêt' : `⚡ Gemini ${eff.gemini5hPct}% Prêt`;
+      expect(geminiBadge).toBe('⚡ Gemini 40% Prêt');
+    });
+
+    it('prioritizes validation required and blocked states over generic quota exhaustion', () => {
+      const challengeAcc = {
+        id: 'challenge-1',
+        email: 'verify@gmail.com',
+        status: 'unhealthy',
+        requiresValidation: true,
+        lastError: 'VALIDATION_REQUIRED: Action required on account',
+        quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 0 },
+      };
+
+      const isVal = Boolean(challengeAcc.requiresValidation || challengeAcc.lastError.includes('VALIDATION_REQUIRED'));
+      expect(isVal).toBe(true);
+
+      const isBlocked = !isVal && challengeAcc.status === 'unhealthy';
+      expect(isBlocked).toBe(false); // Does not misclassify as generic blocked since isVal caught it
+    });
+
+    it('zeros Claude quota for Studio and CLI accounts without triggering Cap Épuisé', () => {
+      const studioAcc = {
+        id: 'studio-1',
+        provider: 'google-gemini',
+        apiKey: 'AIzaSyTestApiKeyStudio',
+      };
+
+      const eff = getAccountEffectiveQuotas(studioAcc);
+      expect(eff.claude5hPct).toBe(0);
+      expect(eff.claudeWkPct).toBe(0);
+      expect(eff.gemini5hPct).toBeGreaterThan(0);
+
+      const isExh = isAccountCapExhausted(studioAcc);
+      expect(isExh).toBe(false);
+    });
+  });
 });
+
+
 

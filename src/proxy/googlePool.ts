@@ -340,11 +340,10 @@ export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>,
           const family = k.endsWith(':gemini') ? 'gemini' : k.endsWith(':claude') ? 'claude' : null;
           const fiveHourPct = family === 'claude' ? q.claudeFiveHourPct : q.geminiFiveHourPct;
           const weeklyPct = family === 'claude' ? q.claudeWeeklyPct : q.geminiWeeklyPct;
-          // If quota is fresh (<6h), 5h shows >= 5%, AND weekly also shows >= 5%, don't restore the cooldown.
-          // If weekly is 0% (or near-zero), the cooldown is a real weekly exhaustion — always restore it.
+          const isRealQuotaCooldown = durationMs >= 5 * 3600 * 1000;
           const weeklyOk = typeof weeklyPct !== 'number' || weeklyPct >= 5;
-          if (age < 6 * 3600_000 && typeof fiveHourPct === 'number' && fiveHourPct >= 5 && weeklyOk) {
-            log.info(`[GooglePool] Skipping stale quota-exhausted cooldown restore for ${k} (live quota: 5h=${fiveHourPct}%, wk=${weeklyPct ?? '?'}%, age=${Math.round(age / 60_000)}min)`);
+          if (!isRealQuotaCooldown && age < 6 * 3600_000 && typeof fiveHourPct === 'number' && fiveHourPct >= 5 && weeklyOk) {
+            log.info(`[GooglePool] Skipping stale rate-limited cooldown restore for ${k} (live quota: 5h=${fiveHourPct}%, wk=${weeklyPct ?? '?'}%, age=${Math.round(age / 60_000)}min)`);
             continue;
           }
         }
@@ -685,10 +684,22 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
       quotaExhaustedAccountKeys.has(normAccountKey) ||
       quotaExhaustedAccountKeys.has(rawAccountKey);
 
+    const isGeminiQuotaExhausted =
+      quotaExhaustedAccountKeys.has(`${normAccountKey}:gemini`) ||
+      quotaExhaustedAccountKeys.has(`${rawAccountKey}:gemini`) ||
+      quotaExhaustedAccountKeys.has(normAccountKey) ||
+      quotaExhaustedAccountKeys.has(rawAccountKey);
+
     // Allow healing if:
     // 1) Not in an active rate-limited cooldown, AND
-    // 2) Cooldown is not strict (<5h), OR Google reset timestamp has elapsed
-    const canHealGemini = !isRateLimited && (!isStrictCooldown || geminiResetPassed) && !geminiWeeklyDepleted && hasAnyCooldown;
+    // 2) Not in an active quota-exhausted cooldown (unless Google reset timestamp has actually elapsed), AND
+    // 3) Cooldown is not strict (<5h), OR Google reset timestamp has elapsed
+    const canHealGemini =
+      !isRateLimited &&
+      (!isGeminiQuotaExhausted || geminiResetPassed) &&
+      (!isStrictCooldown || geminiResetPassed) &&
+      !geminiWeeklyDepleted &&
+      hasAnyCooldown;
 
     if (canHealGemini) {
       log.info(`[Proxy] Auto-healing Gemini cooldown for ${accountKey}: quota recovered to 5h=${quota.geminiFiveHourPct}%, week=${quota.geminiWeeklyPct}%${geminiResetPassed ? ' (reset timestamp passed)' : ''}`);
@@ -746,7 +757,18 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
       quotaExhaustedAccountKeys.has(normAccountKey) ||
       quotaExhaustedAccountKeys.has(rawAccountKey);
 
-    const canHealClaude = !isRateLimited && (!isStrictCooldown || claudeResetPassed) && !claudeWeeklyDepleted && hasAnyCooldown;
+    const isClaudeQuotaExhausted =
+      quotaExhaustedAccountKeys.has(`${normAccountKey}:claude`) ||
+      quotaExhaustedAccountKeys.has(`${rawAccountKey}:claude`) ||
+      quotaExhaustedAccountKeys.has(normAccountKey) ||
+      quotaExhaustedAccountKeys.has(rawAccountKey);
+
+    const canHealClaude =
+      !isRateLimited &&
+      (!isClaudeQuotaExhausted || claudeResetPassed) &&
+      (!isStrictCooldown || claudeResetPassed) &&
+      !claudeWeeklyDepleted &&
+      hasAnyCooldown;
 
     if (canHealClaude) {
       log.info(`[Proxy] Auto-healing Claude cooldown for ${accountKey}: quota recovered to 5h=${quota.claudeFiveHourPct}%, week=${quota.claudeWeeklyPct}%${claudeResetPassed ? ' (reset timestamp passed)' : ''}`);
@@ -1405,7 +1427,18 @@ export function classifyGoogleCloudCode429(
 // ─── Power of Two Choices (P2C) Candidate Selection ────────────────────────────
 export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gemini'): CustomModel | undefined {
   if (!candidates || candidates.length === 0) return undefined;
-  if (candidates.length === 1) return candidates[0];
+  if (candidates.length === 1) {
+    const single = candidates[0];
+    if (
+      (single as any).enabled === false ||
+      isAccountUnlicensed(single) ||
+      isAccountInCooldown(single, modelFamily) ||
+      getOpenBreaker(single)
+    ) {
+      return undefined;
+    }
+    return single;
+  }
 
   const fam = (modelFamily || '').toLowerCase();
   const isRestrictedTarget = fam.includes('argon') || fam.includes('claude-5-5') || fam.includes('claude-5.5') || fam.includes('5.5') || fam.includes('5-5');
@@ -1416,8 +1449,10 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
     : available;
   const targetCandidates = tierFiltered.length > 0 ? tierFiltered : available;
 
+  if (targetCandidates.length === 0) return undefined;
+
   const availableWithQuota = targetCandidates.filter((m) => getModelQuotaScore(m, modelFamily) > 0);
-  const pool = availableWithQuota.length > 0 ? availableWithQuota : (targetCandidates.length > 0 ? targetCandidates : candidates.filter((m) => (m as any).enabled !== false && !isAccountUnlicensed(m)));
+  const pool = availableWithQuota.length > 0 ? availableWithQuota : targetCandidates;
   if (pool.length === 0) return undefined;
   // Exclude accounts saturated with concurrent in-flight requests (>= MAX_CONCURRENT_PER_ACCOUNT, or 1 in probation)
   // if other idle/available accounts exist in the pool.
@@ -1464,12 +1499,26 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
 
 let roundRobinCounter = 0;
 
-export function selectBestModelByQuota(candidates: CustomModel[], allModels?: CustomModel[]): CustomModel | undefined {
+export function selectBestModelByQuota(
+  candidates: CustomModel[],
+  allModels?: CustomModel[],
+  modelFamily = 'gemini',
+): CustomModel | undefined {
   if (!candidates || candidates.length === 0) return undefined;
   if (candidates.length === 1) return candidates[0];
 
-  const healthy = candidates.filter((m) => !getOpenBreaker(m));
-  const pool = healthy.length > 0 ? healthy : candidates;
+  const healthy = candidates.filter(
+    (m) =>
+      (m as any).enabled !== false &&
+      !isAccountUnlicensed(m) &&
+      !getOpenBreaker(m) &&
+      !isAccountInCooldown(m, modelFamily),
+  );
+  const pool =
+    healthy.length > 0
+      ? healthy
+      : candidates.filter((m) => (m as any).enabled !== false && !isAccountUnlicensed(m));
+  if (pool.length === 0) return candidates[0];
 
   // Prefer candidates with refreshable credentials if Google Cloud Code
   const withRefresh = pool.filter((m) => !isGoogleCloudCodeModel(m) || Boolean(m.refreshToken));
@@ -1478,18 +1527,20 @@ export function selectBestModelByQuota(candidates: CustomModel[], allModels?: Cu
   // ponytail: For Google family models, prioritize Google Cloud Code pool (free, load-balanced across 19 accounts)
   // over static developer API keys (AIzaSy... / AQ...) whenever healthy Cloud Code accounts have positive quota.
   const hasCloudCodeWithQuota = candidatePool.some(
-    (m) => isGoogleCloudCodeModel(m) && Boolean(m.refreshToken) && getModelQuotaScore(m) > 0,
+    (m) => isGoogleCloudCodeModel(m) && Boolean(m.refreshToken) && getModelQuotaScore(m, modelFamily) > 0,
   );
   const filteredCandidates = hasCloudCodeWithQuota
     ? candidatePool.filter((m) => isGoogleCloudCodeModel(m) && Boolean(m.refreshToken))
     : candidatePool;
 
-  const withQuota = filteredCandidates.filter((m) => getModelQuotaScore(m) > 0);
+  const withQuota = filteredCandidates.filter((m) => getModelQuotaScore(m, modelFamily) > 0);
   const candidatesToSort = withQuota.length > 0 ? withQuota : filteredCandidates;
 
-  const sorted = [...candidatesToSort].sort((a, b) => getModelQuotaScore(b) - getModelQuotaScore(a));
-  const topScore = getModelQuotaScore(sorted[0]);
-  const topTier = sorted.filter((m) => topScore - getModelQuotaScore(m) <= 5);
+  const sorted = [...candidatesToSort].sort(
+    (a, b) => getModelQuotaScore(b, modelFamily) - getModelQuotaScore(a, modelFamily),
+  );
+  const topScore = getModelQuotaScore(sorted[0], modelFamily);
+  const topTier = sorted.filter((m) => topScore - getModelQuotaScore(m, modelFamily) <= 5);
 
   if (topTier.length > 1) {
     const selected = topTier[Math.abs(roundRobinCounter++) % topTier.length];

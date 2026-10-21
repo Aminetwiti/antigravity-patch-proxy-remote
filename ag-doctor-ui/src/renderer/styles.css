@@ -4036,20 +4036,21 @@ body {
    ───────────────────────────────────────────────────────────────────────── */
 .ga-pool-kpi-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 10px 16px;
+  border-radius: var(--r-md, 8px);
+  padding: 8px 12px;
   backdrop-filter: blur(8px);
+  margin-bottom: 12px;
 }
 .ga-pool-kpi-stats {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  width: 100%;
+  justify-content: space-between;
   flex-wrap: wrap;
 }
 .ga-pool-kpi-pill {
@@ -4090,11 +4091,11 @@ body {
    ───────────────────────────────────────────────────────────────────────── */
 .ga-health-bar-section {
   width: 100%;
-  margin: 4px 0 2px 0;
+  margin: 2px 0 1px 0;
 }
 .ga-health-proportion-bar {
   display: flex;
-  height: 7px;
+  height: 5px;
   width: 100%;
   border-radius: 999px;
   overflow: hidden;
@@ -4115,6 +4116,9 @@ body {
 }
 .ga-health-seg.paused {
   background: #64748b;
+}
+.ga-health-seg.blocked {
+  background: #dc2626;
 }
 .ga-health-legend {
   display: flex;
@@ -4338,20 +4342,19 @@ body {
 .ga-cascade-matrix-wrapper {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  margin: 6px 0 2px 0;
-  padding: 5px 10px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 7px;
+  gap: 6px;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
   flex-wrap: wrap;
 }
 .ga-cascade-matrix-title {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-3);
   font-weight: 600;
   text-transform: uppercase;
@@ -4360,16 +4363,16 @@ body {
 .ga-cascade-chain {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
 }
 .ga-cascade-step {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 7px;
-  border-radius: 5px;
-  font-size: 11px;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-1);
@@ -4430,15 +4433,15 @@ body {
 .ga-timeline-wrapper {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding-top: 8px;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 4px;
   border-top: 1px dashed rgba(255, 255, 255, 0.08);
   flex-wrap: wrap;
   width: 100%;
 }
 .ga-timeline-title {
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-2);
   font-weight: 600;
   text-transform: uppercase;
@@ -4450,16 +4453,16 @@ body {
 .ga-timeline-items {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
 }
 .ga-timeline-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 7px;
-  border-radius: 5px;
-  font-size: 10.5px;
+  gap: 4px;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  font-size: 10px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-1);
@@ -4850,24 +4853,75 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   12 KPI Cards Grid & Custom Colors (Google Service Dashboard)
-/* ─────────────────────────────────────────────────────────────────────────
-   12 KPI Cards Grid — Unified Professional IDE Cockpit (antislop-ui & Impeccable)
+   8 KPI Cockpit Telemetry Grid — Unified Professional IDE Cockpit (Impeccable)
    ───────────────────────────────────────────────────────────────────────── */
 .ga-telemetry-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr) !important;
-  gap: 12px;
-  margin-bottom: 18px;
+  gap: 8px !important;
+  margin-bottom: 12px !important;
 }
-@media (max-width: 1200px) {
+
+.ga-token-stat-card {
+  min-height: 52px !important;
+  padding: 7px 12px !important;
+  gap: 10px !important;
+  background: var(--bg-1) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-md, 8px) !important;
+}
+
+.ga-token-stat-card .stat-icon {
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: var(--r-sm, 5px) !important;
+}
+.ga-token-stat-card .stat-icon svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.ga-token-stat-card .stat-body {
+  gap: 1px !important;
+}
+
+.ga-token-stat-card .stat-label {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.4px !important;
+  color: var(--text-2) !important;
+  text-transform: uppercase !important;
+  line-height: 1.2 !important;
+}
+
+.ga-token-stat-card .stat-value {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  font-family: var(--font-mono, monospace) !important;
+  letter-spacing: -0.2px !important;
+}
+
+.ga-token-stat-card .stat-sub {
+  font-size: 10px !important;
+  color: var(--text-3) !important;
+  margin-top: 0 !important;
+  line-height: 1.2 !important;
+}
+
+@media (max-width: 1100px) {
   .ga-telemetry-grid {
-    grid-template-columns: repeat(3, 1fr) !important;
+    grid-template-columns: repeat(4, minmax(130px, 1fr)) !important;
+    gap: 6px !important;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
   }
 }
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .ga-telemetry-grid {
     grid-template-columns: repeat(2, 1fr) !important;
+    gap: 6px !important;
   }
 }
 @media (max-width: 580px) {
@@ -4909,6 +4963,54 @@ body {
   background: rgba(59, 130, 246, 0.12);
   color: var(--accent-blue-bright, #3b82f6);
   border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Toolbar Responsive Adaptation */
+.ga-panel-body {
+  padding: 12px !important;
+}
+
+.ga-toolbar {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  margin-bottom: 12px !important;
+}
+.ga-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.ga-toolbar-row--top {
+  justify-content: flex-start;
+}
+.ga-toolbar-row--bottom {
+  justify-content: flex-start;
+  gap: 6px;
+}
+.btn-label-short {
+  display: none;
+}
+@media (max-width: 1320px) {
+  .btn-label-long {
+    display: none;
+  }
+  .btn-label-short {
+    display: inline;
+  }
+}
+@media (max-width: 900px) {
+  .ga-toolbar-row--bottom {
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+    flex-wrap: nowrap;
+  }
+  .ga-toolbar-action {
+    flex-shrink: 0;
+  }
 }
 
 

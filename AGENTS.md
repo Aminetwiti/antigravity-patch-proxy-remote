@@ -255,6 +255,7 @@ Determine for each change:
 | Off-by-one in protobuf varint length | Model list corrupt, IDE crashes | Test protobuf encoding with binary diff |
 | sync fs access during streaming | Event loop blocked, timeouts | Use async fs always, sync only at startup |
 | Circular dep in proxy/ | tsc --noEmit errors | Import from registry, not individual translators |
+| Google 403 `VALIDATION_REQUIRED` / Challenge | Account blocked, phone QR fails "too many requests" | Follow 4-step protocol in `TROUBLESHOOTING.md`: Revoke connections, verify age, native PC auth via Antigravity 2.0 / `ag-doctor auth fix`, sync patch |
 
 ---
 

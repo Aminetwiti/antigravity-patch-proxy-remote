@@ -62,3 +62,41 @@ The `ag-doctor` tool checks three aspects of the MITM proxy:
 If you encounter persistent permission issues (e.g. `Access is denied` or `0x80070005`) when setting the proxy or installing the CA, you can use the self-elevating repair scripts:
 - Windows: Run `ag-doctor-ui/resources/repair-all.ps1`.
 - Linux/macOS: Run `ag-doctor-ui/resources/repair-all.sh`.
+
+## Google Account 403 VALIDATION_REQUIRED & Challenge Resolution Protocol
+
+### Symptom
+When sending requests or testing accounts in Antigravity or `ag-doctor`, a Google account returns `HTTP 403 Forbidden` with status `VALIDATION_REQUIRED` or an error mentioning `Verify your account at https://accounts.google.com/signin/continue?...`.
+
+Attempts to authenticate via smartphone QR code fail with:
+> *"Cette device a été utilisée pour trop de requêtes. Veuillez utiliser un autre appareil."* (Device rate limit / al_alert).
+
+Direct browser logins to generic `accounts.google.com` may return `HTTP 400 Bad Request` or loop without clearing the token state.
+
+### Root Cause
+Google security algorithms flagged the account with a security challenge (`al_alert`), age verification requirement, or conflicting stale OAuth sessions. The account is **NOT suspended or banned under TOS**; it simply requires identity/age confirmation and clean native OAuth token issuance.
+
+### The 4-Step Resolution Protocol
+
+1. **Révocation de l'accès Antigravity existant**
+   - Ouvrez : `https://myaccount.google.com/connections`
+   - Connectez-vous avec le compte concerné.
+   - Supprimez / révoquez les accès tiers pour **Antigravity** (ou Google Cloud Code / Jetski). Cela efface les sessions OAuth en conflit côté Google.
+
+2. **Validation de l'âge et de l'identité du compte**
+   - Ouvrez : `https://myaccount.google.com/age-verification`
+   - Complétez la vérification demandée (par carte bancaire ou selfie vidéo).
+   - Confirmez que le compte est débloqué et reconnu majeur.
+
+3. **Reconnexion native via Antigravity 2.0 (Bypass de la limite smartphone)**
+   - Ne scannez **pas** de QR code avec un smartphone déjà saturé de requêtes !
+   - Utilisez l'authentification native sur votre PC :
+     - Soit lancez l'IDE Antigravity 2.0 et connectez-vous directement via la fenêtre native de l'IDE.
+     - Soit exécutez dans un terminal : `ag-doctor auth fix` ou `agy` (Option 1).
+     - Soit cliquez sur le bouton de connexion native dans `ag-doctor-ui`.
+   - Cette authentification native sur PC contourne l'erreur *"Cet appareil a été utilisé pour trop de requêtes"*.
+
+4. **Synchronisation avec le Patch Proxy**
+   - Ouvrez `ag-doctor-ui` ou rafraîchissez les quotas (`npm run doctor` / bouton *Actualiser tout*).
+   - Le jeton d'accès est automatiquement mis à jour dans `custom_models.json`. Le compte passe immédiatement en `🟢 Prêt` avec 100% de ses quotas Gemini & Claude.
+

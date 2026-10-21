@@ -125,6 +125,57 @@ describe('Sticky Sessions (Multi-Account Session Affinity)', () => {
       expect(getSessionBoundModel('session-1', account2Model, allModels).apiKey).toBe('key-account-1');
       expect(getSessionBoundModel('session-2', account1Model, allModels).apiKey).toBe('key-account-2');
     });
+
+    it('strictly preserves reasoning effort tier (e.g. Medium does not downgrade to Low)', () => {
+      const acc1Low: CustomModel = {
+        ...account1Model,
+        name: 'acc1-low',
+        displayName: 'Gemini 3.8 Flash (Low)',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        _effortSuffix: '-low',
+        reasoningEffort: 'low',
+      };
+      const acc1Med: CustomModel = {
+        ...account1Model,
+        name: 'acc1-medium',
+        displayName: 'Gemini 3.8 Flash (Medium)',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        _effortSuffix: '-medium',
+        reasoningEffort: 'medium',
+      };
+      const acc2Med: CustomModel = {
+        ...account2Model,
+        name: 'acc2-medium',
+        displayName: 'Gemini 3.8 Flash (Medium)',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        _effortSuffix: '-medium',
+        reasoningEffort: 'medium',
+      };
+
+      const tieredModels: CustomModel[] = [acc1Low, acc1Med, acc2Med];
+      bindSessionToModel('session-effort', acc1Med);
+
+      // Subsequent request targets acc2Med; session affinity must bind to acc1Med, NOT acc1Low
+      const bound = getSessionBoundModel('session-effort', acc2Med, tieredModels);
+      expect(bound.name).toBe('acc1-medium');
+      expect(bound.reasoningEffort).toBe('medium');
+      expect(bound.displayName).toContain('(Medium)');
+    });
+
+    it('clears session affinity and falls back to targetModel if bound account enters cooldown or is unlicensed', () => {
+      bindSessionToModel('session-cooldown', account1Model);
+      expect(getSessionBoundModel('session-cooldown', account2Model, allModels).name).toBe('account-1');
+
+      // Now account1 enters cooldown
+      (account1Model as any).enabled = false;
+      const fallback = getSessionBoundModel('session-cooldown', account2Model, allModels);
+      expect(fallback.name).toBe('account-2');
+
+      // Re-enable account1, but session affinity must have been deleted
+      (account1Model as any).enabled = true;
+      const subsequent = getSessionBoundModel('session-cooldown', account2Model, allModels);
+      expect(subsequent.name).toBe('account-2');
+    });
   });
 
   describe('getAccountQuotaKey', () => {

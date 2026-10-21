@@ -851,6 +851,43 @@ describe('Burst Rate Limit Governor & Constants', () => {
       const claudeChosen = selectCandidateP2C([trialAcc, paidAcc], 'claude-5-5-sonnet');
       expect(claudeChosen?.accountEmail).toBe('paid-dev@example.com');
     });
+
+    it('selectCandidateP2C returns undefined when all candidates are in active cooldown', () => {
+      const acc1 = makeModel({ accountEmail: 'acc1@example.com', quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any });
+      const acc2 = makeModel({ accountEmail: 'acc2@example.com', quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any });
+      setAccountCooldown(acc1, 60_000, 'gemini');
+      setAccountCooldown(acc2, 60_000, 'gemini');
+
+      const chosen = selectCandidateP2C([acc1, acc2], 'gemini');
+      expect(chosen).toBeUndefined();
+
+      // Single candidate in cooldown also returns undefined
+      expect(selectCandidateP2C([acc1], 'gemini')).toBeUndefined();
+    });
+
+    it('selectBestModelByQuota accurately checks modelFamily and skips cooled-down Claude accounts', () => {
+      const accA = makeModel({
+        accountEmail: 'accA@example.com',
+        quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100, claudeFiveHourPct: 0, claudeWeeklyPct: 0 } as any,
+      });
+      const accB = makeModel({
+        accountEmail: 'accB@example.com',
+        quotas: { geminiFiveHourPct: 50, geminiWeeklyPct: 50, claudeFiveHourPct: 90, claudeWeeklyPct: 90 } as any,
+      });
+
+      // When requesting Gemini, accA has higher Gemini quota (100 > 50)
+      const geminiChosen = selectBestModelByQuota([accA, accB], undefined, 'gemini');
+      expect(geminiChosen?.accountEmail).toBe('accA@example.com');
+
+      // When requesting Claude, accB has positive Claude quota (90 > 0)
+      const claudeChosen = selectBestModelByQuota([accA, accB], undefined, 'claude');
+      expect(claudeChosen?.accountEmail).toBe('accB@example.com');
+
+      // If accB is placed in cooldown for Claude, selectBestModelByQuota filters it out
+      setAccountCooldown(accB, 60_000, 'claude');
+      const cooledClaude = selectBestModelByQuota([accA, accB], undefined, 'claude');
+      expect(cooledClaude?.accountEmail).toBe('accA@example.com');
+    });
   });
 });
 

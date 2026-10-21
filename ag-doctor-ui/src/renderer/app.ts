@@ -9816,7 +9816,7 @@ let currentGaFetchedModels: Array<{ id: string; displayName: string; enabled: bo
 let googleAccountsCache: ProviderEntry[] = [];
 let gaCurrentQuotaWindow: '5h' | 'weekly' = 'weekly';
 let gaCurrentViewMode: 'list' | 'grid' = 'list';
-let gaCurrentFilter: 'all' | 'pro' | 'ultra' | 'free' | 'status:ready' | 'status:exhausted' | 'status:cooldown' | 'status:paused' | 'status:blocked' = 'all';
+let gaCurrentFilter: 'all' | 'pro' | 'ultra' | 'free' | 'status:ready' | 'status:exhausted' | 'status:cooldown' | 'status:paused' | 'status:blocked' | 'status:validation' = 'all';
 let gaSearchQuery: string = '';
 let gaShowAllQuotas: boolean = true;
 let gaSortColumn: 'name' | 'quota' | 'lastUsed' | null = null;
@@ -9824,6 +9824,25 @@ let gaSortDirection: 'asc' | 'desc' = 'asc';
 let gaSelectedIds: Set<string> = new Set();
 let gaToolbarInitialized: boolean = false;
 let gaActiveCooldownsCache: Record<string, { until: number; remainingMs: number; remainingMin: number; remainingHours: string }> = {};
+
+function isAccountValidationRequired(a: any): boolean {
+  if (!a) return false;
+  const err = a.errorDetails || a.quotas?.errorDetails;
+  if (!err && a.lastError) {
+    const le = String(a.lastError);
+    if (le.includes('VALIDATION_REQUIRED') || le.includes('Verify your account') || le.includes('challenge')) {
+      return true;
+    }
+  }
+  if (!err) return false;
+  return Boolean(
+    err.validationUrl ||
+    (a as any).isValidationRequired ||
+    err.status === 'VALIDATION_REQUIRED' ||
+    err.reason === 'VALIDATION_REQUIRED' ||
+    (err.message && (err.message.includes('Verify your account') || err.message.includes('VALIDATION_REQUIRED') || err.message.includes('challenge')))
+  );
+}
 
 function getAccountActiveCooldown(
   account: any,
@@ -10250,23 +10269,22 @@ export function getAccountEffectiveQuotas(acc: any): {
     argon5hPct = 0;
   }
 
-  // Free accounts do not have access to Claude/GPT models
+  // Free, Studio, and CLI accounts do not have access to Claude/GPT models in Antigravity
   const tier = getAccountTier(acc);
-  if (tier === 'FREE') {
+  if (tier === 'FREE' || tier === 'STUDIO' || tier === 'CLI') {
     claudeWkPct = 0;
     claude5hPct = 0;
   }
 
   // Cooldown reality override: when the proxy has a confirmed weekly-cap cooldown active
-  // (from a real-time 429 response), the Google quota API may still report 100% (stale data).
-  // The cooldown is ground truth — force quotas to 0% so the UI doesn't show contradictory data.
+  // Cooldown reality override: only apply when live quota is already near-zero (avoid overwriting fresh 100% quota)
   const cdGemini = getAccountActiveCooldown(acc, 'gemini');
   const cdClaude = getAccountActiveCooldown(acc, 'claude');
-  if (cdGemini?.isCooldown && cdGemini.isWeeklyCap) {
+  if (cdGemini?.isCooldown && cdGemini.isWeeklyCap && geminiWkPct <= 5) {
     geminiWkPct = 0;
     gemini5hPct = 0;
   }
-  if (cdClaude?.isCooldown && cdClaude.isWeeklyCap) {
+  if (cdClaude?.isCooldown && cdClaude.isWeeklyCap && claudeWkPct <= 5) {
     claudeWkPct = 0;
     claude5hPct = 0;
   }
@@ -10302,27 +10320,27 @@ export function getAccountEffectiveQuotas(acc: any): {
 
 export function isAccountCapExhausted(a: any, windowMode: '5h' | 'weekly' = gaCurrentQuotaWindow || '5h'): boolean {
   if (!a) return false;
+  // Accounts with an active cooldown timer belong strictly under Cooldown, NOT Cap Épuisé
   const cdGemini = getAccountActiveCooldown(a, 'gemini');
   const cdClaude = getAccountActiveCooldown(a, 'claude');
-  if (cdGemini?.isWeeklyCap || cdClaude?.isWeeklyCap) return true;
+  if (cdGemini || cdClaude) return false;
+
   if (a.status === 'exhausted') return true;
 
   const eff = getAccountEffectiveQuotas(a);
-  const tier = getAccountTier(a).toLowerCase();
+
+  // If Gemini has positive quota (> 5% in both 5h and weekly), the account is NOT exhausted (Gemini requests run normally)
+  if (eff.gemini5hPct > 5 && eff.geminiWkPct > 5) return false;
 
   // If active window is weekly and weekly quota is depleted
   if (windowMode === 'weekly') {
     if (eff.geminiWkPct <= 0) return true;
-    if (tier !== 'free' && typeof eff.claudeWkPct === 'number' && eff.claudeWkPct <= 0) return true;
   }
 
   // 0% quota in 5h rolling window or weekly quota (since weekly 0% locks the account)
   if (eff.gemini5hPct <= 0 || eff.geminiWkPct <= 0) return true;
-  if (tier !== 'free' && ((typeof eff.claude5hPct === 'number' && eff.claude5hPct <= 0) || (typeof eff.claudeWkPct === 'number' && eff.claudeWkPct <= 0))) {
-    return true;
-  }
 
-  // Critical insufficient quota (<= 5% remaining in both buckets)
+  // Critical insufficient quota (<= 5% remaining in both Gemini buckets)
   if (eff.gemini5hPct <= 5 && eff.geminiWkPct <= 5) return true;
 
   return false;
@@ -10646,15 +10664,14 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
   for (const acc of accounts) {
     if (acc.enabled === false) continue;
     if (acc.isUnlicensed || acc.quotas?.isUnlicensed) continue;
-    const gCd = gaActiveCooldownsCache[`google:${acc.email || acc.name || acc.id}:gemini`];
-    const cCd = gaActiveCooldownsCache[`google:${acc.email || acc.name || acc.id}:claude`];
+    const gCd = getAccountActiveCooldown(acc, 'gemini');
+    const cCd = getAccountActiveCooldown(acc, 'claude');
     const eff = getAccountEffectiveQuotas(acc);
 
-    if (gCd && gCd.until > nowMs) cooldownCnt++;
+    if (gCd) cooldownCnt++;
     else if (eff.gemini5hPct > 0) geminiReadyCnt++;
 
-    if (cCd && cCd.until > nowMs) {}
-    else if (eff.claude5hPct > 0) claudeReadyCnt++;
+    if (!cCd && eff.claude5hPct > 0) claudeReadyCnt++;
   }
 
   // Card 6: Flotte Gemini Prête
@@ -10771,6 +10788,7 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
   let cooldown = 0;
   let paused = 0;
   let blocked = 0;
+  let validation = 0;
 
   for (const a of accounts) {
     const tier = getAccountTier(a);
@@ -10779,26 +10797,25 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
     else pro++;
 
     const isEnabled = a.enabled !== false;
+    const isVal = isAccountValidationRequired(a);
     const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
-    const isBlocked = isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'));
+    const isBlocked = !isVal && (isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403')));
     const cdGemini = getAccountActiveCooldown(a, 'gemini');
     const cdClaude = getAccountActiveCooldown(a, 'claude');
+    const hasActiveCooldown = Boolean(cdGemini || cdClaude);
     const isExh = isAccountCapExhausted(a);
-    const isTempCooldown = !isExh && ((cdGemini && !cdGemini.isWeeklyCap) || (cdClaude && !cdClaude.isWeeklyCap));
 
-    if (isBlocked) {
+    if (isVal) {
+      validation++;
+    } else if (isBlocked) {
       blocked++;
-    }
-
-    if (isExh) {
-      exhausted++;
-    }
-
-    if (!isEnabled) {
+    } else if (!isEnabled) {
       paused++;
-    } else if (isTempCooldown) {
+    } else if (hasActiveCooldown) {
       cooldown++;
-    } else if (!isExh && !isBlocked) {
+    } else if (isExh) {
+      exhausted++;
+    } else {
       ready++;
     }
   }
@@ -10809,6 +10826,7 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
   const elCooldown = $('#gaCntCooldown');
   const elPaused = $('#gaCntPaused');
   const elBlocked = $('#gaCntBlocked');
+  const elValidation = $('#gaCntValidation');
   const elPro = $('#gaCntPro');
   const elUltra = $('#gaCntUltra');
   const elFree = $('#gaCntFree');
@@ -10819,6 +10837,7 @@ function updateGoogleAccountToolbarCounts(accounts: any[]): void {
   if (elCooldown) elCooldown.textContent = String(cooldown);
   if (elPaused) elPaused.textContent = String(paused);
   if (elBlocked) elBlocked.textContent = String(blocked);
+  if (elValidation) elValidation.textContent = String(validation);
   if (elPro) elPro.textContent = String(pro);
   if (elUltra) elUltra.textContent = String(ultra);
   if (elFree) elFree.textContent = String(free);
@@ -11360,30 +11379,63 @@ function initGoogleAccountsToolbarOnce(): void {
         </div>
 
         ${isValidationRequired ? `
-        <!-- Validation Challenge Section (Primary for Captcha / Interactive) -->
-        <div style="margin-bottom: 16px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px 14px;">
+        <!-- Validation Challenge Section: 4-Step Resolution Protocol -->
+        <div style="margin-bottom: 16px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 13px 14px;">
           <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #fbbf24; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            ACTION REQUISE : VALIDATION DE SÉCURITÉ GOOGLE
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            PROTOCOLE DE DÉBLOCAGE EN 4 ÉTAPES (VALIDATION REQUISE)
           </div>
-          <p style="margin: 0 0 10px 0; font-size: 12px; color: #cbd5e1; line-height: 1.45;">
-            Google exige que le propriétaire du compte résolve un défi interactif (captcha, acceptation de prompt ou connexion web) pour réautoriser l'accès.
+          <p style="margin: 0 0 10px 0; font-size: 11.5px; color: #cbd5e1; line-height: 1.45;">
+            Ce compte n'est pas banni. Google demande une confirmation d'âge et une session propre. Suivez les 4 étapes :
           </p>
-          <div style="display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px;">
-            <button type="button" id="gaGoToValidationBtn" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border: none; border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; box-shadow: 0 3px 12px rgba(245, 158, 11, 0.35); transition: all 0.15s ease;">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-              <span>Résoudre le Challenge</span>
-            </button>
-            <button type="button" id="gaCopyValidationBtn" style="background: rgba(255, 255, 255, 0.05); color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 7px; padding: 10px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px;">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              <span id="gaCopyValidationLabel">Copier le Lien</span>
-            </button>
-          </div>
-          <div style="margin-top: 8px;">
-            <button type="button" id="gaOpenVerificationCenterBtn" style="width: 100%; background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 7px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; transition: all 0.15s ease;">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              <span>Ouvrir l'Assistant de Résolution &amp; QR Code Antigravity</span>
-            </button>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Step 1 -->
+            <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div>
+                <strong style="font-size: 11.5px; color: #f8fafc;">1. Révoquer l'ancienne autorisation Antigravity</strong>
+                <div style="font-size: 10.5px; color: #94a3b8;">Supprimez Antigravity pour purger les jetons en conflit.</div>
+              </div>
+              <button type="button" id="gaOpenConnectionsBtn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Ouvrir Connexions
+              </button>
+            </div>
+
+            <!-- Step 2 -->
+            <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div>
+                <strong style="font-size: 11.5px; color: #f8fafc;">2. Valider l'âge du compte</strong>
+                <div style="font-size: 10.5px; color: #94a3b8;">Validez la majorité (carte ou selfie) pour débloquer l'accès.</div>
+              </div>
+              <button type="button" id="gaOpenAgeVerificationBtn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Validation Âge
+              </button>
+            </div>
+
+            <!-- Step 3 -->
+            <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div>
+                <strong style="font-size: 11.5px; color: #f8fafc;">3. Reconnexion native Antigravity 2.0 (PC)</strong>
+                <div style="font-size: 10.5px; color: #fbbf24;">Ne scannez pas le QR mobile saturé ! Authentifiez-vous sur PC.</div>
+              </div>
+              <button type="button" id="gaNativeLoginBtn" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                Connexion PC
+              </button>
+            </div>
+
+            <!-- Step 4 -->
+            <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div>
+                <strong style="font-size: 11.5px; color: #34d399;">4. Synchroniser &amp; Activer dans le Patch</strong>
+                <div style="font-size: 10.5px; color: #94a3b8;">Met à jour custom_models.json (retour à 100% quota).</div>
+              </div>
+              <button type="button" id="gaResyncAccountBtn" style="background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Actualiser
+              </button>
+            </div>
           </div>
         </div>
         ` : `
@@ -11627,6 +11679,37 @@ function initGoogleAccountsToolbarOnce(): void {
             toast('JSON brut copié dans le presse-papier !', 'ok');
           } catch {
             toast('Impossible de copier le JSON', 'err');
+          }
+        });
+
+        // 4-Step Resolution Protocol Listeners
+        handle.bodyEl.querySelector('#gaOpenConnectionsBtn')?.addEventListener('click', () => {
+          const url = 'https://myaccount.google.com/connections';
+          if (window.ag?.openExternal) void window.ag.openExternal(url);
+          else window.open(url, '_blank');
+        });
+
+        handle.bodyEl.querySelector('#gaOpenAgeVerificationBtn')?.addEventListener('click', () => {
+          const url = 'https://myaccount.google.com/age-verification';
+          if (window.ag?.openExternal) void window.ag.openExternal(url);
+          else window.open(url, '_blank');
+        });
+
+        handle.bodyEl.querySelector('#gaNativeLoginBtn')?.addEventListener('click', () => {
+          void triggerGoogleOAuthLogin('antigravity');
+        });
+
+        handle.bodyEl.querySelector('#gaResyncAccountBtn')?.addEventListener('click', async () => {
+          const resyncBtn = handle.bodyEl.querySelector('#gaResyncAccountBtn') as HTMLButtonElement | null;
+          if (resyncBtn) {
+            resyncBtn.disabled = true;
+            resyncBtn.textContent = 'Actualisation…';
+          }
+          await loadGoogleAccounts(true);
+          toast('Comptes Google actualisés avec succès !', 'ok');
+          if (resyncBtn) {
+            resyncBtn.disabled = false;
+            resyncBtn.textContent = '✓ Actualisé !';
           }
         });
 
@@ -13028,14 +13111,22 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
     };
   }
 
-  const { gemini5hPct, geminiWkPct, claude5hPct, claudeWkPct } = getAccountEffectiveQuotas(a);
-
-  // Status Unhealthy ou Quota Épuisé
-  if (a.status === 'unhealthy' || a.status === 'exhausted' || (geminiWkPct <= 0 && claudeWkPct <= 0)) {
+  const isVal = isAccountValidationRequired(a);
+  if (isVal) {
     return {
       type: 'warn',
-      text: a.lastError || 'Plafond hebdomadaire atteint (Gemini 0%, Claude 0%). Compte bloqué par Google.',
-      badge: '⚠️ Quota Épuisé',
+      text: 'Vérification de sécurité Google requise (Challenge / Captcha). Cliquez pour débloquer.',
+      badge: '🛡️ Validation Requise',
+    };
+  }
+
+  const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
+  const isBlocked = isUnlicensed || Boolean(a.errorDetails) || Boolean(a.quotas?.errorDetails) || (a.status === 'unhealthy' && Boolean(a.lastError?.includes('403')));
+  if (isBlocked) {
+    return {
+      type: 'warn',
+      text: a.lastError || (isUnlicensed ? 'Compte sans licence Antigravity active (HTTP 403 Subscription Required).' : 'Compte bloqué par Google (TOS / 403). Guide de déblocage disponible.'),
+      badge: isUnlicensed ? '🚫 Sans Licence' : '🚫 Bloqué (403)',
     };
   }
 
@@ -13043,11 +13134,22 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
   const cdClaude = getAccountActiveCooldown(a, 'claude');
 
   // Real Gemini Cooldown (429/504)
-  if (cdGemini && !cdGemini.isWeeklyCap) {
+  if (cdGemini) {
     return {
       type: 'cooldown',
       text: `En cooldown Gemini temporaire (${cdGemini.text}). Le proxy bascule automatiquement sur un compte standby.`,
       badge: '⏳ Cooldown 429',
+    };
+  }
+
+  const { gemini5hPct, geminiWkPct, claude5hPct, claudeWkPct } = getAccountEffectiveQuotas(a);
+
+  // Status Unhealthy ou Quota Épuisé
+  if (a.status === 'exhausted' || (geminiWkPct <= 0 && claudeWkPct <= 0)) {
+    return {
+      type: 'warn',
+      text: a.lastError || 'Plafond hebdomadaire atteint (Gemini 0%, Claude 0%). Compte bloqué par Google.',
+      badge: '⚠️ Quota Épuisé',
     };
   }
 
@@ -13062,10 +13164,11 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
 
   // Claude Weekly Quota Cap with Gemini still available
   if ((cdClaude && cdClaude.isWeeklyCap && gemini5hPct >= 20) || (claudeWkPct <= 0 && gemini5hPct >= 20)) {
+    const geminiBadge = gemini5hPct >= 95 ? '⚡ Gemini 100% Prêt' : `⚡ Gemini ${gemini5hPct}% Prêt`;
     return {
       type: 'info',
       text: `Plafond hebdo Claude atteint, mais Gemini est opérationnel (${gemini5hPct}%). Les requêtes Gemini s’exécutent normalement sans délai.`,
-      badge: '⚡ Gemini 100% Prêt',
+      badge: geminiBadge,
     };
   }
 
@@ -13313,11 +13416,13 @@ async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> 
       if (geminiPct >= 95 && claudePct >= 95) {
         const cd = getAccountActiveCooldown(a);
         if (cd) {
-          void window.ag.providers.liftAccountCooldown?.(a.id);
-          const needle = (a.id || '').toLowerCase().replace(/^(google|gemini-cli):/, '');
+          void window.ag.providers.liftAccountCooldown?.(a.email || a.id);
+          const email = (a.email || '').toLowerCase().trim();
+          const name = (a.name || '').toLowerCase().trim();
+          const id = (a.id || '').toLowerCase().trim().replace(/^(google|gemini-cli):/, '');
           for (const k of Object.keys(gaActiveCooldownsCache)) {
             const cleanK = k.toLowerCase().replace(/^(google|gemini-cli):/, '').replace(/:(gemini|claude)$/, '');
-            if (cleanK === needle || k.toLowerCase().includes(needle)) {
+            if ((email && cleanK === email) || (name && cleanK === name) || (id && cleanK === id) || (email && k.toLowerCase().includes(email))) {
               delete gaActiveCooldownsCache[k];
             }
           }
@@ -13665,6 +13770,10 @@ function getTopRotationCandidate(accounts: any[], family: 'gemini' | 'claude' = 
   if (!accounts || accounts.length === 0) return null;
   const eligible = accounts.filter((a) => {
     if (a.enabled === false) return false;
+    const isVal = isAccountValidationRequired(a);
+    const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
+    const isBlocked = isVal || isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'));
+    if (isBlocked) return false;
     // Only check cooldown for the requested model family!
     if (getAccountActiveCooldown(a, family)) return false;
     // Check minimum quota
@@ -13729,28 +13838,31 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
   let claudeWeeklyCap = 0;
   let claudeCooldown = 0;
   let paused = 0;
+  let blocked = 0;
 
   for (const a of accounts) {
-    const isEnabled = a.enabled !== false;
+    const isVal = isAccountValidationRequired(a);
     const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
-    if (!isEnabled) {
-      paused++;
+    const isBlocked = isVal || isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'));
+    if (isBlocked) {
+      blocked++;
       continue;
     }
-    if (isUnlicensed) {
+    const isEnabled = a.enabled !== false;
+    if (!isEnabled) {
       paused++;
       continue;
     }
     const eff = getAccountEffectiveQuotas(a);
     const gCd = getAccountActiveCooldown(a, 'gemini');
     const cCd = getAccountActiveCooldown(a, 'claude');
+    const hasCooldown = Boolean(gCd || cCd);
     const isExh = isAccountCapExhausted(a);
-    const isTempCd = gCd && !gCd.isWeeklyCap && !isExh;
 
-    if (isExh) {
-      geminiExhausted++;
-    } else if (isTempCd) {
+    if (hasCooldown) {
       geminiCooldown++;
+    } else if (isExh) {
+      geminiExhausted++;
     } else {
       geminiReady++;
     }
@@ -13818,14 +13930,15 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
   const readyPct = total > 0 ? Math.round((geminiReady / total) * 100) : 0;
   const exhPct = total > 0 ? Math.round((geminiExhausted / total) * 100) : 0;
   const cdPct = total > 0 ? Math.round((geminiCooldown / total) * 100) : 0;
-  const pausedPct = total > 0 ? Math.max(0, 100 - readyPct - exhPct - cdPct) : 0;
+  const blockedPct = total > 0 ? Math.round((blocked / total) * 100) : 0;
+  const pausedPct = total > 0 ? Math.max(0, 100 - readyPct - exhPct - cdPct - blockedPct) : 0;
 
   container.innerHTML = `
     <div class="ga-pool-kpi-bar">
       <!-- Operational Cascade Fallback Matrix & Runway Profile Switcher (No Duplicate Stats) -->
-      <div class="ga-pool-kpi-stats" style="width: 100%; justify-content: space-between; align-items: center;">
+      <div class="ga-pool-kpi-stats" style="width: 100%; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         ${fallbackChain.length > 0 ? `
-        <div class="ga-cascade-matrix-wrapper" style="margin: 0; width: auto; flex: 1;">
+        <div class="ga-cascade-matrix-wrapper" style="margin: 0; width: auto; flex: 1; min-width: 260px;">
           <div class="ga-cascade-matrix-title">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             Cascade Fallback :
@@ -13860,17 +13973,19 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
 
       <!-- Fleet Proportion Bar (Miller's Law Chunking) -->
       <div class="ga-health-bar-section">
-        <div class="ga-health-proportion-bar" title="${geminiReady} prêts (${readyPct}%), ${geminiExhausted} quota épuisé (${exhPct}%), ${geminiCooldown} cooldown (${cdPct}%), ${paused} en pause (${pausedPct}%)">
+        <div class="ga-health-proportion-bar" title="${geminiReady} prêts (${readyPct}%), ${geminiExhausted} quota épuisé (${exhPct}%), ${geminiCooldown} cooldown (${cdPct}%), ${paused} en pause (${pausedPct}%), ${blocked} erreurs (${blockedPct}%)">
           <div class="ga-health-seg ready" style="width: ${readyPct}%;"></div>
           <div class="ga-health-seg exhausted" style="width: ${exhPct}%;"></div>
           <div class="ga-health-seg cooldown" style="width: ${cdPct}%;"></div>
           <div class="ga-health-seg paused" style="width: ${pausedPct}%;"></div>
+          <div class="ga-health-seg blocked" style="width: ${blockedPct}%;"></div>
         </div>
         <div class="ga-health-legend">
           <span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #10b981;"></span> <strong>${geminiReady}</strong> Prêts (${readyPct}%)</span>
           ${geminiExhausted > 0 ? `<span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #f59e0b;"></span> <strong>${geminiExhausted}</strong> Cap Épuisé (${exhPct}%)</span>` : ''}
           ${geminiCooldown > 0 ? `<span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #ef4444;"></span> <strong>${geminiCooldown}</strong> Cooldown 429 (${cdPct}%)</span>` : ''}
           ${paused > 0 ? `<span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #64748b;"></span> <strong>${paused}</strong> En Pause (${pausedPct}%)</span>` : ''}
+          ${blocked > 0 ? `<span class="ga-health-legend-item"><span class="ga-health-legend-dot" style="background: #dc2626;"></span> <strong>${blocked}</strong> Erreurs & TOS (${blockedPct}%)</span>` : ''}
           ${claudeWeeklyCap > 0 ? `<span class="ga-health-legend-item" style="color: var(--text-3); font-size: 11px;">(${claudeWeeklyCap} comptes avec plafond Claude redirigés sur Gemini)</span>` : ''}
         </div>
       </div>
@@ -14000,25 +14115,28 @@ function renderGoogleAccountsList(accounts: any[]): void {
   // Filter by search query & operational status / tier filter
   const filtered = accounts.filter((a) => {
     const isEnabled = a.enabled !== false;
+    const isVal = isAccountValidationRequired(a);
     const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
     const cdGemini = getAccountActiveCooldown(a, 'gemini');
     const cdClaude = getAccountActiveCooldown(a, 'claude');
     const tier = getAccountTier(a).toLowerCase();
 
-    const isBlocked = isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'));
+    const isBlocked = !isVal && (isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403')));
+    const hasActiveCooldown = Boolean(cdGemini || cdClaude);
     const isExh = isAccountCapExhausted(a);
-    const isTempCooldown = !isExh && ((cdGemini && !cdGemini.isWeeklyCap) || (cdClaude && !cdClaude.isWeeklyCap));
 
     if (gaCurrentFilter === 'status:ready') {
-      if (!isEnabled || isBlocked || isTempCooldown || isExh) return false;
+      if (!isEnabled || isBlocked || isVal || hasActiveCooldown || isExh) return false;
     } else if (gaCurrentFilter === 'status:exhausted') {
-      if (!isExh) return false;
+      if (isVal || isBlocked || !isEnabled || hasActiveCooldown || !isExh) return false;
     } else if (gaCurrentFilter === 'status:cooldown') {
-      if (!isTempCooldown) return false;
+      if (isVal || isBlocked || !isEnabled || !hasActiveCooldown) return false;
     } else if (gaCurrentFilter === 'status:paused') {
-      if (isEnabled) return false;
+      if (isVal || isBlocked || isEnabled) return false;
     } else if (gaCurrentFilter === 'status:blocked') {
-      if (!isBlocked) return false;
+      if (isVal || !isBlocked) return false;
+    } else if (gaCurrentFilter === 'status:validation') {
+      if (!isVal) return false;
     } else if (gaCurrentFilter !== 'all' && tier !== gaCurrentFilter) {
       return false;
     }
@@ -14054,8 +14172,9 @@ function renderGoogleAccountsList(accounts: any[]): void {
       } else if (gaSortColumn === 'quota') {
         const effA = getAccountEffectiveQuotas(a);
         const effB = getAccountEffectiveQuotas(b);
-        const qA = effA.gemini5hPct * 10 + effA.claude5hPct;
-        const qB = effB.gemini5hPct * 10 + effB.claude5hPct;
+        const isWk = gaCurrentQuotaWindow === 'weekly';
+        const qA = isWk ? (effA.geminiWkPct * 10 + effA.claudeWkPct) : (effA.gemini5hPct * 10 + effA.claude5hPct);
+        const qB = isWk ? (effB.geminiWkPct * 10 + effB.claudeWkPct) : (effB.gemini5hPct * 10 + effB.claude5hPct);
         cmp = qA - qB;
       } else if (gaSortColumn === 'lastUsed') {
         const timeA = a.lastUsed || a.updatedAt ? new Date(a.lastUsed || a.updatedAt).getTime() : 0;
@@ -14123,6 +14242,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
 
       let statusBadgeHtml = '';
       const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
+      const isBlocked = isUnlicensed || Boolean(a.errorDetails) || Boolean(a.quotas?.errorDetails) || (a.status === 'unhealthy' && Boolean(a.lastError?.includes('403')));
       if (!isEnabled) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-paused" style="background: rgba(148, 163, 184, 0.14); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25);" title="Compte mis en pause (temporairement exclu de la rotation)">⏸ PAUSE</span>`;
       } else if (isUnlicensed) {
@@ -14154,10 +14274,18 @@ function renderGoogleAccountsList(accounts: any[]): void {
         unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--studio" title="Google AI Studio Developer API Key">● Active Studio</span>`;
       } else if (isCli) {
         unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>`;
-      } else if (isCurrent && isTarget) {
-        unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif & classé #1 en rotation P2C">● EN LIGNE (P2C #1)</span>`;
       } else if (isCurrent) {
-        unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">● EN LIGNE</span>`;
+        if (cdInfo) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35);" title="Compte principal Antigravity (actuellement en cooldown)">● PRINCIPAL (Cooldown)</span>`;
+        } else if (isBlocked) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (bloqué / 403)">⚠️ PRINCIPAL (Bloqué)</span>`;
+        } else if (!isEnabled) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-paused" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3);" title="Compte principal Antigravity (mis en pause)">⏸ PRINCIPAL (Pause)</span>`;
+        } else if (isTarget) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif & classé #1 en rotation P2C">● EN LIGNE (P2C #1)</span>`;
+        } else {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">● EN LIGNE</span>`;
+        }
       } else if (isTarget) {
         unifiedRoleBadgeHtml = `<span class="ga-badge ga-target-badge" title="Compte actuellement classé #1 en rotation pour la prochaine requête entrante">🎯 PROCHAIN P2C</span>`;
       }
@@ -14185,7 +14313,11 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   ${typeof a.lastLatencyMs === 'number' ? `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-family: var(--font-mono); font-size: 10px;" title="Dernière latence mesurée">⚡ ${a.lastLatencyMs}ms</span>` : ''}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()} ga-tier-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Cliquer pour basculer (FREE ↔ PRO)">${tierIcon} ${tier}</span>
                   ${(a.quotas?.creditAmount || a.creditAmount) ? `<span class="ga-badge ga-badge-credits">🪙 ${a.quotas?.creditAmount || a.creditAmount} credits</span>` : ''}
-                  ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `<button type="button" class="ga-badge ga-error-details-badge ga-badge-unlicensed" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Compte sans licence active Antigravity (HTTP 403). Cliquez pour voir le diagnostic et les solutions (Quick Fix).">🚫 Compte sans licence</button>` : ''}
+                  ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? (
+                    isAccountValidationRequired(a)
+                      ? `<button type="button" class="ga-badge ga-error-details-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer; background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); font-weight: 600; font-size: 10px; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px;" title="Validation Google requise (HTTP 403 Challenge). Cliquez pour voir le protocole en 4 étapes.">🟠 Validation Requise</button>`
+                      : `<button type="button" class="ga-badge ga-error-details-badge ga-badge-unlicensed" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Compte sans licence active Antigravity (HTTP 403). Cliquez pour voir le diagnostic et les solutions (Quick Fix).">🚫 Compte sans licence</button>`
+                  ) : ''}
                 </div>
                 ${a.email && a.name && a.email !== a.name
                   ? `<div style="font-size: 11px; color: var(--text-4);">${escapeHtml(a.name)}</div>`
@@ -14213,7 +14345,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               </button>
               ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `
-              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="Diagnostic Erreur (TOS / 403) & Solutions Quick Fix" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);">
+              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="${isAccountValidationRequired(a) ? 'Protocole de Validation (403 Challenge)' : 'Diagnostic Erreur (TOS / 403) & Solutions Quick Fix'}" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="${isAccountValidationRequired(a) ? 'color: #fbbf24; border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.1);' : 'color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);'}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               </button>` : ''}
               <button type="button" class="ga-action-btn ga-details" title="Détails du compte" aria-label="Details for ${escapeHtml(a.name || a.email)}">
@@ -14297,6 +14429,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
 
       let statusBadgeHtml = '';
       const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
+      const isBlocked = isUnlicensed || Boolean(a.errorDetails) || Boolean(a.quotas?.errorDetails) || (a.status === 'unhealthy' && Boolean(a.lastError?.includes('403')));
       if (!isEnabled) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-paused" style="background: rgba(148, 163, 184, 0.14); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25);" title="Compte mis en pause (temporairement exclu de la rotation)">⏸ PAUSE</span>`;
       } else if (isUnlicensed) {
@@ -14328,10 +14461,18 @@ function renderGoogleAccountsList(accounts: any[]): void {
         unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--studio" title="Google AI Studio Developer API Key">● Active Studio</span>`;
       } else if (isCli) {
         unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>`;
-      } else if (isCurrent && isTarget) {
-        unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif & classé #1 en rotation P2C">● EN LIGNE (P2C #1)</span>`;
       } else if (isCurrent) {
-        unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">● EN LIGNE</span>`;
+        if (cdInfo) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35);" title="Compte principal Antigravity (actuellement en cooldown)">● PRINCIPAL (Cooldown)</span>`;
+        } else if (isBlocked) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (bloqué / 403)">⚠️ PRINCIPAL (Bloqué)</span>`;
+        } else if (!isEnabled) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-paused" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3);" title="Compte principal Antigravity (mis en pause)">⏸ PRINCIPAL (Pause)</span>`;
+        } else if (isTarget) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif & classé #1 en rotation P2C">● EN LIGNE (P2C #1)</span>`;
+        } else {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-current ga-led-active" title="Compte principal actif pour Antigravity">● EN LIGNE</span>`;
+        }
       } else if (isTarget) {
         unifiedRoleBadgeHtml = `<span class="ga-badge ga-target-badge" title="Compte actuellement classé #1 en rotation pour la prochaine requête entrante">🎯 PROCHAIN P2C</span>`;
       }
@@ -14356,7 +14497,11 @@ function renderGoogleAccountsList(accounts: any[]): void {
                   ${typeof a.lastLatencyMs === 'number' ? `<span class="ga-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-family: var(--font-mono); font-size: 10px;" title="Dernière latence mesurée">⚡ ${a.lastLatencyMs}ms</span>` : ''}
                   <span class="ga-badge ga-badge-${tier.toLowerCase()} ga-tier-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer;" title="Cliquer pour basculer (FREE ↔ PRO)">${tierIcon} ${tier}</span>
                   ${(a.quotas?.creditAmount || a.creditAmount) ? `<span class="ga-badge ga-badge-credits">🪙 ${a.quotas?.creditAmount || a.creditAmount} credits</span>` : ''}
-                  ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `<button type="button" class="ga-badge ga-error-details-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 600; font-size: 10px; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px;" title="Compte bloqué (403 / TOS). Cliquez pour voir le diagnostic et les solutions (Quick Fix).">🔒 Erreur 403 (TOS)</button>` : ''}
+                  ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? (
+                    isAccountValidationRequired(a)
+                      ? `<button type="button" class="ga-badge ga-error-details-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer; background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); font-weight: 600; font-size: 10px; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px;" title="Validation Google requise (HTTP 403 Challenge). Cliquez pour voir le protocole en 4 étapes.">🟠 Validation Requise</button>`
+                      : `<button type="button" class="ga-badge ga-error-details-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 600; font-size: 10px; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px;" title="Compte bloqué (403 / TOS). Cliquez pour voir le diagnostic et les solutions (Quick Fix).">🔒 Erreur 403 (TOS)</button>`
+                  ) : ''}
                 </div>
                 <div style="font-size: 11px; color: var(--text-4); margin-top: 2px;">${dedupModels.filter((m) => m.enabled !== false).length} models · ${escapeHtml(maskKeyPreview(a.apiKey))}</div>
               </div>
@@ -14366,7 +14511,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
               </button>
               ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `
-              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="Diagnostic Erreur (TOS / 403) & Solutions Quick Fix" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);">
+              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="${isAccountValidationRequired(a) ? 'Protocole de Validation (403 Challenge)' : 'Diagnostic Erreur (TOS / 403) & Solutions Quick Fix'}" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="${isAccountValidationRequired(a) ? 'color: #fbbf24; border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.1);' : 'color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);'}">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               </button>` : ''}
               <button type="button" class="ga-action-btn ga-details" title="Détails du compte" aria-label="Details for ${escapeHtml(a.name || a.email)}">

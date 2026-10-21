@@ -210,6 +210,7 @@ export function clampSubagentReasoning(
   reqObj: unknown,
   maxBudget = 2048,
 ): boolean {
+  if (process.env.AG_DISABLE_SUBAGENT_CLAMP === '1') return false;
   if (!isSubagentRequest(reqObj)) return false;
 
   const target = ((reqObj as any).request || reqObj) as Record<string, any>;

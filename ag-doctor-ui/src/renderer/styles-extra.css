@@ -2293,31 +2293,37 @@ th.sortable-th:hover {
 .ga-telemetry-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1100px) {
   .ga-telemetry-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
   }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 768px) {
   .ga-overview-grid {
     grid-template-columns: 1fr;
   }
   .ga-telemetry-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
   }
 }
 
 .ga-token-stat-card {
   position: relative;
-  min-height: 82px;
+  min-height: 52px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--r-md, 8px);
   transition: transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
 
@@ -2327,8 +2333,8 @@ th.sortable-th:hover {
 }
 
 .ga-token-stat-card .stat-icon {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--r-sm, 6px);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -2339,28 +2345,43 @@ th.sortable-th:hover {
   transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
+.ga-token-stat-card .stat-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
 .ga-token-stat-card:hover .stat-icon {
   color: var(--text-1);
   background: rgba(255, 255, 255, 0.07);
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-.ga-token-stat-card .stat-value {
-  font-size: 18px;
+.ga-token-stat-card .stat-label {
+  font-size: 10px;
   font-weight: 600;
-  color: var(--text-0);
-  letter-spacing: -0.01em;
-  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-2);
   line-height: 1.2;
 }
 
+.ga-token-stat-card .stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-0);
+  letter-spacing: -0.01em;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.15;
+}
+
 .ga-token-stat-card .stat-sub {
-  font-size: 11px;
-  color: var(--text-2);
-  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .ga-token-pill-mode {

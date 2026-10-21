@@ -100,15 +100,22 @@ async function probeSingle(token, projectId, model) {
         const ms = Date.now() - start;
         const ok = res.statusCode === 200;
         let reason = ok ? 'OK' : '';
+        let validationUrl = null;
         if (!ok) {
           try {
             const j = JSON.parse(body);
             reason = j.error?.message || j.error?.details?.[0]?.reason || body.substring(0, 80);
+            const errInfo = j.error?.details?.find(d => d['@type']?.includes('ErrorInfo'));
+            validationUrl = errInfo?.metadata?.validation_url || null;
+            if (!validationUrl) {
+              const help = j.error?.details?.find(d => d['@type']?.includes('Help'));
+              validationUrl = help?.links?.[0]?.url || null;
+            }
           } catch (_) {
             reason = body.substring(0, 80);
           }
         }
-        resolve({ status: res.statusCode, ms, ok, reason });
+        resolve({ status: res.statusCode, ms, ok, reason, validationUrl });
       });
     });
 
@@ -158,11 +165,12 @@ async function testAccount(acc) {
       ok: flashRes.ok,
       isTrial,
       reason: flashRes.reason,
+      validationUrl: flashRes.validationUrl,
       diagnosis,
     };
   } catch (err) {
     const diagnosis = classifyError(0, err.message);
-    return { email, status: 0, ms: 0, ok: false, isTrial: false, reason: err.message, diagnosis };
+    return { email, status: 0, ms: 0, ok: false, isTrial: false, reason: err.message, validationUrl: null, diagnosis };
   }
 }
 

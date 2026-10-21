@@ -2120,11 +2120,21 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_LIFT_ACCOUNT_COOLDOWN, async (_evt, ac
     const qData = JSON.parse(fs.readFileSync(qCachePath, 'utf8'));
     const cds = qData.accountCooldowns || {};
     const needle = accountIdentifier.toLowerCase().replace(/^(google|gemini-cli):/, '');
+    let needleEmail = '';
+    try {
+      const cmPath = path.join(app.getPath('home'), '.gemini', 'antigravity', 'custom_models.json');
+      if (fs.existsSync(cmPath)) {
+        const cm = JSON.parse(fs.readFileSync(cmPath, 'utf8'));
+        const accs = (cm.providers || []).find((p: any) => p.provider === 'google')?.accounts || [];
+        const found = accs.find((a: any) => (a.id || '').toLowerCase() === needle || (a.email || '').toLowerCase() === needle);
+        if (found?.email) needleEmail = found.email.toLowerCase();
+      }
+    } catch {}
     let cleared = 0;
     const removedKeys: string[] = [];
     for (const k of Object.keys(cds)) {
       const cleanK = k.toLowerCase().replace(/^(google|gemini-cli):/, '').replace(/:(gemini|claude)$/, '');
-      if (cleanK === needle || k.toLowerCase().includes(needle)) {
+      if (cleanK === needle || k.toLowerCase().includes(needle) || (needleEmail && (cleanK === needleEmail || k.toLowerCase().includes(needleEmail)))) {
         delete cds[k];
         cleared++;
         removedKeys.push(k);

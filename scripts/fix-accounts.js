@@ -30,7 +30,11 @@ function openBrowser(url) {
   }
 }
 
-function getGoogleUnlockUrl(email) {
+function getGoogleUnlockUrl(acc) {
+  if (typeof acc === 'object' && acc && acc.validationUrl) {
+    return acc.validationUrl;
+  }
+  const email = typeof acc === 'object' && acc ? acc.email : acc;
   // Direct Google login pre-fill URL that lands directly on the verification/security page
   return `https://accounts.google.com/ServiceLogin?Email=${encodeURIComponent(email)}&continue=https://gemini.google.com/`;
 }
@@ -73,7 +77,10 @@ async function main() {
 
   const promptUser = () => {
     console.log('\nQue souhaitez-vous faire ?');
-    console.log('  [Numéro]  Ouvrir le navigateur pour débloquer ce compte spécifique (ex: 1)');
+    console.log('  [Numéro]  Débloquer ce compte spécifique avec le protocole 4 étapes (ex: 1)');
+    console.log('  [P]       Afficher le protocole complet en 4 étapes (Bypass limite smartphone)');
+    console.log('  [C]       Ouvrir la gestion des connexions Google (Révoquer accès Antigravity)');
+    console.log('  [V]       Ouvrir la validation d\'âge Google (myaccount.google.com/age-verification)');
     console.log('  [A]       Ouvrir les 3 premiers comptes bloqués dans le navigateur');
     console.log('  [R]       Re-tester tous les comptes pour vérifier les déblocages');
     console.log('  [Q]       Quitter\n');
@@ -83,6 +90,37 @@ async function main() {
 
       if (choice === 'Q') {
         rl.close();
+        return;
+      }
+
+      if (choice === 'P') {
+        console.log('\n═══════════════════════════════════════════════════════════════════════════════');
+        console.log(' 📋 PROTOCOLE DE DÉBLOCAGE 4 ÉTAPES (VALIDATION_REQUIRED)');
+        console.log('═══════════════════════════════════════════════════════════════════════════════');
+        console.log('1. Révocation des autorisations :');
+        console.log('   Ouvrez https://myaccount.google.com/connections et supprimez Antigravity.');
+        console.log('2. Validation de l\'âge / identité :');
+        console.log('   Ouvrez https://myaccount.google.com/age-verification et validez le compte.');
+        console.log('3. Reconnexion native Antigravity 2.0 (Bypass limite smartphone) :');
+        console.log('   Ne scannez PAS de QR code sur un smartphone saturé de requêtes !');
+        console.log('   Connectez-vous nativement sur PC via l\'IDE Antigravity 2.0 ou "ag-doctor auth fix".');
+        console.log('4. Synchronisation Patch :');
+        console.log('   Le compte est synchronisé automatiquement dans custom_models.json (100% quota).\n');
+        promptUser();
+        return;
+      }
+
+      if (choice === 'C') {
+        console.log('\nOuverture de https://myaccount.google.com/connections ...');
+        openBrowser('https://myaccount.google.com/connections');
+        promptUser();
+        return;
+      }
+
+      if (choice === 'V') {
+        console.log('\nOuverture de https://myaccount.google.com/age-verification ...');
+        openBrowser('https://myaccount.google.com/age-verification');
+        promptUser();
         return;
       }
 
@@ -100,7 +138,7 @@ async function main() {
         console.log(`\nOuverture du navigateur pour ${batch.length} compte(s)...`);
         batch.forEach(acc => {
           console.log(` -> Ouverture : ${acc.email}`);
-          openBrowser(getGoogleUnlockUrl(acc.email));
+          openBrowser(getGoogleUnlockUrl(acc));
         });
         console.log('\nUne fois validé sur Google, tapez [R] pour re-tester.');
         promptUser();
@@ -110,9 +148,15 @@ async function main() {
       const num = parseInt(choice, 10);
       if (!isNaN(num) && num >= 1 && num <= actionableAccounts.length) {
         const target = actionableAccounts[num - 1];
-        console.log(`\nOuverture de la session Google pour : ${target.email}`);
-        openBrowser(getGoogleUnlockUrl(target.email));
-        console.log('Validez l\'invite Google (SMS, confirmation de sécurité ou Captcha), puis tapez [R].');
+        console.log(`\n══════════════════════════════════════════════════════════════`);
+        console.log(` Déblocage du compte : ${target.email}`);
+        console.log(`══════════════════════════════════════════════════════════════`);
+        console.log(`Étape 1 : Révocation des autorisations sur https://myaccount.google.com/connections`);
+        console.log(`Étape 2 : Validation d'âge sur https://myaccount.google.com/age-verification`);
+        console.log(`Étape 3 : Reconnexion native via Antigravity 2.0 sur PC (évite rate limit smartphone)`);
+        console.log(`Étape 4 : Tapez [R] pour valider la synchronisation\n`);
+        openBrowser('https://myaccount.google.com/connections');
+        openBrowser('https://myaccount.google.com/age-verification');
         promptUser();
         return;
       }

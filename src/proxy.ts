@@ -2018,15 +2018,26 @@ export async function executeGoogleCloudCodeWithPool(
   let boundAccount: CustomModel | undefined;
   const useStickySessions = process.env.AG_STICKY_GOOGLE_ACCOUNTS === '1';
   if (sessId && useStickySessions) {
-    boundAccount = sortedAccounts.find((m) => {
-      const affinity = sessionAffinities.get(sessId);
-      return affinity && getAccountQuotaKey(m) === affinity.accountKey && !getOpenBreaker(m) && !isAccountInCooldown(m, modelFamily) && getModelQuotaScore(m) > 0;
-    });
-    if (boundAccount) {
-      const idx = sortedAccounts.indexOf(boundAccount);
-      if (idx > 0) {
-        sortedAccounts.splice(idx, 1);
-        sortedAccounts.unshift(boundAccount);
+    const affinity = sessionAffinities.get(sessId);
+    if (affinity) {
+      boundAccount = sortedAccounts.find((m) => {
+        return (
+          getAccountQuotaKey(m) === affinity.accountKey &&
+          (m as any).enabled !== false &&
+          !isAccountUnlicensed(m) &&
+          !getOpenBreaker(m) &&
+          !isAccountInCooldown(m, modelFamily) &&
+          getModelQuotaScore(m, modelFamily) > 0
+        );
+      });
+      if (boundAccount) {
+        const idx = sortedAccounts.indexOf(boundAccount);
+        if (idx > 0) {
+          sortedAccounts.splice(idx, 1);
+          sortedAccounts.unshift(boundAccount);
+        }
+      } else {
+        sessionAffinities.delete(sessId);
       }
     }
   }
@@ -2123,7 +2134,13 @@ export async function executeGoogleCloudCodeWithPool(
 
     // Fast-skip: if this candidate is already in active cooldown for this model family
     if (isAccountInCooldown(candidate, modelFamily)) {
-      const hasEligibleRemaining = sortedAccounts.slice(i).some((c) => !isAccountInCooldown(c, modelFamily));
+      const hasEligibleRemaining = sortedAccounts.slice(i + 1).some(
+        (c) =>
+          (c as any).enabled !== false &&
+          !isAccountUnlicensed(c) &&
+          !isAccountInCooldown(c, modelFamily) &&
+          getModelQuotaScore(c, modelFamily) > 0,
+      );
       if (!hasEligibleRemaining) {
         lastStatus = 429;
         lastErrorText = `All accounts in Google Cloud Code pool are in active cooldown for ${modelFamily}`;
@@ -2137,6 +2154,19 @@ export async function executeGoogleCloudCodeWithPool(
     const candidateQuotaScore = getModelQuotaScore(candidate, modelFamily);
     if (candidateQuotaScore <= 0) {
       log.info(`[Proxy] Fast-skipping candidate ${candidateName}: 0% quota remaining for ${modelFamily}`);
+      const hasEligibleRemaining = sortedAccounts.slice(i + 1).some(
+        (c) =>
+          (c as any).enabled !== false &&
+          !isAccountUnlicensed(c) &&
+          !isAccountInCooldown(c, modelFamily) &&
+          getModelQuotaScore(c, modelFamily) > 0,
+      );
+      if (!hasEligibleRemaining) {
+        lastStatus = 429;
+        lastErrorText = `All accounts in Google Cloud Code pool have exhausted quota for ${modelFamily}`;
+        log.warn(`[Proxy] All remaining accounts in pool have exhausted quota for ${modelFamily}. Stopping pool search.`);
+        break;
+      }
       continue;
     }
 
@@ -2548,13 +2578,21 @@ export async function executeGoogleCloudCodeWithPool(
       // Otherwise, it is an isolated burst/RPM rate limit: apply a brief pause of a few seconds (5-10s)
       // ONLY to this candidate, keeping all other pool accounts fully active and unpenalized.
       const currentQuotaScore = getModelQuotaScore(candidate, currentFamily);
-      const isExplicitMultiHourReset = Boolean(decision.isExplicitReset) && (decision.rawRetryAfterMs ?? 0) >= 3600_000;
+      const isExplicitMultiHourReset =
+        (Boolean(decision.isExplicitReset) && (decision.rawRetryAfterMs ?? 0) >= 3600_000) ||
+        Boolean(decision.weeklyResetMs && decision.weeklyResetMs >= 3600_000);
       const isCreditExhausted = /insufficient.*credit|credit.*exhausted|g1_credits|minimum.*credit|not enough credit/i.test(outcome.error || '');
+      const isIndividualQuotaMessage = /individual quota reached|upgrade your subscription|quota reached|resets in \d+h/i.test(outcome.error || '');
       const isGenuineQuotaExhaustion =
-        decision.category === 'quota_exhausted' &&
-        (isExplicitMultiHourReset || isCreditExhausted || currentQuotaScore <= 0);
+        decision.category === 'quota_exhausted' ||
+        isIndividualQuotaMessage ||
+        isExplicitMultiHourReset ||
+        isCreditExhausted ||
+        currentQuotaScore <= 0;
 
-      if (!isGenuineQuotaExhaustion) {
+      if (isGenuineQuotaExhaustion) {
+        decision.category = 'quota_exhausted';
+      } else {
         const burstCount = recordAccountBurst(candidate);
         let burstCooldownMs = 10_000;
         if (retryAfterHeader && !isNaN(Number(retryAfterHeader))) {
@@ -2604,8 +2642,8 @@ export async function executeGoogleCloudCodeWithPool(
         if (currentFamily === 'gemini') {
           updateLiveAccountQuota(liveKey, {
             ...existingQuota,
-            geminiFiveHourPct: isWeekly ? existingQuota?.geminiFiveHourPct ?? 0 : 0,
-            geminiWeeklyPct: isWeekly ? 0 : existingQuota?.geminiWeeklyPct ?? 100,
+            geminiFiveHourPct: 0,
+            geminiWeeklyPct: isWeekly ? 0 : (existingQuota?.geminiWeeklyPct ?? 100),
             geminiFiveHourReset: isWeekly ? existingQuota?.geminiFiveHourReset : resetIso,
             geminiWeeklyReset: isWeekly ? resetIso : existingQuota?.geminiWeeklyReset,
             updatedAt: nowMs,
@@ -2613,8 +2651,8 @@ export async function executeGoogleCloudCodeWithPool(
         } else if (currentFamily === 'claude') {
           updateLiveAccountQuota(liveKey, {
             ...existingQuota,
-            claudeFiveHourPct: isWeekly ? existingQuota?.claudeFiveHourPct ?? 0 : 0,
-            claudeWeeklyPct: isWeekly ? 0 : existingQuota?.claudeWeeklyPct ?? 100,
+            claudeFiveHourPct: 0,
+            claudeWeeklyPct: isWeekly ? 0 : (existingQuota?.claudeWeeklyPct ?? 100),
             claudeFiveHourReset: isWeekly ? existingQuota?.claudeFiveHourReset : resetIso,
             claudeWeeklyReset: isWeekly ? resetIso : existingQuota?.claudeWeeklyReset,
             updatedAt: nowMs,
@@ -2677,18 +2715,20 @@ export async function executeGoogleCloudCodeWithPool(
       }
 
       if (i + 1 < totalAttempts) {
-        // Anti-domino pacing: When Google triggers a burst/RPM rate limit, pause to allow Google's
-        // token bucket for our IP to drain instead of burning through pool accounts in milliseconds.
-        // For genuine quota exhaustion, skip pacing entirely — the account is already in 5h cooldown,
-        // and even 100ms of delay causes premature client disconnects that abort the rotation before
-        // the proxy can try the next healthy account or trigger the cross-model fallback cascade.
-        const isBurst429 = !isGenuineQuotaExhausted;
-        if (isBurst429) {
+        // Anti-domino pacing: When Google triggers a burst/RPM rate limit, pause ONLY if there are NO OTHER
+        // healthy idle sibling accounts. If other idle accounts exist in the pool, NEVER PAUSE: rotate immediately
+        // so the downstream client (IDE Language Server) does not experience a timeout or drop connection.
+        // For genuine quota exhaustion, skip pacing entirely.
+        const isBurst429 = !isGenuineQuotaExhausted && decision.category !== 'quota_exhausted';
+        const hasIdleAccount = sortedAccounts.slice(i + 1).some(
+          (c) => !isAccountInCooldown(c, currentFamily) && !getOpenBreaker(c) && getAccountInFlight(c) === 0,
+        );
+        if (isBurst429 && !hasIdleAccount) {
           const pacingMs = consecutive429Count > 1
             ? 2000 + Math.floor(Math.random() * 800)
             : 1000 + Math.floor(Math.random() * 400);
           log.info(
-            `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
+            `[Proxy] ⏳ [IP Bucket Drain] Burst 429 détecté sans compte libre. Pause préventive de ${pacingMs}ms pour vider le seau IP Google avant rotation.`
           );
           const isClientAlive = !res.writableEnded && !res.destroyed && Boolean(!res.socket || (!res.socket.destroyed && res.socket.writable !== false));
           if (!isClientAlive) {
@@ -2970,6 +3010,9 @@ export async function executeGoogleCloudCodeWithPool(
         setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
         if (lastStatus === 504) {
           recordAccountLatency(candidate, 60_000);
+          if (sessId) {
+            sessionAffinities.delete(sessId);
+          }
         }
 
         const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some(
@@ -3007,6 +3050,9 @@ export async function executeGoogleCloudCodeWithPool(
     // On HTTP 403 licensing/forbidden failure, immediately place the account in a
     // 7-day quarantine so subsequent requests don't waste round-trip time failing over.
     if (lastStatus === 403) {
+      if (sessId) {
+        sessionAffinities.delete(sessId);
+      }
       const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid|verify.*account|verification.*required|account.*restricted|restricted|unavailable tier|suspended|denied access|validation_required/i.test(lastErrorText);
       const quarantineMs = isLicenseError ? 7 * 24 * 3600 * 1000 : 24 * 3600 * 1000;
       log.warn(
@@ -3024,6 +3070,9 @@ export async function executeGoogleCloudCodeWithPool(
 
     // On HTTP 402 payment / credit depletion, quarantine account for 24h to avoid wasting failovers
     if (lastStatus === 402 || (lastStatus === 400 && /prepayment.*depleted|credit.*depleted|insufficient.*credit|billing.*closed/i.test(lastErrorText))) {
+      if (sessId) {
+        sessionAffinities.delete(sessId);
+      }
       const quarantineMs = 24 * 3600 * 1000;
       log.warn(`[Proxy] Account ${candidateName} hit HTTP 402 / credit depletion (${lastErrorText.slice(0, 100)}). Placing in 24h quarantine.`);
       setAccountCooldown(candidate, quarantineMs);
@@ -3154,7 +3203,7 @@ export async function executeGoogleCloudCodeWithPool(
 
         if (fallbackCandidates.length > 0) {
           const selectedFallback =
-            selectBestModelByQuota(fallbackCandidates, allCustomModels) || fallbackCandidates[0];
+            selectBestModelByQuota(fallbackCandidates, allCustomModels, fbFamily) || fallbackCandidates[0];
           const fallbackPool = getGoogleAccountPool(selectedFallback, allCustomModels);
 
           reqJson.model = fallbackModel;
@@ -4277,18 +4326,30 @@ export function getSessionBoundModel(
     return targetModel;
   }
 
-  // Find candidate models that share the same base external model (e.g. Gemini 3.8 Flash High across accounts)
+  // Find candidate models that share the same base external model AND effort level (e.g. Gemini 3.8 Flash Medium across accounts)
   const targetBase = getBaseModelId(targetModel.externalModelName);
+  const targetEffort = targetModel._effortSuffix || targetModel.reasoningEffort || '';
   const bound = allModels.find((m) => {
     const mBase = getBaseModelId(m.externalModelName);
-    return mBase === targetBase && getAccountQuotaKey(m) === affinity.accountKey;
+    const mEffort = m._effortSuffix || m.reasoningEffort || '';
+    return mBase === targetBase && mEffort === targetEffort && getAccountQuotaKey(m) === affinity.accountKey;
   });
 
-  if (bound && !getOpenBreaker(bound) && getModelQuotaScore(bound) > 0) {
+  const fam = (targetModel.externalModelName || targetModel.name || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
+
+  if (
+    bound &&
+    (bound as any).enabled !== false &&
+    !isAccountUnlicensed(bound) &&
+    !getOpenBreaker(bound) &&
+    !isAccountInCooldown(bound, fam) &&
+    getModelQuotaScore(bound, fam) > 0
+  ) {
     affinity.lastUsed = now;
     return bound;
   }
 
+  sessionAffinities.delete(sessionId);
   return targetModel;
 }
 
@@ -5032,6 +5093,17 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
   const normExt = (isModelGemini && extLower) ? normalizeGoogleModelId(extLower) : '';
   const normId = (isModelGemini && idLower) ? normalizeGoogleModelId(idLower) : '';
 
+  // Strict reasoning effort check: if candidate specifies an effort tier, only match models with that same tier
+  const candEffort = /(?:^|[-_ (])(low|medium|high)(?:$|[-_ )])/i.exec(candLower)?.[1]?.toLowerCase();
+  const mEffort = (
+    m.reasoningEffort ||
+    (m._effortSuffix ? m._effortSuffix.replace('-', '') : undefined) ||
+    /(?:^|[-_ (])(low|medium|high)(?:$|[-_ )])/i.exec(dispLower)?.[1]
+  )?.toLowerCase();
+  if (candEffort && mEffort && candEffort !== mEffort) {
+    return false;
+  }
+
   return (
     m.name === candidate ||
     m.name === clean ||
@@ -5051,7 +5123,7 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
     candLower.endsWith(enumName.toLowerCase()) ||
     (Boolean(extLower) && (candLower === extLower || cleanLower === extLower || candLower === `models/${extLower}`)) ||
     (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
-    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower)) ||
+    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower || candLower.replace(/^[🟢🟡🔴•\s]+/, '') === dispLower || cleanLower.replace(/^[🟢🟡🔴•\s]+/, '') === dispLower)) ||
     (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower)) ||
     (isCandidateGemini && isModelGemini && Boolean(normExt) && normCand === normExt) ||
     (isCandidateGemini && isModelGemini && Boolean(normId) && normCand === normId) ||
@@ -6904,11 +6976,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             }
           }
         }
-        let matchedCustomModel = (isNativeCloudCode && !isNativeRoutedToPool) ? undefined : selectBestModelByQuota(matchingCandidates, customModels);
+        const targetFam = (cleanRequested || candidateNames[0] || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
+        let matchedCustomModel = (isNativeCloudCode && !isNativeRoutedToPool) ? undefined : selectBestModelByQuota(matchingCandidates, customModels, targetFam);
         // Fallback: if a conversation references a placeholder (e.g. M299/M298/M50/M319/M565)
         if (!isNativeCloudCode && !matchedCustomModel && candidateNames.some((cn) => /MODEL_PLACEHOLDER_/i.test(cn))) {
           const activePool = customModels.filter((m) => !(m as any)._poolOnly && m.enabled !== false);
-          matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
+          matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels, targetFam) || activePool[0] || customModels[0];
         }
 
         const effectiveModelName = (
@@ -6945,8 +7018,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
         }
 
-        // Subagent Effort Governor: automatically detect subagent tasks and clamp thinking budget
-        if (clampSubagentReasoning(targetReq)) {
+        // Subagent Effort Governor: only clamp if AG_CLAMP_SUBAGENTS=1 is explicitly set
+        // Disabled by default to strictly honor user-selected reasoning effort without quota throttling
+        if (process.env.AG_CLAMP_SUBAGENTS === '1' && clampSubagentReasoning(targetReq)) {
           log.info(`[Proxy] 🛡️ Subagent detected: clamped thinking budget to 2048 tokens to conserve quota`);
           contentsNormalized = true;
         }
@@ -6963,6 +7037,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               .replace(/:auto-pool.*$/, '');
             const baseName = getBaseModelId(rawTarget);
             const baseNorm = normalizeCloudCodeModelId(baseName);
+            const targetEffort = matchedCustomModel._effortSuffix || matchedCustomModel.reasoningEffort || '';
             const realSiblings = customModels.filter((m) => {
               if (m.apiKey === 'auto' || m.name.includes(':auto-pool') || getOpenBreaker(m)) return false;
               const mRaw = (m.externalModelName || m.name)
@@ -6971,9 +7046,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
                 .replace(/:auto-pool.*$/, '');
               const mBase = getBaseModelId(mRaw);
               const mNorm = normalizeCloudCodeModelId(mBase);
-              return mBase === baseName || (baseNorm && mNorm === baseNorm);
+              const mEffort = m._effortSuffix || m.reasoningEffort || '';
+              return (mBase === baseName || (baseNorm && mNorm === baseNorm)) && mEffort === targetEffort;
             });
-            matchedCustomModel = selectBestModelByQuota(realSiblings, customModels) || matchedCustomModel;
+            matchedCustomModel = selectBestModelByQuota(realSiblings, customModels, isClaudeRequest ? 'claude' : 'gemini') || matchedCustomModel;
           }
 
           if (matchedCustomModel) {
@@ -6983,6 +7059,21 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             if (sessId) {
               matchedCustomModel = getSessionBoundModel(sessId, matchedCustomModel, customModels);
               bindSessionToModel(sessId, matchedCustomModel);
+            }
+
+            // Propagate reasoning effort / thinking level from matched model to Cloud Code payload
+            const modelEffort = matchedCustomModel.reasoningEffort;
+            const modelBudget = matchedCustomModel.thinkingBudget;
+            if (modelEffort || modelBudget) {
+              const target = (reqJson.request || reqJson) as Record<string, any>;
+              if (!target.generationConfig) target.generationConfig = {};
+              if (!target.generationConfig.thinkingConfig) target.generationConfig.thinkingConfig = {};
+              if (modelEffort) {
+                target.generationConfig.thinkingConfig.thinkingLevel = modelEffort;
+              }
+              if (modelBudget && !target.generationConfig.thinkingConfig.thinkingBudget) {
+                target.generationConfig.thinkingConfig.thinkingBudget = modelBudget;
+              }
             }
 
             log.info(
@@ -7078,10 +7169,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             );
           }
         }
-        matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels);
+        const directFam = (matchedModelName || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
+        matchedCustomModel = selectBestModelByQuota(matchingCandidates, customModels, directFam);
         if (!matchedCustomModel && /MODEL_PLACEHOLDER_/i.test(matchedModelName)) {
           const activePool = customModels.filter((m) => !(m as any)._poolOnly && m.enabled !== false);
-          matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels) || activePool[0] || customModels[0];
+          matchedCustomModel = selectBestModelByQuota(activePool.length > 0 ? activePool : customModels, customModels, directFam) || activePool[0] || customModels[0];
         }
 
         if (matchedCustomModel && matchedCustomModel.apiKey === 'auto') {
@@ -7093,7 +7185,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             const mNorm = normalizeCloudCodeModelId(mBase);
             return mBase === baseName || (baseNorm && mNorm === baseNorm);
           });
-          matchedCustomModel = selectBestModelByQuota(realSiblings, customModels) || matchedCustomModel;
+          matchedCustomModel = selectBestModelByQuota(realSiblings, customModels, directFam) || matchedCustomModel;
         }
       }
 

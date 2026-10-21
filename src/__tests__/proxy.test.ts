@@ -142,6 +142,25 @@ describe('matchesCustomModel', () => {
     expect(matchesCustomModel(model, 'claude-3-5-sonnet')).toBe(false);
     expect(matchesCustomModel(model, 'gemini-3.8-flash-tiered')).toBe(false);
   });
+
+  it('distinguishes reasoning effort levels (Medium does not match Low candidate)', () => {
+    const flashMed: CustomModel = {
+      name: 'google-flash-med',
+      displayName: 'Gemini 3.8 Flash (Medium)',
+      provider: 'google',
+      apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      apiKey: 'ya29.test',
+      externalModelName: 'gemini-3.8-flash-tiered',
+      reasoningEffort: 'medium',
+      _effortSuffix: '-medium',
+      enabled: true,
+    };
+    expect(matchesCustomModel(flashMed, '🟢 • Gemini 3.8 Flash (Medium)')).toBe(true);
+    expect(matchesCustomModel(flashMed, toSlug(flashMed))).toBe(true);
+    expect(matchesCustomModel(flashMed, generateModelPlaceholderId(flashMed))).toBe(true);
+    expect(matchesCustomModel(flashMed, '🟢 • Gemini 3.8 Flash (Low)')).toBe(false);
+    expect(matchesCustomModel(flashMed, '🟢 • Gemini 3.8 Flash (High)')).toBe(false);
+  });
 });
 
 describe('isNativeCloudCodeModel', () => {

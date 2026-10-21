@@ -898,10 +898,10 @@
 
         <!-- Accounts List Panel with High-Density Toolbar -->
         <div class="panel">
-          <div class="panel-body" style="padding: 16px;">
+          <div class="panel-body ga-panel-body">
             <!-- Antigravity Tools High-Density Toolbar -->
             <div class="ga-toolbar">
-              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+              <div class="ga-toolbar-row ga-toolbar-row--top">
                 <!-- Search email... -->
                 <div class="ga-search-box">
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -948,6 +948,9 @@
                   <button type="button" class="ga-chip" data-filter="status:blocked" style="border-color: rgba(239, 68, 68, 0.45); color: #f87171; background: rgba(239, 68, 68, 0.08);">
                     🚨 Erreurs & TOS <span class="ga-chip-cnt" id="gaCntBlocked">0</span>
                   </button>
+                  <button type="button" class="ga-chip" data-filter="status:validation" style="border-color: rgba(245, 158, 11, 0.45); color: #fbbf24; background: rgba(245, 158, 11, 0.08);">
+                    🟠 Validation Requise <span class="ga-chip-cnt" id="gaCntValidation">0</span>
+                  </button>
                   <div style="width: 1px; height: 14px; background: var(--border); margin: 3px 1px; align-self: center;"></div>
                   <button type="button" class="ga-chip" data-filter="pro">
                     PRO <span class="ga-chip-cnt" id="gaCntPro">0</span>
@@ -962,7 +965,7 @@
               </div>
 
               <!-- Right action buttons -->
-              <div style="display: flex; align-items: center; gap: 6px;">
+              <div class="ga-toolbar-row ga-toolbar-row--bottom">
                 <button type="button" class="btn btn-ghost" id="gaToolbarAddBtn" title="Add Google Account" aria-label="Add Google Account" style="padding: 5px 9px; font-weight: bold; font-size: 13px; border-radius: 7px; border: 1px solid var(--border);">
                   +
                 </button>
@@ -970,20 +973,20 @@
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Actualiser tout
                 </button>
                 <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarProbeHealthBtn" title="Diagnostiquer instantanément tous les comptes (403, TOS, Black-Hole) avec les signatures Antigravity" style="border-color: rgba(16, 185, 129, 0.45); color: #10b981; background: rgba(16, 185, 129, 0.08); font-weight: 600;">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Diagnostic Santé Pool
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> <span class="btn-label-long">Diagnostic Santé Pool</span><span class="btn-label-short">Diagnostic</span>
                 </button>
                 <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarWarmupBtn" title="Préchauffer un compte avec une requête minimale">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> One-click Warmup
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> <span class="btn-label-long">One-click Warmup</span><span class="btn-label-short">Warmup</span>
                 </button>
                 <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarWakeAllBtn" title="Lever tous les cooldowns et réveiller tous les comptes">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Lever Cooldowns
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> <span class="btn-label-long">Lever Cooldowns</span><span class="btn-label-short">Cooldowns</span>
                 </button>
                 <button type="button" class="btn btn-secondary ga-toolbar-action" id="gaToolbarRandomizeDeviceBtn" title="Régénérer l'empreinte machine (machineId, sqmId, serviceMachineId) pour désolidariser la machine des comptes bloqués (Anti-Ban)" style="border-color: rgba(168, 85, 247, 0.4); color: #c084fc;">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> Empreinte Anti-Ban
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> <span class="btn-label-long">Empreinte Anti-Ban</span><span class="btn-label-short">Anti-Ban</span>
                 </button>
                 <div style="width: 1px; height: 18px; background: var(--border); margin: 0 4px;"></div>
                 <button type="button" class="btn btn-secondary ga-toolbar-action ga-toolbar-action--danger" id="gaToolbarPurgeCacheBtn" title="Purger le cache disque des quotas et réinitialiser tous les cooldowns">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Purger Cache
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> <span class="btn-label-long">Purger Cache</span><span class="btn-label-short">Purger</span>
                 </button>
                 <div style="width: 1px; height: 16px; background: var(--border); margin: 0 2px;"></div>
                 <button type="button" class="btn btn-ghost btn-sm" id="gaImportJsonBtn" title="Import Accounts JSON" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
@@ -997,7 +1000,7 @@
             </div>
 
             <!-- Pool Health & Readiness KPI Banner -->
-            <div id="gaPoolHealthBar" style="margin-bottom: 14px;"></div>
+            <div id="gaPoolHealthBar" style="margin-bottom: 10px;"></div>
 
             <!-- Floating / Inline Batch Operations Action Bar -->
             <div id="gaBatchActionBar" style="display: none; margin-bottom: 12px; padding: 8px 14px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
