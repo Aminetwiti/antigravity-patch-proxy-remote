@@ -533,7 +533,7 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const geminiWeeklyDepleted = geminiWeekVal !== null && geminiWeekVal < 5 && !geminiResetPassed;
 
         const isFullyRestored = quota.geminiFiveHourPct === 100 && (geminiWeekVal === null || geminiWeekVal >= 50);
-        if (geminiResetPassed && quota.geminiFiveHourPct >= 5) {
+        if (!isQuotaExhausted && geminiResetPassed && quota.geminiFiveHourPct >= 5) {
           shouldWakeUp = true;
           reason = `Gemini reset timestamp elapsed (${geminiResetStr}${weekStr})`;
         } else if (!isQuotaExhausted && isFullyRestored) {
@@ -551,7 +551,7 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const claudeWeeklyDepleted = claudeWeekVal !== null && claudeWeekVal < 5 && !claudeResetPassed;
 
         const isFullyRestored = quota.claudeFiveHourPct === 100 && (claudeWeekVal === null || claudeWeekVal >= 50);
-        if (claudeResetPassed && quota.claudeFiveHourPct >= 5) {
+        if (!isQuotaExhausted && claudeResetPassed && quota.claudeFiveHourPct >= 5) {
           shouldWakeUp = true;
           reason = `Claude reset timestamp elapsed (${claudeResetStr}${weekStr})`;
         } else if (!isQuotaExhausted && isFullyRestored) {
@@ -574,8 +574,8 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         const claudeWeekStr = claudeWeekVal !== null ? `, week=${claudeWeekVal}%` : '';
         const claudeWeeklyDepleted = claudeWeekVal !== null && claudeWeekVal < 5 && !claudeResetPassed;
 
-        const geminiOk = geminiResetPassed || (!isQuotaExhausted && quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted);
-        const claudeOk = claudeResetPassed || (!isQuotaExhausted && quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted);
+        const geminiOk = !isQuotaExhausted && (geminiResetPassed || (quota.geminiFiveHourPct >= 5 && !geminiWeeklyDepleted));
+        const claudeOk = !isQuotaExhausted && (claudeResetPassed || (quota.claudeFiveHourPct >= 5 && !claudeWeeklyDepleted));
 
         if (geminiOk && claudeOk) {
           shouldWakeUp = true;
@@ -656,13 +656,17 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
 
   const geminiResetStr = quota.geminiResetTime || quota.geminiFiveHourReset || (quota as any).fiveHourResetTime;
   const geminiResetPassed = geminiResetStr ? new Date(geminiResetStr).getTime() <= now : false;
-  const geminiWeeklyDepleted = (typeof quota.geminiWeeklyPct === 'number' && quota.geminiWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiResetPassed) ||
-                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiResetPassed);
+  const geminiWeeklyResetStr = quota.geminiWeeklyReset || (quota as any).weeklyResetTime || quota.geminiResetTime;
+  const geminiWeeklyResetPassed = geminiWeeklyResetStr ? new Date(geminiWeeklyResetStr).getTime() <= now : false;
+  const geminiWeeklyDepleted = (typeof quota.geminiWeeklyPct === 'number' && quota.geminiWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiWeeklyResetPassed) ||
+                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiWeeklyResetPassed);
 
   const claudeResetStr = quota.claudeResetTime || quota.claudeFiveHourReset || (quota as any).fiveHourResetTime;
   const claudeResetPassed = claudeResetStr ? new Date(claudeResetStr).getTime() <= now : false;
-  const claudeWeeklyDepleted = (typeof quota.claudeWeeklyPct === 'number' && quota.claudeWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeResetPassed) ||
-                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeResetPassed);
+  const claudeWeeklyResetStr = quota.claudeWeeklyReset || (quota as any).weeklyResetTime || quota.claudeResetTime;
+  const claudeWeeklyResetPassed = claudeWeeklyResetStr ? new Date(claudeWeeklyResetStr).getTime() <= now : false;
+  const claudeWeeklyDepleted = (typeof quota.claudeWeeklyPct === 'number' && quota.claudeWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeWeeklyResetPassed) ||
+                               (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeWeeklyResetPassed);
 
   if (quota.geminiFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT) {
     const remaining = getCooldownRemainingForFamily('gemini');
@@ -696,8 +700,8 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
     // 3) Cooldown is not strict (<5h), OR Google reset timestamp has elapsed
     const canHealGemini =
       !isRateLimited &&
-      (!isGeminiQuotaExhausted || geminiResetPassed) &&
-      (!isStrictCooldown || geminiResetPassed) &&
+      (!isStrictCooldown || geminiWeeklyResetPassed) &&
+      (!isGeminiQuotaExhausted || (isStrictCooldown ? geminiWeeklyResetPassed : geminiResetPassed)) &&
       !geminiWeeklyDepleted &&
       hasAnyCooldown;
 
@@ -765,8 +769,8 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
 
     const canHealClaude =
       !isRateLimited &&
-      (!isClaudeQuotaExhausted || claudeResetPassed) &&
-      (!isStrictCooldown || claudeResetPassed) &&
+      (!isStrictCooldown || claudeWeeklyResetPassed) &&
+      (!isClaudeQuotaExhausted || (isStrictCooldown ? claudeWeeklyResetPassed : claudeResetPassed)) &&
       !claudeWeeklyDepleted &&
       hasAnyCooldown;
 

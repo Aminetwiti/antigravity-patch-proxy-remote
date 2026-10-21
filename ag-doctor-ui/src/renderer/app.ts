@@ -18,9 +18,23 @@ window.addEventListener('error', (e) => {
   document.body.prepend(banner);
 });
 window.addEventListener('unhandledrejection', (e) => {
+  const reasonText = e.reason instanceof Error ? (e.reason.stack || e.reason.message) : String(e.reason);
+  console.error('[app.ts UNHANDLED REJECTION]', e.reason);
   const banner = document.createElement('div');
-  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#dc2626;color:#fff;padding:12px 16px;font:13px/1.5 monospace;white-space:pre-wrap;';
-  banner.textContent = `[app.ts UNHANDLED REJECTION] ${e.reason}`;
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#dc2626;color:#fff;padding:12px 16px;font:13px/1.5 monospace;white-space:pre-wrap;box-shadow:0 4px 12px rgba(0,0,0,0.5);display:flex;justify-content:space-between;align-items:flex-start;';
+  
+  const textSpan = document.createElement('div');
+  textSpan.style.cssText = 'flex:1;overflow:auto;max-height:160px;';
+  textSpan.textContent = `[app.ts UNHANDLED REJECTION] ${reasonText}`;
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.style.cssText = 'margin-left:12px;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:12px;';
+  closeBtn.textContent = '✕ Fermer';
+  closeBtn.addEventListener('click', () => banner.remove());
+
+  banner.appendChild(textSpan);
+  banner.appendChild(closeBtn);
   document.body.prepend(banner);
 });
 
@@ -1499,6 +1513,8 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
   if (!cachedRealStats) {
     void ensureRealTokenStats().then((data) => {
       if (data) renderStatsBoard(stats);
+    }).catch((err) => {
+      console.warn('[StatsBoard] ensureRealTokenStats failed:', err);
     });
   }
 
@@ -1564,7 +1580,7 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
   const toYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const todayYmd = toYmd(now);
 
-  let rangeFilteredActivity = cachedRealStats?.activityByDay || [];
+  let rangeFilteredActivity = Array.isArray(cachedRealStats?.activityByDay) ? cachedRealStats.activityByDay : [];
   if (range === 'today') {
     rangeFilteredActivity = rangeFilteredActivity.filter((d) => d.day === todayYmd);
   } else if (range === 'yesterday') {
@@ -3197,8 +3213,8 @@ function renderTokenDashboard(): void {
       ? `custom:${customRangeStart}:${customRangeEnd}`
       : rangeFilter;
 
-    const entries = tokenTracker.filterEntries(query, provFilter, modFilter, currentTokenSortField, currentTokenSortOrder, rangeParam);
-    const totalEntries = entries.length;
+    const entries = tokenTracker ? tokenTracker.filterEntries(query, provFilter, modFilter, currentTokenSortField, currentTokenSortOrder, rangeParam) : [];
+    const totalEntries = Array.isArray(entries) ? entries.length : 0;
 
     if (totalEntries === 0) {
       tokenLogsTbody.innerHTML = `
@@ -3344,7 +3360,7 @@ function renderTokenizerTool(): void {
   }
 
   if (tokenizerChipsContainer) {
-    if (res.tokens.length === 0) {
+    if (!res || !Array.isArray(res.tokens) || res.tokens.length === 0) {
       tokenizerChipsContainer.innerHTML = '<span style="color:var(--text-3); font-style:italic;">Les jetons découpés apparaîtront ici avec des couleurs alternées...</span>';
     } else {
       const fragment = document.createDocumentFragment();
@@ -3370,17 +3386,24 @@ function renderTokenizerTool(): void {
 let tokenAutoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
 async function loadTokenizer(): Promise<void> {
-  await ensureRealTokenStats(true);
-
-  renderTokenDashboard();
+  try {
+    await ensureRealTokenStats(true);
+    renderTokenDashboard();
+  } catch (err) {
+    console.warn('[Tokenizer] Initial load error:', err);
+  }
 
   if (!tokenAutoRefreshTimer) {
     tokenAutoRefreshTimer = setInterval(async () => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      const tokView = document.getElementById('view-tokenizer');
-      if (tokView && tokView.classList.contains('active')) {
-        await ensureRealTokenStats(true);
-        renderTokenDashboard();
+      try {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        const tokView = document.getElementById('view-tokenizer');
+        if (tokView && tokView.classList.contains('active')) {
+          await ensureRealTokenStats(true);
+          renderTokenDashboard();
+        }
+      } catch (err) {
+        console.warn('[Tokenizer] Auto-refresh error:', err);
       }
     }, 8000);
   }
@@ -4120,8 +4143,9 @@ async function loadTokenizer(): Promise<void> {
       if (!tokenizeTextFn || !tokenizerInputText) return;
       const res = tokenizeTextFn(tokenizerInputText.value, tokenizerModelSelect?.value || 'gemini-3.8-flash');
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(JSON.stringify(res.tokens, null, 2)).then(() => {
-          toast(`${res.tokens.length} tokens copiés en JSON`, 'ok', 1600);
+        const tokensArr = Array.isArray(res?.tokens) ? res.tokens : [];
+        navigator.clipboard.writeText(JSON.stringify(tokensArr, null, 2)).then(() => {
+          toast(`${tokensArr.length} tokens copiés en JSON`, 'ok', 1600);
         }).catch(() => {});
       }
     });
@@ -9827,6 +9851,7 @@ let gaActiveCooldownsCache: Record<string, { until: number; remainingMs: number;
 
 function isAccountValidationRequired(a: any): boolean {
   if (!a) return false;
+  if (a.status === 'validation_required' || (a as any).isValidationRequired) return true;
   const err = a.errorDetails || a.quotas?.errorDetails;
   if (!err && a.lastError) {
     const le = String(a.lastError);
@@ -9842,6 +9867,16 @@ function isAccountValidationRequired(a: any): boolean {
     err.reason === 'VALIDATION_REQUIRED' ||
     (err.message && (err.message.includes('Verify your account') || err.message.includes('VALIDATION_REQUIRED') || err.message.includes('challenge')))
   );
+}
+
+function hasAccountErrorOrValidation(a: any): boolean {
+  if (!a) return false;
+  if (isAccountValidationRequired(a)) return true;
+  if (a.isUnlicensed || a.quotas?.isUnlicensed) return true;
+  if (a.errorDetails || a.quotas?.errorDetails) return true;
+  if (a.status === 'unhealthy' || a.status === 'blocked' || a.status === 'validation_required') return true;
+  if (a.lastError && (a.lastError.includes('403') || a.lastError.includes('Terms of Service') || a.lastError.includes('PERMISSION_DENIED'))) return true;
+  return false;
 }
 
 function getAccountActiveCooldown(
@@ -10446,7 +10481,10 @@ function calculatePoolTokenSummary(accounts: any[], isWeekly: boolean = true) {
   let activeCount = 0;
   let antigravityTotal = 0;
 
+  if (!Array.isArray(accounts)) accounts = [];
+
   for (const acc of accounts) {
+    if (!acc) continue;
     // Calcul exclusif sur les comptes Antigravity (sans AI Studio ni CLI)
     if (isAiStudioAccount(acc) || isGeminiCliAccount(acc)) continue;
     antigravityTotal++;
@@ -10480,6 +10518,9 @@ function calculatePoolTokenSummary(accounts: any[], isWeekly: boolean = true) {
 }
 
 function updateGoogleAccountsTokenStats(accounts: any[]): void {
+  if (!Array.isArray(accounts)) {
+    accounts = Array.isArray(googleAccountsCache) ? googleAccountsCache : [];
+  }
   const isWeekly = gaCurrentQuotaWindow === 'weekly';
   const summary = calculatePoolTokenSummary(accounts, isWeekly);
   const total = summary.antigravityTotal || accounts.length;
@@ -10525,6 +10566,8 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
   if (!cachedRealStats) {
     void ensureRealTokenStats().then((res) => {
       if (res) updateGoogleAccountsTokenStats(accounts);
+    }).catch((err) => {
+      console.warn('[Doctor-UI] ensureRealTokenStats in updateGoogleAccountsTokenStats failed:', err);
     });
   }
 
@@ -10779,6 +10822,9 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
 }
 
 function updateGoogleAccountToolbarCounts(accounts: any[]): void {
+  if (!Array.isArray(accounts)) {
+    accounts = Array.isArray(googleAccountsCache) ? googleAccountsCache : [];
+  }
   const total = accounts.length;
   let pro = 0;
   let ultra = 0;
@@ -11272,11 +11318,11 @@ function initGoogleAccountsToolbarOnce(): void {
     if (!account) return;
     const err = account.errorDetails || account.quotas?.errorDetails || {};
     const validationUrl = err.validationUrl || account.quotas?.errorDetails?.validationUrl;
-    const isValidationRequired = Boolean(validationUrl || (account as any).isValidationRequired || err.status === 'VALIDATION_REQUIRED' || err.reason === 'VALIDATION_REQUIRED');
+    const isValidationRequired = isAccountValidationRequired(account) || Boolean(validationUrl || (account as any).isValidationRequired || err.status === 'VALIDATION_REQUIRED' || err.reason === 'VALIDATION_REQUIRED');
     const reason = err.reason || (isValidationRequired ? 'VALIDATION_REQUIRED' : (account.lastError?.includes('Terms of Service') ? 'TOS_VIOLATION' : 'PERMISSION_DENIED'));
     const message = err.message || account.lastError || (isValidationRequired ? 'Une validation de sécurité interactive ou un captcha est requis par Google pour ce compte.' : 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.');
     const appealUrl = err.appealUrl || 'https://forms.gle/hGzM9MEUv2azZsrb9';
-    const actionValidationUrl = validationUrl || 'https://accounts.google.com';
+    const actionValidationUrl = validationUrl || 'https://myaccount.google.com/age-verification';
     const detectionDate = err.detectionTime ? new Date(err.detectionTime) : new Date(account.lastTestedAt || Date.now());
     const pad = (n: number) => n.toString().padStart(2, '0');
     const detectionTimeStr = `${pad(detectionDate.getDate())}/${pad(detectionDate.getMonth() + 1)}/${detectionDate.getFullYear()} à ${pad(detectionDate.getHours())}:${pad(detectionDate.getMinutes())}:${pad(detectionDate.getSeconds())}`;
@@ -11339,6 +11385,19 @@ function initGoogleAccountsToolbarOnce(): void {
         <div style="margin-bottom: 14px;">
           <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; margin-bottom: 6px;">STATUT DU PROXY &amp; ROTATION</div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            ${isValidationRequired ? `
+            <span style="background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Validation Requise (Non Suspendu)
+            </span>
+            <span style="background: rgba(59, 130, 246, 0.15); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Bypass Mobile via PC
+            </span>
+            <span style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+              ⚡ 4 Étapes Rapides
+            </span>
+            ` : `
             <span style="background: rgba(239, 68, 68, 0.18); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               Blocked due to Violation
@@ -11351,6 +11410,7 @@ function initGoogleAccountsToolbarOnce(): void {
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               Autres comptes préservés
             </span>
+            `}
           </div>
         </div>
 
@@ -11950,6 +12010,8 @@ function initGoogleAccountsToolbarOnce(): void {
         const cdInfo = getAccountActiveCooldown(account);
         const isEnabled = account.enabled !== false;
         const recom = getAccountRecommendation(account);
+        const isValAccount = isAccountValidationRequired(account);
+        const hasErrAccount = hasAccountErrorOrValidation(account);
         const dedupModels = getDeduplicatedAccountModels(account.models);
         const diagBg = recom.type === 'warn' || recom.type === 'cooldown'
           ? 'rgba(245, 158, 11, 0.12)'
@@ -11985,8 +12047,9 @@ function initGoogleAccountsToolbarOnce(): void {
               <span style="color: var(--text-2);">Status Pool:</span>
               <span>${isEnabled ? '<span class="ga-badge ga-badge-ok">Actif dans le pool</span>' : '<span class="ga-badge ga-badge-warn">Désactivé (En pause)</span>'}</span>
               <span style="color: var(--text-2);">Diagnostic & Conseil:</span>
-              <div style="padding: 6px 10px; border-radius: 6px; background: ${diagBg}; border: 1px solid ${diagBorder}; color: ${diagColor}; font-size: 11.5px; line-height: 1.45;">
-                ${escapeHtml(recom.text)}
+              <div id="gaModalDiagnosticCard" style="padding: 7px 11px; border-radius: 6px; background: ${diagBg}; border: 1px solid ${diagBorder}; color: ${diagColor}; font-size: 11.5px; line-height: 1.45; ${isValAccount ? 'cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px;' : ''}" ${isValAccount ? 'title="Cliquer pour ouvrir l\'Assistant Interactif en 4 étapes"' : ''}>
+                <span>${escapeHtml(recom.text)}</span>
+                ${isValAccount ? `<button type="button" id="gaModalDiagActionBtn" style="background: rgba(245, 158, 11, 0.25); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.45); border-radius: 5px; padding: 2px 8px; font-size: 10.5px; font-weight: 700; cursor: pointer; flex-shrink: 0;">Assistant 4 Étapes ›</button>` : ''}
               </div>
               <span style="color: var(--text-2);">Cooldown Status:</span>
               <span>${cdInfo ? `<span class="ga-badge ga-badge-warn" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);">${escapeHtml(cdInfo.text)}</span> <small style="display:block; color:var(--text-2); margin-top:3px;">${escapeHtml(cdInfo.details)}</small>` : '<span style="color: #10b981;">🟢 Aucun cooldown actif (Prêt pour requêtes)</span>'}</span>
@@ -12018,17 +12081,19 @@ function initGoogleAccountsToolbarOnce(): void {
               </button>
             </div>
             ` : ''}
-            ${(account.isUnlicensed || (account as any).errorDetails || account.quotas?.errorDetails || ((account as any).status === 'unhealthy' && (account as any).lastError?.includes('403'))) ? `
-            <div style="margin-bottom: 14px; padding: 12px 14px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+            ${hasErrAccount ? `
+            <div style="margin-bottom: 14px; padding: 12px 14px; background: ${isValAccount ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)'}; border: 1px solid ${isValAccount ? 'rgba(245, 158, 11, 0.35)' : 'rgba(239, 68, 68, 0.35)'}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
               <div>
-                <strong style="color: #ef4444; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+                <strong style="color: ${isValAccount ? '#fbbf24' : '#ef4444'}; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  Compte Bloqué par Google (TOS Violation / 403)
+                  ${isValAccount ? 'Validation de Sécurité Requise (Google Challenge 403)' : 'Compte Bloqué par Google (TOS Violation / 403)'}
                 </strong>
-                <div style="font-size: 11px; color: #fca5a5; margin-top: 2px;">Violation des conditions ou suspension détectée. Guide de déblocage disponible.</div>
+                <div style="font-size: 11px; color: ${isValAccount ? '#cbd5e1' : '#fca5a5'}; margin-top: 2px;">
+                  ${isValAccount ? 'Vérification d\'âge requise. Assistant interactif en 4 étapes prêt.' : 'Violation des conditions ou suspension détectée. Guide de déblocage disponible.'}
+                </div>
               </div>
-              <button type="button" class="btn btn-sm" id="gaModalOpenErrorDetailsBtn" style="background: #ef4444; color: #fff; font-size: 11.5px; font-weight: 600; padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; flex-shrink: 0; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35);">
-                🔒 Solutions Quick Fix
+              <button type="button" class="btn btn-sm" id="gaModalOpenErrorDetailsBtn" style="background: ${isValAccount ? 'linear-gradient(135deg, #f59e0b, #d97706)' : '#ef4444'}; color: #fff; font-size: 11.5px; font-weight: 700; padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; flex-shrink: 0; box-shadow: 0 2px 8px ${isValAccount ? 'rgba(245, 158, 11, 0.35)' : 'rgba(239, 68, 68, 0.35)'};">
+                ${isValAccount ? '🟠 Assistant 4 Étapes' : '🔒 Solutions Quick Fix'}
               </button>
             </div>
             ` : ''}
@@ -12158,11 +12223,23 @@ function initGoogleAccountsToolbarOnce(): void {
           });
 
           const modalOpenErrBtn = document.getElementById('gaModalOpenErrorDetailsBtn');
-          modalOpenErrBtn?.addEventListener('click', () => {
+          const modalDiagCard = document.getElementById('gaModalDiagnosticCard');
+          const modalDiagBtn = document.getElementById('gaModalDiagActionBtn');
+
+          const openDiagnosticModal = () => {
             const closeBtn = document.querySelector('#modalConfirm, #modalClose') as HTMLElement | null;
             closeBtn?.click();
             setTimeout(() => showAccountErrorDetailsModal(account), 150);
-          });
+          };
+
+          modalOpenErrBtn?.addEventListener('click', openDiagnosticModal);
+          if (isValAccount) {
+            modalDiagCard?.addEventListener('click', openDiagnosticModal);
+            modalDiagBtn?.addEventListener('click', (e) => {
+              e.stopPropagation();
+              openDiagnosticModal();
+            });
+          }
         }, 100);
         await confirmPromise;
         return;
@@ -13825,7 +13902,7 @@ function getNextExpiringCooldown(): { key: string; until: number; remainingMin: 
 function renderGoogleAccountsPoolHealth(accounts: any[]): void {
   const container = document.getElementById('gaPoolHealthBar');
   if (!container) return;
-  if (!accounts || accounts.length === 0) {
+  if (!Array.isArray(accounts) || accounts.length === 0) {
     container.innerHTML = '';
     return;
   }
@@ -14241,10 +14318,13 @@ function renderGoogleAccountsList(accounts: any[]): void {
       const dedupModels = getDeduplicatedAccountModels(a.models);
 
       let statusBadgeHtml = '';
+      const isVal = isAccountValidationRequired(a);
       const isUnlicensed = a.isUnlicensed || a.quotas?.isUnlicensed;
-      const isBlocked = isUnlicensed || Boolean(a.errorDetails) || Boolean(a.quotas?.errorDetails) || (a.status === 'unhealthy' && Boolean(a.lastError?.includes('403')));
+      const isBlocked = !isVal && (isUnlicensed || Boolean(a.errorDetails) || Boolean(a.quotas?.errorDetails) || (a.status === 'unhealthy' && Boolean(a.lastError?.includes('403'))));
       if (!isEnabled) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-paused" style="background: rgba(148, 163, 184, 0.14); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25);" title="Compte mis en pause (temporairement exclu de la rotation)">⏸ PAUSE</span>`;
+      } else if (isVal) {
+        statusBadgeHtml = `<button type="button" class="ga-badge ga-error-details-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer; background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); font-weight: 600; font-size: 10px; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px;" title="Validation Google requise (Challenge 403). Cliquez pour ouvrir l'Assistant Interactif en 4 étapes.">🟠 Validation Requise</button>`;
       } else if (isUnlicensed) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);" title="Compte sans licence Antigravity active (HTTP 403 Subscription Required)">🚫 SANS LICENCE</span>`;
       } else if (cdGemini) {
@@ -14344,8 +14424,8 @@ function renderGoogleAccountsList(accounts: any[]): void {
               <button type="button" class="ga-action-btn ga-refresh" title="Rafraîchir les quotas de ce compte" aria-label="Refresh quotas for ${escapeHtml(a.name || a.email)}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               </button>
-              ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `
-              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="${isAccountValidationRequired(a) ? 'Protocole de Validation (403 Challenge)' : 'Diagnostic Erreur (TOS / 403) & Solutions Quick Fix'}" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="${isAccountValidationRequired(a) ? 'color: #fbbf24; border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.1);' : 'color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);'}">
+              ${hasAccountErrorOrValidation(a) ? `
+              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="${isAccountValidationRequired(a) ? 'Assistant Déblocage (Protocole 4 Étapes)' : 'Diagnostic Erreur (TOS / 403) & Solutions Quick Fix'}" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="${isAccountValidationRequired(a) ? 'color: #fbbf24; border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.1);' : 'color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);'}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               </button>` : ''}
               <button type="button" class="ga-action-btn ga-details" title="Détails du compte" aria-label="Details for ${escapeHtml(a.name || a.email)}">
@@ -14478,7 +14558,7 @@ function renderGoogleAccountsList(accounts: any[]): void {
       }
 
       html += `
-        <div class="agy-provider-row ${isCurrent ? 'is-current' : ''} ${isTarget ? 'is-target' : ''} ${!isEnabled ? 'is-disabled' : ''}" data-id="${escapeHtml(a.id)}" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; border-radius: var(--r-card, 10px); border: 1px solid ${isCurrent ? 'rgba(59, 130, 246, 0.4)' : (isTarget ? 'rgba(56, 189, 248, 0.45)' : (!isEnabled ? 'rgba(148, 163, 184, 0.25)' : 'var(--border)'))}; background: ${!isEnabled ? 'rgba(0,0,0,0.2)' : 'var(--bg-1)'}; ${!isEnabled ? 'opacity: 0.75;' : ''}">
+        <div class="agy-provider-row ${isCurrent ? 'is-current' : ''} ${isTarget ? 'is-target' : ''} ${!isEnabled ? 'is-disabled' : ''}" data-id="${escapeHtml(a.id)}" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; border-radius: var(--r-card, 10px); border: 1px solid ${isCurrent ? 'rgba(59, 130, 246, 0.4)' : isTarget ? 'rgba(56, 189, 248, 0.45)' : !isEnabled ? 'rgba(148, 163, 184, 0.25)' : isAccountValidationRequired(a) ? 'rgba(245, 158, 11, 0.45)' : 'var(--border)'}; background: ${!isEnabled ? 'rgba(0,0,0,0.2)' : 'var(--bg-1)'}; ${!isEnabled ? 'opacity: 0.75;' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
               ${a.picture
@@ -14510,8 +14590,8 @@ function renderGoogleAccountsList(accounts: any[]): void {
               <button type="button" class="ga-action-btn ga-switch ${isCurrent ? 'active-switch' : ''}" title="${isCurrent ? 'Compte actif principal' : 'Activer ce compte (1-clic)'}" aria-label="Switch to ${escapeHtml(a.name || a.email)}">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
               </button>
-              ${(a.isUnlicensed || a.errorDetails || a.quotas?.errorDetails || (a.status === 'unhealthy' && a.lastError?.includes('403'))) ? `
-              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="${isAccountValidationRequired(a) ? 'Protocole de Validation (403 Challenge)' : 'Diagnostic Erreur (TOS / 403) & Solutions Quick Fix'}" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="${isAccountValidationRequired(a) ? 'color: #fbbf24; border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.1);' : 'color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);'}">
+              ${hasAccountErrorOrValidation(a) ? `
+              <button type="button" class="ga-action-btn ga-error-details-btn" data-id="${escapeHtml(a.id)}" title="${isAccountValidationRequired(a) ? 'Assistant Déblocage (Protocole 4 Étapes)' : 'Diagnostic Erreur (TOS / 403) & Solutions Quick Fix'}" aria-label="Error details for ${escapeHtml(a.name || a.email)}" style="${isAccountValidationRequired(a) ? 'color: #fbbf24; border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.1);' : 'color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.1);'}">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               </button>` : ''}
               <button type="button" class="ga-action-btn ga-details" title="Détails du compte" aria-label="Details for ${escapeHtml(a.name || a.email)}">
@@ -15557,7 +15637,9 @@ function triggerAutoSyncGoogleAccounts(): void {
   if (gaAutoSyncDebounce) clearTimeout(gaAutoSyncDebounce);
   gaAutoSyncDebounce = setTimeout(() => {
     if (document.visibilityState === 'visible') {
-      void loadGoogleAccounts(false);
+      void loadGoogleAccounts(false).catch((err) => {
+        console.warn('[AutoSync] loadGoogleAccounts failed:', err);
+      });
     }
   }, 300);
 }

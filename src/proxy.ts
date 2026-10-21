@@ -2644,7 +2644,7 @@ export async function executeGoogleCloudCodeWithPool(
             ...existingQuota,
             geminiFiveHourPct: 0,
             geminiWeeklyPct: isWeekly ? 0 : (existingQuota?.geminiWeeklyPct ?? 100),
-            geminiFiveHourReset: isWeekly ? existingQuota?.geminiFiveHourReset : resetIso,
+            geminiFiveHourReset: resetIso,
             geminiWeeklyReset: isWeekly ? resetIso : existingQuota?.geminiWeeklyReset,
             updatedAt: nowMs,
           } as AccountLiveQuota);
@@ -2653,7 +2653,7 @@ export async function executeGoogleCloudCodeWithPool(
             ...existingQuota,
             claudeFiveHourPct: 0,
             claudeWeeklyPct: isWeekly ? 0 : (existingQuota?.claudeWeeklyPct ?? 100),
-            claudeFiveHourReset: isWeekly ? existingQuota?.claudeFiveHourReset : resetIso,
+            claudeFiveHourReset: resetIso,
             claudeWeeklyReset: isWeekly ? resetIso : existingQuota?.claudeWeeklyReset,
             updatedAt: nowMs,
           } as AccountLiveQuota);

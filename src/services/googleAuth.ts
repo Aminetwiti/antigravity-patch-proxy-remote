@@ -794,6 +794,21 @@ export async function pollAllGoogleQuotas(
       const quota = await fetchLiveUserQuota(accessToken);
       if (quota) {
         const prevQuota = accountLiveQuotas.get(accountKey);
+        if (prevQuota) {
+          const now = Date.now();
+          if (prevQuota.geminiFiveHourPct === 0 && prevQuota.geminiFiveHourReset && Date.parse(prevQuota.geminiFiveHourReset) > now) {
+            quota.geminiFiveHourPct = 0;
+            quota.geminiFiveHourReset = prevQuota.geminiFiveHourReset;
+            if (prevQuota.geminiWeeklyPct === 0) quota.geminiWeeklyPct = 0;
+            if (prevQuota.geminiWeeklyReset) quota.geminiWeeklyReset = prevQuota.geminiWeeklyReset;
+          }
+          if (prevQuota.claudeFiveHourPct === 0 && prevQuota.claudeFiveHourReset && Date.parse(prevQuota.claudeFiveHourReset) > now) {
+            quota.claudeFiveHourPct = 0;
+            quota.claudeFiveHourReset = prevQuota.claudeFiveHourReset;
+            if (prevQuota.claudeWeeklyPct === 0) quota.claudeWeeklyPct = 0;
+            if (prevQuota.claudeWeeklyReset) quota.claudeWeeklyReset = prevQuota.claudeWeeklyReset;
+          }
+        }
         const quotaChanged = !prevQuota ||
           prevQuota.geminiFiveHourPct !== quota.geminiFiveHourPct ||
           prevQuota.geminiWeeklyPct !== quota.geminiWeeklyPct ||
