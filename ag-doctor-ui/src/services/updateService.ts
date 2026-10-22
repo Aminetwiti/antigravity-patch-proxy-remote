@@ -182,21 +182,42 @@ export function shouldCheckForUpdates(settings: UpdateSettings): boolean {
   return elapsedHours >= interval;
 }
 
+export function isPortableExecution(): boolean {
+  if (process.platform !== 'win32') return false;
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return true;
+  try {
+    const exeName = path.basename(process.execPath).toLowerCase();
+    return exeName.includes('portable');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Match release asset appropriate for the current platform and architecture.
  */
 export function matchAssetForPlatform(
   assets: UpdateAsset[],
   platform = process.platform,
-  arch = process.arch
+  arch = process.arch,
+  portableOverride?: boolean
 ): UpdateAsset | null {
   if (!Array.isArray(assets) || assets.length === 0) return null;
 
   if (platform === 'win32') {
-    // Prefer NSIS setup executable
-    const nsis = assets.find((a) => a.name.endsWith('.exe') && (a.name.includes('Setup') || a.name.includes('setup')));
-    if (nsis) return nsis;
-    // Fallback to any .exe
+    const isPort = portableOverride !== undefined ? portableOverride : isPortableExecution();
+    if (isPort) {
+      // Prioritize portable executable if currently running as portable
+      const port = assets.find(
+        (a) => a.name.endsWith('.exe') && (a.name.includes('portable') || a.name.includes('Portable') || a.name === 'ag-doctor-ui.exe')
+      );
+      if (port) return port;
+    } else {
+      // Prioritize NSIS setup executable if currently installed
+      const nsis = assets.find((a) => a.name.endsWith('.exe') && (a.name.includes('Setup') || a.name.includes('setup')));
+      if (nsis) return nsis;
+    }
+    // Fallback to any matching .exe
     const anyExe = assets.find((a) => a.name.endsWith('.exe'));
     if (anyExe) return anyExe;
   } else if (platform === 'darwin') {

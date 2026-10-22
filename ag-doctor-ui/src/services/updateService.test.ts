@@ -115,10 +115,16 @@ describe('UpdateService - SemVer Comparison & Core Logic', () => {
       },
     ];
 
-    it('matches Windows NSIS setup asset on win32', () => {
-      const match = matchAssetForPlatform(assets, 'win32', 'x64');
+    it('matches Windows NSIS setup asset on win32 when not in portable mode', () => {
+      const match = matchAssetForPlatform(assets, 'win32', 'x64', false);
       expect(match).not.toBeNull();
       expect(match?.name).toBe('ag-doctor-3.7.6-Setup.exe');
+    });
+
+    it('matches Windows portable asset on win32 when in portable mode', () => {
+      const match = matchAssetForPlatform(assets, 'win32', 'x64', true);
+      expect(match).not.toBeNull();
+      expect(match?.name).toBe('ag-doctor-3.7.6-portable.exe');
     });
 
     it('matches macOS DMG with correct architecture', () => {
