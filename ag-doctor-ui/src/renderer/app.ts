@@ -4907,7 +4907,7 @@ $('#doctorRebuildSidebarBtn')?.addEventListener('click', () => void handleRebuil
 $('#agRebuildSidebarBtn')?.addEventListener('click', () => void handleRebuildSidebarAction());
 
 $('#doctorRunBtn').addEventListener('click', () => void runDoctorView());
-$('#doctorPruneBtn')?.addEventListener('click', async () => {
+async function handlePruneAction(): Promise<void> {
   setStatus('Pruning database…', 'busy');
   try {
     const result = await window.ag.run(['db:prune', '--json']);
@@ -4927,13 +4927,18 @@ $('#doctorPruneBtn')?.addEventListener('click', async () => {
     } else {
       toast(result.stdout.trim() || 'Database pruned successfully', 'ok');
     }
-    doctorOutput.textContent = result.stdout || result.stderr;
+    const docOut = $('#doctorOutput');
+    if (docOut) {
+      docOut.textContent = result.stdout || result.stderr;
+    }
     setStatus('Ready');
   } catch (e) {
     toast(`Prune failed: ${(e as Error).message}`, 'err');
     setStatus('Error', 'err');
   }
-});
+}
+
+$('#doctorPruneBtn')?.addEventListener('click', () => void handlePruneAction());
 $('#doctorJsonBtn').addEventListener('click', async () => {
   setStatus('Loading JSON…', 'busy');
   try {
@@ -7540,8 +7545,18 @@ $('#agCopyPathsBtn')?.addEventListener('click', async () => {
   toast('All paths copied', 'ok', 2000);
 });
 
+function setAgLifecycleBusy(busy: boolean): void {
+  if (agLaunchBtn) agLaunchBtn.disabled = busy;
+  if (agLaunchLogsBtn) agLaunchLogsBtn.disabled = busy;
+  if (agRestartBtn) agRestartBtn.disabled = busy;
+  if (agKillBtn) agKillBtn.disabled = busy;
+  if (agRefreshBtn) agRefreshBtn.disabled = busy;
+}
+
 agRefreshBtn.addEventListener('click', () => void loadAntigravityStatus());
+
 agLaunchBtn.addEventListener('click', async () => {
+  setAgLifecycleBusy(true);
   setAgHero('busy', 'Opening…', 'Launching Antigravity');
   try {
     const result = await window.ag.antigravityLaunch();
@@ -7550,26 +7565,34 @@ agLaunchBtn.addEventListener('click', async () => {
     setAgHero('ok', 'Running', `PID ${pid ?? '—'} · Launched`);
     startUptimeTicker();
     toast('Antigravity launched', 'ok', 2000);
+    await loadAntigravityStatus();
   } catch (e) {
     setAgHero('err', 'Failed', (e as Error).message);
     toast(`Launch failed: ${(e as Error).message}`, 'err');
+  } finally {
+    setAgLifecycleBusy(false);
   }
 });
+
 agKillBtn.addEventListener('click', async () => {
+  setAgLifecycleBusy(true);
   setAgHero('busy', 'Closing…', 'Killing Antigravity process');
   try {
     const result = await window.ag.antigravityKill();
     if (!result.ok) throw new Error(result.error ?? 'Kill failed');
     setAgHero('warn', 'Stopped', `Killed ${result.data?.killed ?? 0} processes`);
-    // stopUptimeTicker();
     toast('Antigravity closed', 'ok', 2000);
+    await loadAntigravityStatus();
   } catch (e) {
     setAgHero('err', 'Failed', (e as Error).message);
     toast(`Close failed: ${(e as Error).message}`, 'err');
+  } finally {
+    setAgLifecycleBusy(false);
   }
 });
 
 agRestartBtn.addEventListener('click', async () => {
+  setAgLifecycleBusy(true);
   setAgHero('busy', 'Restarting…', 'Killing and relaunching');
   try {
     const result = await window.ag.antigravityRestart();
@@ -7578,9 +7601,12 @@ agRestartBtn.addEventListener('click', async () => {
     setAgHero('ok', 'Running', `PID ${pid ?? '—'} · Restarted`);
     startUptimeTicker();
     toast('Antigravity restarted', 'ok', 2000);
+    await loadAntigravityStatus();
   } catch (e) {
     setAgHero('err', 'Failed', (e as Error).message);
     toast(`Restart failed: ${(e as Error).message}`, 'err');
+  } finally {
+    setAgLifecycleBusy(false);
   }
 });
 
@@ -7588,115 +7614,148 @@ const agResolveVerificationBtn = $('#agResolveVerificationBtn') as HTMLButtonEle
 agResolveVerificationBtn?.addEventListener('click', () => {
   void showAntigravityVerificationResolutionModal();
 });
-// remove unused buttons
+
+// Interactive stat card shortcuts
+document.querySelector('[data-stat="ag-running"]')?.addEventListener('click', () => {
+  if (agRunningValue?.textContent === 'Stopped') {
+    agLaunchBtn?.click();
+  } else {
+    void loadAntigravityStatus();
+  }
+});
+
+document.querySelector('[data-stat="ag-proxy"]')?.addEventListener('click', () => {
+  navigate('mitm');
+});
+
+document.querySelector('[data-stat="ag-ls"]')?.addEventListener('click', () => {
+  if (agLsValue?.textContent === 'Stopped') {
+    agLaunchBtn?.click();
+  } else {
+    $('#agLsPids')?.scrollIntoView({ behavior: 'smooth' });
+  }
+});
 
 async function loadAntigravityStatus(): Promise<void> {
   return guardLoad('agStatus', async () => {
     setStatus('Loading Antigravity status…', 'busy');
     setAgHero('busy', 'Checking…', 'Detecting installation');
     try {
-      // Parallel: info IPC, status IPC, version IPC, models count
       const [info, statusResult, versionResult, modelsResult] = await Promise.all([
-        // PERF: 5 s TTL caused stale reads and split-cached state with the
-        // boot path that requests 60 s. Unify to 60 s (info rarely changes).
         memo('info', 60_000, () => window.ag.info()),
         withTimeout(window.ag.antigravityStatus(), 10_000, 'antigravity status').catch((err: Error) => ({ ok: false, data: undefined, error: err.message })),
         withTimeout(window.ag.antigravityVersion(), 10_000, 'antigravity version').catch((err: Error) => ({ ok: false, data: undefined, error: err.message })),
         withTimeout(window.ag.run(['models', 'list', '--json']), 10_000, 'models list').catch(() => ({ stdout: '{"models":[]}', stderr: '', code: 0 })),
       ]);
 
-    const status = statusResult.ok ? (statusResult.data as Record<string, unknown>) : null;
-    const versionData = versionResult.ok ? versionResult.data : null;
-    let modelsCount = 0;
-    try {
-      const modelsData = JSON.parse(modelsResult.stdout) as { models?: Array<{ name: string }> };
-      if (modelsData && Array.isArray(modelsData.models)) {
-        modelsCount = modelsData.models.length;
-      }
-    } catch {
-      modelsCount = 0;
-    }
-
-    const installed = Boolean(status?.installed ?? status?.installDir);
-    const running = Boolean(status?.running ?? status?.pid);
-    const pid = status?.pid as number | undefined;
-    const version = (versionData?.version as string | undefined) ?? (status?.version as string | undefined);
-    const installDir = (status?.installDir as string | undefined) ?? '';
-
-    // Hero card
-    if (!installed) {
-      setAgHero('err', 'Not installed', installDir || 'No installation found');
-    } else if (running) {
-      setAgHero('ok', 'Running', `PID ${pid ?? '—'} · ${version ?? 'unknown'}`);
-      startUptimeTicker();
-    } else {
-      setAgHero('warn', 'Installed · Stopped', version ?? 'Not running');
-    }
-
-    // Stat cards
-    if (agVersionValue) agVersionValue.textContent = version ?? '—';
-    if (agRunningValue) {
-      if (!installed) {
-        agRunningValue.textContent = 'Not installed';
-      } else if (running) {
-        agRunningValue.textContent = 'Running';
-      } else {
-        agRunningValue.textContent = 'Stopped';
-      }
-    }
-
-    // Fill Installation Panel
-    if (agInstallPath) agInstallPath.textContent = installDir || '—';
-    if (agAppAsar) agAppAsar.textContent = (status?.appAsarPath as string | undefined) ?? '—';
-    if (agVersionRow) agVersionRow.textContent = version ?? '—';
-    if (agChannelRow) agChannelRow.textContent = (status?.channel as string | undefined) ?? '—';
-
-    // Fill Running processes Panel
-    let agPidCount = 0;
-    if (agAgPids) {
-      const pids = status?.agPids as number[] | undefined;
-      agPidCount += pids?.length ?? (pid ? 1 : 0);
-      agAgPids.textContent = pids && pids.length > 0 ? pids.join(', ') : (pid ? String(pid) : '—');
-    }
-    if (agLsPids) {
-      const lsPids = status?.lsPids as number[] | undefined;
-      agPidCount += lsPids?.length ?? 0;
-      agLsPids.textContent = lsPids && lsPids.length > 0 ? lsPids.join(', ') : '—';
-    }
-    if (agPidsBadge) {
-      agPidsBadge.textContent = `${agPidCount} PIDs`;
-    }
-    if (agSourceBadge) {
-       agSourceBadge.textContent = installed ? 'Installed' : 'Missing';
-    }
-
-    if (agLsValue) {
-       const lsPids = status?.lsPids as number[] | undefined;
-       agLsValue.textContent = (lsPids && lsPids.length > 0) ? 'Running' : 'Stopped';
-    }
-
-    try {
-        const proxyResp = await window.ag.proxyStatus();
-        if (agProxyValue) {
-            agProxyValue.textContent = proxyResp?.data?.running ? 'Running' : 'Stopped';
+      const status = statusResult.ok ? (statusResult.data as Record<string, unknown>) : null;
+      const versionData = versionResult.ok ? versionResult.data : null;
+      let modelsCount = 0;
+      try {
+        const modelsData = JSON.parse(modelsResult.stdout) as { models?: Array<{ name: string }> };
+        if (modelsData && Array.isArray(modelsData.models)) {
+          modelsCount = modelsData.models.length;
         }
-    } catch {
+      } catch {
+        modelsCount = 0;
+      }
+
+      const installed = Boolean(status?.installed ?? status?.installDir);
+      const running = Boolean(status?.running ?? status?.pid);
+      const pid = status?.pid as number | undefined;
+      const version = (versionData?.version as string | undefined) ?? (status?.version as string | undefined);
+      const installDir = (status?.installDir as string | undefined) ?? '';
+
+      // Hero card
+      if (!installed) {
+        setAgHero('err', 'Not installed', installDir || 'No installation found');
+      } else if (running) {
+        setAgHero('ok', 'Running', `PID ${pid ?? '—'} · ${version ?? 'unknown'}`);
+        startUptimeTicker();
+      } else {
+        setAgHero('warn', 'Installed · Stopped', version ?? 'Not running');
+      }
+
+      // Stat cards with synchronized icon statuses
+      if (agVersionValue) agVersionValue.textContent = version ?? '—';
+      const versionIcon = document.querySelector('[data-stat="ag-version"] .stat-icon');
+      if (versionIcon) versionIcon.className = installed ? 'stat-icon ok' : 'stat-icon err';
+
+      const runningIcon = document.querySelector('[data-stat="ag-running"] .stat-icon');
+      if (agRunningValue) {
+        if (!installed) {
+          agRunningValue.textContent = 'Not installed';
+          if (runningIcon) runningIcon.className = 'stat-icon err';
+        } else if (running) {
+          agRunningValue.textContent = 'Running';
+          if (runningIcon) runningIcon.className = 'stat-icon ok';
+        } else {
+          agRunningValue.textContent = 'Stopped';
+          if (runningIcon) runningIcon.className = 'stat-icon warn';
+        }
+      }
+
+      // Fill Installation Panel
+      if (agInstallPath) agInstallPath.textContent = installDir || '—';
+      if (agAppAsar) agAppAsar.textContent = (status?.appAsarPath as string | undefined) ?? '—';
+      if (agVersionRow) agVersionRow.textContent = version ?? '—';
+      if (agChannelRow) agChannelRow.textContent = (status?.channel as string | undefined) ?? '—';
+
+      // Fill Running processes Panel
+      let agPidCount = 0;
+      if (agAgPids) {
+        const pids = status?.agPids as number[] | undefined;
+        agPidCount += pids?.length ?? (pid ? 1 : 0);
+        agAgPids.textContent = pids && pids.length > 0 ? pids.join(', ') : (pid ? String(pid) : '—');
+      }
+      if (agLsPids) {
+        const lsPids = status?.lsPids as number[] | undefined;
+        agPidCount += lsPids?.length ?? 0;
+        agLsPids.textContent = lsPids && lsPids.length > 0 ? lsPids.join(', ') : '—';
+      }
+      if (agPidsBadge) {
+        agPidsBadge.textContent = `${agPidCount} PIDs`;
+      }
+      if (agSourceBadge) {
+        agSourceBadge.textContent = installed ? 'Installed' : 'Missing';
+      }
+
+      const lsIcon = document.querySelector('[data-stat="ag-ls"] .stat-icon');
+      if (agLsValue) {
+        const lsPids = status?.lsPids as number[] | undefined;
+        const isLsRunning = Boolean(lsPids && lsPids.length > 0);
+        agLsValue.textContent = isLsRunning ? 'Running' : 'Stopped';
+        if (lsIcon) lsIcon.className = isLsRunning ? 'stat-icon ok' : 'stat-icon warn';
+      }
+
+      const proxyIcon = document.querySelector('[data-stat="ag-proxy"] .stat-icon');
+      try {
+        const proxyResp = await window.ag.proxyStatus();
+        const isProxyRunning = Boolean(proxyResp?.data?.running);
+        if (agProxyValue) {
+          agProxyValue.textContent = isProxyRunning ? 'Running' : 'Stopped';
+        }
+        if (proxyIcon) {
+          proxyIcon.className = isProxyRunning ? 'stat-icon ok' : 'stat-icon warn';
+        }
+      } catch {
         if (agProxyValue) agProxyValue.textContent = 'Unknown';
-    }
+        if (proxyIcon) proxyIcon.className = 'stat-icon err';
+      }
 
-    try {
+      try {
         await loadAntigravityCpuOptStatus();
-    } catch {}
+      } catch {}
 
-    try {
+      try {
         await loadAuthStatus();
-    } catch {}
+      } catch {}
 
-    setStatus('Ready');
-  } catch (e) {
-    setAgHero('err', 'Error', (e as Error).message);
-    setStatus('Error', 'err');
-  }
+      setStatus('Ready');
+    } catch (e) {
+      setAgHero('err', 'Error', (e as Error).message);
+      setStatus('Error', 'err');
+    }
   });
 }
 
@@ -7705,7 +7764,6 @@ async function loadAntigravityStatus(): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const agApplyCpuOptBtn = $('#agApplyCpuOptBtn') as HTMLButtonElement | null;
-const agHeaderCpuOptBtn = $('#agHeaderCpuOptBtn') as HTMLButtonElement | null;
 const agRevertCpuOptBtn = $('#agRevertCpuOptBtn') as HTMLButtonElement | null;
 
 async function loadAntigravityCpuOptStatus(): Promise<void> {
@@ -7717,10 +7775,10 @@ async function loadAntigravityCpuOptStatus(): Promise<void> {
     const res = await window.ag.antigravityCpuOptStatus?.();
     if (!res?.ok || !res.data) {
       if (badge) {
-        badge.textContent = 'Inconnu';
+        badge.textContent = 'Unknown';
         badge.className = 'badge';
       }
-      if (statusEl) statusEl.textContent = res?.error ?? 'Impossible de vérifier';
+      if (statusEl) statusEl.textContent = res?.error ?? 'Unable to check status';
       return;
     }
 
@@ -7729,23 +7787,23 @@ async function loadAntigravityCpuOptStatus(): Promise<void> {
     const hasBackups = existing.some((p: any) => p.backupExists);
 
     if (badge) {
-      badge.textContent = isOptimized ? 'Optimisé' : 'Non optimisé';
+      badge.textContent = isOptimized ? 'Optimized' : 'Not optimized';
       badge.className = isOptimized ? 'badge badge-ok' : 'badge badge-warn';
     }
 
     if (statusEl) {
       statusEl.textContent = isOptimized
-        ? 'Actif · Watchers allégés et mémoire LSP plafonnée'
-        : 'Inactif · Paramètres par défaut non optimisés';
+        ? 'Active · Heavy watchers excluded and LSP memory capped'
+        : 'Inactive · Default unoptimized settings in place';
     }
 
     if (profilesEl) {
       if (existing.length === 0) {
-        profilesEl.textContent = 'Aucun fichier settings.json détecté';
+        profilesEl.textContent = 'No settings.json profile detected';
       } else {
         profilesEl.textContent = existing.map((p: any) => {
           const name = p.path.includes('Antigravity IDE') ? 'Antigravity IDE' : 'Antigravity';
-          return `${name}: ${p.optimized ? 'Optimisé ✓' : 'Non optimisé ⚠'}`;
+          return `${name}: ${p.optimized ? 'Optimized ✓' : 'Unoptimized ⚠'}`;
         }).join(' · ');
       }
     }
@@ -7755,11 +7813,11 @@ async function loadAntigravityCpuOptStatus(): Promise<void> {
     }
 
     if (agApplyCpuOptBtn) {
-      agApplyCpuOptBtn.textContent = isOptimized ? 'Ré-appliquer l\'optimisation CPU' : 'Appliquer l\'optimisation CPU';
+      agApplyCpuOptBtn.textContent = isOptimized ? 'Reapply CPU Optimization' : 'Apply CPU Optimization';
     }
   } catch (err) {
     if (badge) {
-      badge.textContent = 'Erreur';
+      badge.textContent = 'Error';
       badge.className = 'badge badge-err';
     }
     if (statusEl) statusEl.textContent = (err as Error).message;
@@ -7768,34 +7826,31 @@ async function loadAntigravityCpuOptStatus(): Promise<void> {
 
 async function handleApplyCpuOpt(): Promise<void> {
   if (agApplyCpuOptBtn) agApplyCpuOptBtn.disabled = true;
-  if (agHeaderCpuOptBtn) agHeaderCpuOptBtn.disabled = true;
-  toast('Application des optimisations CPU…', 'info', 2000);
+  toast('Applying CPU optimizations…', 'info', 2000);
   try {
     const res = await window.ag.antigravityCpuOptApply?.();
-    if (!res?.ok) throw new Error(res?.error ?? 'Échec');
-    toast('Optimisations CPU appliquées avec succès !', 'ok', 3000);
+    if (!res?.ok) throw new Error(res?.error ?? 'Failed');
+    toast('CPU optimizations applied successfully!', 'ok', 3000);
     await loadAntigravityCpuOptStatus();
   } catch (e) {
-    toast(`Erreur optimisation CPU: ${(e as Error).message}`, 'err', 4000);
+    toast(`CPU optimization error: ${(e as Error).message}`, 'err', 4000);
   } finally {
     if (agApplyCpuOptBtn) agApplyCpuOptBtn.disabled = false;
-    if (agHeaderCpuOptBtn) agHeaderCpuOptBtn.disabled = false;
   }
 }
 
 agApplyCpuOptBtn?.addEventListener('click', () => void handleApplyCpuOpt());
-agHeaderCpuOptBtn?.addEventListener('click', () => void handleApplyCpuOpt());
 
 agRevertCpuOptBtn?.addEventListener('click', async () => {
   if (agRevertCpuOptBtn) agRevertCpuOptBtn.disabled = true;
-  toast('Restauration des réglages sauvegardés…', 'info', 2000);
+  toast('Restoring backed up settings…', 'info', 2000);
   try {
     const res = await window.ag.antigravityCpuOptRevert?.();
-    if (!res?.ok) throw new Error(res?.error ?? 'Échec restauration');
-    toast('Sauvegarde restaurée avec succès', 'ok', 3000);
+    if (!res?.ok) throw new Error(res?.error ?? 'Restore failed');
+    toast('Settings restored successfully', 'ok', 3000);
     await loadAntigravityCpuOptStatus();
   } catch (e) {
-    toast(`Erreur restauration: ${(e as Error).message}`, 'err', 4000);
+    toast(`Restore error: ${(e as Error).message}`, 'err', 4000);
   } finally {
     if (agRevertCpuOptBtn) agRevertCpuOptBtn.disabled = false;
   }
@@ -7805,7 +7860,6 @@ agRevertCpuOptBtn?.addEventListener('click', async () => {
 // Antigravity Authentication & Eligibility (403 Fix) Controls
 // ─────────────────────────────────────────────────────────────────────────────
 
-const agHeaderAuthBtn = $('#agHeaderAuthBtn') as HTMLButtonElement | null;
 const agAuthCheckBtn = $('#agAuthCheckBtn') as HTMLButtonElement | null;
 const agAuthAgeCheckBtn = $('#agAuthAgeCheckBtn') as HTMLButtonElement | null;
 const agAuthPurgeBtn = $('#agAuthPurgeBtn') as HTMLButtonElement | null;
@@ -7819,8 +7873,8 @@ async function loadAuthStatus(): Promise<void> {
   try {
     const res = await window.ag.run(['auth', 'status', '--json']);
     if (!res?.stdout) {
-      if (badge) { badge.textContent = 'Inconnu'; badge.className = 'badge'; }
-      if (statusEl) statusEl.textContent = res?.stderr || 'Statut inconnu';
+      if (badge) { badge.textContent = 'Unknown'; badge.className = 'badge'; }
+      if (statusEl) statusEl.textContent = res?.stderr || 'Unknown status';
       return;
     }
 
@@ -7835,13 +7889,13 @@ async function loadAuthStatus(): Promise<void> {
 
     if (badge) {
       if (hasError) {
-        badge.textContent = '403 / Non Éligible';
+        badge.textContent = '403 / Ineligible';
         badge.className = 'badge badge-err';
       } else if (hasCreds) {
-        badge.textContent = 'Connecté (Trousseau OK)';
+        badge.textContent = 'Connected (Keychain OK)';
         badge.className = 'badge badge-ok';
       } else {
-        badge.textContent = 'Aucun jeton';
+        badge.textContent = 'No tokens';
         badge.className = 'badge';
       }
     }
@@ -7850,37 +7904,27 @@ async function loadAuthStatus(): Promise<void> {
       if (hasCreds) {
         credsEl.textContent = data.credentialsFound!.join(', ');
       } else {
-        credsEl.textContent = 'Aucun identifiant Antigravity stocké dans le trousseau OS';
+        credsEl.textContent = 'No Antigravity credentials stored in OS keychain';
       }
     }
 
     if (statusEl) {
       if (hasError) {
-        statusEl.innerHTML = `<span style="color:#f87171;">⚠️ Erreur 403 / Éligibilité détectée : ${escapeHtml(data.lastErrorLine || 'Validation requise')}</span>`;
+        statusEl.innerHTML = `<span style="color:#f87171;">⚠️ 403 / Eligibility error detected: ${escapeHtml(data.lastErrorLine || 'Validation required')}</span>`;
       } else {
-        statusEl.innerHTML = `<span style="color:#34d399;">✓ Aucun blocage 403 détecté dans les logs récents</span>`;
+        statusEl.innerHTML = `<span style="color:#34d399;">✓ No 403 block detected in recent logs</span>`;
       }
     }
   } catch (err) {
-    if (badge) { badge.textContent = 'Erreur'; badge.className = 'badge badge-err'; }
+    if (badge) { badge.textContent = 'Error'; badge.className = 'badge badge-err'; }
     if (statusEl) statusEl.textContent = (err as Error).message;
   }
 }
 
-agHeaderAuthBtn?.addEventListener('click', () => {
-  const panel = $('#agAuthPanel');
-  if (panel) {
-    panel.scrollIntoView({ behavior: 'smooth' });
-    toast('Accès au panneau Authentification & Éligibilité 403', 'info', 2000);
-  } else {
-    void showAntigravityVerificationResolutionModal();
-  }
-});
-
 agAuthCheckBtn?.addEventListener('click', async () => {
-  toast('Actualisation du statut auth…', 'info', 1500);
+  toast('Refreshing auth status…', 'info', 1500);
   await loadAuthStatus();
-  toast('Statut d\'authentification actualisé', 'ok', 2000);
+  toast('Authentication status refreshed', 'ok', 2000);
 });
 
 agAuthAgeCheckBtn?.addEventListener('click', async () => {
@@ -7890,42 +7934,47 @@ agAuthAgeCheckBtn?.addEventListener('click', async () => {
   } else {
     window.open(url, '_blank');
   }
-  toast('Page de vérification d\'âge Google ouverte dans le navigateur', 'ok', 3000);
+  toast('Google age verification page opened in browser', 'ok', 3000);
 });
 
 agAuthPurgeBtn?.addEventListener('click', async () => {
+  const isRunning = agRunningValue?.textContent === 'Running';
+  const warningText = isRunning
+    ? '⚠️ Antigravity is currently running. Purging credentials while the IDE is active may cause disconnection. It is recommended to close Antigravity first.\n\nContinue with purge?'
+    : 'Remove Antigravity credentials from the Windows / OS keychain?\n(Custom models and proxy settings will not be affected).';
+
   const confirmed = await modals.confirm(
-    'Purger le Trousseau OS',
-    'Voulez-vous supprimer les identifiants Antigravity du trousseau de clés Windows / OS ?\n(Vos modèles et proxies personnalisés ne seront pas affectés).',
-    { confirmLabel: 'Purger', danger: true }
+    'Clear OS Keychain',
+    warningText,
+    { confirmLabel: isRunning ? 'Clear Anyway' : 'Clear Keychain', danger: true }
   );
   if (!confirmed) return;
 
-  toast('Purge des credentials en cours…', 'info', 2000);
+  toast('Purging credentials from keychain…', 'info', 2000);
   try {
     await window.ag.run(['auth', 'purge', '--yes', '--json']);
-    toast('Trousseau OS purgé avec succès', 'ok', 3000);
+    toast('OS keychain cleared successfully', 'ok', 3000);
     await loadAuthStatus();
   } catch (e) {
-    toast(`Échec de la purge: ${(e as Error).message}`, 'err', 4000);
+    toast(`Keychain purge failed: ${(e as Error).message}`, 'err', 4000);
   }
 });
 
 agAuthFixBtn?.addEventListener('click', async () => {
   const confirmed = await modals.confirm(
-    'Réparer l\'Authentification (Auth Fix)',
-    'Cette action va :\n1. Fermer les processus Antigravity et agy en cours\n2. Purger les anciens jetons stale du trousseau OS\n3. Ouvrir la page officielle de vérification d\'âge Google\n\nContinuer ?',
-    { confirmLabel: 'Exécuter la Réparation' }
+    'Run Auth Repair (403 Fix)',
+    'This action will:\n1. Terminate running Antigravity and language_server processes\n2. Purge stale tokens from the OS keychain\n3. Open the official Google account age verification page\n\nContinue?',
+    { confirmLabel: 'Run Auth Repair' }
   );
   if (!confirmed) return;
 
-  toast('Exécution de la réparation auth en cours…', 'info', 3000);
+  toast('Executing auth repair…', 'info', 3000);
   try {
     await window.ag.run(['auth', 'fix', '--yes', '--json']);
-    toast('Réparation terminée ! Complétez la vérification selfie dans le navigateur.', 'ok', 5000);
+    toast('Auth repair completed! Complete verification in browser if prompted.', 'ok', 5000);
     await loadAuthStatus();
   } catch (e) {
-    toast(`Erreur lors de la réparation: ${(e as Error).message}`, 'err', 4000);
+    toast(`Auth repair error: ${(e as Error).message}`, 'err', 4000);
   }
 });
 
@@ -7956,19 +8005,20 @@ async function loadSettings(): Promise<void> {
     ]);
     const theme = (cfg.ui as Record<string, string> | undefined)?.theme ?? 'dark';
     themeToggle.textContent = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+    const accent = (cfg.ui as Record<string, string> | undefined)?.accent || '#22d3ee';
+    applyAccentColor(accent);
     settingsConfigPath.textContent = pathResult.stdout.trim();
     settingsConfigBody.textContent = JSON.stringify(JSON.parse(listResult.stdout), null, 2);
     setStatus('Ready');
+    await loadSettingsExtras(cfg);
   } catch (e) {
     setStatus('Error', 'err');
     toast(`Settings error: ${(e as Error).message}`, 'err');
+    await loadSettingsExtras();
   } finally {
     settingsConfigSkeleton.style.display = 'none';
     settingsConfigBody.style.display = '';
   }
-  // Notify toggle + proxy-error history are independent from the legacy
-  // config block; load them in parallel and swallow errors (best-effort).
-  await loadSettingsExtras();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8056,7 +8106,20 @@ async function loadProxyErrorHistory(): Promise<void> {
   }
 }
 
-async function loadSettingsExtras(): Promise<void> {
+function applyAccentColor(hex: string): void {
+  document.documentElement.style.setProperty('--accent', hex);
+  document.documentElement.style.setProperty('--accent-blue', hex);
+  document.documentElement.style.setProperty('--accent-blue-bright', hex);
+  const chips = document.querySelectorAll<HTMLButtonElement>('.accent-chip');
+  chips.forEach((c) => {
+    const isSelected = c.dataset.color?.toLowerCase() === hex.toLowerCase();
+    c.style.transform = isSelected ? 'scale(1.2)' : 'scale(1)';
+    c.style.borderColor = isSelected ? 'var(--text-0, #ffffff)' : 'transparent';
+    c.style.boxShadow = isSelected ? `0 0 8px ${hex}` : 'none';
+  });
+}
+
+async function loadSettingsExtras(existingCfg?: any): Promise<void> {
   if (notifyToggle) {
     try {
       const cfg = await window.ag.config();
@@ -8065,22 +8128,34 @@ async function loadSettingsExtras(): Promise<void> {
     } catch {
       notifyToggle.checked = false;
     }
-    notifyToggle.addEventListener('change', async () => {
-      const enabled = notifyToggle.checked;
-      const ok = await window.ag.setNotifyEnabled(enabled);
-      if (ok) toast(enabled ? 'Notifications re-enabled' : 'Notifications muted', 'ok', 1800);
-      else { toast('Failed to save preference', 'err', 1800); notifyToggle.checked = !enabled; }
-    });
+    if (!notifyToggle.dataset.bound) {
+      notifyToggle.dataset.bound = 'true';
+      notifyToggle.addEventListener('change', async () => {
+        const enabled = notifyToggle.checked;
+        invalidateCache('config');
+        const ok = await window.ag.setNotifyEnabled(enabled);
+        if (ok) toast(enabled ? 'Notifications re-enabled' : 'Notifications muted', 'ok', 1800);
+        else { toast('Failed to save preference', 'err', 1800); notifyToggle.checked = !enabled; }
+      });
+    }
   }
 
   // Chat UI & Suggestions (Antigravity Patch)
   const retryBtnToggle = $('#retryBtnToggle') as HTMLInputElement | null;
   const suggestionPillsToggle = $('#suggestionPillsToggle') as HTMLInputElement | null;
+  const suggestionsEditorContainer = $('#suggestionsEditorContainer') as HTMLDivElement | null;
   const suggestionsList = $('#suggestionsList') as HTMLDivElement | null;
   const resetSuggestionsBtn = $('#resetSuggestionsBtn') as HTMLButtonElement | null;
   const addSuggestionBtn = $('#addSuggestionBtn') as HTMLButtonElement | null;
   const newSuggestionLabel = $('#newSuggestionLabel') as HTMLInputElement | null;
   const newSuggestionText = $('#newSuggestionText') as HTMLInputElement | null;
+
+  const syncSuggestionsEditorVisibility = (enabled: boolean) => {
+    if (!suggestionsEditorContainer) return;
+    suggestionsEditorContainer.style.opacity = enabled ? '1' : '0.45';
+    suggestionsEditorContainer.style.pointerEvents = enabled ? 'auto' : 'none';
+    suggestionsEditorContainer.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+  };
 
   const DEFAULT_SUGGESTION_ITEMS: Array<{ label: string; text: string }> = [
     { label: 'Continue', text: 'Continue' },
@@ -8135,12 +8210,30 @@ async function loadSettingsExtras(): Promise<void> {
     });
   };
 
+  const handleAddSuggestion = async () => {
+    const label = (newSuggestionLabel?.value || '').trim();
+    const text = (newSuggestionText?.value || '').trim();
+    if (!label || !text) {
+      toast('Please enter both label and prompt text', 'warn', 2000);
+      return;
+    }
+    currentChatSuggestions.push({ label, text });
+    if (newSuggestionLabel) newSuggestionLabel.value = '';
+    if (newSuggestionText) newSuggestionText.value = '';
+    renderSuggestionsList();
+    invalidateCache('config');
+    await window.ag.setChatEnhancements({ suggestions: currentChatSuggestions });
+    toast(`Added suggestion "${label}"`, 'ok', 1800);
+  };
+
   if (retryBtnToggle || suggestionPillsToggle) {
     try {
       const cfg = await window.ag.config();
       const ui = (cfg.ui as Record<string, unknown> | undefined) ?? {};
       if (retryBtnToggle) retryBtnToggle.checked = ui.retryButton !== false;
-      if (suggestionPillsToggle) suggestionPillsToggle.checked = ui.suggestionPills !== false;
+      const pillsActive = ui.suggestionPills !== false;
+      if (suggestionPillsToggle) suggestionPillsToggle.checked = pillsActive;
+      syncSuggestionsEditorVisibility(pillsActive);
       if (Array.isArray(ui.suggestions) && ui.suggestions.length > 0) {
         currentChatSuggestions = (ui.suggestions as Array<{ label: string; text: string }>).map((s) => ({
           label: String(s.label || ''),
@@ -8153,6 +8246,7 @@ async function loadSettingsExtras(): Promise<void> {
     } catch {
       if (retryBtnToggle) retryBtnToggle.checked = true;
       if (suggestionPillsToggle) suggestionPillsToggle.checked = true;
+      syncSuggestionsEditorVisibility(true);
       currentChatSuggestions = [...DEFAULT_SUGGESTION_ITEMS];
       renderSuggestionsList();
     }
@@ -8172,6 +8266,7 @@ async function loadSettingsExtras(): Promise<void> {
       suggestionPillsToggle.dataset.bound = 'true';
       suggestionPillsToggle.addEventListener('change', async () => {
         const enabled = suggestionPillsToggle.checked;
+        syncSuggestionsEditorVisibility(enabled);
         invalidateCache('config');
         const ok = await window.ag.setChatEnhancements({ suggestionPills: enabled });
         if (ok) toast(enabled ? 'Suggestion pills bar enabled' : 'Suggestion pills bar disabled', 'ok', 1800);
@@ -8192,22 +8287,50 @@ async function loadSettingsExtras(): Promise<void> {
 
     if (addSuggestionBtn && !addSuggestionBtn.dataset.bound) {
       addSuggestionBtn.dataset.bound = 'true';
-      addSuggestionBtn.addEventListener('click', async () => {
-        const label = (newSuggestionLabel?.value || '').trim();
-        const text = (newSuggestionText?.value || '').trim();
-        if (!label || !text) {
-          toast('Please enter both label and prompt text', 'warn', 2000);
-          return;
-        }
-        currentChatSuggestions.push({ label, text });
-        if (newSuggestionLabel) newSuggestionLabel.value = '';
-        if (newSuggestionText) newSuggestionText.value = '';
-        renderSuggestionsList();
-        invalidateCache('config');
-        await window.ag.setChatEnhancements({ suggestions: currentChatSuggestions });
-        toast(`Added suggestion "${label}"`, 'ok', 1800);
+      addSuggestionBtn.addEventListener('click', () => {
+        void handleAddSuggestion();
       });
     }
+
+    // Keyboard support: Enter key in either input submits the new suggestion
+    const handleKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void handleAddSuggestion();
+      }
+    };
+    if (newSuggestionLabel && !newSuggestionLabel.dataset.bound) {
+      newSuggestionLabel.dataset.bound = 'true';
+      newSuggestionLabel.addEventListener('keydown', handleKeydown);
+    }
+    if (newSuggestionText && !newSuggestionText.dataset.bound) {
+      newSuggestionText.dataset.bound = 'true';
+      newSuggestionText.addEventListener('keydown', handleKeydown);
+    }
+  }
+
+  // Copy Config JSON button
+  const copyConfigJsonBtn = $('#copyConfigJsonBtn') as HTMLButtonElement | null;
+  const copyConfigJsonBtnText = $('#copyConfigJsonBtnText') as HTMLSpanElement | null;
+  if (copyConfigJsonBtn && !copyConfigJsonBtn.dataset.bound) {
+    copyConfigJsonBtn.dataset.bound = 'true';
+    copyConfigJsonBtn.addEventListener('click', async () => {
+      const textToCopy = settingsConfigBody?.textContent || '';
+      if (!textToCopy || textToCopy === 'Loading config file…') {
+        toast('No configuration available to copy', 'warn', 1800);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        if (copyConfigJsonBtnText) copyConfigJsonBtnText.textContent = 'Copied!';
+        toast('Configuration copied to clipboard', 'ok', 1800);
+        setTimeout(() => {
+          if (copyConfigJsonBtnText) copyConfigJsonBtnText.textContent = 'Copy JSON';
+        }, 1800);
+      } catch {
+        toast('Failed to copy to clipboard', 'err', 1800);
+      }
+    });
   }
 
   // Auto-Update Settings
@@ -8274,6 +8397,153 @@ async function loadSettingsExtras(): Promise<void> {
     }
   }
 
+  // Accent Color Picker
+  const accentPicker = $('#accentColorPicker') as HTMLDivElement | null;
+  if (accentPicker && !accentPicker.dataset.bound) {
+    accentPicker.dataset.bound = 'true';
+    accentPicker.addEventListener('click', async (e) => {
+      const target = (e.target as HTMLElement).closest('.accent-chip') as HTMLButtonElement | null;
+      if (!target || !target.dataset.color) return;
+      const hex = target.dataset.color;
+      applyAccentColor(hex);
+      invalidateCache('config');
+      await window.ag.run(['config', 'set', 'ui.accent', hex]);
+      toast('Accent color updated', 'ok', 1500);
+    });
+  }
+
+  // Database & Storage Maintenance
+  const settingsPruneDbBtn = $('#settingsPruneDbBtn') as HTMLButtonElement | null;
+  if (settingsPruneDbBtn && !settingsPruneDbBtn.dataset.bound) {
+    settingsPruneDbBtn.dataset.bound = 'true';
+    settingsPruneDbBtn.addEventListener('click', () => void handlePruneAction());
+  }
+
+  const settingsRebuildSidebarBtn = $('#settingsRebuildSidebarBtn') as HTMLButtonElement | null;
+  if (settingsRebuildSidebarBtn && !settingsRebuildSidebarBtn.dataset.bound) {
+    settingsRebuildSidebarBtn.dataset.bound = 'true';
+    settingsRebuildSidebarBtn.addEventListener('click', () => void handleRebuildSidebarAction());
+  }
+
+  const settingsPurgeQuotaBtn = $('#settingsPurgeQuotaBtn') as HTMLButtonElement | null;
+  if (settingsPurgeQuotaBtn && !settingsPurgeQuotaBtn.dataset.bound) {
+    settingsPurgeQuotaBtn.dataset.bound = 'true';
+    settingsPurgeQuotaBtn.addEventListener('click', async () => {
+      setStatus('Purging quota cache…', 'busy');
+      try {
+        const purgeRes = await window.ag.providers?.purgeQuotaCache?.();
+        const recRes = await window.ag.providers?.reconcileCooldowns?.();
+        const burstRes = await window.ag.providers?.liftBurstCooldowns?.();
+        const total = (purgeRes?.cleared || 0) + (recRes?.cleared || 0) + (burstRes?.cleared || 0);
+        toast(`Quota cache purged! ${total} cooldown entries cleared.`, 'ok', 3000);
+        setStatus('Ready');
+      } catch (err) {
+        toast(`Purge failed: ${(err as Error).message}`, 'err');
+        setStatus('Error', 'err');
+      }
+    });
+  }
+
+  // Network & Proxy Options
+  const mitmPortInput = $('#settingsMitmPortInput') as HTMLInputElement | null;
+  const mitmPortSaveBtn = $('#settingsMitmPortSaveBtn') as HTMLButtonElement | null;
+  const doctorIntervalSelect = $('#settingsDoctorIntervalSelect') as HTMLSelectElement | null;
+  const openTrafficBtn = $('#settingsOpenTrafficBtn') as HTMLButtonElement | null;
+
+  const cfgData = existingCfg || await (async () => {
+    try { return await window.ag.config(); } catch { return {}; }
+  })();
+
+  if (mitmPortInput) {
+    mitmPortInput.value = String(cfgData.mitmPort ?? 51074);
+  }
+  if (mitmPortSaveBtn && !mitmPortSaveBtn.dataset.bound) {
+    mitmPortSaveBtn.dataset.bound = 'true';
+    mitmPortSaveBtn.addEventListener('click', async () => {
+      const val = parseInt(mitmPortInput?.value || '', 10);
+      if (isNaN(val) || val < 1024 || val > 65535) {
+        toast('Port must be a valid number between 1024 and 65535', 'warn', 2500);
+        return;
+      }
+      try {
+        await window.ag.run(['config', 'set', 'mitmPort', String(val)]);
+        invalidateCache('config');
+        toast(`MITM port saved: ${val} (restart proxy to apply)`, 'ok', 3000);
+      } catch (err) {
+        toast(`Failed to save port: ${(err as Error).message}`, 'err');
+      }
+    });
+  }
+
+  if (doctorIntervalSelect) {
+    doctorIntervalSelect.value = String(cfgData.doctorInterval ?? 5000);
+    if (!doctorIntervalSelect.dataset.bound) {
+      doctorIntervalSelect.dataset.bound = 'true';
+      doctorIntervalSelect.addEventListener('change', async () => {
+        const val = doctorIntervalSelect.value;
+        try {
+          await window.ag.run(['config', 'set', 'doctorInterval', val]);
+          invalidateCache('config');
+          toast(`Diagnostic interval set to ${val}ms`, 'ok', 1800);
+        } catch (err) {
+          toast(`Failed to save interval: ${(err as Error).message}`, 'err');
+        }
+      });
+    }
+  }
+
+  if (openTrafficBtn && !openTrafficBtn.dataset.bound) {
+    openTrafficBtn.dataset.bound = 'true';
+    openTrafficBtn.addEventListener('click', () => {
+      navigate('traffic');
+    });
+  }
+
+  // Reveal Config File in Explorer
+  const revealConfigFileBtn = $('#revealConfigFileBtn') as HTMLButtonElement | null;
+  if (revealConfigFileBtn && !revealConfigFileBtn.dataset.bound) {
+    revealConfigFileBtn.dataset.bound = 'true';
+    revealConfigFileBtn.addEventListener('click', async () => {
+      const p = settingsConfigPath?.textContent?.trim() || '';
+      if (!p || p === '—') {
+        toast('No configuration file path detected', 'warn', 1800);
+        return;
+      }
+      try {
+        await window.ag.reveal(p);
+        toast('Opened config location in Explorer', 'ok', 1800);
+      } catch (err) {
+        toast(`Could not open file: ${(err as Error).message}`, 'err');
+      }
+    });
+  }
+
+  // Reset All Settings to Defaults
+  const resetAllSettingsBtn = $('#resetAllSettingsBtn') as HTMLButtonElement | null;
+  if (resetAllSettingsBtn && !resetAllSettingsBtn.dataset.bound) {
+    resetAllSettingsBtn.dataset.bound = 'true';
+    resetAllSettingsBtn.addEventListener('click', async () => {
+      const ok = await confirmModal(
+        'Reset Settings',
+        'Are you sure you want to reset all persistent configuration settings to defaults? This action cannot be undone.',
+        { confirmLabel: 'Reset Defaults', danger: true }
+      );
+      if (!ok) return;
+      setStatus('Resetting configuration...', 'busy');
+      try {
+        const r = await window.ag.run(['config', 'reset']);
+        if (r.code !== 0) throw new Error(r.stderr || r.stdout || 'Reset failed');
+        invalidateCache('config');
+        toast('Settings reset to defaults', 'ok');
+        void loadSettings();
+      } catch (err) {
+        toast(`Reset failed: ${(err as Error).message}`, 'err');
+      } finally {
+        setStatus('Ready');
+      }
+    });
+  }
+
   await loadProxyErrorHistory();
 }
 
@@ -8301,6 +8571,8 @@ async function applySavedTheme(): Promise<void> {
     const theme = (cfg.ui as Record<string, string> | undefined)?.theme ?? 'dark';
     document.documentElement.dataset.theme = theme;
     updateStatusBarTheme(theme);
+    const accent = (cfg.ui as Record<string, string> | undefined)?.accent;
+    if (accent) applyAccentColor(accent);
   } catch {
     document.documentElement.dataset.theme = 'dark';
   }

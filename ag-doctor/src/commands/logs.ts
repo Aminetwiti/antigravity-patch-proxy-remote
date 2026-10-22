@@ -240,6 +240,9 @@ export function simplifyLogLine(raw: string): string | null {
     /runner\.go/i.test(msg) ||
     /cascade_manager\.go/i.test(msg) ||
     /errorreport\.go/i.test(msg) ||
+    /poll\.go/i.test(msg) ||
+    /rpcs_marketplace\.go/i.test(msg) ||
+    /declarative_config_loader\.go/i.test(msg) ||
     /State refresh took/i.test(msg)
   ) {
     return null;

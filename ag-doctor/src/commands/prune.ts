@@ -76,6 +76,7 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
   const readDb = new DatabaseSync(dbPath, { readOnly: true });
   let rows: Array<{ conversation_id: string }> = [];
   try {
+    try { readDb.exec('PRAGMA busy_timeout = 10000;'); } catch (_) {}
     rows = readDb.prepare('SELECT conversation_id FROM conversation_summaries').all() as Array<{ conversation_id: string }>;
   } finally {
     readDb.close();
@@ -152,6 +153,22 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
           }
         } catch (_) {}
       }
+      // Scrub orphan multi-conversation layout & collapsed sidebar keys
+      for (const key of Object.keys(storage)) {
+        if (key.startsWith('antigravity-multi-conversation-layout-v3-') && key !== 'antigravity-multi-conversation-layout-v3-index') {
+          const id = key.replace('antigravity-multi-conversation-layout-v3-', '');
+          if (toDeleteIds.has(id)) {
+            delete storage[key];
+            storageModified = true;
+          }
+        } else if (key.startsWith('sidebarCollapsed-')) {
+          const id = key.replace('sidebarCollapsed-', '');
+          if (toDeleteIds.has(id)) {
+            delete storage[key];
+            storageModified = true;
+          }
+        }
+      }
       if (storageModified) {
         fs.writeFileSync(appStoragePath, JSON.stringify(storage, null, 2), 'utf8');
       }
@@ -162,6 +179,7 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
   const writeDb = new DatabaseSync(dbPath);
   let prunedCount = 0;
   try {
+    try { writeDb.exec('PRAGMA busy_timeout = 10000;'); } catch (_) {}
     const deleteStmt = writeDb.prepare('DELETE FROM conversation_summaries WHERE conversation_id = ?');
     writeDb.exec('BEGIN TRANSACTION;');
     for (const id of toDeleteIds) {

@@ -455,41 +455,35 @@
             <p class="subtitle">Version, status, and lifecycle controls for the installed app</p>
           </div>
           <div class="header-actions">
-            <button class="btn btn-ghost" id="agRefreshBtn" type="button">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              Refresh
-            </button>
             <button class="btn btn-primary" id="agLaunchBtn" type="button" aria-label="Launch Antigravity">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Launch
             </button>
-            <button class="btn btn-primary" id="agLaunchLogsBtn" type="button" title="Launch Antigravity and follow live logs" aria-label="Launch Antigravity and follow live logs">
+            <button class="btn btn-secondary" id="agLaunchLogsBtn" type="button" title="Launch Antigravity and follow live logs" aria-label="Launch Antigravity and follow live logs">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Launch &amp; follow logs
             </button>
-            <button class="btn btn-ghost" id="agKillBtn" type="button" aria-label="Close Antigravity">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12"/></svg>
-              Close Antigravity
-            </button>
+            <span class="action-divider" aria-hidden="true"></span>
             <button class="btn btn-ghost" id="agRestartBtn" type="button" aria-label="Restart Antigravity">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
               Restart
             </button>
-            <button class="btn btn-warning" id="agResolveVerificationBtn" type="button" title="Scanner les logs récents pour extraire la validation URL et débloquer Antigravity" aria-label="Résoudre la vérification">
+            <button class="btn btn-ghost btn-danger-hover" id="agKillBtn" type="button" aria-label="Close Antigravity" title="Terminate Antigravity and language_server processes">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12"/></svg>
+              Close Antigravity
+            </button>
+            <span class="action-divider" aria-hidden="true"></span>
+            <button class="btn btn-warning" id="agResolveVerificationBtn" type="button" title="Scan recent logs to extract challenge validation URL and unlock Antigravity" aria-label="Resolve verification">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v3"/></svg>
-              Résoudre Vérification
+              Resolve Verification
             </button>
-            <button class="btn btn-ghost" id="agHeaderAuthBtn" type="button" title="Vérifier et réparer l'éligibilité de compte Google et les erreurs 403" aria-label="Fixer Auth 403">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
-              Auth / 403 Fix
-            </button>
-            <button class="btn btn-ghost" id="agRebuildSidebarBtn" type="button" title="Reconstruire l'index de la sidebar des conversations Antigravity" aria-label="Reconstruire la sidebar">
+            <button class="btn btn-ghost" id="agRebuildSidebarBtn" type="button" title="Rebuild Antigravity conversation sidebar index" aria-label="Rebuild sidebar">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               Rebuild Sidebar
             </button>
-            <button class="btn btn-ghost" id="agHeaderCpuOptBtn" type="button" title="Optimiser CPU et réduire la charge en veille" aria-label="Optimiser CPU">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              Optimiser CPU
+            <button class="btn btn-ghost" id="agRefreshBtn" type="button" title="Refresh Antigravity status" aria-label="Refresh status">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
             </button>
           </div>
         </div>
@@ -578,38 +572,38 @@
         <div class="panel" id="agCpuOptPanel" style="margin-top:24px">
           <div class="panel-header">
             <div>
-              <h2>Performance &amp; Optimisation CPU</h2>
+              <h2>Performance &amp; CPU Optimization</h2>
               <p style="font-size:12px; color:var(--text-2); margin-top:2px;">
-                Exclusion des watchers (node_modules, caches, build) et réglages mémoire/polling LSP
+                Exclude heavy file watchers (node_modules, caches, build) and optimize LSP memory and polling
               </p>
             </div>
             <span class="badge" id="agCpuOptBadge">—</span>
           </div>
           <div class="panel-body">
             <div class="patch-row">
-              <div class="patch-row-label">Statut CPU Fix</div>
+              <div class="patch-row-label">CPU Fix Status</div>
               <div class="patch-row-value" id="agCpuOptStatus">—</div>
             </div>
             <div class="patch-row">
-              <div class="patch-row-label">Fichiers surveillés</div>
+              <div class="patch-row-label">Ignored Watchers</div>
               <div class="patch-row-value" id="agCpuOptWatchers">node_modules, .git, .venv, __pycache__, dist, build, .next, target, .cache</div>
             </div>
             <div class="patch-row">
-              <div class="patch-row-label">Serveurs LSP</div>
-              <div class="patch-row-value" id="agCpuOptLsp">TypeScript (2048 MB, useFsEvents) · Python (indexation allégée)</div>
+              <div class="patch-row-label">LSP Servers</div>
+              <div class="patch-row-value" id="agCpuOptLsp">TypeScript (2048 MB, useFsEvents) · Python (lightweight indexing)</div>
             </div>
             <div class="patch-row">
-              <div class="patch-row-label">Profils détectés</div>
+              <div class="patch-row-label">Detected Profiles</div>
               <div class="patch-row-value" id="agCpuOptProfiles">—</div>
             </div>
             <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center;">
-              <button class="btn btn-primary" id="agApplyCpuOptBtn" type="button" aria-label="Optimiser CPU">
+              <button class="btn btn-primary" id="agApplyCpuOptBtn" type="button" aria-label="Apply CPU Optimization">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                Appliquer l'optimisation CPU
+                Apply CPU Optimization
               </button>
-              <button class="btn btn-ghost" id="agRevertCpuOptBtn" type="button" style="display:none;" aria-label="Restaurer sauvegarde">
+              <button class="btn btn-ghost" id="agRevertCpuOptBtn" type="button" style="display:none;" aria-label="Restore Backup">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                Restaurer sauvegarde
+                Restore Backup
               </button>
             </div>
           </div>
@@ -618,44 +612,44 @@
         <div class="panel" id="agAuthPanel" style="margin-top:24px">
           <div class="panel-header">
             <div>
-              <h2>Authentification &amp; Éligibilité Compte (Erreurs 403)</h2>
+              <h2>Authentication &amp; Account Eligibility (403 Fixes)</h2>
               <p style="font-size:12px; color:var(--text-2); margin-top:2px;">
-                Résolution des blocages 403 VALIDATION_REQUIRED, vérification d'âge Google et purge des jetons du trousseau OS
+                Resolve 403 VALIDATION_REQUIRED blocks, Google account age verification, and purge stale OS keychain credentials
               </p>
             </div>
             <span class="badge" id="agAuthBadge">—</span>
           </div>
           <div class="panel-body">
             <div class="patch-row">
-              <div class="patch-row-label">Trousseau OS (Credentials)</div>
+              <div class="patch-row-label">OS Keychain (Credentials)</div>
               <div class="patch-row-value" id="agAuthCredentialsValue">—</div>
             </div>
             <div class="patch-row">
-              <div class="patch-row-label">Éligibilité &amp; Logs 403</div>
+              <div class="patch-row-label">Eligibility &amp; 403 Logs</div>
               <div class="patch-row-value" id="agAuthStatusValue">—</div>
             </div>
             <div style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
-              <button class="btn btn-primary" id="agAuthFixBtn" type="button" aria-label="Réparer l'Authentification">
+              <button class="btn btn-primary" id="agAuthFixBtn" type="button" aria-label="Run Auth Repair">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                Réparer l'Authentification (Auth Fix)
+                Run Auth Repair
               </button>
-              <button class="btn btn-secondary" id="agAuthAgeCheckBtn" type="button" aria-label="Vérification Âge Google">
+              <button class="btn btn-secondary" id="agAuthAgeCheckBtn" type="button" aria-label="Verify Google Account Age">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                Vérification d'Âge Google (Selfie / ID)
+                Verify Google Account Age
               </button>
-              <button class="btn btn-ghost" id="agAuthPurgeBtn" type="button" aria-label="Purger Trousseau OS">
+              <button class="btn btn-ghost" id="agAuthPurgeBtn" type="button" aria-label="Clear OS Keychain">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                Purger Trousseau OS
+                Clear OS Keychain
               </button>
-              <button class="btn btn-ghost" id="agAuthCheckBtn" type="button" aria-label="Actualiser Statut">
+              <button class="btn btn-ghost" id="agAuthCheckBtn" type="button" aria-label="Refresh Status">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                Actualiser
+                Refresh
               </button>
             </div>
           </div>
         </div>
       </div>
-
+      
       <!-- MITM Proxy view -->
       <div class="view" id="view-mitm" role="tabpanel" aria-labelledby="nav-tab-mitm">
         <div class="view-header">
@@ -1314,7 +1308,27 @@
         <div class="panel">
           <div class="panel-header"><h2>Appearance</h2></div>
           <div class="panel-body">
-            <button class="btn btn-primary" id="themeToggle" type="button" role="switch" aria-pressed="false" aria-label="Toggle light or dark theme">Switch to light theme</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Theme Mode</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Switch between dark and light appearance.</div>
+              </div>
+              <button class="btn btn-primary" id="themeToggle" type="button" role="switch" aria-pressed="false" aria-label="Toggle light or dark theme">Switch to light theme</button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:12px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Accent Color</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Signature highlight color across buttons, chips, and indicators.</div>
+              </div>
+              <div id="accentColorPicker" style="display:flex; gap:10px; align-items:center;">
+                <button type="button" class="accent-chip" data-color="#22d3ee" title="Cyan" style="width:24px; height:24px; border-radius:50%; background:#22d3ee; border:2px solid transparent; cursor:pointer; outline:none; transition:all 0.15s ease;" aria-label="Cyan accent"></button>
+                <button type="button" class="accent-chip" data-color="#38bdf8" title="Sky Blue" style="width:24px; height:24px; border-radius:50%; background:#38bdf8; border:2px solid transparent; cursor:pointer; outline:none; transition:all 0.15s ease;" aria-label="Sky Blue accent"></button>
+                <button type="button" class="accent-chip" data-color="#a78bfa" title="Violet" style="width:24px; height:24px; border-radius:50%; background:#a78bfa; border:2px solid transparent; cursor:pointer; outline:none; transition:all 0.15s ease;" aria-label="Violet accent"></button>
+                <button type="button" class="accent-chip" data-color="#34d399" title="Emerald" style="width:24px; height:24px; border-radius:50%; background:#34d399; border:2px solid transparent; cursor:pointer; outline:none; transition:all 0.15s ease;" aria-label="Emerald accent"></button>
+                <button type="button" class="accent-chip" data-color="#fbbf24" title="Amber" style="width:24px; height:24px; border-radius:50%; background:#fbbf24; border:2px solid transparent; cursor:pointer; outline:none; transition:all 0.15s ease;" aria-label="Amber accent"></button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="panel" style="margin-top:24px" id="settingsChatEnhancementsPanel">
@@ -1424,8 +1438,86 @@
             <ul class="proxy-error-history" id="proxyErrorHistoryList" data-label="proxy-error-history" aria-label="Recent proxy errors"></ul>
           </div>
         </div>
+
         <div class="panel" style="margin-top:24px">
-          <div class="panel-header"><h2>Configuration file</h2></div>
+          <div class="panel-header"><h2>Database &amp; Storage Maintenance</h2></div>
+          <div class="panel-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Prune Orphan Trajectories &amp; Reconcile DB</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Clean dead sessions in conversation_summaries.db, sync protobuf state, and scrub app_storage.json.</div>
+                <div style="font-size:11px; color:var(--text-muted, rgba(255,255,255,0.4)); margin-top:3px;">Tip: Close Antigravity IDE beforehand to prevent SQLite file-lock conflicts.</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="settingsPruneDbBtn" type="button" style="border-radius:var(--r-sm);">Prune Database</button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Rebuild Sidebar Index</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Reindex conversation summaries so all active chats show properly in Antigravity.</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="settingsRebuildSidebarBtn" type="button" style="border-radius:var(--r-sm);">Rebuild Sidebar</button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Purge Quota Cache &amp; Cooldowns</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Clear cached Google AI Studio / Gemini quota limits and burst cooldown blocks.</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="settingsPurgeQuotaBtn" type="button" style="border-radius:var(--r-sm);">Purge Cache</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header"><h2>Network &amp; Proxy Configuration</h2></div>
+          <div class="panel-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">MITM Proxy Port</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Local port where the patch proxy intercepts and injects models (default 51074).</div>
+                <div style="font-size:11px; color:var(--accent-amber, #f59e0b); margin-top:3px;">⚠️ Changing this port requires repatching Antigravity (<code>npm run repatch</code>) to update Language Server URL table.</div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input type="number" id="settingsMitmPortInput" class="input" style="width:100px; padding:4px 8px; font-size:12px; text-align:center;" min="1024" max="65535" placeholder="51074" />
+                <button class="btn btn-primary btn-sm" id="settingsMitmPortSaveBtn" type="button" style="border-radius:var(--r-sm);">Save</button>
+              </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Diagnostic Polling Interval</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Frequency of background health checks and metrics refresh.</div>
+              </div>
+              <select id="settingsDoctorIntervalSelect" class="input" style="width:140px; padding:4px 8px; font-size:12px; border-radius:var(--r-sm);">
+                <option value="3000">3 seconds (Fast)</option>
+                <option value="5000">5 seconds (Default)</option>
+                <option value="10000">10 seconds</option>
+                <option value="30000">30 seconds (Eco)</option>
+              </select>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Quick Traffic Inspector</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Inspect real-time translated HTTP payloads and token streams.</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="settingsOpenTrafficBtn" type="button" style="border-radius:var(--r-sm);">Open Traffic Inspector →</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <h2>Configuration file</h2>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button class="btn btn-ghost btn-sm" id="revealConfigFileBtn" type="button" title="Reveal configuration file in folder" style="display:flex; align-items:center; gap:6px;">
+                <span>📂</span><span>Open in Explorer</span>
+              </button>
+              <button class="btn btn-ghost btn-sm" id="copyConfigJsonBtn" type="button" title="Copy raw JSON to clipboard" style="display:flex; align-items:center; gap:6px;">
+                <span>📋</span><span id="copyConfigJsonBtnText">Copy JSON</span>
+              </button>
+            </div>
+          </div>
           <div class="panel-body">
             <div class="patch-row">
               <div class="patch-row-label">Path</div>
@@ -1442,11 +1534,18 @@
           </div>
         </div>
         <div class="panel" style="margin-top:24px">
-          <div class="panel-header"><h2>Backup & Restore</h2></div>
-          <div class="panel-body" style="display:flex; gap:12px; flex-wrap:wrap;">
-            <button class="btn btn-ghost" id="exportProvidersBtn" type="button">Export Providers (.json)</button>
-            <button class="btn btn-primary" id="importProvidersBtn" type="button">Import Providers (.json)</button>
-            <button class="btn btn-warning" id="restoreBackupBtn" type="button" title="Restore previous valid custom_models.json configuration from .bak file">Restore Backup (.bak)</button>
+          <div class="panel-header"><h2>Backup, Restore &amp; Reset</h2></div>
+          <div class="panel-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button class="btn btn-ghost" id="exportProvidersBtn" type="button">Export Providers (.json)</button>
+                <button class="btn btn-primary" id="importProvidersBtn" type="button">Import Providers (.json)</button>
+              </div>
+              <div style="display:flex; gap:10px; align-items:center; border-left:1px solid var(--border, rgba(255,255,255,0.1)); padding-left:16px; flex-wrap:wrap;">
+                <button class="btn btn-warning btn-sm" id="restoreBackupBtn" type="button" title="Restore previous valid custom_models.json configuration from .bak file">Restore from .bak</button>
+                <button class="btn btn-danger btn-sm" id="resetAllSettingsBtn" type="button" title="Reset all configuration values to defaults">Reset to Defaults</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

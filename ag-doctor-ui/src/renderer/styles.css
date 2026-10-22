@@ -550,6 +550,15 @@ body {
 }
 .subtitle { color: var(--text-2); font-size: 12.5px; margin-top: 4px; text-wrap: balance; }
 .header-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.action-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 4px;
+  display: inline-block;
+  align-self: center;
+  flex-shrink: 0;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
    Buttons
@@ -3150,7 +3159,7 @@ body {
   align-items: center;
   gap: 12px;
 }
-.btn-danger-hover:hover { color: var(--err, #ef4444); border-color: rgba(239, 68, 68, 0.4); }
+.btn-danger-hover:hover { color: var(--err, #ef4444); border-color: rgba(239, 68, 68, 0.4); background: var(--err-bg, rgba(239, 68, 68, 0.08)); }
 
 /* Auto-Sentinel Toggle Switch */
 .sentinel-toggle {

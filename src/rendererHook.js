@@ -16,6 +16,71 @@
     }
   }, true);
 
+  // Auto-bootstrap Enterprise & Google Internal capabilities and custom flags
+  try {
+    const existingOverride = window.localStorage.getItem('jetski.developer.featureEnvironmentOverride');
+    if (existingOverride && (existingOverride.includes('"host":1') || existingOverride.includes('"host": 1'))) {
+      window.localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
+    }
+    if (!window.localStorage.getItem('jetski.developer.featureEnvironmentOverride')) {
+      window.localStorage.setItem('jetski.developer.featureEnvironmentOverride', JSON.stringify({
+        enabled: true,
+        userCohort: 'google',
+        binary: 'hub',
+        os: 'windows'
+      }));
+    }
+    if (!window.localStorage.getItem('jetski.developer.customFlagOverrides')) {
+      window.localStorage.setItem('jetski.developer.customFlagOverrides', JSON.stringify({
+        'enable-developer-mode': true,
+        'enable-permissions-selector': true,
+        'enable-thought-editing': true,
+        'enable-thought-steering-from-selection': true,
+        'enable-battle-mode': true,
+        'enable-battle-contrib-variants': true,
+        'enable-battle-mode-custom-agents': true,
+        'jetski-autonomous-mode': true,
+        'labs-autonomous-mode': true,
+        'enable-agent-team': true,
+        'enable-swarm-monitor': true,
+        'enable-critique-preview': true,
+        'enable-conversation-forking': true,
+        'enable-fork-at-historical-step': true,
+        'enable-fork-in-new-worktree': true,
+        'enable-conversation-navigator': true,
+        'enable-conversation-groups': true,
+        'enable-conversation-sharing-prototype': true,
+        'enable-trajectory-debug-tools': true,
+        'enable-hub-builtin-browser': true,
+        'enable-pdf-viewer': true,
+        'enable-notebook-rendering': true,
+        'enable-audio-transcription': true,
+        'enable-voice-relay': true,
+        'google-workspace-mentions': true,
+        'enable-plugins': true,
+        'enable-plugin-bundles': true,
+        'enable-plugin-context-providers': true,
+        'enable-mcp-plugin-auth': true,
+        'enable-split-view': true,
+        'enable-input-autocomplete': true,
+        'enable-file-explorer-tab': true,
+        'enable-code-search-palette': true,
+        'enable-git-vcs-ui': true,
+        'enable-jj-vcs-ui': true,
+        'markdown-table-v2': true,
+        'scheduled-tasks-v2': true,
+        'enable-tasks': true,
+        'enable-remote-ai': true,
+        'enable-auto-permission-preset': true,
+        'enable-sidebar-unread-dot': true,
+        'enable-sidecar-pill-auto-open': true,
+        'enable-terminal-setup-script': true,
+        'enable-context-menu-system': true,
+        'configure-artifact-width': true
+      }));
+    }
+  } catch (_) {}
+
   // Intercept GetAllWorkflows & GetSlashCommands to display all 86 skills in the visual / dropdown
   (() => {
     if (window.__ag_fetch_skills_hooked) return;
@@ -24,11 +89,18 @@
 
     let cachedSkillsWorkflows = null;
     let lastSkillsFetchTime = 0;
+    let cachedMarketplaceItems = null;
+    let lastMarketplaceFetchTime = 0;
 
     window.fetch = async function(...args) {
       const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : (args[0] && args[0].href ? args[0].href : ''));
       const isAllWorkflows = typeof url === 'string' && url.includes('LanguageServerService/GetAllWorkflows');
       const isSlashCommands = typeof url === 'string' && url.includes('LanguageServerService/GetSlashCommands');
+      const isSearchMarketplaceCustomizations = typeof url === 'string' && url.includes('LanguageServerService/SearchMarketplaceCustomizations');
+      const isSearchMarketplace = typeof url === 'string' && url.includes('LanguageServerService/SearchMarketplace') && !isSearchMarketplaceCustomizations;
+      const isMarketplaceBundles = typeof url === 'string' && url.includes('LanguageServerService/GetMarketplaceBundles');
+      const isMarketplaceCustomization = typeof url === 'string' && url.includes('LanguageServerService/GetMarketplaceCustomization');
+      const isInstallCustomization = typeof url === 'string' && url.includes('LanguageServerService/InstallCustomization');
 
       // 1. Intercept GetAllWorkflows: merge official workflows (Automation, templates) with custom skills
       if (isAllWorkflows) {
@@ -107,6 +179,328 @@
             }
           }
         } catch (_) {}
+      }
+
+      // 3. Intercept SearchMarketplace: populate the Marketplace catalog with built-in plugins & skills
+      if (isSearchMarketplace) {
+        try {
+          let reqQuery = '';
+          let reqGroupId = '';
+          try {
+            let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
+            if (bText) {
+              const bObj = JSON.parse(bText);
+              if (bObj.query) reqQuery = bObj.query.trim().toLowerCase();
+              if (bObj.groupId) reqGroupId = bObj.groupId;
+            }
+          } catch (_) {}
+
+          // Use or update cached marketplace items
+          if (!cachedMarketplaceItems || (Date.now() - lastMarketplaceFetchTime > 60000)) {
+            let rawSkills = [];
+            try {
+              const skillsUrl = url.replace('SearchMarketplace', 'GetAllSkills');
+              const skillsRes = await origFetch.apply(this, [skillsUrl, Object.assign({}, args[1], { body: '{}' })]);
+              if (skillsRes.ok) {
+                const sData = await skillsRes.json();
+                rawSkills = sData.skills || [];
+              }
+            } catch (_) {}
+
+            const BUILTIN_PLUGINS = [
+              {
+                id: 'automation',
+                displayName: 'Automation & Scheduled Tasks',
+                description: 'Design and manage recurring background tasks, cron workflows, and daily automations.',
+                logo: '',
+                marketplace: 'builtin',
+                kind: { case: 'plugin', value: {} },
+                version: '2.0.0',
+                tags: ['automation', 'cron', 'system', 'tools']
+              },
+              {
+                id: 'chrome-devtools-mcp',
+                displayName: 'Chrome DevTools MCP',
+                description: 'Direct browser DOM inspection, console logs, network monitoring and live debugging.',
+                logo: '',
+                marketplace: 'builtin',
+                kind: { case: 'plugin', value: {} },
+                version: '1.2.0',
+                tags: ['devtools', 'browser', 'debugging', 'mcp']
+              },
+              {
+                id: 'generative_ui',
+                displayName: 'Generative UI & Visual Artifacts',
+                description: 'Render interactive HTML, SVG charts, data visualizations, and live reactive widgets in chat.',
+                logo: '',
+                marketplace: 'builtin',
+                kind: { case: 'plugin', value: {} },
+                version: '2.0.0',
+                tags: ['ui', 'artifacts', 'visualization', 'frontend']
+              },
+              {
+                id: 'plugin',
+                displayName: 'Plugin Management Hub',
+                description: 'Install, manage, toggle and bundle skills, rules, MCP servers and custom agents as unified plugins.',
+                logo: '',
+                marketplace: 'builtin',
+                kind: { case: 'plugin', value: {} },
+                version: '2.1.0',
+                tags: ['plugins', 'ecosystem', 'management']
+              },
+              {
+                id: 'ui-plugin-navigation',
+                displayName: 'UI Sidecar & Panel Navigation',
+                description: 'One-click shortcuts to discover and toggle side panels, status widgets and active tools.',
+                logo: '',
+                marketplace: 'builtin',
+                kind: { case: 'plugin', value: {} },
+                version: '1.5.0',
+                tags: ['ui', 'navigation', 'sidecar']
+              },
+              {
+                id: 'permissioned-github',
+                displayName: 'Permissioned GitHub Integration',
+                description: 'Secure GitHub operations with per-action branch guardrails and PR merge automation.',
+                logo: '',
+                marketplace: 'builtin',
+                kind: { case: 'plugin', value: {} },
+                version: '1.1.0',
+                tags: ['github', 'vcs', 'security']
+              }
+            ];
+
+            const formatTitle = function(name) {
+              if (!name) return '';
+              return name.replace(/^skill-/, '')
+                .split(/[-_]+/)
+                .map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); })
+                .join(' ');
+            };
+
+            const skillItems = rawSkills.map(function(s) {
+              return {
+                id: s.name,
+                displayName: formatTitle(s.name),
+                description: s.description || ('Capability: ' + s.name),
+                logo: '',
+                marketplace: 'builtin',
+                kind: { case: 'skill', value: {} },
+                version: '1.0.0',
+                tags: ['skill'].concat(s.name.split('-'))
+              };
+            });
+
+            const CORE_SKILLS = [
+              { id: 'boost', displayName: 'Boost Multi-Agent Swarm', description: 'Invoke the Boost multi-agent orchestrator for complex tasks, system design, and formal verification.', kind: { case: 'skill', value: {} } },
+              { id: 'owl', displayName: 'Owl Autonomous Multi-Agent', description: 'Invoke the Owl multi-agent orchestrator for complex tasks and system design.', kind: { case: 'skill', value: {} } },
+              { id: 'teamwork', displayName: 'Teamwork Swarm Orchestrator', description: 'Teamwork multi-agent swarm for parallel execution and adversarial code review.', kind: { case: 'skill', value: {} } },
+              { id: 'reverse-engineer-anything', displayName: 'Reverse Engineer Anything (REA)', description: 'Reverse engineer native, managed, Electron/JS, packaged, and browser targets.', kind: { case: 'skill', value: {} } },
+              { id: 'ponytail', displayName: 'Ponytail Senior Dev Suite', description: 'Forces the minimal working solution: senior dev mode, audit, and debt ledger.', kind: { case: 'skill', value: {} } },
+              { id: 'impeccable', displayName: 'Impeccable UI & Behavioral Polish', description: 'Design, shape, critique and polish frontend interfaces with 65 behavioral psychology principles.', kind: { case: 'skill', value: {} } },
+              { id: 'security-review', displayName: 'Codebase Security Scanner', description: 'AI-powered codebase security scanner tracing data flows and catching vulnerabilities.', kind: { case: 'skill', value: {} } },
+              { id: 'autoplan', displayName: 'Autoplan Review Suite', description: 'Automated strategy, design, engineering architecture and DX reviews.', kind: { case: 'skill', value: {} } },
+              { id: 'antislop', displayName: 'Anti-Slop Suite for Coding Agents', description: 'Universal filter to prevent AI slop across code comments, UI design, typography and layouts.', kind: { case: 'skill', value: {} } },
+              { id: 'investigate', displayName: 'Systematic Root Cause Investigator', description: 'Systematic debugging with root cause investigation and verification.', kind: { case: 'skill', value: {} } }
+            ];
+
+            const seen = new Set(BUILTIN_PLUGINS.map(function(p) { return p.id; }));
+            const merged = BUILTIN_PLUGINS.slice();
+            skillItems.forEach(function(s) {
+              if (!seen.has(s.id)) {
+                seen.add(s.id);
+                merged.push(s);
+              }
+            });
+            CORE_SKILLS.forEach(function(s) {
+              if (!seen.has(s.id)) {
+                seen.add(s.id);
+                merged.push(Object.assign({
+                  marketplace: 'builtin',
+                  logo: '',
+                  version: '1.0.0',
+                  tags: ['skill'].concat(s.id.split('-'))
+                }, s));
+              }
+            });
+
+            cachedMarketplaceItems = merged;
+            lastMarketplaceFetchTime = Date.now();
+          }
+
+          const GROUPS = [
+            {
+              id: 'featured',
+              displayName: '⭐ Featured Superpowers & Plugins',
+              description: 'Curated autonomous swarms, reverse engineering, and developer suites.',
+              memberIds: ['automation', 'chrome-devtools-mcp', 'boost', 'owl', 'teamwork', 'reverse-engineer-anything', 'ponytail', 'security-review', 'generative_ui'],
+              nextPageToken: ''
+            },
+            {
+              id: 'architecture',
+              displayName: '🛠️ Developer Experience & Architecture',
+              description: 'Codebase analysis, refactoring, code review swarms, and root-cause debugging.',
+              memberIds: ['investigate', 'systematic-debugging', 'autoplan', 'devex-review', 'health', 'plan', 'spec', 'writing-plans', 'executing-plans'],
+              nextPageToken: ''
+            },
+            {
+              id: 'frontend-design',
+              displayName: '🎨 UI, Design & Behavioral Polish',
+              description: 'Cognitive psychology UX audits, generative UI widgets, anti-slop filters, and design systems.',
+              memberIds: ['impeccable', 'generative_ui', 'antislop', 'design-consultation', 'design-review', 'design-html', 'design-shotgun'],
+              nextPageToken: ''
+            },
+            {
+              id: 'qa-security',
+              displayName: '🛡️ Security, QA & Automated Deployment',
+              description: 'Security vulnerability scanners, QA dogfooding, and protected ship pipelines.',
+              memberIds: ['security-review', 'qa', 'qa-only', 'test-driven-development', 'careful', 'guard', 'ship', 'land-and-deploy'],
+              nextPageToken: ''
+            }
+          ];
+
+          if (reqGroupId) {
+            const selectedGroup = GROUPS.find(function(g) { return g.id === reqGroupId; });
+            const groupMemberSet = new Set(selectedGroup ? selectedGroup.memberIds : []);
+            const groupItems = (cachedMarketplaceItems || []).filter(function(c) { return groupMemberSet.has(c.id); });
+            return new Response(JSON.stringify({
+              customizations: groupItems,
+              groups: [],
+              nextPageToken: ''
+            }), {
+              status: 200,
+              headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+            });
+          }
+
+          let outItems = cachedMarketplaceItems || [];
+          if (reqQuery) {
+            outItems = outItems.filter(function(c) {
+              return c.id.toLowerCase().includes(reqQuery) ||
+                (c.displayName && c.displayName.toLowerCase().includes(reqQuery)) ||
+                (c.description && c.description.toLowerCase().includes(reqQuery)) ||
+                (c.tags && c.tags.some(function(t) { return t.toLowerCase().includes(reqQuery); }));
+            });
+          }
+
+          const currentIdSet = new Set(outItems.map(function(c) { return c.id; }));
+          const outGroups = GROUPS.map(function(g) {
+            return Object.assign({}, g, {
+              memberIds: g.memberIds.filter(function(id) { return currentIdSet.has(id); })
+            });
+          }).filter(function(g) { return g.memberIds.length > 0; });
+
+          return new Response(JSON.stringify({
+            customizations: outItems,
+            groups: outGroups,
+            nextPageToken: ''
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+          });
+        } catch (searchErr) {
+          console.warn('[AG] SearchMarketplace error in rendererHook:', searchErr);
+        }
+      }
+
+      // 4. Intercept GetMarketplaceBundles: return curated packs for the bundles shelf
+      if (isMarketplaceBundles) {
+        return new Response(JSON.stringify({
+          bundles: [
+            {
+              id: 'bundle-senior-dev',
+              displayName: 'Senior Dev & Optimization Pack',
+              description: 'Ponytail lazy senior dev mode, root cause investigation, and security review.',
+              members: [
+                { id: 'ponytail', displayName: 'Ponytail Lazy Dev', kind: { case: 'skill', value: {} } },
+                { id: 'security-review', displayName: 'Security Review', kind: { case: 'skill', value: {} } },
+                { id: 'investigate', displayName: 'Systematic Investigation', kind: { case: 'skill', value: {} } }
+              ]
+            },
+            {
+              id: 'bundle-swarms',
+              displayName: 'Autonomous Swarm Ensemble',
+              description: 'Multi-agent orchestration, Boost swarm reasoning, and Teamwork swarm.',
+              members: [
+                { id: 'boost', displayName: 'Boost Swarm', kind: { case: 'skill', value: {} } },
+                { id: 'owl', displayName: 'Owl Orchestrator', kind: { case: 'skill', value: {} } },
+                { id: 'teamwork', displayName: 'Teamwork Swarm', kind: { case: 'skill', value: {} } }
+              ]
+            },
+            {
+              id: 'bundle-ux-polish',
+              displayName: 'UI / UX Design & Behavioral Polish',
+              description: '65 behavioral psychology principles, generative UI components, and anti-slop filters.',
+              members: [
+                { id: 'impeccable', displayName: 'Impeccable UI', kind: { case: 'skill', value: {} } },
+                { id: 'generative_ui', displayName: 'Generative UI', kind: { case: 'skill', value: {} } },
+                { id: 'antislop', displayName: 'Anti-Slop Filter', kind: { case: 'skill', value: {} } }
+              ]
+            }
+          ]
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+        });
+      }
+
+      // 5. Intercept GetMarketplaceCustomization: return full details and markdown preview
+      if (isMarketplaceCustomization) {
+        try {
+          let targetId = '';
+          try {
+            let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
+            if (bText) {
+              const bObj = JSON.parse(bText);
+              if (bObj.id) targetId = bObj.id;
+            }
+          } catch (_) {}
+
+          const item = (cachedMarketplaceItems || []).find(function(c) { return c.id === targetId; }) || {
+            id: targetId,
+            displayName: targetId,
+            description: 'Customization ' + targetId,
+            marketplace: 'builtin',
+            kind: { case: 'skill', value: {} },
+            version: '1.0.0',
+            tags: []
+          };
+
+          return new Response(JSON.stringify({
+            customization: item,
+            preview: {
+              case: item.kind && item.kind.case === 'plugin' ? 'plugin' : 'skill',
+              value: {
+                readme: '# ' + (item.displayName || item.id) + '\n\n' + (item.description || '') + '\n\n### Status\nBuilt-in / Installed capability ready for immediate use.',
+                overview: item.description || item.displayName
+              }
+            }
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+          });
+        } catch (detailErr) {
+          console.warn('[AG] GetMarketplaceCustomization error in rendererHook:', detailErr);
+        }
+      }
+
+      // 6. Intercept InstallCustomization: acknowledge installation
+      if (isInstallCustomization) {
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+        });
+      }
+
+      // 7. Intercept SearchMarketplaceCustomizations: return empty for internal Google CL extensions
+      if (isSearchMarketplaceCustomizations) {
+        return new Response(JSON.stringify({
+          extensions: [],
+          hasMore: false
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
+        });
       }
 
       return origFetch.apply(this, args);
@@ -616,64 +1010,10 @@
       }
     }
 
-    // Inline Environment Toggle Button next to Model Selector
-    const modelTrigger = document.querySelector('[data-testid="model-selector-trigger"]');
-    if (modelTrigger) {
-      const container = modelTrigger.parentElement ? modelTrigger.parentElement.parentElement : null;
-      const row = container ? container.parentElement : null;
-      if (row) {
-        let inlineBtn = document.getElementById('__ag_inline_remote_btn');
-        if (!inlineBtn) {
-          inlineBtn = document.createElement('button');
-          inlineBtn.id = '__ag_inline_remote_btn';
-          inlineBtn.type = 'button';
-          inlineBtn.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:2px 8px;margin-left:6px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;transition:all 0.15s;user-select:none;';
-          row.insertBefore(inlineBtn, container.nextSibling);
-        }
+    // Inline Environment Toggle Button next to Model Selector (disabled/hidden)
+    const oldInlineBtn = document.getElementById('__ag_inline_remote_btn');
+    if (oldInlineBtn) oldInlineBtn.remove();
 
-        const desiredMode = isRemote ? 'remote' : 'local';
-        if (inlineBtn.dataset.agMode !== desiredMode) {
-          inlineBtn.dataset.agMode = desiredMode;
-          if (isRemote) {
-            inlineBtn.style.background = 'rgba(52,211,153,0.12)';
-            inlineBtn.style.border = '1px solid rgba(52,211,153,0.35)';
-            inlineBtn.style.color = '#34d399';
-            inlineBtn.innerHTML = '<span>☁️ Remote (VPS)</span>';
-            inlineBtn.title = 'Session en mode Remote Cloud. Cliquer pour désactiver ou Shift+clic pour configurer.';
-          } else {
-            inlineBtn.style.background = 'rgba(255,255,255,0.06)';
-            inlineBtn.style.border = '1px solid rgba(255,255,255,0.12)';
-            inlineBtn.style.color = '#a3a3a3';
-            inlineBtn.innerHTML = '<span>⚡ Local</span>';
-            inlineBtn.title = 'Session locale Windows. Cliquer pour activer le mode Remote VPS.';
-          }
-        }
-
-        inlineBtn.onclick = (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          const cid = getActiveSessionId();
-          if (!isRemote) {
-            const cfg = getRemoteConfig();
-            if (e.shiftKey || e.altKey || !cfg.configured) {
-              openRemoteConfigModal();
-            } else {
-              if (cid) setSessionRemote(cid, true);
-              else window.__ag_draft_remote = true;
-              updateTriggerButton();
-            }
-          } else {
-            if (e.shiftKey || e.altKey) {
-              openRemoteConfigModal();
-            } else {
-              if (cid) setSessionRemote(cid, false);
-              else window.__ag_draft_remote = false;
-              updateTriggerButton();
-            }
-          }
-        };
-      }
-    }
   }
 
   // --- Popover Item Injection ---
@@ -741,33 +1081,10 @@
     }
   }
 
-  // --- Global Top Bar Status Button (visible on all screens including Projects & Dashboard) ---
+  // --- Global Top Bar Status Button (disabled/hidden) ---
   function injectTopBarButton() {
-    if (!document.body) return;
-    let topBtn = document.getElementById('__ag_topbar_remote_btn');
-    if (!topBtn) {
-      topBtn = document.createElement('div');
-      topBtn.id = '__ag_topbar_remote_btn';
-      topBtn.style.cssText = 'position:fixed;top:8px;right:140px;z-index:9999;display:flex;align-items:center;gap:6px;padding:3px 10px;border-radius:12px;background:rgba(20,20,20,0.85);backdrop-filter:blur(6px);font-size:11px;font-weight:500;cursor:pointer;user-select:none;transition:all 0.2s;box-shadow:0 2px 8px rgba(0,0,0,0.4);';
-      topBtn.onclick = () => openRemoteConfigModal();
-      document.body.appendChild(topBtn);
-    }
-    const isRemote = isCurrentSessionRemote();
-    const desiredMode = isRemote ? 'remote' : 'local';
-    if (topBtn.dataset.agMode === desiredMode) return;
-    topBtn.dataset.agMode = desiredMode;
-
-    if (isRemote) {
-      topBtn.style.border = '1px solid rgba(52,211,153,0.4)';
-      topBtn.style.color = '#34d399';
-      topBtn.innerHTML = '<span>☁️ Remote (VPS)</span>';
-      topBtn.title = 'Antigravity 2.0 Mode Remote (VPS) Actif. Cliquer pour configurer.';
-    } else {
-      topBtn.style.border = '1px solid rgba(255,255,255,0.15)';
-      topBtn.style.color = '#a3a3a3';
-      topBtn.innerHTML = '<span>⚡ Local (PC)</span>';
-      topBtn.title = 'Antigravity 2.0 Mode Local. Cliquer pour configurer ou activer Remote.';
-    }
+    const oldTopBtn = document.getElementById('__ag_topbar_remote_btn');
+    if (oldTopBtn) oldTopBtn.remove();
   }
 
   // --- Permanent Inline Retry Button ---
@@ -1033,7 +1350,25 @@
     if (!bar) {
       bar = document.createElement('div');
       bar.id = '__ag_suggestion_pills_bar';
-      bar.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 2px 8px 2px;width:100%;user-select:none;z-index:10;';
+    }
+
+    if (!document.getElementById('__ag_pills_style')) {
+      const st = document.createElement('style');
+      st.id = '__ag_pills_style';
+      st.textContent = '#__ag_suggestion_pills_bar::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }';
+      (document.head || document.documentElement).appendChild(st);
+    }
+
+    bar.style.cssText = 'display:flex;align-items:center;flex-wrap:nowrap;gap:6px;padding:4px 2px 6px 2px;width:100%;max-width:100%;box-sizing:border-box;user-select:none;z-index:5;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-behavior:smooth;';
+
+    if (!bar.__ag_wheel_attached) {
+      bar.__ag_wheel_attached = true;
+      bar.addEventListener('wheel', (e) => {
+        if (e.deltaY !== 0) {
+          e.preventDefault();
+          bar.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
     }
 
     const currentSuggestions = Array.isArray(chatUiConfig.suggestions) && chatUiConfig.suggestions.length > 0
@@ -1050,7 +1385,7 @@
         pill.className = '__ag_suggestion_pill';
         pill.setAttribute('data-ag-suggestion', sug.text);
         pill.title = `Insérer: "${sug.text}"`;
-        pill.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:12px;font-size:11.5px;font-weight:500;font-family:system-ui,-apple-system,sans-serif;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);cursor:pointer;transition:all 0.15s ease-in-out;backdrop-filter:blur(4px);white-space:nowrap;';
+        pill.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:11.5px;font-weight:500;font-family:system-ui,-apple-system,sans-serif;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);cursor:pointer;transition:all 0.15s ease-in-out;backdrop-filter:blur(4px);white-space:nowrap;flex-shrink:0;';
 
         pill.innerHTML = `
           <span style="opacity:0.65;font-size:10px;">✦</span>
