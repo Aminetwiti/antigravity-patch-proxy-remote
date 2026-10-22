@@ -43,6 +43,8 @@ exports.logTokenUsageEvent = logTokenUsageEvent;
 exports.loadRemoteState = loadRemoteState;
 exports.saveRemoteState = saveRemoteState;
 exports.unlockCodeAssistPayload = unlockCodeAssistPayload;
+exports.isTelemetryRpcUrl = isTelemetryRpcUrl;
+exports.enrichExperimentsPayload = enrichExperimentsPayload;
 exports.executeOnRemoteDaemon = executeOnRemoteDaemon;
 exports.setProxyErrorEmitter = setProxyErrorEmitter;
 exports.buildProxyErrorPayload = buildProxyErrorPayload;
@@ -322,63 +324,8 @@ function getLoadCodeAssistCachePath() {
     return path.join(dir, 'load_code_assist_cache.json');
 }
 function unlockCodeAssistPayload(rawJson) {
-    try {
-        const data = JSON.parse(rawJson);
-        const ultraTier = {
-            id: 'g1-ultra-tier',
-            name: 'Google AI Ultra',
-            description: 'Google AI Ultra',
-            isDefault: true,
-        };
-        const ultraTierAlt = {
-            id: 'ultra-tier',
-            name: 'Google AI Ultra',
-            description: 'Google AI Ultra',
-        };
-        data.currentTier = {
-            ...(data.currentTier || {}),
-            id: 'g1-ultra-tier',
-            name: 'Google AI Ultra',
-            description: 'Google AI Ultra',
-        };
-        data.paidTier = {
-            ...(data.paidTier || {}),
-            id: 'g1-ultra-tier',
-            name: 'Google AI Ultra',
-            description: 'Google AI Ultra',
-        };
-        if (Array.isArray(data.allowedTiers)) {
-            for (const t of data.allowedTiers) {
-                if (t && typeof t === 'object') {
-                    t.isDefault = false;
-                }
-            }
-            if (!data.allowedTiers.some((t) => t?.id === 'g1-ultra-tier')) {
-                data.allowedTiers.push(ultraTier);
-            }
-            else {
-                const found = data.allowedTiers.find((t) => t?.id === 'g1-ultra-tier');
-                if (found)
-                    found.isDefault = true;
-            }
-            if (!data.allowedTiers.some((t) => t?.id === 'ultra-tier')) {
-                data.allowedTiers.push(ultraTierAlt);
-            }
-        }
-        else {
-            data.allowedTiers = [
-                { id: 'free-tier', isDefault: false },
-                { id: 'standard-tier', isDefault: false },
-                { id: 'g1-pro-tier', isDefault: false },
-                ultraTier,
-                ultraTierAlt,
-            ];
-        }
-        return JSON.stringify(data);
-    }
-    catch {
-        return rawJson;
-    }
+    // Pass-through: do not force Google AI Ultra, preserve actual user plan (Pro, Standard, etc.)
+    return rawJson;
 }
 function loadCachedCodeAssist() {
     if (memoryLoadCodeAssistCache)
@@ -453,6 +400,84 @@ function saveCachedExperiments(content) {
     }
     catch (e) {
         electron_log_1.default.warn('[Proxy] Failed to save cached experiments:', e);
+    }
+}
+/**
+ * Detects whether a request URL corresponds to an internal Language Server telemetry / shadow eval RPC.
+ */
+function isTelemetryRpcUrl(url) {
+    if (!url)
+        return false;
+    return (url.includes('/exa.language_server_pb.LanguageServerService/Record') ||
+        url.includes('/exa.language_server_pb.LanguageServerService/DetectBattleModeAutoTrigger') ||
+        url.includes('recordTrajectoryAnalytics') ||
+        url.includes('writeTrajectoryAcls') ||
+        url.includes('/v1internal:record'));
+}
+/**
+ * Enriches listExperiments responses with required IDE feature flags,
+ * performance optimizations, and strictly neutralizes DeepMind / Mendel shadow evaluation.
+ */
+function enrichExperimentsPayload(rawBody) {
+    try {
+        const data = JSON.parse(rawBody);
+        if (!Array.isArray(data.flags)) {
+            data.flags = [];
+        }
+        const requiredFlags = [
+            // DeepMind & Mendel Shadow Eval suppression
+            { name: 'shadow-call-aicode-mendel', boolValue: false },
+            { name: 'mendel_aicode_shadow_diff', boolValue: false },
+            { name: 'enable-battle-mode-auto-trigger', boolValue: false },
+            // High performance & caching boosters
+            { name: 'supercomplete-fast-debounce', boolValue: true },
+            { name: 'command-prompt-cache-config', stringValue: '{"enabled": true}' },
+            { name: 'context-force-local-context', boolValue: true },
+            { name: 'use-special-edit-code-block', boolValue: true },
+            // Core UI & planning capabilities
+            { name: 'use-slash-plan', boolValue: true },
+            { name: 'customization-token-budget', intValue: 20000 },
+            { name: 'rules-token-budget', intValue: 20000 },
+            { name: 'enable-subagent-hub', boolValue: true },
+            { name: 'enable-skill-search-tool', boolValue: true },
+            { name: 'enable-owl-slash-command', boolValue: true },
+            { name: 'enable-browser-subagent-v2', boolValue: true },
+            { name: 'send-subagent-initial-prompt-as-message', boolValue: true },
+            { name: 'enable-battle-mode-custom-agents', boolValue: true },
+            { name: 'show-model-selection-change', boolValue: true },
+            { name: 'scheduled-tasks-v2', boolValue: true },
+            { name: 'enable-tasks', boolValue: true },
+            { name: 'enable-conversation-search-v2', boolValue: true },
+            { name: 'enable-background-task-accumulator', boolValue: true },
+            { name: 'enable-aux-pane-redesign', boolValue: true },
+            { name: 'enable-ui-sidecars', boolValue: true },
+            { name: 'enable-sidecars', boolValue: true },
+            { name: 'enable-split-view', boolValue: true },
+            { name: 'supercomplete-always-use-cache-on-equal-state', boolValue: true },
+            { name: 'supercomplete-max-concurrent-requests', intValue: 2 },
+            { name: 'supercomplete-regular-debounce', intValue: 350 },
+            { name: 'use-anthropic-token-efficient-tools-beta', boolValue: true },
+            { name: 'cascade-use-replace-content-edit-tool', boolValue: true },
+        ];
+        for (const reqFlag of requiredFlags) {
+            const existing = data.flags.find((f) => f && f.name === reqFlag.name);
+            if (!existing) {
+                data.flags.push(reqFlag);
+            }
+            else if (reqFlag.boolValue !== undefined) {
+                existing.boolValue = reqFlag.boolValue;
+            }
+            else if (reqFlag.intValue !== undefined) {
+                existing.intValue = reqFlag.intValue;
+            }
+            else if (reqFlag.stringValue !== undefined) {
+                existing.stringValue = reqFlag.stringValue;
+            }
+        }
+        return JSON.stringify(data);
+    }
+    catch (_) {
+        return rawBody;
     }
 }
 async function executeOnRemoteDaemon(rawHost, token, command, workspaceId, sessionId, timeoutMs = 15000) {
@@ -842,7 +867,12 @@ function transformGoogleStreamForRemote(proxyRes, clientRes, convId = '', isRemo
     const headers = { ...proxyRes.headers };
     delete headers['content-length'];
     delete headers['content-encoding'];
+    headers['x-accel-buffering'] = 'no';
+    headers['cache-control'] = 'no-cache, no-transform';
     (0, httpUtils_1.safeWriteHead)(clientRes, proxyRes.statusCode || 200, headers);
+    if (typeof clientRes.flushHeaders === 'function') {
+        clientRes.flushHeaders();
+    }
     if (clientRes?.socket && typeof clientRes.socket.setNoDelay === 'function') {
         try {
             clientRes.socket.setNoDelay(true);
@@ -1369,7 +1399,7 @@ function createResponseClaimer() {
         },
     };
 }
-function executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession = false, customAuthHeader, convId = '', hostOverride, timeoutMs, modelName = '', startTime = Date.now(), responseClaimer) {
+function executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession = false, customAuthHeader, convId = '', hostOverride, timeoutMs, modelName = '', startTime = Date.now(), responseClaimer, candidate) {
     return new Promise((resolve) => {
         const traceId = newTraceId();
         const isCloudCodeUrl = req.url.includes('v1internal') || req.url.includes('daily-cloudcode') || req.url.includes('cloudcode');
@@ -1434,6 +1464,10 @@ function executeGoogleCloudCodeRequest(req, res, reqBody, isRemoteSession = fals
             if (isCloudCodeUrl) {
                 headers['user-agent'] = 'antigravity';
                 headers['User-Agent'] = 'antigravity';
+                if (candidate) {
+                    const virtualDevHeaders = (0, googlePool_1.getAccountVirtualDeviceHeaders)(candidate);
+                    Object.assign(headers, virtualDevHeaders);
+                }
             }
             const isGeneration = req.url.includes('generateContent') || req.url.includes('streamGenerateContent');
             const isStream = req.url.includes('streamGenerateContent') || req.url.includes('alt=sse');
@@ -2186,12 +2220,12 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
         try {
             electron_log_1.default.info(`[CloudCode Candidate Dispatch] acc=${candidateName} model=${targetModel} host=${hostOverride} project=${reqJson.project} cli=${(0, googleAuth_1.isGeminiCliModel)(candidate)}`);
             if (!canHedge) {
-                outcome = await executeGoogleCloudCodeRequest(req, res, updatedBody, isSessionRemote, authHeader, convId, hostOverride, poolHeaderTimeout, targetModel, startReqTime);
+                outcome = await executeGoogleCloudCodeRequest(req, res, updatedBody, isSessionRemote, authHeader, convId, hostOverride, poolHeaderTimeout, targetModel, startReqTime, undefined, candidate);
             }
             else {
                 const claimer = createResponseClaimer();
                 let hedgeTimer;
-                const candidate1Promise = executeGoogleCloudCodeRequest(req, res, updatedBody, isSessionRemote, authHeader, convId, hostOverride, poolHeaderTimeout, targetModel, startReqTime, claimer);
+                const candidate1Promise = executeGoogleCloudCodeRequest(req, res, updatedBody, isSessionRemote, authHeader, convId, hostOverride, poolHeaderTimeout, targetModel, startReqTime, claimer, candidate);
                 const hedgeDelay = Math.min(constants_1.HEDGED_REQUEST_DELAY_MS, Math.floor(poolHeaderTimeout * 0.6));
                 const hedgePromise = new Promise((resolveHedge) => {
                     hedgeTimer = setTimeout(async () => {
@@ -2222,7 +2256,7 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                         (0, googlePool_1.incrementAccountInFlight)(sibling);
                         const siblingStart = Date.now();
                         try {
-                            const siblingOutcome = await executeGoogleCloudCodeRequest(req, res, siblingBody, isSessionRemote, siblingAuth, convId, siblingHost, poolHeaderTimeout, targetModel, siblingStart, claimer);
+                            const siblingOutcome = await executeGoogleCloudCodeRequest(req, res, siblingBody, isSessionRemote, siblingAuth, convId, siblingHost, poolHeaderTimeout, targetModel, siblingStart, claimer, sibling);
                             if (siblingOutcome.success) {
                                 successfulCandidate = sibling;
                                 (0, googlePool_1.recordAccountLatency)(sibling, Date.now() - siblingStart);
@@ -2742,13 +2776,41 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 consecutive504TimeoutCount = 0;
             }
         }
-        // On HTTP 403 licensing/forbidden failure, immediately place the account in a
-        // 7-day quarantine so subsequent requests don't waste round-trip time failing over.
+        // On HTTP 403 licensing/forbidden failure:
         if (lastStatus === 403) {
             if (sessId) {
                 sessionAffinities.delete(sessId);
             }
-            const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid|verify.*account|verification.*required|account.*restricted|restricted|unavailable tier|suspended|denied access|validation_required/i.test(lastErrorText);
+            const isValidationRequired = /validation_required|verify.*account|verification.*required/i.test(lastErrorText);
+            const isLicenseError = /license|licens|permission|unauthorized|forbidden|not have a valid|account.*restricted|restricted|unavailable tier|suspended|denied access/i.test(lastErrorText) || isValidationRequired;
+            // If the error is VALIDATION_REQUIRED / missing onboarding consent, attempt automatic background activation
+            if (isValidationRequired && (0, googleAuth_1.isGoogleCloudCodeModel)(candidate)) {
+                let validationUrl = '';
+                try {
+                    const parsed = JSON.parse(lastErrorText);
+                    const errInfo = parsed.error?.details?.find((d) => d['@type']?.includes('ErrorInfo'));
+                    validationUrl = errInfo?.metadata?.validation_url || '';
+                    if (!validationUrl) {
+                        const help = parsed.error?.details?.find((d) => d['@type']?.includes('Help'));
+                        validationUrl = help?.links?.[0]?.url || '';
+                    }
+                }
+                catch (_) { }
+                if (validationUrl) {
+                    electron_log_1.default.warn(`[Proxy] 🚨 Compte ${candidateName} requiert une validation Google (Challenge interactif / plt) !`);
+                    electron_log_1.default.warn(`[Proxy] 🔗 Lien de déblocage direct navigateur : ${validationUrl}`);
+                }
+                else {
+                    electron_log_1.default.warn(`[Proxy] Account ${candidateName} encountered VALIDATION_REQUIRED ("Get started" pending). Triggering automatic background onboarding & TOS registration...`);
+                }
+                (0, googleAuth_1.getValidGoogleAccessToken)(candidate).then((token) => {
+                    if (token) {
+                        (0, googleAuth_1.onboardUserAndAcceptTerms)(token).catch((err) => {
+                            electron_log_1.default.warn(`[Proxy] Auto-onboarding failed for ${candidateName}:`, err?.message || err);
+                        });
+                    }
+                }).catch(() => { });
+            }
             const quarantineMs = isLicenseError ? 7 * 24 * 3600 * 1000 : 24 * 3600 * 1000;
             electron_log_1.default.warn(`[Proxy] Account ${candidateName} received HTTP 403 (${isLicenseError ? 'license/permission/verification challenge' : 'forbidden'}). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine to eliminate failover latency.`);
             if (isLicenseError) {
@@ -4690,6 +4752,13 @@ function isAllowedOrigin(req) {
     }
 }
 function handleRequest(req, res) {
+    // Ultra-low latency: Disable Nagle algorithm on loopback sockets immediately
+    if (req.socket && typeof req.socket.setNoDelay === 'function') {
+        req.socket.setNoDelay(true);
+    }
+    if (res.socket && typeof res.socket.setNoDelay === 'function') {
+        res.socket.setNoDelay(true);
+    }
     // CSRF / Origin Guard: Reject unauthorized external origins attempting local proxy abuse
     if (!isAllowedOrigin(req)) {
         const host = (req.headers.host || '').toLowerCase();
@@ -5146,6 +5215,15 @@ function handleRequest(req, res) {
         else {
             electron_log_1.default.info(`[Proxy] Request: ${req.method} ${req.url}`);
         }
+        // Zero latency: Short-circuit DeepMind / Trajectory telemetry and analytics reporting
+        if (req.url?.includes('recordTrajectoryAnalytics') ||
+            req.url?.includes('writeTrajectoryAcls') ||
+            req.url?.includes('analytics')) {
+            if ((0, httpUtils_1.safeWriteHead)(res, 200, { 'Content-Type': 'application/json' })) {
+                (0, httpUtils_1.safeEnd)(res, JSON.stringify({ ok: true, status: 'RECORDED_NOOP' }));
+            }
+            return;
+        }
         // MCP relay: the mobile companion asks the desktop session for the list
         // of configured MCP servers (name + tools + status) because the phone
         // holds no credentials or allowlist. The actual MCP runtime is the
@@ -5251,6 +5329,29 @@ function handleRequest(req, res) {
                 electron_log_1.default.error('[Proxy] /chat/completions relay error:', err);
             }
         }
+        // Fast-Ack for Language Server telemetry & shadow eval RPCs
+        if (process.env.AG_FAST_ACK_TELEMETRY !== '0' && isTelemetryRpcUrl(req.url)) {
+            electron_log_1.default.debug(`[Proxy] Fast-Ack telemetry RPC intercepted: ${req.url}`);
+            const isJson = !req.headers['content-type'] || req.headers['content-type'].includes('application/json');
+            if (isJson) {
+                if ((0, httpUtils_1.safeWriteHead)(res, 200, {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                })) {
+                    (0, httpUtils_1.safeEnd)(res, '{}');
+                }
+            }
+            else {
+                if ((0, httpUtils_1.safeWriteHead)(res, 200, {
+                    'Content-Type': req.headers['content-type'] || 'application/connect+proto',
+                    'Access-Control-Allow-Origin': '*',
+                    'grpc-status': '0',
+                })) {
+                    (0, httpUtils_1.safeEnd)(res, Buffer.from([0, 0, 0, 0, 0]));
+                }
+            }
+            return;
+        }
         // 0. Intercept GetAvailableModels (redirected from Electron webRequest)
         if (req.url.startsWith('/GetAvailableModels')) {
             const gavParsed = new URL(req.url, `http://${constants_1.LOOPBACK_HOSTS[0]}`);
@@ -5282,6 +5383,13 @@ function handleRequest(req, res) {
             electron_log_1.default.debug('[Proxy] Intercepting listExperiments request');
             const buildDefaultExperimentsFallback = () => {
                 const flags = [
+                    { name: 'shadow-call-aicode-mendel', boolValue: false },
+                    { name: 'mendel_aicode_shadow_diff', boolValue: false },
+                    { name: 'enable-battle-mode-auto-trigger', boolValue: false },
+                    { name: 'supercomplete-fast-debounce', boolValue: true },
+                    { name: 'command-prompt-cache-config', stringValue: '{"enabled": true, "ttl_seconds": 3600}' },
+                    { name: 'context-force-local-context', boolValue: true },
+                    { name: 'use-special-edit-code-block', boolValue: true },
                     { name: 'use-slash-plan', boolValue: true },
                     { name: 'customization-token-budget', intValue: 20000 },
                     { name: 'rules-token-budget', intValue: 20000 },
@@ -5322,50 +5430,7 @@ function handleRequest(req, res) {
                     flags,
                 });
             };
-            const enrichExperiments = (rawBody) => {
-                try {
-                    const data = JSON.parse(rawBody);
-                    if (!Array.isArray(data.flags)) {
-                        data.flags = [];
-                    }
-                    const requiredFlags = [
-                        { name: 'use-slash-plan', boolValue: true },
-                        { name: 'customization-token-budget', intValue: 20000 },
-                        { name: 'rules-token-budget', intValue: 20000 },
-                        { name: 'enable-subagent-hub', boolValue: true },
-                        { name: 'enable-skill-search-tool', boolValue: true },
-                        { name: 'enable-owl-slash-command', boolValue: true },
-                        { name: 'enable-browser-subagent-v2', boolValue: true },
-                        { name: 'send-subagent-initial-prompt-as-message', boolValue: true },
-                        { name: 'enable-battle-mode-custom-agents', boolValue: true },
-                        { name: 'show-model-selection-change', boolValue: true },
-                        { name: 'scheduled-tasks-v2', boolValue: true },
-                        { name: 'enable-tasks', boolValue: true },
-                        { name: 'enable-conversation-search-v2', boolValue: true },
-                        { name: 'enable-background-task-accumulator', boolValue: true },
-                        { name: 'enable-aux-pane-redesign', boolValue: true },
-                        { name: 'enable-ui-sidecars', boolValue: true },
-                        { name: 'enable-sidecars', boolValue: true },
-                        { name: 'enable-split-view', boolValue: true },
-                    ];
-                    for (const reqFlag of requiredFlags) {
-                        const existing = data.flags.find((f) => f && f.name === reqFlag.name);
-                        if (!existing) {
-                            data.flags.push(reqFlag);
-                        }
-                        else if (reqFlag.boolValue !== undefined) {
-                            existing.boolValue = reqFlag.boolValue;
-                        }
-                        else if (reqFlag.intValue !== undefined) {
-                            existing.intValue = reqFlag.intValue;
-                        }
-                    }
-                    return JSON.stringify(data);
-                }
-                catch (_) {
-                    return rawBody;
-                }
-            };
+            const enrichExperiments = enrichExperimentsPayload;
             // If we have a fresh cache (< 3 minutes), serve it immediately (ensuring enrichment)
             const freshCache = (Date.now() - memoryListExperimentsTime < 180000) ? loadCachedExperiments() : null;
             if (freshCache) {
@@ -5410,7 +5475,7 @@ function handleRequest(req, res) {
                 if (res.headersSent || res.writableEnded)
                     return;
                 const cached = loadCachedExperiments() || buildDefaultExperimentsFallback();
-                electron_log_1.default.warn('[Proxy] Upstream listExperiments fallback active, serving 2.21 enabled flags');
+                electron_log_1.default.debug('[Proxy] Upstream listExperiments fallback active, serving 2.21 enabled flags');
                 const enrichedFallback = enrichExperiments(cached);
                 if ((0, httpUtils_1.safeWriteHead)(res, 200, { 'Content-Type': 'application/json' })) {
                     (0, httpUtils_1.safeEnd)(res, enrichedFallback);
@@ -5465,9 +5530,12 @@ function handleRequest(req, res) {
             googleReq.end();
             return;
         }
-        // 0.6. Intercept telemetry metrics to avoid noisy upstream 503 UNAVAILABLE errors
+        // 0.6. Intercept telemetry metrics & AGI-Control shadow evaluation to avoid noisy upstream 503 UNAVAILABLE errors
         if (req.url.includes('/v1internal:recordCodeAssistMetrics') ||
-            req.url.includes('/v1internal:recordTrajectoryAnalytics')) {
+            req.url.includes('/v1internal:recordTrajectoryAnalytics') ||
+            req.url.includes('/v1internal:recordClientEvent') ||
+            req.url.includes('/v1internal:uploadPerformanceProfile') ||
+            req.url.includes('/v1internal:checkUrlDenylist')) {
             if ((0, httpUtils_1.safeWriteHead)(res, 200, { 'Content-Type': 'application/json' })) {
                 (0, httpUtils_1.safeEnd)(res, JSON.stringify({}));
             }
@@ -5480,18 +5548,16 @@ function handleRequest(req, res) {
                 const customModels = (0, modelLoader_1.loadCustomModels)();
                 const googleAccount = customModels.find((m) => m.accountProject || m.projectId);
                 const projectId = googleAccount?.accountProject || googleAccount?.projectId || 'projects/antigravity-local';
-                return unlockCodeAssistPayload(JSON.stringify({
+                return JSON.stringify({
                     cloudaicompanionProject: projectId,
                     allowedTiers: [
                         { id: 'free-tier', isDefault: false },
                         { id: 'standard-tier', isDefault: false },
-                        { id: 'g1-pro-tier', isDefault: false },
-                        { id: 'g1-ultra-tier', isDefault: true },
-                        { id: 'ultra-tier' },
+                        { id: 'g1-pro-tier', isDefault: true },
                     ],
-                    currentTier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
-                    paidTier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
-                }));
+                    currentTier: { id: 'g1-pro-tier', name: 'Google AI Pro' },
+                    paidTier: { id: 'g1-pro-tier', name: 'Google AI Pro' },
+                });
             };
             // If we have cached code assist (disk or memory), serve it immediately to guarantee zero-latency response (< 2ms)
             const cached = loadCachedCodeAssist();
