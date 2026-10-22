@@ -381,13 +381,22 @@ export async function downloadUpdate(
     }
 
     const parsed = new URL(targetUrl);
-    const fileName = path.basename(parsed.pathname) || 'ag-doctor-update.exe';
+    const baseName = path.basename(parsed.pathname) || 'ag-doctor-update.exe';
     const tempDir = path.join(app.getPath('temp'), 'ag-doctor-updates');
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    const destPath = path.join(tempDir, fileName);
+    // Use a clean target path, appending timestamp if locked/exists
+    let destPath = path.join(tempDir, baseName);
+    try {
+      if (fs.existsSync(destPath)) {
+        fs.unlinkSync(destPath);
+      }
+    } catch {
+      // If locked (EBUSY), use unique name
+      destPath = path.join(tempDir, `${Date.now()}-${baseName}`);
+    }
 
     // Cancel any previous in-flight download
     if (downloadAbortController) {
