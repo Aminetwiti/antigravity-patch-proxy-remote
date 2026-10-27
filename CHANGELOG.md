@@ -2,6 +2,31 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.8.1] - 2026-10-27 (Experiments Engine, Token Management & Intelligent Updater)
+
+### Added
+- **Experiments Payload & Enterprise Capabilities Auto-Bootstrap**: Added custom flag overrides and internal capabilities injection (enrichExperimentsPayload) in rendererHook.js and proxy.ts.
+- **Intelligent Update Asset Matching**: Automatic detection and matching between Portable and Setup installer executables based on active execution mode in updateService.
+- **EBUSY Lock Prevention**: Atomic temp file staging and release guards during background update asset downloads.
+- **Enhanced Token & Stream Handling**: Thought signature metadata purge on cleanup, model-level stream ID retention in Anthropic translator, and revoked refresh token TTL cache with automated reactivation in Google Auth.
+
+### Changed
+- Bumped project release version to v3.8.1 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
+## [3.8.0] - 2026-10-21 (Automated Onboarding, Challenge Dashboard & Pool Hardening)
+
+### Added
+- **Automated Onboarding & Challenge Dashboard**: Embedded OAuth server and diagnostic challenge visualizer (challenges.html) for multi-account validation and quota verification.
+- **Account Eligibility & Cooldown Recovery**: Hardened Google account candidate selection, quota exhaustion checks, and unlicensed account synchronization.
+- **Patch 2.25 Engine Support**: Added dedicated binary patch routines and runtime adapters for Antigravity 2.25.
+
+### Changed
+- Bumped project release version to v3.8.0 across core components.
+
+---
+
 ## [3.7.5] - 2026-10-19 (Token Tracker Calendar Filters, Cluster Failover Resilience & UI Modernization)
 
 ### Added

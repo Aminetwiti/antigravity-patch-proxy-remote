@@ -501,7 +501,7 @@ async function executeOnRemoteDaemon(rawHost, token, command, workspaceId, sessi
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(payload),
                 Authorization: `Bearer ${token || constants_1.DEFAULT_REMOTE_TOKEN}`,
-                'User-Agent': 'AntigravityPatchProxy/3.7.5',
+                'User-Agent': 'AntigravityPatchProxy/3.8.1',
             },
             timeout: timeoutMs,
         }, (resp) => {
