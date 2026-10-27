@@ -10175,6 +10175,11 @@ function isAccountValidationRequired(a: any): boolean {
   );
 }
 
+function isAccountUnlicensed(a: any): boolean {
+  if (!a) return false;
+  return Boolean(a.isUnlicensed || a.quotas?.isUnlicensed);
+}
+
 function hasAccountErrorOrValidation(a: any): boolean {
   if (!a) return false;
   if (isAccountValidationRequired(a)) return true;
