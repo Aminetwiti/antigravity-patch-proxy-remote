@@ -44,6 +44,7 @@ import { runRebuildSidebar } from './commands/rebuild-sidebar';
 import { runExportSessions } from './commands/export-sessions';
 import { runDevice } from './commands/device';
 import { runAuth } from './commands/auth';
+import { runDevCommand } from './commands/developer';
 import { getActiveProfile, resolveActiveProfile } from './core/profile';
 
 const USAGE = `ag-doctor — Antigravity diagnostic & management CLI
@@ -106,6 +107,8 @@ Commands:
   device {show|reset}    Inspect or reset hardware/telemetry identity (storage.json)
   auth {status|fix|purge}
                          Inspect or repair Antigravity authentication & 403 errors
+  dev {status|boost|flags}
+                         Manage developer features, Google cohort & optimal flags
   antigravity {status|version|launch|kill|restart}
                          Manage the Antigravity install (version, launch, close)
   update                 Re-run the parent deploy script
@@ -333,6 +336,9 @@ export async function main(argv: string[]): Promise<number> {
       case 'auth':
       case 'account':
         return await runAuth(ctx, sub, rest);
+      case 'dev':
+      case 'developer':
+        return await runDevCommand(ctx, sub, rest);
       case 'help':
       case '--help':
       case '-h':

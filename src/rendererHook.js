@@ -87,32 +87,321 @@
     window.__ag_fetch_skills_hooked = true;
     const origFetch = window.fetch;
 
+    function makeGrpcWeb(payload) {
+      const jsonStr = JSON.stringify(payload);
+      const jsonBytes = new TextEncoder().encode(jsonStr);
+      const trailerStr = 'grpc-status: 0\r\ngrpc-message: OK\r\n';
+      const trailerBytes = new TextEncoder().encode(trailerStr);
+      
+      const total = 5 + jsonBytes.length + 5 + trailerBytes.length;
+      const res = new Uint8Array(total);
+      const v = new DataView(res.buffer);
+      
+      // Data frame (flag 0)
+      v.setUint8(0, 0);
+      v.setUint32(1, jsonBytes.length, false);
+      res.set(jsonBytes, 5);
+      
+      // Trailer frame (flag 0x80 = 128)
+      const offset2 = 5 + jsonBytes.length;
+      v.setUint8(offset2, 128);
+      v.setUint32(offset2 + 1, trailerBytes.length, false);
+      res.set(trailerBytes, offset2 + 5);
+      
+      return res;
+    }
+
+    function formatResponse(payload, reqHeaders) {
+      let isGw = false;
+      if (reqHeaders) {
+        if (typeof reqHeaders.get === 'function') {
+          isGw = (reqHeaders.get('content-type') || '').includes('grpc-web') || reqHeaders.get('x-grpc-web') === '1';
+        } else {
+          for (const k of Object.keys(reqHeaders)) {
+            const lk = k.toLowerCase();
+            if (lk === 'x-grpc-web' && reqHeaders[k] == '1') isGw = true;
+            if (lk === 'content-type' && String(reqHeaders[k]).includes('grpc-web')) isGw = true;
+          }
+        }
+      }
+      if (isGw) {
+        return new Response(makeGrpcWeb(payload), {
+          status: 200,
+          headers: {
+            'content-type': 'application/grpc-web+json',
+            'x-grpc-web': '1'
+          }
+        });
+      }
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'connect-protocol-version': '1'
+        }
+      });
+    }
+
     let cachedSkillsWorkflows = null;
     let lastSkillsFetchTime = 0;
     let cachedMarketplaceItems = null;
     let lastMarketplaceFetchTime = 0;
 
+    const BUILTIN_PLUGINS = [
+      // Google Workspace (Original Google Ecosystem)
+      {
+        id: 'google-docs',
+        displayName: 'Google Docs',
+        description: 'Read, draft, and edit docs.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%234285F4" d="M30 6H14a4 4 0 0 0-4 4v28a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4V14l-8-8z"/><path fill="%23A1C2FA" d="M30 6v8h8z"/><path fill="%23fff" d="M16 22h16v2.5H16zm0 6h16v2.5H16zm0 6h10v2.5H16z"/></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['workspace', 'docs', 'google']
+      },
+      {
+        id: 'google-sheets',
+        displayName: 'Google Sheets',
+        description: 'Read, write, and format spreadsheets.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%230F9D58" d="M30 6H14a4 4 0 0 0-4 4v28a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4V14l-8-8z"/><path fill="%2387CEAC" d="M30 6v8h8z"/><path fill="%23fff" d="M16 22h16v14H16zm2 2v2.5h5V24zm7 0v2.5h5V24zm-7 4.5v2.5h5v-2.5zm7 0v2.5h5v-2.5zm-7 4.5v2.5h5V33zm7 0v2.5h5V33z"/></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['workspace', 'sheets', 'google']
+      },
+      {
+        id: 'google-slides',
+        displayName: 'Google Slides',
+        description: 'Read, edit, and export presentations.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23F4B400" d="M30 6H14a4 4 0 0 0-4 4v28a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4V14l-8-8z"/><path fill="%23FBE38E" d="M30 6v8h8z"/><path fill="%23fff" d="M16 22h16v12H16zm2 2v8h12v-8z"/></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['workspace', 'slides', 'google']
+      },
+      {
+        id: 'google-drive',
+        displayName: 'Google Drive',
+        description: 'Search, upload, download, and share files.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23FFC107" d="M17 6L6 25l6 10.5h11L17 6z"/><path fill="%232196F3" d="M31 6H17l11 19h14L31 6z"/><path fill="%234CAF50" d="M12 35.5l5.5 9.5h22l-6-9.5H12z"/></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['workspace', 'drive', 'google']
+      },
+      {
+        id: 'google-calendar',
+        displayName: 'Google Calendar',
+        description: 'Check availability, schedule events, and RSVP.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="36" height="36" x="6" y="6" fill="%23fff" rx="4"/><path fill="%231976D2" d="M6 10a4 4 0 0 1 4-4h28a4 4 0 0 1 4 4v6H6z"/><text x="24" y="34" fill="%231976D2" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle">31</text></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['workspace', 'calendar', 'google']
+      },
+
+      // Build with Google
+      {
+        id: 'gemini-api',
+        displayName: 'Gemini API',
+        description: 'Build applications with the Gemini Interactions API and multimodal models.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><linearGradient id="gem" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="%231BA1E2"/><stop offset="50%" stop-color="%239B59B6"/><stop offset="100%" stop-color="%23E67E22"/></linearGradient></defs><path fill="url(%23gem)" d="M24 2C24 14.15 14.15 24 2 24c12.15 0 22 9.85 22 22 0-12.15 9.85-22 22-22-12.15 0-22-9.85-22-22z"/></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['google', 'gemini', 'api']
+      },
+      {
+        id: 'chrome-devtools',
+        displayName: 'Chrome DevTools',
+        description: 'Reliable automation, in-depth debugging, and performance profiling.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="%234285F4"/><circle cx="24" cy="24" r="9" fill="%23fff"/><circle cx="24" cy="24" r="7" fill="%231976D2"/><path fill="%23EA4335" d="M24 4c7.4 0 13.9 4 17.3 10H24z"/><path fill="%23FBBC05" d="M41.3 14c2.2 3.8 3.5 8.2 3.5 13 0 7.8-3.5 14.8-9 19.3L24 24z"/><path fill="%2334A853" d="M35.8 46.3C32.4 48.7 28.4 50 24 50 12.9 50 3.6 42.4 1 32l11.5-6.6z"/></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['google', 'chrome', 'devtools']
+      },
+      {
+        id: 'android-cli',
+        displayName: 'Android CLI',
+        description: 'Core tools and knowledge required to develop for Android.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%233DDC84" d="M12 28a12 12 0 0 1 24 0v4H12zm5-12l-3-5a1 1 0 1 1 1.7-1l3.1 5.2a14 14 0 0 1 10.4 0L32.3 10a1 1 0 1 1 1.7 1l-3 5A12 12 0 0 1 36 24H12a12 12 0 0 1 5-8zm1 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm12 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['google', 'android', 'cli']
+      },
+      {
+        id: 'firebase',
+        displayName: 'Firebase',
+        description: 'Prototype, build & run modern apps that users love.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23FFA000" d="M8 38L18 6l6 12-5.5 10.5z"/><path fill="%23FFCA28" d="M40 38l-7-25-15 25z"/><path fill="%23F57C00" d="M23.5 28.5L18 6l-10 32h32z"/></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['google', 'firebase', 'cloud']
+      },
+      {
+        id: 'science',
+        displayName: 'Science',
+        description: 'Curated collection of agent skills for science tasks.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="4" fill="%23fff"/><ellipse cx="24" cy="24" rx="20" ry="7" fill="none" stroke="%23fff" stroke-width="2.5" transform="rotate(30 24 24)"/><ellipse cx="24" cy="24" rx="20" ry="7" fill="none" stroke="%23fff" stroke-width="2.5" transform="rotate(90 24 24)"/><ellipse cx="24" cy="24" rx="20" ry="7" fill="none" stroke="%23fff" stroke-width="2.5" transform="rotate(150 24 24)"/></svg>',
+        marketplace: 'builtin',
+        skill: {},
+        version: '1.0.0',
+        tags: ['google', 'science', 'skill']
+      },
+      {
+        id: 'google-antigravity-sdk',
+        displayName: 'Google Antigravity SDK',
+        description: 'Using the Google Antigravity Python SDK to build custom tools and agents.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%234285F4" d="M24 4L6 40h10l8-18 8 18h10z"/><circle cx="24" cy="18" r="4" fill="%2334A853"/></svg>',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.0.0',
+        tags: ['google', 'sdk', 'antigravity']
+      },
+
+      // Superpowers & Core Plugins
+      {
+        id: 'automation',
+        displayName: 'Automation & Scheduled Tasks',
+        description: 'Design and manage recurring background tasks, cron workflows, and daily automations.',
+        logo: '',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '2.0.0',
+        tags: ['automation', 'cron', 'system', 'tools']
+      },
+      {
+        id: 'chrome-devtools-mcp',
+        displayName: 'Chrome DevTools MCP',
+        description: 'Direct browser DOM inspection, console logs, network monitoring and live debugging.',
+        logo: '',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.2.0',
+        tags: ['devtools', 'browser', 'debugging', 'mcp']
+      },
+      {
+        id: 'generative_ui',
+        displayName: 'Generative UI & Visual Artifacts',
+        description: 'Render interactive HTML, SVG charts, data visualizations, and live reactive widgets in chat.',
+        logo: '',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '2.0.0',
+        tags: ['ui', 'artifacts', 'visualization', 'frontend']
+      },
+      {
+        id: 'plugin',
+        displayName: 'Plugin Management Hub',
+        description: 'Install, manage, toggle and bundle skills, rules, MCP servers and custom agents as unified plugins.',
+        logo: '',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '2.1.0',
+        tags: ['plugins', 'ecosystem', 'management']
+      },
+      {
+        id: 'ui-plugin-navigation',
+        displayName: 'UI Sidecar & Panel Navigation',
+        description: 'One-click shortcuts to discover and toggle side panels, status widgets and active tools.',
+        logo: '',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.5.0',
+        tags: ['ui', 'navigation', 'sidecar']
+      },
+      {
+        id: 'permissioned-github',
+        displayName: 'Permissioned GitHub Integration',
+        description: 'Secure GitHub operations with per-action branch guardrails and PR merge automation.',
+        logo: '',
+        marketplace: 'builtin',
+        plugin: {},
+        version: '1.1.0',
+        tags: ['github', 'vcs', 'security']
+      }
+    ];
+
+    const CORE_SKILLS = [
+      { id: 'boost', displayName: 'Boost Multi-Agent Swarm', description: 'Invoke the Boost multi-agent orchestrator for complex tasks, system design, and formal verification.', skill: {} },
+      { id: 'owl', displayName: 'Owl Autonomous Multi-Agent', description: 'Invoke the Owl multi-agent orchestrator for complex tasks and system design.', skill: {} },
+      { id: 'teamwork', displayName: 'Teamwork Swarm Orchestrator', description: 'Teamwork multi-agent swarm for parallel execution and adversarial code review.', skill: {} },
+      { id: 'reverse-engineer-anything', displayName: 'Reverse Engineer Anything (REA)', description: 'Reverse engineer native, managed, Electron/JS, packaged, and browser targets.', skill: {} },
+      { id: 'ponytail', displayName: 'Ponytail Senior Dev Suite', description: 'Forces the minimal working solution: senior dev mode, audit, and debt ledger.', skill: {} },
+      { id: 'impeccable', displayName: 'Impeccable UI & Behavioral Polish', description: 'Design, shape, critique and polish frontend interfaces with 65 behavioral psychology principles.', skill: {} },
+      { id: 'security-review', displayName: 'Codebase Security Scanner', description: 'AI-powered codebase security scanner tracing data flows and catching vulnerabilities.', skill: {} },
+      { id: 'autoplan', displayName: 'Autoplan Review Suite', description: 'Automated strategy, design, engineering architecture and DX reviews.', skill: {} },
+      { id: 'antislop', displayName: 'Anti-Slop Suite for Coding Agents', description: 'Universal filter to prevent AI slop across code comments, UI design, typography and layouts.', skill: {} },
+      { id: 'investigate', displayName: 'Systematic Root Cause Investigator', description: 'Systematic debugging with root cause investigation and verification.', skill: {} }
+    ];
+
+    const GROUPS = [
+      {
+        id: 'google-workspace',
+        displayName: 'Google Workspace',
+        description: 'Connect to Google Workspace, including Docs, Sheets, Slides, Drive, and Calendar.',
+        memberIds: ['google-docs', 'google-sheets', 'google-slides', 'google-drive', 'google-calendar'],
+        nextPageToken: ''
+      },
+      {
+        id: 'build-with-google',
+        displayName: 'Build with Google',
+        description: "Build on Google's developer platforms, including Android, Chrome, Gemini, and Google Cloud.",
+        memberIds: ['gemini-api', 'chrome-devtools', 'android-cli', 'firebase', 'science', 'google-antigravity-sdk'],
+        nextPageToken: ''
+      },
+      {
+        id: 'featured',
+        displayName: '⭐ Featured Superpowers & Plugins',
+        description: 'Curated autonomous swarms, reverse engineering, and developer suites.',
+        memberIds: ['automation', 'chrome-devtools-mcp', 'boost', 'owl', 'teamwork', 'reverse-engineer-anything', 'ponytail', 'security-review', 'generative_ui'],
+        nextPageToken: ''
+      },
+      {
+        id: 'architecture',
+        displayName: '🛠️ Developer Experience & Architecture',
+        description: 'Codebase analysis, refactoring, code review swarms, and root-cause debugging.',
+        memberIds: ['investigate', 'systematic-debugging', 'autoplan', 'devex-review', 'health', 'plan', 'spec', 'writing-plans', 'executing-plans'],
+        nextPageToken: ''
+      },
+      {
+        id: 'frontend-design',
+        displayName: '🎨 UI, Design & Behavioral Polish',
+        description: 'Cognitive psychology UX audits, generative UI widgets, anti-slop filters, and design systems.',
+        memberIds: ['impeccable', 'generative_ui', 'antislop', 'design-consultation', 'design-review', 'design-html', 'design-shotgun'],
+        nextPageToken: ''
+      },
+      {
+        id: 'qa-security',
+        displayName: '🛡️ Security, QA & Automated Deployment',
+        description: 'Security vulnerability scanners, QA dogfooding, and protected ship pipelines.',
+        memberIds: ['security-review', 'qa', 'qa-only', 'test-driven-development', 'careful', 'guard', 'ship', 'land-and-deploy'],
+        nextPageToken: ''
+      }
+    ];
+
     window.fetch = async function(...args) {
       const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : (args[0] && args[0].href ? args[0].href : ''));
+      const reqHeaders = args[1] && args[1].headers;
       const isAllWorkflows = typeof url === 'string' && url.includes('LanguageServerService/GetAllWorkflows');
       const isSlashCommands = typeof url === 'string' && url.includes('LanguageServerService/GetSlashCommands');
       const isSearchMarketplaceCustomizations = typeof url === 'string' && url.includes('LanguageServerService/SearchMarketplaceCustomizations');
+      const isListRemotePlugins = typeof url === 'string' && url.includes('LanguageServerService/ListRemotePlugins');
       const isSearchMarketplace = typeof url === 'string' && url.includes('LanguageServerService/SearchMarketplace') && !isSearchMarketplaceCustomizations;
       const isMarketplaceBundles = typeof url === 'string' && url.includes('LanguageServerService/GetMarketplaceBundles');
       const isMarketplaceCustomization = typeof url === 'string' && url.includes('LanguageServerService/GetMarketplaceCustomization');
       const isInstallCustomization = typeof url === 'string' && url.includes('LanguageServerService/InstallCustomization');
 
-      // 1. Intercept GetAllWorkflows: merge official workflows (Automation, templates) with custom skills
+      // 1. Intercept GetAllWorkflows: merge official workflows with custom skills
       if (isAllWorkflows) {
         try {
           if (cachedSkillsWorkflows && (Date.now() - lastSkillsFetchTime < 60000)) {
-            return new Response(JSON.stringify({ workflows: cachedSkillsWorkflows }), {
-              status: 200,
-              headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
-            });
+            return formatResponse({ workflows: cachedSkillsWorkflows }, reqHeaders);
           }
 
-          // Fetch official workflows from Language Server to preserve native features like Automation
           let officialWorkflows = [];
           try {
             const origRes = await origFetch.apply(this, args);
@@ -124,32 +413,31 @@
             }
           } catch (_) {}
 
-          const skillsUrl = url.replace('GetAllWorkflows', 'GetAllSkills');
-          const skillsRes = await origFetch.apply(this, [skillsUrl, Object.assign({}, args[1], { body: '{}' })]);
           let skillWorkflows = [];
-          if (skillsRes.ok) {
-            const skillsData = await skillsRes.json();
-            const rawSkills = skillsData.skills || [];
-            skillWorkflows = rawSkills.map(function(s) {
-              return {
-                $typeName: 'exa.cortex_pb.WorkflowSpec',
-                name: s.name,
-                description: s.description || ('Skill: ' + s.name),
-                path: s.path || s.name,
-                content: s.content || ''
-              };
-            });
-          }
+          try {
+            const skillsUrl = url.replace('GetAllWorkflows', 'GetAllSkills');
+            const skillsRes = await origFetch.apply(this, [skillsUrl, Object.assign({}, args[1], { body: '{}' })]);
+            if (skillsRes.ok) {
+              const skillsData = await skillsRes.json();
+              const rawSkills = skillsData.skills || [];
+              skillWorkflows = rawSkills.map(function(s) {
+                return {
+                  $typeName: 'exa.cortex_pb.WorkflowSpec',
+                  name: s.name,
+                  description: s.description || ('Skill: ' + s.name),
+                  path: s.path || s.name,
+                  content: s.content || ''
+                };
+              });
+            }
+          } catch (_) {}
 
           const officialNames = new Set(officialWorkflows.map(function(w) { return w.name; }));
           cachedSkillsWorkflows = officialWorkflows.concat(
             skillWorkflows.filter(function(s) { return !officialNames.has(s.name); })
           );
           lastSkillsFetchTime = Date.now();
-          return new Response(JSON.stringify({ workflows: cachedSkillsWorkflows }), {
-            status: 200,
-            headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
-          });
+          return formatResponse({ workflows: cachedSkillsWorkflows }, reqHeaders);
         } catch (wfErr) {
           console.warn('[AG] GetAllWorkflows skill conversion error in rendererHook:', wfErr);
         }
@@ -181,7 +469,12 @@
         } catch (_) {}
       }
 
-      // 3. Intercept SearchMarketplace: populate the Marketplace catalog with built-in plugins & skills
+      // 3. Intercept ListRemotePlugins (avoid 403 / unimplemented error in local mode)
+      if (isListRemotePlugins) {
+        return formatResponse({ plugins: [] }, reqHeaders);
+      }
+
+      // 4. Intercept SearchMarketplace: populate the Marketplace catalog with built-in plugins & skills
       if (isSearchMarketplace) {
         try {
           let reqQuery = '';
@@ -195,7 +488,6 @@
             }
           } catch (_) {}
 
-          // Use or update cached marketplace items
           if (!cachedMarketplaceItems || (Date.now() - lastMarketplaceFetchTime > 60000)) {
             let rawSkills = [];
             try {
@@ -206,69 +498,6 @@
                 rawSkills = sData.skills || [];
               }
             } catch (_) {}
-
-            const BUILTIN_PLUGINS = [
-              {
-                id: 'automation',
-                displayName: 'Automation & Scheduled Tasks',
-                description: 'Design and manage recurring background tasks, cron workflows, and daily automations.',
-                logo: '',
-                marketplace: 'builtin',
-                kind: { case: 'plugin', value: {} },
-                version: '2.0.0',
-                tags: ['automation', 'cron', 'system', 'tools']
-              },
-              {
-                id: 'chrome-devtools-mcp',
-                displayName: 'Chrome DevTools MCP',
-                description: 'Direct browser DOM inspection, console logs, network monitoring and live debugging.',
-                logo: '',
-                marketplace: 'builtin',
-                kind: { case: 'plugin', value: {} },
-                version: '1.2.0',
-                tags: ['devtools', 'browser', 'debugging', 'mcp']
-              },
-              {
-                id: 'generative_ui',
-                displayName: 'Generative UI & Visual Artifacts',
-                description: 'Render interactive HTML, SVG charts, data visualizations, and live reactive widgets in chat.',
-                logo: '',
-                marketplace: 'builtin',
-                kind: { case: 'plugin', value: {} },
-                version: '2.0.0',
-                tags: ['ui', 'artifacts', 'visualization', 'frontend']
-              },
-              {
-                id: 'plugin',
-                displayName: 'Plugin Management Hub',
-                description: 'Install, manage, toggle and bundle skills, rules, MCP servers and custom agents as unified plugins.',
-                logo: '',
-                marketplace: 'builtin',
-                kind: { case: 'plugin', value: {} },
-                version: '2.1.0',
-                tags: ['plugins', 'ecosystem', 'management']
-              },
-              {
-                id: 'ui-plugin-navigation',
-                displayName: 'UI Sidecar & Panel Navigation',
-                description: 'One-click shortcuts to discover and toggle side panels, status widgets and active tools.',
-                logo: '',
-                marketplace: 'builtin',
-                kind: { case: 'plugin', value: {} },
-                version: '1.5.0',
-                tags: ['ui', 'navigation', 'sidecar']
-              },
-              {
-                id: 'permissioned-github',
-                displayName: 'Permissioned GitHub Integration',
-                description: 'Secure GitHub operations with per-action branch guardrails and PR merge automation.',
-                logo: '',
-                marketplace: 'builtin',
-                kind: { case: 'plugin', value: {} },
-                version: '1.1.0',
-                tags: ['github', 'vcs', 'security']
-              }
-            ];
 
             const formatTitle = function(name) {
               if (!name) return '';
@@ -285,24 +514,11 @@
                 description: s.description || ('Capability: ' + s.name),
                 logo: '',
                 marketplace: 'builtin',
-                kind: { case: 'skill', value: {} },
+                skill: {},
                 version: '1.0.0',
                 tags: ['skill'].concat(s.name.split('-'))
               };
             });
-
-            const CORE_SKILLS = [
-              { id: 'boost', displayName: 'Boost Multi-Agent Swarm', description: 'Invoke the Boost multi-agent orchestrator for complex tasks, system design, and formal verification.', kind: { case: 'skill', value: {} } },
-              { id: 'owl', displayName: 'Owl Autonomous Multi-Agent', description: 'Invoke the Owl multi-agent orchestrator for complex tasks and system design.', kind: { case: 'skill', value: {} } },
-              { id: 'teamwork', displayName: 'Teamwork Swarm Orchestrator', description: 'Teamwork multi-agent swarm for parallel execution and adversarial code review.', kind: { case: 'skill', value: {} } },
-              { id: 'reverse-engineer-anything', displayName: 'Reverse Engineer Anything (REA)', description: 'Reverse engineer native, managed, Electron/JS, packaged, and browser targets.', kind: { case: 'skill', value: {} } },
-              { id: 'ponytail', displayName: 'Ponytail Senior Dev Suite', description: 'Forces the minimal working solution: senior dev mode, audit, and debt ledger.', kind: { case: 'skill', value: {} } },
-              { id: 'impeccable', displayName: 'Impeccable UI & Behavioral Polish', description: 'Design, shape, critique and polish frontend interfaces with 65 behavioral psychology principles.', kind: { case: 'skill', value: {} } },
-              { id: 'security-review', displayName: 'Codebase Security Scanner', description: 'AI-powered codebase security scanner tracing data flows and catching vulnerabilities.', kind: { case: 'skill', value: {} } },
-              { id: 'autoplan', displayName: 'Autoplan Review Suite', description: 'Automated strategy, design, engineering architecture and DX reviews.', kind: { case: 'skill', value: {} } },
-              { id: 'antislop', displayName: 'Anti-Slop Suite for Coding Agents', description: 'Universal filter to prevent AI slop across code comments, UI design, typography and layouts.', kind: { case: 'skill', value: {} } },
-              { id: 'investigate', displayName: 'Systematic Root Cause Investigator', description: 'Systematic debugging with root cause investigation and verification.', kind: { case: 'skill', value: {} } }
-            ];
 
             const seen = new Set(BUILTIN_PLUGINS.map(function(p) { return p.id; }));
             const merged = BUILTIN_PLUGINS.slice();
@@ -328,49 +544,15 @@
             lastMarketplaceFetchTime = Date.now();
           }
 
-          const GROUPS = [
-            {
-              id: 'featured',
-              displayName: '⭐ Featured Superpowers & Plugins',
-              description: 'Curated autonomous swarms, reverse engineering, and developer suites.',
-              memberIds: ['automation', 'chrome-devtools-mcp', 'boost', 'owl', 'teamwork', 'reverse-engineer-anything', 'ponytail', 'security-review', 'generative_ui'],
-              nextPageToken: ''
-            },
-            {
-              id: 'architecture',
-              displayName: '🛠️ Developer Experience & Architecture',
-              description: 'Codebase analysis, refactoring, code review swarms, and root-cause debugging.',
-              memberIds: ['investigate', 'systematic-debugging', 'autoplan', 'devex-review', 'health', 'plan', 'spec', 'writing-plans', 'executing-plans'],
-              nextPageToken: ''
-            },
-            {
-              id: 'frontend-design',
-              displayName: '🎨 UI, Design & Behavioral Polish',
-              description: 'Cognitive psychology UX audits, generative UI widgets, anti-slop filters, and design systems.',
-              memberIds: ['impeccable', 'generative_ui', 'antislop', 'design-consultation', 'design-review', 'design-html', 'design-shotgun'],
-              nextPageToken: ''
-            },
-            {
-              id: 'qa-security',
-              displayName: '🛡️ Security, QA & Automated Deployment',
-              description: 'Security vulnerability scanners, QA dogfooding, and protected ship pipelines.',
-              memberIds: ['security-review', 'qa', 'qa-only', 'test-driven-development', 'careful', 'guard', 'ship', 'land-and-deploy'],
-              nextPageToken: ''
-            }
-          ];
-
           if (reqGroupId) {
             const selectedGroup = GROUPS.find(function(g) { return g.id === reqGroupId; });
             const groupMemberSet = new Set(selectedGroup ? selectedGroup.memberIds : []);
             const groupItems = (cachedMarketplaceItems || []).filter(function(c) { return groupMemberSet.has(c.id); });
-            return new Response(JSON.stringify({
+            return formatResponse({
               customizations: groupItems,
               groups: [],
               nextPageToken: ''
-            }), {
-              status: 200,
-              headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
-            });
+            }, reqHeaders);
           }
 
           let outItems = cachedMarketplaceItems || [];
@@ -390,61 +572,47 @@
             });
           }).filter(function(g) { return g.memberIds.length > 0; });
 
-          return new Response(JSON.stringify({
+          return formatResponse({
             customizations: outItems,
             groups: outGroups,
             nextPageToken: ''
-          }), {
-            status: 200,
-            headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
-          });
+          }, reqHeaders);
         } catch (searchErr) {
           console.warn('[AG] SearchMarketplace error in rendererHook:', searchErr);
         }
       }
 
-      // 4. Intercept GetMarketplaceBundles: return curated packs for the bundles shelf
+      // 5. Intercept GetMarketplaceBundles: return curated packs for the bundles shelf
       if (isMarketplaceBundles) {
-        return new Response(JSON.stringify({
+        return formatResponse({
           bundles: [
             {
               id: 'bundle-senior-dev',
               displayName: 'Senior Dev & Optimization Pack',
               description: 'Ponytail lazy senior dev mode, root cause investigation, and security review.',
-              members: [
-                { id: 'ponytail', displayName: 'Ponytail Lazy Dev', kind: { case: 'skill', value: {} } },
-                { id: 'security-review', displayName: 'Security Review', kind: { case: 'skill', value: {} } },
-                { id: 'investigate', displayName: 'Systematic Investigation', kind: { case: 'skill', value: {} } }
-              ]
+              marketplace: 'builtin',
+              memberIds: ['ponytail', 'security-review', 'investigate']
             },
             {
               id: 'bundle-swarms',
               displayName: 'Autonomous Swarm Ensemble',
               description: 'Multi-agent orchestration, Boost swarm reasoning, and Teamwork swarm.',
-              members: [
-                { id: 'boost', displayName: 'Boost Swarm', kind: { case: 'skill', value: {} } },
-                { id: 'owl', displayName: 'Owl Orchestrator', kind: { case: 'skill', value: {} } },
-                { id: 'teamwork', displayName: 'Teamwork Swarm', kind: { case: 'skill', value: {} } }
-              ]
+              marketplace: 'builtin',
+              memberIds: ['boost', 'owl', 'teamwork']
             },
             {
               id: 'bundle-ux-polish',
               displayName: 'UI / UX Design & Behavioral Polish',
               description: '65 behavioral psychology principles, generative UI components, and anti-slop filters.',
-              members: [
-                { id: 'impeccable', displayName: 'Impeccable UI', kind: { case: 'skill', value: {} } },
-                { id: 'generative_ui', displayName: 'Generative UI', kind: { case: 'skill', value: {} } },
-                { id: 'antislop', displayName: 'Anti-Slop Filter', kind: { case: 'skill', value: {} } }
-              ]
+              marketplace: 'builtin',
+              memberIds: ['impeccable', 'generative_ui', 'antislop']
             }
-          ]
-        }), {
-          status: 200,
-          headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
-        });
+          ],
+          customizations: cachedMarketplaceItems || BUILTIN_PLUGINS
+        }, reqHeaders);
       }
 
-      // 5. Intercept GetMarketplaceCustomization: return full details and markdown preview
+      // 6. Intercept GetMarketplaceCustomization: return full details and markdown preview
       if (isMarketplaceCustomization) {
         try {
           let targetId = '';
@@ -461,51 +629,43 @@
             displayName: targetId,
             description: 'Customization ' + targetId,
             marketplace: 'builtin',
-            kind: { case: 'skill', value: {} },
+            skill: {},
             version: '1.0.0',
             tags: []
           };
 
-          return new Response(JSON.stringify({
+          return formatResponse({
             customization: item,
             preview: {
-              case: item.kind && item.kind.case === 'plugin' ? 'plugin' : 'skill',
+              case: item.plugin ? 'plugin' : 'skill',
               value: {
                 readme: '# ' + (item.displayName || item.id) + '\n\n' + (item.description || '') + '\n\n### Status\nBuilt-in / Installed capability ready for immediate use.',
                 overview: item.description || item.displayName
               }
             }
-          }), {
-            status: 200,
-            headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
-          });
+          }, reqHeaders);
         } catch (detailErr) {
           console.warn('[AG] GetMarketplaceCustomization error in rendererHook:', detailErr);
         }
       }
 
-      // 6. Intercept InstallCustomization: acknowledge installation
+      // 7. Intercept InstallCustomization: acknowledge installation
       if (isInstallCustomization) {
-        return new Response(JSON.stringify({}), {
-          status: 200,
-          headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
-        });
+        return formatResponse({ success: true }, reqHeaders);
       }
 
-      // 7. Intercept SearchMarketplaceCustomizations: return empty for internal Google CL extensions
+      // 8. Intercept SearchMarketplaceCustomizations: return empty for internal Google CL extensions
       if (isSearchMarketplaceCustomizations) {
-        return new Response(JSON.stringify({
+        return formatResponse({
           extensions: [],
           hasMore: false
-        }), {
-          status: 200,
-          headers: { 'content-type': 'application/json', 'connect-protocol-version': '1' }
-        });
+        }, reqHeaders);
       }
 
       return origFetch.apply(this, args);
     };
   })();
+
 
   console.log('[Antigravity 2.0] Initializing Remote Environment Hook...');
 

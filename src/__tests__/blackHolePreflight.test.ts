@@ -136,6 +136,8 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
     // Verified: Account is placed in transient cooldown, but NOT falsely marked unlicensed
     expect(isAccountUnlicensed(blackHoleAcc)).toBe(false);
     expect(isAccountInCooldown(blackHoleAcc, 'gemini')).toBe(true);
+    // Verified: Gemini timeout probe does NOT contaminate Claude cooldown
+    expect(isAccountInCooldown(blackHoleAcc, 'claude')).toBe(false);
   });
 
   it('restores and marks healthy accounts active on HTTP 200 OK', async () => {
@@ -297,6 +299,61 @@ describe('Black-Hole Account Elimination & Pre-Flight Health Checks', () => {
 
     expect(callCount).toBe(2);
     expect(result).toBe(true);
+  });
+
+  it('does not place thinking candidate in black-hole cooldown when client drops connection (499) at normal TTFT', async () => {
+    vi.spyOn(https, 'request').mockImplementation((_url: any, _opts: any, _cb: any): any => {
+      const emitter = new EventEmitter() as any;
+      emitter.write = vi.fn();
+      emitter.setTimeout = vi.fn();
+      emitter.destroy = vi.fn();
+      emitter.end = vi.fn(() => {
+        emitter.emit('error', new Error('socket hang up'));
+      });
+      return emitter;
+    });
+
+    const accThinking: CustomModel = {
+      name: 'acc-thinking',
+      provider: 'google',
+      apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      refreshToken: 'tok-think',
+      accountEmail: 'thinker@gmail.com',
+      externalModelName: 'gemini-3.8-flash-tiered',
+    } as any;
+
+    const fakeReq = { url: '/v1internal:generateContent', method: 'POST', headers: {} } as any;
+    const fakeSocket = { destroyed: true, writable: false };
+    const fakeRes = {
+      writableEnded: false,
+      destroyed: true, // Client dropped
+      headersSent: false,
+      socket: fakeSocket,
+      writeHead: vi.fn(),
+      write: vi.fn(),
+      end: vi.fn(),
+      once: vi.fn(),
+      off: vi.fn(),
+    } as any;
+
+    const result = await executeGoogleCloudCodeWithPool(
+      fakeReq,
+      fakeRes,
+      {
+        model: 'gemini-3.8-flash-tiered',
+        request: {
+          contents: [{ parts: [{ text: 'deep prompt' }] }],
+          generationConfig: { thinkingConfig: { thinkingBudget: 4096 } },
+        },
+      },
+      [accThinking],
+      false,
+      'conv-think',
+      'sess-think',
+    );
+
+    expect(result).toBe(false);
+    expect(isAccountInCooldown(accThinking, 'gemini')).toBe(false);
   });
 
   it('skips probing accounts that are in-flight or recently active to prevent false-positive quarantines', async () => {

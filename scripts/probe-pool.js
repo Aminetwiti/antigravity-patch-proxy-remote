@@ -284,8 +284,28 @@ async function main() {
             detectionTime: Date.now()
           };
         }
-      } else if (quarantinedEmails.has(a.email)) {
-        if (a.enabled !== false) { a.enabled = false; modified = true; }
+      } else {
+        // Pour les comptes en attente de quota (429) ou sans challenge actif :
+        // Si le compte avait un ancien flag de challenge, on le purge car l'authentification est passée
+        if (a.isValidationRequired) {
+          delete a.isValidationRequired;
+          modified = true;
+        }
+        if (a.errorDetails && (a.errorDetails.status === 'VALIDATION_REQUIRED' || a.errorDetails.reason === 'VALIDATION_REQUIRED')) {
+          delete a.errorDetails;
+          modified = true;
+        }
+        if (a.lastError && (a.lastError.includes('VALIDATION_REQUIRED') || a.lastError.includes('403'))) {
+          delete a.lastError;
+          modified = true;
+        }
+
+        if (quarantinedEmails.has(a.email)) {
+          if (a.enabled !== false) { a.enabled = false; modified = true; }
+        } else {
+          if (a.enabled === false) { a.enabled = true; modified = true; }
+          if (a.status === 'validation_required') { a.status = 'healthy'; modified = true; }
+        }
       }
     }
 

@@ -829,12 +829,12 @@ describe('Burst Rate Limit Governor & Constants', () => {
       const trialAcc = makeModel({
         accountEmail: 'student-trial@example.com',
         isTrial: true,
-        quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 } as any,
+        quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100, claudeFiveHourPct: 100, claudeWeeklyPct: 100 } as any,
       } as any);
       const paidAcc = makeModel({
         accountEmail: 'paid-dev@example.com',
         isTrial: false,
-        quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90 } as any,
+        quotas: { geminiFiveHourPct: 90, geminiWeeklyPct: 90, claudeFiveHourPct: 90, claudeWeeklyPct: 90 } as any,
       } as any);
 
       expect(isAccountTrial(trialAcc)).toBe(true);
@@ -940,6 +940,58 @@ describe('Burst Rate Limit Governor & Constants', () => {
       _clearLiveQuotasForTests();
     });
 
+    it('classifyGoogleCloudCode429 prioritizes quota exhaustion keywords over generic rate limit', () => {
+      // Body has both "rate limit" and "quota exhausted"
+      const mixedBody = 'HTTP 429 Too Many Requests: Rate limit exceeded: quota exhausted for resource gemini-2.5-pro';
+      const r = classifyGoogleCloudCode429(mixedBody);
+      expect(r.category).toBe('quota_exhausted');
+      expect(r.cooldownMs).toBeGreaterThanOrEqual(5 * 3600 * 1000);
+    });
+
+    it('selectCandidateP2C returns undefined and excludes accounts when all candidates have 0% quota', () => {
+      _resetAllAccountCooldowns();
+      const exhausted1 = makeModel({
+        accountEmail: 'exhausted1@test.com',
+        quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 100, fiveHourPercentage: 0 } as any,
+      });
+      const exhausted2 = makeModel({
+        accountEmail: 'exhausted2@test.com',
+        quotas: { geminiFiveHourPct: 0, geminiWeeklyPct: 100, fiveHourPercentage: 0 } as any,
+      });
+
+      // Single exhausted candidate
+      expect(selectCandidateP2C([exhausted1], 'gemini')).toBeUndefined();
+
+      // Multiple exhausted candidates — must NOT fall back to targetCandidates with 0 quota
+      const selected = selectCandidateP2C([exhausted1, exhausted2], 'gemini');
+      expect(selected).toBeUndefined();
+    });
+
+    it('autoHealAccountOnQuotaRecovery sets a multi-hour cooldown when poller detects 0% quota', () => {
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+      const testEmail = 'poll-exhausted@example.com';
+      const key = `google:${testEmail}`;
+      const acc = makeModel({ accountEmail: testEmail });
+
+      const zeroQuota = {
+        geminiFiveHourPct: 0,
+        geminiWeeklyPct: 100,
+        fiveHourPercentage: 0,
+        weeklyPercentage: 100,
+        geminiFiveHourReset: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
+        updatedAt: Date.now(),
+      } as any;
+
+      autoHealAccountOnQuotaRecovery(key, zeroQuota);
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+      const remaining = getAccountCooldownRemaining(acc, 'gemini');
+      // Should have ~4 hours cooldown remaining (>= 3.9h)
+      expect(remaining).toBeGreaterThan(3.5 * 3600 * 1000);
+
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+    });
   });
 });
 

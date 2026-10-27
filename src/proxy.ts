@@ -1067,26 +1067,71 @@ export function transformGoogleStreamForRemote(
     clientRes.once('close', onClientClose);
   }
 
-  const idleGuard = new IdleTimeoutGuard(proxyRes, {
-    idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
-    label: modelName || 'google-stream',
-    onTimeout: (err) => {
-      log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} — aborting socket`);
-      try { proxyRes.destroy(err); } catch (_) {}
-    },
-  });
+  // 3s periodic SSE keepalive heartbeat (prevents Go Language Server 5m0s context deadline timeout
+  // during upstream model reasoning/thinking pauses or temporary network stalls).
+  const HEARTBEAT_INTERVAL_MS = 3000;
+  let lastChunkTime = Date.now();
+  const heartbeatTimer = setInterval(() => {
+    if (clientRes.writableEnded || clientRes.destroyed) {
+      clearInterval(heartbeatTimer);
+      return;
+    }
+    if (Date.now() - lastChunkTime >= HEARTBEAT_INTERVAL_MS) {
+      try {
+        clientRes.write(': ping\n\n');
+        if (typeof (clientRes as any).flush === 'function') {
+          try { (clientRes as any).flush(); } catch (_) {}
+        }
+      } catch {
+        clearInterval(heartbeatTimer);
+      }
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+
+  if (typeof (heartbeatTimer as any)?.unref === 'function') {
+    (heartbeatTimer as any).unref();
+  }
+
+  const cleanupHeartbeat = () => {
+    clearInterval(heartbeatTimer);
+  };
+  if (typeof clientRes?.on === 'function') {
+    clientRes.on('close', cleanupHeartbeat);
+    clientRes.on('finish', cleanupHeartbeat);
+  }
+  if (typeof proxyRes?.on === 'function') {
+    proxyRes.on('close', cleanupHeartbeat);
+    proxyRes.on('error', cleanupHeartbeat);
+  }
 
   const encoding = (proxyRes.headers['content-encoding'] || '').toLowerCase();
   let stream: NodeJS.ReadableStream = proxyRes;
   if (encoding === 'gzip') {
     const gunzip = zlib.createGunzip();
     proxyRes.pipe(gunzip);
+    proxyRes.on('error', (err) => gunzip.destroy(err));
+    proxyRes.on('close', () => { if (!gunzip.destroyed) gunzip.destroy(); });
     stream = gunzip;
   } else if (encoding === 'deflate') {
     const inflate = zlib.createInflate();
     proxyRes.pipe(inflate);
+    proxyRes.on('error', (err) => inflate.destroy(err));
+    proxyRes.on('close', () => { if (!inflate.destroyed) inflate.destroy(); });
     stream = inflate;
   }
+
+  const idleGuard = new IdleTimeoutGuard(proxyRes, {
+    idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+    label: modelName || 'google-stream',
+    onTimeout: (err) => {
+      log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} — aborting socket`);
+      cleanupHeartbeat();
+      try { proxyRes.destroy(err); } catch (_) {}
+      if (stream !== proxyRes && typeof (stream as any).destroy === 'function') {
+        try { (stream as any).destroy(err); } catch (_) {}
+      }
+    },
+  });
 
   const decoder = new StringDecoder('utf-8');
   let buffer = '';
@@ -1187,6 +1232,7 @@ export function transformGoogleStreamForRemote(
   };
 
   stream.on('data', (chunk: Buffer) => {
+    lastChunkTime = Date.now();
     buffer += decoder.write(chunk);
     let lineEndIdx: number;
     while ((lineEndIdx = buffer.indexOf('\n')) !== -1) {
@@ -1197,6 +1243,7 @@ export function transformGoogleStreamForRemote(
   });
 
   stream.on('end', () => {
+    cleanupHeartbeat();
     buffer += decoder.end();
     if (buffer.length > 0) {
       processLine(buffer);
@@ -1251,6 +1298,7 @@ export function transformGoogleStreamForRemote(
   });
 
   stream.on('error', (err) => {
+    cleanupHeartbeat();
     idleGuard.dispose();
     if (typeof clientRes?.off === 'function') {
       clientRes.off('close', onClientClose);
@@ -1261,7 +1309,10 @@ export function transformGoogleStreamForRemote(
         response: {
           candidates: [
             {
-              content: { parts: [{ text: '' }], role: 'model' },
+              content: {
+                parts: [{ text: '\n\n> ⚠️ *[Proxy] La connexion au modèle a été interrompue prématurément par une erreur réseau upstream.*' }],
+                role: 'model',
+              },
               finishReason: 'STOP',
               index: 0,
             },
@@ -1674,22 +1725,24 @@ export function executeGoogleCloudCodeRequest(
         ...(req.headers as Record<string, string | string[] | undefined>),
       };
       headers['host'] = targetHost;
-      log.info(`[CloudCode Dispatch Detail] host=${targetHost} ip=${realIp} url=${req.url} customAuth=${Boolean(customAuthHeader)} headers=${Object.keys(headers).join(',')}`);
       headers['content-length'] = String(reqBody.length);
       delete headers['connection'];
       delete headers['keep-alive'];
+      delete headers['Authorization'];
+      delete headers['authorization'];
       if (customAuthHeader) {
         headers['authorization'] = customAuthHeader;
-        headers['Authorization'] = customAuthHeader;
       }
       if (isCloudCodeUrl) {
+        delete headers['User-Agent'];
+        delete headers['user-agent'];
         headers['user-agent'] = 'antigravity';
-        headers['User-Agent'] = 'antigravity';
         if (candidate) {
           const virtualDevHeaders = getAccountVirtualDeviceHeaders(candidate);
           Object.assign(headers, virtualDevHeaders);
         }
       }
+      log.info(`[CloudCode Dispatch Detail] host=${targetHost} ip=${realIp} url=${req.url} customAuth=${Boolean(customAuthHeader)} headers=${Object.keys(headers).join(',')}`);
 
       const isGeneration = req.url!.includes('generateContent') || req.url!.includes('streamGenerateContent');
       const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
@@ -2125,7 +2178,7 @@ export async function executeGoogleCloudCodeWithPool(
   });
 
   let boundAccount: CustomModel | undefined;
-  const useStickySessions = process.env.AG_STICKY_GOOGLE_ACCOUNTS === '1';
+  const useStickySessions = process.env.AG_STICKY_GOOGLE_ACCOUNTS !== '0';
   if (sessId && useStickySessions) {
     const affinity = sessionAffinities.get(sessId);
     if (affinity) {
@@ -2146,7 +2199,10 @@ export async function executeGoogleCloudCodeWithPool(
           sortedAccounts.unshift(boundAccount);
         }
       } else {
-        sessionAffinities.delete(sessId);
+        const boundCandidate = sortedAccounts.find((m) => getAccountQuotaKey(m) === affinity.accountKey);
+        if (boundCandidate && ((boundCandidate as any).enabled === false || isAccountUnlicensed(boundCandidate) || isTokenRevoked(boundCandidate.refreshToken))) {
+          sessionAffinities.delete(sessId);
+        }
       }
     }
   }
@@ -2225,8 +2281,17 @@ export async function executeGoogleCloudCodeWithPool(
     );
   }
 
+  const poolLoopStartTime = Date.now();
+  const MAX_POOL_LOOP_DURATION_MS = 210_000; // 3m30s max: prevents Go Language Server 5m0s stream idle timeout
+
   for (let i = 0; i < totalAttempts; i++) {
     if (initialHealthyCount === 0) break;
+    if (Date.now() - poolLoopStartTime >= MAX_POOL_LOOP_DURATION_MS) {
+      log.warn(`[Proxy] Account pool loop safety budget reached (${Math.round((Date.now() - poolLoopStartTime) / 1000)}s). Halting account rotation to prevent Go Language Server 5m0s context deadline timeout.`);
+      if (!lastStatus || lastStatus === 200) lastStatus = 504;
+      if (!lastErrorText) lastErrorText = 'Account pool loop safety budget expired before upstream response';
+      break;
+    }
     const candidate = sortedAccounts[i];
     const candidateName =
       candidate.accountEmail ||
@@ -2235,9 +2300,9 @@ export async function executeGoogleCloudCodeWithPool(
       candidate.displayName ||
       candidate.name;
 
-    // Fast-skip: if this candidate is disabled or unlicensed
-    if ((candidate as any).enabled === false || isAccountUnlicensed(candidate)) {
-      log.info(`[Proxy] Fast-skipping candidate ${candidateName}: account is disabled or unlicensed`);
+    // Fast-skip: if this candidate is disabled, unlicensed, or has a pending security challenge
+    if ((candidate as any).enabled === false || isAccountUnlicensed(candidate) || (candidate as any).isValidationRequired === true || (candidate as any).status === 'validation_required') {
+      log.info(`[Proxy] Fast-skipping candidate ${candidateName}: account is disabled, unlicensed, or requires security validation`);
       continue;
     }
 
@@ -2247,6 +2312,8 @@ export async function executeGoogleCloudCodeWithPool(
         (c) =>
           (c as any).enabled !== false &&
           !isAccountUnlicensed(c) &&
+          !(c as any).isValidationRequired &&
+          (c as any).status !== 'validation_required' &&
           !isAccountInCooldown(c, modelFamily) &&
           getModelQuotaScore(c, modelFamily) > 0,
       );
@@ -2267,6 +2334,8 @@ export async function executeGoogleCloudCodeWithPool(
         (c) =>
           (c as any).enabled !== false &&
           !isAccountUnlicensed(c) &&
+          !(c as any).isValidationRequired &&
+          (c as any).status !== 'validation_required' &&
           !isAccountInCooldown(c, modelFamily) &&
           getModelQuotaScore(c, modelFamily) > 0,
       );
@@ -2286,6 +2355,10 @@ export async function executeGoogleCloudCodeWithPool(
       const hasOtherFreeAccount = sortedAccounts.some(
         (c) =>
           c !== candidate &&
+          (c as any).enabled !== false &&
+          !isAccountUnlicensed(c) &&
+          !(c as any).isValidationRequired &&
+          (c as any).status !== 'validation_required' &&
           !isAccountInCooldown(c, modelFamily) &&
           !getOpenBreaker(c) &&
           getModelQuotaScore(c, modelFamily) > 0 &&
@@ -2307,6 +2380,10 @@ export async function executeGoogleCloudCodeWithPool(
         const freedAccount = sortedAccounts.some(
           (c) =>
             c !== candidate &&
+            (c as any).enabled !== false &&
+            !isAccountUnlicensed(c) &&
+            !(c as any).isValidationRequired &&
+            (c as any).status !== 'validation_required' &&
             !isAccountInCooldown(c, modelFamily) &&
             !getOpenBreaker(c) &&
             getModelQuotaScore(c, modelFamily) > 0 &&
@@ -2326,7 +2403,8 @@ export async function executeGoogleCloudCodeWithPool(
     }
 
     const targetModel = normalizeCloudCodeModelId(candidate.externalModelName || candidate.name);
-    const quotaScore = getModelQuotaScore(candidate, modelFamily);
+    const currentFamily = targetModel.toLowerCase().includes('claude') ? 'claude' : (targetModel ? 'gemini' : modelFamily);
+    const quotaScore = getModelQuotaScore(candidate, currentFamily);
     const formattedQuota = Number(quotaScore.toFixed(1));
 
     const qKey = getAccountQuotaKey(candidate);
@@ -2417,6 +2495,13 @@ export async function executeGoogleCloudCodeWithPool(
     recordAccountRequest(candidate);
     incrementAccountInFlight(candidate);
     const startReqTime = Date.now();
+    let candidateInFlightReleased = false;
+    const releaseCandidateInFlight = () => {
+      if (!candidateInFlightReleased) {
+        candidateInFlightReleased = true;
+        decrementAccountInFlight(candidate);
+      }
+    };
     const candidateHost = candidate.apiUrl ? (() => {
       try {
         const u = new URL(candidate.apiUrl);
@@ -2480,11 +2565,12 @@ export async function executeGoogleCloudCodeWithPool(
       }
     }
 
+    const isFlashThinkingHedgeable = isFlashModel && isThinkingModel && !isLargePayload;
     const canHedge =
       isStreamReq &&
       hasOtherCandidates &&
       isFlashModel &&
-      !isLargePayloadOrThinking &&
+      (!isLargePayloadOrThinking || isFlashThinkingHedgeable) &&
       !isContextualPayload &&
       !res.headersSent &&
       !res.writableEnded &&
@@ -2528,16 +2614,25 @@ export async function executeGoogleCloudCodeWithPool(
           candidate,
         );
 
-        const hedgeDelay = Math.min(HEDGED_REQUEST_DELAY_MS, Math.floor(poolHeaderTimeout * 0.6));
+        const baseHedgeDelay = isFlashThinkingHedgeable
+          ? Math.max(HEDGED_REQUEST_DELAY_MS, 15_000)
+          : HEDGED_REQUEST_DELAY_MS;
+        const hedgeDelay = Math.min(baseHedgeDelay, Math.floor(poolHeaderTimeout * 0.6));
 
         const hedgePromise = new Promise<GoogleRequestOutcome>((resolveHedge) => {
           hedgeTimer = setTimeout(async () => {
-            if (claimer.isClaimed() || res.headersSent || res.writableEnded) return;
+            if (claimer.isClaimed() || res.headersSent || res.writableEnded) {
+              resolveHedge({ success: false, statusCode: 499, error: 'Hedge aborted: already claimed or response finished' });
+              return;
+            }
 
             const sibling = sortedAccounts.slice(i + 1).find(
               (c) => !isAccountInCooldown(c, modelFamily) && getModelQuotaScore(c, modelFamily) > 0,
             );
-            if (!sibling) return;
+            if (!sibling) {
+              resolveHedge({ success: false, statusCode: 504, error: 'Hedge skipped: no eligible sibling accounts' });
+              return;
+            }
 
             const siblingName = sibling.accountEmail || sibling.name || 'sibling';
             log.info(
@@ -2549,7 +2644,10 @@ export async function executeGoogleCloudCodeWithPool(
               siblingToken = await getValidGoogleAccessToken(sibling);
             } catch (_) {}
 
-            if (!siblingToken || claimer.isClaimed() || res.headersSent || res.writableEnded) return;
+            if (!siblingToken || claimer.isClaimed() || res.headersSent || res.writableEnded) {
+              resolveHedge({ success: false, statusCode: 504, error: 'Hedge skipped: token unavailable or already claimed' });
+              return;
+            }
 
             const siblingReqJson = JSON.parse(JSON.stringify(reqJson));
             siblingReqJson.project = resolveGoogleProjectId(sibling);
@@ -2564,6 +2662,13 @@ export async function executeGoogleCloudCodeWithPool(
             recordAccountRequest(sibling);
             incrementAccountInFlight(sibling);
             const siblingStart = Date.now();
+            let siblingInFlightReleased = false;
+            const releaseSiblingInFlight = () => {
+              if (!siblingInFlightReleased) {
+                siblingInFlightReleased = true;
+                decrementAccountInFlight(sibling);
+              }
+            };
 
             try {
               const siblingOutcome = await executeGoogleCloudCodeRequest(
@@ -2592,7 +2697,21 @@ export async function executeGoogleCloudCodeWithPool(
               }
               resolveHedge(siblingOutcome);
             } finally {
-              decrementAccountInFlight(sibling);
+              const siblingStreamActive =
+                isStreamReq &&
+                successfulCandidate === sibling &&
+                !res.writableEnded &&
+                !res.destroyed &&
+                typeof res.once === 'function';
+              if (siblingStreamActive) {
+                res.once('finish', () => {
+                  recordAccountLatency(sibling, Date.now() - siblingStart);
+                  releaseSiblingInFlight();
+                });
+                res.once('close', releaseSiblingInFlight);
+              } else {
+                releaseSiblingInFlight();
+              }
             }
           }, hedgeDelay);
         });
@@ -2635,11 +2754,25 @@ export async function executeGoogleCloudCodeWithPool(
         recordAccountLatency(candidate, Math.max(reqDuration, poolHeaderTimeout));
       }
     } finally {
-      decrementAccountInFlight(candidate);
+      const candidateStreamActive =
+        isStreamReq &&
+        outcome?.success &&
+        successfulCandidate === candidate &&
+        !res.writableEnded &&
+        !res.destroyed &&
+        typeof res.once === 'function';
+      if (candidateStreamActive) {
+        res.once('finish', () => {
+          recordAccountLatency(candidate, Date.now() - startReqTime);
+          releaseCandidateInFlight();
+        });
+        res.once('close', releaseCandidateInFlight);
+      } else {
+        releaseCandidateInFlight();
+      }
     }
 
     const elapsedMs = Date.now() - startReqTime;
-    const currentFamily = targetModel.toLowerCase().includes('claude') ? 'claude' : (targetModel ? 'gemini' : modelFamily);
     if (outcome.success) {
       consecutiveTimeoutCount = 0;
       consecutiveTransportErrorCount = 0;
@@ -2662,14 +2795,16 @@ export async function executeGoogleCloudCodeWithPool(
     }
 
     // Downstream client socket check: only halt rotation if the IDE genuinely destroyed the connection
-    const isClientSocketAlive = !res.destroyed && !(res.socket && res.socket.destroyed) && !(req && (req as any).destroyed);
+    const isClientSocketAlive = !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed && res.socket.writable !== false);
 
     // If client actually dropped connection (IDE closed window, cancelled prompt):
     if (!isClientSocketAlive) {
-      if (elapsedMs >= 3_000 || outcome.statusCode === 504) {
-        log.warn(`[Proxy] Account [${candidateName}] stalled connection for ${Math.round(elapsedMs / 1000)}s before client closed (HTTP 499). Placing in 120s cooldown to protect pool from black-hole accounts.`);
-        setAccountCooldown(candidate, 120_000, currentFamily, true);
-        recordAccountLatency(candidate, 60_000);
+      const isGenuineUpstreamStall = outcome.statusCode === 504 || (elapsedMs >= poolHeaderTimeout && !res.headersSent);
+      if (isGenuineUpstreamStall) {
+        log.warn(`[Proxy] Account [${candidateName}] genuinely stalled upstream for ${Math.round(elapsedMs / 1000)}s before client closed (HTTP 499). Placing in 30s cooldown to protect pool from black-hole accounts.`);
+        setAccountCooldown(candidate, 30_000, currentFamily, true);
+        // ponytail: recording 60s latency permanently harms P2C ranking via EWMA for 15min. Record actual elapsedMs capped at 20s.
+        recordAccountLatency(candidate, Math.min(elapsedMs, 20_000));
       }
       log.info(`[Proxy] 🛑 Client cancelled or closed connection (HTTP 499). Halting account rotation loop.`);
       return false;
@@ -2709,6 +2844,20 @@ export async function executeGoogleCloudCodeWithPool(
 
       if (isGenuineQuotaExhaustion) {
         decision.category = 'quota_exhausted';
+        const liveKeyForCd = getAccountQuotaKey(candidate);
+        const existingLive = getLiveAccountQuota(liveKeyForCd);
+        const existingResetStr = currentFamily === 'claude'
+          ? (existingLive?.claudeFiveHourReset || existingLive?.claudeResetTime)
+          : (existingLive?.geminiFiveHourReset || existingLive?.geminiResetTime);
+        const existingResetTs = existingResetStr ? Date.parse(existingResetStr) : 0;
+        const nowMs = Date.now();
+        const remainingUntilReset = (existingResetTs > nowMs) ? (existingResetTs - nowMs) : 0;
+
+        const effectiveCooldown = decision.weeklyResetMs ||
+          (decision.cooldownMs > 5 * 60_000 ? decision.cooldownMs : (remainingUntilReset > 5 * 60_000 ? remainingUntilReset : 5 * 3600_000));
+
+        decision.cooldownMs = effectiveCooldown;
+        decision.reason = decision.reason || `Quota exhausted — ${Math.round(effectiveCooldown / 3600_000)}h cooldown`;
       } else {
         const burstCount = recordAccountBurst(candidate);
         let burstCooldownMs = 10_000;
@@ -2756,7 +2905,13 @@ export async function executeGoogleCloudCodeWithPool(
         const isWeekly = decision.cooldownMs > 24 * 3600 * 1000 || rawWeekly !== null;
         const nowMs = Date.now();
         const weeklyDuration = rawWeekly || decision.cooldownMs;
-        const resetIso = new Date(nowMs + weeklyDuration).toISOString();
+        const existingResetIso = currentFamily === 'claude'
+          ? (existingQuota?.claudeFiveHourReset || existingQuota?.claudeResetTime)
+          : (existingQuota?.geminiFiveHourReset || existingQuota?.geminiResetTime);
+        const existingResetTs = existingResetIso ? Date.parse(existingResetIso) : 0;
+        const resetIso = (existingResetTs > nowMs + 5 * 60_000 && !isWeekly)
+          ? existingResetIso!
+          : new Date(nowMs + (isWeekly ? weeklyDuration : Math.max(decision.cooldownMs, 5 * 3600_000))).toISOString();
         if (isWeekly) {
           setAccountCooldown(candidate, Math.min(weeklyDuration, 7 * 24 * 3600 * 1000), currentFamily);
         }
@@ -3089,28 +3244,11 @@ export async function executeGoogleCloudCodeWithPool(
       if (isCapacityExhausted) {
         consecutive503CapacityCount++;
         log.warn(
-          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED / 503 Overload for [${targetModel}]. Setting 0% quota for ${currentFamily} and cooling down for 15min. (Capacity 503 count: ${consecutive503CapacityCount}/${CAPACITY_503_CASCADE_THRESHOLD})`,
+          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED / 503 Overload for [${targetModel}]. Placing in 45s cooldown without clearing quota. (Capacity 503 count: ${consecutive503CapacityCount}/${CAPACITY_503_CASCADE_THRESHOLD})`,
         );
-        const liveKey = getAccountQuotaKey(candidate);
-        const existingQuota = getLiveAccountQuota(liveKey);
-        const nowMs = Date.now();
-        const resetIso = new Date(nowMs + 15 * 60_000).toISOString();
-        if (currentFamily === 'gemini') {
-          updateLiveAccountQuota(liveKey, {
-            ...existingQuota,
-            geminiFiveHourPct: 0,
-            geminiFiveHourReset: resetIso,
-            updatedAt: nowMs,
-          } as AccountLiveQuota);
-        } else if (currentFamily === 'claude') {
-          updateLiveAccountQuota(liveKey, {
-            ...existingQuota,
-            claudeFiveHourPct: 0,
-            claudeFiveHourReset: resetIso,
-            updatedAt: nowMs,
-          } as AccountLiveQuota);
-        }
-        setAccountCooldown(candidate, 15 * 60_000, currentFamily, true);
+        // Do not zero out the account's real 5-hour quota for transient upstream cluster capacity saturation.
+        // Instead, cool down briefly (45s) and penalize latency to give the TPU pod time to shed load.
+        setAccountCooldown(candidate, 45_000, currentFamily, true);
         recordAccountLatency(candidate, 45_000);
 
         const combinedOutageCount = consecutive503CapacityCount + consecutive504TimeoutCount;
@@ -3549,7 +3687,7 @@ export async function executeGoogleCloudCodeWithPool(
     !process.env.VITEST &&
     !res.writableEnded &&
     !res.destroyed &&
-    !req.destroyed
+    Boolean(res.socket && !res.socket.destroyed)
   ) {
     const soonest = getSoonestAccountCooldownRemaining(accountPool, modelFamily, RATE_LIMIT_RELIEF_WAIT_MS);
     if (soonest) {
@@ -3564,14 +3702,12 @@ export async function executeGoogleCloudCodeWithPool(
         `[Proxy] ⏳ [Rate Limit Relief] All pool accounts and fallbacks in cooldown. Waiting ${waitSec}s for account [${accName}] cooldown relief to prevent conversation crash...`,
       );
 
-      if (req.socket) req.socket.setTimeout(Math.max(120_000, waitMs + 30_000));
       if (res.socket) res.socket.setTimeout(Math.max(120_000, waitMs + 30_000));
 
       await new Promise<void>((resolve) => {
         let timer: NodeJS.Timeout | null = null;
         const cleanup = () => {
           if (timer) clearTimeout(timer);
-          if (typeof req?.removeListener === 'function') req.removeListener('close', onClose);
           if (typeof res?.removeListener === 'function') res.removeListener('close', onClose);
         };
         const onClose = () => {
@@ -3583,11 +3719,10 @@ export async function executeGoogleCloudCodeWithPool(
           resolve();
         }, waitMs);
         if (timer.unref) timer.unref();
-        if (typeof req?.once === 'function') req.once('close', onClose);
         if (typeof res?.once === 'function') res.once('close', onClose);
       });
 
-      if (!res.writableEnded && !res.destroyed && !req.destroyed) {
+      if (!res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
         log.info(`[Proxy] 🟢 [Rate Limit Relief] Cooldown expired! Retrying request on recovered Google pool...`);
         // Restore original target model in reqJson if fallback attempts modified it
         if (targetRaw) {
@@ -3965,11 +4100,18 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     if (Date.now() - lastChunkTime >= HEARTBEAT_INTERVAL_MS) {
       try {
         res.write(': ping\n\n');
+        if (typeof (res as any).flush === 'function') {
+          try { (res as any).flush(); } catch (_) {}
+        }
       } catch {
         clearInterval(heartbeatTimer);
       }
     }
   }, HEARTBEAT_INTERVAL_MS);
+
+  if (typeof (heartbeatTimer as any)?.unref === 'function') {
+    (heartbeatTimer as any).unref();
+  }
 
   const cleanupHeartbeat = () => {
     clearInterval(heartbeatTimer);
@@ -4523,6 +4665,21 @@ export function getSessionBoundModel(
 
 export function bindSessionToModel(sessionId: string, model: CustomModel): void {
   if (model.name?.includes(':auto-pool') || model.apiKey === 'auto') return;
+  if (sessionAffinities.size >= 500) {
+    const now = Date.now();
+    for (const [sId, aff] of sessionAffinities.entries()) {
+      if (now - aff.lastUsed > SESSION_AFFINITY_TTL_MS) {
+        sessionAffinities.delete(sId);
+      }
+    }
+    if (sessionAffinities.size >= 500) {
+      const sorted = Array.from(sessionAffinities.entries()).sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+      const toRemove = sorted.slice(0, sessionAffinities.size - 400);
+      for (const [oldId] of toRemove) {
+        sessionAffinities.delete(oldId);
+      }
+    }
+  }
   sessionAffinities.set(sessionId, {
     modelName: model.name,
     accountKey: getAccountQuotaKey(model),
@@ -4533,6 +4690,37 @@ export function bindSessionToModel(sessionId: string, model: CustomModel): void 
 export function clearSessionAffinities(): void {
   sessionAffinities.clear();
   sessionModelFallbacks.clear();
+  sessionEffortAffinities.clear();
+}
+
+interface SessionEffortEntry {
+  effort: string;
+  lastUsed: number;
+}
+const sessionEffortAffinities = new Map<string, SessionEffortEntry>();
+
+export function setSessionEffortAffinity(sessionId: string, effort: string): void {
+  if (!sessionId || !effort) return;
+  sessionEffortAffinities.set(sessionId, { effort: effort.toLowerCase(), lastUsed: Date.now() });
+}
+
+export function getSessionEffortAffinity(sessionId: string): string | undefined {
+  if (!sessionId) return undefined;
+  const entry = sessionEffortAffinities.get(sessionId);
+  if (!entry) return undefined;
+  if (Date.now() - entry.lastUsed > SESSION_AFFINITY_TTL_MS) {
+    sessionEffortAffinities.delete(sessionId);
+    return undefined;
+  }
+  return entry.effort;
+}
+
+export function clearSessionEffortAffinity(sessionId: string): void {
+  if (sessionId) sessionEffortAffinities.delete(sessionId);
+}
+
+export function clearAllSessionEffortAffinities(): void {
+  sessionEffortAffinities.clear();
 }
 
 export const SESSION_MODEL_FALLBACK_TTL_MS = 3 * 60 * 1000; // 3 minutes auto-recovery back to primary model
@@ -4552,7 +4740,7 @@ export function getSessionModelFallback(sessionKey: string): SessionModelFallbac
   if (!fb) return undefined;
   if (
     Date.now() - fb.lastUsed > SESSION_MODEL_FALLBACK_TTL_MS ||
-    /gemini-(?:3\.[0-7]|2\.|1\.)/i.test(fb.fallbackModel) ||
+    /gemini-(?:3\.[0-7]|2\.0|1\.)/i.test(fb.fallbackModel) ||
     /gpt-[34]/i.test(fb.fallbackModel)
   ) {
     sessionModelFallbacks.delete(sessionKey);
@@ -4578,7 +4766,7 @@ export function setSessionModelFallback(
   if (originalModel === 'gemini-4-argon' || originalModel === 'gemini-4-argon-medium') {
     return;
   }
-  if (/gemini-(?:3\.[0-7]|2\.|1\.)/i.test(fallbackModel) || /gpt-[34]/i.test(fallbackModel)) {
+  if (/gemini-(?:3\.[0-7]|2\.0|1\.)/i.test(fallbackModel) || /gpt-[34]/i.test(fallbackModel)) {
     return;
   }
   const cleanOrig = originalModel.trim().toLowerCase();
@@ -6377,7 +6565,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       req.url!.includes('/v1internal:recordTrajectoryAnalytics') ||
       req.url!.includes('/v1internal:recordClientEvent') ||
       req.url!.includes('/v1internal:uploadPerformanceProfile') ||
-      req.url!.includes('/v1internal:checkUrlDenylist')
+      req.url!.includes('/v1internal:checkUrlDenylist') ||
+      req.url!.includes('/v1internal:fetchFromTrawlerCache') ||
+      req.url!.includes('/v1internal:batchFetchFromTrawlerCache')
     ) {
       if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
         safeEnd(res, JSON.stringify({}));
@@ -6446,11 +6636,19 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         servername: targetHost,
       };
 
-      const fallback = () => {
+      const fallback = (isLocationBlocked?: boolean) => {
         if (res.headersSent || res.writableEnded) return;
         const cached = loadCachedCodeAssist() || buildDefaultFallback();
-        log.warn('[Proxy] Upstream loadCodeAssist failed/timed out, serving fallback response');
-        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json' })) {
+        log.warn(
+          isLocationBlocked
+            ? '[Proxy] Upstream loadCodeAssist blocked by LOCATION/GEO. Serving fallback (an egress VPN/proxy may be required for downstream inference).'
+            : '[Proxy] Upstream loadCodeAssist failed/timed out, serving fallback response',
+        );
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (isLocationBlocked) {
+          headers['X-Antigravity-Location-Warning'] = 'LOCATION_BLOCKED';
+        }
+        if (safeWriteHead(res, 200, headers)) {
           safeEnd(res, cached);
         }
       };
@@ -6479,8 +6677,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             googleRes.statusCode === 403 ||
             (googleRes.statusCode === 400 && (body.includes('LOCATION') || body.includes('1008') || body.toLowerCase().includes('location')))
           ) {
-            log.warn(`[Proxy] Upstream loadCodeAssist rejected with HTTP ${googleRes.statusCode} (${body.slice(0, 150)}). Serving unlocked fallback to prevent IDE lockout.`);
-            fallback();
+            log.warn(`[Proxy] Upstream loadCodeAssist rejected with HTTP ${googleRes.statusCode} (${body.slice(0, 150)}). Serving unlocked fallback with location warning.`);
+            fallback(true);
           } else if (googleRes.statusCode && googleRes.statusCode < 500) {
             if (safeWriteHead(res, googleRes.statusCode, { 'Content-Type': 'application/json' })) {
               safeEnd(res, body);
@@ -6915,7 +7113,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           /MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE/i.test(cn)
         );
         if (isInputDetection) {
-          log.info(`[Proxy] ⚡ Instant mock resolution for input-detection model call (0ms)`);
+          const detectedSess = extractSessionId(targetReq, req.headers as Record<string, unknown>) || '';
+          log.info(`[Proxy] ⚡ Instant mock resolution for input-detection model call (0ms) [model=${candidateNames[0] || 'input-detect'}${detectedSess ? ` session=${detectedSess}` : ''}]`);
           const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
           if (isStream) {
             if (safeWriteHead(res, 200, {
@@ -6962,11 +7161,42 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         const customModels = expandModelsWithEffort(loadCustomModels());
         let actualGeminiBody: GeminiRequestBody | undefined;
         let sessionKey = '';
+        let isAuxiliaryReq = false;
+        let auxiliaryType = '';
 
         if (candidateNames.length > 0) {
           actualGeminiBody = (reqJson.request || reqJson) as GeminiRequestBody;
           sessId = extractSessionId(actualGeminiBody as Record<string, unknown>, req.headers as Record<string, unknown>) || '';
           sessionKey = convId || sessId;
+
+          const rType = String(
+            targetReq.requestType ||
+            reqJson.requestType ||
+            (targetReq as any).type ||
+            ''
+          ).toUpperCase();
+          if (
+            rType === 'CONVERSATION_TITLE' ||
+            rType === 'TITLE' ||
+            rType === 'SUMMARY' ||
+            rType === 'CONVERSATION_SUMMARY' ||
+            rType === 'SEARCH' ||
+            rType === 'INDEX' ||
+            rType === 'CORTEX' ||
+            rType === 'SONAR'
+          ) {
+            isAuxiliaryReq = true;
+            auxiliaryType = rType;
+          } else {
+            const siText = (targetReq.systemInstruction as any)?.parts?.[0]?.text || '';
+            if (
+              /generate a (?:short |concise )?title/i.test(siText) ||
+              /summarize the conversation/i.test(siText)
+            ) {
+              isAuxiliaryReq = true;
+              auxiliaryType = /title/i.test(siText) ? 'TITLE' : 'SUMMARY';
+            }
+          }
 
           const customCandidate = candidateNames.find(
             (cn) => /MODEL_PLACEHOLDER_/i.test(cn) || cn.startsWith('custom-') || customModels.some((m) => matchesCustomModel(m, cn))
@@ -7082,8 +7312,6 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             if (sessionKey) clearSessionModelFallback(sessionKey);
             if (convId) clearSessionModelFallback(convId);
             if (sessId) clearSessionModelFallback(sessId);
-            if (sessId) sessionAffinities.delete(sessId);
-            if (convId) sessionAffinities.delete(convId);
           } else {
             // User explicitly requested a custom model: clear any native session lock
             if (sessionKey) nativeSessions.delete(sessionKey);
@@ -7144,6 +7372,33 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           ''
         ).toLowerCase();
         let cleanRequested = requestedRaw.replace(/^models\//, '').trim();
+
+        let detectedExplicitEffort: string | undefined;
+        if (customCandidate) {
+          const matchedExplicit = customModels.find((m) => matchesCustomModel(m, customCandidate));
+          if (matchedExplicit) {
+            detectedExplicitEffort = (matchedExplicit._effortSuffix?.replace('-', '') || matchedExplicit.reasoningEffort || '').toLowerCase();
+          }
+        }
+        if (!detectedExplicitEffort) {
+          for (const cn of candidateNames) {
+            const mEff = /(?:^|[-_ (])(low|medium|high)(?:$|[-_ )])/i.exec(cn)?.[1]?.toLowerCase();
+            if (mEff) {
+              detectedExplicitEffort = mEff;
+              break;
+            }
+          }
+        }
+
+        if (detectedExplicitEffort && !isAuxiliaryReq) {
+          if (sessionKey) setSessionEffortAffinity(sessionKey, detectedExplicitEffort);
+          if (sessId && sessId !== sessionKey) setSessionEffortAffinity(sessId, detectedExplicitEffort);
+        }
+
+        const inheritedEffort = (!detectedExplicitEffort && !isAuxiliaryReq && (sessionKey || sessId))
+          ? (getSessionEffortAffinity(sessionKey) || (sessId ? getSessionEffortAffinity(sessId) : undefined))
+          : undefined;
+
         const activeFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
         if (activeFallback) {
           const normReq = normalizeCloudCodeModelId(cleanRequested);
@@ -7182,9 +7437,13 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               return mTarget === cleanRequested.toLowerCase() ||
                      (normReq && normalizeCloudCodeModelId(mTarget) === normReq);
             });
-            if (matchedPool.length > 0) {
-              log.info(`[Proxy] 🌐 Routing native model [${requestedRaw}] through Google multi-account pool (${matchedPool.length} candidate(s)).`);
-              matchingCandidates = matchedPool;
+            let effectivePool = matchedPool;
+            if (inheritedEffort && matchedPool.some((m) => (m._effortSuffix || m.reasoningEffort || '').toLowerCase().includes(inheritedEffort))) {
+              effectivePool = matchedPool.filter((m) => (m._effortSuffix || m.reasoningEffort || '').toLowerCase().includes(inheritedEffort));
+            }
+            if (effectivePool.length > 0) {
+              log.info(`[Proxy] 🌐 Routing native model [${requestedRaw}] through Google multi-account pool (${effectivePool.length} candidate(s))${inheritedEffort ? ` [Inherited Effort: ${inheritedEffort}]` : ''}.`);
+              matchingCandidates = effectivePool;
               isNativeRoutedToPool = true;
             } else {
               log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
@@ -7194,11 +7453,18 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           }
         } else {
           // Strictly prioritize the model matching cleanRequested (the directly requested model)
-          matchingCandidates = customModels.filter((m) => matchesCustomModel(m, cleanRequested));
+          let candidates = customModels.filter((m) => matchesCustomModel(m, cleanRequested));
+          if (inheritedEffort && candidates.some((m) => (m._effortSuffix || m.reasoningEffort || '').toLowerCase().includes(inheritedEffort))) {
+            candidates = candidates.filter((m) => (m._effortSuffix || m.reasoningEffort || '').toLowerCase().includes(inheritedEffort));
+          }
+          matchingCandidates = candidates;
           if (matchingCandidates.length === 0) {
             // Check candidateNames in precedence order without mixing disparate models
             for (const cn of candidateNames) {
-              const matched = customModels.filter((m) => matchesCustomModel(m, cn));
+              let matched = customModels.filter((m) => matchesCustomModel(m, cn));
+              if (inheritedEffort && matched.some((m) => (m._effortSuffix || m.reasoningEffort || '').toLowerCase().includes(inheritedEffort))) {
+                matched = matched.filter((m) => (m._effortSuffix || m.reasoningEffort || '').toLowerCase().includes(inheritedEffort));
+              }
               if (matched.length > 0) {
                 matchingCandidates = matched;
                 break;
@@ -7319,8 +7585,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               }
             }
 
+            const auxTag = isAuxiliaryReq ? ` [Auxiliary Task: ${auxiliaryType || 'BACKGROUND'}]` : '';
             log.info(
-              `[Proxy] 📥 [Incoming Request] Model requested: [${matchedCustomModel.displayName || matchedCustomModel.name}]${sessId ? ` (session: ${sessId})` : ''}`,
+              `[Proxy] 📥 [Incoming Request]${auxTag} Model requested: [${matchedCustomModel.displayName || matchedCustomModel.name}]${sessId ? ` (session: ${sessId})` : ''}`,
             );
 
             // Resolve fileData URIs then route to translator
@@ -7914,9 +8181,12 @@ export function stopProxy(): Promise<void> {
     };
 
     if (server) {
-      // Forcefully close idle connections to release sockets immediately
+      // Forcefully close idle connections and active connections to release sockets immediately
       if (typeof (server as any).closeIdleConnections === 'function') {
         (server as any).closeIdleConnections();
+      }
+      if (typeof (server as any).closeAllConnections === 'function') {
+        (server as any).closeAllConnections();
       }
       server.close(() => {
         log.info('[Proxy] Server stopped');

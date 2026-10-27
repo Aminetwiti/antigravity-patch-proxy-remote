@@ -51,7 +51,8 @@ function schedulePrewarm(cleanRefresh: string, safeExpiry: number) {
   prewarmTimers.set(cleanRefresh, timer);
 }
 
-const revokedRefreshTokens = new Set<string>();
+export const TOKEN_REVOCATION_TTL_MS = 60 * 60_000;
+const revokedRefreshTokens = new Map<string, number>();
 
 /**
  * Checks whether a refresh token has been quarantined as revoked / invalid_grant.
@@ -59,7 +60,14 @@ const revokedRefreshTokens = new Set<string>();
 export function isTokenRevoked(refreshToken?: string): boolean {
   const clean = (refreshToken || '').trim();
   if (!clean) return false;
-  return revokedRefreshTokens.has(clean);
+  const quarantinedAt = revokedRefreshTokens.get(clean);
+  if (!quarantinedAt) return false;
+  if (Date.now() - quarantinedAt > TOKEN_REVOCATION_TTL_MS) {
+    revokedRefreshTokens.delete(clean);
+    log.info(`[GoogleAuth] Quarantine TTL elapsed for token [${clean.substring(0, 10)}...]. Restoring to candidate pool for re-probing.`);
+    return false;
+  }
+  return true;
 }
 
 type QuotaChangeSubscriber = () => void;
@@ -93,7 +101,7 @@ export function markTokenRevoked(refreshToken?: string): void {
   const clean = (refreshToken || '').trim();
   if (!clean) return;
   const isNew = !revokedRefreshTokens.has(clean);
-  revokedRefreshTokens.add(clean);
+  revokedRefreshTokens.set(clean, Date.now());
   tokenCache.delete(clean);
   inFlightRefreshes.delete(clean);
   log.warn(`[GoogleAuth] Refresh token quarantined as REVOKED / REAUTH_REQUIRED: ${clean.substring(0, 10)}...`);
@@ -116,7 +124,7 @@ export function clearRevokedTokens(): void {
  * Returns a list of all currently quarantined revoked refresh tokens.
  */
 export function getAllRevokedTokens(): string[] {
-  return Array.from(revokedRefreshTokens);
+  return Array.from(revokedRefreshTokens.keys());
 }
 
 function performOAuthTokenRequest(
@@ -819,8 +827,8 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                     weeklyPercentage: effGeminiWk,
                     geminiFiveHourPct: effGemini5h,
                     geminiWeeklyPct: effGeminiWk,
-                    claudeFiveHourPct: claudeFiveHourPct ?? 100,
-                    claudeWeeklyPct: claudeWeeklyPct ?? 100,
+                    claudeFiveHourPct: typeof claudeFiveHourPct === 'number' ? claudeFiveHourPct : 0,
+                    claudeWeeklyPct: typeof claudeWeeklyPct === 'number' ? claudeWeeklyPct : 0,
                     argonFiveHourPct,
                     argonWeeklyPct,
                     updatedAt: Date.now(),
@@ -930,10 +938,10 @@ export async function pollAllGoogleQuotas(
           const now = Date.now();
           const gemini5hReset = (prevQuota.geminiFiveHourReset || prevQuota.geminiResetTime) ? Date.parse(prevQuota.geminiFiveHourReset || prevQuota.geminiResetTime!) : 0;
           const geminiWeeklyReset = prevQuota.geminiWeeklyReset ? Date.parse(prevQuota.geminiWeeklyReset) : 0;
-          const isGeminiWeeklyExhausted = (prevQuota.geminiWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) && geminiWeeklyReset > now;
-          const isGemini5hExhausted = prevQuota.geminiFiveHourPct === 0 && (gemini5hReset > now || isGeminiWeeklyExhausted);
+          const isGeminiWeeklyExhausted = (quota.geminiWeeklyPct === 0 || prevQuota.geminiWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) && geminiWeeklyReset > now;
+          const isGemini5hExhausted = (quota.geminiFiveHourPct === 0 || prevQuota.geminiFiveHourPct === 0) && (gemini5hReset > now || isGeminiWeeklyExhausted);
 
-          if (isGeminiWeeklyExhausted || isGemini5hExhausted) {
+          if (isGeminiWeeklyExhausted || (isGemini5hExhausted && quota.geminiFiveHourPct === 0)) {
             quota.geminiFiveHourPct = 0;
             quota.fiveHourPercentage = 0;
             if (isGeminiWeeklyExhausted) {
@@ -951,14 +959,17 @@ export async function pollAllGoogleQuotas(
               }
               if (prevQuota.geminiWeeklyReset) quota.geminiWeeklyReset = prevQuota.geminiWeeklyReset;
             }
+          } else if (quota.geminiFiveHourPct > 0 && !isGeminiWeeklyExhausted) {
+            quota.geminiFiveHourReset = undefined;
+            quota.geminiResetTime = undefined;
           }
 
           const claude5hReset = (prevQuota.claudeFiveHourReset || prevQuota.claudeResetTime) ? Date.parse(prevQuota.claudeFiveHourReset || prevQuota.claudeResetTime!) : 0;
           const claudeWeeklyReset = prevQuota.claudeWeeklyReset ? Date.parse(prevQuota.claudeWeeklyReset) : 0;
-          const isClaudeWeeklyExhausted = (prevQuota.claudeWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) && claudeWeeklyReset > now;
-          const isClaude5hExhausted = prevQuota.claudeFiveHourPct === 0 && (claude5hReset > now || isClaudeWeeklyExhausted);
+          const isClaudeWeeklyExhausted = (quota.claudeWeeklyPct === 0 || prevQuota.claudeWeeklyPct === 0 || prevQuota.weeklyPercentage === 0) && claudeWeeklyReset > now;
+          const isClaude5hExhausted = (quota.claudeFiveHourPct === 0 || prevQuota.claudeFiveHourPct === 0) && (claude5hReset > now || isClaudeWeeklyExhausted);
 
-          if (isClaudeWeeklyExhausted || isClaude5hExhausted) {
+          if (isClaudeWeeklyExhausted || (isClaude5hExhausted && quota.claudeFiveHourPct === 0)) {
             quota.claudeFiveHourPct = 0;
             if (isClaudeWeeklyExhausted) {
               quota.claudeWeeklyPct = 0;
@@ -973,6 +984,9 @@ export async function pollAllGoogleQuotas(
               }
               if (prevQuota.claudeWeeklyReset) quota.claudeWeeklyReset = prevQuota.claudeWeeklyReset;
             }
+          } else if (quota.claudeFiveHourPct > 0 && !isClaudeWeeklyExhausted) {
+            quota.claudeFiveHourReset = undefined;
+            quota.claudeResetTime = undefined;
           }
         }
         const quotaChanged = !prevQuota ||

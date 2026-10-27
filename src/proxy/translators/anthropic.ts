@@ -400,9 +400,14 @@ export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: stri
 
 // ─── STREAM CHUNK: Anthropic SSE → Gemini ─────────────────────────────────
 
+const lastStreamIdByModel = new Map<string, string>();
+
 export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: string): GeminiCandidate | null {
   const type = chunk.type;
-  const streamId = chunk.message?.id || 'anthropic_stream';
+  if (chunk.message?.id) {
+    lastStreamIdByModel.set(modelName, chunk.message.id);
+  }
+  const streamId = chunk.message?.id || lastStreamIdByModel.get(modelName) || `anthropic_stream_${modelName}`;
 
   if (!activeStreamContexts.has(streamId)) {
     activeStreamContexts.set(streamId, { accumulatedText: '', accumulatedReasoning: '', toolCalls: {} });
@@ -489,12 +494,14 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
         return tcPart;
       });
       activeStreamContexts.delete(streamId);
+      lastStreamIdByModel.delete(modelName);
       return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
     }
   }
 
   if (type === 'message_stop') {
     activeStreamContexts.delete(streamId);
+    lastStreamIdByModel.delete(modelName);
     return { content: { parts: [{ text: '' }], role: 'model' }, finishReason: 'STOP', index: 0 };
   }
 

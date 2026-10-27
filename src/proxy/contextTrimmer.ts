@@ -4,6 +4,7 @@
  * and reducing overall token usage to prevent rate limits and improve latency.
  */
 
+import { createHash } from 'crypto';
 import log from 'electron-log';
 import type { GeminiRequestBody } from './types';
 
@@ -41,22 +42,26 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
       );
       if (hasFunctionOps) return true;
 
-      // Hash short string representations of text blocks (>100 chars)
+      // Hash full text representation of text blocks (>100 chars) using SHA-256 to avoid collisions
       if (part.text.length > 100) {
-        const sampleKey = `${part.text.substring(0, 50)}_${part.text.length}_${part.text.substring(part.text.length - 50)}`;
-        if (seenHashes.has(sampleKey)) {
+        const hash = createHash('sha256').update(part.text).digest('hex');
+        if (seenHashes.has(hash)) {
           return false; // Deduplicate redundant file context injections
         }
-        seenHashes.add(sampleKey);
+        seenHashes.add(hash);
       }
       return true;
     });
 
-    totalPartsAfter += uniqueParts.length;
+    // Safety guard: Google Cloud Code / Gemini API strictly requires parts.length >= 1.
+    // If all parts in this turn were deduplicated, preserve at least the first original part.
+    const safeParts = uniqueParts.length > 0 ? uniqueParts : (content.parts.length > 0 ? [content.parts[0]] : content.parts);
+
+    totalPartsAfter += safeParts.length;
 
     return {
       ...content,
-      parts: uniqueParts,
+      parts: safeParts,
     };
   });
 

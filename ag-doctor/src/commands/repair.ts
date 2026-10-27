@@ -202,6 +202,12 @@ export async function runRepair(ctx: CommandContext): Promise<number> {
     }
   }
 
+  // 5. Ensure Developer Environment immunity against auto-reset in app.asar
+  try {
+    const { patchAsarPreventOverridePurge } = require('../core/developer-flags');
+    patchAsarPreventOverridePurge();
+  } catch (_) {}
+
   ok('Repair complete');
   return 0;
 }

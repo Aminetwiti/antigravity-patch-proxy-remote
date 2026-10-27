@@ -194,56 +194,60 @@ export function simplifyLogLine(raw: string): string | null {
 
   if (!msg) return null;
 
-  // Double check message content after stripping
+  // Double check message content and location after stripping
+  const contextMsg = location ? `${location} ${msg}` : msg;
   if (
-    /\[RemoteControl\]/i.test(msg) ||
-    /\[CDP Discovery\]/i.test(msg) ||
-    /Migration \[/i.test(msg) ||
-    /failed to load external trajectory/i.test(msg) ||
-    /summary store: starting background reconciliation/i.test(msg) ||
-    /SetEnableBusinessLogin/i.test(msg) ||
-    /UpdateEndpointURL/i.test(msg) ||
-    /SetProjectID called with projectID: ""/i.test(msg) ||
-    /SetLocation called with location: ""/i.test(msg) ||
-    /SetUserTier called with userTier: "", tierDisplayName: ""/i.test(msg) ||
-    /Setting GOMAXPROCS/i.test(msg) ||
-    /Continuous pprof profiling/i.test(msg) ||
-    /Projects migration already started/i.test(msg) ||
-    /Retroactive projects migration/i.test(msg) ||
-    /Using bundled agy-node/i.test(msg) ||
-    /attempt to listen on host localhost/i.test(msg) ||
-    /Serving UI bundle from embedded assets/i.test(msg) ||
-    /Creating trajectory store manager/i.test(msg) ||
-    /failed to get cs path/i.test(msg) ||
-    /fastpush pin gate/i.test(msg) ||
-    /Monitor agy_tool_safety/i.test(msg) ||
-    /runner\.go:\d+\]\s*Monitor/i.test(msg) ||
-    /unsupported_tool:\s*replace_file_content/i.test(msg) ||
-    /Monitor severe_internal_risks_agy/i.test(msg) ||
-    /LLM Monitor severe_internal_risks_agy/i.test(msg) ||
-    /LLM_MONITOR_LLM_CALL_FAILED/i.test(msg) ||
-    /AutoUpdater/i.test(msg) ||
-    /Checking for update/i.test(msg) ||
-    /Update for version.*is not available/i.test(msg) ||
-    /Up to date/i.test(msg) ||
-    /SEND_USER_CASCADE_MESSAGE_LATENCY/i.test(msg) ||
-    /\[Sonar\]/i.test(msg) ||
-    /externalMonitorConfigManager/i.test(msg) ||
-    /CORTEX_MEMORY_TRIGGER_UNSPECIFIED/i.test(msg) ||
-    /Invalid rule trigger: CORTEX_MEMORY_TRIGGER/i.test(msg) ||
-    /\[IPC\] remote:set-state/i.test(msg) ||
-    /Cancel during force stop of conversation/i.test(msg) ||
-    /executor is not currently running/i.test(msg) ||
-    /latency_breakdown\.go/i.test(msg) ||
-    /llm_monitor\.go/i.test(msg) ||
-    /rules\.go.*Invalid rule trigger/i.test(msg) ||
-    /runner\.go/i.test(msg) ||
-    /cascade_manager\.go/i.test(msg) ||
-    /errorreport\.go/i.test(msg) ||
-    /poll\.go/i.test(msg) ||
-    /rpcs_marketplace\.go/i.test(msg) ||
-    /declarative_config_loader\.go/i.test(msg) ||
-    /State refresh took/i.test(msg)
+    /\[RemoteControl\]/i.test(contextMsg) ||
+    /\[CDP Discovery\]/i.test(contextMsg) ||
+    /Migration \[/i.test(contextMsg) ||
+    /failed to load external trajectory/i.test(contextMsg) ||
+    /summary store: starting background reconciliation/i.test(contextMsg) ||
+    /SetEnableBusinessLogin/i.test(contextMsg) ||
+    /UpdateEndpointURL/i.test(contextMsg) ||
+    /SetProjectID called with projectID: ""/i.test(contextMsg) ||
+    /SetLocation called with location: ""/i.test(contextMsg) ||
+    /SetUserTier called with userTier: "", tierDisplayName: ""/i.test(contextMsg) ||
+    /Setting GOMAXPROCS/i.test(contextMsg) ||
+    /Continuous pprof profiling/i.test(contextMsg) ||
+    /Projects migration already started/i.test(contextMsg) ||
+    /Retroactive projects migration/i.test(contextMsg) ||
+    /Using bundled agy-node/i.test(contextMsg) ||
+    /attempt to listen on host localhost/i.test(contextMsg) ||
+    /Serving UI bundle from embedded assets/i.test(contextMsg) ||
+    /Creating trajectory store manager/i.test(contextMsg) ||
+    /failed to get cs path/i.test(contextMsg) ||
+    /fastpush pin gate/i.test(contextMsg) ||
+    /Monitor agy_tool_safety/i.test(contextMsg) ||
+    /runner\.go:\d+\]\s*Monitor/i.test(contextMsg) ||
+    /unsupported_tool:\s*replace_file_content/i.test(contextMsg) ||
+    /Monitor severe_internal_risks_agy/i.test(contextMsg) ||
+    /LLM Monitor severe_internal_risks_agy/i.test(contextMsg) ||
+    /LLM_MONITOR_LLM_CALL_FAILED/i.test(contextMsg) ||
+    /AutoUpdater/i.test(contextMsg) ||
+    /Checking for update/i.test(contextMsg) ||
+    /Update for version.*is not available/i.test(contextMsg) ||
+    /Up to date/i.test(contextMsg) ||
+    /SEND_USER_CASCADE_MESSAGE_LATENCY/i.test(contextMsg) ||
+    /\[Sonar\]/i.test(contextMsg) ||
+    /externalMonitorConfigManager/i.test(contextMsg) ||
+    /CORTEX_MEMORY_TRIGGER_UNSPECIFIED/i.test(contextMsg) ||
+    /Invalid rule trigger: CORTEX_MEMORY_TRIGGER/i.test(contextMsg) ||
+    /\[IPC\] remote:set-state/i.test(contextMsg) ||
+    /Cancel during force stop of conversation/i.test(contextMsg) ||
+    /executor is not currently running/i.test(contextMsg) ||
+    /latency_breakdown\.go/i.test(contextMsg) ||
+    /llm_monitor\.go/i.test(contextMsg) ||
+    /rules\.go.*Invalid rule trigger/i.test(contextMsg) ||
+    /runner\.go/i.test(contextMsg) ||
+    /cascade_manager\.go/i.test(contextMsg) ||
+    /errorreport\.go/i.test(contextMsg) ||
+    /poll\.go/i.test(contextMsg) ||
+    /cloud (?:projects|summaries) poll failed/i.test(contextMsg) ||
+    /extract_searchable_content\.go/i.test(contextMsg) ||
+    /conversationsearch: oversized step/i.test(contextMsg) ||
+    /rpcs_marketplace\.go/i.test(contextMsg) ||
+    /declarative_config_loader\.go/i.test(contextMsg) ||
+    /State refresh took/i.test(contextMsg)
   ) {
     return null;
   }

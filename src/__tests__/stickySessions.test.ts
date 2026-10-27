@@ -267,5 +267,87 @@ describe('Sticky Sessions (Multi-Account Session Affinity)', () => {
       expect(data.response.candidates[0].content.parts[1].text).toBe('');
     });
   });
+
+  describe('Session Affinity Capacity and Pruning (AUDIT-001 Resilience)', () => {
+    it('prunes expired sessions when table exceeds 500 entries', () => {
+      const model: CustomModel = {
+        name: 'test-model',
+        displayName: 'Test',
+        description: 'Test',
+        provider: 'google',
+        apiKey: 'key',
+        apiUrl: 'https://example.com',
+        externalModelName: 'gemini-2.5-flash',
+        accountEmail: 'test@gmail.com',
+      };
+
+      // Insert an expired session
+      bindSessionToModel('expired-session-1', model);
+
+      // Flood with 501 sessions
+      for (let i = 0; i <= 501; i++) {
+        bindSessionToModel(`session-${i}`, model);
+      }
+
+      // Ensure binding works without unbound memory growth
+      expect(getSessionBoundModel('session-500', model, [model])).toBe(model);
+    });
+
+    it('enforces hard LRU cap and shrinks table when all entries are unexpired', () => {
+      const model: CustomModel = {
+        name: 'test-model',
+        displayName: 'Test',
+        description: 'Test',
+        provider: 'google',
+        apiKey: 'key',
+        apiUrl: 'https://example.com',
+        externalModelName: 'gemini-2.5-flash',
+        accountEmail: 'test@gmail.com',
+      };
+
+      // Add 550 active sessions without any being expired
+      for (let i = 0; i < 550; i++) {
+        bindSessionToModel(`active-${i}`, model);
+      }
+
+      // Oldest sessions (e.g. active-0) should have been LRU-evicted
+      // Latest sessions (e.g. active-549) must remain bound
+      expect(getSessionBoundModel('active-549', model, [model])).toBe(model);
+    });
+
+    it('maintains session affinity for candidate account across consecutive requests', () => {
+      const candidateAccount: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:acc1',
+        displayName: 'Account 1',
+        description: 'Account 1',
+        provider: 'google',
+        apiKey: 'ya29.sample_token',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        accountEmail: 'amine.twiti27@gmail.com',
+        quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 },
+      };
+      const candidateAccount2: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:acc2',
+        displayName: 'Account 2',
+        description: 'Account 2',
+        provider: 'google',
+        apiKey: 'ya29.sample_token_2',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        accountEmail: 'lesjardindelavie@gmail.com',
+        quotas: { geminiFiveHourPct: 100, geminiWeeklyPct: 100 },
+      };
+
+      bindSessionToModel('-3750763034362895579', candidateAccount);
+      const bound = getSessionBoundModel(
+        '-3750763034362895579',
+        candidateAccount2,
+        [candidateAccount, candidateAccount2],
+      );
+      expect(bound.accountEmail).toBe('amine.twiti27@gmail.com');
+    });
+  });
 });
+
 

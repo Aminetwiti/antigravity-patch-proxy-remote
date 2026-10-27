@@ -8444,6 +8444,44 @@ async function loadSettingsExtras(existingCfg?: any): Promise<void> {
     });
   }
 
+
+  // Developer Features & Cohort Boost Handlers
+  const btnDevApplyBoost = $('#btnDevApplyBoost') as HTMLButtonElement | null;
+  if (btnDevApplyBoost && !btnDevApplyBoost.dataset.bound) {
+    btnDevApplyBoost.dataset.bound = 'true';
+    btnDevApplyBoost.addEventListener('click', async () => {
+      setStatus('Applying Developer Boost…', 'busy');
+      try {
+        const res = await window.ag.run(['dev', 'boost']);
+        if (res.code === 0) {
+          toast('✨ Developer Boost appliqué ! Cohorte Google et 45 flags verrouillés.', 'ok', 3500);
+        } else {
+          toast('Erreur Boost: ' + (res.stderr || res.stdout), 'warn', 3500);
+        }
+        setStatus('Ready');
+      } catch (err) {
+        toast('Échec du boost: ' + (err as Error).message, 'err');
+        setStatus('Error', 'err');
+      }
+    });
+  }
+
+  const btnDevCheckStatus = $('#btnDevCheckStatus') as HTMLButtonElement | null;
+  if (btnDevCheckStatus && !btnDevCheckStatus.dataset.bound) {
+    btnDevCheckStatus.dataset.bound = 'true';
+    btnDevCheckStatus.addEventListener('click', async () => {
+      setStatus('Checking Developer Status…', 'busy');
+      try {
+        await window.ag.run(['dev', 'status']);
+        toast('Statut vérifié : app.asar immunisé & profil Google actif.', 'ok', 3000);
+        setStatus('Ready');
+      } catch (err) {
+        toast('Vérification échouée: ' + (err as Error).message, 'err');
+        setStatus('Error', 'err');
+      }
+    });
+  }
+
   // Network & Proxy Options
   const mitmPortInput = $('#settingsMitmPortInput') as HTMLInputElement | null;
   const mitmPortSaveBtn = $('#settingsMitmPortSaveBtn') as HTMLButtonElement | null;
@@ -10887,16 +10925,16 @@ function updateGoogleAccountsTokenStats(accounts: any[]): void {
     gaStatTotalCapacitySub.title = text;
   }
 
-  // Card 3: Capacité Moyenne du Pool
+  // Card 3: Capacité Moyenne du Pool (Flotte réelle)
   let totalActivePct = 0;
   let activeQuotaAccountsCount = 0;
   for (const acc of accounts) {
-    if (acc.enabled === false) continue;
     if (isAiStudioAccount(acc) || isGeminiCliAccount(acc)) continue;
+    activeQuotaAccountsCount++;
+    if (acc.enabled === false || isAccountValidationRequired(acc) || isAccountUnlicensed(acc)) continue;
     const eff = getAccountEffectiveQuotas(acc);
     const pct = isWeekly ? eff.geminiWkPct : eff.gemini5hPct;
-    totalActivePct += pct;
-    activeQuotaAccountsCount++;
+    totalActivePct += Math.max(0, Math.min(100, pct));
   }
   const avgPoolPct = activeQuotaAccountsCount > 0 ? (totalActivePct / activeQuotaAccountsCount) : 100;
 
@@ -11727,73 +11765,13 @@ function initGoogleAccountsToolbarOnce(): void {
         </div>
 
         ${isValidationRequired ? `
-        <!-- Validation Challenge Section: 4-Step Resolution Protocol -->
-        <div style="margin-bottom: 16px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 13px 14px;">
-          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #fbbf24; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            PROTOCOLE DE DÉBLOCAGE EN 4 ÉTAPES (VALIDATION REQUISE)
+        <!-- Section Protocole de Déblocage (En attente du nouveau protocole) -->
+        <div id="gaProtocolContainer" style="margin-bottom: 16px; background: rgba(245, 158, 11, 0.05); border: 1px dashed rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 18px; text-align: center;">
+          <div style="font-size: 12px; font-weight: 600; color: #fbbf24; margin-bottom: 4px;">
+            Protocole de déblocage personnalisé
           </div>
-          <p style="margin: 0 0 10px 0; font-size: 11.5px; color: #cbd5e1; line-height: 1.45;">
-            Ce compte n'est pas banni. Google demande une confirmation d'âge et une session propre. Suivez les 4 étapes :
-          </p>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            <!-- Step 1 -->
-            <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <div>
-                <strong style="font-size: 11.5px; color: #f8fafc;">1. Révoquer l'ancienne autorisation Antigravity</strong>
-                <div style="font-size: 10.5px; color: #94a3b8;">Supprimez Antigravity pour purger les jetons en conflit.</div>
-              </div>
-              <button type="button" id="gaOpenConnectionsBtn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                Ouvrir Connexions
-              </button>
-            </div>
-
-            <!-- Step 2 -->
-            <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <div>
-                <strong style="font-size: 11.5px; color: #f8fafc;">${validationUrl ? '2. Résoudre le Challenge Google Sécurité Direct' : '2. Valider l\'âge du compte'}</strong>
-                <div style="font-size: 10.5px; color: ${validationUrl ? '#fbbf24' : '#94a3b8'}; font-weight: ${validationUrl ? '600' : 'normal'};">${validationUrl ? 'Challenge de sécurité interactif requis par Google (SMS/Captcha).' : 'Validez la majorité (carte ou selfie) pour débloquer l\'accès.'}</div>
-              </div>
-              <div style="display: flex; gap: 6px; align-items: center;">
-                <button type="button" id="gaOpenAgeVerificationBtn" style="background: ${validationUrl ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'rgba(245, 158, 11, 0.15)'}; color: ${validationUrl ? '#ffffff' : '#fbbf24'}; border: ${validationUrl ? 'none' : '1px solid rgba(245, 158, 11, 0.35)'}; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: ${validationUrl ? '0 2px 8px rgba(245, 158, 11, 0.3)' : 'none'};">
-                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                  ${validationUrl ? 'Ouvrir Challenge Direct' : 'Validation Âge'}
-                </button>
-                ${validationUrl ? `
-                <button type="button" id="gaCopyChallengeUrlBtn" style="background: rgba(255, 255, 255, 0.08); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 4px 7px; font-size: 10.5px; cursor: pointer;" title="Copier le lien direct du challenge">
-                  Copier Lien
-                </button>
-                ` : ''}
-              </div>
-            </div>
-
-            <!-- Step 3 -->
-            <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <div>
-                <strong style="font-size: 11.5px; color: #f8fafc;">3. Reconnexion native Antigravity 2.0 (Consentement Onboarding)</strong>
-                <div style="font-size: 10.5px; color: #fbbf24;">Ne scannez pas le QR mobile saturé ! Authentifiez-vous sur PC.</div>
-                <div style="font-size: 10px; color: #cbd5e1; margin-top: 3px; background: rgba(245, 158, 11, 0.12); padding: 3px 6px; border-radius: 4px; border-left: 2px solid #f59e0b;">
-                  💡 <strong>Crucial :</strong> Sur l'écran <em>"Security Notice & Data Use"</em>, cochez la case et cliquez sur <strong>[Get started]</strong> pour valider l'onboarding Google.
-                </div>
-              </div>
-              <button type="button" id="gaNativeLoginBtn" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                Connexion PC
-              </button>
-            </div>
-
-            <!-- Step 4 -->
-            <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <div>
-                <strong style="font-size: 11.5px; color: #34d399;">4. Synchroniser &amp; Activer dans le Patch</strong>
-                <div style="font-size: 10.5px; color: #94a3b8;">Met à jour custom_models.json (retour à 100% quota).</div>
-              </div>
-              <button type="button" id="gaResyncAccountBtn" style="background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                Actualiser
-              </button>
-            </div>
+          <div style="font-size: 11px; color: #94a3b8;">
+            (Section préparée — Prête pour l'intégration de votre nouveau protocole)
           </div>
         </div>
         ` : `
@@ -11920,6 +11898,56 @@ function initGoogleAccountsToolbarOnce(): void {
         handle.confirmBtn.style.boxShadow = '0 3px 12px rgba(37, 99, 235, 0.35)';
 
         // Copy Account Email
+        // Auto-detect Challenge QR code from logs or active validationUrl
+        void (async () => {
+          let qrDataUrl = '';
+          let finalValidationUrl = actionValidationUrl;
+          try {
+            if (window.ag?.verification?.detect) {
+              const detection = await window.ag.verification.detect();
+              if (detection?.found && detection.validationUrl) {
+                finalValidationUrl = detection.validationUrl;
+                qrDataUrl = detection.qrCodeDataUrl || '';
+              }
+            }
+
+            // Fallback: If no QR from detection but validationUrl is directly present in account error
+            if (!qrDataUrl && validationUrl) {
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const qrcodeLib = require('qrcode');
+                qrDataUrl = await qrcodeLib.toDataURL(validationUrl, {
+                  width: 220,
+                  margin: 1,
+                  color: { dark: '#000000FF', light: '#FFFFFFFF' }
+                });
+              } catch {
+                // ignore
+              }
+            }
+
+            const qrBoxEl = handle.bodyEl.querySelector('#gaQrSectionBox') as HTMLElement | null;
+            const qrContainer = handle.bodyEl.querySelector('#gaQrCodeContainer') as HTMLElement | null;
+            const copyExtractedBtn = handle.bodyEl.querySelector('#gaCopyExtractedQrUrlBtn') as HTMLButtonElement | null;
+
+            if (qrDataUrl && qrContainer && qrBoxEl) {
+              qrContainer.innerHTML = `<img src="${qrDataUrl}" alt="QR Code de Vérification" style="display:block; width:190px; height:190px; border-radius:6px;" />`;
+              qrBoxEl.style.display = 'block';
+            }
+
+            copyExtractedBtn?.addEventListener('click', async () => {
+              try {
+                await navigator.clipboard.writeText(finalValidationUrl);
+                toast('Lien de vérification copié dans le presse-papier !', 'ok');
+              } catch {
+                toast('Impossible de copier l\'URL', 'err');
+              }
+            });
+          } catch (e) {
+            console.warn('[403Modal] QR detection error:', e);
+          }
+        })();
+
         const copyEmailBtn = handle.bodyEl.querySelector('#gaCopyEmailBtn');
         const copyEmailLabel = handle.bodyEl.querySelector('#gaCopyEmailLabel');
         copyEmailBtn?.addEventListener('click', async () => {
@@ -13519,6 +13547,25 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
 
   const cdGemini = getAccountActiveCooldown(a, 'gemini');
   const cdClaude = getAccountActiveCooldown(a, 'claude');
+  const { gemini5hPct, geminiWkPct, claude5hPct, claudeWkPct } = getAccountEffectiveQuotas(a);
+
+  // Status Unhealthy ou Quota Épuisé (Prioritaire sur les cooldowns temporaires)
+  if (a.status === 'exhausted' || (geminiWkPct <= 0 && claudeWkPct <= 0) || (gemini5hPct <= 0 && claude5hPct <= 0)) {
+    return {
+      type: 'warn',
+      text: a.lastError || 'Plafond de quota atteint (Gemini 0%, Claude 0%). Le proxy bascule automatiquement sur vos autres comptes disponibles.',
+      badge: '⚠️ Cap Épuisé',
+    };
+  }
+
+  // Gemini 5h épuisé
+  if (gemini5hPct <= 0) {
+    return {
+      type: 'warn',
+      text: a.lastError || `Plafond de quota 5h Gemini épuisé (0%). ${claude5hPct > 0 ? `Claude disponible (${claude5hPct}%).` : ''} Requêtes Gemini bloquées.`,
+      badge: '⚠️ Cap Épuisé (Gemini)',
+    };
+  }
 
   // Real Gemini Cooldown (429/504)
   if (cdGemini) {
@@ -13527,17 +13574,6 @@ function getAccountRecommendation(a: any): { type: 'ok' | 'warn' | 'cooldown' | 
       type: 'cooldown',
       text: cdGemini.details || `En cooldown Gemini temporaire (${cdGemini.text}). Le proxy bascule automatiquement sur un compte standby.`,
       badge,
-    };
-  }
-
-  const { gemini5hPct, geminiWkPct, claude5hPct, claudeWkPct } = getAccountEffectiveQuotas(a);
-
-  // Status Unhealthy ou Quota Épuisé
-  if (a.status === 'exhausted' || (geminiWkPct <= 0 && claudeWkPct <= 0) || (gemini5hPct <= 0 && claude5hPct <= 0)) {
-    return {
-      type: 'warn',
-      text: a.lastError || 'Plafond de quota atteint (Gemini 0%, Claude 0%). Le proxy bascule automatiquement sur vos autres comptes disponibles.',
-      badge: '⚠️ Quota Épuisé',
     };
   }
 
@@ -14678,6 +14714,10 @@ function renderGoogleAccountsList(accounts: any[]): void {
         statusBadgeHtml = `<button type="button" class="ga-badge ga-error-details-badge" data-id="${escapeHtml(a.id)}" style="cursor: pointer; background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); font-weight: 600; font-size: 10px; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px;" title="Validation Google requise (Challenge 403). Cliquez pour ouvrir l'Assistant Interactif en 4 étapes.">🟠 Validation Requise</button>`;
       } else if (isUnlicensed) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);" title="Compte sans licence Antigravity active (HTTP 403 Subscription Required)">🚫 SANS LICENCE</span>`;
+      } else if (quotas && (quotas.geminiFiveHourPct === 0 || quotas.fiveHourPercentage === 0) && (quotas.claudeFiveHourPct === 0)) {
+        statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.18); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4);" title="Plafond de quota épuisé (Gemini 0%, Claude 0%)">⚠️ Cap Épuisé</span>`;
+      } else if (quotas && (quotas.geminiFiveHourPct === 0 || quotas.fiveHourPercentage === 0)) {
+        statusBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.18); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4);" title="Plafond de quota 5h Gemini épuisé (0%)">⚠️ Cap Épuisé (Gemini)</span>`;
       } else if (cdGemini) {
         statusBadgeHtml = `<span class="ga-badge ga-badge-warn ga-live-cd" data-until="${cdGemini.until}" data-account-id="${escapeHtml(a.id)}" style="background: rgba(245, 158, 11, 0.18); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);" title="${escapeHtml(cdGemini.details)}">${escapeHtml(cdGemini.text)}</span>`;
       } else if (cdClaude && cdClaude.isWeeklyCap) {
@@ -14707,10 +14747,12 @@ function renderGoogleAccountsList(accounts: any[]): void {
         unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>`;
       } else if (isCurrent) {
         const effCurrent = getAccountEffectiveQuotas(a);
-        if (cdInfo) {
+        if (effCurrent.gemini5hPct <= 0 && effCurrent.claude5hPct <= 0) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (quotas 5h épuisés)">⚠️ PRINCIPAL (Cap Épuisé)</span>`;
+        } else if (effCurrent.gemini5hPct <= 0) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (quota Gemini 5h épuisé)">⚠️ PRINCIPAL (Cap Épuisé)</span>`;
+        } else if (cdInfo) {
           unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35);" title="Compte principal Antigravity (actuellement en cooldown)">● PRINCIPAL (Cooldown)</span>`;
-        } else if (effCurrent.gemini5hPct <= 0 && effCurrent.claude5hPct <= 0) {
-          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (quota 5h épuisé)">⚠️ PRINCIPAL (Épuisé)</span>`;
         } else if (isBlocked) {
           unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (bloqué / 403)">⚠️ PRINCIPAL (Bloqué)</span>`;
         } else if (!isEnabled) {
@@ -14897,10 +14939,12 @@ function renderGoogleAccountsList(accounts: any[]): void {
         unifiedRoleBadgeHtml = `<span class="pool-role-badge pool-role-badge--cli" title="Gemini CLI Account (Code Assist Prod, separate quota)">● Active CLI</span>`;
       } else if (isCurrent) {
         const effCurrent = getAccountEffectiveQuotas(a);
-        if (cdInfo) {
+        if (effCurrent.gemini5hPct <= 0 && effCurrent.claude5hPct <= 0) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (quotas 5h épuisés)">⚠️ PRINCIPAL (Cap Épuisé)</span>`;
+        } else if (effCurrent.gemini5hPct <= 0) {
+          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (quota Gemini 5h épuisé)">⚠️ PRINCIPAL (Cap Épuisé)</span>`;
+        } else if (cdInfo) {
           unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35);" title="Compte principal Antigravity (actuellement en cooldown)">● PRINCIPAL (Cooldown)</span>`;
-        } else if (effCurrent.gemini5hPct <= 0 && effCurrent.claude5hPct <= 0) {
-          unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (quota 5h épuisé)">⚠️ PRINCIPAL (Épuisé)</span>`;
         } else if (isBlocked) {
           unifiedRoleBadgeHtml = `<span class="ga-badge ga-badge-warn" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.35);" title="Compte principal Antigravity (bloqué / 403)">⚠️ PRINCIPAL (Bloqué)</span>`;
         } else if (!isEnabled) {

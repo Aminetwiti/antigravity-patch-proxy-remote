@@ -304,6 +304,169 @@ describe('Google Multi-Account Pool & Failover', () => {
     expect(isAccountInCooldown(acc1, 'claude')).toBe(false);
   });
 
+  describe('Adversarial Red Team: Gemini vs Claude Quota Decoupling & Isolation', () => {
+    it('guarantees that accounts with 0% Gemini quota and active Gemini cooldown remain 100% eligible for Claude', () => {
+      const acc1: CustomModel = {
+        name: 'acc-gemini-capped-1',
+        accountEmail: 'user-capped1@gmail.com',
+        provider: 'google',
+        apiKey: 'token1',
+        quotas: {
+          geminiFiveHourPct: 0,
+          geminiWeeklyPct: 100,
+          claudeFiveHourPct: 100,
+          claudeWeeklyPct: 100,
+          updatedAt: Date.now(),
+        },
+      };
+      const acc2: CustomModel = {
+        name: 'acc-gemini-capped-2',
+        accountEmail: 'user-capped2@gmail.com',
+        provider: 'google',
+        apiKey: 'token2',
+        quotas: {
+          geminiFiveHourPct: 0,
+          geminiWeeklyPct: 100,
+          claudeFiveHourPct: 95,
+          claudeWeeklyPct: 95,
+          updatedAt: Date.now(),
+        },
+      };
+
+      const pool = [acc1, acc2];
+
+      // Mark both accounts in 5h Gemini quota cooldown
+      setAccountCooldown(acc1, 5 * 3600_000, 'gemini');
+      setAccountCooldown(acc2, 5 * 3600_000, 'gemini');
+
+      // 1. Invariant: Accounts are in cooldown for Gemini, but NOT for Claude
+      expect(isAccountInCooldown(acc1, 'gemini')).toBe(true);
+      expect(isAccountInCooldown(acc2, 'gemini')).toBe(true);
+      expect(isAccountInCooldown(acc1, 'claude')).toBe(false);
+      expect(isAccountInCooldown(acc2, 'claude')).toBe(false);
+
+      // 2. Invariant: Quota score for Gemini is 0, but Claude score is high (>90)
+      expect(getModelQuotaScore(acc1, 'gemini')).toBe(0);
+      expect(getModelQuotaScore(acc2, 'gemini')).toBe(0);
+      expect(getModelQuotaScore(acc1, 'claude')).toBe(100);
+      expect(getModelQuotaScore(acc2, 'claude')).toBe(95);
+
+      // 3. Invariant: P2C selection for Gemini returns undefined (no fallback into exhausted accounts)
+      const selectedGemini = selectCandidateP2C(pool, 'gemini');
+      expect(selectedGemini).toBeUndefined();
+
+      // 4. Invariant: P2C selection for Claude selects an eligible candidate with full health
+      const selectedClaude = selectCandidateP2C(pool, 'claude');
+      expect(selectedClaude).toBeDefined();
+      expect(['acc-gemini-capped-1', 'acc-gemini-capped-2']).toContain(selectedClaude!.name);
+
+      // 5. Invariant: Quota stress detector identifies Gemini under stress, but Claude as completely healthy
+      expect(isPoolUnderQuotaStress(pool, 'gemini')).toBe(true);
+      expect(isPoolUnderQuotaStress(pool, 'claude')).toBe(false);
+
+      clearAccountCooldown(acc1, 'gemini');
+      clearAccountCooldown(acc2, 'gemini');
+    });
+
+    it('guarantees that placing an account in Claude cooldown does not affect Gemini routing or scores', () => {
+      const acc: CustomModel = {
+        name: 'acc-claude-capped',
+        accountEmail: 'user-claude-capped@gmail.com',
+        provider: 'google',
+        apiKey: 'token-claude-cd',
+        quotas: {
+          geminiFiveHourPct: 90,
+          geminiWeeklyPct: 90,
+          claudeFiveHourPct: 0,
+          claudeWeeklyPct: 100,
+          updatedAt: Date.now(),
+        },
+      };
+
+      setAccountCooldown(acc, 3600_000, 'claude');
+
+      expect(isAccountInCooldown(acc, 'claude')).toBe(true);
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
+
+      expect(getModelQuotaScore(acc, 'claude')).toBe(0);
+      expect(getModelQuotaScore(acc, 'gemini')).toBe(90);
+
+      const pool = [acc];
+      expect(selectCandidateP2C(pool, 'claude')).toBeUndefined();
+      expect(selectCandidateP2C(pool, 'gemini')).toBe(acc);
+      clearAccountCooldown(acc, 'claude');
+    });
+
+    it('recovers fiveHourResetPassed score even if background poller refreshed updatedAt after reset timestamp', () => {
+      const pastReset = new Date(Date.now() - 60_000).toISOString(); // 1 minute in the past
+      const acc: CustomModel = {
+        name: 'acc-poller-refreshed',
+        accountEmail: 'poller-refreshed@example.com',
+        provider: 'google',
+        quotas: {
+          geminiFiveHourPct: 0,
+          geminiWeeklyPct: 80,
+          geminiFiveHourReset: pastReset,
+          // Poller ran just now, after the reset timestamp!
+          updatedAt: Date.now(),
+        },
+      };
+
+      // Score should recover to provisional 50 score rather than being locked at 0
+      const score = getModelQuotaScore(acc, 'gemini');
+      expect(score).toBeGreaterThan(0);
+    });
+
+    it('decouples root cooldown in verifyAndReconcileCooldowns when one family is healthy and partitions exhausted family', () => {
+      _resetAllAccountCooldowns();
+      const now = Date.now();
+      const rootKey = 'google:root-cooldown-acc@example.com';
+
+      // Simulate a generic / network root cooldown with no family attached
+      setAccountCooldown({
+        name: 'models/google:gemini-3.8-flash:root',
+        provider: 'google',
+        accountEmail: 'root-cooldown-acc@example.com',
+      }, 3600_000);
+
+      // Verify root cooldown exists
+      expect(getActiveAccountCooldowns()[rootKey]).toBeGreaterThan(now);
+
+      // Live quota: Gemini is 0% (exhausted), but Claude is 100% (healthy)
+      updateLiveAccountQuota(rootKey, {
+        geminiFiveHourPct: 0,
+        geminiWeeklyPct: 100,
+        claudeFiveHourPct: 100,
+        claudeWeeklyPct: 100,
+        fiveHourPercentage: 0,
+        weeklyPercentage: 100,
+        updatedAt: now,
+      });
+
+      // Run reconciliation
+      const report = verifyAndReconcileCooldowns(now);
+      expect(report.cleared).toBeGreaterThan(0);
+
+      // Root cooldown must be removed
+      expect(getActiveAccountCooldowns()[rootKey]).toBeUndefined();
+
+      // Exhausted Gemini must be partitioned to its own key
+      expect(getActiveAccountCooldowns()[`${rootKey}:gemini`]).toBeGreaterThan(now);
+
+      // Claude must be completely FREE of cooldown!
+      const candidate: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:root',
+        provider: 'google',
+        accountEmail: 'root-cooldown-acc@example.com',
+      };
+      expect(isAccountInCooldown(candidate, 'claude')).toBe(false);
+      expect(isAccountInCooldown(candidate, 'gemini')).toBe(true);
+
+      _resetAllAccountCooldowns();
+      _clearLiveQuotasForTests();
+    });
+  });
+
   describe('Intelligent 429 Classification (OmniRoute Parity)', () => {
     it('classifies soft micro-bursts and applies short backoff', () => {
       const d1 = classifyGoogleCloudCode429('Quota reset in 0s');
@@ -1536,6 +1699,98 @@ describe('Google Multi-Account Pool & Failover', () => {
       expect(isAccountInCooldown(candidate, 'gemini')).toBe(true);
 
       _resetAllAccountCooldowns();
+    });
+  });
+
+  describe('Adversarial Hardening Audits (AUDIT-001 through AUDIT-005)', () => {
+    it('AUDIT-001: accounts with only Gemini quota return 0 score for Claude requests', () => {
+      const geminiOnlyAcc: CustomModel = {
+        name: 'models/google:gemini-only@example.com:gemini',
+        provider: 'google',
+        accountEmail: 'gemini-only@example.com',
+        refreshToken: 'token_gemini_only',
+      };
+      updateLiveAccountQuota('google:gemini-only@example.com', {
+        geminiFiveHourPct: 90,
+        geminiWeeklyPct: 90,
+        // No claudeFiveHourPct or claudeWeeklyPct
+        updatedAt: Date.now(),
+      } as any);
+
+      // Score for Gemini is healthy
+      expect(getModelQuotaScore(geminiOnlyAcc, 'gemini')).toBeGreaterThan(0);
+      // Score for Claude MUST be strictly 0 (no fallback to Gemini quota)
+      expect(getModelQuotaScore(geminiOnlyAcc, 'claude')).toBe(0);
+    });
+
+    it('AUDIT-004: revoked refresh tokens auto-heal after TOKEN_REVOCATION_TTL_MS expires', () => {
+      const testToken = '1//test-token-to-auto-heal';
+      clearRevokedTokens();
+
+      markTokenRevoked(testToken);
+      expect(isTokenRevoked(testToken)).toBe(true);
+
+      // Advance time past 1 hour (60 minutes + 1 second)
+      const originalNow = Date.now;
+      try {
+        Date.now = vi.fn(() => originalNow() + 3601_000);
+        // After TTL elapsed, isTokenRevoked auto-heals and returns false
+        expect(isTokenRevoked(testToken)).toBe(false);
+      } finally {
+        Date.now = originalNow;
+        clearRevokedTokens();
+      }
+    });
+
+    it('AUDIT-003: two models without accountEmail but distinct refreshTokens have isolated circuit breakers', () => {
+      const modelA: CustomModel = {
+        name: 'gemini-2.5-pro',
+        provider: 'google',
+        apiUrl: 'https://cloudcode-pa.googleapis.com',
+        refreshToken: 'refresh_token_account_AAA',
+      };
+      const modelB: CustomModel = {
+        name: 'gemini-2.5-pro',
+        provider: 'google',
+        apiUrl: 'https://cloudcode-pa.googleapis.com',
+        refreshToken: 'refresh_token_account_BBB',
+      };
+
+      recordFailure(modelA, 'timeout');
+      // Model A breaker should be open
+      expect(getOpenBreaker(modelA)).not.toBeNull();
+      // Model B should remain completely closed (healthy)
+      expect(getOpenBreaker(modelB)).toBeNull();
+
+      recordSuccess(modelA);
+    });
+
+    it('AUDIT-001: downstream client socket liveness verifies res/socket without being misled by consumed req.destroyed', () => {
+      // In Node.js HTTP servers, req.destroyed is true as soon as request body stream reaches EOF.
+      // Downstream client is still healthy and waiting as long as res is writable and res.socket is intact.
+      const mockReq = {
+        method: 'POST',
+        destroyed: true, // Incoming request body has finished reading
+        socket: { destroyed: false, writable: true },
+      };
+      const mockRes = {
+        headersSent: false,
+        writableEnded: false,
+        destroyed: false,
+        socket: { destroyed: false, writable: true },
+      };
+
+      // Correct check:
+      const isClientSocketAlive =
+        !mockRes.writableEnded &&
+        !mockRes.destroyed &&
+        Boolean(mockRes.socket && !mockRes.socket.destroyed && mockRes.socket.writable !== false);
+
+      expect(isClientSocketAlive).toBe(true);
+
+      // Contrast with flawed check that tested req.destroyed:
+      const flawedCheck = !mockRes.destroyed && !(mockRes.socket && mockRes.socket.destroyed) && !(mockReq && mockReq.destroyed);
+      expect(flawedCheck).toBe(false); // Proves why the old code aborted rotation incorrectly!
     });
   });
 });

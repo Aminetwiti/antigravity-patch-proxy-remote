@@ -367,9 +367,12 @@ try {
         }
       } catch (_) {}
 
-      // Clean up any corrupt featureEnvironmentOverride from previous versions
+      // Clean up legacy featureEnvironmentOverride only if malformed
       try {
-        window.localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
+        const val = window.localStorage.getItem('jetski.developer.featureEnvironmentOverride');
+        if (val && (val.includes('"host":1') || val.includes('"host": 1'))) {
+          window.localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
+        }
       } catch (_) {}
 
       try {

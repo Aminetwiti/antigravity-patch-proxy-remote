@@ -538,6 +538,24 @@ export function getPoolStrategicAdvice(
     };
   }
 
+  // 5. Significant portion of accounts requiring validation or blocked (Cognitive realism)
+  const problematicAccounts = accounts.filter((a) => {
+    if (!a) return false;
+    const isVal = Boolean(a.validationRequired || a.quotas?.validationRequired || a.status === 'validation_required');
+    const isBlocked = Boolean(a.isUnlicensed || a.quotas?.isUnlicensed || a.errorDetails || a.quotas?.errorDetails);
+    return isVal || isBlocked;
+  });
+
+  if (problematicAccounts.length > 0 && accounts.length > 0) {
+    const problemRatio = problematicAccounts.length / accounts.length;
+    if (problemRatio >= 0.25) {
+      return {
+        icon: '⚠️',
+        text: `Pool dégradé : ${readyGeminiAccounts.length}/${accounts.length} prêts (${problematicAccounts.length} compte(s) requièrent une validation ou sont bloqués).`,
+      };
+    }
+  }
+
   return {
     icon: '🟢',
     text: `Pool nominal et équilibré : ${readyGeminiAccounts.length}/${accounts.length} comptes prêts pour Gemini (${readyClaudeAccounts.length} pour Claude).`,

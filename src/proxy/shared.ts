@@ -548,6 +548,7 @@ export function startCleanupInterval(): void {
     for (const [key, ts] of stateTimestamps.thoughtSigs) {
       if (now - ts > TOOL_TTL) {
         thoughtSignatureCache.delete(key);
+        thoughtSignatureMeta.delete(key);
         stateTimestamps.thoughtSigs.delete(key);
       }
     }

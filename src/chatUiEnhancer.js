@@ -20,9 +20,12 @@
     }
   } catch (_) {}
 
-  // Cleanup any legacy malformed featureEnvironmentOverride that causes b.startsWith crashes in 2.25.0
+  // Cleanup legacy featureEnvironmentOverride only if malformed
   try {
-    localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
+    const val = localStorage.getItem('jetski.developer.featureEnvironmentOverride');
+    if (val && (val.includes('"host":1') || val.includes('"host": 1'))) {
+      localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
+    }
   } catch (_) {}
 
   // Intercept benign Antigravity IDE UI errors (e.g. DraftCommentEditor on image/binary assets)

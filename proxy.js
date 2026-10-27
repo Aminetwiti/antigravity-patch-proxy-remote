@@ -2229,11 +2229,15 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 const hedgeDelay = Math.min(constants_1.HEDGED_REQUEST_DELAY_MS, Math.floor(poolHeaderTimeout * 0.6));
                 const hedgePromise = new Promise((resolveHedge) => {
                     hedgeTimer = setTimeout(async () => {
-                        if (claimer.isClaimed() || res.headersSent || res.writableEnded)
+                        if (claimer.isClaimed() || res.headersSent || res.writableEnded) {
+                            resolveHedge({ success: false, statusCode: 499, error: 'Hedge aborted: already claimed or response finished' });
                             return;
+                        }
                         const sibling = sortedAccounts.slice(i + 1).find((c) => !(0, googlePool_1.isAccountInCooldown)(c, modelFamily) && (0, googlePool_1.getModelQuotaScore)(c, modelFamily) > 0);
-                        if (!sibling)
+                        if (!sibling) {
+                            resolveHedge({ success: false, statusCode: 504, error: 'Hedge skipped: no eligible sibling accounts' });
                             return;
+                        }
                         const siblingName = sibling.accountEmail || sibling.name || 'sibling';
                         electron_log_1.default.info(`[Proxy] ⚡ [Hedged Request] Account [${candidateName}] did not send headers within ${hedgeDelay}ms. Launching speculative candidate [${siblingName}]...`);
                         let siblingToken = null;
@@ -2241,8 +2245,10 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                             siblingToken = await (0, googleAuth_1.getValidGoogleAccessToken)(sibling);
                         }
                         catch (_) { }
-                        if (!siblingToken || claimer.isClaimed() || res.headersSent || res.writableEnded)
+                        if (!siblingToken || claimer.isClaimed() || res.headersSent || res.writableEnded) {
+                            resolveHedge({ success: false, statusCode: 504, error: 'Hedge skipped: token unavailable or already claimed' });
                             return;
+                        }
                         const siblingReqJson = JSON.parse(JSON.stringify(reqJson));
                         siblingReqJson.project = (0, googlePool_1.resolveGoogleProjectId)(sibling);
                         if (!(0, googleAuth_1.isGeminiCliModel)(sibling) && !siblingReqJson.enabledCreditTypes) {
@@ -2338,10 +2344,10 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
             return outcome.success;
         }
         // Downstream client socket check: only halt rotation if the IDE genuinely destroyed the connection
-        const isClientSocketAlive = !res.destroyed && !(res.socket && res.socket.destroyed) && !(req && req.destroyed);
+        const isClientSocketAlive = !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed && res.socket.writable !== false);
         // If client actually dropped connection (IDE closed window, cancelled prompt):
         if (!isClientSocketAlive) {
-            if (elapsedMs >= 3000 || outcome.statusCode === 504) {
+            if (elapsedMs >= 20000 || outcome.statusCode === 504) {
                 electron_log_1.default.warn(`[Proxy] Account [${candidateName}] stalled connection for ${Math.round(elapsedMs / 1000)}s before client closed (HTTP 499). Placing in 120s cooldown to protect pool from black-hole accounts.`);
                 (0, googlePool_1.setAccountCooldown)(candidate, 120000, currentFamily, true);
                 (0, googlePool_1.recordAccountLatency)(candidate, 60000);
@@ -3086,7 +3092,7 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
         !process.env.VITEST &&
         !res.writableEnded &&
         !res.destroyed &&
-        !req.destroyed) {
+        Boolean(res.socket && !res.socket.destroyed)) {
         const soonest = (0, googlePool_1.getSoonestAccountCooldownRemaining)(accountPool, modelFamily, constants_1.RATE_LIMIT_RELIEF_WAIT_MS);
         if (soonest) {
             const waitMs = soonest.remainingMs > 0 ? Math.min(soonest.remainingMs + 800, constants_1.RATE_LIMIT_RELIEF_WAIT_MS) : 15000;
@@ -3096,8 +3102,6 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 soonest.candidate.displayName ||
                 soonest.candidate.name;
             electron_log_1.default.warn(`[Proxy] ⏳ [Rate Limit Relief] All pool accounts and fallbacks in cooldown. Waiting ${waitSec}s for account [${accName}] cooldown relief to prevent conversation crash...`);
-            if (req.socket)
-                req.socket.setTimeout(Math.max(120000, waitMs + 30000));
             if (res.socket)
                 res.socket.setTimeout(Math.max(120000, waitMs + 30000));
             await new Promise((resolve) => {
@@ -3105,8 +3109,6 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 const cleanup = () => {
                     if (timer)
                         clearTimeout(timer);
-                    if (typeof req?.removeListener === 'function')
-                        req.removeListener('close', onClose);
                     if (typeof res?.removeListener === 'function')
                         res.removeListener('close', onClose);
                 };
@@ -3120,12 +3122,10 @@ async function executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, is
                 }, waitMs);
                 if (timer.unref)
                     timer.unref();
-                if (typeof req?.once === 'function')
-                    req.once('close', onClose);
                 if (typeof res?.once === 'function')
                     res.once('close', onClose);
             });
-            if (!res.writableEnded && !res.destroyed && !req.destroyed) {
+            if (!res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
                 electron_log_1.default.info(`[Proxy] 🟢 [Rate Limit Relief] Cooldown expired! Retrying request on recovered Google pool...`);
                 // Restore original target model in reqJson if fallback attempts modified it
                 if (targetRaw) {

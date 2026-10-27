@@ -50,7 +50,9 @@ export const CIRCUIT_BREAKER_BILLING_RESET_MS = 15 * 60_000;
 export const CIRCUIT_BREAKER_THRESHOLD = 1;
 
 function keyOf(model: CustomModel): string {
-  const accountId = model.accountEmail ? `::${model.accountEmail.toLowerCase()}` : '';
+  const accountId = model.accountEmail
+    ? `::${model.accountEmail.toLowerCase()}`
+    : (model.refreshToken ? `::token:${model.refreshToken.slice(-12)}` : (model.apiKey && model.apiKey !== 'none' && model.apiKey !== 'auto' ? `::key:${model.apiKey.slice(-10)}` : ''));
   return `${model.provider}::${model.apiUrl}::${model.name}${accountId}`;
 }
 
