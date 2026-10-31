@@ -1644,6 +1644,29 @@ describe('Google Multi-Account Pool & Failover', () => {
       _resetAllAccountCooldowns();
     });
 
+    it('restoreActiveAccountCooldowns does not leak Gemini quota exhaustion into Claude availability', () => {
+      _resetAllAccountCooldowns();
+      const acc: CustomModel = {
+        name: 'models/google:gemini-3.8-flash',
+        provider: 'google',
+        accountEmail: 'isolated-family@example.com',
+      };
+
+      // 5h quota-exhaustion cooldown specifically for Gemini
+      const now = Date.now();
+      const fiveHoursLater = now + 5 * 3600_000;
+      restoreActiveAccountCooldowns({
+        'google:isolated-family@example.com:gemini': fiveHoursLater,
+      });
+
+      // Gemini MUST be in cooldown
+      expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+      // Claude MUST remain 100% eligible and NOT be locked out
+      expect(isAccountInCooldown(acc, 'claude')).toBe(false);
+
+      _resetAllAccountCooldowns();
+    });
+
     it('restoreActiveAccountCooldowns preserves multi-day weekly cooldowns (82h) without clamping to 5h', () => {
       _resetAllAccountCooldowns();
       const now = Date.now();
