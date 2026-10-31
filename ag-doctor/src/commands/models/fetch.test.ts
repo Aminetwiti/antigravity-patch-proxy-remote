@@ -74,4 +74,12 @@ describe('buildModelsUrl', () => {
     expect(buildModelsUrl('https://API.OpenAI.com/v1/CHAT/COMPLETIONS'))
       .toBe('https://API.OpenAI.com/v1/models');
   });
+  it('handles Google Cloud Code RPC endpoints', () => {
+    expect(buildModelsUrl('https://daily-cloudcode-pa.googleapis.com'))
+      .toBe('https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels');
+    expect(buildModelsUrl('https://cloudcode-pa.googleapis.com'))
+      .toBe('https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels');
+    expect(buildModelsUrl('https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent'))
+      .toBe('https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels');
+  });
 });
