@@ -6116,7 +6116,7 @@ $('#exportProvidersBtn')?.addEventListener('click', async () => {
       return copy;
     }) : [];
     const bundle = {
-      version: '3.8.1',
+      version: '3.8.2',
       exportedAt: new Date().toISOString(),
       providers: sanitized,
     };

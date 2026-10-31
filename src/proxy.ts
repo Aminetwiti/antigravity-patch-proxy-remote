@@ -684,7 +684,7 @@ export async function executeOnRemoteDaemon(
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload),
           Authorization: `Bearer ${token || DEFAULT_REMOTE_TOKEN}`,
-          'User-Agent': 'AntigravityPatchProxy/3.8.1',
+          'User-Agent': 'AntigravityPatchProxy/3.8.2',
         },
         timeout: timeoutMs,
       },
