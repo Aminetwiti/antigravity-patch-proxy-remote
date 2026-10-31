@@ -1,0 +1,563 @@
+package gateway
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/antigravity/remote-daemon/pkg/cdp"
+	"github.com/antigravity/remote-daemon/pkg/connectrpc"
+	"github.com/antigravity/remote-daemon/pkg/discovery"
+	"github.com/antigravity/remote-daemon/pkg/ide"
+	"github.com/gorilla/websocket"
+)
+
+// IsIDESupportedAction indique si une action concerne les services Antigravity IDE.
+func (s *Server) IsIDESupportedAction(action string) bool {
+	switch action {
+	case "ide.list_workspaces", "ide.list_sessions", "ide.create_session", "ide.send_prompt", "ide.focus", "ide.status",
+		"ide.launch", "ide.restart", "ide.kill", "ide_launch", "ide_restart", "ide_kill", "emergency_stop",
+		"ide.open_file", "ide_open_file", "open_file_in_ide", "focus_session",
+		"ide.screenshot", "ide_screenshot", "ide.navigate", "ide_navigate", "ide.focus_convo":
+		return true
+	default:
+		return false
+	}
+}
+
+// handleIDEMessage route et traite les requêtes WebSocket destinées à Antigravity IDE.
+func (s *Server) handleIDEMessage(conn *websocket.Conn, msg IncomingMessage) {
+	launcher := ide.NewLauncher()
+
+	switch msg.Type {
+	case "ide.launch", "ide_launch":
+		cmd, err := launcher.Launch()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec du lancement d'Antigravity: %v", err),
+			})
+			return
+		}
+		pid := 0
+		if cmd.Process != nil {
+			pid = cmd.Process.Pid
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":  "launched",
+				"pid":     pid,
+				"success": true,
+			},
+		})
+
+	case "ide.restart", "ide_restart":
+		cmd, err := launcher.Restart()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec du redémarrage d'Antigravity: %v", err),
+			})
+			return
+		}
+		pid := 0
+		if cmd.Process != nil {
+			pid = cmd.Process.Pid
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":  "restarted",
+				"pid":     pid,
+				"success": true,
+			},
+		})
+
+	case "ide.kill", "ide_kill":
+		err := launcher.KillAll()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec de l'arrêt d'Antigravity: %v", err),
+			})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":  "killed",
+				"success": true,
+			},
+		})
+
+	case "emergency_stop":
+		if msg.CascadeID != "" {
+			s.CancelGeneration(msg.CascadeID)
+		}
+		// Interruption de tous les streams et terminaux actifs
+		s.terminals.killAllFor(conn)
+		s.broadcast(OutgoingMessage{
+			Type: "emergency_stop_triggered",
+			Data: map[string]interface{}{
+				"cascadeId": msg.CascadeID,
+				"timestamp": time.Now().Unix(),
+			},
+		})
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":    "stopped",
+				"emergency": true,
+				"success":   true,
+			},
+		})
+	case "ide.list_workspaces":
+		workspaces, err := ide.ListWorkspaces()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("erreur lecture workspaces IDE: %v", err),
+			})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"workspaces": workspaces,
+			},
+		})
+
+	case "ide.list_sessions":
+		sessions, err := ide.ListSessions()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("erreur lecture sessions IDE: %v", err),
+			})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"sessions": sessions,
+			},
+		})
+
+	case "ide.status":
+		instances, err := ide.DiscoverInstances()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("erreur découverte IDE: %v", err),
+			})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"instances": instances,
+				"active":    len(instances) > 0,
+			},
+		})
+
+	case "ide.create_session":
+		client, err := ide.NewAutoClient()
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("aucune instance IDE active: %v", err),
+			})
+			return
+		}
+
+		wsPath := msg.WorkspacePath
+		if wsPath == "" && msg.Data != nil {
+			if p, ok := msg.Data["workspacePath"].(string); ok {
+				wsPath = p
+			}
+		}
+
+		model := msg.ModelUID
+		if model == "" && msg.Data != nil {
+			if m, ok := msg.Data["model"].(string); ok {
+				model = m
+			}
+		}
+
+		cascadeID, err := client.CreateSession(wsPath, model)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec création session IDE: %v", err),
+			})
+			return
+		}
+
+		// Focus automatique
+		_ = client.SetFocus(cascadeID)
+
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"cascadeId": cascadeID,
+				"status":    "created",
+			},
+		})
+
+	case "ide.focus", "focus_session":
+		cascadeID := msg.CascadeID
+		if cascadeID == "" && msg.Data != nil {
+			if c, ok := msg.Data["cascadeId"].(string); ok {
+				cascadeID = c
+			}
+		}
+		if cascadeID == "" {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     "cascadeId requis pour focus",
+			})
+			return
+		}
+
+		var focusErr error
+		rpcTarget := s.getRPCClientForCascade(cascadeID)
+		if rpcTarget != nil {
+			_, focusErr = rpcTarget.SetBrowserOpenConversation(cascadeID)
+		}
+		if focusErr != nil || rpcTarget == nil {
+			if client, err := ide.FindClientForCascade(cascadeID); err == nil {
+				_, focusErr = client.SetBrowserOpenConversation(cascadeID)
+			} else if autoClient, errAuto := ide.NewAutoClient(); errAuto == nil {
+				focusErr = autoClient.SetFocus(cascadeID)
+			} else if focusErr == nil {
+				focusErr = err
+			}
+		}
+
+		if focusErr != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec focus IDE: %v", focusErr),
+			})
+			return
+		}
+
+		s.mu.Lock()
+		s.focusedCascadeID = cascadeID
+		var title string
+		if sum, ok := s.jetboxSummaries[cascadeID]; ok {
+			title = sum.Title
+		}
+		s.mu.Unlock()
+
+		s.broadcast(OutgoingMessage{
+			Type: "session_focus_changed",
+			Data: map[string]interface{}{
+				"cascadeId":        cascadeID,
+				"focusedCascadeId": cascadeID,
+				"title":            title,
+			},
+		})
+
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"cascadeId": cascadeID,
+				"focused":   true,
+			},
+		})
+
+	case "ide.open_file", "ide_open_file", "open_file_in_ide":
+		filePath := ""
+		line := 0
+		col := 0
+		if msg.Data != nil {
+			if p, ok := msg.Data["filePath"].(string); ok {
+				filePath = p
+			} else if p, ok := msg.Data["file"].(string); ok {
+				filePath = p
+			} else if p, ok := msg.Data["path"].(string); ok {
+				filePath = p
+			}
+			if l, ok := msg.Data["line"].(float64); ok {
+				line = int(l)
+			} else if l, ok := msg.Data["line"].(int); ok {
+				line = l
+			}
+			if c, ok := msg.Data["column"].(float64); ok {
+				col = int(c)
+			} else if c, ok := msg.Data["column"].(int); ok {
+				col = c
+			}
+		}
+		if filePath == "" {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     "filePath requis",
+			})
+			return
+		}
+		if err := launcher.OpenFile(filePath, line, col); err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec d'ouverture du fichier dans l'IDE: %v", err),
+			})
+			return
+		}
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"filePath": filePath,
+				"line":     line,
+				"column":   col,
+				"opened":   true,
+			},
+		})
+
+	case "ide.send_prompt":
+		cascadeID := msg.CascadeID
+		prompt := msg.Prompt
+		if cascadeID == "" && msg.Data != nil {
+			if c, ok := msg.Data["cascadeId"].(string); ok {
+				cascadeID = c
+			}
+			if t, ok := msg.Data["prompt"].(string); ok && prompt == "" {
+				prompt = t
+			}
+		}
+
+		if cascadeID == "" || prompt == "" {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     "cascadeId et prompt requis pour send_prompt",
+			})
+			return
+		}
+
+		var client *ide.Client
+		var err error
+		inst, errInst := ide.FindInstanceForCascade(cascadeID)
+		if errInst == nil {
+			client = ide.NewClient(inst)
+		} else {
+			client, err = ide.NewAutoClient()
+		}
+		if client == nil || (errInst != nil && err != nil) {
+			errMsg := errInst
+			if errMsg == nil {
+				errMsg = err
+			}
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("connexion IDE impossible: %v", errMsg),
+			})
+			return
+		}
+
+		// Acquitter le début de traitement
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status": "streaming_started",
+			},
+		})
+
+		// Diffuser le début du stream aux clients
+		s.broadcast(OutgoingMessage{
+			Type:      "stream_start",
+			CascadeID: cascadeID,
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"userPrompt": prompt,
+				"shellType":  "ide",
+			},
+		})
+
+		// Streamer en tâche de fond
+		go func() {
+			errStream := client.SendMessageStream(cascadeID, prompt, func(ev connectrpc.StreamEvent) {
+				deltaType := "stream_delta"
+				var eventData map[string]interface{}
+				if ev.Kind == connectrpc.EventKindThinking {
+					eventData = map[string]interface{}{
+						"thinkingDelta": ev.Delta,
+						"stepIndex":     ev.StepIndex,
+					}
+				} else {
+					eventData = map[string]interface{}{
+						"delta":     ev.Delta,
+						"stepIndex": ev.StepIndex,
+					}
+				}
+
+				s.broadcast(OutgoingMessage{
+					Type:      deltaType,
+					CascadeID: cascadeID,
+					RequestID: msg.RequestID,
+					Data:      eventData,
+				})
+			})
+
+			// Clôturer le stream
+			s.broadcast(OutgoingMessage{
+				Type:      "stream_end",
+				CascadeID: cascadeID,
+				RequestID: msg.RequestID,
+				Data: map[string]interface{}{
+					"status": map[bool]string{true: "done", false: "error"}[errStream == nil],
+					"error":  map[bool]string{true: "", false: fmt.Sprintf("%v", errStream)}[errStream == nil],
+				},
+			})
+
+			// Forcer le focus et rafraîchissement du Webview
+			_ = client.SetFocus(cascadeID)
+		}()
+
+	case "ide.screenshot", "ide_screenshot":
+		info, err := discovery.DiscoverCDP()
+		if err != nil || info == nil || info.ActiveTarget == nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("surface IHM Antigravity introuvable via CDP: %v", err),
+			})
+			return
+		}
+
+		client, err := cdp.Dial(info.ActiveTarget.WebSocketDebuggerURL, 2*time.Second)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec connexion CDP: %v", err),
+			})
+			return
+		}
+		defer client.Close()
+
+		format := "jpeg"
+		quality := 80
+		if msg.Data != nil {
+			if f, ok := msg.Data["format"].(string); ok && f != "" {
+				format = f
+			}
+			if q, ok := msg.Data["quality"].(float64); ok && q > 0 {
+				quality = int(q)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		base64Data, err := client.CaptureScreenshot(ctx, format, quality)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("erreur capture d'écran: %v", err),
+			})
+			return
+		}
+
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":      "success",
+				"screenshot":  base64Data,
+				"format":      format,
+				"targetTitle": info.ActiveTarget.Title,
+				"targetUrl":   info.ActiveTarget.URL,
+			},
+		})
+
+	case "ide.navigate", "ide_navigate", "ide.focus_convo":
+		info, err := discovery.DiscoverCDP()
+		if err != nil || info == nil || info.ActiveTarget == nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("surface IHM Antigravity introuvable via CDP: %v", err),
+			})
+			return
+		}
+
+		client, err := cdp.Dial(info.ActiveTarget.WebSocketDebuggerURL, 2*time.Second)
+		if err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("échec connexion CDP: %v", err),
+			})
+			return
+		}
+		defer client.Close()
+
+		targetURL := ""
+		if msg.Data != nil {
+			if u, ok := msg.Data["url"].(string); ok && u != "" {
+				targetURL = u
+			}
+		}
+		if targetURL == "" && msg.CascadeID != "" {
+			targetURL = fmt.Sprintf("https://127.0.0.1:%d/c/%s", info.Port, msg.CascadeID)
+		}
+
+		if targetURL == "" {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     "aucun paramètre url ou cascadeId fourni pour la navigation",
+			})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := client.Navigate(ctx, targetURL); err != nil {
+			s.writeJSON(conn, OutgoingMessage{
+				Type:      "response",
+				RequestID: msg.RequestID,
+				Error:     fmt.Sprintf("erreur navigation: %v", err),
+			})
+			return
+		}
+
+		s.writeJSON(conn, OutgoingMessage{
+			Type:      "response",
+			RequestID: msg.RequestID,
+			Data: map[string]interface{}{
+				"status":    "navigated",
+				"targetUrl": targetURL,
+				"success":   true,
+			},
+		})
+	}
+}

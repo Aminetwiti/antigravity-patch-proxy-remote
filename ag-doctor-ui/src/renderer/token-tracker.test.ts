@@ -1,0 +1,384 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  TokenTrackerEngine,
+  tokenizeText,
+  estimateTokenCost,
+  MODEL_PRICING,
+  calculateQuotaTokens,
+  GEMINI_5H_TOKEN_CAPACITY,
+  GEMINI_5H_TO_WEEKLY_RATIO,
+  GEMINI_WEEKLY_TOKEN_CAPACITY,
+  CLAUDE_5H_TOKEN_CAPACITY,
+  CLAUDE_5H_TO_WEEKLY_RATIO,
+  CLAUDE_WEEKLY_TOKEN_CAPACITY,
+} from './token-tracker';
+
+describe('token-tracker', () => {
+  describe('estimateTokenCost', () => {
+    it('calculates correct cost for Claude 3.5 Sonnet', () => {
+      // 100,000 prompt tokens ($3/M) + 50,000 completion tokens ($15/M)
+      // in: 100,000 * 3 / 1,000,000 = 0.3
+      // out: 50,000 * 15 / 1,000,000 = 0.75
+      // total = 1.05
+      const cost = estimateTokenCost('claude-3-5-sonnet', 100_000, 50_000);
+      expect(cost).toBeCloseTo(1.05, 3);
+    });
+
+    it('calculates correct cost for GPT-4o', () => {
+      // 200,000 prompt tokens ($2.5/M) + 10,000 completion tokens ($10/M)
+      // in: 0.5, out: 0.1 -> total 0.6
+      const cost = estimateTokenCost('gpt-4o', 200_000, 10_000);
+      expect(cost).toBeCloseTo(0.6, 3);
+    });
+
+    it('calculates correct cost for Gemini 4 Argon and Flash', () => {
+      // 100,000 prompt ($1.25/M) + 50,000 completion ($5.0/M) -> in 0.125, out 0.25 -> 0.375
+      const costPro = estimateTokenCost('gemini-4-argon-medium', 100_000, 50_000);
+      expect(costPro).toBeCloseTo(0.375, 3);
+
+      // Flash: 100,000 prompt ($0.10/M) + 50,000 completion ($0.40/M) -> in 0.01, out 0.02 -> 0.03
+      const costFlash = estimateTokenCost('gemini-3.8-flash', 100_000, 50_000);
+      expect(costFlash).toBeCloseTo(0.03, 3);
+    });
+
+    it('returns zero cost for local / ollama models', () => {
+      const cost = estimateTokenCost('ollama-llama-3', 100_000, 100_000);
+      expect(cost).toBe(0);
+    });
+
+    it('uses fallback pricing for unknown models', () => {
+      const cost = estimateTokenCost('custom-unknown-model', 1_000_000, 1_000_000);
+      expect(cost).toBeGreaterThan(0);
+    });
+  });
+
+  describe('tokenizeText', () => {
+    it('handles empty input gracefully', () => {
+      const res = tokenizeText('');
+      expect(res.tokenCount).toBe(0);
+      expect(res.charCount).toBe(0);
+      expect(res.wordCount).toBe(0);
+      expect(res.lineCount).toBe(0);
+      expect(res.tokens).toEqual([]);
+      expect(res.inputCostEstimate).toBe(0);
+    });
+
+    it('segments English prose and estimates counts', () => {
+      const text = 'Hello world! This is a test of the tokenizer engine.';
+      const res = tokenizeText(text, 'claude-3-5-sonnet');
+      expect(res.tokenCount).toBeGreaterThan(0);
+      expect(res.charCount).toBe(text.length);
+      expect(res.wordCount).toBe(10);
+      expect(res.lineCount).toBe(1);
+      expect(res.tokens.length).toBe(res.tokenCount);
+      expect(res.tokens[0].colorIndex).toBeGreaterThanOrEqual(0);
+      expect(res.tokens[0].colorIndex).toBeLessThan(6);
+    });
+
+    it('splits code snippets and multiline text correctly', () => {
+      const code = `function calculateTotal(price: number, quantity: number): number {\n  return price * quantity;\n}`;
+      const res = tokenizeText(code, 'gpt-4o');
+      expect(res.lineCount).toBe(3);
+      expect(res.tokenCount).toBeGreaterThan(10);
+      expect(res.charCount).toBe(code.length);
+    });
+  });
+
+  describe('TokenTrackerEngine', () => {
+    let engine: TokenTrackerEngine;
+
+    beforeEach(() => {
+      engine = new TokenTrackerEngine(false);
+      engine.clear();
+    });
+
+    it('logs new usage entry with automatic calculation', () => {
+      const entry = engine.logUsage({
+        provider: 'anthropic',
+        model: 'claude-3-5-sonnet',
+        promptTokens: 1000,
+        completionTokens: 500,
+        latencyMs: 1000,
+        status: 200,
+      });
+
+      expect(entry.id).toBeDefined();
+      expect(entry.totalTokens).toBe(1500);
+      expect(entry.tokensPerSec).toBe(500); // 500 completion tokens / 1 sec
+      expect(entry.estimatedCost).toBeGreaterThan(0);
+      expect(engine.getEntries().length).toBe(1);
+    });
+
+    it('filters entries by query, provider, and model', () => {
+      engine.logUsage({
+        provider: 'anthropic',
+        model: 'claude-3-5-sonnet',
+        promptTokens: 500,
+        completionTokens: 200,
+        latencyMs: 800,
+        status: 200,
+      });
+      engine.logUsage({
+        provider: 'openai',
+        model: 'gpt-4o',
+        promptTokens: 800,
+        completionTokens: 300,
+        latencyMs: 1200,
+        status: 200,
+      });
+      engine.logUsage({
+        provider: 'gemini',
+        model: 'gemini-1.5-pro',
+        promptTokens: 2000,
+        completionTokens: 400,
+        latencyMs: 900,
+        status: 200,
+      });
+
+      expect(engine.filterEntries('', 'all', 'all').length).toBe(3);
+      expect(engine.filterEntries('', 'anthropic', 'all').length).toBe(1);
+      expect(engine.filterEntries('', 'all', 'gpt-4o').length).toBe(1);
+      expect(engine.filterEntries('gemini', 'all', 'all').length).toBe(1);
+      expect(engine.filterEntries('nonexistent', 'all', 'all').length).toBe(0);
+    });
+
+    it('computes accurate summary statistics', () => {
+      engine.logUsage({
+        provider: 'anthropic',
+        model: 'claude-3-5-sonnet',
+        promptTokens: 1000,
+        completionTokens: 500,
+        latencyMs: 1000,
+        status: 200,
+      });
+      engine.logUsage({
+        provider: 'anthropic',
+        model: 'claude-3-5-sonnet',
+        promptTokens: 2000,
+        completionTokens: 1000,
+        latencyMs: 2000,
+        status: 200,
+      });
+
+      const stats = engine.getStats();
+      expect(stats.requestCount).toBe(2);
+      expect(stats.promptTokens).toBe(3000);
+      expect(stats.completionTokens).toBe(1500);
+      expect(stats.totalTokens).toBe(4500);
+      expect(stats.avgTokensPerReq).toBe(2250);
+      expect(stats.avgLatencyMs).toBe(1500);
+      expect(stats.inOutRatio).toBe(2.0); // 3000 / 1500 = 2.0
+      expect(stats.cacheHitRatioPct).toBe(0);
+      expect(stats.byProvider['anthropic'].totalTokens).toBe(4500);
+      expect(stats.byModel['claude-3-5-sonnet'].count).toBe(2);
+    });
+
+    it('aggregates Google / Antigravity stats and context caching accurately', () => {
+      engine.logUsage({
+        provider: 'google',
+        model: 'gemini-4-argon-medium',
+        promptTokens: 10000,
+        completionTokens: 2000,
+        cachedTokens: 7500,
+        latencyMs: 650,
+        status: 200,
+      });
+
+      const stats = engine.getStats();
+      expect(stats.googleStats).toBeDefined();
+      expect(stats.googleStats.totalTokens).toBe(12000);
+      expect(stats.googleStats.cachedTokens).toBe(7500);
+      expect(stats.googleStats.cacheHitRatioPct).toBe(75);
+      expect(stats.googleStats.estimatedSavings).toBeGreaterThan(0);
+    });
+
+    it('exports valid JSON and CSV formats', () => {
+      engine.logUsage({
+        provider: 'openai',
+        model: 'gpt-4o',
+        promptTokens: 120,
+        completionTokens: 80,
+        latencyMs: 500,
+        status: 200,
+      });
+
+      const jsonStr = engine.exportJson();
+      const parsed = JSON.parse(jsonStr);
+      expect(parsed.entries.length).toBe(1);
+      expect(parsed.stats.totalTokens).toBe(200);
+
+      const csvStr = engine.exportCsv();
+      expect(csvStr).toContain('gpt-4o');
+      expect(csvStr).toContain('openai');
+      expect(csvStr).toContain('Prompt Tokens');
+    });
+
+    it('clears all entries and resets stats', () => {
+      engine.logUsage({
+        provider: 'openai',
+        model: 'gpt-4o',
+        promptTokens: 100,
+        completionTokens: 50,
+        latencyMs: 400,
+        status: 200,
+      });
+      expect(engine.getEntries().length).toBe(1);
+
+      engine.clear();
+      expect(engine.getEntries().length).toBe(0);
+      const stats = engine.getStats();
+      expect(stats.totalTokens).toBe(0);
+      expect(stats.requestCount).toBe(0);
+    });
+
+    it('seeds demo data when empty', () => {
+      engine.seedDemoData();
+      expect(engine.getEntries().length).toBeGreaterThan(0);
+      const stats = engine.getStats();
+      expect(stats.totalTokens).toBeGreaterThan(1000);
+      expect(Object.keys(stats.byProvider).length).toBeGreaterThan(1);
+    });
+
+    it('loads real SQLite sessions and computes metrics', () => {
+      engine.clear();
+      engine.loadRealSessions([
+        {
+          id: 'sess-1',
+          title: 'Refactor Agent',
+          timestamp: 1700000000000,
+          provider: 'google',
+          model: 'Gemini 3.8 Flash',
+          promptTokens: 14500,
+          completionTokens: 4000,
+          totalTokens: 18500,
+          latencyMs: 320,
+          tokensPerSec: 120,
+          estimatedCost: 0.003,
+          status: 200,
+          endpoint: '/v1internal:streamGenerateContent',
+        },
+      ]);
+      expect(engine.getEntries().length).toBe(1);
+      const stats = engine.getStats();
+      expect(stats.totalTokens).toBe(18500);
+      expect(stats.promptTokens).toBe(14500);
+      expect(stats.completionTokens).toBe(4000);
+      expect(stats.byModel['Gemini 3.8 Flash']).toBeDefined();
+    });
+  });
+
+  describe('calculateQuotaTokens & Calibrated Capacities', () => {
+    it('verifies Gemini 5h = 13% weekly = 250M tokens formula', () => {
+      expect(GEMINI_5H_TOKEN_CAPACITY).toBe(250_000_000);
+      expect(GEMINI_5H_TO_WEEKLY_RATIO).toBe(0.13);
+      expect(GEMINI_WEEKLY_TOKEN_CAPACITY).toBe(1_923_076_923);
+      expect(Math.round(GEMINI_WEEKLY_TOKEN_CAPACITY * 0.13)).toBe(250_000_000);
+    });
+
+    it('verifies Claude 5h = 50% weekly formula', () => {
+      expect(CLAUDE_5H_TOKEN_CAPACITY).toBe(10_000_000);
+      expect(CLAUDE_5H_TO_WEEKLY_RATIO).toBe(0.50);
+      expect(CLAUDE_WEEKLY_TOKEN_CAPACITY).toBe(20_000_000);
+    });
+
+    it('calculates consumed and remaining tokens accurately for Gemini 5h', () => {
+      // 80% remaining -> 20% consumed
+      const res = calculateQuotaTokens(80, GEMINI_5H_TOKEN_CAPACITY);
+      expect(res.availableTokens).toBe(200_000_000); // 200M restants
+      expect(res.consumedTokens).toBe(50_000_000);   // 50M consommés
+      expect(res.percentageRemaining).toBe(80);
+      expect(res.percentageConsumed).toBe(20);
+    });
+
+    it('calculates consumed and remaining tokens accurately for Gemini Weekly', () => {
+      // 90% remaining -> 10% consumed on ~1.923B capacity
+      const res = calculateQuotaTokens(90, GEMINI_WEEKLY_TOKEN_CAPACITY);
+      expect(res.availableTokens).toBe(1_730_769_231);
+      expect(res.consumedTokens).toBe(192_307_692);
+      expect(res.percentageRemaining).toBe(90);
+      expect(res.percentageConsumed).toBe(10);
+    });
+
+    it('preserves all characters during tokenization (lossless reconstruction)', () => {
+      const complexText = `function calculatePool(a: number, b: number) {\n  if (a === 250_000_000) return "d'ingénierie";\n  return a * 0.13;\n}`;
+      const res = tokenizeText(complexText, 'gemini-3.8-flash');
+      const reconstructed = res.tokens.map((t) => t.text).join('');
+      expect(reconstructed).toBe(complexText);
+      expect(res.tokenCount).toBeGreaterThan(15);
+    });
+
+    it('filters entries using calendar presets and custom date ranges', () => {
+      const tracker = new TokenTrackerEngine('test-calendar-tracker');
+      const now = Date.now();
+      const oneHourAgo = now - 3600 * 1000;
+      const threeDaysAgo = now - 3 * 86400 * 1000;
+      const twentyDaysAgo = now - 20 * 86400 * 1000;
+      const twoMonthsAgo = now - 60 * 86400 * 1000;
+
+      tracker.logUsage({ timestamp: oneHourAgo, provider: 'google', model: 'gemini-3.8-flash', promptTokens: 100, completionTokens: 50, latencyMs: 120, status: 200 });
+      tracker.logUsage({ timestamp: threeDaysAgo, provider: 'google', model: 'gemini-3.8-flash', promptTokens: 200, completionTokens: 50, latencyMs: 150, status: 200 });
+      tracker.logUsage({ timestamp: twentyDaysAgo, provider: 'anthropic', model: 'claude-sonnet-4-6', promptTokens: 300, completionTokens: 100, latencyMs: 300, status: 200 });
+      tracker.logUsage({ timestamp: twoMonthsAgo, provider: 'openai', model: 'gpt-4o', promptTokens: 400, completionTokens: 200, latencyMs: 500, status: 200 });
+
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', 'all').length).toBe(4);
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', '24h').length).toBe(1);
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', '7d').length).toBe(2);
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', '30d').length).toBe(3);
+      expect(tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', '7m').length).toBe(4);
+
+      // Custom range test: YYYY-MM-DD
+      const dStart = new Date(twentyDaysAgo - 86400 * 1000).toISOString().slice(0, 10);
+      const dEnd = new Date(threeDaysAgo + 86400 * 1000).toISOString().slice(0, 10);
+      const customMatches = tracker.filterEntries('', 'all', 'all', 'timestamp', 'desc', `custom:${dStart}:${dEnd}`);
+      expect(customMatches.length).toBe(2);
+
+      // Export with filtered entries
+      const csv = tracker.exportCsv(customMatches);
+      expect(csv.includes('claude-sonnet-4-6')).toBe(true);
+      expect(csv.includes('gpt-4o')).toBe(false);
+
+      const json = JSON.parse(tracker.exportJson(customMatches));
+      expect(json.totalEntries).toBe(2);
+      expect(json.entries.length).toBe(2);
+    });
+
+    it('safely handles empty, null or undefined inputs without throwing', () => {
+      const tracker = new TokenTrackerEngine('test-empty-tracker');
+      const emptyRes = tracker.filterEntries();
+      expect(Array.isArray(emptyRes)).toBe(true);
+      expect(emptyRes.length).toBe(0);
+
+      const nullTokenize = tokenizeText('');
+      expect(Array.isArray(nullTokenize.tokens)).toBe(true);
+      expect(nullTokenize.tokens.length).toBe(0);
+      expect(nullTokenize.tokenCount).toBe(0);
+    });
+
+    it('neutralizes spreadsheet formula injection in CSV export (AUDIT-005)', () => {
+      const tracker = new TokenTrackerEngine(false);
+      tracker.clear();
+      tracker.logUsage({
+        id: '=cmd|"/C calc"!A0',
+        provider: '@google-hub',
+        model: '+gemini-calc',
+        promptTokens: 100,
+        completionTokens: 50,
+      });
+
+      const csv = tracker.exportCsv();
+      expect(csv).toContain("\"'=cmd|\"\"/C calc\"\"!A0\"");
+      expect(csv).toContain("\"'@google-hub\"");
+      expect(csv).toContain("\"'+gemini-calc\"");
+    });
+
+    it('efficiently tokenizes large payloads in linear time without OOM (AUDIT-002)', () => {
+      const bigText = 'const a = 123;\nfunction test() { return a + 456; }\n'.repeat(500);
+      const start = performance.now();
+      const res = tokenizeText(bigText);
+      const duration = performance.now() - start;
+
+      expect(res.tokenCount).toBeGreaterThan(1000);
+      expect(duration).toBeLessThan(150);
+    });
+  });
+});

@@ -1,0 +1,132 @@
+{
+  "name": "ag-doctor-ui",
+  "version": "3.8.1",
+  "description": "Premium Electron UI for the ag-doctor CLI",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node scripts/copy-assets.js && tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/strip-module-syntax.js",
+    "build:cli": "cd ../ag-doctor && npm install && npm run build",
+    "prepack": "npm run build && cd ../ag-doctor && npm install && npm run build && npm prune --omit=dev",
+    "watch": "tsc -p tsconfig.json --watch",
+    "start": "node -e \"if (!require('fs').existsSync('dist/launch.js')) { require('child_process').execSync('npm run build', { stdio: 'inherit' }); }\" && node dist/launch.js",
+    "start:build": "npm run build && node dist/launch.js",
+    "dev": "tsc -p tsconfig.json --watch & node dist/launch.js",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder --win nsis portable",
+    "dist:installer": "npm run build && electron-builder --win nsis",
+    "dist:portable": "npm run build && electron-builder --win portable",
+    "dist:all": "npm run build && electron-builder --win nsis portable",
+    "dist:dir": "npm run build && electron-builder --dir",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "antigravity",
+    "doctor",
+    "electron",
+    "cli",
+    "diagnostic"
+  ],
+  "author": "Antigravity",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Aminetwiti/antigravity-patch-proxy.git"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "electron": "44.0.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "build": {
+    "electronVersion": "44.0.0",
+    "appId": "dev.antigravity.doctor-ui",
+    "productName": "Antigravity Doctor",
+    "publish": {
+      "provider": "github",
+      "owner": "Aminetwiti",
+      "repo": "antigravity-patch-proxy"
+    },
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../ag-doctor/bin",
+        "to": "ag-doctor/bin"
+      },
+      {
+        "from": "../ag-doctor/dist",
+        "to": "ag-doctor/dist"
+      },
+      {
+        "from": "../ag-doctor/node_modules",
+        "to": "ag-doctor/node_modules",
+        "filter": [
+          "**/*",
+          "!**/.bin",
+          "!**/.bin/**/*",
+          "!**/*.map"
+        ]
+      },
+      {
+        "from": "../ag-doctor/package.json",
+        "to": "ag-doctor/package.json"
+      },
+      {
+        "from": "../remote/daemon",
+        "to": "remote/daemon",
+        "filter": [
+          "daemon.exe",
+          "bin/**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Antigravity Doctor",
+      "artifactName": "ag-doctor-${version}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "ag-doctor-${version}-portable.${ext}"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
+  "dependencies": {
+    "@types/qrcode": "^1.5.6",
+    "qrcode": "^1.5.4"
+  }
+}

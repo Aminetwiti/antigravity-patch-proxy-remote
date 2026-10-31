@@ -1,0 +1,15 @@
+{
+  "name": "Quiet Light",
+  "brightness": "light",
+  "background": "#FAFAFA",
+  "surfaceBase": "#FFFFFF",
+  "surfaceRaised": "#F6F8FA",
+  "surfaceInput": "#EAEEF2",
+  "borderSubtle": "#D0D7DE",
+  "borderStrong": "#8C959F",
+  "textPrimary": "#1F2328",
+  "textSecondary": "#57606A",
+  "textMuted": "#656D76",
+  "accent": "#0969DA",
+  "source": "utils.js: L106-107 & app_colors.dart: L87-105"
+}

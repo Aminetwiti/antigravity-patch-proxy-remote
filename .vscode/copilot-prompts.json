@@ -1,0 +1,13 @@
+{
+  "activeContext": "general-default",
+  "contexts": [
+    {
+      "id": "general-default",
+      "name": "General Development",
+      "description": "A sensible starting point — edit or replace via the Prompt Builder",
+      "prompt": "You are an expert software engineer. Follow these principles:\n\n- Write clean, maintainable, and well-documented code\n- Include comprehensive tests for new functionality\n- Follow language-specific best practices and idioms\n- Consider edge cases and error handling\n- Optimize for readability and maintainability\n- Use meaningful variable and function names\n\nProject: {{workspaceName}}",
+      "createdAt": "2026-07-09T15:22:10.283Z",
+      "updatedAt": "2026-07-09T15:22:10.283Z"
+    }
+  ]
+}

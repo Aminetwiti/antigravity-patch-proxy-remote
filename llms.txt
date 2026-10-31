@@ -1,0 +1,30 @@
+# Google Antigravity Custom Model Proxy
+
+> A lightweight local reverse proxy and binary patch enabler to integrate custom LLM providers (Anthropic Claude 3.5 Sonnet, OpenAI GPT-4o, DeepSeek R1/V3, Ollama, OpenRouter, Google AI Studio, Groq, Mistral) into Google Antigravity IDE with native UI dropdown support, bi-directional SSE streaming, tool calling, and AES-256-GCM encryption.
+
+## Key Features
+- **Native IDE Integration**: Injects custom models directly into the Google Antigravity IDE model picker.
+- **Supported Providers**: OpenAI, Anthropic, OpenRouter, Google AI Studio, Ollama, DeepSeek, Groq, Mistral, Cerebras, NVIDIA, OpenCode, Codestral, Kimi, Fireworks, LM Studio, Llama.cpp, MiniMax.
+- **Protocol Translation**: Intercepts Google Cloud Code `v1internal` API calls (`POST /v1internal:streamGenerateContent?alt=sse`) and translates them into provider-native payloads.
+- **Stream Failover & Auto-Fallback**: Automatically switches to secondary fallback models on HTTP 429 rate limit or 5xx server errors while displaying inline stream notification cards.
+- **AES-256-GCM Encryption**: Securely encrypts stored API keys at rest via Electron `safeStorage` (backed by Windows DPAPI, macOS Keychain, or Linux Secret Service).
+- **Diagnostic Suite (`ag-doctor`)**: Built-in CLI and Electron UI (`ag-doctor-ui`) for automatic binary patching, port binding checks, live log inspection, and 1-click repairs.
+
+## System Architecture & Data Flow
+- **Local Proxy Address**: `127.0.0.1:51074` (configurable via `AG_PROXY_PORT`)
+- **Internal API Interception**: Intercepts `fetchAvailableModels`, `streamGenerateContent`, `generateContent`, `loadCodeAssist`, and `listExperiments`.
+- **Language Server Patching**: Modifies compiled Go binary string tables to redirect hardcoded Google endpoints to `127.0.0.1:51074`.
+- **Config Storage**: Stored at `~/.gemini/antigravity/custom_models.json` (or `%USERPROFILE%\.gemini\antigravity\custom_models.json` on Windows).
+
+## Key Files & Documentation
+- [README.md](README.md): Primary technical guide, feature matrices, setup commands, and FAQ.
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md): Complete diagnostic flow, error codes, and troubleshooting steps.
+- [ARCHITECTURE.md](ARCHITECTURE.md): Deep architectural details on reverse engineering Cloud Code APIs.
+- [PRODUCT.md](PRODUCT.md): Overview of project scope and key metrics.
+
+## Quick Installation & Setup
+- **Windows**: Run `repatch.bat` or `npm run build && npm run repatch`
+- **macOS**: Run `npm run repack:mac`
+- **Linux**: Run `npm run repack:linux`
+- **Diagnostic CLI**: Run `npm run doctor`
+- **Enterprise HTTPS MITM**: Run `"Start Antigravity MITM.bat"`

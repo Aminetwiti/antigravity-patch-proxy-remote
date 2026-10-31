@@ -1,0 +1,39 @@
+﻿syntax = "proto3";
+
+// file: exa/diff_action_pb/diff_action.proto
+// package: exa.diff_action_pb
+message UnifiedDiff {
+  repeated .exa.diff_action_pb.UnifiedDiff.UnifiedDiffLine lines = 3;
+  message UnifiedDiffLine {
+    optional string text = 1;
+    optional .exa.diff_action_pb.UnifiedDiffLineType type = 2;
+  }
+}
+message DiffBlock {
+  optional int32 start_line = 1;
+  optional int32 end_line = 2;
+  optional .exa.diff_action_pb.UnifiedDiff unified_diff = 3;
+}
+message CharacterDiffChange {
+  optional string text = 1;
+  optional .exa.diff_action_pb.DiffChangeType type = 2;
+}
+message CharacterDiff {
+  repeated .exa.diff_action_pb.CharacterDiffChange changes = 1;
+}
+message ComboDiffLine {
+  optional string text = 1;
+  optional .exa.diff_action_pb.DiffChangeType type = 2;
+  optional .exa.diff_action_pb.CharacterDiff character_diff = 3;
+}
+message ComboDiff {
+  repeated .exa.diff_action_pb.ComboDiffLine lines = 1;
+}
+message DiffSet {
+  optional .exa.diff_action_pb.UnifiedDiff unified_diff = 1;
+  optional .exa.diff_action_pb.CharacterDiff character_diff = 2;
+  optional .exa.diff_action_pb.ComboDiff combo_diff = 3;
+}
+message DiffList {
+  repeated .exa.diff_action_pb.DiffBlock diffs = 2;
+}

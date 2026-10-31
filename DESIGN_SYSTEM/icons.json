@@ -1,0 +1,31 @@
+{
+  "family": "Google Symbols / Material Icons",
+  "style": "Outlined / Rounded",
+  "strokeWidth": 1.5,
+  "sizes": {
+    "sm": "16px",
+    "md": "20px",
+    "lg": "24px"
+  },
+  "mapping": {
+    "search": "search",
+    "settings": "settings",
+    "chat": "chat_bubble_outline",
+    "history": "history",
+    "tools": "construction",
+    "workspace": "folder_open",
+    "check": "check",
+    "close": "close",
+    "delete": "delete_outline",
+    "refresh": "refresh",
+    "terminal": "terminal",
+    "chevronDown": "expand_more",
+    "chevronRight": "chevron_right",
+    "code": "code",
+    "agentRunning": "progress_activity",
+    "statusIdle": "circle",
+    "statusCompleted": "check_circle",
+    "statusFailed": "error"
+  },
+  "_source": "remote/mobile/design.md: L255-265 & remote/mobile/lib/features/"
+}

@@ -1,0 +1,19 @@
+﻿syntax = "proto3";
+
+// file: exa/browser_pb/browser.proto
+// package: exa.browser_pb
+message SerializablePageState {
+  optional string page_id = 1;
+  optional .exa.codeium_common_pb.BrowserPageMetadata metadata = 2;
+  optional .exa.codeium_common_pb.DOMTree dom_tree = 3;
+  optional .exa.codeium_common_pb.ImageData screenshot = 4;
+  optional .exa.browser_pb.AgentMousePosition agent_mouse_position = 5;
+  optional .exa.codeium_common_pb.ConsoleLogScopeItem console_logs = 6;
+  optional .google.protobuf.Timestamp added_time = 7;
+  optional string serialized_dom_tree = 8;
+  optional .exa.codeium_common_pb.Media media_screenshot = 9;
+}
+message AgentMousePosition {
+  optional int32 x = 1;
+  optional int32 y = 2;
+}

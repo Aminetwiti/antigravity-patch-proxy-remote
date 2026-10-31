@@ -1,0 +1,27 @@
+{
+  "subtle": {
+    "width": "1px",
+    "style": "solid",
+    "color": "#27272A",
+    "purpose": "Card resting borders, inner separators"
+  },
+  "default": {
+    "width": "1px",
+    "style": "solid",
+    "color": "#3A3A3A",
+    "purpose": "Sidebar boundary, header divider"
+  },
+  "strong": {
+    "width": "1px",
+    "style": "solid",
+    "color": "#3F3F46",
+    "purpose": "Modal frames, card hover states, focused inputs"
+  },
+  "focus": {
+    "width": "1px",
+    "style": "solid",
+    "color": "#8AB4F8",
+    "purpose": "Active focus state"
+  },
+  "_source": "DESIGN.md: L8-10 & ag-doctor-ui/src/renderer/styles.css: L2716-2717"
+}

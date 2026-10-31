@@ -1,0 +1,569 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
+import '../../config/env_config.dart';
+
+enum ConnectionStatus { disconnected, connecting, connected, error }
+
+/// Low-level resilient WebSocket client using native stdlib `dart:io` WebSocket.
+/// ponytail: Zero external dependencies, pure Dart stdlib WebSocket stream.
+class DaemonWebSocketClient {
+  WebSocket? _socket;
+  StreamController<dynamic>? _messageController;
+  final ValueNotifier<ConnectionStatus> statusNotifier =
+      ValueNotifier(ConnectionStatus.disconnected);
+
+  /// Reassemblage des messages texte multi-frames (dart:io WebSocket livre
+  /// chaque fragment sÃ©parÃ©ment). RÃ©initialisÃ© Ã  chaque (re)connexion.
+  String _textBuffer = '';
+  bool _inPartialMessage = false;
+
+  Timer? _reconnectTimer;
+  Timer? _retryCountdownTimer;
+  String _targetUrl = EnvConfig.wsUrl;
+  String? _authToken;
+  bool _manualDisconnect = false;
+  bool _connecting = false;
+  int _reconnectAttempts = 0;
+
+  /// Backoff exponentiel : 2s → 4s → 8s → 16s → 30s (plafond).
+  /// ponytail: pas de dépendance (package:async retry) — 4 lignes de calcul.
+  @visibleForTesting
+  static Duration backoffDelay(int attempt) {
+    final capped = attempt < 4 ? attempt : 4;
+    final seconds = min(30, 2 * (1 << capped));
+    return Duration(seconds: seconds);
+  }
+
+  /// Numéro de la tentative de reconnexion + temps restant avant la prochaine
+  /// tentative — regroupés dans UN notifier pour que l'UI (banner) écoute
+  /// une seule source et se mette à jour en un setState.
+  final ValueNotifier<RetryInfo> retryInfo = ValueNotifier(const RetryInfo());
+
+  /// Alias pratique pour l'UI : l'état de connexion actuel.
+  ConnectionStatus get status => statusNotifier.value;
+
+  /// Étape 5 : incrémenté à chaque reconnexion réussie. Les consommateurs
+  /// (DaemonApi → replay outbox, UI → re-sync) écoutent ce notifier pour
+  /// savoir quand l'état distant doit être rejoué.
+  final ValueNotifier<int> reconnectVersion = ValueNotifier(0);
+
+  /// Latence aller-retour mesurée en millisecondes vers le daemon.
+  final ValueNotifier<int?> latencyMsNotifier = ValueNotifier(null);
+  int? get latencyMs => latencyMsNotifier.value;
+  int? _lastPingTimestamp;
+
+  Stream<dynamic> get stream =>
+      _messageController?.stream ?? const Stream.empty();
+
+  /// Étape 6 : la connexion a été abandonnée (dispose). Les callbacks async
+  /// tardifs (WebSocket.connect en vol, onDone, onError) doivent devenir no-op
+  /// au lieu de notifier des ValueNotifier déjà disposés.
+  bool _disposed = false;
+
+  /// Timer de timeout 15 s pour `WebSocket.connect` en vol : annulé dans
+  /// dispose/disconnect pour ne pas laisser de timer pendant après la
+  /// destruction (tests « A Timer is still pending »). Le dispose ferme
+  /// directement le socket via le garde `_disposed` dans connect().
+  Timer? _connectTimeout;
+
+  /// Keep-alive applicatif : le daemon ferme les connexions sans frame après
+  /// pongWait (60 s). En arrière-plan, l'OS Android gèle le réseau → le ping
+  /// Ping JSON toutes les 5 s : le daemon lit la frame → reset du read deadline
+  /// (pongWait) → connexion maintenue contre les timeouts d'inactivité Wi-Fi/NAT.
+  static const keepAliveInterval = Duration(seconds: 5);
+  Timer? _keepAliveTimer;
+
+  /// Callback appelé après chaque connexion réussie : permet au consumer de
+  /// persister la session (URL + token) pour la reconnexion directe.
+  void Function(String url, String token)? onSessionEstablished;
+
+  /// Callback appelé quand le serveur rejette notre token (HTTP 401) : le
+  /// consumer doit effacer la session persistée (token obsolète après un
+  /// redémarrage du daemon avec un nouveau --auth-token) et re-tenter sans
+  /// l'ancien token au lieu de marteler un 401 en boucle.
+  void Function()? onAuthRejected;
+
+  /// Callback appelé quand l'URL persistée est définitivement morte (HTTP
+  /// 530/502 de Cloudflare = le tunnel a été remplacé par un redémarrage du
+  /// daemon) : le consumer doit effacer la session et retomber sur le
+  /// fallback LAN (réglages host/port) — sinon on martèle une URL morte en
+  /// boucle pendant que le daemon tourne sur une nouvelle URL.
+  void Function()? onEndpointDead;
+
+  /// Échecs 530/502 consécutifs sur l'endpoint courant. Réarmé à 0 dès qu'une
+  /// connexion aboutit ou qu'un autre type d'erreur survient.
+  int _endpointDeadCount = 0;
+
+  /// URL complète actuellement ciblée (réutilisée pour re-sauvegarde).
+  String get targetUrl => _targetUrl;
+
+  /// Token d'auth en vigueur (peut être vide).
+  String? get authToken => _authToken;
+
+  /// Formate une URL WebSocket propre et robuste à partir d'un hôte et port.
+  /// Gère les schémas http(s)://, ws(s)://, les ports 80/443 par défaut, les tunnels Cloudflare/Pinggy
+  /// et évite les doubles slashes ou les suffixes :443 redondants.
+  static String formatWsUrl(String host, [int? port]) {
+    var raw = host.trim();
+    if (raw.isEmpty) return 'ws://127.0.0.1:8090/ws';
+
+    // Extraction de query parameters existants si présents
+    String query = '';
+    if (raw.contains('?')) {
+      final qIdx = raw.indexOf('?');
+      query = raw.substring(qIdx);
+      raw = raw.substring(0, qIdx);
+    }
+
+    // 1. Détection et nettoyage du schéma
+    String scheme = 'ws';
+    if (raw.startsWith('wss://')) {
+      scheme = 'wss';
+      raw = raw.substring('wss://'.length);
+    } else if (raw.startsWith('https://')) {
+      scheme = 'wss';
+      raw = raw.substring('https://'.length);
+    } else if (raw.startsWith('ws://')) {
+      scheme = 'ws';
+      raw = raw.substring('ws://'.length);
+    } else if (raw.startsWith('http://')) {
+      scheme = 'ws';
+      raw = raw.substring('http://'.length);
+    } else {
+      // Pas de schéma explicite :
+      // Domaine distant (non IP locale), tunnel ou port 443 -> wss
+      final isLocal = RegExp(r'^(127\.0\.0\.1|localhost|0\.0\.0\.0|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)').hasMatch(raw);
+      if (!isLocal || port == 443 || raw.contains('trycloudflare.com') || raw.contains('pinggy')) {
+        scheme = 'wss';
+      }
+    }
+
+    // 2. Nettoyage du chemin
+    raw = raw.replaceAll(RegExp(r'/ws/?$'), '').replaceAll(RegExp(r'/+$'), '');
+
+    // 3. Extraction d'un port explicite dans l'hôte (ex: host:8090)
+    String domain = raw;
+    int? inlinePort;
+    if (raw.contains(':')) {
+      final parts = raw.split(':');
+      domain = parts[0];
+      inlinePort = int.tryParse(parts[1].replaceAll(RegExp(r'/.*$'), ''));
+    }
+    domain = domain.replaceAll(RegExp(r'/.*$'), '');
+
+    // 4. Détermination du port effectif
+    int effectivePort = inlinePort ?? (port ?? (scheme == 'wss' ? 443 : 8090));
+
+    // Si WSS et port laissé à 8090 par défaut (sans port explicite dans l'hôte) -> 443
+    if (scheme == 'wss' && inlinePort == null && (port == 8090 || port == null)) {
+      effectivePort = 443;
+    }
+
+    // 5. Omission des ports par défaut standard (443 pour wss, 80 pour ws)
+    final portPart = (effectivePort == 443 && scheme == 'wss') || (effectivePort == 80 && scheme == 'ws')
+        ? ''
+        : ':$effectivePort';
+
+    return '$scheme://$domain$portPart/ws$query';
+  }
+
+  Future<void> connect({String? customUrl, String? authToken}) async {
+    if (customUrl != null && customUrl.isNotEmpty) {
+      _targetUrl = customUrl.startsWith('http://') || customUrl.startsWith('https://')
+          ? formatWsUrl(customUrl)
+          : customUrl;
+      _reconnectAttempts = 0;
+    }
+    if (authToken != null) {
+      _authToken = authToken;
+      _reconnectAttempts = 0;
+    }
+
+    if (_disposed) return;
+    if (statusNotifier.value == ConnectionStatus.connected ||
+        statusNotifier.value == ConnectionStatus.connecting) {
+      return;
+    }
+
+    // Garde anti-boucle (C3) : une tentative de connexion en vol (connect()
+    // appelé par onAuthRejected/onEndpointDead/reconnect-timer alors que le
+    // socket est encore vivant ou que _connecting n'a pas été réarmé) ne doit
+    // JAMAIS muter _targetUrl/_authToken ni lancer une seconde tentative en
+    // parallèle de la première — sinon la connexion part en ping-timeout /
+    // reconnect storm (la boucle connecter/déconnecter observée).
+    if (_connecting || _socket != null) {
+      return;
+    }
+    _manualDisconnect = false;
+    _connecting = true;
+    statusNotifier.value = ConnectionStatus.connecting;
+    _messageController ??= StreamController<dynamic>.broadcast();
+
+    try {
+      var uri = Uri.parse(_targetUrl);
+      // P3 : Transmettre le token dans les query parameters (?token=...)
+      // EN PLUS du header 'Authorization: Bearer'.
+      // Les reverse proxies Cloud (Coolify/Traefik, Cloudflare, Nginx) suppriment
+      // fréquemment les headers d'authentification personnalisés lors du handshake
+      // HTTP 101 WebSocket Upgrade, causant un rejet 401 Unauthorized par le daemon.
+      if (_authToken != null && _authToken!.isNotEmpty && !uri.queryParameters.containsKey('token')) {
+        final queryParams = Map<String, String>.from(uri.queryParameters);
+        queryParams['token'] = _authToken!;
+        uri = uri.replace(queryParameters: queryParams);
+      }
+
+      final headers = <String, dynamic>{};
+      if (_authToken != null && _authToken!.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $_authToken';
+      }
+
+      WebSocket? socket;
+      final connectFuture = WebSocket.connect(
+        uri.toString(),
+        headers: headers.isNotEmpty ? headers : null,
+      );
+
+      _connectTimeout?.cancel();
+      _connectTimeout = Timer(const Duration(seconds: 15), () {
+        // onError: (_) {} — consomme le rejet du connectFuture pour ne pas
+        // créer un Future dérivé non géré (sinon : Unhandled Exception
+        // SocketException errno=103 quand le daemon meurt pendant le
+        // handshake — crash du phone en pleine boucle de reconnexion).
+        connectFuture.then((s) => s.close(), onError: (_) {});
+      });
+
+      try {
+        socket = await connectFuture;
+      } finally {
+        _connectTimeout?.cancel();
+        _connectTimeout = null;
+      }
+
+      if (_disposed) {
+        socket.close();
+        return;
+      }
+
+      // Si le socket a été fermé par le timeout (qui s'est déclenché pendant l'await)
+      if (socket.readyState == WebSocket.closed) {
+        throw TimeoutException('WebSocket connection timed out');
+      }
+
+      _socket = socket;
+      _connecting = false;
+      _endpointDeadCount = 0;
+      statusNotifier.value = ConnectionStatus.connected;
+      _reconnectAttempts = 0;
+      _stopRetryCountdown();
+      retryInfo.value = const RetryInfo();
+      _startKeepAlive();
+      reconnectVersion.value++; // Étape 5 : signaler la (re)connexion
+      if (kDebugMode) {
+        print('[DaemonWS] Connected to $_targetUrl');
+      }
+      onSessionEstablished?.call(_targetUrl, _authToken ?? '');
+
+      _socket!.listen(
+        (data) {
+          _handleData(data);
+        },
+        onError: (error) {
+          if (kDebugMode) {
+            print('[DaemonWS] Error: $error');
+          }
+          _handleDisconnect();
+        },
+        onDone: () {
+          if (kDebugMode) {
+            print('[DaemonWS] Stream closed');
+          }
+          _handleDisconnect();
+        },
+      );
+    } catch (e) {
+      _connecting = false;
+      if (kDebugMode) {
+        print('[DaemonWS] Connection failed: $e');
+      }
+      // Token obsolète (redémarrage du daemon avec un nouveau --auth-token) :
+      // le serveur répond 401 au handshake WS. On prévient le consumer pour
+      // qu'il efface la session persistée — sinon on martèle le 401 en boucle
+      // avec l'ancien token pendant ~30 s (backoff).
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('401') ||
+          errStr.contains('unauthorized') ||
+          errStr.contains('connection reset') ||
+          errStr.contains('not upgraded')) {
+        statusNotifier.value = ConnectionStatus.error;
+        onAuthRejected?.call();
+        _socket?.close();
+        _socket = null;
+        _stopKeepAlive();
+        return;
+      }
+      // URL de tunnel morte : Cloudflare répond 530/502 quand le daemon a
+      // redémarré avec un nouveau tunnel. 3 échecs consécutifs → statut
+      // `error` + onEndpointDead (clear session → repli LAN). Les 2 premiers
+      // passent par _handleDisconnect pour laisser une chance à un 530
+      // transitoire (cold start Cloudflare ~30 s).
+      if (e.toString().contains('530') || e.toString().contains('502')) {
+        _endpointDeadCount++;
+        if (_endpointDeadCount >= 3) {
+          _endpointDeadCount = 0;
+          statusNotifier.value = ConnectionStatus.error;
+          onEndpointDead?.call();
+          _socket?.close();
+          _socket = null;
+          _stopKeepAlive();
+          return;
+        }
+      } else {
+        _endpointDeadCount = 0;
+      }
+      _handleDisconnect();
+    }
+  }
+
+  /// Reconstruit le message texte complet (multi-frames) avant Ã©mission :
+  /// seuls les messages complets (endOfMessage=true) sont publiÃ©s sur le
+  /// stream, dans l'ordre du flux.
+  void _handleData(dynamic data) {
+    if (data is! String) {
+      _messageController?.add(data);
+      return;
+    }
+    if (_inPartialMessage) {
+      _textBuffer += data;
+    } else {
+      _textBuffer = data;
+      _inPartialMessage = true;
+    }
+    // Note: `WebSocketMessage.endOfMessage` n'est pas exposÃ© par l'API
+    // dart:io; le message est complet quand il se termine par le dÃ©limiteur
+    // fermant du JSON (aprÃ¨s les fragments intermÃ©diaires, dont le contenu
+    // est un préfixe JSON non valide).
+    final trimmed = _textBuffer.trimRight();
+    if (_isCompleteJson(trimmed)) {
+      _inPartialMessage = false;
+      _textBuffer = '';
+      if (_lastPingTimestamp != null && (trimmed.contains('"pong"') || trimmed.contains('"type":"pong"') || trimmed.contains('"status":"ok"'))) {
+        final rtt = DateTime.now().millisecondsSinceEpoch - _lastPingTimestamp!;
+        if (rtt >= 0 && rtt < 10000) {
+          latencyMsNotifier.value = rtt;
+        }
+      }
+      _messageController?.add(trimmed);
+    }
+  }
+
+  /// Vérifie la complétude du JSON par comptage de délimiteurs (strings et
+  /// échappements respectés) — O(n) sans allocation, au lieu d'un jsonDecode
+  /// complet qui décoderait ensuite une seconde fois dans DaemonApi.
+  bool _isCompleteJson(String s) {
+    if (s.isEmpty) return false;
+    final first = s.codeUnitAt(0);
+    if (first != 0x7B /* { */ && first != 0x5B /* [ */) return false;
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    for (var i = 0; i < s.length; i++) {
+      final c = s.codeUnitAt(i);
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (c == 0x5C /* \ */) {
+          escaped = true;
+        } else if (c == 0x22 /* " */) {
+          inString = false;
+        }
+        continue;
+      }
+      if (c == 0x22) {
+        inString = true;
+      } else if (c == 0x7B || c == 0x5B) {
+        depth++;
+      } else if (c == 0x7D /* } */ || c == 0x5D /* ] */) {
+        depth--;
+        if (depth == 0) return i == s.length - 1;
+        if (depth < 0) return false;
+      }
+    }
+    return false;
+  }
+
+  void send(dynamic data) {
+    if (statusNotifier.value == ConnectionStatus.connected && _socket != null) {
+      if (data is Map || data is List) {
+        _socket!.add(jsonEncode(data));
+      } else {
+        _socket!.add(data);
+      }
+    }
+  }
+
+  void _handleDisconnect() {
+    if (_disposed) {
+      _socket?.close();
+      _socket = null;
+      return;
+    }
+    _socket?.close();
+    _socket = null;
+    _stopKeepAlive();
+    latencyMsNotifier.value = null;
+    _reconnectAttempts++;
+
+    // Après 5 échecs consécutifs, on bascule en état Erreur pour éviter de marteler le réseau.
+    if (_reconnectAttempts >= 5) {
+      _stopRetryCountdown();
+      _reconnectTimer?.cancel();
+      statusNotifier.value = ConnectionStatus.error;
+      retryInfo.value = retryInfo.value.copyWith(
+        attempt: _reconnectAttempts,
+        nextRetryIn: Duration.zero,
+      );
+      return;
+    }
+
+    statusNotifier.value = ConnectionStatus.disconnected;
+    retryInfo.value = retryInfo.value.copyWith(attempt: _reconnectAttempts);
+    _scheduleReconnect();
+  }
+
+  /// Ping JSON toutes les 5 s (avec émission immédiate à la connexion) :
+  /// le daemon lit la frame → reset du read deadline (pongWait) → connexion
+  /// maintenue en continu même en cas de veille réseau agressive.
+  void _startKeepAlive() {
+    _keepAliveTimer?.cancel();
+    // Émission immédiate au handshake pour réchauffer le socket et mesurer le RTT initial
+    final sock = _socket;
+    if (sock != null && statusNotifier.value == ConnectionStatus.connected) {
+      try {
+        _lastPingTimestamp = DateTime.now().millisecondsSinceEpoch;
+        sock.add('{"type":"ping","ts":$_lastPingTimestamp}');
+      } catch (_) {}
+    }
+    _keepAliveTimer = Timer.periodic(keepAliveInterval, (_) {
+      final s = _socket;
+      if (s == null ||
+          statusNotifier.value != ConnectionStatus.connected) {
+        _stopKeepAlive();
+        return;
+      }
+      try {
+        _lastPingTimestamp = DateTime.now().millisecondsSinceEpoch;
+        s.add('{"type":"ping","ts":$_lastPingTimestamp}');
+      } catch (_) {
+        _stopKeepAlive();
+      }
+    });
+  }
+
+  void _stopKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
+  }
+
+  void _scheduleReconnect() {
+    _reconnectTimer?.cancel();
+    _stopRetryCountdown();
+    if (_manualDisconnect) return;
+    final delay = backoffDelay(_reconnectAttempts);
+    // Jitter ±1 s : évite la rafale synchrone quand plusieurs appareils
+    // retombent en même temps (le host redémarre).
+    final jitter = Random().nextInt(2000) - 1000;
+    final effective = delay + Duration(milliseconds: jitter);
+    retryInfo.value =
+        retryInfo.value.copyWith(nextRetryIn: effective);
+    // Compte à rebours visible : 1 tick / seconde vers la prochaine tentative.
+    _retryCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final left = retryInfo.value.nextRetryIn - const Duration(seconds: 1);
+      retryInfo.value =
+          retryInfo.value.copyWith(nextRetryIn: left.isNegative ? Duration.zero : left);
+    });
+    _reconnectTimer = Timer(
+      effective,
+      () {
+        _stopRetryCountdown();
+        if (_disposed) return;
+        retryInfo.value = retryInfo.value.copyWith(nextRetryIn: Duration.zero);
+        if (statusNotifier.value == ConnectionStatus.disconnected) {
+          connect();
+        }
+      },
+    );
+  }
+
+  void _stopRetryCountdown() {
+    _retryCountdownTimer?.cancel();
+    _retryCountdownTimer = null;
+  }
+
+  void disconnect() {
+    _connecting = false;
+    if (_disposed) {
+      _socket?.close();
+      _socket = null;
+      _connectTimeout?.cancel();
+      _connectTimeout = null;
+      return;
+    }
+    _manualDisconnect = true;
+    _reconnectTimer?.cancel();
+    _stopRetryCountdown();
+    _stopKeepAlive();
+    _socket?.close();
+    _socket = null;
+    statusNotifier.value = ConnectionStatus.disconnected;
+    retryInfo.value = const RetryInfo();
+  }
+
+  /// Vrai quand la déconnexion vient d'un choix explicite de l'utilisateur
+  /// (bouton « Offline ») et non d'une perte réseau : l'UI ne doit pas
+  /// notifier « Connexion perdue » dans ce cas.
+  bool get isManualDisconnect => _manualDisconnect;
+
+  /// Annule l'attente du backoff et tente immédiatement une connexion
+  /// (bouton « Réessayer » du banner).
+  void retryNow() {
+    _manualDisconnect = false;
+    _reconnectTimer?.cancel();
+    _stopRetryCountdown();
+    retryInfo.value = const RetryInfo();
+    connect();
+  }
+
+  void dispose() {
+    _disposed = true;
+    _reconnectTimer?.cancel();
+    _stopRetryCountdown();
+    _stopKeepAlive();
+    disconnect();
+    _messageController?.close();
+    _messageController = null;
+    reconnectVersion.dispose();
+    retryInfo.dispose();
+    statusNotifier.dispose();
+    latencyMsNotifier.dispose();
+  }
+}
+
+/// État de reconnexion exposé à l'UI : numéro de tentative en cours et temps
+/// restant avant la prochaine relance (décrémenté chaque seconde).
+class RetryInfo {
+  final int attempt;
+  final Duration nextRetryIn;
+
+  const RetryInfo({this.attempt = 0, this.nextRetryIn = Duration.zero});
+
+  RetryInfo copyWith({int? attempt, Duration? nextRetryIn}) {
+    return RetryInfo(
+      attempt: attempt ?? this.attempt,
+      nextRetryIn: nextRetryIn ?? this.nextRetryIn,
+    );
+  }
+}

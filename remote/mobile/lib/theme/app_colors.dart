@@ -1,0 +1,377 @@
+import 'package:flutter/material.dart';
+
+/// Antigravity 2.0 Color Palette ("The Quiet Console")
+/// Extracted from Antigravity IDE computed tokens (htmlcss.log) + DESIGN.md
+abstract class AppColors {
+  // ── Backgrounds & Surfaces (Antigravity 2.0 Quiet Console)
+  static const Color surfaceBase = Color(0xFF202020);   // #202020 (background.default)
+  static const Color surfaceRaised = Color(0xFF242424); // #242424 (surface.default / background.elevated)
+  static const Color surfaceInput = Color(0xFF282828);  // #282828 (surface.raised / background.subtle)
+  static const Color surfaceOverlay = Color(0xFF2B2B2B);// #2b2b2b (surface.overlay)
+  static const Color surfaceHover = Color(0xFF2F2F2F);  // #2f2f2f (surface.hover)
+  static const Color surfacePressed = Color(0xFF353535);// #353535 (surface.pressed)
+  static const Color surfaceDisabled = Color(0xFF222222);// #222222 (surface.disabled)
+  static const Color sidebarBackground = Color(0xFF202020); // #202020
+  static const Color editorBackground = Color(0xFF1A1A1A);  // #1a1a1a
+  static const Color listSelectionBg = Color(0xFF3C4043);   // #3c4043 (interactive.selection)
+
+  // ── Borders (Antigravity 2.0 Border Scale)
+  static const Color borderSubtle = Color(0xFF303030);  // #303030 (border.subtle)
+  static const Color borderDefault = Color(0xFF3A3A3A); // #3a3a3a (border.default)
+  static const Color borderStrong = Color(0xFF4A4A4A);  // #4a4a4a (border.strong)
+  static const Color borderFocus = Color(0xFF8AB4F8);   // #8ab4f8 (border.focus)
+
+  // ── Ink / Text (Antigravity 2.0 Typography Foregrounds)
+  static const Color inkPrimary = Color(0xFFF1F1F1);   // #f1f1f1 (text.primary)
+  static const Color inkSecondary = Color(0xFFB8B8B8); // #b8b8b8 (text.secondary)
+  static const Color inkTertiary = Color(0xFF969696);  // #969696 (text.tertiary)
+  static const Color inkMuted = Color(0xFF858585);     // #858585 (text.muted)
+  static const Color inkDisabled = Color(0xFF606060);  // #606060 (text.disabled)
+  static const Color inkFaint = Color(0xFF969696);     // #969696 (labels)
+  static const Color codeGold = Color(0xFFC7E1A3);     // #c7e1a3 (code.string)
+
+  // ── Accents & Actions (Antigravity 2.0 Google Blue Accent)
+  static const Color accentBlue = Color(0xFF8AB4F8);     // #8ab4f8 (accent.primary)
+  static const Color accentBlueHover = Color(0xFFAECBFA);// #aecbfa (accent.primaryHover)
+  static const Color accentBlueBright = Color(0xFFAECBFA);// #aecbfa
+  static const Color accentBluePressed = Color(0xFF669DF6);// #669df6 (accent.primaryPressed)
+  static const Color accentBlueDeep = Color(0xFF669DF6); // #669df6
+  static const Color accentSubtle = Color(0xFF263447);   // #263447 (accent.subtle)
+  static const Color buttonBackground = Color(0xFF8AB4F8); // #8ab4f8
+
+  // ── Status (Antigravity 2.0 States: Success / Warning / Error / Info)
+  static const Color positive = Color(0xFF81C995);       // #81c995 (status.success)
+  static const Color success = positive;
+  static const Color online = positive;
+  static const Color successSubtle = Color(0xFF20352A);  // #20352a (status.successSubtle)
+  static const Color warning = Color(0xFFFDD663);        // #fdd663 (status.warning)
+  static const Color warningSubtle = Color(0xFF3A321A);  // #3a321a (status.warningSubtle)
+  static const Color danger = Color(0xFFF28B82);         // #f28b82 (status.error)
+  static const Color error = danger;
+  static const Color dangerSubtle = Color(0xFF3A2423);   // #3a2423 (status.errorSubtle)
+  static const Color dangerDeep = Color(0xFFD93025);     // #d93025
+  static const Color info = Color(0xFF8AB4F8);           // #8ab4f8 (status.info)
+  static const Color infoSubtle = Color(0xFF263447);     // #263447 (status.infoSubtle)
+  static const Color accent = accentBlue;
+
+  // ── IDE Wizard & Shell Natif ASAR Confirmed Tokens (ASAR_COLOR_PALETTE.md)
+  static const Color windowDark = Color(0xFF131313);       // #131313 (dist/utils.js: L105)
+  static const Color windowLight = Color(0xFFFAFAFA);      // #FAFAFA (dist/utils.js: L105)
+  static const Color wizardWindowBg = Color(0xFF0D0D0D);   // #0D0D0D (dist/ideInstall/wizard.js: L67)
+  static const Color wizardBgPrimary = Color(0xFF000000);  // #000000 (dist/ideInstall/wizardHtml.js: L31)
+  static const Color wizardBgSecondary = Color(0xFF1A1A1A);// #1A1A1A (dist/ideInstall/wizardHtml.js: L32)
+  static const Color wizardBgTertiary = Color(0xFF242424); // #242424 (dist/ideInstall/wizardHtml.js: L33)
+  static const Color wizardAccent = Color(0xFF2F80ED);      // #2F80ED (dist/ideInstall/wizardHtml.js: L38)
+  static const Color wizardAccentHover = Color(0xFF2D74D7); // #2D74D7 (dist/ideInstall/wizardHtml.js: L39)
+
+  // ── Code Syntax Colors
+  static const Color codeBackground = Color(0xFF1A1A1A); // #1a1a1a
+  static const Color codeForeground = Color(0xFFE8EAED); // #e8eaed
+  static const Color codeComment = Color(0xFF80868B);    // #80868b
+  static const Color codeKeyword = Color(0xFFA8C7FA);    // #a8c7fa
+  static const Color codeString = Color(0xFFC7E1A3);     // #c7e1a3
+  static const Color codeNumber = Color(0xFFF8C8DC);     // #f8c8dc
+
+  // ── Diff Editor Tokens
+  static const Color diffInsertedLine = Color(0x3381C995); // rgba(129, 201, 149, 0.2)
+  static const Color diffRemovedLine = Color(0x33F28B82);  // rgba(242, 139, 130, 0.2)
+  static const Color diffInsertedText = Color(0x4D81C995); // rgba(129, 201, 149, 0.3)
+  static const Color diffRemovedText = Color(0x66F28B82);  // rgba(242, 139, 130, 0.4)
+
+  // ── Neutrals (scrims, shadows, camera overlay)
+  static const Color overlayScrim = Color(0xFF000000);   // full-black scrim (camera, modal backdrop)
+  static const Color shadowNeutral = Color(0xFF000000);  // drop shadows, elevation
+
+  // ── On-fill ink (text/icons over accent & danger fills)
+  static const Color onAccent = Color(0xFF202020);       // #202020 (dark text over light blue accent)
+  static const Color onDanger = Color(0xFF202020);       // #202020
+
+  // ── Provider Accent Badges & Tinted Backgrounds (COLOR_PALETTE.md)
+  static const Color providerOpenAI = Color(0xFF10A37F);
+  static const Color providerOpenAIBg = Color(0x2210A37F);
+  static const Color providerAnthropic = Color(0xFFD97757);
+  static const Color providerAnthropicBg = Color(0x22D97757);
+  static const Color providerGoogle = Color(0xFF4285F4);
+  static const Color providerGoogleBg = Color(0x224285F4);
+  static const Color providerOllama = Color(0xFFF0F0F0);
+  static const Color providerOllamaBg = Color(0x22F0F0F0);
+  static const Color providerOpenRouter = Color(0xFFFF7A45);
+  static const Color providerOpenRouterBg = Color(0x22FF7A45);
+  static const Color providerCustom = Color(0xFFA855F7);
+  static const Color providerCustomBg = Color(0x22A855F7);
+
+  // ── Execution Feed Tokens (Antigravity 2.0 "The Quiet Console")
+  static const Color executionTerminalBg = Color(0xFF101012);
+  static const Color executionCardBg = Color(0xFF1A1A1E);
+  static const Color executionSearchBg = Color(0xFF202024);
+  static const Color executionSearchBorder = Color(0xFF2E2E34);
+  static const Color executionBorder = Color(0xFF27272A);
+  static const Color executionFileEdit = Color(0xFF34D399);
+  static const Color executionFileAnalysis = Color(0xFF38BDF8);
+  static const Color executionSearch = Color(0xFF2DD4BF);
+  static const Color executionSubagent = Color(0xFFA78BFA);
+  static const Color executionTerminal = Color(0xFF9CA3AF);
+  static const Color executionThought = Color(0xFFFBBF24);
+  static const Color executionTimer = Color(0xFFFB923C);
+  static const Color executionDiffAdded = Color(0xFF4ADE80);
+  static const Color executionDiffRemoved = Color(0xFFF87171);
+
+  // ── Glass Tokens (Antigravity 2.0 Glassmorphism)
+  static const Color glassBg = Color(0xD918181B);             // rgba(24, 24, 27, 0.85)
+  static const Color glassBgTier1 = Color(0xE618181B);        // rgba(24, 24, 27, 0.90) (sidebar nav rail)
+  static const Color glassBgTier2 = Color(0xBF27272A);        // rgba(39, 39, 42, 0.75) (hero, panels)
+  static const Color glassBgStrong = Color(0xF227272A);       // rgba(39, 39, 42, 0.95)
+  static const Color glassBorder = Color(0x14FFFFFF);         // rgba(255, 255, 255, 0.08)
+  static const Color glassBorderStrong = Color(0x26FFFFFF);   // rgba(255, 255, 255, 0.15)
+  static const Color glassInnerHighlight = Color(0x08FFFFFF); // rgba(255, 255, 255, 0.03)
+
+  // ── Status Subtle Fills & Borders (PC --ok-bg, --warn-bg, --err-bg, --info-bg)
+  static const Color okBg = Color(0x1F22C55E);      // rgba(34, 197, 94, 0.12)
+  static const Color okBorder = Color(0x4022C55E);  // rgba(34, 197, 94, 0.25)
+  static const Color warnBg = Color(0x1FEAB308);    // rgba(234, 179, 8, 0.12)
+  static const Color warnBorder = Color(0x40EAB308);// rgba(234, 179, 8, 0.25)
+  static const Color errBg = Color(0x1FEF4444);     // rgba(239, 68, 68, 0.12)
+  static const Color errBorder = Color(0x40EF4444); // rgba(239, 68, 68, 0.25)
+  static const Color infoBg = Color(0x1F3B82F6);    // rgba(59, 130, 246, 0.12)
+  static const Color infoBorder = Color(0x403B82F6);// rgba(59, 130, 246, 0.25)
+
+  // ── Dynamic Contextual Accessors (prevents Light/Dark mode conflicts)
+  static Color canvas(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? surfaceBase : const Color(0xFFFFFFFF);
+
+  static Color panel(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? surfaceRaised : const Color(0xFFF6F8FA);
+
+  static Color input(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? surfaceInput : const Color(0xFFEAEEF2);
+
+  static Color text(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? inkPrimary : const Color(0xFF1F2328);
+
+  static Color textSecondary(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? inkSecondary : const Color(0xFF57606A);
+
+  static Color textMuted(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? inkMuted : const Color(0xFF6E7781);
+
+  static Color border(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? borderSubtle : const Color(0xFFD0D7DE);
+
+  static Color borderStrongContext(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? borderStrong : const Color(0xFFAFB8C1);
+
+  static Color accentContext(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? accentBlue : const Color(0xFF0969DA);
+}
+
+/// Ergonomic syntax sugar for accessing theme colors and animation preference on any BuildContext
+extension ThemeContextExtension on BuildContext {
+  ColorScheme get colors => Theme.of(this).colorScheme;
+  bool get isDarkMode => Theme.of(this).brightness == Brightness.dark;
+  bool get shouldAnimate => AppMotion.shouldAnimate(this);
+}
+
+/// Radius scale (Antigravity 2.0 radius.json)
+abstract class AppRadius {
+  static const double none = 0;   // rect
+  static const double xs = 4;     // tags, small chips
+  static const double sm = 6;     // buttons sm, micro cards
+  static const double md = 8;     // buttons, inputs, dropdowns
+  static const double lg = 12;    // cards, panels, bottom sheets
+  static const double xl = 16;    // modals, composers
+  static const double xxl = 20;   // hero containers
+  static const double pill = 999; // status pills, badges
+}
+
+/// Motion tokens (PC --t-fast/base/slow + --ease-out)
+abstract class AppMotion {
+  static const Duration fast = Duration(milliseconds: 120);
+  static const Duration base = Duration(milliseconds: 180);
+  static const Duration slow = Duration(milliseconds: 320);
+
+  static const Curve easeOut = Curves.easeOutCubic;
+  static const Curve easeStandard = Curves.easeInOut;
+  /// Google Antigravity Remote official exponential easing curve
+  static const Curve expoOut = Cubic(0.16, 1.0, 0.3, 1.0);
+  /// Google Antigravity Remote official cubic easing curve
+  static const Curve cubicOut = Cubic(0.23, 1.0, 0.32, 1.0);
+
+  /// Vérifie si les animations système sont actives (support Reduce Motion / Accessibility).
+  static bool shouldAnimate(BuildContext context) {
+    return !MediaQuery.disableAnimationsOf(context);
+  }
+}
+
+/// Layout and dimension constraints (Antigravity Remote official metrics)
+abstract class AppDimensions {
+  /// Maximum width for trajectory/chat conversation reading area (48rem / 768px)
+  static const double maxConversationWidth = 768.0;
+  /// Narrow reading width
+  static const double narrowConversationWidth = 600.0;
+  /// Composer floating box max width
+  static const double composerMaxWidth = 768.0;
+}
+
+/// Antigravity 2.0 Border width scale (DESIGN_SYSTEM/borders.json)
+abstract class AppBorders {
+  /// Hairline subtle separation (0.5px)
+  static const double hairline = 0.5;
+  /// Standard container border (1.0px)
+  static const double standard = 1.0;
+  /// Emphasized active border (1.5px)
+  static const double strong = 1.5;
+  /// Accessibility focus ring (2.0px)
+  static const double focus = 2.0;
+}
+
+/// Antigravity 2.0 Responsive Breakpoints (DESIGN_SYSTEM/breakpoints.json)
+abstract class AppBreakpoints {
+  /// Mobile portrait viewport threshold (< 640px)
+  static const double mobile = 640.0;
+  /// Tablet / Foldable viewport threshold (>= 768px)
+  static const double tablet = 768.0;
+  /// Desktop compact viewport threshold (>= 1024px)
+  static const double desktop = 1024.0;
+  /// Wide / Ultra-wide viewport threshold (>= 1280px)
+  static const double wide = 1280.0;
+}
+
+/// Atmospheric background gradients — Antigravity 2.0 logo palette
+///
+/// Official AGY logo colors (extracted from blog SVG):
+///   Blue  #3186FF   Green #00B95C   Yellow #FBBC04 / #FFE432   Red #FC413D
+///   Accent #749BFF
+abstract class AppGradients {
+  // ── AGY Logo Palette (source of truth for all gradient tints) ──
+  static const Color _agyBlue   = Color(0xFF3186FF);
+  static const Color _agyGreen  = Color(0xFF00B95C);
+  static const Color _agyYellow = Color(0xFFFBBC04);
+  static const Color _agyRed    = Color(0xFFFC413D);
+  static const Color _agyAccent = Color(0xFF749BFF);
+
+  /// Subtle studio-lit radial glow from top center into deep dark canvas
+  static const RadialGradient zenithal = RadialGradient(
+    center: Alignment(0.0, -1.25),
+    radius: 1.45,
+    colors: [
+      Color(0xFF1E1E22),
+      Color(0xFF131313),
+    ],
+    stops: [0.0, 0.65],
+  );
+
+  // ── Decorative atmospheric orbs (subtle studio light behind content) ──
+
+  /// Blue orb — top-right placement, subtle studio tint
+  static RadialGradient orbBlue({bool isDark = true}) => RadialGradient(
+    center: Alignment.center,
+    radius: 0.8,
+    colors: [
+      _agyBlue.withValues(alpha: isDark ? 0.025 : 0.015),
+      _agyBlue.withValues(alpha: 0.0),
+    ],
+  );
+
+  /// Green orb — bottom-left placement, subtle studio tint
+  static RadialGradient orbGreen({bool isDark = true}) => RadialGradient(
+    center: Alignment.center,
+    radius: 0.8,
+    colors: [
+      _agyGreen.withValues(alpha: isDark ? 0.02 : 0.012),
+      _agyGreen.withValues(alpha: 0.0),
+    ],
+  );
+
+  /// Yellow orb — top-left placement (optional warmth)
+  static RadialGradient orbYellow({bool isDark = true}) => RadialGradient(
+    center: Alignment.center,
+    radius: 0.7,
+    colors: [
+      _agyYellow.withValues(alpha: isDark ? 0.04 : 0.025),
+      _agyYellow.withValues(alpha: 0.0),
+    ],
+  );
+
+  // ── Card surface washes (barely-visible tint on card backgrounds) ──
+
+  /// Cool card wash: blue→green at 5% opacity (info / neutral cards)
+  static LinearGradient cardCool({bool isDark = true}) => LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      _agyBlue.withValues(alpha: isDark ? 0.05 : 0.04),
+      _agyGreen.withValues(alpha: isDark ? 0.04 : 0.03),
+    ],
+  );
+
+  /// Warm card wash: yellow→red at 5% opacity (attention / action cards)
+  static LinearGradient cardWarm({bool isDark = true}) => LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      _agyYellow.withValues(alpha: isDark ? 0.06 : 0.04),
+      _agyRed.withValues(alpha: isDark ? 0.05 : 0.03),
+    ],
+  );
+
+  // ── Full-color CTA gradient (the only surface with visible gradient) ──
+
+  /// Primary action button gradient: AGY blue → lighter accent
+  static const LinearGradient accentCta = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [_agyBlue, _agyAccent],
+  );
+
+  // ── Antigravity 2.0 Brand Gradients (--gradient-primary, --gradient-accent, --gradient-header) ──
+
+  /// Primary signature gradient (--gradient-primary)
+  static const LinearGradient primaryLinear = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+  );
+
+  /// Accent signature gradient (--gradient-accent)
+  static const LinearGradient accentLinear = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF2563EB), Color(0xFF3B82F6)],
+  );
+
+  /// Header surface gradient (--gradient-header)
+  static const LinearGradient headerLinear = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xFF18181B), Color(0xFF09090B)],
+  );
+
+  /// Shimmer colors for skeleton loaders
+  static List<Color> shimmerColors({bool isDark = true}) {
+    final base = isDark ? const Color(0xFF1B1F27) : const Color(0xFFEAEEF2);
+    final hl = isDark ? const Color(0xFF2E3440) : const Color(0xFFF6F8FA);
+    return [base, hl, base];
+  }
+}
+
+/// Antigravity 2.0 Elevation & Shadow scale (--shadow-sm, --shadow-md, --shadow-lg, --shadow-glass, --shadow-glow-blue)
+abstract class AppShadows {
+  static const List<BoxShadow> sm = [
+    BoxShadow(color: Color(0x66000000), offset: Offset(0, 1), blurRadius: 0),
+  ];
+  static const List<BoxShadow> md = [
+    BoxShadow(color: Color(0x66000000), offset: Offset(0, 3), blurRadius: 6),
+  ];
+  static const List<BoxShadow> lg = [
+    BoxShadow(color: Color(0x80000000), offset: Offset(0, 8), blurRadius: 24),
+  ];
+  static const List<BoxShadow> glass = [
+    BoxShadow(color: Color(0x73060910), offset: Offset(0, 8), blurRadius: 32),
+  ];
+  static const List<BoxShadow> glowBlue = [
+    BoxShadow(color: Color(0x4D3B82F6), offset: Offset(0, 0), blurRadius: 18, spreadRadius: 1),
+  ];
+  static const List<BoxShadow> railElevation = [
+    BoxShadow(color: Color(0x59060910), offset: Offset(8, 0), blurRadius: 24),
+  ];
+}

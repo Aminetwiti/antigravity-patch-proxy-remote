@@ -1,0 +1,95 @@
+﻿syntax = "proto3";
+
+// file: exa/vcs_pb/vcs.proto
+// package: exa.vcs_pb
+message VcsFileChange {
+  optional string uri = 1;
+  optional .exa.vcs_pb.VcsFileChange.Operation operation = 2;
+  optional string original_uri = 3;
+  optional string content_hash = 4;
+  enum Operation {
+    OPERATION_UNKNOWN = 0;
+    OPERATION_ADDED = 1;
+    OPERATION_MODIFIED = 2;
+    OPERATION_DELETED = 3;
+    OPERATION_RENAMED = 4;
+    OPERATION_COPIED = 5;
+  }
+}
+message VcsConflictFile {
+  optional string path = 1;
+  optional .exa.vcs_pb.VcsConflictFile.Side yours = 2;
+  optional .exa.vcs_pb.VcsConflictFile.Side theirs = 3;
+  optional string uri = 4;
+  message Side {
+    optional string label = 2;
+  }
+}
+message VcsConflictState {
+  optional bool in_conflict = 1;
+  optional .exa.vcs_pb.VcsConflictState.Operation operation = 2;
+  repeated .exa.vcs_pb.VcsConflictFile conflicts = 3;
+  enum Operation {
+    OPERATION_UNKNOWN = 0;
+    OPERATION_MERGE = 1;
+    OPERATION_REBASE = 2;
+    OPERATION_CHERRY_PICK = 3;
+    OPERATION_EVOLVE = 4;
+  }
+}
+message VcsCommit {
+  optional string id = 1;
+  optional string change_id = 2;
+  repeated string parent_ids = 3;
+  optional .exa.vcs_pb.VcsCommit.Author author = 4;
+  optional int64 timestamp_ms = 5;
+  optional .exa.vcs_pb.VcsCommit.Message message = 6;
+  optional .exa.vcs_pb.VcsCommit.Status status = 7;
+  optional .exa.vcs_pb.VcsCommit.Refs refs = 8;
+  optional .exa.vcs_pb.VcsCommit.Evolution evolution = 9;
+  message Author {
+    optional string name = 1;
+    optional string email = 2;
+    optional string ldap = 3;
+  }
+  message Message {
+    optional string subject = 1;
+    optional string description = 2;
+  }
+  message Status {
+    optional bool is_active = 1;
+    optional bool is_submitted = 2;
+    optional bool is_draft = 3;
+    optional bool is_secret = 4;
+    optional bool is_empty = 5;
+    optional bool has_conflict = 6;
+  }
+  message Refs {
+    repeated string branches = 1;
+    repeated string bookmarks = 2;
+    repeated string tags = 3;
+  }
+  message Evolution {
+    optional bool is_obsolete = 1;
+    optional bool is_orphaned = 2;
+    optional bool is_divergent = 3;
+    repeated string successors = 4;
+    repeated string precursors = 5;
+  }
+}
+message VcsWorkspaceState {
+  optional .exa.vcs_pb.VcsType vcs_type = 1;
+  optional string current_ref = 2;
+  optional string active_commit_id = 3;
+  repeated .exa.vcs_pb.VcsCommit commits = 4;
+  repeated .exa.vcs_pb.VcsFileChange working_directory_changes = 5;
+  optional .exa.vcs_pb.VcsConflictState conflict_state = 6;
+  repeated .exa.vcs_pb.VcsFileChange staged_changes = 7;
+  repeated .exa.vcs_pb.VcsFileChange branch_changes = 8;
+  optional string merge_base_commit_id = 9;
+  optional string target_branch = 10;
+}
+message JJWorktree {
+  optional string base_commit_description = 2;
+  optional string uri = 3;
+}

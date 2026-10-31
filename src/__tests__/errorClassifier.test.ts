@@ -1,0 +1,295 @@
+import { describe, it, expect } from 'vitest';
+import { classifyError, generateDiagnosticCardMarkdown } from '../proxy/errorClassifier';
+
+
+describe('Error Classifier', () => {
+  describe('Billing / Quota errors', () => {
+    it('classifies HTTP 402 as billing error', () => {
+      const result = classifyError(402);
+      expect(result.errorType).toBe('billing');
+      expect(result.title).toBe('Insufficient Credits');
+      expect(result.retryable).toBe(false);
+    });
+
+    it('classifies billing_error in body as billing error', () => {
+      const body = JSON.stringify({
+        error: {
+          type: 'billing_error',
+          message: 'insufficient tokens',
+        },
+      });
+      const result = classifyError(200, null, body);
+      expect(result.errorType).toBe('billing');
+      expect(result.retryable).toBe(false);
+    });
+
+    it('classifies insufficient_quota in body as billing error', () => {
+      const body = JSON.stringify({
+        error: {
+          code: 'insufficient_quota',
+        },
+      });
+      const result = classifyError(400, null, body);
+      expect(result.errorType).toBe('billing');
+    });
+
+    it('classifies raw string including quota exceeded as billing error', () => {
+      const result = classifyError(400, null, 'Quota exceeded for model developer');
+      expect(result.errorType).toBe('billing');
+    });
+
+    it('assigns provider-specific billing URLs', () => {
+      const resOpenAI = classifyError(402, null, undefined, 'OpenAI');
+      expect(resOpenAI.actionUrl).toBe('https://platform.openai.com/billing');
+
+      const resAnthropic = classifyError(402, null, undefined, 'anthropic');
+      expect(resAnthropic.actionUrl).toBe('https://console.anthropic.com/settings/billing');
+
+      const resUnknown = classifyError(402, null, undefined, 'SomeUnknownProvider');
+      expect(resUnknown.actionUrl).toBeUndefined();
+    });
+  });
+
+  describe('Authentication errors', () => {
+    it('classifies HTTP 401 as auth error', () => {
+      const result = classifyError(401);
+      expect(result.errorType).toBe('auth');
+      expect(result.title).toBe('Authentication Failed');
+      expect(result.retryable).toBe(false);
+    });
+
+    it('classifies invalid_api_key in body as auth error', () => {
+      const body = JSON.stringify({
+        error: {
+          code: 'invalid_api_key',
+        },
+      });
+      const result = classifyError(400, null, body);
+      expect(result.errorType).toBe('auth');
+    });
+
+    it('classifies message with unauthorized as auth error', () => {
+      const result = classifyError(undefined, { message: 'Request unauthorized' });
+      expect(result.errorType).toBe('auth');
+    });
+  });
+
+  describe('Forbidden errors', () => {
+    it('classifies HTTP 403 as forbidden error', () => {
+      const result = classifyError(403);
+      expect(result.errorType).toBe('forbidden');
+      expect(result.title).toBe('Access Denied');
+      expect(result.retryable).toBe(false);
+    });
+
+    it('classifies permission_denied in body as forbidden error', () => {
+      const result = classifyError(200, null, 'permission_denied to model resource');
+      expect(result.errorType).toBe('forbidden');
+    });
+
+    it('classifies project has been denied access as free-tier security flag', () => {
+      const result = classifyError(403, null, '403 PERMISSION_DENIED: Your project has been denied access. Please contact support.');
+      expect(result.errorType).toBe('forbidden');
+      expect(result.title).toBe('Project Denied Access (Free-Tier Security Flag)');
+      expect(result.actionUrl).toBe('https://console.cloud.google.com/billing');
+    });
+
+    it('classifies location is not supported as geo-blocked error', () => {
+      const result = classifyError(400, null, 'User location is not supported for the API use.');
+      expect(result.errorType).toBe('forbidden');
+      expect(result.title).toBe('Location Not Supported (Geo-Blocked)');
+      expect(result.actionUrl).toContain('available-regions');
+    });
+  });
+
+  describe('Rate limit errors', () => {
+    it('classifies HTTP 429 as rate limit error', () => {
+      const result = classifyError(429);
+      expect(result.errorType).toBe('rate_limit');
+      expect(result.title).toBe('Rate Limited');
+      expect(result.retryable).toBe(true);
+    });
+
+    it('classifies too_many_requests in response body as rate limit', () => {
+      const result = classifyError(400, null, 'too_many_requests to this endpoint');
+      expect(result.errorType).toBe('rate_limit');
+    });
+  });
+
+  describe('DNS resolution errors', () => {
+    it('classifies ENOTFOUND code as DNS error', () => {
+      const result = classifyError(undefined, { code: 'ENOTFOUND' });
+      expect(result.errorType).toBe('dns');
+      expect(result.title).toBe('DNS Resolution Failed');
+      expect(result.retryable).toBe(false);
+    });
+
+    it('classifies getaddrinfo message as DNS error', () => {
+      const result = classifyError(undefined, { message: 'getaddrinfo ENOTFOUND api.openai.com' });
+      expect(result.errorType).toBe('dns');
+    });
+  });
+
+  describe('Timeout errors', () => {
+    it('classifies HTTP 504 as timeout error', () => {
+      const result = classifyError(504);
+      expect(result.errorType).toBe('timeout');
+      expect(result.title).toBe('Request Timeout');
+      expect(result.retryable).toBe(true);
+    });
+
+    it('classifies ETIMEDOUT code as timeout error', () => {
+      const result = classifyError(undefined, { code: 'ETIMEDOUT' });
+      expect(result.errorType).toBe('timeout');
+      expect(result.retryable).toBe(true);
+    });
+  });
+
+  describe('Network errors', () => {
+    it('classifies ECONNREFUSED as network error', () => {
+      const result = classifyError(undefined, { code: 'ECONNREFUSED' });
+      expect(result.errorType).toBe('network');
+      expect(result.title).toBe('Network Connection Failed');
+      expect(result.retryable).toBe(true);
+    });
+
+    it('classifies connrefused in error message as network error', () => {
+      const result = classifyError(undefined, { message: 'connect ECONNREFUSED 127.0.0.1:11434' });
+      expect(result.errorType).toBe('network');
+    });
+  });
+
+  describe('Server errors', () => {
+    it('classifies HTTP 500 as server error', () => {
+      const result = classifyError(500);
+      expect(result.errorType).toBe('server');
+      expect(result.title).toBe('Provider Server Error');
+      expect(result.retryable).toBe(true);
+    });
+
+    it('classifies HTTP 503 as server error', () => {
+      const result = classifyError(503);
+      expect(result.errorType).toBe('server');
+      expect(result.retryable).toBe(true);
+    });
+  });
+
+  describe('400 and 404 errors', () => {
+    it('classifies HTTP 404 as Model Not Found with upstream detail', () => {
+      const result = classifyError(404, null, JSON.stringify({ error: { message: 'Model free/mimo-v2.5 not found' } }));
+      expect(result.title).toBe('Model Not Found (404)');
+      expect(result.message).toContain('Model free/mimo-v2.5 not found');
+    });
+
+    it('classifies HTTP 404 with SSE-encoded body (Google upstream format)', () => {
+      // Google returns 404 as an SSE stream: "data: {...}\n\n"
+      const sseBody = `data: ${JSON.stringify({ error: { message: 'models/gemini-3.8-flash-tiered is not found' } })}\n\n`;
+      const result = classifyError(404, null, sseBody);
+      expect(result.title).toBe('Model Not Found (404)');
+      expect(result.message).toContain('models/gemini-3.8-flash-tiered is not found');
+    });
+
+    it('classifies HTTP 400 as Invalid Request with upstream detail', () => {
+      const result = classifyError(400, null, JSON.stringify({ error: { message: 'Context window exceeded' } }));
+      expect(result.title).toBe('Invalid Request (400)');
+      expect(result.message).toContain('Context window exceeded');
+    });
+
+    it('classifies internal gateway / self-harm messages as recoverable server warnings', () => {
+      const res1 = classifyError(500, null, 'all accounts limited in pool');
+      expect(res1.errorType).toBe('server');
+      expect(res1.title).toBe('Pool Temporarily Exhausted');
+      expect(res1.retryable).toBe(true);
+      expect(res1.severity).toBe('warning');
+
+      const res2 = classifyError(500, new Error('token pool is empty'));
+      expect(res2.errorType).toBe('server');
+      expect(res2.title).toBe('Pool Temporarily Exhausted');
+      expect(res2.retryable).toBe(true);
+    });
+
+    it('classifies 403 with validation URL as Validation Required', () => {
+      const body = JSON.stringify({
+        error: {
+          code: 403,
+          status: 'PERMISSION_DENIED',
+          message: 'Account validation required',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+              reason: 'VALIDATION_REQUIRED',
+              metadata: {
+                validation_url: 'https://accounts.google.com/signin/v2/challenge',
+              },
+            },
+          ],
+        },
+      });
+      const res = classifyError(403, null, body);
+      expect(res.errorType).toBe('forbidden');
+      expect(res.title).toBe('Validation Required');
+      expect(res.actionUrl).toBe('https://accounts.google.com/signin/v2/challenge');
+      expect(res.severity).toBe('warning');
+    });
+
+    it('classifies 403 with Terms of Service as TOS Violation with appealUrl', () => {
+      const body = JSON.stringify({
+        error: {
+          code: 403,
+          message: 'Disabled for violation of Terms of Service',
+          details: [
+            {
+              reason: 'TOS_VIOLATION',
+              metadata: {
+                appeal_url: 'https://forms.gle/custom-appeal',
+              },
+            },
+          ],
+        },
+      });
+      const res = classifyError(403, null, body);
+      expect(res.errorType).toBe('forbidden');
+      expect(res.title).toBe('Terms of Service Violation');
+      expect(res.actionUrl).toBe('https://forms.gle/custom-appeal');
+      expect(res.severity).toBe('error');
+    });
+
+    it('classifies account ineligible for higher rate limits error', () => {
+      const res = classifyError(403, null, 'This account is ineligible for higher rate limits through a Google AI plan at this time');
+      expect(res.errorType).toBe('forbidden');
+      expect(res.title).toBe('Account Ineligible for Higher Rate Limits');
+      expect(res.retryable).toBe(false);
+      expect(res.severity).toBe('error');
+    });
+
+    it('classifies faux 429 entitlement desynchronization', () => {
+      const res = classifyError(429, null, 'RESOURCE_EXHAUSTED: loadCodeAssist currentTier=free-tier');
+      expect(res.errorType).toBe('rate_limit');
+      expect(res.title).toBe('Entitlement Desynchronization (Faux 429)');
+      expect(res.retryable).toBe(true);
+      expect(res.severity).toBe('error');
+    });
+
+    it('classifies 503 TPU capacity overload on Gemini Flash', () => {
+      const res = classifyError(503, null, 'UNAVAILABLE (code 503): No capacity available for model gemini-3.8-flash');
+      expect(res.errorType).toBe('server');
+      expect(res.title).toBe('TPU Capacity Overload (HTTP 503)');
+      expect(res.retryable).toBe(true);
+      expect(res.severity).toBe('warning');
+    });
+  });
+
+  describe('generateDiagnosticCardMarkdown', () => {
+    it('formats a Markdown alert card with title, message, suggestions and actionUrl', () => {
+      const diag = classifyError(402, null, null, 'openai');
+      const md = generateDiagnosticCardMarkdown(diag);
+
+      expect(md).toContain('[!CAUTION]');
+      expect(md).toContain('Insufficient Credits');
+      expect(md).toContain('Suggested Actions');
+      expect(md).toContain('https://platform.openai.com/billing');
+      expect(md).toContain('ag-system-error-marker');
+    });
+  });
+});
+

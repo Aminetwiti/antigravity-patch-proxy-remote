@@ -1,0 +1,556 @@
+﻿syntax = "proto3";
+
+// file: exa/gemini_coder/proto/iframe_messages.proto
+// package: gemini_coder.agent_ui_toolkit.iframe
+message UrlChangeMessage {
+  optional string path = 1;
+}
+message UrlChangeResponse {
+}
+message UrlNavigateMessage {
+  optional string path = 1;
+}
+message UrlNavigateResponse {
+}
+message UrlQueryMessage {
+}
+message UrlResponseMessage {
+  optional string path = 1;
+}
+message NotificationRequestMessage {
+  optional .gemini_coder.agent_ui_toolkit.iframe.NotificationRequestMessage.Payload payload = 1;
+  message Payload {
+    optional string id = 1;
+    optional string title = 2;
+    optional string body = 3;
+    optional bool silent = 4;
+    optional string path = 5;
+    optional string cascade_id = 6;
+  }
+}
+message BrowserNotificationResponse {
+}
+message NotificationPermissionQueryMessage {
+}
+message NotificationPermissionStateMessage {
+  optional string permission = 1;
+}
+message NotificationPermissionRequestMessage {
+}
+message NotificationDismissMessage {
+  optional string id = 1;
+}
+message EnvQueryMessage {
+}
+message EnvStateMessage {
+  optional string env = 1;
+  optional string capsule_fqdn = 2;
+  optional string role_name = 3;
+  optional string role_identity = 4;
+}
+message EnvironmentChangeMessage {
+  optional string target_path = 1;
+}
+message EnvironmentChangeResponse {
+}
+message TitleChangeMessage {
+  optional string title = 1;
+}
+message TitleChangeResponse {
+}
+message ThemeChangeMessage {
+  optional string theme = 1;
+  optional string background_color = 2;
+  repeated .gemini_coder.agent_ui_toolkit.iframe.ThemeChangeMessage.ColorsEntry colors = 3;
+  repeated .gemini_coder.agent_ui_toolkit.iframe.ThemeChangeMessage.FontsEntry fonts = 4;
+  message ColorsEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+  message FontsEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message ThemeChangeResponse {
+}
+message AddSkillsMessage {
+  optional .gemini_coder.agent_ui_toolkit.iframe.AddSkillsMessage.Payload payload = 1;
+  message Payload {
+    repeated string paths = 1;
+  }
+}
+message AddSkillsResponse {
+}
+message EditorStateMessage {
+  optional string action = 1;
+  optional .gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage.Document active_document = 2;
+  repeated .gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage.Document other_documents = 3;
+  message Document {
+    optional string uri = 1;
+    optional int32 version = 2;
+    optional string language_id = 3;
+    optional .gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage.Document.Range selection = 4;
+    optional .gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage.Document.Range visible_range = 5;
+    optional string text = 6;
+    message Position {
+      optional int32 line = 1;
+      optional int32 character = 2;
+    }
+    message Range {
+      optional .gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage.Document.Position start = 1;
+      optional .gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage.Document.Position end = 2;
+    }
+  }
+}
+message EditorStateResponse {
+}
+message GcertRenewRequestMessage {
+  optional bool valid = 1;
+  optional double expires_at_ms = 2;
+}
+message DownloadRequestMessage {
+  optional string data_base64 = 1;
+  optional string filename = 2;
+  optional string content_type = 3;
+}
+message FaviconBadgeChangeMessage {
+  optional bool show_badge = 1;
+}
+message NotificationClearRequestMessage {
+  optional string cascade_id = 1;
+}
+message InstanceInfo {
+  optional string uuid = 1;
+  optional string display_name = 2;
+  optional string status = 3;
+  optional string version = 4;
+  optional bool is_active = 5;
+}
+message InstancesQueryMessage {
+}
+message InstancesResponseMessage {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.InstanceInfo instances = 1;
+}
+message SelectInstanceMessage {
+  optional string uuid = 1;
+}
+message ContextCategoryInfo {
+  optional string trigger = 1;
+  optional string label = 2;
+  optional string icon_uri = 3;
+}
+message GetContextCategoriesRequest {
+}
+message GetContextCategoriesResponse {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.ContextCategoryInfo categories = 1;
+}
+message ContextCategoryItem {
+  optional string value = 1;
+  optional string label = 2;
+  optional string icon_uri = 3;
+  optional string uri = 4;
+}
+message QueryContextCategoryRequest {
+  optional string trigger = 1;
+  optional string query = 2;
+}
+message QueryContextCategoryResponse {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.ContextCategoryItem items = 1;
+}
+message IframeMessage {
+  optional .gemini_coder.agent_ui_toolkit.iframe.UrlChangeMessage url_change = 1;
+  optional .gemini_coder.agent_ui_toolkit.iframe.UrlNavigateMessage url_navigate = 2;
+  optional .gemini_coder.agent_ui_toolkit.iframe.UrlQueryMessage url_query = 3;
+  optional .gemini_coder.agent_ui_toolkit.iframe.UrlResponseMessage url_response = 4;
+  optional .gemini_coder.agent_ui_toolkit.iframe.NotificationRequestMessage notification_request = 5;
+  optional .gemini_coder.agent_ui_toolkit.iframe.NotificationPermissionQueryMessage notification_permission_query = 6;
+  optional .gemini_coder.agent_ui_toolkit.iframe.NotificationPermissionStateMessage notification_permission_state = 7;
+  optional .gemini_coder.agent_ui_toolkit.iframe.NotificationPermissionRequestMessage notification_permission_request = 8;
+  optional .gemini_coder.agent_ui_toolkit.iframe.EnvQueryMessage env_query = 9;
+  optional .gemini_coder.agent_ui_toolkit.iframe.EnvStateMessage env_state = 10;
+  optional .gemini_coder.agent_ui_toolkit.iframe.EnvironmentChangeMessage env_change = 11;
+  optional .gemini_coder.agent_ui_toolkit.iframe.TitleChangeMessage title_change = 12;
+  optional .gemini_coder.agent_ui_toolkit.iframe.ThemeChangeMessage theme_change = 13;
+  optional .gemini_coder.agent_ui_toolkit.iframe.AddSkillsMessage add_skills = 14;
+  optional .gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage editor_state = 15;
+  optional .gemini_coder.agent_ui_toolkit.iframe.GcertRenewRequestMessage gcert_renew_request = 16;
+  optional .gemini_coder.agent_ui_toolkit.iframe.DownloadRequestMessage download_request = 17;
+  optional .gemini_coder.agent_ui_toolkit.iframe.FaviconBadgeChangeMessage favicon_badge_change = 18;
+  optional .gemini_coder.agent_ui_toolkit.iframe.NotificationClearRequestMessage notification_clear_request = 19;
+  optional .gemini_coder.agent_ui_toolkit.iframe.InstancesQueryMessage instances_query = 20;
+  optional .gemini_coder.agent_ui_toolkit.iframe.InstancesResponseMessage instances_response = 21;
+  optional .gemini_coder.agent_ui_toolkit.iframe.SelectInstanceMessage select_instance = 22;
+  optional .gemini_coder.agent_ui_toolkit.iframe.NotificationDismissMessage notification_dismiss = 23;
+}
+message OpenUrlRequest {
+  optional string url = 1;
+}
+message OpenUrlResponse {
+}
+message OpenFileRequest {
+  optional string file_uri = 1;
+  optional int32 line = 2;
+}
+message OpenFileResponse {
+}
+message OpenArtifactRequest {
+  optional string file_uri = 1;
+  optional string cascade_id = 2;
+}
+message OpenArtifactResponse {
+}
+message OpenSettingsRequest {
+  optional string target_screen = 1;
+  optional string target_project_id = 2;
+  optional string target_workspace_uri = 3;
+}
+message OpenSettingsResponse {
+}
+message OpenTerminalRequest {
+  optional string conversation_id = 1;
+  optional int32 step_index = 3;
+}
+message OpenTerminalResponse {
+}
+message OpenDiffRequest {
+  optional string original_uri = 1;
+  optional string modified_uri = 2;
+  optional string file_uri = 3;
+  optional string original_contents = 4;
+  optional string modified_contents = 5;
+  optional string title = 6;
+}
+message OpenDiffResponse {
+}
+message AddAgentEditRequest {
+  optional string file_uri = 1;
+  optional string original_contents = 2;
+  optional string modified_contents = 3;
+  optional bool skip_open = 4;
+  optional int32 turn_index = 5;
+  optional string conversation_id = 6;
+  optional bool strict_nav = 7;
+}
+message AddAgentEditResponse {
+}
+message CloseAllDiffZonesRequest {
+}
+message CloseAllDiffZonesResponse {
+}
+message ResolveAllAgentEditsRequest {
+  optional bool accept = 1;
+}
+message ResolveAllAgentEditsResponse {
+}
+message FileAgentEditState {
+  optional string uri = 1;
+  optional int32 num_lines_inserted = 2;
+  optional int32 num_lines_deleted = 3;
+  optional bool created_by_cascade = 4;
+}
+message RequestAgentEditsStateRequest {
+}
+message RequestAgentEditsStateResponse {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.FileAgentEditState states = 1;
+}
+message RequestDiffZonesStateRequest {
+}
+message RequestDiffZonesStateResponse {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.FileAgentEditState states = 1;
+}
+message ChatMessageSentRequest {
+  optional string cascade_id = 1;
+}
+message ChatMessageSentResponse {
+}
+message ConversationStartedRequest {
+  optional string cascade_id = 1;
+}
+message ConversationStartedResponse {
+}
+message OnAntigravityReadyRequest {
+}
+message OnAntigravityReadyResponse {
+}
+message StorageGetItemsRequest {
+  repeated string keys = 1;
+}
+message StorageGetItemsResponse {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.StorageGetItemsResponse.ItemsEntry items = 1;
+  message ItemsEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message StorageUpdateItemsRequest {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.StorageUpdateItemsRequest.ItemsEntry items = 1;
+  repeated string keys_to_delete = 2;
+  message ItemsEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message StorageUpdateItemsResponse {
+}
+message ClipboardReadRequest {
+}
+message ClipboardReadResponse {
+  optional string text = 1;
+}
+message ShowNotificationRequest {
+  optional string title = 1;
+  optional string message = 2;
+  optional string primary_action_label = 3;
+  optional bool markdown = 4;
+}
+message ShowNotificationResponse {
+  optional bool handled = 1;
+  optional bool primary_action_clicked = 2;
+}
+message GetEditorStateRequest {
+}
+message GetEditorStateResponse {
+  optional .gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage.Document active_document = 1;
+  repeated .gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage.Document other_documents = 2;
+}
+message InsertSnippetRequest {
+  optional string snippet = 1;
+  optional string file_uri = 2;
+  optional int32 start_line = 3;
+  optional int32 end_line = 4;
+}
+message InsertSnippetResponse {
+}
+message AddContextRequest {
+  repeated .exa.codeium_common_pb.TextOrScopeItem items = 1;
+}
+message AddContextResponse {
+}
+message TriggerSendRequest {
+}
+message TriggerSendResponse {
+}
+message SendCommandRequest {
+  optional string command_id = 1;
+}
+message SendCommandResponse {
+}
+message ListCommandsRequest {
+}
+message CommandInfo {
+  optional string id = 1;
+  optional string title = 2;
+}
+message ListCommandsResponse {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.CommandInfo commands = 1;
+}
+message KeyboardEventRequest {
+  optional string type = 1;
+  optional .gemini_coder.agent_ui_toolkit.iframe.KeyboardEventRequest.Data data = 2;
+  message Data {
+    optional string key = 1;
+    optional int32 key_code = 2;
+    optional string code = 3;
+    optional bool shift_key = 4;
+    optional bool alt_key = 5;
+    optional bool ctrl_key = 6;
+    optional bool meta_key = 7;
+    optional bool repeat = 8;
+  }
+}
+message KeyboardEventResponse {
+}
+message MouseEventRequest {
+  optional string type = 1;
+  optional .gemini_coder.agent_ui_toolkit.iframe.MouseEventRequest.Data data = 2;
+  message Data {
+    optional int32 button = 1;
+    optional int32 buttons = 2;
+    optional int32 client_x = 3;
+    optional int32 client_y = 4;
+    optional bool shift_key = 5;
+    optional bool alt_key = 6;
+    optional bool ctrl_key = 7;
+    optional bool meta_key = 8;
+  }
+}
+message MouseEventResponse {
+}
+message WebviewFocusedRequest {
+}
+message WebviewFocusedResponse {
+}
+message ReportFeedbackMetadataRequest {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.ReportFeedbackMetadataRequest.MetadataEntry metadata = 1;
+  message MetadataEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message ReportFeedbackMetadataResponse {
+}
+message ProvideFeedbackRequest {
+  optional string title = 1;
+  optional string description = 2;
+}
+message ProvideFeedbackResponse {
+}
+message ChangeWorkspaceRequest {
+  optional string workspace_uri = 1;
+}
+message ChangeWorkspaceResponse {
+}
+message ExecuteNotebookCellsRequest {
+  optional string notebook_uri = 1;
+  repeated string cell_ids = 2;
+}
+message ExecuteNotebookCellsResponse {
+  optional .gemini_coder.agent_ui_toolkit.iframe.ExecuteNotebookCellsResponse.ExecutionResult execution_result = 1;
+  optional .gemini_coder.agent_ui_toolkit.iframe.ExecuteNotebookCellsResponse.ErrorResult error_result = 2;
+  optional .gemini_coder.agent_ui_toolkit.iframe.ExecuteNotebookCellsResponse.NotImplementedResult not_implemented_result = 3;
+  message CellOutput {
+    optional string cell_id = 1;
+    optional string text = 2;
+    optional string error_trace = 3;
+  }
+  message ExecutionResult {
+    optional string tx_id = 1;
+    repeated .gemini_coder.agent_ui_toolkit.iframe.ExecuteNotebookCellsResponse.CellOutput outputs = 2;
+    optional string status = 3;
+  }
+  message ErrorResult {
+    optional string error_message = 1;
+  }
+  message NotImplementedResult {
+  }
+}
+message BroadcastCommentsRequest {
+  optional string comments_state_json = 1;
+}
+message BroadcastCommentsResponse {
+}
+message SetCommentsRequest {
+  optional string comments_state_json = 1;
+}
+message SetCommentsResponse {
+}
+message AddFileCommentRequest {
+  optional string file_uri = 1;
+  optional string comment_id = 2;
+  optional string comment = 3;
+  optional .exa.codeium_common_pb.TextSelection selection = 4;
+}
+message AddFileCommentResponse {
+}
+message DeleteFileCommentRequest {
+  optional string file_uri = 1;
+  optional string comment_id = 2;
+}
+message DeleteFileCommentResponse {
+}
+message EditFileCommentRequest {
+  optional string file_uri = 1;
+  optional string comment_id = 2;
+  optional string comment = 3;
+}
+message EditFileCommentResponse {
+}
+message NewConversationRequest {
+}
+message NewConversationResponse {
+}
+message ConversationSummary {
+  optional string cascade_id = 1;
+  optional .exa.jetski_cortex_pb.CascadeTrajectorySummary summary = 2;
+}
+message ConversationsChangedMessage {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.ConversationSummary conversations = 1;
+}
+message ConversationsChangedResponse {
+}
+message SetContextCategoriesRequest {
+  repeated .gemini_coder.agent_ui_toolkit.iframe.ContextCategoryInfo categories = 1;
+}
+message SetContextCategoriesResponse {
+}
+message CanResolveConnectionRequest {
+  optional .gemini_coder.agent_ui_toolkit.iframe.ConnectionResolutionType type = 1;
+}
+message CanResolveConnectionResponse {
+  optional bool can_resolve = 1;
+}
+message ResolveConnectionRequest {
+  optional .gemini_coder.agent_ui_toolkit.iframe.ConnectionResolutionType type = 1;
+}
+message ResolveConnectionResponse {
+  optional bool success = 1;
+  optional string error_message = 2;
+}
+message LogTelemetryRequest {
+  optional string event_name = 1;
+  repeated .gemini_coder.agent_ui_toolkit.iframe.LogTelemetryRequest.PropertiesEntry properties = 2;
+  message PropertiesEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message LogTelemetryResponse {
+}
+service AntigravityApi {
+  rpc GetUrl(.gemini_coder.agent_ui_toolkit.iframe.UrlQueryMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.UrlResponseMessage);
+  rpc Navigate(.gemini_coder.agent_ui_toolkit.iframe.UrlNavigateMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.UrlNavigateResponse);
+  rpc SetEditorState(.gemini_coder.agent_ui_toolkit.iframe.EditorStateMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.EditorStateResponse);
+  rpc SetContextCategories(.gemini_coder.agent_ui_toolkit.iframe.SetContextCategoriesRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.SetContextCategoriesResponse);
+  rpc InsertSnippet(.gemini_coder.agent_ui_toolkit.iframe.InsertSnippetRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.InsertSnippetResponse);
+  rpc AddContext(.gemini_coder.agent_ui_toolkit.iframe.AddContextRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.AddContextResponse);
+  rpc SetTheme(.gemini_coder.agent_ui_toolkit.iframe.ThemeChangeMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.ThemeChangeResponse);
+  rpc AddSkills(.gemini_coder.agent_ui_toolkit.iframe.AddSkillsMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.AddSkillsResponse);
+  rpc SetComments(.gemini_coder.agent_ui_toolkit.iframe.SetCommentsRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.SetCommentsResponse);
+  rpc NewConversation(.gemini_coder.agent_ui_toolkit.iframe.NewConversationRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.NewConversationResponse);
+  rpc AddFileComment(.gemini_coder.agent_ui_toolkit.iframe.AddFileCommentRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.AddFileCommentResponse);
+  rpc DeleteFileComment(.gemini_coder.agent_ui_toolkit.iframe.DeleteFileCommentRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.DeleteFileCommentResponse);
+  rpc EditFileComment(.gemini_coder.agent_ui_toolkit.iframe.EditFileCommentRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.EditFileCommentResponse);
+  rpc TriggerSend(.gemini_coder.agent_ui_toolkit.iframe.TriggerSendRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.TriggerSendResponse);
+  rpc SendCommand(.gemini_coder.agent_ui_toolkit.iframe.SendCommandRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.SendCommandResponse);
+  rpc ListCommands(.gemini_coder.agent_ui_toolkit.iframe.ListCommandsRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ListCommandsResponse);
+}
+service ExtensionApi {
+  rpc OnDidChangeUrl(.gemini_coder.agent_ui_toolkit.iframe.UrlChangeMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.UrlChangeResponse);
+  rpc OnDidSendChatMessage(.gemini_coder.agent_ui_toolkit.iframe.ChatMessageSentRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ChatMessageSentResponse);
+  rpc OnDidStartConversation(.gemini_coder.agent_ui_toolkit.iframe.ConversationStartedRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ConversationStartedResponse);
+  rpc OnDidChangeConversations(.gemini_coder.agent_ui_toolkit.iframe.ConversationsChangedMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.ConversationsChangedResponse);
+  rpc OpenUrl(.gemini_coder.agent_ui_toolkit.iframe.OpenUrlRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.OpenUrlResponse);
+  rpc OpenFile(.gemini_coder.agent_ui_toolkit.iframe.OpenFileRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.OpenFileResponse);
+  rpc OpenArtifact(.gemini_coder.agent_ui_toolkit.iframe.OpenArtifactRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.OpenArtifactResponse);
+  rpc OpenSettings(.gemini_coder.agent_ui_toolkit.iframe.OpenSettingsRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.OpenSettingsResponse);
+  rpc OpenTerminal(.gemini_coder.agent_ui_toolkit.iframe.OpenTerminalRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.OpenTerminalResponse);
+  rpc OpenDiff(.gemini_coder.agent_ui_toolkit.iframe.OpenDiffRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.OpenDiffResponse);
+  rpc AddAgentEdit(.gemini_coder.agent_ui_toolkit.iframe.AddAgentEditRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.AddAgentEditResponse);
+  rpc CloseAllDiffZones(.gemini_coder.agent_ui_toolkit.iframe.CloseAllDiffZonesRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.CloseAllDiffZonesResponse);
+  rpc ResolveAllAgentEdits(.gemini_coder.agent_ui_toolkit.iframe.ResolveAllAgentEditsRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ResolveAllAgentEditsResponse);
+  rpc RequestAgentEditsState(.gemini_coder.agent_ui_toolkit.iframe.RequestAgentEditsStateRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.RequestAgentEditsStateResponse);
+  rpc RequestDiffZonesState(.gemini_coder.agent_ui_toolkit.iframe.RequestDiffZonesStateRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.RequestDiffZonesStateResponse);
+  rpc StorageGetItems(.gemini_coder.agent_ui_toolkit.iframe.StorageGetItemsRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.StorageGetItemsResponse);
+  rpc StorageUpdateItems(.gemini_coder.agent_ui_toolkit.iframe.StorageUpdateItemsRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.StorageUpdateItemsResponse);
+  rpc ClipboardRead(.gemini_coder.agent_ui_toolkit.iframe.ClipboardReadRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ClipboardReadResponse);
+  rpc OnKeyboardEvent(.gemini_coder.agent_ui_toolkit.iframe.KeyboardEventRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.KeyboardEventResponse);
+  rpc OnMouseEvent(.gemini_coder.agent_ui_toolkit.iframe.MouseEventRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.MouseEventResponse);
+  rpc OnWebviewFocused(.gemini_coder.agent_ui_toolkit.iframe.WebviewFocusedRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.WebviewFocusedResponse);
+  rpc GetBrowserNotificationPermissionState(.gemini_coder.agent_ui_toolkit.iframe.NotificationPermissionQueryMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.NotificationPermissionStateMessage);
+  rpc RequestBrowserNotificationPermission(.gemini_coder.agent_ui_toolkit.iframe.NotificationPermissionRequestMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.NotificationPermissionStateMessage);
+  rpc ShowBrowserNotification(.gemini_coder.agent_ui_toolkit.iframe.NotificationRequestMessage) returns (.gemini_coder.agent_ui_toolkit.iframe.BrowserNotificationResponse);
+  rpc ShowNotification(.gemini_coder.agent_ui_toolkit.iframe.ShowNotificationRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ShowNotificationResponse);
+  rpc ReportFeedbackMetadata(.gemini_coder.agent_ui_toolkit.iframe.ReportFeedbackMetadataRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ReportFeedbackMetadataResponse);
+  rpc ProvideFeedback(.gemini_coder.agent_ui_toolkit.iframe.ProvideFeedbackRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ProvideFeedbackResponse);
+  rpc ChangeWorkspace(.gemini_coder.agent_ui_toolkit.iframe.ChangeWorkspaceRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ChangeWorkspaceResponse);
+  rpc ExecuteNotebookCells(.gemini_coder.agent_ui_toolkit.iframe.ExecuteNotebookCellsRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ExecuteNotebookCellsResponse);
+  rpc GetEditorState(.gemini_coder.agent_ui_toolkit.iframe.GetEditorStateRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.GetEditorStateResponse);
+  rpc BroadcastComments(.gemini_coder.agent_ui_toolkit.iframe.BroadcastCommentsRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.BroadcastCommentsResponse);
+  rpc CanResolveConnection(.gemini_coder.agent_ui_toolkit.iframe.CanResolveConnectionRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.CanResolveConnectionResponse);
+  rpc ResolveConnection(.gemini_coder.agent_ui_toolkit.iframe.ResolveConnectionRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.ResolveConnectionResponse);
+  rpc OnAntigravityReady(.gemini_coder.agent_ui_toolkit.iframe.OnAntigravityReadyRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.OnAntigravityReadyResponse);
+  rpc LogTelemetry(.gemini_coder.agent_ui_toolkit.iframe.LogTelemetryRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.LogTelemetryResponse);
+  rpc GetContextCategories(.gemini_coder.agent_ui_toolkit.iframe.GetContextCategoriesRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.GetContextCategoriesResponse);
+  rpc QueryContextCategory(.gemini_coder.agent_ui_toolkit.iframe.QueryContextCategoryRequest) returns (.gemini_coder.agent_ui_toolkit.iframe.QueryContextCategoryResponse);
+}

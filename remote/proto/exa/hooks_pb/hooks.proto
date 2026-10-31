@@ -1,0 +1,128 @@
+﻿syntax = "proto3";
+
+// file: exa/hooks_pb/hooks.proto
+// package: exa.hooks_pb
+message HookToolCall {
+  optional string name = 1;
+  optional .google.protobuf.Struct args = 2;
+}
+message HookSystemMessage {
+  optional string system_message = 1;
+  repeated .exa.hooks_pb.HookSystemMessage.MetadataEntry metadata = 2;
+  repeated .exa.codeium_common_pb.Media media = 3;
+  message MetadataEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message HookErrorMessage {
+  optional string model_message = 1;
+  optional string user_message = 2;
+}
+message HookUserMessage {
+  optional string content = 1;
+  repeated .exa.codeium_common_pb.Media media = 2;
+}
+message HookEphemeralMessage {
+  optional string content = 1;
+  repeated .exa.codeium_common_pb.Media media = 2;
+  repeated .exa.hooks_pb.HookEphemeralMessage.MetadataEntry metadata = 3;
+  message MetadataEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message HookInjectedStep {
+  optional .exa.hooks_pb.HookToolCall tool_call = 1;
+  optional string user_message = 2;
+  optional string ephemeral_message = 3;
+  optional .exa.hooks_pb.HookSystemMessage system_message = 4;
+  optional .exa.hooks_pb.HookErrorMessage error_message = 6;
+  optional .exa.hooks_pb.HookUserMessage hook_user_message = 7;
+  optional .exa.hooks_pb.HookEphemeralMessage hook_ephemeral_message = 8;
+  optional string model_api_content_id = 5;
+}
+message HookArgsCommon {
+  optional string conversation_id = 1;
+  repeated string workspace_paths = 2;
+  optional string transcript_path = 3;
+  optional string artifact_directory_path = 4;
+  optional string execution_id = 5;
+  optional string model_name = 6;
+  optional bool is_battle_mode = 7;
+  optional string last_user_input = 8;
+}
+message HookArgs {
+  optional .exa.hooks_pb.HookArgsCommon common = 6;
+  optional .exa.hooks_pb.PreToolHookArgs pre_tool_hook_args = 2;
+  optional .exa.hooks_pb.PostToolHookArgs post_tool_hook_args = 3;
+  optional .exa.hooks_pb.PreInvocationHookArgs pre_invocation_hook_args = 1;
+  optional .exa.hooks_pb.PostInvocationHookArgs post_invocation_hook_args = 5;
+  optional .exa.hooks_pb.StopHookArgs stop_hook_args = 4;
+  optional .exa.hooks_pb.SessionStartHookArgs session_start_hook_args = 7;
+}
+message PreToolHookArgs {
+  optional .exa.hooks_pb.HookToolCall tool_call = 1;
+  optional int32 step_idx = 2;
+}
+message PreToolHookResult {
+  optional string decision = 4;
+  optional string reason = 5;
+  optional .google.protobuf.Struct overwrite = 3;
+  repeated string permission_overrides = 6;
+  optional bool allow_tool = 1;
+  optional string deny_reason = 2;
+}
+message PostToolHookArgs {
+  optional int32 step_idx = 1;
+  optional .exa.hooks_pb.HookToolCall tool_call = 2;
+  optional string error = 3;
+  optional string result = 4;
+}
+message PostToolHookResult {
+}
+message PreInvocationHookArgs {
+  optional int32 invocation_num = 1;
+  optional int32 initial_num_steps = 2;
+}
+message PreInvocationHookResult {
+  repeated .exa.hooks_pb.HookInjectedStep inject_steps = 1;
+}
+message PostInvocationHookArgs {
+  optional int32 invocation_num = 1;
+  optional int32 initial_num_steps = 2;
+  optional string model_output = 3;
+  optional string model_thinking = 4;
+}
+message PostInvocationHookResult {
+  repeated .exa.hooks_pb.HookInjectedStep inject_steps = 1;
+  optional string termination_behavior = 2;
+}
+message StopHookArgs {
+  optional int32 execution_num = 1;
+  optional string termination_reason = 2;
+  optional string error = 3;
+  optional bool fully_idle = 4;
+  optional string final_model_output = 5;
+}
+message StopHookResult {
+  optional string decision = 1;
+  optional string reason = 2;
+}
+message SessionStartHookArgs {
+}
+message SessionStartHookResult {
+  repeated .exa.hooks_pb.HookInjectedStep inject_steps = 1;
+}
+message CommandHook {
+  optional string command = 1;
+}
+message PromptHook {
+  optional string prompt = 1;
+  optional string model = 2;
+}
+message HookHandlerConfig {
+  optional int32 timeout = 1;
+  optional .exa.hooks_pb.CommandHook command = 2;
+  optional .exa.hooks_pb.PromptHook prompt = 3;
+}

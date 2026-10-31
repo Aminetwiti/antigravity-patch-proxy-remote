@@ -1,0 +1,107 @@
+/**
+ * Strongly-typed IPC channel constants for ag-doctor-ui.
+ * Ensures compile-time consistency across Main, Preload, and Renderer.
+ */
+
+export const DOCTOR_IPC_CHANNELS = {
+  // CLI & Execution
+  RUN: 'ag:run',
+  INFO: 'ag:info',
+  CONFIG: 'ag:config',
+  CONFIG_SET_THEME: 'ag:config:set-theme',
+  CONFIG_SET_NOTIFY: 'ag:config:set-notify',
+  CONFIG_SET_CHAT_ENHANCEMENTS: 'ag:config:set-chat-enhancements',
+  CONFIG_RESTORE_BACKUP: 'ag:config:restore-backup',
+  NOTIFY: 'ag:notify',
+  TRAY_STATUS: 'ag:tray-status',
+  OPEN_EXTERNAL: 'ag:open-external',
+  REVEAL: 'ag:reveal',
+  TEST_MODEL: 'ag:test-model',
+  REPAIR_RUN: 'ag:repair:run',
+  RUN_DOCTOR: 'ag:run-doctor',
+  NAVIGATE: 'ag:navigate',
+  COMMAND_PALETTE: 'ag:command-palette',
+  THEME_CHANGED: 'ag:theme-changed',
+  SYSTEM_RANDOMIZE_MACHINE_ID: 'ag:system:randomize-machine-id',
+
+  // Providers
+  PROVIDERS_GET: 'ag:providers:get',
+  PROVIDERS_SAVE: 'ag:providers:save',
+  PROVIDERS_DELETE: 'ag:providers:delete',
+  PROVIDERS_FETCH_MODELS: 'ag:providers:fetch-models',
+  PROVIDERS_TEST: 'ag:providers:test',
+  PROVIDERS_CHANGED: 'ag:providers:changed',
+
+  // Google Multi-Account Discovery & Quotas
+  GOOGLE_DISCOVER_IDE_ACCOUNT: 'ag:google:discover-ide-account',
+  GOOGLE_FETCH_ACCOUNT_QUOTAS: 'ag:google:fetch-account-quotas',
+  GOOGLE_WARMUP_ACCOUNT: 'ag:google:warmup-account',
+  GOOGLE_REFRESH_TOKEN: 'ag:google:refresh-token',
+  GOOGLE_OAUTH_LOGIN: 'ag:google:oauth-login',
+  GOOGLE_SWITCH_IDE_ACCOUNT: 'ag:google:switch-ide-account',
+  GOOGLE_OAUTH_INTERCEPTED: 'ag:google:oauth-intercepted',
+  GOOGLE_RECONCILE_COOLDOWNS: 'ag:google:reconcile-cooldowns',
+  GOOGLE_GET_COOLDOWNS: 'ag:google:get-cooldowns',
+  GOOGLE_LIFT_ACCOUNT_COOLDOWN: 'ag:google:lift-account-cooldown',
+  GOOGLE_LIFT_BURST_COOLDOWNS: 'ag:google:lift-burst-cooldowns',
+  GOOGLE_PURGE_QUOTA_CACHE: 'ag:google:purge-quota-cache',
+  GOOGLE_REPAIR_ADC: 'ag:google:repair-adc',
+  GOOGLE_PROBE_POOL: 'ag:google:probe-pool',
+  GOOGLE_UNLOCK_ACCOUNT: 'ag:google:unlock-account',
+  MODEL_PING_PONG: 'ag:model:ping-pong',
+
+  // Proxy & MITM
+  PROXY_START: 'ag:proxy:start',
+  PROXY_STOP: 'ag:proxy:stop',
+  PROXY_STATUS: 'ag:proxy:status',
+  PROXY_RESTART: 'ag:proxy:restart',
+  PROXY_START_STUB: 'ag:proxy:start-stub',
+  PROXY_STUB_STATUS: 'ag:proxy:stub-status',
+  PROXY_CHECK_MAIN_PORT: 'ag:proxy:check-main-port',
+  PROXY_KILL_MAIN_PORT: 'ag:proxy:kill-main-port',
+  PROXY_STATS: 'ag:proxy-stats',
+  PROXY_ERROR: 'proxy:error',
+  PROXY_ERROR_HISTORY: 'ag:proxy-error-history',
+  MITM_TRAFFIC: 'mitm:traffic',
+  TOKEN_REAL_STATS: 'ag:token:real-stats',
+
+  // Network & Remote Daemon
+  NETWORK_GET_LOCAL_IP: 'ag:network:getLocalIp',
+  NETWORK_GENERATE_QR: 'ag:network:generateQr',
+  NETWORK_START_DAEMON: 'ag:network:startDaemon',
+  NETWORK_STOP_DAEMON: 'ag:network:stopDaemon',
+  NETWORK_GET_DAEMON_STATUS: 'ag:network:getDaemonStatus',
+  NETWORK_DAEMON_LOG: 'ag:network:daemonLog',
+
+  // Antigravity Lifecycle
+  ANTIGRAVITY_STATUS: 'ag:antigravity:status',
+  ANTIGRAVITY_VERSION: 'ag:antigravity:version',
+  ANTIGRAVITY_LAUNCH: 'ag:antigravity:launch',
+  ANTIGRAVITY_KILL: 'ag:antigravity:kill',
+  ANTIGRAVITY_RESTART: 'ag:antigravity:restart',
+  ANTIGRAVITY_LAUNCH_LOGS: 'ag:antigravity:launch-logs',
+  DETECT_INSTALLATION: 'ag:detect-installation',
+  ANTIGRAVITY_CPU_OPT_STATUS: 'ag:antigravity:cpu-opt-status',
+  ANTIGRAVITY_CPU_OPT_APPLY: 'ag:antigravity:cpu-opt-apply',
+  ANTIGRAVITY_CPU_OPT_REVERT: 'ag:antigravity:cpu-opt-revert',
+
+  // Streaming
+  STREAM_START: 'ag:stream:start',
+  STREAM_CANCEL: 'ag:stream:cancel',
+
+  // Antigravity Verification & Challenge Resolver
+  VERIFICATION_DETECT: 'ag:verification:detect',
+  VERIFICATION_OPEN_URL: 'ag:verification:open-url',
+  VERIFICATION_RESET_ONBOARDING: 'ag:verification:reset-onboarding',
+
+  // Auto-Update System
+  UPDATE_CHECK: 'ag:update:check',
+  UPDATE_DOWNLOAD: 'ag:update:download',
+  UPDATE_INSTALL: 'ag:update:install',
+  UPDATE_GET_SETTINGS: 'ag:update:get-settings',
+  UPDATE_SAVE_SETTINGS: 'ag:update:save-settings',
+  UPDATE_AVAILABLE: 'ag:update:available',
+  UPDATE_PROGRESS: 'ag:update:progress',
+} as const;
+
+export type DoctorIpcChannel = typeof DOCTOR_IPC_CHANNELS[keyof typeof DOCTOR_IPC_CHANNELS];

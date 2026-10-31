@@ -1,0 +1,16 @@
+{
+  "name": "Observable Agentic Pipeline",
+  "states": [
+    "User Request",
+    "Planning",
+    "Queued",
+    "Running",
+    "Tool Execution",
+    "Sub-agent",
+    "Artifact",
+    "Validation",
+    "Completed"
+  ],
+  "rule": "Every asynchronous step must render an Icon + Label + Status Color. Never color alone.",
+  "source": "remote/mobile/design.md: L270-290"
+}

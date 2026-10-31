@@ -1,0 +1,35 @@
+{
+  "name": "ag-doctor",
+  "version": "3.8.1",
+  "description": "Diagnostic, repair and management CLI for the Antigravity custom-model patch",
+  "license": "Apache-2.0",
+  "bin": {
+    "ag-doctor": "bin/ag-doctor.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "bin/",
+    "dist/",
+    "scripts/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "clean": "tsc -p tsconfig.json --build --clean"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@electron/asar": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

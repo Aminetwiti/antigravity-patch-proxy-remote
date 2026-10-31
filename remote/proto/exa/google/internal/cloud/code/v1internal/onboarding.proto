@@ -1,0 +1,221 @@
+﻿syntax = "proto3";
+
+// file: exa/google/internal/cloud/code/v1internal/onboarding.proto
+// package: google.internal.cloud.code.v1internal
+message OnboardUserRequest {
+  optional string tier_id = 1;
+  optional string cloudaicompanion_project = 2;
+  optional .google.internal.cloud.code.v1internal.ClientMetadata metadata = 3;
+}
+message OnboardUserResponse {
+  optional .google.internal.cloud.code.v1internal.Project cloudaicompanion_project = 1;
+  optional .google.internal.cloud.code.v1internal.OnboardUserStatus status = 4;
+  optional .google.internal.cloud.code.v1internal.ReleaseChannel release_channel = 5;
+}
+message ReleaseChannel {
+  optional .google.internal.cloud.code.v1internal.ReleaseChannel.ChannelType type = 1;
+  optional string name = 2;
+  optional string description = 3;
+  enum ChannelType {
+    UNKNOWN = 0;
+    STABLE = 1;
+    EXPERIMENTAL = 2;
+  }
+}
+message LoadCodeAssistRequest {
+  optional string cloudaicompanion_project = 1;
+  optional .google.internal.cloud.code.v1internal.ClientMetadata metadata = 2;
+  optional .google.internal.cloud.code.v1internal.LoadCodeAssistRequest.Mode mode = 3;
+  enum Mode {
+    MODE_UNSPECIFIED = 0;
+    FULL_ELIGIBILITY_CHECK = 1;
+    HEALTH_CHECK = 2;
+  }
+}
+message IneligibleTier {
+  optional .google.internal.cloud.code.v1internal.IneligibleTier.IneligibleTierReasonCodes reason_code = 1;
+  optional string reason_message = 2;
+  optional string tier_id = 3;
+  optional string tier_name = 4;
+  optional string validation_error_message = 5;
+  optional string validation_url_link_text = 6;
+  optional string validation_url = 7;
+  optional string validation_learn_more_link_text = 8;
+  optional string validation_learn_more_url = 9;
+  enum IneligibleTierReasonCodes {
+    UNKNOWN = 0;
+    INELIGIBLE_ACCOUNT = 1;
+    UNKNOWN_LOCATION = 2;
+    UNSUPPORTED_LOCATION = 3;
+    RESTRICTED_NETWORK = 4;
+    RESTRICTED_AGE = 5;
+    NON_USER_ACCOUNT = 6;
+    DASHER_USER = 7;
+    BYOID_USER = 8;
+    RESTRICTED_DASHER_USER = 9;
+    VALIDATION_REQUIRED = 10;
+    GOOGLE_TOS_NOT_SUPPORTED_BY_CLIENT = 11;
+    UNSUPPORTED_CLIENT = 12;
+  }
+}
+message ClientMetadata {
+  optional .google.internal.cloud.code.v1internal.ClientMetadata.IdeType ide_type = 1;
+  optional string ide_version = 2;
+  optional string plugin_version = 3;
+  optional .google.internal.cloud.code.v1internal.ClientMetadata.Platform platform = 4;
+  optional string update_channel = 5;
+  optional string duet_project = 6;
+  optional .google.internal.cloud.code.v1internal.ClientMetadata.PluginType plugin_type = 7;
+  optional string ide_name = 8;
+  enum IdeType {
+    IDE_UNSPECIFIED = 0;
+    VSCODE = 1;
+    INTELLIJ = 2;
+    VSCODE_CLOUD_WORKSTATION = 3;
+    INTELLIJ_CLOUD_WORKSTATION = 4;
+    CLOUD_SHELL = 5;
+    CIDER = 6;
+    CLOUD_RUN = 7;
+    ANDROID_STUDIO = 8;
+    ANTIGRAVITY = 9;
+    JETSKI = 10;
+    COLAB = 11;
+    FIREBASE = 12;
+    CHROME_DEVTOOLS = 13;
+    GEMINI_CLI = 14;
+  }
+  enum Platform {
+    PLATFORM_UNSPECIFIED = 0;
+    DARWIN_AMD64 = 1;
+    DARWIN_ARM64 = 2;
+    LINUX_AMD64 = 3;
+    LINUX_ARM64 = 4;
+    WINDOWS_AMD64 = 5;
+  }
+  enum PluginType {
+    PLUGIN_UNSPECIFIED = 0;
+    CLOUD_CODE = 1;
+    GEMINI = 2;
+    AIPLUGIN_INTELLIJ = 3;
+    AIPLUGIN_STUDIO = 4;
+    PANTHEON = 6;
+  }
+}
+message Project {
+  optional string id = 1;
+  optional string name = 2;
+  optional int64 project_number = 3;
+}
+message OnboardUserStatus {
+  optional .google.internal.cloud.code.v1internal.OnboardUserStatus.StatusCode status_code = 1;
+  optional string display_message = 2;
+  optional string message_title = 4;
+  optional .google.rpc.Help.Link help_link = 3;
+  enum StatusCode {
+    DEFAULT = 0;
+    NOTICE = 1;
+    WARNING = 2;
+  }
+}
+message LoadCodeAssistResponse {
+  optional .google.internal.cloud.code.v1internal.UserTier current_tier = 1;
+  repeated .google.internal.cloud.code.v1internal.UserTier allowed_tiers = 2;
+  optional string cloudaicompanion_project = 3;
+  optional .google.rpc.Status project_validation_error = 4;
+  repeated .google.internal.cloud.code.v1internal.IneligibleTier ineligible_tiers = 5;
+  optional bool gcp_managed = 6;
+  optional string manage_subscription_uri = 7;
+  optional .google.internal.cloud.code.v1internal.ReleaseChannel release_channel = 8;
+  optional string upgrade_subscription_uri = 9;
+  optional string g1_tier = 11;
+  optional .google.internal.cloud.code.v1internal.UserTier paid_tier = 12;
+}
+message UserTier {
+  optional string id = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional bool user_defined_cloudaicompanion_project = 4;
+  optional .google.internal.cloud.code.v1internal.UserTier.PrivacyNotice privacy_notice = 5;
+  optional bool is_default = 6;
+  optional string upgrade_subscription_uri = 7;
+  optional string upgrade_subscription_text = 8;
+  optional string upgrade_button_text = 11;
+  optional string client_experience_tag = 12;
+  optional .google.internal.cloud.code.v1internal.UserTier.UpgradeType upgrade_subscription_type = 9;
+  optional bool uses_gcp_tos = 13;
+  repeated .google.internal.cloud.code.v1internal.Credits available_credits = 14;
+  message PrivacyNotice {
+    optional bool show_notice = 1;
+    optional string notice_text = 2;
+    optional bool minor_notice = 4;
+  }
+  enum UpgradeType {
+    UPGRADE_TYPE_UNSPECIFIED = 0;
+    GDP = 1;
+    GOOGLE_ONE = 2;
+    GDP_HELIUM = 3;
+    GOOGLE_ONE_HELIUM = 4;
+  }
+}
+message AiDevToolsSetting {
+  optional bool strict_mode_disabled = 1;
+  optional .google.internal.cloud.code.v1internal.McpSetting mcp_setting = 2;
+  optional .google.internal.cloud.code.v1internal.TurboModeSetting turbo_mode_setting = 3;
+  optional .google.internal.cloud.code.v1internal.BrowserSetting browser_setting = 4;
+  optional .google.internal.cloud.code.v1internal.PreviewFeatureSetting preview_feature_setting = 5;
+  optional .google.internal.cloud.code.v1internal.AgentSetting agent_setting = 6;
+  optional .google.internal.cloud.code.v1internal.CliFeatureSetting cli_feature_setting = 7;
+}
+message RecitationPolicy {
+  optional bool disable_citations = 1;
+}
+message McpSetting {
+  optional bool mcp_enabled = 1;
+  optional string override_mcp_config_json = 2;
+  optional string mcp_config_json = 3;
+}
+message TurboModeSetting {
+  optional bool terminal_auto_execution_enabled = 1;
+  optional bool browser_js_execution_enabled = 2;
+}
+message BrowserSetting {
+  optional bool browser_enabled = 1;
+  repeated string allowed_websites = 2;
+  repeated string denied_websites = 3;
+}
+message PreviewFeatureSetting {
+  optional bool preview_models_enabled = 1;
+}
+message AgentSetting {
+  repeated string agy_allowed_models = 1;
+}
+message CliFeatureSetting {
+  optional .google.internal.cloud.code.v1internal.CliFeatureSetting.ExtensionsSetting extensions_setting = 1;
+  optional bool unmanaged_capabilities_enabled = 2;
+  message ExtensionsSetting {
+    optional bool extensions_enabled = 1;
+  }
+}
+message FetchAdminControlsRequest {
+  optional string project = 1;
+}
+message FetchAdminControlsResponse {
+  optional bool disable_telemetry = 1;
+  optional bool disable_feedback = 2;
+  optional .google.internal.cloud.code.v1internal.RecitationPolicy recitation_policy = 3;
+  optional .google.internal.cloud.code.v1internal.FetchAdminControlsResponse.GroundingType grounding_type = 4;
+  optional bool secure_mode_enabled = 5;
+  optional .google.internal.cloud.code.v1internal.McpSetting mcp_setting = 6;
+  optional .google.internal.cloud.code.v1internal.TurboModeSetting turbo_mode_setting = 7;
+  optional .google.internal.cloud.code.v1internal.BrowserSetting browser_setting = 8;
+  optional .google.internal.cloud.code.v1internal.PreviewFeatureSetting preview_feature_setting = 9;
+  optional .google.internal.cloud.code.v1internal.AgentSetting agent_setting = 10;
+  optional .google.internal.cloud.code.v1internal.CliFeatureSetting cli_feature_setting = 11;
+  optional bool strict_mode_disabled = 12;
+  optional bool admin_controls_applicable = 13;
+  enum GroundingType {
+    GROUNDING_TYPE_UNSPECIFIED = 0;
+    GROUNDING_WITH_GOOGLE_SEARCH = 1;
+    WEB_GROUNDING_FOR_ENTERPRISE = 2;
+  }
+}

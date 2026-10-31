@@ -1,0 +1,30 @@
+﻿syntax = "proto3";
+
+// file: exa/chat_client_server_pb/chat_client_server.proto
+// package: exa.chat_client_server_pb
+message StartChatClientRequestStreamRequest {
+  optional .exa.chat_client_server_pb.ChatClientRequestStreamClientType client_type = 1;
+}
+message ChatClientRequest {
+  optional .exa.chat_client_server_pb.AddCascadeInputRequest add_cascade_input = 1;
+  optional .exa.chat_client_server_pb.SendActionToChatPanelRequest send_action_to_chat_panel = 2;
+  optional .exa.chat_client_server_pb.InitialAckRequest initial_ack = 3;
+  optional .exa.chat_client_server_pb.RefreshCustomizationRequest refresh_customization = 4;
+}
+message AddCascadeInputRequest {
+  repeated .exa.codeium_common_pb.TextOrScopeItem items = 1;
+  repeated .exa.codeium_common_pb.ImageData images = 2;
+  repeated .exa.codeium_common_pb.Media media = 3;
+}
+message SendActionToChatPanelRequest {
+  optional string action_type = 1;
+  repeated bytes payload = 2;
+}
+message InitialAckRequest {
+}
+message RefreshCustomizationRequest {
+  optional .exa.codeium_common_pb.RefreshCustomizationType config_type = 1;
+}
+service ChatClientServerService {
+  rpc StartChatClientRequestStream(.exa.chat_client_server_pb.StartChatClientRequestStreamRequest) returns (.exa.chat_client_server_pb.ChatClientRequest);
+}

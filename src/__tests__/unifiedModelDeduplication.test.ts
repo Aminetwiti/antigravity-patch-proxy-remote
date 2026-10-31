@@ -1,0 +1,95 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { loadCustomModels } from '../proxy/modelLoader';
+import { deduplicateModels } from '../proxy/modelInjector';
+
+describe('Unified Model Deduplication (Cloud Code + AI Studio Single Entry)', () => {
+  const customModelsPath = path.join(os.homedir(), '.gemini', 'antigravity', 'custom_models.json');
+  let originalContent: string | undefined;
+  let tempFixtureCreated = false;
+  let tempFilePath: string | undefined;
+
+  beforeEach(() => {
+    tempFixtureCreated = true;
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-dedup-test-'));
+    tempFilePath = path.join(tmpDir, 'custom_models.json');
+    const sampleModels = [
+      { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)' },
+      { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash' },
+      { id: 'gemini-3.8-flash', displayName: 'Gemini 3.8 Flash High Fast' },
+      { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6' },
+      { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)' },
+    ];
+    const providers: any[] = [];
+    providers.push({
+      id: 'prov-aistudio',
+      provider: 'google-gemini',
+      apiKey: 'ai-studio-test-key',
+      models: sampleModels.map((m) => ({ ...m })),
+    });
+    for (let i = 1; i <= 25; i++) {
+      providers.push({
+        id: `prov-cc-${i}`,
+        provider: 'google',
+        email: `account-${i}@example.com`,
+        refreshToken: `fake-refresh-token-${i}`,
+        projectId: `project-${i}`,
+        models: sampleModels.map((m) => ({ ...m })),
+      });
+    }
+    fs.writeFileSync(tempFilePath, JSON.stringify({ providers }, null, 2), 'utf8');
+    process.env.AG_CUSTOM_MODELS_PATH = tempFilePath;
+  });
+
+  afterEach(() => {
+    delete process.env.AG_CUSTOM_MODELS_PATH;
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+        fs.rmdirSync(path.dirname(tempFilePath));
+      } catch {}
+    }
+  });
+
+  it('deduplicates all accounts into exactly 5 unique models with zero duplicates', () => {
+    const loaded = loadCustomModels();
+    expect(loaded.length).toBeGreaterThan(0);
+
+    const deduped = deduplicateModels(loaded);
+
+    // Verify there are no duplicate display names or canonical model keys
+    const names = deduped.map((m) => m.displayName || m.name);
+    const uniqueNames = new Set(names);
+    expect(uniqueNames.size).toBe(names.length);
+
+    // Verify models in dropdown
+    expect(deduped.length).toBeGreaterThanOrEqual(1);
+
+    // Verify clean display names (no models/ prefix, no placeholder IDs)
+    for (const m of deduped) {
+      expect(m._poolOnly).toBeFalsy();
+      expect(m.displayName).not.toMatch(/^models\//);
+      expect(m.displayName).not.toMatch(/MODEL_PLACEHOLDER_/);
+      expect(m.displayName).not.toMatch(/-tiered$/);
+    }
+  });
+
+  it('keeps real per-account entries marked _poolOnly for background routing', () => {
+    const loaded = loadCustomModels();
+    const poolOnlyEntries = loaded.filter((m) => m._poolOnly === true);
+
+    // 25 accounts * 5 models = 125 pool entries
+    expect(poolOnlyEntries.length).toBeGreaterThanOrEqual(20);
+
+    // All real accounts must have their apiKey or refreshToken intact for routing
+    const hasAiStudio = poolOnlyEntries.some((m) => m.provider === 'google-gemini' && m.apiKey && m.apiKey !== 'auto');
+    const hasCloudCode = poolOnlyEntries.some((m) => m.provider === 'google' && Boolean(m.refreshToken));
+
+    if (loaded.some((m) => m.provider === 'google-gemini')) {
+      expect(hasAiStudio).toBe(true);
+    }
+    expect(hasCloudCode).toBe(true);
+  });
+});

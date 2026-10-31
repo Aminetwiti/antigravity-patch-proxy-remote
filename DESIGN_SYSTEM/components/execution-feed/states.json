@@ -1,0 +1,75 @@
+{
+  "stepStates": {
+    "STREAMING_WORKING": {
+      "icon": "Md3DoubleTrackSpinner",
+      "iconSize": "13px",
+      "iconColor": "#60A5FA",
+      "title": "Working...",
+      "animation": "Rotation 1200ms repeat + Ellipsis 550ms",
+      "textColor": "#9E9FA8"
+    },
+    "FILE_EDIT": {
+      "verb": "Edited",
+      "icon": "Icons.edit_note_rounded",
+      "iconColor": "#34D399",
+      "titleColor": "#F4F4F5",
+      "diff": {
+        "added": "+N (#4ADE80)",
+        "removed": "-N (#F87171)"
+      }
+    },
+    "FILE_ANALYSIS": {
+      "verb": "Analyzed",
+      "icon": "Icons.insert_drive_file_outlined / Icons.photo_outlined",
+      "iconColor": "#38BDF8 / #9E9FA8",
+      "titleColor": "#F4F4F5",
+      "lineRange": "#L... (#71717A)"
+    },
+    "COMMAND_RUN": {
+      "verb": "Run",
+      "icon": "Icons.terminal_rounded",
+      "iconColor": "#9CA3AF",
+      "titleColor": "#F4F4F5",
+      "expandable": true,
+      "consoleBox": {
+        "bg": "#0E0F12",
+        "border": "#27272A"
+      }
+    },
+    "EXPLORED_GROUP": {
+      "verb": "Explored",
+      "icon": "Icons.folder_open_outlined",
+      "expandable": true,
+      "subItemsCount": "N files/commands indented by 14px"
+    },
+    "THOUGHT_REASONING": {
+      "verb": "Thought",
+      "icon": "Icons.lightbulb_outline_rounded",
+      "iconColor": "#FBBF24",
+      "titleColor": "#9E9FA8"
+    },
+    "SUBAGENT": {
+      "verb": "Subagent",
+      "icon": "Icons.smart_toy_outlined",
+      "iconColor": "#A78BFA",
+      "titleColor": "#F4F4F5"
+    },
+    "TIMER": {
+      "verb": "Timed",
+      "icon": "Icons.timer_outlined",
+      "iconColor": "#FB923C",
+      "titleColor": "#F4F4F5"
+    },
+    "ERROR": {
+      "icon": "Icons.error_outline_rounded",
+      "iconColor": "#F87171",
+      "titleColor": "#F87171",
+      "consolePromptColor": "#71717A"
+    },
+    "COMPLETED_COLLAPSED": {
+      "icon": "Icons.keyboard_arrow_down_rounded",
+      "masterTitle": "Summary (e.g. 'Thought for 45s, edited 3 files')",
+      "expandable": true
+    }
+  }
+}

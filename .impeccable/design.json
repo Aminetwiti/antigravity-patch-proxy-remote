@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-18T14:55:00Z",
+  "title": "Design System: Antigravity Custom Model Enabler UI",
+  "extensions": {
+    "colorMeta": {
+      "surface-base": { "role": "neutral", "displayName": "Surface Base", "canonical": "#18181b", "tonalRamp": ["#18181b", "#1c1c1f", "#27272a"] },
+      "border-strong": { "role": "neutral", "displayName": "Border Strong", "canonical": "#3f3f46", "tonalRamp": ["#27272a", "#3f3f46"] },
+      "ink-primary": { "role": "neutral", "displayName": "Ink Primary", "canonical": "#f4f4f5", "tonalRamp": ["#f4f4f5", "#a1a1aa", "#71717a"] },
+      "accent-blue": { "role": "primary", "displayName": "Accent Blue", "canonical": "#3b82f6", "tonalRamp": ["#3b82f6", "#2563eb"] },
+      "positive": { "role": "semantic", "displayName": "Positive", "canonical": "#22c55e" },
+      "warning": { "role": "semantic", "displayName": "Warning", "canonical": "#eab308" },
+      "danger": { "role": "semantic", "displayName": "Danger", "canonical": "#ef4444", "tonalRamp": ["#ef4444", "#dc2626"] },
+      "provider-custom": { "role": "accent", "displayName": "Provider Custom Purple", "canonical": "#a855f7" }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "Body", "purpose": "Descriptions, subtitles, toast copy (13px/400)." },
+      "title": { "displayName": "Title", "purpose": "Model names, section headings (14px/500)." },
+      "heading": { "displayName": "Heading", "purpose": "Modal titles (18px/600)." },
+      "label": { "displayName": "Label", "purpose": "Provider badges, captions (10px/600 uppercase)." }
+    },
+    "shadows": [
+      { "name": "modal-lift", "value": "0 20px 25px -5px rgba(0,0,0,0.5)", "purpose": "Provider Manager modal overlay." },
+      { "name": "toast-lift", "value": "0 10px 15px -3px rgba(0,0,0,0.5), 0 4px 6px -2px rgba(0,0,0,0.5)", "purpose": "Error/status toasts." },
+      { "name": "banner-lift", "value": "0 4px 6px -1px rgba(0,0,0,0.1)", "purpose": "Persistent error banner above chat input." }
+    ],
+    "motion": [
+      { "name": "modal-in", "value": "transform 0.2s ease, opacity 0.2s ease", "purpose": "Modal scale(0.9) translateY(20px) → scale(1) translateY(0)." },
+      { "name": "toast-in", "value": "cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s", "purpose": "Toast fade + slight overshoot." },
+      { "name": "status-dot", "value": "background-color 0.3s ease", "purpose": "Connection status dot color shift." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Provider Manager Modal",
+      "kind": "custom",
+      "refersTo": "button-primary",
+      "description": "650px two-step modal to add external models; step indicator, fetch, select, save.",
+      "html": "<div class=\"agy-modal\"><div class=\"agy-modal-header\"><h3>Provider Manager</h3><button class=\"agy-close\">&times;</button></div><div class=\"agy-modal-body\"></div></div>",
+      "css": ".agy-modal { background:#18181b; border:1px solid #3f3f46; border-radius:12px; width:650px; max-height:85vh; color:#f4f4f5; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; box-shadow:0 20px 25px -5px rgba(0,0,0,0.5); } .agy-modal-header { padding:16px 24px; border-bottom:1px solid #3f3f46; display:flex; justify-content:space-between; align-items:center; } .agy-close { background:none; border:none; color:#a1a1aa; font-size:24px; cursor:pointer; }"
+    },
+    {
+      "name": "Model Row Card",
+      "kind": "card",
+      "refersTo": "card-model",
+      "description": "A custom model entry with provider icon, status dot, test + delete actions.",
+      "html": "<div class=\"agy-model-row\"><div class=\"agy-model-left\"><span class=\"agy-icon\"></span><div><div class=\"agy-title\"><span class=\"agy-dot\"></span>Model</div><div class=\"agy-sub\"><span class=\"agy-badge\">openai</span>url</div></div></div><div class=\"agy-actions\"></div></div>",
+      "css": ".agy-model-row { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#18181b; border:1px solid #27272a; border-radius:8px; transition:border-color 0.15s ease, background-color 0.15s ease; } .agy-model-row:hover { border-color:#3f3f46; background:#1c1c1f; } .agy-dot { width:6px; height:6px; border-radius:50%; background:#71717a; } .agy-badge { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; padding:2px 6px; border-radius:4px; background:#a855f722; color:#a855f7; }"
+    },
+    {
+      "name": "Error Toast",
+      "kind": "custom",
+      "refersTo": "button-primary",
+      "description": "Top-right contextual toast with accent left rule, title, message, suggestions.",
+      "html": "<div class=\"agy-toast\"><div class=\"agy-accent\"></div><div class=\"agy-main\"><div class=\"agy-title\">Title</div><div class=\"agy-desc\">Message</div></div></div>",
+      "css": ".agy-toast { background:#18181b; border:1px solid #27272a; border-radius:12px; padding:16px 20px; color:#f4f4f5; box-shadow:0 10px 15px -3px rgba(0,0,0,0.5),0 4px 6px -2px rgba(0,0,0,0.5); position:relative; overflow:hidden; } .agy-accent { position:absolute; left:0; top:0; bottom:0; width:4px; background:#a855f7; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Console",
+    "overview": "The injected Custom Models UI is a calm, native-feeling control surface that disappears into the Antigravity IDE chrome. Restrained dark zinc, system typography, and provider-colored accents used sparingly. Every state is built to reassure: the user always knows what the system is doing and what to do next. It rejects loud AI-wrapper dashboards, neon gradients, and any visual language that clashes with the dark IDE shell.",
+    "keyCharacteristics": [
+      "Dark tonal surfaces matching the host IDE",
+      "System font stack; hierarchy via weight/size only",
+      "Provider accents only as small icon bubbles, badges, status dots",
+      "Minimal, purposeful motion",
+      "Constant but quiet feedback (status dots, toasts)"
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Accent blue fills ≤10% of any surface; provider colors appear only as 16–32px bubbles, 10px badges, or 6px dots.", "section": "colors" },
+      { "name": "The Invisible Type Rule", "body": "Never introduce a non-system font; hierarchy comes from weight (500/600) and size (10/13/14/18px).", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Inline panels and cards are flat (border + tonal fill). Shadows reserved for overlays floating above the IDE.", "section": "elevation" }
+    ],
+    "dos": [
+      "Match the IDE's dark zinc surfaces for any new panel or modal.",
+      "Use provider accents only as small icon bubbles, badges, or status dots.",
+      "Keep body text at #f4f4f5 / #a1a1aa to hold ≥4.5:1 contrast.",
+      "Show a quiet status dot so the user always knows connection state.",
+      "Clone the IDE's own button classes for entry points."
+    ],
+    "donts": [
+      "Use cream, sand, beige, or warm-neutral body backgrounds.",
+      "Introduce gradient-heavy, neon, or glassmorphism visuals.",
+      "Build loud AI-wrapper dashboards with playful mascots.",
+      "Use a non-system font.",
+      "Fill large areas with provider brand colors.",
+      "Write error states that blame the user."
+    ]
+  }
+}

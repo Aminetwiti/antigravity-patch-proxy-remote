@@ -1,0 +1,7 @@
+﻿syntax = "proto3";
+
+// file: exa/google/internal/cloud/code/v1internal/entitlement.proto
+// package: google.internal.cloud.code.v1internal
+message Entitlement {
+  optional string user_tier = 1;
+}

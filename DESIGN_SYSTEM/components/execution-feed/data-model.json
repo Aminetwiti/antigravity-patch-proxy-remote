@@ -1,0 +1,22 @@
+{
+  "entity": "ExecutionStepItem",
+  "fields": {
+    "type": "enum ExecutionStepType (header, command, fileEdit, fileAnalysis, exploredGroup, task, timer, autoProceed, subagent, thought, search, question)",
+    "action": "String (e.g. 'Edited', 'Analyzed', 'Run', 'Explored', 'Timed', 'Thought')",
+    "title": "String (filename, command string, task count, duration)",
+    "diffAdded": "String? (e.g. '+12')",
+    "diffRemoved": "String? (e.g. '-3')",
+    "lineRange": "String? (e.g. '#L680-710')",
+    "thoughtTitle": "String? (e.g. 'Examining Conditional Logic')",
+    "consolePrompt": "String? (e.g. '... > flutter test')",
+    "consoleOutput": "String? (stdout buffer)",
+    "timerPrompt": "String?",
+    "timerStatus": "String?",
+    "rawDetail": "String?",
+    "subItems": "List<ExecutionStepItem>? (indented children)",
+    "isExpandable": "bool",
+    "isRunning": "bool",
+    "isImage": "bool"
+  },
+  "source": "remote/mobile/lib/features/chat_stream/widgets/execution_progress_view.dart: L30-66"
+}

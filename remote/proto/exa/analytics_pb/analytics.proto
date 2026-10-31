@@ -1,0 +1,103 @@
+﻿syntax = "proto3";
+
+// file: exa/analytics_pb/analytics.proto
+// package: exa.analytics_pb
+message RecordCommandUsageRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional string command = 2;
+  optional string selection = 3;
+  optional .exa.codeium_common_pb.CommandRequestSource request_source = 4;
+  optional string prompt_id = 5;
+  optional string completion_id = 6;
+  optional string completion = 7;
+  optional string prompt = 8;
+  optional .exa.codeium_common_pb.Model requested_model_id = 9;
+  optional .exa.codeium_common_pb.StopReason stop_reason = 10;
+  optional .exa.codeium_common_pb.Language language = 11;
+  optional .exa.codeium_common_pb.ProviderSource provider_source = 12;
+  optional .exa.prompt_pb.UnifiedPromptComponents command_prompt_components = 13;
+  optional .exa.cortex_pb.CortexTrajectoryReference cortex_trajectory_reference = 14;
+  optional .exa.codeium_common_pb.SuperCompleteFilterReason super_complete_filter_reason = 15;
+  optional .exa.codeium_common_pb.SupercompleteTriggerCondition supercomplete_trigger_condition = 17;
+  repeated .exa.codeium_common_pb.PromptStageLatency prompt_stage_latencies = 16;
+  optional .exa.codeium_common_pb.CompletionProfile completion_profile = 18;
+}
+message RecordCommandUsageResponse {
+}
+message BatchRecordPromptsRequest {
+  repeated .exa.analytics_pb.RecordPromptRequest prompts = 1;
+}
+message BatchRecordPromptsResponse {
+}
+message RecordPromptRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional .exa.codeium_common_pb.CompletionsRequest request = 2;
+  optional string prompt_id = 3;
+  optional .google.protobuf.Timestamp timestamp = 4;
+  optional string ip = 5;
+  optional string inference_address = 6;
+  optional .exa.codeium_common_pb.ProviderSource provider_source = 7;
+  optional string api_server_address = 8;
+  optional .exa.codeium_common_pb.Model firstline_model = 9;
+  optional .exa.codeium_common_pb.PromptComponents prompt_components = 10;
+  optional bool is_server_side_prompt = 11;
+  optional .exa.prompt_pb.UnifiedPromptComponents unified_prompt_components = 12;
+  optional .exa.cortex_pb.CortexTrajectoryReference cortex_trajectory_reference = 13;
+}
+message RecordCompletionsRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  repeated .exa.codeium_common_pb.CompletionWithLatencyInfo completions_with_latency_info = 2;
+  optional string prompt_id = 3;
+  optional uint64 prompt_length = 4;
+  optional .exa.codeium_common_pb.ProviderSource provider_source = 5;
+  optional string relative_path = 6;
+  optional .exa.codeium_common_pb.Repository repository = 7;
+  optional string model_tag = 8;
+  optional .google.protobuf.Timestamp timestamp = 9;
+}
+message RecordCompletionsResponse {
+}
+message BatchRecordCompletionsRequest {
+  repeated .exa.analytics_pb.RecordCompletionsRequest completions = 1;
+}
+message BatchRecordCompletionsResponse {
+}
+message RecordContextToPromptRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional .exa.context_module_pb.ContextUseCase prompt_user = 2;
+  optional string chat_message_id = 3;
+  repeated .exa.context_module_pb.RetrievedCodeContextItemMetadata retrieved_code_context_item_metadata = 4;
+  optional uint64 latency_ms = 5;
+  optional .google.protobuf.Timestamp timestamp = 6;
+  optional .exa.cortex_pb.CortexWorkflowState cortex_state = 7;
+  optional string prompt_id = 8;
+}
+message RecordContextToPromptResponse {
+}
+message RecordCortexTrajectoryRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional string trajectory_id = 2;
+  optional string cascade_id = 5;
+  optional .exa.cortex_pb.CortexTrajectoryType trajectory_type = 3;
+  optional .exa.cortex_pb.CortexTrajectorySource trajectory_source = 7;
+  repeated .exa.cortex_pb.CortexTrajectoryReference parents = 4;
+  optional .exa.cortex_pb.CortexTrajectoryMetadata trajectory_metadata = 6;
+}
+message RecordCortexTrajectoryResponse {
+}
+message RecordCortexTrajectoryStepRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  optional .gemini_coder.Step step = 2;
+  optional .exa.cortex_pb.CortexTrajectoryReference reference = 3;
+}
+message RecordCortexTrajectoryStepResponse {
+}
+service AnalyticsService {
+  rpc RecordCommandUsage(.exa.analytics_pb.RecordCommandUsageRequest) returns (.exa.analytics_pb.RecordCommandUsageResponse);
+  rpc RecordCompletions(.exa.analytics_pb.RecordCompletionsRequest) returns (.exa.analytics_pb.RecordCompletionsResponse);
+  rpc RecordContextToPrompt(.exa.analytics_pb.RecordContextToPromptRequest) returns (.exa.analytics_pb.RecordContextToPromptResponse);
+  rpc RecordCortexTrajectory(.exa.analytics_pb.RecordCortexTrajectoryRequest) returns (.exa.analytics_pb.RecordCortexTrajectoryResponse);
+  rpc RecordCortexTrajectoryStep(.exa.analytics_pb.RecordCortexTrajectoryStepRequest) returns (.exa.analytics_pb.RecordCortexTrajectoryStepResponse);
+  rpc BatchRecordPrompts(.exa.analytics_pb.BatchRecordPromptsRequest) returns (.exa.analytics_pb.BatchRecordPromptsResponse);
+  rpc BatchRecordCompletions(.exa.analytics_pb.BatchRecordCompletionsRequest) returns (.exa.analytics_pb.BatchRecordCompletionsResponse);
+}

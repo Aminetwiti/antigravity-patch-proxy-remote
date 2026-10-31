@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Antigravity Remote Official Notification Vector Icon (Monochrome Silhouette for Status Bar) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Antigravity Trefoil / Quantum Knot Silhouette -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2 C9.24,2 7,4.24 7,7 C7,8.23 7.45,9.35 8.19,10.22 L4.4,16.78 C3.53,18.29 4.05,20.24 5.56,21.11 C7.07,21.98 9.02,21.46 9.89,19.95 L12,16.3 L14.11,19.95 C14.98,21.46 16.93,21.98 18.44,21.11 C19.95,20.24 20.47,18.29 19.6,16.78 L15.81,10.22 C16.55,9.35 17,8.23 17,7 C17,4.24 14.76,2 12,2 Z M12,4.5 C13.38,4.5 14.5,5.62 14.5,7 C14.5,8.38 13.38,9.5 12,9.5 C10.62,9.5 9.5,8.38 9.5,7 C9.5,5.62 10.62,4.5 12,4.5 Z M7.73,18.7 C7.29,19.46 6.31,19.72 5.55,19.28 C4.79,18.84 4.53,17.86 4.97,17.1 L7.32,13.03 C8.12,14.11 9.24,14.91 10.55,15.31 L7.73,18.7 Z M16.27,18.7 L13.45,15.31 C14.76,14.91 15.88,14.11 16.68,13.03 L19.03,17.1 C19.47,17.86 19.21,18.84 18.45,19.28 C17.69,19.72 16.71,19.46 16.27,18.7 Z" />
+</vector>

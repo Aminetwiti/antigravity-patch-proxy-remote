@@ -1,0 +1,298 @@
+// Ambient declarations for the renderer global window.ag bridge.
+// Loaded as a script (no module). Types are erased at build time.
+
+interface RunResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+interface AgAPI {
+  run(args: string[]): Promise<RunResult>;
+  info(): Promise<{
+    platform: string;
+    arch: string;
+    versions: NodeJS.ProcessVersions;
+    electron: string;
+    node: string;
+    chrome: string;
+    cliPath: string;
+  }>;
+  config(): Promise<Record<string, unknown>>;
+  onMitmTraffic(handler: (payload: {
+    id: string;
+    ts: number;
+    method: string;
+    path: string;
+    targetModel: string;
+    translatedProvider: string;
+    statusCode: number;
+    latencyMs: number;
+    requestPayload?: string;
+    responsePayload?: string;
+    headers?: Record<string, string>;
+  }) => void): () => void;
+  setTheme(theme: 'dark' | 'light'): Promise<boolean>;
+  setNotifyEnabled(enabled: boolean): Promise<boolean>;
+  setChatEnhancements(enhancements: { retryButton?: boolean; suggestionPills?: boolean; suggestions?: Array<{ label: string; text: string }> }): Promise<boolean>;
+  restoreBackup(): Promise<{ success: boolean; error?: string }>;
+  getProxyErrorHistory(): Promise<Array<{
+    traceId: string;
+    provider: string;
+    status?: number;
+    errorType: string;
+    rawError: string;
+    title: string;
+    message: string;
+    suggestions: string[];
+    actionUrl?: string;
+    at: number;
+  }>>;
+  notify(title: string, body: string): Promise<void>;
+  trayStatus(status: 'ok' | 'warn' | 'err'): Promise<void>;
+  openExternal(url: string): Promise<void>;
+  reveal(p: string): Promise<void>;
+
+  // Provider Management APIs
+  providers: {
+    get(): Promise<unknown[]>;
+    save(p: unknown): Promise<{ success: boolean; error?: string }>;
+    delete(id: string): Promise<{ success: boolean; error?: string }>;
+    fetchModels(params: { apiUrl: string; apiKey: string; provider?: string }): Promise<{ success: boolean; models?: Array<{ id: string; displayName?: string; enabled?: boolean }>; error?: string }>;
+    test(params: { apiUrl: string; apiKey: string; id?: string; modelId?: string; provider?: string }): Promise<{ success: boolean; status?: number; latencyMs?: number; healthStatus?: 'healthy' | 'degraded' | 'offline'; error?: string }>;
+    onChanged(handler: () => void): () => void;
+    discoverIdeAccount(): Promise<{ success: boolean; account?: any; error?: string }>;
+    fetchAccountQuotas(accessToken?: string, refreshToken?: string): Promise<{ success: boolean; quotas?: any; accessToken?: string; error?: string }>;
+    warmupAccount(accessToken: string): Promise<{ success: boolean; message?: string; error?: string }>;
+    refreshToken(refreshToken: string): Promise<{
+      success: boolean;
+      accessToken?: string;
+      expiresIn?: number;
+      email?: string;
+      name?: string;
+      picture?: string;
+      quotas?: any;
+      projectId?: string;
+      tierId?: string;
+      error?: string;
+    }>;
+    startOAuthLogin(providerType?: 'antigravity' | 'gemini-cli'): Promise<{
+      success: boolean;
+      account?: any;
+      error?: string;
+    }>;
+    switchIdeAccount(params: {
+      accessToken: string;
+      refreshToken?: string;
+      email?: string;
+      picture?: string;
+    }): Promise<{ success: boolean; error?: string; dbPath?: string }>;
+    reconcileCooldowns?(): Promise<{
+      success: boolean;
+      cleared?: number;
+      activeRemaining?: number;
+      details?: string[];
+      error?: string;
+    }>;
+    getCooldowns?(): Promise<{
+      success: boolean;
+      cooldowns: Record<string, { until: number; remainingMs: number; remainingMin: number; remainingHours: string }>;
+      error?: string;
+    }>;
+    liftAccountCooldown?(accountIdentifier: string): Promise<{
+      success: boolean;
+      cleared: number;
+      removedKeys?: string[];
+      remainingActive?: number;
+      error?: string;
+    }>;
+    liftBurstCooldowns?(): Promise<{
+      success: boolean;
+      cleared: number;
+      removedKeys?: string[];
+      remainingActive?: number;
+      error?: string;
+    }>;
+    purgeQuotaCache?(): Promise<{
+      success: boolean;
+      cleared: number;
+      error?: string;
+    }>;
+    probePool?(dryRun?: boolean): Promise<{
+      success: boolean;
+      results?: any[];
+      summary?: any;
+      error?: string;
+    }>;
+    unlockAccount?(email: string): Promise<{
+      success: boolean;
+      url?: string;
+      error?: string;
+    }>;
+  };
+
+  // MITM Proxy Server Management
+  proxyStart(): Promise<{ ok: boolean; message: string; pid?: number }>;
+  proxyStop(): Promise<{ ok: boolean; message: string }>;
+  proxyStatus(): Promise<{ ok: boolean; data?: { running: boolean; port: number; pid?: number; error?: string }; error?: string }>;
+  proxyRestart(): Promise<{ ok: boolean; message: string }>;
+  
+  onRunDoctor(handler: () => void): () => void;
+  onNavigate(handler: (view: string) => void): () => void;
+  onCommandPalette(handler: () => void): () => void;
+  onThemeChanged(handler: (theme: 'dark' | 'light') => void): () => void;
+  startStream(args: string[], streamId: string): Promise<boolean>;
+  cancelStream(streamId: string): Promise<boolean>;
+  onStreamData(streamId: string, handler: (chunk: string) => void): () => void;
+  onStreamClose(streamId: string, handler: (code: number) => void): () => void;
+  onStreamError(streamId: string, handler: (err: string) => void): () => void;
+
+  // Real-time proxy error fan-out (see preload.ts). The renderer receives a
+  // payload from src/proxy.ts:buildProxyErrorPayload() and renders the
+  // matching native quota/error card via NativeQuotaCardRenderer.
+  onProxyError(handler: (payload: {
+    traceId: string;
+    provider: string;
+    status?: number;
+    errorType: string;
+    rawError: string;
+    title: string;
+    message: string;
+    suggestions: string[];
+    actionUrl?: string;
+  }) => void): () => void;
+
+  // Network Utils
+  getLocalIp: () => Promise<string>;
+  generateQr: (text: string) => Promise<string>;
+  startDaemon: (options: { port: number; tunnel: string; token: string; allowFirstAdmin?: boolean }) => Promise<any>;
+  stopDaemon: () => Promise<any>;
+  getDaemonStatus: (port?: number, token?: string) => Promise<any>;
+  onDaemonLog: (callback: (data: string) => void) => () => void;
+
+  // Antigravity lifecycle
+  antigravityStatus(): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  antigravityVersion(): Promise<{ ok: boolean; data?: { version: string }; error?: string }>;
+  antigravityLaunch(): Promise<{ ok: boolean; data?: { ok: boolean; pid?: number; message: string }; error?: string }>;
+  antigravityKill(): Promise<{ ok: boolean; data?: { killed: number; message: string }; error?: string }>;
+  antigravityRestart(): Promise<{ ok: boolean; data?: { ok: boolean; message: string; pid?: number }; error?: string }>;
+  antigravityLaunchLogs(): Promise<string | null>;
+  antigravityCpuOptStatus(): Promise<{ ok: boolean; data?: any; error?: string }>;
+  antigravityCpuOptApply(): Promise<{ ok: boolean; data?: any; error?: string }>;
+  antigravityCpuOptRevert(): Promise<{ ok: boolean; data?: any; error?: string }>;
+  repairRun(): Promise<{ ok: boolean; proxy?: boolean; ca?: boolean; error?: string }>;
+
+  // Proxy stub lifecycle — emergency fallback when Antigravity's bundled proxy fails
+  proxyStartStub(): Promise<{ ok: boolean; pid?: number; port?: number; note?: string; error?: string }>;
+  proxyStubStatus(): Promise<{ ok: boolean; data?: { ok: boolean; stub: boolean; latencyMs: number; error?: string }; error?: string }>;
+
+  // OAuth Interception & Model Ping-Pong
+  onOAuthIntercepted(handler: (data: { url: string; port?: string; redirectUri?: string; ts?: number }) => void): () => void;
+  modelPingPong(params: { modelId: string; providerId?: string; prompt?: string }): Promise<{
+    ok: boolean;
+    status: number;
+    latencyMs: number;
+    pongText?: string;
+    error?: string;
+  }>;
+  getRealTokenStats(): Promise<{
+    ok: boolean;
+    data?: {
+      totalConversations: number;
+      totalSteps: number;
+      estimatedLifetimeTokens: number;
+      peakTokensDay: { day: string; steps: number; tokens: number };
+      longestTaskSteps: number;
+      currentStreakDays: number;
+      longestStreakDays: number;
+      activityByDay: Array<{ day: string; convs: number; steps: number; estimatedTokens: number }>;
+      accountsInPool: number;
+      modelsDistribution: Array<{ model: string; count: number; pct: number }>;
+      sessions?: Array<{
+        id: string;
+        title: string;
+        timestamp: number;
+        provider: string;
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+        latencyMs: number;
+        tokensPerSec: number;
+        estimatedCost: number;
+        status: number;
+        endpoint: string;
+      }>;
+    };
+    error?: string;
+  }>;
+
+  // Antigravity Verification & Challenge Resolver
+  verification?: {
+    detect(): Promise<{
+      found: boolean;
+      validationUrl?: string;
+      qrCodeDataUrl?: string;
+      logFile?: string;
+      timestamp?: string;
+      accountEmail?: string;
+      reason?: string;
+      message?: string;
+      carrierWarning?: string;
+      error?: string;
+    }>;
+    openUrl(url: string): Promise<{ success: boolean; error?: string }>;
+    resetOnboarding(): Promise<{ success: boolean; message: string; error?: string }>;
+  };
+
+  // Auto-Update
+  updater?: {
+    check(channel?: 'stable' | 'beta'): Promise<{
+      hasUpdate: boolean;
+      currentVersion: string;
+      latestVersion: string;
+      releaseNotes: string;
+      publishedAt: string;
+      downloadUrl: string;
+      assetName?: string;
+      assetSize?: number;
+      channel: 'stable' | 'beta';
+      isPrerelease: boolean;
+    }>;
+    download(downloadUrl?: string): Promise<{ success: boolean; filePath?: string; error?: string }>;
+    install(filePath?: string, silent?: boolean): Promise<{ success: boolean; error?: string }>;
+    getSettings(): Promise<{
+      autoCheck: boolean;
+      lastCheckTime: number;
+      checkIntervalHours: number;
+      channel: 'stable' | 'beta';
+      repo: string;
+    }>;
+    saveSettings(settings: any): Promise<{
+      autoCheck: boolean;
+      lastCheckTime: number;
+      checkIntervalHours: number;
+      channel: 'stable' | 'beta';
+      repo: string;
+    }>;
+    onUpdateAvailable(handler: (info: any) => void): () => void;
+    onProgress(handler: (progress: { percent: number; transferred: number; total: number }) => void): () => void;
+    openReleasePage?(url: string): Promise<{ success: boolean; error?: string }>;
+  };
+}
+
+interface Window {
+  ag: AgAPI;
+}
+
+// Real-time proxy error bridge — defined in native-quota-card.ts.
+declare function startProxyErrorBridge(): () => void;
+
+// Auto-Update trigger — defined in update-notification.ts.
+declare function triggerUpdateCheck(manual?: boolean): Promise<void>;
+
+// NOTE: SmartBannerManager is declared as a top-level class in
+// src/renderer/smart-banner.ts (script-mode → global). We intentionally do
+// NOT redeclare it here to avoid TS2300 "Duplicate identifier" when both
+// files are compiled together. Consumers that need the type can refer to
+// it directly from smart-banner.ts via a triple-slash reference or import.

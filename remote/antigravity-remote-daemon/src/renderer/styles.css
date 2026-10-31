@@ -1,0 +1,408 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Antigravity Remote Daemon — Dedicated 1-Page Design System
+   IDE-grade dark theme · Blue accent · Ultra-clean glassmorphism
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --bg-0: #09090b;
+  --bg-1: #121215;
+  --bg-2: #1c1c21;
+  --bg-3: #27272f;
+  --bg-hover: #2e2e38;
+
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+
+  --accent-blue: #38bdf8;
+  --accent-blue-dim: rgba(56, 189, 248, 0.15);
+  --accent-primary: #2563eb;
+  --accent-primary-hover: #1d4ed8;
+
+  --ok: #22c55e;
+  --ok-bg: rgba(34, 197, 94, 0.15);
+  --err: #ef4444;
+  --err-bg: rgba(239, 68, 68, 0.15);
+  --warn: #eab308;
+
+  --text-0: #fafafa;
+  --text-1: #e4e4e7;
+  --text-2: #a1a1aa;
+  --text-3: #71717a;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, Menlo, Monaco, Consolas, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+body {
+  background-color: var(--bg-0);
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.app-header {
+  height: 68px;
+  padding: 0 24px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.header-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-blue);
+}
+
+.header-titles h1 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-0);
+  letter-spacing: -0.01em;
+}
+
+.header-titles p {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Main Container */
+.main-content {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+}
+
+@media (max-width: 860px) {
+  .main-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Cards */
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-0);
+  margin-bottom: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Form inputs */
+.form-group {
+  margin-bottom: 14px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+
+.input, .select {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-size: 13px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.15s, background-color 0.15s;
+  font-family: inherit;
+}
+
+.input:focus, .select:focus {
+  border-color: var(--accent-blue);
+  background: var(--bg-3);
+}
+
+.input::placeholder {
+  color: var(--text-3);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.btn-primary {
+  background: var(--accent-primary);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.btn-primary:hover {
+  background: var(--accent-primary-hover);
+}
+
+.btn-danger {
+  background: #dc2626 !important;
+  color: #fff !important;
+  border-color: #ef4444 !important;
+}
+
+.btn-danger:hover {
+  background: #b91c1c !important;
+}
+
+.btn-ghost {
+  background: var(--bg-2);
+  border-color: var(--border);
+  color: var(--text-1);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+  color: var(--text-0);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Checkbox container */
+.checkbox-card {
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-top: 14px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-0);
+}
+
+.checkbox-label input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.checkbox-desc {
+  font-size: 11.5px;
+  color: var(--text-2);
+  margin-top: 4px;
+  margin-left: 26px;
+  line-height: 1.4;
+}
+
+/* Telemetry stats */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.stat-box {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.stat-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-0);
+  margin-top: 2px;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.badge-offline {
+  background: var(--bg-3);
+  color: var(--text-3);
+}
+
+.badge-online {
+  background: var(--ok-bg);
+  color: var(--ok);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+/* Console */
+.console-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.console-area {
+  width: 100%;
+  min-height: 180px;
+  flex: 1;
+  background: #000;
+  color: #22c55e;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  resize: none;
+  outline: none;
+  user-select: text;
+}
+
+/* QR Code Section */
+.qr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 20px;
+}
+
+.qr-box {
+  background: #ffffff;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qr-placeholder {
+  width: 220px;
+  height: 220px;
+  background: var(--bg-2);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-3);
+}
+
+.qr-status {
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  word-break: break-all;
+}
+
+/* PIN Card */
+.pin-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px;
+}
+
+.pin-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+}
+
+.pin-number {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  font-family: var(--font-mono);
+  color: var(--accent-blue);
+  margin: 10px 0;
+}
+
+.pin-hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+}

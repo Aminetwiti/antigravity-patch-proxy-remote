@@ -1,0 +1,187 @@
+# Changelog
+
+All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
+
+## [3.8.1] - 2026-10-27 (Experiments Engine, Token Management & Intelligent Updater)
+
+### Added
+- **Experiments Payload & Enterprise Capabilities Auto-Bootstrap**: Added custom flag overrides and internal capabilities injection (enrichExperimentsPayload) in rendererHook.js and proxy.ts.
+- **Intelligent Update Asset Matching**: Automatic detection and matching between Portable and Setup installer executables based on active execution mode in updateService.
+- **EBUSY Lock Prevention**: Atomic temp file staging and release guards during background update asset downloads.
+- **Enhanced Token & Stream Handling**: Thought signature metadata purge on cleanup, model-level stream ID retention in Anthropic translator, and revoked refresh token TTL cache with automated reactivation in Google Auth.
+
+### Changed
+- Bumped project release version to v3.8.1 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
+## [3.8.0] - 2026-10-21 (Automated Onboarding, Challenge Dashboard & Pool Hardening)
+
+### Added
+- **Automated Onboarding & Challenge Dashboard**: Embedded OAuth server and diagnostic challenge visualizer (challenges.html) for multi-account validation and quota verification.
+- **Account Eligibility & Cooldown Recovery**: Hardened Google account candidate selection, quota exhaustion checks, and unlicensed account synchronization.
+- **Patch 2.25 Engine Support**: Added dedicated binary patch routines and runtime adapters for Antigravity 2.25.
+
+### Changed
+- Bumped project release version to v3.8.0 across core components.
+
+---
+
+## [3.7.5] - 2026-10-19 (Token Tracker Calendar Filters, Cluster Failover Resilience & UI Modernization)
+
+### Added
+- **Token Tracker Calendar Date Range Filtering**: Preset date ranges (Today, Yesterday, 24h, 7d, 30d, This Month, Last Month, 7m, This Year) and custom start/end date selectors with dynamic filtering and filtered CSV / JSON export in `ag-doctor-ui`.
+- **Google Account Pool Cluster Failover Resilience**: Combined outage tracking across consecutive 503 capacity exhausts and 504 gateway timeouts to trigger fast failovers; extended timeout cooldown to 120s; safe socket cleanup on preflight timeout.
+- **Weekly Reset Time Parsing & Isolation**: Dedicated `weeklyResetMs` classification in Google Cloud Code 429 decisions to preserve the 5-hour rolling cooldown window.
+- **Session Management & Device Randomization**: Interactive unstick session routines, dual summary synchronization, and randomized device telemetry identifiers.
+
+### Changed
+- Bumped project release version to v3.7.5 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
+## [3.7.4] - 2026-10-15 (Gemini Next-Gen Models, Native Zero-Fallback & Quota Token Engine)
+
+### Added
+- **Next-Gen Gemini Model Support**: Added dynamic support and full test suite validation for `gemini-4-argon-medium` and `gemini-3.8-flash`.
+- **Zero-Fallback Native Model Protection**: Hardened native model error interception across all native Gemini models, preventing accidental fallback cascades when native models are explicitly targeted.
+- **Accurate Token Quota Calculations**: Calibrated 5-hour rolling window and weekly token capacities (Gemini: 250M 5h / ~1.92B weekly; Claude: 10M 5h / 20M weekly) with real-time available and consumed token tracking in `ag-doctor-ui`.
+- **Subword BPE-like Tokenizer**: Multi-vocabulary tokenizer modeling 256k Gemini vocabulary, Claude 65k-100k, operators, contractions, whitespace, and camelCase splits with zero external dependencies.
+- **Enhanced Log Filtering**: Faceted search with level normalization (`lvl:err`, `lvl:warning`) and subsystem tag matching in `log-viewer`.
+
+### Changed
+- **Proxy Resilience**: Extended pool response header timeout to 120s and normalized Cloud Code upstream host routing (`daily-cloudcode-pa.googleapis.com`).
+- **WSL Resilience**: Silenced command timeouts and log spam when WSL is uninstalled on Windows hosts.
+- Bumped project release version to v3.7.4 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
+## [3.7.3] - 2026-10-10 (Smart Pool Scaling, Quota Cache Merging & Health Optimization)
+
+### Added
+- **Google Account Quota Merging & Stale Quota Guard**: Atomic merge for quota caches, stale data protection preventing premature cooldown clearance, and live quota refresh reconciliation.
+- **P2C Selection & Latency Penalty Hardening**: Filter zero-score accounts when positive scoring accounts are available; scaled latency penalties up to 70 points for slow accounts (>7.5s) and applied dynamic cooldowns on gateway timeouts.
+- **Resilient Pool Fast-Fail**: Only fast-fail consecutive quota exhausted accounts when no remaining healthy accounts with positive quota exist.
+
+### Changed
+- Bumped project release version to v3.7.3 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
+## [3.7.2] - 2026-10-09 (Security Hardening, UI Streamlining & Stability Release)
+
+### Added
+- **Strict Host Header & DNS Rebinding Security Tests**: Added `src/__tests__/securityRemediations.test.ts` verifying protection against DNS rebinding, origin validation, and host spoofing.
+- **ag-doctor-ui Logging Resilience**: Cleaned process logging fallbacks in `proxy-manager.ts` to ensure decoupled execution across portable electron runners.
+
+### Changed
+- Bumped project release version to v3.7.2 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+- Refreshed documentation, badges, and release assets.
+
+---
+
+## [3.7.1] - 2026-10-09 (Critical Security Hotfix)
+
+### Security Advisory
+- **Eradication of Supply-Chain Backdoor (Issue #22)**:
+  - Completely removed malicious loader file disguised as a font (`remote/mobile/android/app/src/main/kotlin/com/antigravity/remote/mobile/public/fonts/fa-solid-900.woff2`, SHA-256 `048f883f8e4a67a8a319091c88dfe19de7f9e8c70129a3e03e3571e56b841457`) and all associated decoy font files.
+  - Deleted `.vscode/tasks.json` which configured a hidden `eslint-check` shell task executing the backdoor on `folderOpen`.
+  - Sanitized `eslint.config.mjs` by removing the stealth secondary obfuscated payload appended to the configuration exports and the CommonJS `createRequire` harness.
+  - Sanitized `.vscode/settings.json` by removing `task.allowAutomaticTasks: true` and the automated `npm run lint` on `folderOpen` block.
+  - Verified zero network connections to C2 IP (`91.218.183.174`) and zero persistent processes.
+- **Remediation Recommendation**:
+  - Any user who opened the workspace on commits `d6ad1c8` through `662e5a4` should terminate any unauthorized `node` or `python3` processes, pull `v3.7.1`, or delete any local `.vscode/tasks.json` carrying `runOn: "folderOpen"`.
+
+---
+
+## [3.7.0] - 2026-10-09 (Unified Sanitization, Quota Cascade & Public Release)
+
+### Added
+- **Repository Security Hardening**: Dynamic obfuscation and masking for OAuth client tokens, full elimination of raw secrets from repository commits and push scanning.
+- **Cross-Platform Test Fixtures**: Self-contained synthetic model fixtures for unified deduplication tests in CI/CD across Linux, Windows, and macOS runners.
+- **Mobile Companion Resilience**: Path normalization fixes for percent-encoded workspace URLs and long Windows path aliases.
+
+### Changed
+- Bumped project release version to v3.7.0 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
+## [3.6.1] - 2026-09-21 (Smart Account Pooling & Live Quotas)
+
+### Added
+- **Smart Google Account Pooling & P2C**: Power of Two Choices candidate selection with dynamic scoring, real-time in-flight concurrency tracking (20-point penalty per active request), and 60s sliding window RPM governor.
+- **Intelligent 429 Classification (OmniRoute Parity)**: 4-tier error classification (soft rate limit, RPM limit, quota exhausted, unknown) with adaptive cooldowns and fast-fail recovery.
+- **Local Credential & Account Discovery**: Automatic extraction and import of local Google Antigravity IDE credentials and accounts.
+- **Live Quota Polling & Telemetry**: Background polling of quota summaries every 3 minutes and `/pool-status` endpoint for live observability.
+
+### Changed
+- Bumped project release version to v3.6.1 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
+## [3.6.0] - 2026-09-21 (Remote Agent Runtime & Quality Consolidation)
+
+### Added
+- **Remote Agent Cloud Runtime Integration**: Consolidated Go remote daemon (`ag-agentd`) with automated process discovery, CSRF watchdog, WebSocket multiplexing, and StepRecovery.
+- **Flutter Mobile Companion Updates**: Turn navigation FAB, live session trajectory streaming, and full unit/widget verification across 755 tests.
+- **Enhanced Patch Proxy & Test Guard**: Consolidated version patch resolution for Antigravity versions up to 2.15.x, robust test suites adhering to test-guard principles, and full local CI verification.
+
+### Changed
+- Bumped project release version to v3.6.0 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
+
+## [3.5.0] - 2026-09-10 (Desktop Patch Proxy & IDE Integration)
+
+### Added
+- **Antigravity IDE (VS Code Platform Fork v1.107.0+) Support**: Integrated autonomous background proxy starter hook in `main.js` and `jetski.cloudCodeUrl` override alongside classic Antigravity 2.0 Electron binary patching.
+- **In-Stream Model Auto-Fallback**: Emits inline markdown warning notices (`> ⚠️ Auto-fallback: <model-1> failed... Retrying with <model-2>`) into active chat streams on 429 rate-limit or upstream timeouts without breaking session context.
+- **ag-doctor CLI & UI Suite**: 26 diagnostic and maintenance subcommands including `models rekey` (re-encrypting language server v10 keys), `repair-asar`, `check-asar`, live traffic inspection, and error scenario simulation.
+- **Zero-Config Windows Auto-Heal**: Automatic backup restoration and binary re-patching across official Antigravity updates via `scripts/auto-heal.ps1` and `scripts/supervise-daemon.ps1`.
+- **Extended Provider Matrix**: Full streaming and function calling support across 19+ providers (Claude 3.5 Sonnet, GPT-4o, DeepSeek R1 / V3, Ollama, LM Studio, OpenRouter, Google AI Studio).
+
+### Changed
+- Default request body limit configured to 100 MB (`DEFAULT_MAX_BODY_SIZE`) to accommodate complex multimodal and long-context trajectories.
+- Hardened key storage using Electron `safeStorage` (AES-256-GCM) with automatic migration from plaintext legacy configs.
+
+---
+
+## [2.0.0] - 2026-09-08 (Antigravity Remote Agent Cloud Runtime `ag-agentd`)
+
+### Added
+- **Pure Static Linux & Windows Binaries**: Cross-compiled standalone executables for Linux AMD64, Linux ARM64, and Windows AMD64 using pure Go SQLite (`modernc.org/sqlite`) with zero dynamic dependencies.
+- **Strict Docker Container Sandbox**: Ephemeral container execution with dropped capabilities (`ALL`), read-only root filesystems, memory ceilings (512MB), and zero network egress (`NetworkMode: "none"`).
+- **Fail-Closed Security**: Strictly denies host fallback execution if the container runtime is unreachable (`ErrSandboxUnavailable`).
+- **Persistent PTY Sessions**: Interactive terminal sessions survive client disconnects; re-attaching clients automatically receive scrollback buffers.
+- **Comprehensive SSRF Defense**: Strict socket-level IP address validation for outbound HTTP tools and webhooks, rejecting loopback, RFC1918 subnets, cloud metadata IPs, and evasive IP notations.
+- **Multi-Turn Git Worktrees**: Full branch isolation, real-time Git diff tracking, atomic commits, and disk integrity verification.
+- **Embedded Web Console**: Self-contained Single-Page Application (SPA) served at `/console` and `/` without third-party CDN dependencies.
+- **Role-Based Access Control (RBAC)**: Enforced permission checking (`admin`, `user`, `readonly`) on all session, workspace, commit, approval, and MCP tool execution endpoints.
+- **Automated Secrets Redaction**: Trajectory export endpoint (`GET /v2/sessions/export`) and terminal logs scrub API keys, bearer tokens, and connection strings.
+- **Systemd Hardening**: Automated Linux installer provisioning non-root service user `ag-agent` with strict filesystem, kernel, and capability protections.
+
+### Changed
+- Refactored server runtime into modular REST and WebSocket architecture under `pkg/server/`.
+- Default network binding restricted to `127.0.0.1:8090`; public exposure requires explicit `--allow-public-bind`.
+- Upgraded SQLite event store to enforce Write-Ahead Logging (`wal`) mode with synchronous=NORMAL.
+
+### Fixed
+- Prevented silent fallback from Docker sandbox to host command execution (BLK-01).
+- Eliminated SSRF vulnerabilities in `fetch_web_page` and webhook dispatchers (BLK-02).
+- Resolved terminal subprocess termination upon client WebSocket disconnection (HIGH-01).
+- Prevented rate limiter bypass via spoofed `X-Forwarded-For` headers by enforcing `AG_TRUSTED_PROXIES` (HIGH-02).
+- Sanitized sensitive API credentials in session export post-mortems (HIGH-04).
+- Fixed Docker group permission requirement in automated VPS installer (HIGH-05).
+- Eliminated command-line credential exposure in systemd process arguments by adding native `AG_AUTH_TOKEN` environment variable resolution and stripping `--auth-token` from CLI invocation (`INC-2026-0908-SYSTEMD-TOKEN-LEAK`).
+- Resolved multi-user IDOR access gaps and privilege escalations on workspace, session, terminal, and approval endpoints.
+
+### Verified & Deployed (Phase 19 & 20)
+- **Real External Cloud VPS Deployment**: Verified live on Ubuntu 24.04 LTS (external Linux VPS host) under systemd supervision with zero secret leakage in `/proc/<PID>/cmdline` or `ps aux`.
+- **Public Ingress & Remote Access**: Automated Cloudflare Quick Tunnel TLS bridge tested end-to-end for both Web Console (`/console`) and Mobile WebSockets (`/v2/ws`).
+- **Disaster Recovery & SQLite Durability**: Online hot point-in-time SQLite snapshot validated with catastrophic state wipe and restore (RTO: 47s, 0 data loss, `PRAGMA integrity_check = ok`).
+- **Physical Mobile Companion**: Built Android APK with Impeller Vulkan engine, installed and verified on Samsung Galaxy S21 FE 5G (`SM G990B2`).
+
+### Known Limitations
+- **Single-Tenant VPS Target**: Designed and certified for private VPS or single-tenant cloud hosts. Multi-tenant public SaaS hosting untrusted external users on a shared Docker socket is not supported.
+- **Static Multi-User Provisioning**: Multi-user RBAC is enforced in code, but dynamic creation of secondary user tokens via REST API (`POST /v2/users`) is deferred to v2.1.
+

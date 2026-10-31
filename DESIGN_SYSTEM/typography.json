@@ -1,0 +1,62 @@
+{
+  "fontFamilies": {
+    "systemUi": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    "googleSans": "\"Google Sans Flex\", \"Google Sans\", Arial, sans-serif",
+    "mono": "\"Google Sans Mono\", \"Roboto Mono\", Consolas, monospace",
+    "_source": "DESIGN.md: L28 & loadingOverlay.js: L23 & remote/mobile/design.md: L116-118"
+  },
+  "weights": {
+    "regular": 400,
+    "medium": 500,
+    "semibold": 600,
+    "bold": 700
+  },
+  "scales": {
+    "heading": {
+      "size": "18px",
+      "weight": 600,
+      "lineHeight": 1.2,
+      "purpose": "Modal titles, top level headers"
+    },
+    "title": {
+      "size": "14px",
+      "weight": 500,
+      "lineHeight": 1.3,
+      "purpose": "Section headings, model names"
+    },
+    "body": {
+      "size": "13px",
+      "weight": 400,
+      "lineHeight": 1.4,
+      "purpose": "Default UI copy, descriptions, subtitles"
+    },
+    "bodyMobile": {
+      "size": "14px",
+      "weight": 400,
+      "lineHeight": 1.5,
+      "purpose": "Mobile conversational copy"
+    },
+    "label": {
+      "size": "10px",
+      "weight": 600,
+      "lineHeight": 1.4,
+      "letterSpacing": "0.5px",
+      "textTransform": "uppercase",
+      "purpose": "Badges, provider tags"
+    },
+    "caption": {
+      "size": "11px",
+      "weight": 400,
+      "lineHeight": 1.4,
+      "purpose": "Timestamps, secondary telemetry"
+    },
+    "code": {
+      "size": "13px",
+      "weight": 400,
+      "lineHeight": 1.55,
+      "fontFamily": "mono",
+      "purpose": "Code blocks, terminal logs, inline snippets"
+    }
+  },
+  "_source": "DESIGN.md: L26-47 & remote/mobile/design.md: L128-158"
+}

@@ -1,0 +1,403 @@
+syntax = "proto3";
+
+package antigravity.remote.v1;
+
+option go_package = "github.com/antigravity/remote-daemon/pkg/proto/v1;remotepb";
+
+// ============================================================================
+// Remote Daemon — protocole fil « wire truth » (documentation de contrat)
+// ============================================================================
+//
+// Ce fichier est la CONTRAT DOCUMENTAIRE du protocole réellement échangé entre
+// le mobile (Flutter) et le daemon Go (WebSocket JSON), lui-même traduit vers
+// les RPC ConnectRPC du Language Server Antigravity.
+//
+// IMPORTANT : le transport n'est PAS protobuf — c'est du JSON sur WebSocket
+// (messages de la forme {"type": "...", "requestId": "...", ...}). Ce fichier
+// sert de spécification stable et lisible des types/événements : il n'est pas
+// compilé (décision : documentation seule, pas de code généré).
+//
+// Conventions :
+//   - In : message mobile → daemon (champ "type" du JSON).
+//   - Out : message daemon → mobile (champ "type" du JSON).
+//   - Unary : réponse ciblée {"type":"response","requestId":<id>} au client
+//     demandeur UNIQUEMENT.
+//   - Broadcast : événement poussé à TOUS les clients connectés.
+//
+// Références d'implémentation :
+//   - daemon : remote/daemon/pkg/gateway/websocket.go (switch handleMessage)
+//   - mobile : remote/mobile/lib/core/protocol/daemon_api.dart
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Messages mobile → daemon (requêtes unary + streams)
+// ---------------------------------------------------------------------------
+
+// In : ping — heartbeat applicatif. Réponse unary {"type":"pong"}.
+message PingRequest {
+  int64 timestamp_ms = 1;
+}
+
+// In : heartbeat — vérifie que le daemon et son LS sont vivants.
+// Réponse unary {"type":"response","data":{"status":"ok"}}.
+message HeartbeatRequest {}
+
+// In : create_cascade — crée une session de travail (cascade) dans un
+// workspace. Si le workspace est inconnu du hub, le daemon le déclare via
+// AddTrackedWorkspace avant StartCascade (technique Deck : ensureWorkspaceTracked).
+// Réponse unary avec {"cascadeId": "..."}.
+message CreateCascadeRequest {
+  string workspace_uri = 1;      // URI file:/// absolue du workspace
+  string project_id = 2;         // optionnel : projectID résolu depuis list_sessions
+  string model_uid = 3;          // optionnel : requested_model_uid
+  uint64 model_enum = 4;         // repli historique : requested_model_id
+}
+
+// In : send_command — exécute une slash commande dans le LS.
+// Réponse unary.
+message SendCommandRequest {
+  string command = 1;            // ex. "/doctor"
+}
+
+// In : send_prompt — envoie un prompt à une cascade (streaming long 120 s).
+// Événements : stream_start → stream_delta* → stream_end.
+// Peut porter noTools (planner_mode 3 = NO_TOOL côté LS).
+message SendPromptRequest {
+  string cascade_id = 1;
+  string prompt = 2;
+  string model_uid = 3;          // optionnel
+  uint64 model_enum = 4;         // optionnel
+  bool no_tools = 5;
+  string request_id = 6;         // idempotence (C1) : un requestId déjà traité est ignoré
+}
+
+// In : cancel_generation / stop_generation — interrompt une cascade active.
+// Broadcast stream_end(cancelled).
+message CancelGenerationRequest {
+  string cascade_id = 1;
+}
+
+// In : submit_approval — décision utilisateur sur une approbation d'outil
+// (run_command, file_permission, permission, generic). Garde de fraîcheur :
+// une approbation expirée est refusée.
+message SubmitApprovalRequest {
+  string cascade_id = 1;
+  string call_id = 2;            // identifiant de l'appel d'outil
+  string trajectory_id = 3;      // corrélation (trajectory_id du stream)
+  int64 step_index = 4;          // corrélation (step_index du stream)
+  string approval_type = 5;      // run_command | file_permission | permission | ...
+  bool decision = 6;             // true = allow, false = deny
+  string scope = 7;              // session (B3 : toujours autoriser pour cette session)
+  string deny_reason = 8;        // instruction libre après un refus (run_command uniquement)
+}
+
+// In : get_pending_approval — re-fetch du contexte d'une approbation en attente
+// (tap notification). null si aucune/expirée.
+message GetPendingApprovalRequest {
+  string cascade_id = 1;
+}
+
+// In : submit_question_response — réponse utilisateur à une question posée par
+// l'agent (choix multiples / réponse libre). Fire-and-forget (pas de réponse).
+message SubmitQuestionResponseRequest {
+  string cascade_id = 1;
+  string call_id = 2;
+  repeated string selected_answers = 3;
+  string custom_answer = 4;
+}
+
+// In : list_sessions — liste les sessions (GetAllCascades, ~9,5 s au hub,
+// cache 5 s + single-flight côté daemon). Réponse unary broadcastée en
+// sync_catchup au client demandeur.
+message ListSessionsRequest {
+  bool refresh = 1;              // force le re-fetch au-delà du cache TTL
+}
+
+// In : sync_session — rejoue les événements récents d'une cascade après
+// reconnexion (StepRecovery buffer). Réponse sync_catchup.
+message SyncSessionRequest {
+  string cascade_id = 1;
+  int64 last_step_index = 2;     // reprendre après ce step
+}
+
+// In : get_session_history — historique structuré (GetCascadeTrajectory).
+message GetSessionHistoryRequest {
+  string cascade_id = 1;
+}
+
+// In : get_trajectory — trajectoire détaillée d'une session (verbosity 3 =
+// FULL). Réponse unary {"steps": [...], "numTotalSteps": N}.
+message GetTrajectoryRequest {
+  string cascade_id = 1;
+  uint64 verbosity = 2;          // défaut 3 (ClientTrajectoryVerbosity.FULL)
+}
+
+// In : get_turn_diff — diff d'un tour précis (GetTurnDiff).
+message GetTurnDiffRequest {
+  string conversation_id = 1;
+  int64 step_index = 2;
+}
+
+// In : get_revert_preview / cascade.get_revert_preview — aperçu du revert.
+message GetRevertPreviewRequest {
+  string cascade_id = 1;
+  int64 step_index = 2;
+}
+
+// In : revert_to_step / cascade.revert_to_step — revert d'une session.
+message RevertToStepRequest {
+  string cascade_id = 1;
+  int64 step_index = 2;
+}
+
+// In : send_steps_to_background / cascade.send_to_background.
+message SendStepsToBackgroundRequest {
+  string conversation_id = 1;
+  repeated int64 step_indices = 2;
+}
+
+// In : skip_browser_subagent / cascade.skip_subagent.
+message SkipBrowserSubagentRequest {
+  string cascade_id = 1;
+  int64 step_index = 2;
+}
+
+// In : delete_cascade — supprime une session (exige confirm=true après dialog).
+// Purge tout l'état local (buffer, approbations, streams).
+message DeleteCascadeRequest {
+  string cascade_id = 1;
+  bool confirm = 2;
+}
+
+// In : upload_media / upload_image — pièce jointe (base64) pour le prochain prompt.
+message UploadMediaRequest {
+  string cascade_id = 1;
+  string base64_data = 2;
+  string file_name = 3;
+  string mime_type = 4;
+}
+
+// In : search_files — recherche dans le workspace (noms + contenu, ≤ 2 Mo,
+// exclusions .git/node_modules/build/dist/.dart_tool, anti-symlink).
+message SearchFilesRequest {
+  string query = 1;
+  int32 max_results = 2;
+}
+
+// In : list_files — arbre de fichiers (profondeur bornée 8).
+message ListFilesRequest {}
+
+// In : read_file — lecture d'un fichier (confine sous la racine workspace).
+message ReadFileRequest {
+  string file_path = 1;
+}
+
+// In : write_file — écriture d'un fichier (base64 JSON → bytes ; overwrite
+// requis si le fichier existe).
+message WriteFileRequest {
+  string file_path = 1;
+  string content = 2;            // base64
+  bool overwrite = 3;
+}
+
+// In : get_context — contexte de la cascade (fichiers ouverts, etc.).
+message GetContextRequest {
+  string cascade_id = 1;
+}
+
+// In : get_subagents — sous-agents actifs de la cascade.
+message GetSubagentsRequest {
+  string cascade_id = 1;
+}
+
+// In : list_models — modèles disponibles (ListModels).
+message ListModelsRequest {}
+
+// In : list_git_branches — branches Git du workspace.
+message ListGitBranchesRequest {}
+
+// In : list_git_worktrees — worktrees Git du workspace.
+message ListGitWorktreesRequest {}
+
+// In : create_worktree / workspace.create_worktree.
+message CreateWorktreeRequest {
+  string branch = 1;
+  string path = 2;
+}
+
+// In : get_lint_errors / lsp.get_lint_errors — diagnostics LSP d'un fichier.
+message GetLintErrorsRequest {
+  string file_path = 1;
+}
+
+// In : get_definition / lsp.get_definition — définition LSP (position).
+message GetDefinitionRequest {
+  string file_path = 1;
+  int32 line = 2;
+  int32 character = 3;
+}
+
+// In : get_code_validation / lsp.get_code_validation.
+message GetCodeValidationRequest {
+  string file_path = 1;
+}
+
+// In : get_quota_summary / system.get_quota_summary — quotas utilisateur.
+message GetQuotaSummaryRequest {}
+
+// In : get_user_status / user.get_status — statut utilisateur du hub.
+message GetUserStatusRequest {}
+
+// In : get_model_statuses / models.get_statuses.
+message GetModelStatusesRequest {}
+
+// In : generate_commit_message / workspace.generate_commit_message.
+message GenerateCommitMessageRequest {}
+
+// In : export_markdown / trajectory.export_markdown — export local d'une session.
+message ExportMarkdownRequest {
+  string cascade_id = 1;
+}
+
+// In : export_jsonl / trajectory.export_jsonl.
+message ExportJsonlRequest {
+  string cascade_id = 1;
+}
+
+// In : call_mcp_tool / connect_mcp_server / refresh_mcp_oauth_token /
+//      list_mcp_servers — relayés vers le proxy Antigravity desktop
+//      (127.0.0.1:51074), seul détenteur des jetons OAuth MCP.
+message McpActionRequest {
+  string server_name = 1;
+  string tool_name = 2;
+  map<string, string> arguments = 3;
+  string endpoint = 4;
+  string grant_type = 5;
+}
+
+// In : terminal_create / terminal_write / terminal_kill — sessions shell
+// interactives (PTY maison, pas les RPC natifs du LS).
+message TerminalCreateRequest {
+  string workspace_uri = 1;
+}
+
+message TerminalWriteRequest {
+  string terminal_id = 1;
+  string input = 2;
+}
+
+message TerminalKillRequest {
+  string terminal_id = 1;
+}
+
+// In : list_scheduled_tasks / schedule_task / update_scheduled_task /
+//      trigger_scheduled_task / cancel_scheduled_task — cron jobs daemon.
+message ScheduledTaskRequest {
+  string task_id = 1;
+  string name = 2;
+  string prompt = 3;
+  string workspace_name = 4;
+  string cron_expression = 5;
+  int32 duration_seconds = 6;
+  bool is_daemon = 7;
+}
+
+// In : set_approval_timeout — délai d'auto-refus des approbations (0 = off).
+message SetApprovalTimeoutRequest {
+  int32 seconds = 1;
+}
+
+// In : set_auto_accept — auto-approbation des outils read-only.
+message SetAutoAcceptRequest {
+  bool enabled = 1;
+}
+
+// In : set_no_tools — mode global « répondre sans outils ».
+message SetNoToolsRequest {
+  bool enabled = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Messages daemon → mobile (réponses unary + événements broadcast)
+// ---------------------------------------------------------------------------
+
+// Out : response — réponse unary au client DEMANDEUR uniquement (jamais
+// broadcast, corrélation par requestId).
+message UnaryResponse {
+  string request_id = 1;
+  string error = 2;              // absent si succès
+  bytes data = 3;                // JSON opaque (ou protobuf dé-frammé)
+}
+
+// Out : error — type inconnu / paramètre manquant.
+message ErrorEvent {
+  string request_id = 1;
+  string error = 2;
+}
+
+// Out : stream_start — début d'un tour (send_prompt accepté).
+message StreamStartEvent {
+  string request_id = 1;
+  string cascade_id = 2;
+}
+
+// Out : stream_delta — delta de texte/événement d'un tour en cours.
+// data.delta = texte ; data.event = event_parser.go (tool_call, approval…).
+message StreamDeltaEvent {
+  string request_id = 1;
+  string cascade_id = 2;
+  string delta = 3;              // texte incrémental
+  string event = 4;              // JSON du détail événementiel (optionnel)
+}
+
+// Out : approval_pending — approbation d'outil en attente (push dédié B2,
+// avec contexte : commande, chemin, expiration).
+message ApprovalPendingEvent {
+  string cascade_id = 1;
+  string call_id = 2;
+  string trajectory_id = 3;
+  int64 step_index = 4;
+  string approval_type = 5;
+  string command = 6;
+  int64 expires_at_ms = 7;       // 0 = pas d'expiration
+}
+
+// Out : approval_expired — l'approbation n'a pas reçu de réponse à temps
+// (auto-refus, sécurité : téléphone perdu).
+message ApprovalExpiredEvent {
+  string cascade_id = 1;
+  string call_id = 2;
+}
+
+// Out : stream_end — fin du tour. data.outcome = done | error | cancelled |
+// waiting_for_input | done_with_tool_use.
+message StreamEndEvent {
+  string request_id = 1;
+  string cascade_id = 2;
+  string outcome = 3;
+  string error = 4;              // si outcome = error
+}
+
+// Out : sync_catchup — liste des sessions (réponse list_sessions) ou rejeu
+// StepRecovery (réponse sync_session).
+message SyncCatchupEvent {
+  string request_id = 1;
+  bytes data = 2;                // JSON opaque (sessions | deltas rejoués)
+}
+
+// Out : terminal_output — sortie d'une session shell interactive.
+message TerminalOutputEvent {
+  string terminal_id = 1;
+  string output = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Événements poussés par le hub Language Server (via la sonde / le stream)
+// ---------------------------------------------------------------------------
+
+// Out : hub_event — événement brut du hub relayé (best-effort, format du LS).
+message HubEvent {
+  string cascade_id = 1;
+  string event_type = 2;         // text_delta, tool_call, agent_state, …
+  bytes payload = 3;             // JSON brut du LS
+}

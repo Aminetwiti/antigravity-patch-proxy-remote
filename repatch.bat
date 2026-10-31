@@ -1,0 +1,168 @@
+@echo off
+REM ============================================================
+REM  repatch.bat — One-click Antigravity patch (any version)
+REM ============================================================
+REM  Auto-detects the installed product and applies the correct
+REM  patch:
+REM
+REM    A) Antigravity IDE (v1.107.0+, VS Code-based)
+REM         - settings override: jetski.cloudCodeUrl -> %DEFAULT_BIND_HOST%:%AG_PROXY_PORT%
+REM         - starts the local proxy (real proxy via bundled Electron)
+REM
+REM    B) Classic Antigravity (2.x shell)
+REM         - version-aware asar surgery (2.2.x / 2.3.x / ...)
+REM         - binary patch: language_server URL -> %DEFAULT_BIND_HOST%:%AG_PROXY_PORT%
+REM         - asar cache + auto-heal registration (survives official updates)
+REM
+REM  Pipeline:
+REM    1. Stop Antigravity processes
+REM    2. npm run build (compile TS to dist/)
+REM    3. ag-doctor patch apply  (binary + IDE override, auto-detected)
+REM    4. ag-doctor proxy start  (real proxy; stub fallback)
+REM    5. Launch the detected app
+REM ============================================================
+
+setlocal EnableDelayedExpansion
+
+set "SCRIPT_DIR=%~dp0"
+if "%ANTIGRAVITY_IDE_DIR%"=="" (
+  set "AG_IDE=%LOCALAPPDATA%\Programs\Antigravity IDE"
+) else (
+  set "AG_IDE=%ANTIGRAVITY_IDE_DIR%"
+)
+if "%ANTIGRAVITY_APP_DIR%"=="" (
+  set "AG_CLASSIC=%LOCALAPPDATA%\Programs\Antigravity"
+) else (
+  set "AG_CLASSIC=%ANTIGRAVITY_APP_DIR%"
+)
+set "AG_IDE_EXE=%AG_IDE%\Antigravity IDE.exe"
+set "AG_CLASSIC_EXE=%AG_CLASSIC%\Antigravity.exe"
+set "AG_ASAR=%AG_CLASSIC%\resources\app.asar"
+set "AG_BIN_LS=%AG_CLASSIC%\resources\bin\language_server.exe"
+set "PROXY_PORT=%AG_PROXY_PORT%"
+if "!PROXY_PORT!"=="" set "PROXY_PORT=51074"
+set "STAGING_DIR=%TEMP%\antigravity-asar-staging-%RANDOM%"
+if "%ANTIGRAVITY_CACHE_DIR%"=="" (
+  set "AG_SCRATCH=%USERPROFILE%\.gemini\antigravity\scratch"
+) else (
+  set "AG_SCRATCH=%ANTIGRAVITY_CACHE_DIR%"
+)
+
+cd /d "%SCRIPT_DIR%"
+
+echo.
+echo ============================================================
+echo  Antigravity Patch (one-click, version-agnostic)
+echo ============================================================
+echo.
+
+REM -- 1. Stop Classic Antigravity + language servers + proxy-stub (keep Antigravity IDE intact)
+echo [1/5] Stopping Classic Antigravity processes...
+powershell -ExecutionPolicy Bypass -Command "Stop-Process -Name Antigravity, language_server, language_server_windows_x64 -Force -ErrorAction SilentlyContinue"
+powershell -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*proxy-stub*' -or $_.CommandLine -like '*standalone-proxy-runner*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+powershell -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort %PROXY_PORT% -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }"
+timeout /t 2 /nobreak >nul
+
+REM -- 2. Build TS
+echo [2/5] Building TypeScript...
+call npm run build
+if errorlevel 1 (
+  echo   [WARN] tsc build failed -- continuing with existing dist/
+)
+
+REM -- 3. Patch Classic Antigravity (asar overlay) if present
+if exist "%AG_CLASSIC_EXE%" (
+  echo [3/5] Classic Antigravity found -- applying asar overlay...
+  set "AG_ASAR=%AG_CLASSIC%\resources\app.asar"
+  if not exist "!AG_ASAR!.bak" (
+    copy /Y "!AG_ASAR!" "!AG_ASAR!.bak" >nul
+    echo   Backup created: !AG_ASAR!.bak
+    if exist "!AG_ASAR!.unpacked" (
+      if not exist "!AG_ASAR!.bak.unpacked" (
+        xcopy /E /I /H /Y "!AG_ASAR!.unpacked" "!AG_ASAR!.bak.unpacked" >nul
+        echo   Backup created: !AG_ASAR!.bak.unpacked
+      )
+    )
+  ) else (
+    echo   Backup already exists at !AG_ASAR!.bak
+  )
+  set "STAGING_DIR=%TEMP%\antigravity-asar-staging-%RANDOM%"
+  node "%SCRIPT_DIR%scripts\patch-version.js" "!AG_ASAR!" "!STAGING_DIR!" "!AG_ASAR!"
+  if errorlevel 1 (
+    echo   [ERROR] Asar overlay failed. Restoring backup...
+    copy /Y "!AG_ASAR!.bak" "!AG_ASAR!" >nul
+  ) else (
+    if exist "!STAGING_DIR!" rmdir /S /Q "!STAGING_DIR!"
+    echo   Asar overlay applied.
+
+    if not exist "%AG_SCRATCH%" mkdir "%AG_SCRATCH%"
+    copy /Y "!AG_ASAR!" "%AG_SCRATCH%\app.asar.patched" >nul
+    echo   Patched asar cached for auto-heal: %AG_SCRATCH%\app.asar.patched
+    if exist "%AG_CLASSIC%\resources\app.asar.unpacked" (
+      if exist "%AG_SCRATCH%\app.asar.unpacked" rmdir /S /Q "%AG_SCRATCH%\app.asar.unpacked"
+      xcopy /E /I /H /Y "%AG_CLASSIC%\resources\app.asar.unpacked" "%AG_SCRATCH%\app.asar.unpacked" >nul
+      echo   app.asar.unpacked cached as well
+    )
+    if "%AG_AUTO_HEAL%"=="1" (
+      powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\register-auto-heal.ps1"
+    )
+  )
+)
+
+if not "%AG_TARGET%"=="" (
+  set "TARGET=%AG_TARGET%"
+) else if exist "%AG_CLASSIC_EXE%" (
+  echo   Found Antigravity Classic: %AG_CLASSIC%
+  set "TARGET=CLASSIC"
+) else if exist "%AG_IDE_EXE%" (
+  echo   Found Antigravity IDE: %AG_IDE%
+  set "TARGET=IDE"
+) else (
+  set "TARGET=CLASSIC"
+)
+
+REM -- 4. Binary patch (+ IDE override)
+echo [4/5] Applying binary patch + IDE settings override (ag-doctor patch apply)...
+node "%SCRIPT_DIR%ag-doctor\bin\ag-doctor.js" patch apply --yes
+if errorlevel 1 (
+  echo   [ERROR] Patch failed. Re-run ag-doctor repair to recover.
+  exit /b 1
+)
+
+REM -- 5. Start the local proxy (real proxy via bundled Electron; stub fallback)
+if "!TARGET!"=="IDE" (
+  echo [5/5] Starting local proxy on port %PROXY_PORT% for Antigravity IDE...
+  node "%SCRIPT_DIR%ag-doctor\bin\ag-doctor.js" proxy start
+  if errorlevel 1 (
+    echo   [WARN] Proxy did not start cleanly -- models may not be injected.
+  )
+) else (
+  echo [5/5] Classic install: proxy is hosted internally inside Antigravity on port %PROXY_PORT%.
+)
+
+REM -- Launch the detected app
+echo.
+echo ============================================================
+REM TARGET is set inside the if-exist block above, and the else-branch
+REM echo must not contain unescaped parentheses (cmd parses both branches
+REM of an if/else as one block -- "(classic)" caused "... was unexpected
+REM at this time." and broke the launch step).
+set "ELECTRON_RUN_AS_NODE="
+if "!TARGET!"=="IDE" (
+  echo  Launching Antigravity IDE...
+  start "" "%AG_IDE_EXE%"
+) else (
+  echo  Launching Antigravity classic...
+  start "" "%AG_CLASSIC_EXE%"
+)
+
+echo.
+echo ============================================================
+echo  Patch complete!
+echo  - Custom models now route through the local proxy (port %PROXY_PORT%)
+echo  - Cache + auto-heal configured for classic installs
+echo  - Verify with:  ag-doctor doctor
+echo ============================================================
+echo.
+
+endlocal

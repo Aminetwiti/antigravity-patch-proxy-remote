@@ -1,0 +1,7 @@
+{
+  "ENVIRONMENT": "production",
+  "DAEMON_HOST": "antigravity-remote.domain.com",
+  "DAEMON_PORT": 443,
+  "USE_SSL": true,
+  "ENABLE_LOGGING": false
+}
