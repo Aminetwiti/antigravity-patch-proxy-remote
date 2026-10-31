@@ -228,7 +228,8 @@ export async function runPrune(ctx: CommandContext, sub?: string, rest: string[]
   const isDryRun = sub === '--dry-run' || rest.includes('--dry-run') || ctx.options['dry-run'] === true;
 
   try {
-    const res = pruneConversationSummaries({ dryRun: isDryRun });
+    const dataDir = (ctx.options?.dataDir as string) || (ctx.options?.['data-dir'] as string) || ctx.cwd;
+    const res = pruneConversationSummaries({ dryRun: isDryRun, dataDir });
 
     if (ctx.json) {
       console.log(JSON.stringify(res, null, 2));
