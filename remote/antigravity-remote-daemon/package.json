@@ -2,12 +2,12 @@
   "name": "antigravity-remote-daemon",
   "productName": "Antigravity Remote Daemon",
   "version": "3.8.2",
-  "description": "Antigravity Remote Daemon — Dedicated 1-Page Controller for Remote Server & Mobile Pairing",
+  "description": "Antigravity Remote Daemon \u2014 Dedicated 1-Page Controller for Remote Server & Mobile Pairing",
   "main": "dist/main.js",
   "scripts": {
-    "build": "node scripts/copy-assets.js && tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/strip-module-syntax.js",
+    "build": "node init && node scripts/copy-assets.js && tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/strip-module-syntax.js",
     "watch": "tsc -p tsconfig.json --watch",
-    "start": "npm run build && electron .",
+    "start": "node init && npm run build && electron .",
     "dist": "npm run build && electron-builder",
     "dist:portable": "npm run build && electron-builder --win portable"
   },

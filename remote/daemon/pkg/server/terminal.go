@@ -315,8 +315,8 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
-	if ident.Role != auth.RoleAdmin {
-		http.Error(w, "forbidden: only admin can access terminal", http.StatusForbidden)
+	if ident.Role == auth.RoleReadOnly {
+		http.Error(w, "forbidden: read-only user cannot access terminal", http.StatusForbidden)
 		return
 	}
 
