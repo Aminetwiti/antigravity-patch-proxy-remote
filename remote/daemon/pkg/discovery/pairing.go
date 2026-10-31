@@ -397,7 +397,17 @@ func (pm *PairingManager) HTTPHandler() http.HandlerFunc {
 			return
 		}
 
-		token, expiresAt, err := pm.VerifyPIN(r.RemoteAddr, req.PIN, req.DeviceID, req.AllowedProjects)
+		clientIP := r.Header.Get("CF-Connecting-IP")
+		if clientIP == "" {
+			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				parts := strings.Split(xff, ",")
+				clientIP = strings.TrimSpace(parts[0])
+			}
+		}
+		if clientIP == "" {
+			clientIP = r.RemoteAddr
+		}
+		token, expiresAt, err := pm.VerifyPIN(clientIP, req.PIN, req.DeviceID, req.AllowedProjects)
 		if err != nil {
 			status := http.StatusUnauthorized
 			if errors.Is(err, ErrLockedOut) || strings.Contains(err.Error(), ErrLockedOut.Error()) {

@@ -5746,6 +5746,19 @@ export function isAllowedOrigin(req: http.IncomingMessage): boolean {
     hostname.endsWith('.googleapis.com');
   if (!isHostAllowed) return false;
 
+  // Verify socket remoteAddress if available: when socket is present and claims loopback Host,
+  // ensure the actual remote IP is also loopback, preventing LAN spoofing.
+  const remoteAddr = req.socket?.remoteAddress;
+  if (remoteAddr) {
+    const isLoopbackIp =
+      remoteAddr === '127.0.0.1' ||
+      remoteAddr === '::1' ||
+      remoteAddr === '::ffff:127.0.0.1';
+    if (LOOPBACK_HOSTS.includes(hostname as typeof LOOPBACK_HOSTS[number]) && !isLoopbackIp) {
+      return false;
+    }
+  }
+
   // 2. Direct requests without Origin/Referer (Language Server Go, internal gRPC/HTTP)
   if (!origin) return true;
 

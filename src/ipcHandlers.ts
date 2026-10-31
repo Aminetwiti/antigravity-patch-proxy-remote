@@ -437,6 +437,11 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
     }
   });
 
+function isStrictLoopbackHost(hostname: string): boolean {
+  const lower = (hostname || '').toLowerCase();
+  return lower === 'localhost' || lower === '127.0.0.1' || lower === '::1';
+}
+
 function isPrivateOrLoopbackHost(hostname: string): boolean {
   const lower = (hostname || '').toLowerCase();
   if (lower === 'localhost' || lower === '127.0.0.1' || lower === '::1' || lower.endsWith('.local')) {
@@ -634,7 +639,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             port,
             path: '/health',
             timeout: 10000,
-            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            rejectUnauthorized: ((payload as any)?.allowUnauthorized && isPrivateOrLoopbackHost(parsed.hostname)) || isStrictLoopbackHost(parsed.hostname) ? false : true,
             headers: { 'User-Agent': 'Antigravity-Remote-Client/2.0' },
           },
           (healthRes: any) => {
@@ -665,7 +670,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
                   port,
                   path: authPath,
                   timeout: 10000,
-                  rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+                  rejectUnauthorized: ((payload as any)?.allowUnauthorized && isPrivateOrLoopbackHost(parsed.hostname)) || isStrictLoopbackHost(parsed.hostname) ? false : true,
                   headers: {
                     'User-Agent': 'Antigravity-Remote-Client/2.0',
                     'Authorization': `Bearer ${token}`,
@@ -751,7 +756,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             path: '/v2/terminal/exec',
             method: 'POST',
             timeout: timeoutMs,
-            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            rejectUnauthorized: ((payload as any)?.allowUnauthorized && isPrivateOrLoopbackHost(parsed.hostname)) || isStrictLoopbackHost(parsed.hostname) ? false : true,
             headers: {
               'Content-Type': 'application/json',
               'Content-Length': Buffer.byteLength(postData),
@@ -813,7 +818,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             port,
             path: `/v2/sessions?token=${encodeURIComponent(token)}`,
             timeout: 10000,
-            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            rejectUnauthorized: ((payload as any)?.allowUnauthorized && isPrivateOrLoopbackHost(parsed.hostname)) || isStrictLoopbackHost(parsed.hostname) ? false : true,
             headers: {
               'User-Agent': 'Antigravity-Remote-Client/2.0',
               'Authorization': `Bearer ${token}`,
@@ -870,7 +875,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             path: `/v2/sessions?token=${encodeURIComponent(token)}`,
             method: 'POST',
             timeout: 10000,
-            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            rejectUnauthorized: ((payload as any)?.allowUnauthorized && isPrivateOrLoopbackHost(parsed.hostname)) || isStrictLoopbackHost(parsed.hostname) ? false : true,
             headers: {
               'Content-Type': 'application/json',
               'Content-Length': Buffer.byteLength(postData),
@@ -927,7 +932,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
             port,
             path: `/v2/workspaces?token=${encodeURIComponent(token)}`,
             timeout: 10000,
-            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            rejectUnauthorized: ((payload as any)?.allowUnauthorized && isPrivateOrLoopbackHost(parsed.hostname)) || isStrictLoopbackHost(parsed.hostname) ? false : true,
             headers: {
               'User-Agent': 'Antigravity-Remote-Client/2.0',
               'Authorization': `Bearer ${token}`,

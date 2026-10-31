@@ -890,15 +890,15 @@ describe('Burst Rate Limit Governor & Constants', () => {
       const cooledClaude = selectBestModelByQuota([accA, accB], undefined, 'claude');
       expect(cooledClaude?.accountEmail).toBe('accA@example.com');
     });
-    it('absolute protection: amine.twiti39@gmail.com with 68h quota exhaustion never wakes up from stale 5h morning reset or background poll', () => {
+    it('absolute protection: exhausted-user@example.com with 68h quota exhaustion never wakes up from stale 5h morning reset or background poll', () => {
       _resetAllAccountCooldowns();
       _clearLiveQuotasForTests();
 
       const acc: CustomModel = {
-        name: 'models/google:gemini-3.8-flash:twiti39',
+        name: 'models/google:gemini-3.8-flash:exhausted-user',
         provider: 'google',
-        accountEmail: 'amine.twiti39@gmail.com',
-        refreshToken: 'twiti_refresh_token',
+        accountEmail: 'exhausted-user@example.com',
+        refreshToken: 'mock_refresh_token',
       };
       const key = getAccountQuotaKey(acc);
 

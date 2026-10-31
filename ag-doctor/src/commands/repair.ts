@@ -187,6 +187,9 @@ export async function runRepair(ctx: CommandContext): Promise<number> {
               } else if (fam === 'claude' && ((q.claudeFiveHourPct >= 5 && !weeklyDepleted) || resetPassed)) {
                 delete cds[k];
                 clearedCount++;
+              } else if (!fam && ((q.geminiFiveHourPct >= 5 || q.claudeFiveHourPct >= 5 || (typeof q.fiveHourPercentage === 'number' && q.fiveHourPercentage >= 5)) || resetPassed)) {
+                delete cds[k];
+                clearedCount++;
               }
             }
           }

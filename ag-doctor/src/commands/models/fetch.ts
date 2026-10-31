@@ -46,6 +46,12 @@ export function buildModelsUrl(apiUrl: string): string {
   let baseUrl = apiUrl.split('?')[0];
   const urlLower = baseUrl.toLowerCase();
 
+  // Detect Google Cloud Code endpoints (e.g. daily-cloudcode-pa.googleapis.com or cloudcode-pa.googleapis.com)
+  if (urlLower.includes('cloudcode-pa.googleapis.com')) {
+    baseUrl = baseUrl.replace(/\/+$/, '').replace(/\/v1internal.*$/i, '');
+    return baseUrl + '/v1internal:fetchAvailableModels';
+  }
+
   // Detect Google AI Studio URLs (e.g. .../v1beta/models/...)
   // Google uses its own path structure: /v1beta/models (not /v1/models)
   const isGooglePath = /\/v\d+beta\/models/i.test(baseUrl) || /\/v\d+\/models/i.test(baseUrl);
@@ -89,9 +95,11 @@ function performFetch(
       const target = buildModelsUrl(apiUrl);
       const url = new URL(target);
       const client = url.protocol === 'https:' ? https : http;
+      const isCloudCodeRpc = url.pathname.includes('/v1internal:');
+      const rpcPayload = isCloudCodeRpc ? '{}' : undefined;
 
       const options: https.RequestOptions = {
-        method: 'GET',
+        method: isCloudCodeRpc ? 'POST' : 'GET',
         hostname: url.hostname,
         port: parseInt(url.port || (url.protocol === 'https:' ? '443' : '80'), 10),
         path: url.pathname + url.search,
@@ -140,7 +148,7 @@ function performFetch(
             } else if (Array.isArray(parsed.models)) {
               // Google
               models = (parsed.models as Array<Record<string, unknown>>).map((m) => ({
-                id: (m.name as string) || '',
+                id: (m.name as string) || (m.modelId as string) || (m.id as string) || '',
                 name: (m.displayName as string) || (m.name as string) || '',
               }));
             } else if (Array.isArray(parsed.model_ids)) {
@@ -186,6 +194,7 @@ function performFetch(
         resolve({ success: false, url: target, error: message });
       });
 
+      if (rpcPayload) req.write(rpcPayload);
       req.end();
     } catch (err) {
       resolve({ success: false, error: `Invalid URL: ${(err as Error).message}` });

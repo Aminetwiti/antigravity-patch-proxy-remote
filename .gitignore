@@ -183,3 +183,4 @@ inspect_*.js
 .compact_context.md
 issues*.json
 release/*
+.impeccable/

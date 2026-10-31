@@ -724,10 +724,17 @@ export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>,
       googleAccountCooldowns.set(k, clampedUntil);
       if (durationMs >= 5 * 3600 * 1000) {
         quotaExhaustedAccountKeys.add(k);
-        const accKey = k.endsWith(':gemini') ? k.slice(0, -7) : k.endsWith(':claude') ? k.slice(0, -7) : k;
-        quotaExhaustedAccountKeys.add(accKey);
-        quotaExhaustedAccountKeys.add(accKey.startsWith('google:') ? accKey : `google:${accKey}`);
-        quotaExhaustedAccountKeys.add(accKey.replace(/^google:/, ''));
+        const hasFamily = k.endsWith(':gemini') || k.endsWith(':claude');
+        if (!hasFamily) {
+          const accKey = k;
+          quotaExhaustedAccountKeys.add(accKey);
+          quotaExhaustedAccountKeys.add(accKey.startsWith('google:') ? accKey : `google:${accKey}`);
+          quotaExhaustedAccountKeys.add(accKey.replace(/^google:/, ''));
+        } else {
+          // Keep family-partitioned key variants only — do NOT poison the unpartitioned root key!
+          quotaExhaustedAccountKeys.add(k.startsWith('google:') ? k : `google:${k}`);
+          quotaExhaustedAccountKeys.add(k.replace(/^google:/, ''));
+        }
       }
     }
   }
