@@ -1,0 +1,17 @@
+  function syncRemoteStateToProxy(active, host, remoteSessions, token) {
+    const cfg = getRemoteConfig();
+    const finalToken = (token && token !== 'null' && token !== 'undefined' && token.trim().length > 0)
+      ? token.trim()
+      : cfg.token;
+    const finalHost = host || cfg.host;
+
+    if (window.nativeStorage && typeof window.nativeStorage.setRemoteState === 'function') {
+      window.nativeStorage.setRemoteState({ active, host: finalHost, token: finalToken, remoteSessions }).catch(() => {});
+    }
+    try {
+      fetch('http://127.0.0.1:51074/api/remote/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active, host: finalHost, token: finalToken, remoteSessions }),
+      }).catch(() => {});
+    } catch (_) {}

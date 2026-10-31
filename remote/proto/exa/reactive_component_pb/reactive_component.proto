@@ -1,0 +1,81 @@
+﻿syntax = "proto3";
+
+// file: exa/reactive_component_pb/reactive_component.proto
+// package: exa.reactive_component_pb
+message StreamReactiveUpdatesRequest {
+  optional uint32 protocol_version = 1;
+  optional string id = 2;
+  optional string subscriber_id = 3;
+}
+message StreamReactiveUpdatesResponse {
+  optional uint64 version = 1;
+  optional .exa.reactive_component_pb.MessageDiff diff = 2;
+}
+message TestProto {
+  optional int32 counter = 1;
+  repeated int32 values = 2;
+  optional .exa.reactive_component_pb.TestProto nested = 3;
+  repeated .exa.reactive_component_pb.TestProto nested_repeated = 4;
+}
+message MessageDiff {
+  repeated .exa.reactive_component_pb.FieldDiff field_diffs = 1;
+}
+message FieldDiff {
+  optional uint32 field_number = 1;
+  optional .exa.reactive_component_pb.SingularValue update_singular = 2;
+  optional .exa.reactive_component_pb.RepeatedDiff update_repeated = 3;
+  optional .exa.reactive_component_pb.MapDiff update_map = 4;
+  optional bool clear = 5;
+}
+message RepeatedDiff {
+  optional uint32 new_length = 1;
+  repeated .exa.reactive_component_pb.SingularValue update_values = 2;
+  repeated uint32 update_indices = 3;
+}
+message MapDiff {
+  repeated .exa.reactive_component_pb.MapKeyDiff map_key_diffs = 1;
+}
+message MapKeyDiff {
+  optional .exa.reactive_component_pb.SingularValue map_key = 1;
+  optional .exa.reactive_component_pb.SingularValue update_singular = 2;
+  optional bool clear = 3;
+}
+message SingularValue {
+  optional double double_value = 1;
+  optional float float_value = 2;
+  optional int32 int32_value = 3;
+  optional int64 int64_value = 4;
+  optional uint32 uint32_value = 5;
+  optional uint64 uint64_value = 6;
+  optional sint32 sint32_value = 7;
+  optional sint64 sint64_value = 8;
+  optional fixed32 fixed32_value = 9;
+  optional fixed64 fixed64_value = 10;
+  optional sfixed32 sfixed32_value = 11;
+  optional sfixed64 sfixed64_value = 12;
+  optional bool bool_value = 13;
+  optional uint32 enum_value = 14;
+  optional string string_value = 15;
+  optional bytes bytes_value = 16;
+  optional .exa.reactive_component_pb.MessageDiff message_value = 17;
+}
+message TestDiffProto {
+  optional double singular_scalar_value = 1;
+  optional .exa.reactive_component_pb.TestProto singular_message_value = 2;
+  optional double optional_scalar_value = 10;
+  repeated double repeated_scalar_value = 3;
+  repeated .exa.reactive_component_pb.TestProto repeated_message_value = 4;
+  repeated .exa.reactive_component_pb.TestDiffProto.MapScalarValueEntry map_scalar_value = 5;
+  repeated .exa.reactive_component_pb.TestDiffProto.MapMessageValueEntry map_message_value = 6;
+  optional double oneof_scalar_value = 7;
+  optional .exa.reactive_component_pb.TestProto oneof_message_value = 8;
+  optional .exa.reactive_component_pb.TestEnum enum_value = 9;
+  message MapScalarValueEntry {
+    optional int32 key = 1;
+    optional double value = 2;
+  }
+  message MapMessageValueEntry {
+    optional string key = 1;
+    optional .exa.reactive_component_pb.TestProto value = 2;
+  }
+}

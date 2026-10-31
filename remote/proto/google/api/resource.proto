@@ -1,0 +1,26 @@
+﻿syntax = "proto3";
+
+// file: google/api/resource.proto
+// package: google.api
+message ResourceDescriptor {
+  optional string type = 1;
+  repeated string pattern = 2;
+  optional string name_field = 3;
+  optional .google.api.ResourceDescriptor.History history = 4;
+  optional string plural = 5;
+  optional string singular = 6;
+  repeated .google.api.ResourceDescriptor.Style style = 10;
+  enum History {
+    HISTORY_UNSPECIFIED = 0;
+    ORIGINALLY_SINGLE_PATTERN = 1;
+    FUTURE_MULTI_PATTERN = 2;
+  }
+  enum Style {
+    STYLE_UNSPECIFIED = 0;
+    DECLARATIVE_FRIENDLY = 1;
+  }
+}
+message ResourceReference {
+  optional string type = 1;
+  optional string child_type = 2;
+}

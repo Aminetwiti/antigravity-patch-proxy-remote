@@ -1,0 +1,7 @@
+{
+  "autoCheck": true,
+  "lastCheckTime": 0,
+  "checkIntervalHours": 24,
+  "channel": "stable",
+  "repo": "Aminetwiti/antigravity-patch-proxy"
+}

@@ -1,0 +1,8 @@
+﻿{
+  "ENVIRONMENT": "development",
+  "DAEMON_HOST": "192.168.1.50",
+  "DAEMON_PORT": 8090,
+  "USE_SSL": false,
+  "ENABLE_LOGGING": true
+}
+

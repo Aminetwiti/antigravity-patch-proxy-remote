@@ -1,0 +1,6 @@
+{
+  "cmake.sourceDirectory": "${workspaceFolder}/remote/mobile/linux",
+  "git.autofetch": false,
+  "debug.openDebug": "neverOpen",
+  "terminal.integrated.inheritEnv": false
+}

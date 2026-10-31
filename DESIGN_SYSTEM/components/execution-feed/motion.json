@@ -1,0 +1,28 @@
+{
+  "animations": {
+    "expandCollapse": {
+      "duration": "260ms",
+      "curve": "cubic-bezier(0.4, 0.0, 0.2, 1) (Curves.fastOutSlowIn)",
+      "target": "Timeline height and sub-items list"
+    },
+    "subItemsExpand": {
+      "duration": "220ms",
+      "curve": "Curves.fastOutSlowIn",
+      "target": "Indented children container"
+    },
+    "pulseStreaming": {
+      "duration": "1200ms",
+      "mode": "repeat(reverse: true)",
+      "target": "Glow on active working node"
+    },
+    "workingEllipsis": {
+      "interval": "550ms",
+      "states": [
+        ".",
+        "..",
+        "..."
+      ],
+      "target": "_LiveWorkingIndicator dot count"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "mobile": {
+    "stepFontSize": "12px",
+    "subItemIndent": "14px",
+    "terminalMaxWidth": "100%",
+    "truncateTitle": "TextOverflow.ellipsis if not expanded"
+  },
+  "desktop": {
+    "stepFontSize": "12px",
+    "subItemIndent": "18px",
+    "terminalMaxWidth": "680px",
+    "truncateTitle": "TextOverflow.ellipsis if not expanded"
+  }
+}

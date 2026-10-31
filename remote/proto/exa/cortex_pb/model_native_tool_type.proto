@@ -1,0 +1,4 @@
+﻿syntax = "proto3";
+
+// file: exa/cortex_pb/model_native_tool_type.proto
+// package: exa.cortex_pb

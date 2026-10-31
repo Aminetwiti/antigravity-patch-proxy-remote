@@ -1,0 +1,264 @@
+﻿syntax = "proto3";
+
+// file: exa/chat_pb/chat.proto
+// package: exa.chat_pb
+message CodeBlockInfo {
+  optional string raw_source = 1;
+  optional int32 start_line = 2;
+  optional int32 start_col = 3;
+  optional int32 end_line = 4;
+  optional int32 end_col = 5;
+}
+message ChatMetrics {
+  optional uint64 response_stream_latency_ms = 1;
+  optional uint64 refresh_context_latency_ms = 2;
+  optional uint64 should_get_local_context_for_chat_latency_ms = 3;
+  optional bool should_get_local_context_for_chat = 4;
+  optional uint64 compute_change_events_latency_ms = 5;
+  optional uint64 context_to_chat_prompt_latency_ms = 6;
+  optional int32 num_prompt_tokens = 7;
+  optional int32 num_system_prompt_tokens = 8;
+  optional uint64 num_input_tokens = 16;
+  optional .google.protobuf.Timestamp start_timestamp = 9;
+  optional .google.protobuf.Timestamp end_timestamp = 10;
+  optional string active_document_absolute_path = 11;
+  optional .exa.codeium_common_pb.CodeContextItem last_active_code_context_item = 12;
+  optional uint64 num_indexed_files = 13;
+  optional uint64 num_indexed_code_context_items = 14;
+  optional .exa.codeium_common_pb.Model model = 15;
+}
+message IntentGeneric {
+  optional string text = 1;
+  repeated .exa.codeium_common_pb.TextOrScopeItem items = 2;
+}
+message IntentCodeBlockRefactor {
+  optional .exa.chat_pb.CodeBlockInfo code_block_info = 1;
+  optional .exa.codeium_common_pb.Language language = 2;
+  optional string file_path_migrate_me_to_uri = 3;
+  optional string uri = 5;
+  optional string refactor_description = 4;
+}
+message IntentGenerateCode {
+  optional string instruction = 1;
+  optional .exa.codeium_common_pb.Language language = 2;
+  optional string file_path_migrate_me_to_uri = 3;
+  optional string uri = 5;
+  optional int32 line_number = 4;
+}
+message IntentFastApply {
+  optional string diff_outline = 1;
+  optional .exa.codeium_common_pb.Language language = 2;
+  optional .exa.chat_pb.CodeBlockInfo old_code = 3;
+}
+message ChatMessageIntent {
+  optional .exa.chat_pb.IntentGeneric generic = 1;
+  optional .exa.chat_pb.IntentCodeBlockRefactor code_block_refactor = 6;
+  optional .exa.chat_pb.IntentGenerateCode generate_code = 9;
+  optional .exa.chat_pb.IntentFastApply fast_apply = 13;
+  optional uint32 num_tokens = 12;
+}
+message ChatMessageActionSearch {
+}
+message ChatMessageActionEdit {
+  optional string file_path_migrate_me_to_uri = 1;
+  optional string uri = 6;
+  optional .exa.diff_action_pb.DiffBlock diff = 2;
+  optional .exa.codeium_common_pb.Language language = 3;
+  optional string text_pre = 4;
+  optional string text_post = 5;
+}
+message ChatMessageActionGeneric {
+  optional string text = 1;
+  optional string display_text = 2;
+}
+message ChatMessageStatusContextRelevancy {
+  optional bool is_loading = 1;
+  optional bool is_relevant = 2;
+  repeated string query_suggestions = 3;
+}
+message ChatMessageStatus {
+  optional .exa.chat_pb.ChatMessageStatusContextRelevancy context_relevancy = 1;
+}
+message ChatMessageError {
+  optional string text = 1;
+}
+message ChatMessageAction {
+  optional .exa.chat_pb.ChatMessageActionGeneric generic = 1;
+  optional .exa.chat_pb.ChatMessageActionEdit edit = 3;
+  optional .exa.chat_pb.ChatMessageActionSearch search = 5;
+  optional uint32 num_tokens = 2;
+  repeated .exa.codeium_common_pb.CodeContextItem context_items = 4;
+  optional .exa.chat_pb.ChatIntentType latest_intent = 6;
+  optional .exa.chat_pb.ChatMetrics generation_stats = 7;
+  repeated .exa.codeium_common_pb.KnowledgeBaseItemWithMetadata knowledge_base_items = 8;
+}
+message ChatMessage {
+  optional string message_id = 1;
+  optional .exa.codeium_common_pb.ChatMessageSource source = 2;
+  optional .google.protobuf.Timestamp timestamp = 3;
+  optional string conversation_id = 4;
+  optional .exa.chat_pb.ChatMessageIntent intent = 5;
+  optional .exa.chat_pb.ChatMessageAction action = 6;
+  optional .exa.chat_pb.ChatMessageError error = 7;
+  optional .exa.chat_pb.ChatMessageStatus status = 8;
+  optional bool in_progress = 9;
+  optional .exa.chat_pb.GetChatMessageRequest request = 10;
+  optional bool redact = 11;
+}
+message Conversation {
+  repeated .exa.chat_pb.ChatMessage messages = 1;
+}
+message ChatMessagePrompt {
+  optional string message_id = 1;
+  optional .exa.codeium_common_pb.ChatMessageSource source = 2;
+  optional string prompt = 3;
+  optional .genai.Struct prompt_struct = 25;
+  optional uint32 num_tokens = 4;
+  optional bool safe_for_code_telemetry = 5;
+  repeated .exa.codeium_common_pb.ChatToolCall tool_calls = 6;
+  optional string tool_call_id = 7;
+  optional .exa.chat_pb.PromptCacheOptions prompt_cache_options = 8;
+  optional bool tool_result_is_error = 9;
+  repeated .exa.codeium_common_pb.ImageData images = 10;
+  repeated .exa.codeium_common_pb.Media media = 19;
+  optional string thinking = 11;
+  optional string raw_thinking = 17;
+  optional string signature = 12;
+  optional bytes thinking_signature = 20;
+  optional bool thinking_redacted = 13;
+  repeated .exa.codeium_common_pb.PromptAnnotationRange prompt_annotation_ranges = 14;
+  optional int32 step_idx = 18;
+  optional string provider_assigned_message_id = 21;
+  repeated .google.protobuf.Any side_channels = 22;
+  repeated .google.protobuf.Any passback_context = 24;
+}
+message ChatMessagePrompts {
+  repeated .exa.chat_pb.ChatMessagePrompt prompts = 1;
+}
+message PromptCacheOptions {
+  optional .exa.chat_pb.CacheControlType type = 1;
+}
+message ChatToolDefinition {
+  optional string name = 1;
+  optional string description = 2;
+  optional string json_schema_string = 3;
+  optional bool strict = 4;
+  repeated string attribution_field_names = 5;
+  optional string server_name = 6;
+  optional string original_name = 7;
+  optional .exa.cortex_pb.ModelNativeToolType model_native_tool_type = 8;
+}
+message ChatToolChoice {
+  optional string option_name = 1;
+  optional string tool_name = 2;
+}
+message ChatMentionsSearchRequest {
+  optional string query = 1;
+  repeated .exa.codeium_common_pb.CodeContextType allowed_types = 2;
+  optional bool include_repo_info = 3;
+}
+message ChatMentionsSearchResponse {
+  repeated .exa.codeium_common_pb.CodeContextItem cci_items = 1;
+  repeated .exa.codeium_common_pb.GitRepoInfo repo_infos = 2;
+}
+message GetChatMessageRequest {
+  optional .exa.codeium_common_pb.Metadata metadata = 1;
+  repeated .exa.chat_pb.ChatMessage chat_messages = 3;
+  optional .exa.codeium_common_pb.Document active_document = 5;
+  repeated string open_document_uris = 12;
+  repeated string workspace_uris = 13;
+  optional string active_selection = 11;
+  optional .exa.codeium_common_pb.ContextInclusionType context_inclusion_type = 8;
+  optional .exa.codeium_common_pb.Model chat_model = 9;
+  optional string system_prompt_override = 10;
+  optional string chat_model_name = 14;
+  optional .exa.chat_pb.GetChatMessageRequest.EnterpriseExternalModelConfig enterprise_chat_model_config = 15;
+  optional .exa.codeium_common_pb.ExperimentConfig experiment_config = 4;
+  repeated string open_document_paths_migrate_me_to_uris = 6;
+  repeated string workspace_paths_migrate_me_to_uris = 7;
+  message EnterpriseExternalModelConfig {
+    optional int32 max_output_tokens = 2;
+    optional int32 max_input_tokens = 3;
+  }
+}
+message ChatExperimentStatus {
+  optional .exa.codeium_common_pb.ExperimentKey experiment_key = 1;
+  optional bool enabled = 2;
+}
+message FormattedChatMessage {
+  optional .exa.codeium_common_pb.ChatMessageSource role = 1;
+  optional string header = 2;
+  optional string content = 3;
+  optional string footer = 4;
+}
+message IndexMap {
+  repeated .exa.chat_pb.IndexMap.IndexMapEntry index_map = 1;
+  message IndexList {
+    repeated int32 indices = 1;
+  }
+  message IndexMapEntry {
+    optional int32 key = 1;
+    optional .exa.chat_pb.IndexMap.IndexList value = 2;
+  }
+}
+message ChatMessageRollout {
+  optional string system_prompt = 1;
+  repeated .exa.chat_pb.ChatToolDefinition tools = 2;
+  optional .exa.chat_pb.ChatToolChoice tool_choice = 3;
+  repeated .exa.chat_pb.ChatMessagePrompt input_chat_messages = 4;
+  repeated .exa.chat_pb.ChatMessagePrompt output_chat_messages = 5;
+  optional .exa.chat_pb.IndexMap trajectory_to_chat_message_index_map = 6;
+}
+message XboxInferenceToolRequest {
+  optional string model_name = 3;
+  optional string model_enum = 4;
+  optional .exa.chat_pb.Example gemini_example = 2;
+}
+message Example {
+  repeated .exa.chat_pb.Message messages = 1;
+}
+message Message {
+  optional string role = 1;
+  repeated .exa.chat_pb.Chunk chunks = 2;
+}
+message Chunk {
+  optional string text = 3;
+  optional .exa.chat_pb.Image image = 4;
+  optional .exa.chat_pb.Chunk.Trainable trainable = 10;
+  enum Trainable {
+    UNKNOWN_TRAINABLE = 0;
+    FORMATTER_DEFINED = 1;
+    ALWAYS = 2;
+    NEVER = 3;
+  }
+}
+message Image {
+  optional .exa.chat_pb.FileData value = 5;
+  optional int32 height_px = 3;
+  optional int32 width_px = 4;
+}
+message FileData {
+  optional bytes content = 3;
+  optional string mime_type = 2;
+}
+message RpcRequest {
+  optional .exa.chat_pb.RunToolRequest run_tool_request = 1;
+  optional string id = 3;
+}
+message RpcResponse {
+  optional .exa.chat_pb.RunToolResponse run_tool_response = 1;
+  optional string request_id = 2;
+}
+message RunToolRequest {
+  optional string name = 1;
+  optional string operation_id = 2;
+  optional string parameters = 3;
+}
+message RunToolResponse {
+  optional string response = 1;
+  optional .exa.chat_pb.RunToolResponse.Status status = 2;
+  message Status {
+    optional int32 code = 1;
+    optional string status_message = 2;
+  }
+}

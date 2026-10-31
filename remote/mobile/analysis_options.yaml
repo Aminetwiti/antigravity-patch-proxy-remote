@@ -1,0 +1,21 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+  errors:
+    deprecated_member_use: ignore
+    deprecated_member_use_from_same_package: ignore
+    invalid_annotation_target: ignore
+    use_build_context_synchronously: ignore
+
+linter:
+  rules:
+    # avoid_print: false
+    # prefer_single_quotes: true

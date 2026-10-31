@@ -1,0 +1,30 @@
+{
+  "events": {
+    "toggleStepExpand": {
+      "trigger": "tap / click on expandable step row",
+      "action": "toggle index in _expandedIndices",
+      "haptic": "HapticFeedback.selectionClick()",
+      "visual": "chevron rotates from right to down, subItems or terminal expand with 220ms curve"
+    },
+    "toggleSubStepExpand": {
+      "trigger": "tap on sub-command inside Explored/CommandGroup",
+      "action": "toggle key in _expandedSubIndices",
+      "visual": "terminal output box slides open"
+    },
+    "openArtifact": {
+      "trigger": "tap on Auto-proceeded card",
+      "action": "widget.onOpenArtifact?.call(item.title)",
+      "visual": "opens markdown/diff artifact modal or tab"
+    },
+    "toggleMasterSummary": {
+      "trigger": "tap on master title when completed",
+      "action": "toggle _isExpanded",
+      "visual": "expands/collapses entire timeline view"
+    },
+    "stopExecution": {
+      "trigger": "tap on Stop button in header",
+      "action": "widget.onStop?.call()",
+      "visual": "sends cancellation RPC to daemon/LS, halts spinner"
+    }
+  }
+}

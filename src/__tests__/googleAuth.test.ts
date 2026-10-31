@@ -1,0 +1,526 @@
+import { describe, it, expect } from 'vitest';
+import {
+  normalizeCloudCodeModelId,
+  isGoogleCloudCodeModel,
+  normalizeGoogleModelId,
+  sanitizeCloudCodeGenerationConfig,
+  normalizeConversationTurns,
+  getLiveAccountQuota,
+  updateLiveAccountQuota,
+  _clearLiveQuotasForTests,
+  fetchLiveUserQuota,
+  pollAllGoogleQuotas,
+  getTokenRemainingLifetime,
+  shouldRenewToken,
+  _clearTokenCacheForTests,
+  getValidGoogleAccessToken,
+  isTokenRevoked,
+  markTokenRevoked,
+  clearRevokedTokens,
+  refreshGoogleToken,
+  isAccountEntitledToClaude55,
+} from '../services/googleAuth';
+
+describe('googleAuth service', () => {
+  describe('normalizeCloudCodeModelId', () => {
+    it('normalizes legacy flash high alias to tiered', () => {
+      expect(normalizeCloudCodeModelId('gemini-3.8-flash-high')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('models/gemini-3.8-flash-high')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-3.7-flash-high')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-3.8-flash')).toBe('gemini-3.8-flash-tiered');
+    });
+
+    it('preserves valid standard model IDs', () => {
+      expect(normalizeCloudCodeModelId('gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+      expect(normalizeCloudCodeModelId('claude-opus-5-5')).toBe('claude-opus-5-5');
+      expect(normalizeCloudCodeModelId('claude-opus-4-6-thinking')).toBe('claude-opus-4-6-thinking');
+    });
+
+    it('maps alias models to canonical Cloud Code models', () => {
+      expect(normalizeCloudCodeModelId('claude-sonnet')).toBe('claude-sonnet-4-6');
+      expect(normalizeCloudCodeModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
+      expect(normalizeCloudCodeModelId('claude-sonnet-5-5-high')).toBe('claude-sonnet-5-5');
+      expect(normalizeCloudCodeModelId('claude-opus')).toBe('claude-opus-4-6-thinking');
+      expect(normalizeCloudCodeModelId('gemini-flash')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeCloudCodeModelId('gemini-pro')).toBe('gemini-3.8-flash-tiered');
+    });
+  });
+
+  describe('isGoogleCloudCodeModel', () => {
+    it('returns true for accounts with ya29 accessToken or refresh token', () => {
+      expect(isGoogleCloudCodeModel({ provider: 'google', apiKey: 'ya29.test123' })).toBe(true);
+      expect(isGoogleCloudCodeModel({ provider: 'google', refreshToken: '1//refresh123' })).toBe(true);
+    });
+
+    it('returns false for AI Studio developer keys', () => {
+      expect(isGoogleCloudCodeModel({ provider: 'google', apiKey: 'AIzaSyTestKey' })).toBe(false);
+    });
+
+    it('returns false for non-google providers', () => {
+      expect(isGoogleCloudCodeModel({ provider: 'openai', apiKey: 'sk-test' })).toBe(false);
+      expect(isGoogleCloudCodeModel({ provider: 'anthropic', apiKey: 'sk-ant-test' })).toBe(false);
+    });
+  });
+
+  describe('sanitizeCloudCodeGenerationConfig', () => {
+    it('deletes thinkingConfig if budget is zero or negative', () => {
+      const payload: Record<string, unknown> = {
+        generationConfig: {
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
+      expect((payload.generationConfig as any).thinkingConfig).toBeUndefined();
+
+      const payload2: Record<string, unknown> = {
+        generationConfig: {
+          thinkingConfig: { thinkingBudget: -1 },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payload2, 'gemini-3.8-flash-tiered');
+      expect((payload2.generationConfig as any).thinkingConfig).toBeUndefined();
+    });
+
+    it('preserves thinkingLevel and removes thinkingBudget for Gemini 3 models', () => {
+      const payload: Record<string, unknown> = {
+        generationConfig: {
+          thinkingConfig: { thinkingBudget: 1000, thinkingLevel: 'low' },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'gemini-3.7-flash');
+      const tc = (payload.generationConfig as any).thinkingConfig;
+      expect(tc).toBeDefined();
+      expect(tc.thinkingLevel).toBe('low');
+      expect(tc.thinkingBudget).toBeUndefined();
+
+      const payloadOnlyLevel: Record<string, unknown> = {
+        generationConfig: {
+          thinkingConfig: { thinkingLevel: 'medium' },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payloadOnlyLevel, 'gemini-3.8-flash-tiered');
+      const tc2 = (payloadOnlyLevel.generationConfig as any).thinkingConfig;
+      expect(tc2).toBeDefined();
+      expect(tc2.thinkingLevel).toBe('medium');
+      expect(tc2.thinkingBudget).toBeUndefined();
+
+      const payloadHighLevel: Record<string, unknown> = {
+        generationConfig: {
+          thinkingConfig: { thinkingLevel: 'high' },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payloadHighLevel, 'gemini-3.8-flash-tiered');
+      const tc3 = (payloadHighLevel.generationConfig as any).thinkingConfig;
+      expect(tc3).toBeDefined();
+      expect(tc3.thinkingLevel).toBe('medium');
+      expect(tc3.thinkingBudget).toBeUndefined();
+    });
+
+    it('clamps thinkingBudget to >= 1024 for Claude models', () => {
+      const payload: Record<string, unknown> = {
+        generationConfig: {
+          thinkingConfig: { thinkingBudget: 500 },
+          maxOutputTokens: 2048,
+          temperature: 0.7,
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
+      const cfg = payload.generationConfig as any;
+      expect(cfg.thinkingConfig.thinkingBudget).toBe(1024);
+      expect(cfg.maxOutputTokens).toBeGreaterThan(1024);
+      expect(cfg.temperature).toBeUndefined();
+    });
+
+    it('normalizes trailing model turns so request ends on a user turn without losing history', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          { role: 'user', parts: [{ text: 'hello' }] },
+          { role: 'model', parts: [{ text: 'hi' }] },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
+      const contents = payload.contents as any[];
+      expect(contents.length).toBe(3);
+      expect(contents[0]).toEqual({ role: 'user', parts: [{ text: 'hello' }] });
+      expect(contents[1]).toEqual({ role: 'model', parts: [{ text: 'hi' }] });
+      expect(contents[2]).toEqual({ role: 'user', parts: [{ text: 'Continue.' }] });
+      expect(contents[contents.length - 1].role).toBe('user');
+    });
+
+    it('normalizes functionResponse with model role to user role to prevent turn alternation failure', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          { role: 'user', parts: [{ text: 'run tool' }] },
+          { role: 'model', parts: [{ functionCall: { name: 'run_command', args: {} } }] },
+          { role: 'model', parts: [{ functionResponse: { name: 'run_command', response: { output: 'ok' } } }] },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
+      const contents = payload.contents as any[];
+      expect(contents.length).toBe(3);
+      expect(contents[0].role).toBe('user');
+      expect(contents[1].role).toBe('model');
+      expect(contents[2].role).toBe('user');
+    });
+
+    it('prunes truly empty dummy turns at the end', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          { role: 'user', parts: [{ text: 'hello' }] },
+          { role: 'model', parts: [] },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
+      const contents = payload.contents as any[];
+      expect(contents.length).toBe(1);
+      expect(contents[0].role).toBe('user');
+    });
+
+    it('strips historical thinking blocks and thought signatures for Claude models', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: 'write code' }],
+          },
+          {
+            role: 'model',
+            parts: [
+              { thought: true, text: 'Thinking about the code...', thoughtSignature: 'sig_bad' },
+              { type: 'thinking', thinking: 'Internal reasoning...', signature: 'sig_bad2' },
+              { text: 'Here is the code:', thought_signature: 'sig_gemini' },
+              { functionCall: { name: 'run_command', args: { cmd: 'ls' } }, thoughtSignature: 'sig_bad3' },
+            ],
+          },
+          {
+            role: 'user',
+            parts: [{ text: 'continue' }],
+          },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'claude-sonnet-4-6');
+      const modelTurn = (payload.contents as any[])[1];
+      expect(modelTurn.parts.length).toBe(2);
+      expect(modelTurn.parts[0].text).toBe('Here is the code:');
+      expect(modelTurn.parts[0].thought_signature).toBeUndefined();
+      expect(modelTurn.parts[1].functionCall.name).toBe('run_command');
+      expect(modelTurn.parts[1].thoughtSignature).toBeUndefined();
+    });
+
+    it('preserves thought parts for Gemini models', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          {
+            role: 'model',
+            parts: [
+              { thought: true, text: 'Gemini thinking...', thought_signature: 'sig_gemini' },
+              { text: 'Gemini answer' },
+            ],
+          },
+          {
+            role: 'user',
+            parts: [{ text: 'next' }],
+          },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'gemini-3.8-flash-tiered');
+      const modelTurn = (payload.contents as any[])[0];
+      expect(modelTurn.parts.length).toBe(2);
+      expect(modelTurn.parts[0].thought).toBe(true);
+      expect(modelTurn.parts[0].thought_signature).toBe('sig_gemini');
+    });
+
+    it('strips bare thinking parts without text for Gemini models to avoid INVALID_ARGUMENT', () => {
+      const payload: Record<string, unknown> = {
+        contents: [
+          {
+            role: 'model',
+            parts: [
+              { thought: true },
+              { type: 'thinking' },
+              { text: 'Gemini answer' },
+            ],
+          },
+        ],
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'gemini-3.8-flash-tiered');
+      const modelTurn = (payload.contents as any[])[0];
+      expect(modelTurn.parts.length).toBe(1);
+      expect(modelTurn.parts[0].text).toBe('Gemini answer');
+    });
+
+    it('handles snake_case generation_config and thinking_config', () => {
+      const payload: Record<string, unknown> = {
+        generation_config: {
+          thinking_config: { thinkingBudget: 500, thinkingLevel: 'low' },
+        },
+      };
+      sanitizeCloudCodeGenerationConfig(payload, 'gemini-3.8-flash-tiered');
+      const tc = (payload.generation_config as any).thinking_config;
+      expect(tc.thinkingLevel).toBe('low');
+      expect(tc.thinkingBudget).toBeUndefined();
+    });
+  });
+
+  describe('normalizeGoogleModelId', () => {
+    it('preserves canonical models gemini-3.8-flash-tiered, claude-sonnet-5-5, and claude-opus-5-5', () => {
+      expect(normalizeGoogleModelId('gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeGoogleModelId('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+      expect(normalizeGoogleModelId('claude-opus-5-5')).toBe('claude-opus-5-5');
+      expect(normalizeGoogleModelId('models/claude-opus-5-5')).toBe('claude-opus-5-5');
+      expect(normalizeGoogleModelId('models/gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
+    });
+
+    it('maps legacy flash models to canonical gemini-3.8-flash-tiered', () => {
+      expect(normalizeGoogleModelId('gemini-3.8-flash-tiered')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeGoogleModelId('gemini-3.8-flash')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeGoogleModelId('gemini-flash')).toBe('gemini-3.8-flash-tiered');
+    });
+
+    it('maps legacy pro models to canonical gemini-3.8-flash-tiered', () => {
+      expect(normalizeGoogleModelId('gemini-3.1-pro')).toBe('gemini-3.8-flash-tiered');
+      expect(normalizeGoogleModelId('gemini-pro')).toBe('gemini-3.8-flash-tiered');
+    });
+
+    it('maps opus aliases to claude-opus-4-6-thinking without degrading to sonnet or pro', () => {
+      expect(normalizeGoogleModelId('claude-opus')).toBe('claude-opus-4-6-thinking');
+      expect(normalizeGoogleModelId('claude-opus-5-5')).toBe('claude-opus-5-5');
+      expect(normalizeGoogleModelId('models/claude-opus')).toBe('claude-opus-4-6-thinking');
+    });
+
+    it('falls back safely for non-Gemini model names routed to Google', () => {
+      expect(normalizeGoogleModelId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
+      expect(normalizeGoogleModelId('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+      expect(normalizeGoogleModelId('gpt-4o')).toBe('gemini-3.8-flash-tiered');
+    });
+
+    it('returns canonical default on empty string or nullish input', () => {
+      expect(normalizeGoogleModelId('')).toBe('gemini-3.8-flash-tiered');
+    });
+  });
+
+  describe('normalizeConversationTurns', () => {
+    it('converts functionResponse turns with model role to user role', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Check files' }] },
+        { role: 'model', parts: [{ functionCall: { name: 'list_dir', args: {} } }] },
+        { role: 'model', parts: [{ functionResponse: { name: 'list_dir', response: { files: [] } } }] },
+      ];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(true);
+      expect(contents.length).toBe(3);
+      expect(contents[0].role).toBe('user');
+      expect(contents[1].role).toBe('model');
+      expect(contents[2].role).toBe('user');
+    });
+
+    it('merges consecutive model turns to enforce alternation', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Hello' }] },
+        { role: 'model', parts: [{ text: 'Part 1' }] },
+        { role: 'model', parts: [{ text: 'Part 2' }] },
+      ];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(true);
+      // Merged into 1 model turn, then closed with 'Continue.'
+      expect(contents.length).toBe(3);
+      expect(contents[0].role).toBe('user');
+      expect(contents[1].role).toBe('model');
+      expect(contents[1].parts.length).toBe(2);
+      expect(contents[2].role).toBe('user');
+      expect(contents[2].parts[0].text).toBe('Continue.');
+    });
+
+    it('preserves model tool calls and closes with Continue user turn instead of popping', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Run tests' }] },
+        { role: 'model', parts: [{ functionCall: { name: 'run_command', args: { cmd: 'npm test' } } }] },
+      ];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(true);
+      expect(contents.length).toBe(3);
+      expect(contents[0].role).toBe('user');
+      expect(contents[1].role).toBe('model');
+      expect(contents[1].parts[0].functionCall.name).toBe('run_command');
+      expect(contents[2].role).toBe('user');
+      expect(contents[2].parts[0].text).toBe('Continue.');
+    });
+
+    it('prunes empty dummy turns from the end', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Hello' }] },
+        { role: 'model', parts: [] },
+      ];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(true);
+      expect(contents.length).toBe(1);
+      expect(contents[0].role).toBe('user');
+    });
+
+    it('strips previous synthetic proxy error cards from history on retry', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Please write a script' }] },
+        {
+          role: 'model',
+          parts: [{ text: '> **WARNING**\n> **Model unavailable: Request Timeout (5/36 comptes vérifiés)**\nLe service Google Cloud Code a expiré sur 5 comptes consécutifs (coupure amont détectée).' }],
+        },
+        { role: 'user', parts: [{ text: 'retry' }] },
+      ];
+      const modified = normalizeConversationTurns(contents);
+      expect(modified).toBe(true);
+      // The error card model turn should be removed and user turns merged into 1
+      expect(contents.length).toBe(1);
+      expect(contents[0].role).toBe('user');
+      expect(contents[0].parts.length).toBe(2);
+      expect(contents[0].parts[0].text).toBe('Please write a script');
+      expect(contents[0].parts[1].text).toBe('retry');
+    });
+  });
+
+  describe('Live Quota State & Polling Helpers', () => {
+    it('manages in-memory live quota state correctly', () => {
+      _clearLiveQuotasForTests();
+      expect(getLiveAccountQuota('google:user@example.com')).toBeUndefined();
+
+      updateLiveAccountQuota('google:user@example.com', {
+        fiveHourPercentage: 85,
+        weeklyPercentage: 90,
+        geminiFiveHourPct: 85,
+        geminiWeeklyPct: 90,
+        claudeFiveHourPct: 40,
+        claudeWeeklyPct: 70,
+        updatedAt: Date.now(),
+      });
+
+      const quota = getLiveAccountQuota('google:user@example.com');
+      expect(quota).toBeDefined();
+      expect(quota?.geminiFiveHourPct).toBe(85);
+      expect(quota?.claudeFiveHourPct).toBe(40);
+
+      _clearLiveQuotasForTests();
+      expect(getLiveAccountQuota('google:user@example.com')).toBeUndefined();
+    });
+
+    it('pollAllGoogleQuotas gracefully handles empty and invalid accounts without errors', async () => {
+      await expect(pollAllGoogleQuotas([])).resolves.not.toThrow();
+      await expect(
+        pollAllGoogleQuotas([
+          { refreshToken: '', accountEmail: 'test@example.com' },
+          { apiKey: 'not-a-google-key', accountEmail: 'test2@example.com' },
+        ])
+      ).resolves.not.toThrow();
+    });
+    it('prevents background polls from overwriting active 0% quota exhaustion until future reset', async () => {
+      _clearLiveQuotasForTests();
+      const accountKey = 'google:amine.twiti39@gmail.com';
+      const futureReset = new Date(Date.now() + 68 * 3600 * 1000).toISOString();
+
+      // Set active exhaustion
+      updateLiveAccountQuota(accountKey, {
+        fiveHourPercentage: 0,
+        weeklyPercentage: 0,
+        geminiFiveHourPct: 0,
+        geminiWeeklyPct: 0,
+        geminiFiveHourReset: futureReset,
+        geminiWeeklyReset: futureReset,
+        geminiResetTime: futureReset,
+        updatedAt: Date.now(),
+      });
+
+      const live = getLiveAccountQuota(accountKey);
+      expect(live?.geminiFiveHourPct).toBe(0);
+      expect(live?.geminiWeeklyPct).toBe(0);
+
+      _clearLiveQuotasForTests();
+    });
+
+  });
+
+  describe('Proactive Token Renewal & Expiration Helpers', () => {
+    it('returns 0 remaining lifetime and shouldRenew=true for uncached tokens', () => {
+      _clearTokenCacheForTests();
+      expect(getTokenRemainingLifetime(undefined)).toBe(0);
+      expect(getTokenRemainingLifetime('')).toBe(0);
+      expect(getTokenRemainingLifetime('uncached_token_xyz')).toBe(0);
+      expect(shouldRenewToken(undefined)).toBe(true);
+      expect(shouldRenewToken('')).toBe(true);
+      expect(shouldRenewToken('uncached_token_xyz')).toBe(true);
+    });
+
+    it('getValidGoogleAccessToken returns raw ya29 apiKey if provided', async () => {
+      const result = await getValidGoogleAccessToken({ apiKey: 'ya29.mock_token_direct' });
+      expect(result).toBe('ya29.mock_token_direct');
+    });
+
+    it('getValidGoogleAccessToken returns null for non-ya29 apiKey without refreshToken', async () => {
+      const result = await getValidGoogleAccessToken({ apiKey: 'AIzaSyNotOAuth' });
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('Revoked Tokens Quarantine (invalid_grant)', () => {
+    it('quarantines revoked tokens and rejects renewal without network call', async () => {
+      clearRevokedTokens();
+      const testToken = '1//revoked_test_token_abc';
+      expect(isTokenRevoked(testToken)).toBe(false);
+
+      markTokenRevoked(testToken);
+      expect(isTokenRevoked(testToken)).toBe(true);
+
+      // refreshGoogleToken immediately returns null when token is quarantined
+      const res = await refreshGoogleToken(testToken);
+      expect(res).toBeNull();
+
+      clearRevokedTokens();
+      expect(isTokenRevoked(testToken)).toBe(false);
+    });
+  });
+
+  describe('isAccountEntitledToClaude55', () => {
+    it('returns true when account has hasClaude55=true or isFamily=true', () => {
+      expect(isAccountEntitledToClaude55({ hasClaude55: true })).toBe(true);
+      expect(isAccountEntitledToClaude55({ isFamily: true })).toBe(true);
+      expect(isAccountEntitledToClaude55({ isFamilyShared: true })).toBe(true);
+      expect(isAccountEntitledToClaude55({ isFamilyPro: true })).toBe(true);
+    });
+
+    it('returns true when account tier is partage or family', () => {
+      expect(isAccountEntitledToClaude55({ tier: 'partage' })).toBe(true);
+      expect(isAccountEntitledToClaude55({ tier: 'PARTAGE' })).toBe(true);
+      expect(isAccountEntitledToClaude55({ tier: 'family' })).toBe(true);
+    });
+
+    it('returns true when live quota indicates Claude 5.5 access or partage tier', () => {
+      _clearLiveQuotasForTests();
+      updateLiveAccountQuota('google:member@example.com', {
+        fiveHourPercentage: 100,
+        weeklyPercentage: 100,
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 100,
+        claudeFiveHourPct: 100,
+        claudeWeeklyPct: 100,
+        updatedAt: Date.now(),
+        hasClaude55: true,
+        tier: 'partage',
+      });
+
+      expect(isAccountEntitledToClaude55({ accountEmail: 'member@example.com' })).toBe(true);
+      _clearLiveQuotasForTests();
+    });
+
+    it('returns false for standard accounts without 5.5 entitlement even if models list contains 5.5', () => {
+      expect(isAccountEntitledToClaude55({ accountEmail: 'regular@example.com', tier: 'pro', models: [{ id: 'claude-sonnet-5-5' }] })).toBe(false);
+      expect(isAccountEntitledToClaude55({ accountEmail: 'regular@example.com', tier: 'pro' })).toBe(false);
+      expect(isAccountEntitledToClaude55(null)).toBe(false);
+      expect(isAccountEntitledToClaude55(undefined)).toBe(false);
+    });
+
+    it('returns true when type, tierId, or name contains partage', () => {
+      expect(isAccountEntitledToClaude55({ type: 'partage' })).toBe(true);
+      expect(isAccountEntitledToClaude55({ tierId: 'PARTAGE' })).toBe(true);
+      expect(isAccountEntitledToClaude55({ name: 'Compte Partage Famille' })).toBe(true);
+    });
+  });
+});
+

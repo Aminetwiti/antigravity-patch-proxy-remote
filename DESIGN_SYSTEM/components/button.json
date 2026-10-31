@@ -1,0 +1,41 @@
+{
+  "name": "Button",
+  "variants": {
+    "primary": {
+      "backgroundColor": "#3B82F6",
+      "textColor": "#FFFFFF",
+      "hover": {
+        "backgroundColor": "#2563EB"
+      },
+      "active": {
+        "backgroundColor": "#1D4ED8"
+      },
+      "padding": "6px 12px",
+      "borderRadius": "4px",
+      "fontSize": "10px",
+      "fontWeight": 600,
+      "textTransform": "uppercase"
+    },
+    "secondary": {
+      "backgroundColor": "transparent",
+      "textColor": "#A1A1AA",
+      "border": "1px solid #3F3F46",
+      "hover": {
+        "backgroundColor": "#27272A",
+        "textColor": "#F4F4F5"
+      },
+      "padding": "6px 12px",
+      "borderRadius": "4px"
+    },
+    "danger": {
+      "backgroundColor": "#EF4444",
+      "textColor": "#FFFFFF",
+      "hover": {
+        "backgroundColor": "#DC2626"
+      },
+      "padding": "6px 12px",
+      "borderRadius": "4px"
+    }
+  },
+  "source": "DESIGN.md: L59-69"
+}

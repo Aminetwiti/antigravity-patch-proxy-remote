@@ -1,0 +1,21 @@
+{
+  "name": "@antigravity/remote-cli",
+  "version": "1.0.0",
+  "description": "ConnectRPC Protocol Validation CLI for Antigravity Remote Control OS",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "scan": "node --loader ts-node/esm src/discovery.ts",
+    "test:connect": "node --loader ts-node/esm src/index.ts"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "@types/ws": "^8.18.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^7.0.2"
+  }
+}

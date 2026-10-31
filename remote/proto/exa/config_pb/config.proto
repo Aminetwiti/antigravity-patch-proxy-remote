@@ -1,0 +1,20 @@
+﻿syntax = "proto3";
+
+// file: exa/config_pb/config.proto
+// package: exa.config_pb
+message UserConfig {
+  repeated .exa.config_pb.UserConfig.SidecarsEntry sidecars = 1;
+  optional .jetbox_state_pb.UserSettings user_settings = 2;
+  repeated .exa.config_pb.UserConfig.PluginsEntry plugins = 3;
+  message SidecarsEntry {
+    optional string key = 1;
+    optional .exa.cortex_pb.SidecarUserConfig value = 2;
+  }
+  message PluginsEntry {
+    optional string key = 1;
+    optional .exa.config_pb.PluginUserConfig value = 2;
+  }
+}
+message PluginUserConfig {
+  optional bool enabled = 1;
+}

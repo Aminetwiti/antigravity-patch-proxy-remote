@@ -1,0 +1,894 @@
+/**
+ * Protobuf injection logic for the GetAvailableModels response.
+ * Pure functions — no I/O, no side effects, fully testable.
+ */
+
+import {
+  parseProto,
+  encodeVarint,
+  findModelEntryFieldTag,
+  extractFieldMapping,
+  encodeModelEntryForGetModels,
+  parseProtoRaw,
+  encodeStringField,
+  encodeVarintField,
+  encodeMessageField,
+  encodeClientModelConfig,
+} from './protobuf';
+import { generateModelPlaceholderId } from './idGenerator';
+import log from 'electron-log';
+import type { CustomModel } from './types';
+import { isRecentModel } from './recentModelsStore';
+import { getCachedHealth, type ModelHealthResult } from './modelHealthChecker';
+import { expandModelsWithEffort } from './effortExpander';
+import { detectModelCapabilities, getCanonicalModelKey, isNativeCloudCodeModel } from './modelUtils';
+import { isObsoleteModel } from '../constants';
+import { normalizeCloudCodeModelId } from '../services/googleAuth';
+
+/**
+ * Checks whether an incoming model id or label matches a model explicitly disabled in custom_models.json.
+ */
+export function isModelOrLabelDisabled(idStr?: string, labelStr?: string, disabledSet?: Set<string>): boolean {
+  if (!disabledSet || disabledSet.size === 0) return false;
+  const cleanId = (idStr || '').replace(/^models\//, '').trim().toLowerCase();
+  const rawLabel = (labelStr || '').trim().toLowerCase();
+  const cleanLabel = (labelStr || '')
+    .replace(/^⭐\s*/, '')
+    .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .trim()
+    .toLowerCase();
+
+  const normId = normalizeCloudCodeModelId(cleanId).toLowerCase();
+
+  // Strict protection: NEVER strip or disable native official Cloud Code models!
+  // Provider-level disabled models in custom_models.json only apply to custom injected models.
+  if (
+    !cleanId.startsWith('custom-') &&
+    !/MODEL_PLACEHOLDER_/i.test(cleanId) &&
+    !cleanId.includes('claude') &&
+    !cleanLabel.includes('claude') &&
+    isNativeCloudCodeModel(cleanId)
+  ) {
+    return false;
+  }
+
+  if (cleanId && (disabledSet.has(cleanId) || disabledSet.has(`models/${cleanId}`))) return true;
+  if (normId && disabledSet.has(normId)) return true;
+  if (rawLabel && disabledSet.has(rawLabel)) return true;
+  if (cleanLabel && disabledSet.has(cleanLabel)) return true;
+
+  for (const disabledItem of disabledSet) {
+    const item = disabledItem.toLowerCase();
+    // Claude Sonnet (e.g. claude-sonnet-4-6, claude-3-5-sonnet, Claude Sonnet 4.6 (Thinking))
+    if ((item.includes('claude') && item.includes('sonnet')) &&
+        ((cleanId.includes('claude') && cleanId.includes('sonnet')) || (cleanLabel.includes('claude') && cleanLabel.includes('sonnet')))) {
+      return true;
+    }
+    // Claude Opus (e.g. claude-opus-4-6-thinking, Claude Opus 4.6 (Thinking))
+    if ((item.includes('claude') && item.includes('opus')) &&
+        ((cleanId.includes('claude') && cleanId.includes('opus')) || (cleanLabel.includes('claude') && cleanLabel.includes('opus')))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Result of injecting custom models into a GetAvailableModels protobuf response.
+ */
+export interface InjectionResult {
+  /** The modified buffer (may be the same as input if no injection occurred). */
+  buffer: Buffer;
+  /** Number of models that were injected. */
+  injectedCount: number;
+  /** Whether the buffer was modified. */
+  modified: boolean;
+}
+
+export function buildGrpcWebFrame(flags: number, body: Buffer): Buffer {
+  const header = Buffer.alloc(5);
+  header[0] = flags;
+  header.writeUInt32BE(body.length, 1);
+  return Buffer.concat([header, body]);
+}
+
+export function parseGrpcWebHeader(buf: Buffer): { flags: number; msgLen: number } | null {
+  if (buf.length < 5) return null;
+  return { flags: buf[0], msgLen: buf.readUInt32BE(1) };
+}
+
+/**
+ * Formats a model's display name with Status Dot, Latency, and Favorite Star.
+ */
+export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResult | null): string {
+  const isFav = isRecentModel(m.name) || isRecentModel(m.displayName);
+  const star = isFav ? '⭐ ' : '';
+  let name = m.displayName || m.name;
+  name = name.replace(/^\[[^\]]+\]\s*/, '');
+  
+  if (!health || health.status === 'healthy' || health.status === 'slow') {
+    return `${star}🟢 • ${name}`;
+  }
+
+  if (health.status === 'unhealthy') {
+    const errNotice = health.error ? ` [${health.error}]` : ' [Offline]';
+    return `${star}🔴${errNotice} • ${name}`;
+  }
+
+  return `${star}🟢 • ${name}`;
+}
+
+function extractExistingModelKeys(msgBody: Buffer, modelTag: number): {
+  modelIds: Set<string>;
+  labels: Set<string>;
+  placeholderNames: Set<string>;
+} {
+  const modelIds = new Set<string>();
+  const labels = new Set<string>();
+  const placeholderNames = new Set<string>();
+  const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
+
+  for (const f of rawFields) {
+    if (f.tag === modelTag && f.raw) {
+      const subFields = parseProtoRaw(f.raw, 0, f.raw.length);
+      let idStr = '';
+      let labelStr = '';
+      for (const sf of subFields) {
+        if (sf.raw) {
+          if (sf.fieldNum === 1) {
+            idStr = sf.raw.toString('utf8').trim();
+          } else if (sf.fieldNum === 2) {
+            labelStr = sf.raw.toString('utf8').trim();
+          }
+        }
+      }
+
+      if (idStr) {
+        const lowerId = idStr.toLowerCase();
+        modelIds.add(lowerId);
+        modelIds.add(lowerId.replace(/^models\//, ''));
+      }
+      if (labelStr) {
+        labels.add(labelStr);
+        const lowerLabel = labelStr.toLowerCase();
+        labels.add(lowerLabel);
+        if (
+          idStr.toLowerCase().includes('model_placeholder_') ||
+          labelStr.includes('•') ||
+          labelStr.includes('|') ||
+          labelStr.includes('⭐')
+        ) {
+          const norm = labelStr
+            .replace(/^⭐\s*/, '')
+            .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+            .trim()
+            .toLowerCase();
+          if (norm) placeholderNames.add(norm);
+        }
+      }
+    }
+  }
+
+  return { modelIds, labels, placeholderNames };
+}
+
+/**
+ * Injects custom models into a Google GetAvailableModels protobuf response.
+ *
+ * @param responseBuf Raw gRPC-Web response buffer
+ * @param customModels Custom models to inject
+ * @param healthMap Optional health status map for custom models
+ * @returns Injection result with modified buffer and metadata
+ */
+export function injectCustomModelsIntoResponse(
+  responseBuf: Buffer,
+  customModels: CustomModel[],
+  healthMap?: Map<string, ModelHealthResult>,
+  forceCompatibility = false,
+  disabledModelIds?: Set<string>,
+): InjectionResult {
+  // No injection if no custom models (unless forced or disabled models need stripping) or buffer too small to contain header + body
+  if ((customModels.length === 0 && !forceCompatibility && (!disabledModelIds || disabledModelIds.size === 0)) || responseBuf.length <= 6) {
+    return { buffer: responseBuf, injectedCount: 0, modified: false };
+  }
+
+  try {
+    const flags = responseBuf[0];
+    const msgLen = responseBuf.readUInt32BE(1);
+    if (5 + msgLen > responseBuf.length) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const msgBody = responseBuf.subarray(5, 5 + msgLen);
+    const parsed = parseProto(msgBody, 0, msgBody.length);
+    const modelTag = findModelEntryFieldTag(parsed);
+
+    if (modelTag === null) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const sampleEntry = parsed.find((f) => f.tag === modelTag && Array.isArray(f.value));
+    if (!sampleEntry || !Array.isArray(sampleEntry.value)) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const fieldMapping = extractFieldMapping(sampleEntry.value);
+    const existing = extractExistingModelKeys(msgBody, modelTag);
+
+    // Strip any obsolete or explicitly disabled models already present in msgBody
+    const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
+    const keptBodyParts: Buffer[] = [];
+    let strippedAnyNative = false;
+
+    for (const f of rawFields) {
+      if (f.tag === modelTag && f.raw) {
+        const subFields = parseProtoRaw(f.raw, 0, f.raw.length);
+        let idStr = '';
+        let labelStr = '';
+        for (const sf of subFields) {
+          if (sf.raw) {
+            if (sf.fieldNum === 1) idStr = sf.raw.toString('utf8').trim();
+            else if (sf.fieldNum === 2) labelStr = sf.raw.toString('utf8').trim();
+          }
+        }
+        const isObsolete = isObsoleteModel(idStr, labelStr);
+        const isDisabled = isModelOrLabelDisabled(idStr, labelStr, disabledModelIds);
+        if (isObsolete || isDisabled) {
+          strippedAnyNative = true;
+          continue;
+        }
+      }
+      keptBodyParts.push(msgBody.subarray(f.start, f.end));
+    }
+
+    const cleanMsgBody = strippedAnyNative ? Buffer.concat(keptBodyParts) : msgBody;
+    const newParts: Buffer[] = [cleanMsgBody];
+
+    let injectedCount = 0;
+
+    const filteredModels = (customModels || []).filter(
+      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName) && !m._poolOnly,
+    );
+    const expandedModels = expandModelsWithEffort(filteredModels);
+    const seenModelKeys = new Set<string>();
+
+    for (const m of expandedModels) {
+      if (m._poolOnly) continue;
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
+      const effort = m._effortSuffix || '';
+
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
+      const canonicalBase = isGoogleFamily
+        ? (rawName.includes('claude') || cleanDisp.includes('claude')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus')
+                ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
+                : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
+            : (rawName.includes('argon') || cleanDisp.includes('argon')
+                ? 'gemini-4-argon-medium'
+                : (rawName || 'gemini-3.8-flash-tiered')))
+        : rawName;
+
+      const modelDedupKey = isGoogleFamily
+        ? `google-unified:${canonicalBase}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      if (seenModelKeys.has(modelDedupKey)) continue;
+      seenModelKeys.add(modelDedupKey);
+
+      const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
+      const placeholderId = generateModelPlaceholderId(m);
+      const pidKey = placeholderId.toLowerCase();
+
+      // Skip if already in the incoming protobuf message
+      if (existing.modelIds.has(pidKey) || existing.modelIds.has(`models/${pidKey}`)) {
+        continue;
+      }
+      const formattedName = formatModelDisplayName(m, health);
+      if (existing.labels.has(formattedName) || existing.labels.has(formattedName.toLowerCase())) {
+        continue;
+      }
+      if (cleanDisp && existing.placeholderNames.has(cleanDisp)) {
+        continue;
+      }
+      if (rawName && existing.placeholderNames.has(rawName)) {
+        continue;
+      }
+
+      existing.modelIds.add(pidKey);
+      existing.modelIds.add(`models/${pidKey}`);
+      existing.labels.add(formattedName);
+
+      const cap = detectModelCapabilities(m);
+      const entry = encodeModelEntryForGetModels(
+        `models/${placeholderId}`,
+        formattedName,
+        fieldMapping,
+        cap.supportsImages,
+      );
+      const tagBuf = encodeVarint(modelTag);
+      const lenBuf = encodeVarint(entry.length);
+      newParts.push(tagBuf, lenBuf, entry);
+      injectedCount++;
+    }
+
+    if (injectedCount === 0 && !strippedAnyNative && !forceCompatibility) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    // Compatibility fallback: ensure legacy/placeholder models (e.g. MODEL_PLACEHOLDER_M577, MODEL_PLACEHOLDER_M0..M650)
+    // resolve cleanly in Language Server without "unknown model key: model not found"
+    let fallbackInjected = 0;
+    for (let i = 0; i <= 650; i++) {
+      const legacyPid = `MODEL_PLACEHOLDER_M${i}`;
+      const legacyKey = legacyPid.toLowerCase();
+      if (existing.modelIds.has(legacyKey) || existing.modelIds.has(`models/${legacyKey}`)) {
+        continue;
+      }
+      existing.modelIds.add(legacyKey);
+      existing.modelIds.add(`models/${legacyKey}`);
+      const entry = encodeModelEntryForGetModels(
+        `models/${legacyPid}`,
+        legacyPid,
+        fieldMapping,
+        true,
+      );
+      const tagBuf = encodeVarint(modelTag);
+      const lenBuf = encodeVarint(entry.length);
+      newParts.push(tagBuf, lenBuf, entry);
+      fallbackInjected++;
+    }
+
+    if (injectedCount === 0 && !strippedAnyNative && fallbackInjected === 0) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const newMsgBody = Buffer.concat(newParts);
+    const newHeader = Buffer.alloc(5);
+    newHeader[0] = flags;
+    newHeader.writeUInt32BE(newMsgBody.length, 1);
+    const modifiedBuf = Buffer.concat([newHeader, newMsgBody]);
+
+    return { buffer: modifiedBuf, injectedCount, modified: true };
+  } catch (err) {
+    log.warn('[ProtoInjector] Injection failed, returning original buffer:', (err as Error).message);
+    return { buffer: responseBuf, injectedCount: 0, modified: false };
+  }
+}
+
+function injectCustomModelsIntoUserStatusJson(
+  responseBuf: Buffer,
+  flags: number,
+  trailers: Buffer,
+  bodyStr: string,
+  jsonStart: number,
+  customModels: CustomModel[],
+  healthMap?: Map<string, ModelHealthResult>,
+  disabledModelIds?: Set<string>,
+): InjectionResult {
+  try {
+    let jsonEnd = bodyStr.lastIndexOf('}');
+    let parsed: any = null;
+    while (jsonEnd > jsonStart) {
+      try {
+        parsed = JSON.parse(bodyStr.slice(jsonStart, jsonEnd + 1));
+        break;
+      } catch {
+        jsonEnd = bodyStr.lastIndexOf('}', jsonEnd - 1);
+      }
+    }
+
+    if (!parsed || !parsed.userStatus) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    if (!parsed.userStatus.cascadeModelConfigData) {
+      parsed.userStatus.cascadeModelConfigData = {
+        clientModelConfigs: [],
+        clientModelSorts: [{ name: 'Recommended', groups: [{ modelLabels: [] }] }],
+      };
+    }
+
+    const cascade = parsed.userStatus.cascadeModelConfigData;
+    if (!Array.isArray(cascade.clientModelConfigs)) {
+      cascade.clientModelConfigs = [];
+    }
+    if (!Array.isArray(cascade.clientModelSorts) || cascade.clientModelSorts.length === 0) {
+      cascade.clientModelSorts = [{ name: 'Recommended', groups: [{ modelLabels: [] }] }];
+    }
+    if (!cascade.clientModelSorts[0].groups || !Array.isArray(cascade.clientModelSorts[0].groups) || cascade.clientModelSorts[0].groups.length === 0) {
+      cascade.clientModelSorts[0].groups = [{ modelLabels: [] }];
+    }
+    const sortGroup = cascade.clientModelSorts[0].groups[0];
+    if (!Array.isArray(sortGroup.modelLabels)) {
+      sortGroup.modelLabels = [];
+    }
+
+    const existingLabels = new Set<string>();
+    const existingModelIds = new Set<string>();
+    const existingPlaceholderNames = new Set<string>();
+
+    const keptConfigs: any[] = [];
+    const strippedLabels = new Set<string>();
+    let strippedAnyJson = false;
+
+    for (const c of cascade.clientModelConfigs) {
+      const label = (c.label || '').trim();
+      const modelId = String(c.modelId || c.modelOrAlias?.model || '').trim();
+      const isObsolete = isObsoleteModel(modelId, label);
+      const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
+      if (isObsolete || isDisabled) {
+        strippedAnyJson = true;
+        if (label) {
+          strippedLabels.add(label);
+          strippedLabels.add(label.toLowerCase());
+        }
+        continue;
+      }
+
+      // Do NOT unlock native Argon models: standard Google accounts have 0 Argon quota.
+      // Forcing Argon unlock causes Antigravity to schedule background tasks on Argon, triggering 429 quota exhaustion.
+      const isArgon = label.toLowerCase().includes('argon') || modelId.toLowerCase().includes('argon');
+      if (!isArgon) {
+        const tagTitle = String(c.tagTitle || '');
+        const tagDesc = String(c.tagDescription || '');
+        if (
+          tagTitle.toLowerCase().includes('unavailable') ||
+          tagDesc.toLowerCase().includes('ultra') ||
+          c.disabled === true
+        ) {
+          delete c.disabled;
+          if (tagTitle.toLowerCase().includes('unavailable') || tagDesc.toLowerCase().includes('ultra')) {
+            delete c.tagTitle;
+            delete c.tagDescription;
+          }
+          if (!c.quotaInfo) {
+            c.quotaInfo = {
+              remainingFraction: 1,
+              resetTime: '2099-01-01T00:00:00Z',
+            };
+          }
+          if (Array.isArray(c.allowedTiers)) {
+            if (!c.allowedTiers.includes('g1-ultra-tier')) c.allowedTiers.push('g1-ultra-tier');
+            if (!c.allowedTiers.includes('ultra-tier')) c.allowedTiers.push('ultra-tier');
+            if (!c.allowedTiers.includes('TEAMS_TIER_ULTRA')) c.allowedTiers.push('TEAMS_TIER_ULTRA');
+          }
+        }
+      }
+
+      keptConfigs.push(c);
+
+      if (label) {
+        existingLabels.add(label);
+        existingLabels.add(label.toLowerCase());
+        if (
+          modelId.toLowerCase().includes('model_placeholder_') ||
+          label.includes('•') ||
+          label.includes('|') ||
+          label.includes('⭐')
+        ) {
+          const norm = label
+            .replace(/^⭐\s*/, '')
+            .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+            .trim()
+            .toLowerCase();
+          if (norm) existingPlaceholderNames.add(norm);
+        }
+      }
+      if (modelId) {
+        const mid = modelId.toLowerCase();
+        existingModelIds.add(mid);
+        existingModelIds.add(mid.replace(/^models\//, ''));
+      }
+    }
+    cascade.clientModelConfigs = keptConfigs;
+
+    if (strippedLabels.size > 0) {
+      sortGroup.modelLabels = sortGroup.modelLabels.filter(
+        (l: string) => !strippedLabels.has(l) && !strippedLabels.has(l.toLowerCase())
+      );
+    }
+
+    const expandedModels = expandModelsWithEffort(customModels);
+    const seenModelKeys = new Set<string>();
+    let injectedCount = 0;
+
+    for (const m of expandedModels) {
+      if (m._poolOnly) continue;
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
+      const effort = m._effortSuffix || '';
+
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
+      const canonicalBase = isGoogleFamily
+        ? (rawName.includes('claude') || cleanDisp.includes('claude')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus')
+                ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
+                : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
+            : (rawName.includes('argon') || cleanDisp.includes('argon')
+                ? 'gemini-4-argon-medium'
+                : (rawName || 'gemini-3.8-flash-tiered')))
+        : rawName;
+
+      const modelDedupKey = isGoogleFamily
+        ? `google-unified:${canonicalBase}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      if (seenModelKeys.has(modelDedupKey)) continue;
+
+      const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
+      const placeholderId = generateModelPlaceholderId(m);
+      const pidKey = placeholderId.toLowerCase();
+
+      if (existingModelIds.has(pidKey) || existingModelIds.has(`models/${pidKey}`)) continue;
+      const label = formatModelDisplayName(m, health);
+      if (existingLabels.has(label) || existingLabels.has(label.toLowerCase())) continue;
+      if (cleanDisp && existingPlaceholderNames.has(cleanDisp)) continue;
+      if (rawName && existingPlaceholderNames.has(rawName)) continue;
+
+      existingLabels.add(label);
+      existingModelIds.add(pidKey);
+      seenModelKeys.add(modelDedupKey);
+
+      const cap = detectModelCapabilities(m);
+
+      cascade.clientModelConfigs.push({
+        label,
+        modelOrAlias: {
+          model: placeholderId,
+        },
+        supportsImages: cap.supportsImages,
+        isRecommended: false,
+        allowedTiers: [
+          'TEAMS_TIER_PRO',
+          'TEAMS_TIER_TEAMS',
+          'TEAMS_TIER_ENTERPRISE_SELF_HOSTED',
+          'TEAMS_TIER_ENTERPRISE_SAAS',
+          'TEAMS_TIER_HYBRID',
+          'TEAMS_TIER_PRO_ULTIMATE',
+          'TEAMS_TIER_ULTRA',
+          'g1-ultra-tier',
+          'ultra-tier',
+        ],
+        tagTitle: m.provider ? m.provider.charAt(0).toUpperCase() + m.provider.slice(1) : 'Custom',
+        quotaInfo: {
+          remainingFraction: 1,
+          resetTime: '2099-01-01T00:00:00Z',
+        },
+        modelId: placeholderId,
+      });
+
+      sortGroup.modelLabels.push(label);
+      injectedCount++;
+    }
+
+    if (injectedCount === 0 && !strippedAnyJson) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const newJsonBuf = Buffer.from(JSON.stringify(parsed), 'utf8');
+    const newHeader = Buffer.alloc(5);
+    newHeader[0] = flags;
+    newHeader.writeUInt32BE(newJsonBuf.length, 1);
+    const modifiedBuf = Buffer.concat([newHeader, newJsonBuf, trailers]);
+
+    log.debug(`[ProtoInjector] Injected ${injectedCount} custom models into UserStatus JSON`);
+    return { buffer: modifiedBuf, injectedCount, modified: true };
+  } catch (err) {
+    log.warn('[ProtoInjector] JSON injection failed, returning original buffer:', (err as Error).message);
+    return { buffer: responseBuf, injectedCount: 0, modified: false };
+  }
+}
+
+/**
+ * Injects custom models into a LanguageServerService/GetUserStatus protobuf response (for Antigravity 2.5+ / 2.12+).
+ * Populates client_model_configs and adds model labels to client_model_sorts.
+ *
+ * @param responseBuf Raw gRPC-Web response buffer
+ * @param customModels Custom models to inject
+ * @param healthMap Optional health status map
+ * @param disabledModelIds Optional set of model IDs/labels explicitly disabled
+ * @returns Injection result with modified buffer and metadata
+ */
+export function injectCustomModelsIntoUserStatus(
+  responseBuf: Buffer,
+  customModels: CustomModel[],
+  healthMap?: Map<string, ModelHealthResult>,
+  disabledModelIds?: Set<string>,
+): InjectionResult {
+  if (responseBuf.length <= 5) {
+    return { buffer: responseBuf, injectedCount: 0, modified: false };
+  }
+
+  try {
+    const flags = responseBuf[0];
+    const msgLen = responseBuf.readUInt32BE(1);
+    if (5 + msgLen > responseBuf.length) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const msgBody = responseBuf.subarray(5, 5 + msgLen);
+    const trailers = responseBuf.subarray(5 + msgLen);
+
+    // Check if the payload is JSON (Connect-JSON protocol used in Antigravity 2.12+)
+    const bodyStr = msgBody.toString('utf8');
+    const jsonStart = bodyStr.indexOf('{"userStatus"');
+    if (jsonStart !== -1) {
+      return injectCustomModelsIntoUserStatusJson(responseBuf, flags, trailers, bodyStr, jsonStart, customModels, healthMap, disabledModelIds);
+    }
+
+    const topFields = parseProtoRaw(msgBody, 0, msgBody.length);
+    const usField = topFields.find((f) => f.fieldNum === 1 && f.raw);
+    if (!usField || !usField.raw) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const usFields = parseProtoRaw(usField.raw, 0, usField.raw.length);
+    const cascadeField = usFields.find((f) => f.fieldNum === 33 && f.raw);
+    if (!cascadeField || !cascadeField.raw) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    const cascadeFields = parseProtoRaw(cascadeField.raw, 0, cascadeField.raw.length);
+
+    const newModels: Array<{
+      label: string;
+      modelEnum: number;
+      modelId: string;
+      supportsImages: boolean;
+      supportsThought: boolean;
+    }> = [];
+    const filteredCascadeCustom = (customModels || []).filter(
+      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName) && !m._poolOnly,
+    );
+    const expandedModels = expandModelsWithEffort(filteredCascadeCustom);
+
+    // Extract existing model labels and IDs from the Cascade config
+    const existingLabels = new Set<string>();
+    const existingModelIds = new Set<string>();
+    const existingPlaceholderNames = new Set<string>();
+
+    for (const cf of cascadeFields) {
+      if (cf.fieldNum === 1 && cf.raw) {
+        const sub = parseProtoRaw(cf.raw, 0, cf.raw.length);
+        let label = '';
+        let modelId = '';
+        for (const sf of sub) {
+          if (sf.raw) {
+            if (sf.fieldNum === 1) {
+              label = sf.raw.toString('utf8').trim();
+            } else if (sf.fieldNum === 21) {
+              modelId = sf.raw.toString('utf8').trim();
+            }
+          }
+        }
+        if (
+          isObsoleteModel(modelId, label) ||
+          isModelOrLabelDisabled(modelId, label, disabledModelIds)
+        ) {
+          continue;
+        }
+        if (label) {
+          existingLabels.add(label);
+          existingLabels.add(label.toLowerCase());
+          if (
+            modelId.toLowerCase().includes('model_placeholder_') ||
+            label.includes('•') ||
+            label.includes('|') ||
+            label.includes('⭐')
+          ) {
+            const norm = label
+              .replace(/^⭐\s*/, '')
+              .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+              .trim()
+              .toLowerCase();
+            if (norm) existingPlaceholderNames.add(norm);
+          }
+        }
+        if (modelId) {
+          const mid = modelId.toLowerCase();
+          existingModelIds.add(mid);
+          existingModelIds.add(mid.replace(/^models\//, ''));
+        }
+      }
+    }
+
+    const seenModelKeys = new Set<string>();
+    for (const m of expandedModels) {
+      if (m._poolOnly) continue;
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
+      const effort = m._effortSuffix || '';
+
+      const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
+      const canonicalBase = isGoogleFamily
+        ? (rawName.includes('claude') || cleanDisp.includes('claude')
+            ? (rawName.includes('opus') || cleanDisp.includes('opus')
+                ? (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-opus-5-5' : 'claude-opus-4-6-thinking')
+                : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
+            : (rawName.includes('argon') || cleanDisp.includes('argon')
+                ? 'gemini-4-argon-medium'
+                : (rawName || 'gemini-3.8-flash-tiered')))
+        : rawName;
+
+      const modelDedupKey = isGoogleFamily
+        ? `google-unified:${canonicalBase}${effort}`
+        : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
+
+      if (seenModelKeys.has(modelDedupKey)) continue;
+
+      const health = healthMap?.get(m.name) ?? getCachedHealth(m.name) ?? undefined;
+      const placeholderId = generateModelPlaceholderId(m);
+      const pidKey = placeholderId.toLowerCase();
+
+      if (existingModelIds.has(pidKey) || existingModelIds.has(`models/${pidKey}`)) continue;
+      const label = formatModelDisplayName(m, health);
+      if (existingLabels.has(label) || existingLabels.has(label.toLowerCase())) continue;
+      if (cleanDisp && existingPlaceholderNames.has(cleanDisp)) continue;
+      if (rawName && existingPlaceholderNames.has(rawName)) continue;
+
+      existingLabels.add(label);
+      existingModelIds.add(pidKey);
+      seenModelKeys.add(modelDedupKey);
+
+      const match = placeholderId.match(/_M(\d+)$/);
+      const num = match ? parseInt(match[1], 10) : 400;
+      const modelEnum = 1000 + num;
+
+      const cap = detectModelCapabilities(m);
+      newModels.push({
+        label,
+        modelEnum,
+        modelId: placeholderId,
+        supportsImages: cap.supportsImages,
+        supportsThought: cap.isThinking,
+      });
+    }
+
+    const customInjectedCount = newModels.length;
+
+    // Build new CascadeModelConfigData
+    const newCascadeParts: Buffer[] = [];
+    let strippedAnyCascade = false;
+    const strippedLabels = new Set<string>();
+
+    // 1. Keep existing client_model_configs (filtering out obsolete or disabled ones)
+    for (const f of cascadeFields) {
+      if (f.fieldNum === 1 && f.raw) {
+        const sub = parseProtoRaw(f.raw, 0, f.raw.length);
+        let label = '';
+        let modelId = '';
+        for (const sf of sub) {
+          if (sf.raw) {
+            if (sf.fieldNum === 1) label = sf.raw.toString('utf8').trim();
+            else if (sf.fieldNum === 21) modelId = sf.raw.toString('utf8').trim();
+          }
+        }
+        const isObsolete = isObsoleteModel(modelId, label);
+        const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
+        if (isObsolete || isDisabled) {
+          strippedAnyCascade = true;
+          if (label) {
+            strippedLabels.add(label);
+            strippedLabels.add(label.toLowerCase());
+          }
+          continue;
+        }
+        newCascadeParts.push(encodeMessageField(1, f.raw));
+      }
+    }
+
+    if (customInjectedCount === 0 && !strippedAnyCascade) {
+      return { buffer: responseBuf, injectedCount: 0, modified: false };
+    }
+
+    // 2. Append new client_model_configs
+    for (const nm of newModels) {
+      const cfgBuf = encodeClientModelConfig(
+        nm.label,
+        nm.modelEnum,
+        nm.modelId,
+        nm.supportsImages,
+        nm.supportsThought,
+      );
+      newCascadeParts.push(encodeMessageField(1, cfgBuf));
+    }
+
+    // 3. Update client_model_sorts to include the new labels and strip disabled labels
+    let sortsFound = false;
+    for (const f of cascadeFields) {
+      if (f.fieldNum === 2 && f.raw) {
+        sortsFound = true;
+        const sortFields = parseProtoRaw(f.raw, 0, f.raw.length);
+        const newSortParts: Buffer[] = [];
+        for (const sf of sortFields) {
+          if (sf.fieldNum === 1 && sf.raw) {
+            newSortParts.push(encodeStringField(1, sf.raw.toString('utf8')));
+          } else if (sf.fieldNum === 2 && sf.raw) {
+            const groupFields = parseProtoRaw(sf.raw, 0, sf.raw.length);
+            const newGroupParts: Buffer[] = [];
+            for (const gf of groupFields) {
+              if (gf.fieldNum === 1 && gf.raw) {
+                newGroupParts.push(encodeStringField(1, gf.raw.toString('utf8')));
+              } else if (gf.fieldNum === 2 && gf.raw) {
+                const grpLabel = gf.raw.toString('utf8');
+                if (strippedLabels.has(grpLabel) || strippedLabels.has(grpLabel.toLowerCase())) {
+                  continue;
+                }
+                newGroupParts.push(encodeStringField(2, grpLabel));
+              }
+            }
+            for (const nm of newModels) {
+              newGroupParts.push(encodeStringField(2, nm.label));
+            }
+            newSortParts.push(encodeMessageField(2, Buffer.concat(newGroupParts)));
+          } else if (sf.wireType === 2 && sf.raw) {
+            newSortParts.push(encodeMessageField(sf.fieldNum, sf.raw));
+          } else if (sf.wireType === 0 && sf.value !== undefined) {
+            newSortParts.push(encodeVarintField(sf.fieldNum, sf.value));
+          }
+        }
+        newCascadeParts.push(encodeMessageField(2, Buffer.concat(newSortParts)));
+      } else if (f.fieldNum !== 1) {
+        if (f.wireType === 2 && f.raw) {
+          newCascadeParts.push(encodeMessageField(f.fieldNum, f.raw));
+        } else if (f.wireType === 0 && f.value !== undefined) {
+          newCascadeParts.push(encodeVarintField(f.fieldNum, f.value));
+        }
+      }
+    }
+
+    if (!sortsFound) {
+      const groupParts = [encodeStringField(1, '')];
+      for (const nm of newModels) {
+        groupParts.push(encodeStringField(2, nm.label));
+      }
+      const sortParts = [
+        encodeStringField(1, 'Recommended'),
+        encodeMessageField(2, Buffer.concat(groupParts)),
+      ];
+      newCascadeParts.push(encodeMessageField(2, Buffer.concat(sortParts)));
+    }
+
+    const newCascadeBuf = Buffer.concat(newCascadeParts);
+
+    // Build new UserStatus
+    const newUsParts: Buffer[] = [];
+    for (const f of usFields) {
+      if (f.fieldNum === 33) {
+        newUsParts.push(encodeMessageField(33, newCascadeBuf));
+      } else if (f.wireType === 2 && f.raw) {
+        newUsParts.push(encodeMessageField(f.fieldNum, f.raw));
+      } else if (f.wireType === 0 && f.value !== undefined) {
+        newUsParts.push(encodeVarintField(f.fieldNum, f.value));
+      }
+    }
+    const newUsBuf = Buffer.concat(newUsParts);
+
+    // Build new Top Message
+    const newTopParts: Buffer[] = [];
+    for (const f of topFields) {
+      if (f.fieldNum === 1) {
+        newTopParts.push(encodeMessageField(1, newUsBuf));
+      } else if (f.wireType === 2 && f.raw) {
+        newTopParts.push(encodeMessageField(f.fieldNum, f.raw));
+      } else if (f.wireType === 0 && f.value !== undefined) {
+        newTopParts.push(encodeVarintField(f.fieldNum, f.value));
+      }
+    }
+    const newMsgBody = Buffer.concat(newTopParts);
+
+    const newHeader = Buffer.alloc(5);
+    newHeader[0] = flags;
+    newHeader.writeUInt32BE(newMsgBody.length, 1);
+    const modifiedBuf = Buffer.concat([newHeader, newMsgBody, trailers]);
+
+    return { buffer: modifiedBuf, injectedCount: customInjectedCount, modified: true };
+  } catch (err) {
+    log.warn('[ProtoInjector] GetUserStatus injection failed, returning original buffer:', (err as Error).message);
+    return { buffer: responseBuf, injectedCount: 0, modified: false };
+  }
+}
+

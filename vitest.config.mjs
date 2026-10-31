@@ -1,0 +1,25 @@
+import { defineConfig } from 'vitest/config';
+import path from 'path';
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+    hookTimeout: 30000,
+    testTimeout: 30000,
+    include: ['src/__tests__/**/*.test.ts', 'tests/**/*.spec.ts', 'tests/**/*.test.ts'],
+    server: {
+      deps: {
+        // Inline proxy.ts and its sub-modules so vitest can intercept require('./cryptoStore') calls
+        inline: [/\/src\/proxy(\.ts|\/.*)?$/, /\/src\/cryptoStore\.ts$/, 'electron'],
+      },
+    },
+  },
+  resolve: {
+    alias: {
+      electron: path.resolve(import.meta.dirname, './src/__tests__/electron-stub.ts'),
+      'electron-log/main': path.resolve(import.meta.dirname, './src/__mocks__/electron-log.ts'),
+      'electron-log': path.resolve(import.meta.dirname, './src/__mocks__/electron-log.ts'),
+    },
+  },
+});

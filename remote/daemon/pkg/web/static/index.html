@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Antigravity Remote — Web Console</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">⚡</div>
+      <span>Antigravity Remote</span>
+    </div>
+    <div class="header-status">
+      <div class="status-badge">
+        <div id="ws-dot" class="dot"></div>
+        <span id="ws-text">Connexion...</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <aside class="sidebar">
+      <div class="card">
+        <div class="card-title">Télémétrie Hôte</div>
+        <div class="telemetry-row">
+          <span style="color: var(--text-muted);">CPU :</span>
+          <span id="cpu-stat" style="font-weight: bold;">--%</span>
+        </div>
+        <div class="telemetry-row">
+          <span style="color: var(--text-muted);">RAM :</span>
+          <span id="ram-stat" style="font-weight: bold;">-- Go</span>
+        </div>
+        <div class="telemetry-row">
+          <span style="color: var(--text-muted);">IDE :</span>
+          <span id="ide-stat" style="font-weight: bold;">En attente</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Contrôle Système</div>
+        <div class="btn-group">
+          <button class="primary" onclick="launchIDE()">🚀 Lancer Antigravity</button>
+          <button onclick="restartIDE()">🔄 Redémarrer IDE</button>
+          <button class="danger" onclick="emergencyStop()">🛑 Arrêt d'Urgence</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="chat-container">
+      <div id="chat-messages" class="chat-messages">
+        <div class="message agent">
+          👋 Connecté à Antigravity Remote. Posez votre question ou ordonnez une tâche.
+        </div>
+      </div>
+      <div class="chat-input-bar">
+        <input type="text" id="chat-input" placeholder="Écrire un message à l'agent..." autofocus />
+        <button class="primary" onclick="sendMessage()">Envoyer</button>
+      </div>
+    </main>
+  </div>
+
+  <script src="/web/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "The Quiet Console",
+  "principle": "Dark, restrained zinc shell with provider identity expressed only via 16-32px icon bubbles and 6px status dots. No neon gradients.",
+  "colorDistribution": {
+    "neutralSurfaces": "80-90%",
+    "secondaryPanels": "5-15%",
+    "accentHues": "<5%"
+  },
+  "source": "DESIGN.md: L92-104 & remote/mobile/design.md: L102-107"
+}

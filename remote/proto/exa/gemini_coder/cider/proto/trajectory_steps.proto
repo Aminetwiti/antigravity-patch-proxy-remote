@@ -1,0 +1,273 @@
+﻿syntax = "proto3";
+
+// file: exa/gemini_coder/cider/proto/trajectory_steps.proto
+// package: devtools.cider.agent.trajectory_steps
+message DummyStep {
+  optional string tool_name = 1;
+  optional .devtools.cider.agent.trajectory_steps.DummyStep.Args args = 2;
+  optional .devtools.cider.agent.trajectory_steps.DummyStep.Reply reply = 3;
+  message Args {
+    optional int32 a = 1;
+    optional int32 b = 2;
+  }
+  message Reply {
+    optional int32 a_plus_b = 1;
+    optional .devtools.cider.agent.trajectory_steps.DummyStep.Reply.Image image_data = 2;
+    message Image {
+      optional string mime_type = 1;
+      optional bytes data = 2;
+    }
+  }
+}
+message ToolStatus {
+  optional string widget_update = 1;
+  optional string warning = 2;
+}
+message BuildCleanerStep {
+  optional string tool_name = 1;
+  optional .devtools.cider.agent.trajectory_steps.BuildCleanerStep.Args args = 2;
+  optional .devtools.cider.agent.trajectory_steps.BuildCleanerStep.Reply reply = 3;
+  optional .devtools.cider.agent.trajectory_steps.ToolStatus tool_status = 4;
+  message Args {
+    repeated string workspace_paths = 1;
+  }
+  message Issue {
+    optional string blaze_package = 1;
+    optional string action = 2;
+    optional string action_label = 3;
+    optional string status = 4;
+    optional string status_detail = 5;
+  }
+  message Reply {
+    repeated string updated_build_files = 1;
+    repeated .devtools.cider.agent.trajectory_steps.BuildCleanerStep.Issue issues = 2;
+  }
+}
+message BuildFailure {
+  optional string target = 1;
+  optional string stderr = 2;
+}
+message BuildReply {
+  optional string invocation_id = 5;
+  optional bool succeeded = 1;
+  optional string error_message = 2;
+  repeated .devtools.cider.agent.trajectory_steps.BuildFailure failure_details = 3;
+}
+message BuildTargetsStep {
+  optional string tool_name = 1;
+  optional .devtools.cider.agent.trajectory_steps.BuildTargetsStep.Args args = 2;
+  optional .devtools.cider.agent.trajectory_steps.BuildReply reply = 3;
+  message Args {
+    repeated string targets = 1;
+    repeated string arguments = 2;
+    optional uint64 wait_ms_before_async = 3;
+  }
+}
+message TestReply {
+  optional string invocation_id = 8;
+  optional bool succeeded = 1;
+  optional string error_message = 2;
+  repeated .devtools.cider.agent.trajectory_steps.BuildFailure build_failure_details = 3;
+  repeated .devtools.cider.agent.trajectory_steps.TestFailure test_failure_details = 4;
+  optional string raw_lcov = 5;
+}
+message TestLog {
+  optional string target = 1;
+  optional string log = 2;
+}
+message TestFailure {
+  optional string target = 1;
+  optional string test_case = 2;
+  optional string failure_message = 3;
+}
+message TestTargetsStep {
+  optional string tool_name = 1;
+  optional .devtools.cider.agent.trajectory_steps.TestTargetsStep.Args args = 2;
+  optional .devtools.cider.agent.trajectory_steps.TestReply reply = 3;
+  message Args {
+    repeated string targets = 1;
+    repeated string arguments = 2;
+    repeated string coverage_files = 3;
+    optional uint64 wait_ms_before_async = 4;
+  }
+}
+message MomaStep {
+  optional string tool_name = 1;
+  optional .devtools.cider.agent.trajectory_steps.MomaStep.Args args = 2;
+  optional .devtools.cider.agent.trajectory_steps.MomaStep.Reply reply = 3;
+  optional .devtools.cider.agent.trajectory_steps.ToolStatus tool_status = 4;
+  message Args {
+    optional string query = 1;
+  }
+  message Result {
+    optional string uri = 1;
+    optional string title = 2;
+    optional string content = 3;
+  }
+  message Reply {
+    repeated .devtools.cider.agent.trajectory_steps.MomaStep.Result search_results = 1;
+  }
+}
+message LookupResult {
+  optional string uri = 1;
+  optional string content = 2;
+  optional string binary_content = 3;
+  optional string error = 4;
+  optional string title = 5;
+  optional string mime_type = 6;
+}
+message RetrieveContentStep {
+  optional string tool_name = 1;
+  optional .devtools.cider.agent.trajectory_steps.RetrieveContentStep.Args args = 2;
+  optional .devtools.cider.agent.trajectory_steps.RetrieveContentStep.Reply reply = 3;
+  message Args {
+    repeated string uri = 1;
+  }
+  message Reply {
+    repeated .devtools.cider.agent.trajectory_steps.LookupResult results = 1;
+  }
+}
+message CritiqueStep {
+  optional string tool_name = 1;
+  optional .devtools.cider.agent.trajectory_steps.CritiqueStep.Args args = 2;
+  optional .devtools.cider.agent.trajectory_steps.CritiqueStep.Reply reply = 3;
+  optional .devtools.cider.agent.trajectory_steps.ToolStatus tool_status = 4;
+  message Args {
+    optional string changelist = 1;
+    optional bool include_code_changes = 2;
+    optional bool include_reviewer_comments = 3;
+    repeated string paths = 4;
+  }
+  message Reply {
+    optional string changelist_content = 1;
+    repeated .devtools.cider.agent.trajectory_steps.CritiqueStep.Comment comments = 2;
+    repeated string modified_paths = 3;
+  }
+  message Comment {
+    optional string depot_path = 1;
+    optional string type = 2;
+    optional string author = 3;
+    optional string content = 4;
+    optional bool resolved = 5;
+    repeated .devtools.cider.agent.trajectory_steps.CritiqueStep.Approval approval = 6;
+    repeated .devtools.cider.agent.trajectory_steps.CritiqueStep.CommentReply replies = 7;
+  }
+  message Approval {
+    optional string type = 1;
+    optional string display_name = 2;
+    optional bool approved = 3;
+  }
+  message CommentReply {
+    optional string author = 1;
+    optional string content = 2;
+    optional string action = 3;
+  }
+}
+message FindingsStep {
+  optional string tool_name = 1;
+  optional .devtools.cider.agent.trajectory_steps.FindingsStep.Args args = 2;
+  optional .devtools.cider.agent.trajectory_steps.FindingsStep.Reply reply = 3;
+  optional .devtools.cider.agent.trajectory_steps.ToolStatus tool_status = 4;
+  message Args {
+    optional string changelist = 1;
+  }
+  message Finding {
+    optional string category = 1;
+    optional string subcategory = 2;
+    optional string description = 3;
+    optional bool actionable = 4;
+    optional .devtools.cider.agent.trajectory_steps.FindingsStep.Finding.Location location = 5;
+    message Location {
+      optional string depot_path = 1;
+      optional int32 line_number_start = 2;
+      optional int32 line_number_end = 3;
+    }
+  }
+  message Reply {
+    repeated .devtools.cider.agent.trajectory_steps.FindingsStep.Finding findings = 1;
+  }
+}
+message ProposeAICommentsStep {
+  optional .devtools.cider.agent.trajectory_steps.ProposeAICommentsStep.Args args = 2;
+  message AIComment {
+    optional string file_path = 1;
+    optional .devtools.cider.agent.trajectory_steps.ProposeAICommentsStep.AIComment.Side side = 2;
+    optional int32 line_number = 3;
+    optional string comment = 4;
+    enum Side {
+      SIDE_UNSPECIFIED = 0;
+      SIDE_LEFT = 1;
+      SIDE_RIGHT = 2;
+    }
+  }
+  message Args {
+    repeated .devtools.cider.agent.trajectory_steps.ProposeAICommentsStep.AIComment comments = 1;
+  }
+}
+message StartCodeReviewStep {
+  optional .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.Args args = 1;
+  optional .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.ChangeData change_data = 2;
+  repeated .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.ContextData context_data = 3;
+  optional bool continue_review = 4;
+  message FileVersion {
+    optional .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.CritiqueSnapshot critique_snapshot = 1;
+    optional int64 piper_cl_number = 2;
+    optional int64 piper_file_revision = 3;
+  }
+  message CritiqueSnapshot {
+    optional int64 ocl_number = 1;
+    optional int64 snapshot_number = 2;
+  }
+  message Args {
+    optional .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.CritiqueSnapshot critique_snapshot = 1;
+    optional string user_prompt = 2;
+    repeated .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.Args.ExternalContext external_contexts = 3;
+    repeated string file_paths = 4;
+    message ExternalContext {
+      optional string g3doc_path = 1;
+    }
+  }
+  message G3DocData {
+    optional string g3doc_path = 1;
+    optional string content = 2;
+    optional .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.FileVersion file_version = 3;
+  }
+  message FileContentData {
+    optional string file_path = 1;
+    optional string content = 2;
+    optional .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.FileVersion file_version = 3;
+  }
+  message ContextData {
+    optional .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.G3DocData g3doc = 1;
+    optional .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.FileContentData file = 2;
+  }
+  message ChangedFileData {
+    optional .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.ChangedFileData.FileOperation operation = 1;
+    optional string old_file_path = 2;
+    optional string new_file_path = 3;
+    optional string file_diff = 4;
+    enum FileOperation {
+      FILE_OPERATION_UNSPECIFIED = 0;
+      FILE_OPERATION_ADD = 1;
+      FILE_OPERATION_DELETE = 2;
+      FILE_OPERATION_MODIFY = 3;
+      FILE_OPERATION_RENAME = 4;
+      FILE_OPERATION_BRANCH = 5;
+    }
+  }
+  message BugData {
+    optional int64 bug_id = 1;
+    optional string title = 2;
+    optional string description = 3;
+  }
+  message Tag {
+    optional string name = 1;
+    optional string value = 2;
+  }
+  message ChangeData {
+    optional string description = 1;
+    repeated .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.ChangedFileData files = 3;
+    repeated .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.BugData bugs = 2;
+    repeated .devtools.cider.agent.trajectory_steps.StartCodeReviewStep.Tag tags = 4;
+  }
+}

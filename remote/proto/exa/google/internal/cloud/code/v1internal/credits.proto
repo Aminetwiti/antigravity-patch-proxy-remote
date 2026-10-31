@@ -1,0 +1,13 @@
+﻿syntax = "proto3";
+
+// file: exa/google/internal/cloud/code/v1internal/credits.proto
+// package: google.internal.cloud.code.v1internal
+message Credits {
+  optional .google.internal.cloud.code.v1internal.Credits.CreditType credit_type = 1;
+  optional int64 credit_amount = 2;
+  optional int64 minimum_credit_amount_for_usage = 3;
+  enum CreditType {
+    CREDIT_TYPE_UNSPECIFIED = 0;
+    GOOGLE_ONE_AI = 1;
+  }
+}

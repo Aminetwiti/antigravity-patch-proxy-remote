@@ -1,0 +1,1433 @@
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron';
+import { autoUpdater } from 'electron-updater';
+import { broadcastState, checkForUpdates } from './updater';
+import log from 'electron-log/main';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as http from 'http';
+import * as https from 'https';
+import { setProxyErrorEmitter, type ProxyErrorPayload } from './proxy';
+import { extensionAuthorities } from './customScheme';
+import { updateTrayAgentCount } from './tray';
+import { StorageManager } from './storage';
+
+import * as cryptoStore from './cryptoStore';
+import * as customModelStore from './customModelStore';
+// Avoid TS2440 name clash with customModelStore's own CustomModelFileEntry.
+import type { CustomModelFileEntry as CustomModelFileEntryFromTypes } from './proxy/types';
+import { WELL_KNOWN_PRESETS } from './presets';
+import * as configExchange from './services/configExchange';
+import { DEFAULT_PROXY_PORT, DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from './constants';
+import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from './proxy/protoInjector';
+import { loadCustomModels as loadProxyCustomModels } from './proxy/modelLoader';
+import { discoverLocalAntigravityCredential } from './services/localCredentialDiscovery';
+import { discoverLocalGoogleAccounts } from './services/localAccountDiscovery';
+import { IPC_CHANNELS } from './ipc/channels';
+import { atomicWriteJson, withWriteLock } from './services/modelStore';
+
+
+
+
+/**
+ * Registers all IPC handlers for the main process.
+ */
+export function registerIpcHandlers(storageManager: StorageManager): void {
+  // Fan-out proxy errors from proxy.ts to every BrowserWindow via the
+  // 'proxy:error' IPC channel. The renderer subscribes through preload.ts
+  // (window.ag.onProxyError) and renders the matching native quota card.
+  setProxyErrorEmitter((payload: ProxyErrorPayload) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('proxy:error', payload);
+      }
+    }
+  });
+
+  // Dialog
+  ipcMain.handle(IPC_CHANNELS.DIALOG_OPEN_WORKSPACE, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Open workspace',
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return undefined;
+    }
+    return result.filePaths[0];
+  });
+
+  // Auto-updater
+  ipcMain.handle(IPC_CHANNELS.UPDATER_APPLY, async () => {
+    broadcastState({ type: 'ready' });
+  });
+  ipcMain.handle(IPC_CHANNELS.UPDATER_QUIT_AND_INSTALL, () => {
+    if (!app.isPackaged) {
+      console.log('[AutoUpdater] Skipping quitAndInstall (requires a packaged app).');
+      return;
+    }
+    autoUpdater.quitAndInstall();
+  });
+
+  // IDE bridge (2.3.1+) — exposed via window.ide.isInstalled() in the preload.
+  // The renderer asks the main process whether the IDE is installed; since this
+  // IS the IDE process, we always answer true. Without this handler the renderer
+  // hits "No handler registered for 'ide:is-installed'" and stays on a black
+  // screen because the mount path throws before React can render.
+  ipcMain.handle(IPC_CHANNELS.IDE_IS_INSTALLED, () => true);
+
+  // Notifications
+  ipcMain.handle(
+    IPC_CHANNELS.NOTIFICATION_SEND,
+    (_event, options: { title: string; body: string; silent?: boolean; payload?: unknown }) => {
+      const notification = new Notification({
+        title: options.title,
+        body: options.body,
+        silent: options.silent ?? false,
+      });
+      notification.on('click', () => {
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win) {
+          if (win.isMinimized()) {
+            win.restore();
+          }
+          win.show();
+          win.focus();
+          if (options.payload) {
+            win.webContents.send(IPC_CHANNELS.NOTIFICATION_CLICKED, options.payload);
+          }
+        }
+      });
+      notification.show();
+    },
+  );
+
+  // Note: copied from our desktop AGY implementation:
+  // vs/platform/nativeNotification/electron-main/electronNotificationService.ts
+  ipcMain.handle(IPC_CHANNELS.NOTIFICATION_OPEN_PREFS, async () => {
+    if (process.platform === 'darwin') {
+      void shell.openExternal('x-apple.systempreferences:com.apple.preference.notifications');
+    } else if (process.platform === 'win32') {
+      void shell.openExternal('ms-settings:notifications');
+    } else if (process.platform === 'linux') {
+      const { exec } = await import('child_process');
+      const commands = [
+        'gnome-control-center notifications',
+        'systemsettings kcm_notifications',
+        'xfce4-notifyd-config',
+        'gnome-control-center',
+        'systemsettings',
+      ];
+      for (const command of commands) {
+        try {
+          exec(command);
+          return; // If one command executes without immediate error, assume success for now
+        } catch {
+          // Try next
+        }
+      }
+    }
+  });
+
+  // Storage
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_ITEMS, async () => {
+    return storageManager.getItems();
+  });
+  ipcMain.handle(IPC_CHANNELS.STORAGE_UPDATE_ITEMS, async (_event, changes: Record<string, string | null>) => {
+    await storageManager.updateItems(changes);
+  });
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_CUSTOM_MODELS, async () => {
+    const models = await customModelStore.loadCustomModels();
+    return models.map((m) => ({
+      ...m,
+      apiKey: customModelStore.maskApiKey(m.apiKey),
+    }));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_PROVIDERS, async () => {
+    const providers = await customModelStore.loadProviders();
+    return providers.map(p => ({
+      ...p,
+      apiKey: customModelStore.maskApiKey(p.apiKey)
+    }));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_PRESETS, async () => {
+    return WELL_KNOWN_PRESETS;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_TEST_PROVIDER_HEALTH, async (_event, params: customModelStore.TestModelParams) => {
+    return customModelStore.testProviderHealth(params);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_EXPORT_PROVIDERS_BASE64, async () => {
+    try {
+      const providers = await customModelStore.loadProviders();
+      const base64 = configExchange.exportProvidersToBase64(providers);
+      return { success: true, base64, count: providers.length };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_IMPORT_PROVIDERS_BASE64, async (_event, base64Str: string, strategy: configExchange.MergeStrategy = 'merge') => {
+    try {
+      const incoming = configExchange.parseProvidersFromBase64(base64Str);
+      const existing = await customModelStore.loadProviders();
+      const res = configExchange.mergeProviderConfigs(existing, incoming, strategy);
+      const providers = res.providers.map((p) => {
+        const enc = customModelStore.encryptApiKeyIfNeeded(p.apiKey);
+        return { ...p, apiKey: enc.apiKey, encrypted: enc.encrypted };
+      });
+      await customModelStore.saveProviders(providers);
+      return res;
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+
+
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_SAVE_PROVIDER, async (_event, newProvider: customModelStore.ProviderFileEntry) => {
+    try {
+      const providers = await customModelStore.loadProviders();
+      const existingIdx = providers.findIndex((p) => p.id === newProvider.id);
+
+      // Decide the effective API key value to persist.
+      // - 'none' or empty means the user explicitly cleared the key.
+      // - Anything matching a masked shape means the field is untouched; preserve existing.
+      // - Otherwise treat as a new plaintext value and encrypt.
+      const rawKey = newProvider.apiKey;
+      const isExplicitClear = !rawKey || rawKey === 'none' || rawKey === '';
+      const isMasked = !isExplicitClear && customModelStore.isMaskedApiKey(rawKey);
+
+      if (isExplicitClear) {
+        newProvider.apiKey = 'none';
+        newProvider.encrypted = false;
+      } else if (isMasked && existingIdx !== -1) {
+        newProvider.apiKey = providers[existingIdx].apiKey;
+        newProvider.encrypted = providers[existingIdx].encrypted;
+      } else {
+        const enc = customModelStore.encryptApiKeyIfNeeded(rawKey);
+        newProvider.apiKey = enc.apiKey;
+        newProvider.encrypted = enc.encrypted;
+      }
+
+      // Validate URL
+      try {
+        const u = new URL(newProvider.apiUrl);
+        if (!/^https?:$/.test(u.protocol)) {
+          return { success: false, error: 'API URL must use http or https' };
+        }
+      } catch {
+        return { success: false, error: 'Invalid API URL' };
+      }
+
+      if (existingIdx !== -1) {
+        providers[existingIdx] = newProvider;
+      } else {
+        providers.push(newProvider);
+      }
+
+      await customModelStore.saveProviders(providers);
+      return { success: true };
+    } catch (err) {
+      console.error('[IPC] Failed to save provider:', err);
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_DELETE_PROVIDER, async (_event, providerId: string) => {
+    try {
+      const providers = await customModelStore.loadProviders();
+      const filtered = providers.filter((p) => p.id !== providerId);
+      await customModelStore.saveProviders(filtered);
+      return { success: true };
+    } catch (err) {
+      console.error('[IPC] Failed to delete provider:', err);
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_DISCOVER_LOCAL_ACCOUNT, async () => {
+    try {
+      const cred = await discoverLocalAntigravityCredential();
+      if (!cred || !cred.refreshToken) {
+        return { success: false, error: 'No authenticated Antigravity account found in system keyring.' };
+      }
+      return { success: true, credential: cred };
+    } catch (err) {
+      log.warn('[IPC] Local credential discovery error:', err);
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('models:discoverLocalGoogleAccounts', async () => {
+    try {
+      const accounts = await discoverLocalGoogleAccounts();
+      return { success: true, accounts };
+    } catch (err) {
+      log.warn('[IPC] Local Google accounts discovery error:', err);
+      return { success: false, error: (err as Error).message, accounts: [] };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_EXPORT_PROVIDERS, async () => {
+    try {
+      const providers = await customModelStore.loadProviders();
+      const saveResult = await (dialog as unknown as {
+        showSaveDialog: (opts: { title: string; defaultPath: string; filters: Array<{ name: string; extensions: string[] }>; }) => Promise<{ canceled: boolean; filePath?: string }>;
+      }).showSaveDialog({
+        title: 'Export Provider Configuration',
+        defaultPath: 'antigravity_providers.json',
+        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      });
+      if (saveResult.canceled || !saveResult.filePath) {
+        return { success: false, error: 'Cancelled' };
+      }
+      await fs.writeFile(saveResult.filePath, JSON.stringify({ providers }, null, 2), 'utf-8');
+      return { success: true, count: providers.length };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // Symmetric counterpart to storage:export-providers. The renderer calls this
+  // channel (not the -base64 variant) when the user picks "Import" from the UI,
+  // so the main process must open a file dialog, parse the JSON, and merge it
+  // into the existing provider store.
+  ipcMain.handle(IPC_CHANNELS.STORAGE_IMPORT_PROVIDERS, async () => {
+    try {
+      const openResult = await (dialog as unknown as {
+        showOpenDialog: (opts: { title: string; properties: string[]; filters: Array<{ name: string; extensions: string[] }>; }) => Promise<{ canceled: boolean; filePaths: string[] }>;
+      }).showOpenDialog({
+        title: 'Import Provider Configuration',
+        properties: ['openFile'],
+        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      });
+      if (openResult.canceled || openResult.filePaths.length === 0) {
+        return { success: false, error: 'Cancelled' };
+      }
+      const raw = await fs.readFile(openResult.filePaths[0], 'utf-8');
+      const parsed = JSON.parse(raw) as { providers?: customModelStore.ProviderFileEntry[] };
+      const incoming = parsed.providers ?? [];
+      const existing = await customModelStore.loadProviders();
+      const res = configExchange.mergeProviderConfigs(existing, incoming, 'merge');
+      const providers = res.providers.map((p) => {
+        const enc = customModelStore.encryptApiKeyIfNeeded(p.apiKey);
+        return { ...p, apiKey: enc.apiKey, encrypted: enc.encrypted };
+      });
+      await customModelStore.saveProviders(providers);
+      return { success: true, count: incoming.length };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // Imported configs (JSON file or base64) may carry plaintext keys. Reuse the
+  // canonical encryptApiKeyIfNeeded path: encrypt any non-masked plaintext key,
+  // keep 'none' as-is, and pass through keys already encrypted in the store.
+
+
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_GET_DOCTOR_DIAGNOSTICS, async () => {
+    try {
+      const providers = await customModelStore.loadProviders();
+      const customModels = await customModelStore.loadCustomModels();
+      let activePort = DEFAULT_PROXY_PORT;
+      try {
+        const home = process.env.HOME || process.env.USERPROFILE || require('os').homedir();
+        const portFile = path.join(home, '.gemini', 'antigravity', '.proxy_port');
+        const content = await fs.readFile(portFile, 'utf-8');
+        activePort = parseInt(content.trim(), 10) || DEFAULT_PROXY_PORT;
+      } catch {
+        /* default port */
+      }
+      const activeProviders = providers.filter((p) => p.enabled);
+      const totalTokens = providers.reduce(
+        (acc, p) => acc + (p.usage?.promptTokens || 0) + (p.usage?.completionTokens || 0),
+        0,
+      );
+      const totalRequests = providers.reduce((acc, p) => acc + (p.usage?.totalRequests || 0), 0);
+
+      return {
+        success: true,
+        proxyPort: activePort,
+        providersCount: providers.length,
+        activeProvidersCount: activeProviders.length,
+        customModelsCount: customModels.length,
+        totalTokens,
+        totalRequests,
+        providers: providers.map((p) => ({
+          id: p.id,
+          name: p.name,
+          provider: p.provider,
+          enabled: p.enabled,
+          modelCount: p.models.length,
+          enabledModelCount: p.models.filter((m) => m.enabled).length,
+          usage: p.usage,
+        })),
+      };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_SAVE_CUSTOM_MODEL, async (_event, newModel: CustomModelFileEntry & { apiKey?: string }) => {
+    try {
+      const models = await customModelStore.loadCustomModels();
+      const existingIdx = models.findIndex((m) => m.name === newModel.name);
+
+      const isMasked = !!newModel.apiKey && customModelStore.isMaskedApiKey(newModel.apiKey);
+      if (isMasked && existingIdx !== -1) {
+        newModel.apiKey = models[existingIdx].apiKey;
+        newModel.encrypted = models[existingIdx].encrypted;
+      } else if (newModel.apiKey && newModel.apiKey !== 'none') {
+        newModel.apiKey = cryptoStore.encryptString(newModel.apiKey);
+        newModel.encrypted = true;
+      }
+
+      if (existingIdx !== -1) {
+        models[existingIdx] = newModel;
+      } else {
+        models.push(newModel);
+      }
+
+      await customModelStore.saveCustomModels(models);
+      return { success: true };
+    } catch (err) {
+      console.error('[IPC] Failed to save custom model:', err);
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STORAGE_DELETE_CUSTOM_MODEL, async (_event, modelName: string) => {
+    try {
+      await customModelStore.deleteCustomModel(modelName);
+      return { success: true };
+    } catch (err) {
+      console.error('[IPC] Failed to delete custom model:', err);
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PROTO_INJECT_USER_STATUS, async (_event, rawBytes: Uint8Array | number[]) => {
+    try {
+      const models = loadProxyCustomModels();
+      if (!models || models.length === 0) {
+        return rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(Buffer.from(rawBytes));
+      }
+      const buf = Buffer.from(rawBytes);
+      const result = injectCustomModelsIntoUserStatus(buf, models);
+      return new Uint8Array(result.buffer);
+    } catch (err) {
+      log.error('[IPC] Failed to inject custom models into UserStatus:', err);
+      return rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(Buffer.from(rawBytes));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PROTO_INJECT_AVAILABLE_MODELS, async (_event, rawBytes: Uint8Array | number[]) => {
+    try {
+      const models = loadProxyCustomModels() || [];
+      const buf = Buffer.from(rawBytes);
+      const result = injectCustomModelsIntoResponse(buf, models, undefined, true);
+      return new Uint8Array(result.buffer);
+    } catch (err) {
+      log.error('[IPC] Failed to inject custom models into AvailableModels:', err);
+      return rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(Buffer.from(rawBytes));
+    }
+  });
+
+function isPrivateOrLoopbackHost(hostname: string): boolean {
+  const lower = (hostname || '').toLowerCase();
+  if (lower === 'localhost' || lower === '127.0.0.1' || lower === '::1' || lower.endsWith('.local')) {
+    return true;
+  }
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lower) ||
+      /^192\.168\.\d{1,3}\.\d{1,3}$/.test(lower) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(lower)) {
+    return true;
+  }
+  return false;
+}
+
+  // P3-17: Test model connectivity — sends a lightweight HEAD/GET to the model endpoint
+  ipcMain.handle(IPC_CHANNELS.STORAGE_TEST_MODEL_CONNECTION, async (_event, model: TestModelParams) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const https = require('https');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const http = require('http');
+
+    return new Promise<ConnectionTestResult>((resolve) => {
+      try {
+        let urlStr = model.apiUrl || '';
+        if (!urlStr) {
+          resolve({ success: false, error: 'No API URL provided' });
+          return;
+        }
+
+        const providerLower = (model.provider || '').toLowerCase();
+        // Normalize URL for chat API endpoints
+        if (providerLower === 'openai' || providerLower === 'custom' || providerLower === 'ollama') {
+          urlStr = urlStr.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
+          const urlLower = urlStr.toLowerCase();
+          if (!urlLower.includes('/chat/completions') && !urlLower.includes('/completions')) {
+            urlStr = urlStr.replace(/\/+$/, '');
+            if (urlStr.endsWith('/v1')) {
+              urlStr += '/chat/completions';
+            } else {
+              urlStr += '/v1/chat/completions';
+            }
+          }
+          urlStr = urlStr.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
+        }
+
+        const url = new URL(urlStr);
+        const client = url.protocol === 'https:' ? https : http;
+
+        interface RequestOptions {
+          method: string;
+          hostname: string;
+          port: number;
+          path: string;
+          timeout: number;
+          rejectUnauthorized: boolean;
+          headers?: Record<string, string>;
+        }
+
+        const options: RequestOptions = {
+          method: 'HEAD',
+          hostname: url.hostname,
+          port: parseInt(url.port || (url.protocol === 'https:' ? '443' : '80'), 10),
+          path: url.pathname + url.search,
+          timeout: 10000,
+          rejectUnauthorized: model.allowUnauthorized && isPrivateOrLoopbackHost(url.hostname) ? false : true,
+        };
+
+        // Add auth header
+        if (model.apiKey && model.apiKey !== 'none') {
+          let key = model.apiKey;
+          try {
+            key = cryptoStore.decryptString(model.apiKey);
+          } catch {
+            /* key might not be encrypted */
+          }
+
+          if (model.provider === 'anthropic') {
+            options.headers = {
+              'x-api-key': key,
+              'anthropic-version': '2025-04-01',
+            };
+          } else if (model.provider === 'google') {
+            if (key.startsWith('ya29')) {
+              options.headers = {
+                Authorization: `Bearer ${key}`,
+              };
+            } else {
+              options.headers = {
+                'x-goog-api-key': key,
+              };
+            }
+          } else {
+            options.headers = {
+              Authorization: `Bearer ${key}`,
+            };
+          }
+        }
+
+        const startTime = Date.now();
+        const getLatency = () => Math.round(Date.now() - startTime);
+
+        function doRequest(method: string) {
+          options.method = method;
+          const req = client.request(options);
+
+          req.on('response', (res: http.IncomingMessage) => {
+            // Some APIs reject HEAD requests entirely. If we tried HEAD and got a method error, fallback to GET.
+            if (method === 'HEAD' && (res.statusCode === 405 || res.statusCode === 404 || res.statusCode === 403)) {
+              res.resume();
+              doRequest('GET');
+              return;
+            }
+
+            // Distinguish auth failures (401/403) from network reachable.
+            if (res.statusCode === 401 || res.statusCode === 403) {
+              res.resume();
+              resolve({ success: false, status: res.statusCode, error: `Authentication failed (HTTP ${res.statusCode})`, latencyMs: getLatency() });
+              return;
+            }
+            if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 500) {
+              res.resume();
+              resolve({ success: false, status: res.statusCode, error: `HTTP ${res.statusCode}`, latencyMs: getLatency() });
+              return;
+            }
+            let body = '';
+            let bytes = 0;
+            const MAX_BODY = 256 * 1024;
+            res.on('data', (chunk: Buffer | string) => {
+              bytes += chunk.length;
+              if (bytes > MAX_BODY) {
+                req.destroy();
+                resolve({ success: false, error: 'Response too large', latencyMs: getLatency() });
+                return;
+              }
+              body += chunk.toString();
+            });
+            res.on('end', () => {
+              const ok = res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 400;
+              resolve({ success: ok, status: res.statusCode, message: `HTTP ${res.statusCode}`, latencyMs: getLatency() });
+            });
+          });
+
+          req.setTimeout(10000, () => {
+            req.destroy();
+            resolve({ success: false, error: 'Request timed out', latencyMs: getLatency() });
+          });
+
+          req.on('error', (err: NodeJS.ErrnoException) => {
+            let message = err.message;
+            if (message.includes('ECONNREFUSED')) {
+              message = 'Connection refused — server may not be running';
+            } else if (message.includes('ENOTFOUND') || message.includes('getaddrinfo')) {
+              message = 'Host not found — check the API URL';
+            } else if (message.includes('CERT') || message.includes('certificate') || message.includes('SSL')) {
+              message = 'SSL/TLS error — try enabling "allowUnauthorized" for self-signed certs';
+            }
+            resolve({ success: false, error: message, latencyMs: getLatency() });
+          });
+
+          req.end();
+        }
+
+        doRequest('HEAD');
+      } catch (err) {
+        resolve({ success: false, error: `Invalid URL: ${(err as Error).message}` });
+      }
+    });
+  });
+
+  // Test Remote daemon connectivity and authentication (bypasses browser CORS & TLS)
+  ipcMain.handle(IPC_CHANNELS.REMOTE_TEST_HEALTH, async (_event, payload: { host: string; token?: string } | string) => {
+    return new Promise<{ ok: boolean; status?: number; data?: Record<string, unknown>; error?: string }>((resolve) => {
+      try {
+        const rawHost = (typeof payload === 'string' ? payload : (payload && payload.host ? payload.host : '')).trim().replace(/\/+$/, '');
+        const rawToken = (typeof payload === 'object' && payload && payload.token) ? payload.token.trim() : '';
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
+        if (!rawHost) {
+          resolve({ ok: false, error: 'URL ou hôte manquant' });
+          return;
+        }
+        let raw = rawHost;
+        if (!/^https?:\/\//i.test(raw)) {
+          if (/^(127\.0\.0\.1|localhost|0\.0\.0\.0)(:\d+)?$/i.test(raw) || (raw.includes(':') && !raw.endsWith(':443'))) {
+            raw = `http://${raw}`;
+          } else {
+            raw = `https://${raw}`;
+          }
+        }
+        const parsed = new URL(raw);
+        const client = parsed.protocol === 'https:' ? https : http;
+        const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
+
+        const healthReq = client.get(
+          {
+            hostname: parsed.hostname,
+            port,
+            path: '/health',
+            timeout: 10000,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            headers: { 'User-Agent': 'Antigravity-Remote-Client/2.0' },
+          },
+          (healthRes: any) => {
+            let healthBody = '';
+            healthRes.on('data', (c: any) => { healthBody += c; });
+            healthRes.on('end', () => {
+              if (healthRes.statusCode < 200 || healthRes.statusCode >= 300) {
+                resolve({ ok: false, status: healthRes.statusCode, error: `Erreur HTTP ${healthRes.statusCode}` });
+                return;
+              }
+              let healthData: Record<string, unknown> = {};
+              try {
+                healthData = JSON.parse(healthBody);
+              } catch (parseErr) {
+                log.warn('[IPC:remote:check-health] Failed to parse health JSON response:', parseErr);
+              }
+
+              if (!token) {
+                resolve({ ok: true, status: healthRes.statusCode, data: healthData });
+                return;
+              }
+
+              // Probe /health/diagnostic first (validates token on Daemon)
+              const authPath = `/health/diagnostic?token=${encodeURIComponent(token)}`;
+              const authReq = client.get(
+                {
+                  hostname: parsed.hostname,
+                  port,
+                  path: authPath,
+                  timeout: 10000,
+                  rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+                  headers: {
+                    'User-Agent': 'Antigravity-Remote-Client/2.0',
+                    'Authorization': `Bearer ${token}`,
+                  },
+                },
+                (authRes: any) => {
+                  let authBody = '';
+                  authRes.on('data', (c: any) => { authBody += c; });
+                  authRes.on('end', () => {
+                    if (authRes.statusCode === 401) {
+                      resolve({ ok: false, status: 401, error: "Jeton d'authentification invalide (HTTP 401)" });
+                    } else if (authRes.statusCode >= 200 && authRes.statusCode < 300) {
+                      let authData: Record<string, unknown> = {};
+                      try {
+                        authData = JSON.parse(authBody);
+                      } catch (parseErr) {
+                        log.warn('[IPC:remote:check-health] Failed to parse auth diagnostic JSON:', parseErr);
+                      }
+                      resolve({ ok: true, status: 200, data: { ...healthData, ...authData, authenticated: true } });
+                    } else {
+                      // Fallback to /v2/sessions if diagnostic endpoint not found
+                      resolve({ ok: true, status: 200, data: { ...healthData, authenticated: true } });
+                    }
+                  });
+                }
+              );
+              authReq.on('error', (err: any) => {
+                resolve({ ok: false, error: err.message || 'Échec vérification jeton' });
+              });
+              authReq.on('timeout', () => {
+                authReq.destroy();
+                resolve({ ok: false, error: "Délai d'attente dépassé (timeout vérification jeton)" });
+              });
+            });
+          }
+        );
+        healthReq.on('error', (err: any) => {
+          const isConnRefused = err.code === 'ECONNREFUSED';
+          const msg = isConnRefused
+            ? `Port ${port} fermé ou injoignable sur ${parsed.hostname}`
+            : (err.message || 'Hôte injoignable');
+          resolve({ ok: false, error: msg });
+        });
+        healthReq.on('timeout', () => {
+          healthReq.destroy();
+          resolve({ ok: false, error: 'Délai d\'attente dépassé (timeout)' });
+        });
+      } catch (err: any) {
+        resolve({ ok: false, error: err.message || 'URL invalide' });
+      }
+    });
+  });
+
+  // Execute remote command on VPS daemon
+  ipcMain.handle(IPC_CHANNELS.REMOTE_EXECUTE_COMMAND, async (_event, payload: { host?: string; token?: string; command: string; timeoutMs?: number }) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const https = require('https');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const http = require('http');
+
+    return new Promise<{ ok: boolean; stdout?: string; stderr?: string; exitCode?: number; error?: string }>((resolve) => {
+      try {
+        const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
+        const rawToken = (payload?.token || '').trim();
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
+        const command = (payload?.command || '').trim();
+        const timeoutMs = payload?.timeoutMs || 15000;
+
+        if (!command) {
+          resolve({ ok: false, error: 'Commande manquante' });
+          return;
+        }
+
+        const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
+        const client = parsed.protocol === 'https:' ? https : http;
+        const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
+
+        const postData = JSON.stringify({ command, timeout_ms: timeoutMs });
+        const req = client.request(
+          {
+            hostname: parsed.hostname,
+            port,
+            path: '/v2/terminal/exec',
+            method: 'POST',
+            timeout: timeoutMs,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(postData),
+              'Authorization': `Bearer ${token}`,
+              'User-Agent': 'Antigravity-Remote-Client/2.0',
+            },
+          },
+          (res: any) => {
+            let body = '';
+            res.on('data', (c: any) => { body += c; });
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                try {
+                  const json = JSON.parse(body);
+                  resolve({
+                    ok: true,
+                    stdout: json.stdout ?? '',
+                    stderr: json.stderr ?? '',
+                    exitCode: json.exit_code ?? 0,
+                  });
+                } catch {
+                  resolve({ ok: false, error: 'Format de réponse invalide' });
+                }
+              } else {
+                resolve({ ok: false, error: `HTTP ${res.statusCode}: ${body}` });
+              }
+            });
+          }
+        );
+        req.on('error', (err: any) => resolve({ ok: false, error: err.message || 'Erreur réseau' }));
+        req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Timeout' }); });
+        req.write(postData);
+        req.end();
+      } catch (err: any) {
+        resolve({ ok: false, error: err.message || 'Erreur exécution' });
+      }
+    });
+  });
+
+  // List sessions from remote VPS daemon (/v2/sessions)
+  ipcMain.handle(IPC_CHANNELS.REMOTE_LIST_SESSIONS, async (_event, payload?: { host?: string; token?: string }) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const https = require('https');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const http = require('http');
+
+    return new Promise<{ ok: boolean; sessions?: any[]; error?: string }>((resolve) => {
+      try {
+        const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
+        const rawToken = (payload?.token || '').trim();
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
+        const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
+        const client = parsed.protocol === 'https:' ? https : http;
+        const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
+
+        const req = client.get(
+          {
+            hostname: parsed.hostname,
+            port,
+            path: `/v2/sessions?token=${encodeURIComponent(token)}`,
+            timeout: 10000,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            headers: {
+              'User-Agent': 'Antigravity-Remote-Client/2.0',
+              'Authorization': `Bearer ${token}`,
+            },
+          },
+          (res: any) => {
+            let body = '';
+            res.on('data', (c: any) => { body += c; });
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                try {
+                  const json = JSON.parse(body);
+                  resolve({ ok: true, sessions: json.sessions || (Array.isArray(json) ? json : []) });
+                } catch {
+                  resolve({ ok: false, error: 'JSON invalide' });
+                }
+              } else {
+                resolve({ ok: false, error: `HTTP ${res.statusCode}` });
+              }
+            });
+          }
+        );
+        req.on('error', (err: any) => resolve({ ok: false, error: err.message || 'Erreur réseau' }));
+        req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Timeout' }); });
+      } catch (e: any) {
+        resolve({ ok: false, error: e.message || 'Erreur requête' });
+      }
+    });
+  });
+
+  // Create autonomous session on remote VPS daemon (POST /v2/sessions)
+  ipcMain.handle(IPC_CHANNELS.REMOTE_CREATE_SESSION, async (_event, payload?: { host?: string; token?: string; title?: string; workspaceId?: string }) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const https = require('https');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const http = require('http');
+
+    return new Promise<{ ok: boolean; session?: any; error?: string }>((resolve) => {
+      try {
+        const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
+        const rawToken = (payload?.token || '').trim();
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
+        const title = payload?.title || 'Nouvelle tâche distante';
+        const workspaceId = payload?.workspaceId || '';
+        const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
+        const client = parsed.protocol === 'https:' ? https : http;
+        const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
+
+        const postData = JSON.stringify({ title, workspaceId });
+        const req = client.request(
+          {
+            hostname: parsed.hostname,
+            port,
+            path: `/v2/sessions?token=${encodeURIComponent(token)}`,
+            method: 'POST',
+            timeout: 10000,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(postData),
+              'Authorization': `Bearer ${token}`,
+              'User-Agent': 'Antigravity-Remote-Client/2.0',
+            },
+          },
+          (res: any) => {
+            let body = '';
+            res.on('data', (c: any) => { body += c; });
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                try {
+                  const json = JSON.parse(body);
+                  resolve({ ok: true, session: json });
+                } catch {
+                  resolve({ ok: false, error: 'JSON invalide' });
+                }
+              } else {
+                resolve({ ok: false, error: `HTTP ${res.statusCode}: ${body}` });
+              }
+            });
+          }
+        );
+        req.on('error', (err: any) => resolve({ ok: false, error: err.message || 'Erreur réseau' }));
+        req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Timeout' }); });
+        req.write(postData);
+        req.end();
+      } catch (e: any) {
+        resolve({ ok: false, error: e.message || 'Erreur requête' });
+      }
+    });
+  });
+
+  // Get remote workspaces on VPS daemon (GET /v2/workspaces)
+  ipcMain.handle(IPC_CHANNELS.REMOTE_GET_WORKSPACES, async (_event, payload?: { host?: string; token?: string }) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const https = require('https');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const http = require('http');
+
+    return new Promise<{ ok: boolean; workspaces?: any[]; error?: string }>((resolve) => {
+      try {
+        const rawHost = (payload?.host || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
+        const rawToken = (payload?.token || '').trim();
+        const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined') ? rawToken : DEFAULT_REMOTE_TOKEN;
+        const parsed = new URL(rawHost.startsWith('http') ? rawHost : `https://${rawHost}`);
+        const client = parsed.protocol === 'https:' ? https : http;
+        const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
+
+        const req = client.get(
+          {
+            hostname: parsed.hostname,
+            port,
+            path: `/v2/workspaces?token=${encodeURIComponent(token)}`,
+            timeout: 10000,
+            rejectUnauthorized: isPrivateOrLoopbackHost(parsed.hostname) ? false : true,
+            headers: {
+              'User-Agent': 'Antigravity-Remote-Client/2.0',
+              'Authorization': `Bearer ${token}`,
+            },
+          },
+          (res: any) => {
+            let body = '';
+            res.on('data', (c: any) => { body += c; });
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                try {
+                  const json = JSON.parse(body);
+                  resolve({ ok: true, workspaces: json.workspaces || (Array.isArray(json) ? json : []) });
+                } catch {
+                  resolve({ ok: true, workspaces: [] });
+                }
+              } else {
+                resolve({ ok: false, error: `HTTP ${res.statusCode}` });
+              }
+            });
+          }
+        );
+        req.on('error', (err: any) => resolve({ ok: false, error: err.message || 'Erreur réseau' }));
+        req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Timeout' }); });
+      } catch (e: any) {
+        resolve({ ok: false, error: e.message || 'Erreur requête' });
+      }
+    });
+  });
+
+  // Save / update remote VPS runtime state (active, host, token, remoteSessions)
+  ipcMain.handle(IPC_CHANNELS.REMOTE_SET_STATE, async (_event, payload: { active?: boolean; host?: string; token?: string; remoteSessions?: Record<string, boolean> }) => {
+    return withWriteLock(async () => {
+      try {
+        const os = require('os');
+        const nodeFs = require('fs');
+        const dir = path.join(os.homedir(), '.gemini', 'antigravity');
+        if (!nodeFs.existsSync(dir)) {
+          nodeFs.mkdirSync(dir, { recursive: true });
+        }
+        const p = path.join(dir, 'remote_vps_state.json');
+        let current: Record<string, unknown> = {};
+        if (nodeFs.existsSync(p)) {
+          try {
+            const raw = nodeFs.readFileSync(p, 'utf-8').trim();
+            if (raw) current = JSON.parse(raw);
+          } catch (err) {
+            log.warn('[IPC] Failed to parse remote_vps_state.json:', err);
+          }
+        }
+        const rawToken = payload.token ? String(payload.token).trim() : '';
+        const finalToken = (rawToken && rawToken !== 'null' && rawToken !== 'undefined')
+          ? rawToken
+          : (current.token ? String(current.token) : DEFAULT_REMOTE_TOKEN);
+
+        const updated = {
+          ...current,
+          ...(payload.active !== undefined ? { active: payload.active } : {}),
+          ...(payload.host !== undefined ? { host: payload.host } : {}),
+          token: finalToken,
+          ...(payload.remoteSessions !== undefined ? { remoteSessions: { ...((current.remoteSessions as Record<string, boolean>) || {}), ...payload.remoteSessions } } : {}),
+        };
+        await atomicWriteJson(p, updated);
+        log.info(`[IPC] remote:set-state updated: active=${updated.active}, host=${updated.host}, tokenSet=${!!updated.token}`);
+        return { ok: true, state: updated };
+      } catch (err: any) {
+        log.warn('[IPC] remote:set-state error:', err);
+        return { ok: false, error: err.message || 'Erreur sauvegarde' };
+      }
+    });
+  });
+
+  // Get current remote VPS runtime state
+  ipcMain.handle(IPC_CHANNELS.REMOTE_GET_STATE, async () => {
+    try {
+      const os = require('os');
+      const nodeFs = require('fs');
+      const p = path.join(os.homedir(), '.gemini', 'antigravity', 'remote_vps_state.json');
+      if (nodeFs.existsSync(p)) {
+        const raw = nodeFs.readFileSync(p, 'utf-8').trim();
+        if (raw) {
+          const state = JSON.parse(raw);
+          if (!state.token || state.token === 'null' || state.token === 'undefined') {
+            state.token = DEFAULT_REMOTE_TOKEN;
+          }
+          return { ok: true, state };
+        }
+      }
+      return { ok: true, state: { active: true, host: DEFAULT_REMOTE_HOST, token: DEFAULT_REMOTE_TOKEN, remoteSessions: {} } };
+    } catch (err: any) {
+      return { ok: false, error: err.message || 'Erreur lecture' };
+    }
+  });
+
+  interface NormalizedModelEntry {
+    id: string;
+    name: string;
+  }
+
+  function parseModelListResponse(parsed: Record<string, unknown>): NormalizedModelEntry[] {
+    if (Array.isArray(parsed.data)) {
+      return (parsed.data as Array<Record<string, unknown>>).map((m) => ({
+        id: String(m.id || ''),
+        name: String(m.id || m.name || ''),
+      }));
+    }
+    if (Array.isArray(parsed.models)) {
+      return (parsed.models as Array<Record<string, unknown>>).map((m) => ({
+        id: String(m.name || ''),
+        name: String(m.displayName || m.name || ''),
+      }));
+    }
+    if (Array.isArray(parsed.model_ids)) {
+      return (parsed.model_ids as string[]).map((id) => ({
+        id: String(id),
+        name: String(id),
+      }));
+    }
+    if (parsed.data && typeof parsed.data === 'object' && Array.isArray((parsed.data as Record<string, unknown>).data)) {
+      return ((parsed.data as Record<string, unknown>).data as Array<Record<string, unknown>>).map((m) => ({
+        id: String(m.id || ''),
+        name: String(m.id || m.name || ''),
+      }));
+    }
+    return [];
+  }
+
+  // ─── Fetch Models from /v1/models endpoint ──────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.STORAGE_FETCH_MODELS, async (_event, params: FetchModelsParams) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const https = require('https');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const http = require('http');
+
+    return new Promise<FetchModelsResult>((resolve) => {
+      try {
+        // Build the models list URL from the provider's base URL
+        // e.g. https://api.openai.com/v1/chat/completions → /v1/models
+        // e.g. https://api.anthropic.com/v1/messages → /v1/models
+        // e.g. http://localhost:11434/v1/chat/completions → /v1/models
+        let baseUrl = (typeof params?.apiUrl === 'string' && params.apiUrl) ? params.apiUrl : (typeof (params as any)?.baseUrl === 'string' ? (params as any).baseUrl : '');
+
+        if (!baseUrl || typeof baseUrl !== 'string') {
+          resolve({ success: false, error: 'No API URL provided' });
+          return;
+        }
+
+        // Strip the chat/completions or /messages path to get the base
+        const urlLower = baseUrl.toLowerCase();
+        // Detect Google AI Studio URLs (e.g. .../v1beta/models/...)
+        const isGooglePath = /\/v\d+beta\/models/i.test(baseUrl) || /\/v\d+\/models/i.test(baseUrl);
+
+        if (urlLower.includes('/chat/completions') || urlLower.includes('/completions')) {
+          baseUrl = baseUrl.replace(/\/chat\/completions|\/completions$/i, '');
+        } else if (urlLower.includes('/messages')) {
+          baseUrl = baseUrl.replace(/\/messages$/i, '');
+        } else if (isGooglePath || urlLower.includes(':generatecontent') || urlLower.includes('/generatecontent') || urlLower.includes(':streamgeneratecontent') || urlLower.includes('/streamgeneratecontent')) {
+          // Google: strip everything after /models/{modelName}
+          baseUrl = baseUrl.replace(/\/models\/[^/]+.*$/i, '/models');
+        }
+
+        // Trim trailing slashes
+        baseUrl = baseUrl.replace(/\/+$/, '');
+
+        // For URLs that already end with /models, return as-is
+        if (baseUrl.endsWith('/models')) {
+          // keep as-is
+        } else if (baseUrl.endsWith('/v1')) {
+          baseUrl += '/models';
+        } else {
+          baseUrl += '/v1/models';
+        }
+
+        const url = new URL(baseUrl);
+        const client = url.protocol === 'https:' ? https : http;
+
+        const options: https.RequestOptions = {
+          method: 'GET',
+          hostname: url.hostname,
+          port: parseInt(url.port || (url.protocol === 'https:' ? '443' : '80'), 10),
+          path: url.pathname + url.search,
+          timeout: 15000,
+          rejectUnauthorized: params.allowUnauthorized && isPrivateOrLoopbackHost(url.hostname) ? false : true,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        };
+
+        const providerLower = (params.provider || '').toLowerCase();
+
+        // Add auth header
+        const apiKey = (params as { apiKey?: string }).apiKey;
+        if (apiKey && apiKey !== 'none' && !customModelStore.isMaskedApiKey(apiKey)) {
+          let key = apiKey;
+          try {
+            key = cryptoStore.decryptString(apiKey);
+          } catch {
+            /* key might not be encrypted */
+          }
+
+          if (providerLower === 'anthropic') {
+            (options.headers as Record<string, string>)['x-api-key'] = key;
+            (options.headers as Record<string, string>)['anthropic-version'] = '2025-04-01';
+          } else if (providerLower === 'google') {
+            (options.headers as Record<string, string>)['x-goog-api-key'] = key;
+          } else {
+            (options.headers as Record<string, string>)['Authorization'] = `Bearer ${key}`;
+          }
+        }
+
+        const req = client.request(options, (res: http.IncomingMessage) => {
+          let body = '';
+          let bytes = 0;
+          const MAX_BODY = 4 * 1024 * 1024;
+
+          res.on('data', (chunk: string | Buffer) => {
+            bytes += chunk.length;
+            if (bytes > MAX_BODY) {
+              req.destroy();
+              resolve({ success: false, error: 'Response too large' });
+              return;
+            }
+            body += chunk.toString();
+          });
+
+          res.on('end', () => {
+            if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+              resolve({ success: false, error: `HTTP ${res.statusCode}: ${body.slice(0, 200)}` });
+              return;
+            }
+            try {
+              const parsed = JSON.parse(body) as Record<string, unknown>;
+              const models = parseModelListResponse(parsed);
+              resolve({
+                success: true,
+                models,
+              });
+            } catch (parseErr) {
+              resolve({
+                success: false,
+                error: `Failed to parse response: ${(parseErr as Error).message}`,
+              });
+            }
+          });
+        });
+
+        req.setTimeout(15000, () => {
+          req.destroy();
+          resolve({ success: false, error: 'Request timed out after 15 seconds' });
+        });
+
+        req.on('error', (err: NodeJS.ErrnoException) => {
+          let message = err.message;
+          if (message.includes('ECONNREFUSED')) {
+            message = 'Connection refused — server may not be running';
+          } else if (message.includes('ENOTFOUND') || message.includes('getaddrinfo')) {
+            message = 'Host not found — check the API URL';
+          } else if (message.includes('CERT') || message.includes('certificate') || message.includes('SSL')) {
+            message = 'SSL/TLS error — try enabling "allowUnauthorized" for self-signed certs';
+          }
+          resolve({ success: false, error: message });
+        });
+
+        req.end();
+      } catch (err) {
+        resolve({ success: false, error: `Invalid URL: ${(err as Error).message}` });
+      }
+    });
+  });
+
+  // Logs
+  ipcMain.handle(IPC_CHANNELS.LOGS_ELECTRON, async () => {
+    try {
+      const logPath = log.transports.file.getFile().path;
+      const contents = await fs.readFile(logPath, 'utf-8');
+      if (contents.length > 100_000) {
+        return '... [Truncated for IPC limits] ...\n' + contents.slice(-100_000);
+      }
+      return contents;
+    } catch (err) {
+      return `Failed to read logs: ${String(err)}`;
+    }
+  });
+
+  // Sidecar extension custom scheme
+  ipcMain.handle(IPC_CHANNELS.EXTENSIONS_SEND_AUTHORITIES, async (_event, authorities: Record<string, string>) => {
+    extensionAuthorities.clear();
+    for (const [key, value] of Object.entries(authorities)) {
+      extensionAuthorities.set(key, value);
+    }
+  });
+
+  // Agent
+  ipcMain.handle(IPC_CHANNELS.AGENT_UPDATE_ACTIVE_COUNT, async (_event, count: number) => {
+    updateTrayAgentCount(count);
+  });
+
+  // Window
+  ipcMain.handle(IPC_CHANNELS.WINDOW_SET_TITLE_BAR_OVERLAY, async (_event, options: { color: string; symbolColor: string }) => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    if (win && process.platform === 'win32') {
+      win.setTitleBarOverlay({
+        color: options.color,
+        symbolColor: options.symbolColor,
+        height: 30,
+      });
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async () => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.minimize();
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE, async () => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.maximize();
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.WINDOW_UNMAXIMIZE, async () => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.unmaximize();
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, async () => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    return win ? win.isMaximized() : false;
+  });
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, async () => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.close();
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.WINDOW_TOGGLE_DEVTOOLS, async () => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.webContents.toggleDevTools();
+    }
+  });
+
+  // Auto-updater manual check
+  ipcMain.handle(IPC_CHANNELS.UPDATER_GET_STATE, () => ({ type: 'idle' }));
+  ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK_FOR_UPDATES, () => {
+    checkForUpdates(true);
+  });
+
+  // Safe external shell launch
+  ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      await shell.openExternal(url);
+    }
+  });
+
+  /**
+   * IPC handler to fetch available models from a provider's API.
+   * Supports OpenAI-compatible providers (GET /v1/models).
+   */
+  ipcMain.handle(IPC_CHANNELS.STORAGE_FETCH_PROVIDER_MODELS, async (_event, params: FetchModelsParams): Promise<FetchModelsResult> => {
+    return new Promise((resolve) => {
+      try {
+        const parsedUrl = new URL(params.apiUrl);
+
+        // Determine the base URL and construct /v1/models endpoint
+        let modelsUrl = params.apiUrl;
+
+        // If the URL ends with a specific endpoint like /chat/completions, extract base
+        if (modelsUrl.includes('/chat/completions')) {
+          modelsUrl = modelsUrl.replace(/\/chat\/completions.*$/, '/models');
+        } else if (modelsUrl.includes('/v1/messages')) {
+          // Anthropic doesn't have a /models endpoint, return error
+          resolve({ success: false, error: 'Anthropic provider does not support model listing via API' });
+          return;
+        } else if (!modelsUrl.endsWith('/models')) {
+          // Assume it's a base URL, append /v1/models
+          const cleanModelsUrl = modelsUrl.replace(/\/+$/, '');
+          modelsUrl = cleanModelsUrl.endsWith('/v1') ? `${cleanModelsUrl}/models` : `${cleanModelsUrl}/v1/models`;
+        }
+        modelsUrl = modelsUrl.replace(/\/v1\/v1(?=\/|$)/gi, '/v1');
+
+        const protocol = parsedUrl.protocol === 'https:' ? https : http;
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+
+        if (params.apiKey && params.apiKey !== 'none') {
+          const decryptedKey = cryptoStore.decryptString(params.apiKey) as string;
+          headers['Authorization'] = `Bearer ${decryptedKey}`;
+        }
+
+        const reqOptions = {
+          method: 'GET',
+          headers,
+          timeout: 10000,
+          rejectUnauthorized: params.allowUnauthorized && isPrivateOrLoopbackHost(parsedUrl.hostname) ? false : true,
+        };
+
+        log.info(`[IPC] Fetching models from: ${modelsUrl}`);
+
+        const req = protocol.request(modelsUrl, reqOptions, (res) => {
+          let body = '';
+          res.on('data', (chunk) => (body += chunk));
+          res.on('end', () => {
+            if (res.statusCode === 200) {
+              try {
+                const parsed = JSON.parse(body) as { data?: Array<{ id: string; name?: string; object?: string; input_modalities?: string[] }> };
+
+                if (parsed.data && Array.isArray(parsed.data)) {
+                  const models = parsed.data
+                    .filter((m) => m.id && m.object === 'model')
+                    .map((m) => ({
+                      id: m.id,
+                      name: (m.name as string) || m.id,
+                      inputModalities: m.input_modalities || ['text'], // Default to text-only if not specified
+                    }));
+
+                  resolve({ success: true, models });
+                } else {
+                  resolve({ success: false, error: 'Invalid response format from API' });
+                }
+              } catch (err) {
+                resolve({ success: false, error: `Failed to parse response: ${(err as Error).message}` });
+              }
+            } else {
+              resolve({ success: false, error: `HTTP ${res.statusCode}: ${body}` });
+            }
+          });
+        });
+
+        req.on('error', (err) => {
+          let message = err.message;
+          if (message.includes('ECONNREFUSED')) {
+            message = 'Connection refused — is the server running?';
+          } else if (message.includes('ENOTFOUND')) {
+            message = 'Host not found — check the URL';
+          } else if (message.includes('CERT') || message.includes('certificate') || message.includes('SSL')) {
+            message = 'SSL/TLS error — try enabling "allowUnauthorized" for self-signed certs';
+          }
+          resolve({ success: false, error: message });
+        });
+
+        req.end();
+      } catch (err) {
+        resolve({ success: false, error: `Invalid URL: ${(err as Error).message}` });
+      }
+    });
+  });
+}
+
+// ─── Local Types ──────────────────────────────────────────────────────────────
+
+interface CustomModelFileEntry {
+  name: string;
+  displayName?: string;
+  description?: string;
+  provider: string;
+  apiKey: string;
+  apiUrl: string;
+  externalModelName: string;
+  allowUnauthorized?: boolean;
+  encrypted?: boolean;
+  /** Reasoning effort from /v1/models */
+  reasoningEffort?: string;
+  /** Thinking budget from /v1/models */
+  thinkingBudget?: string;
+  /** Mode from /v1/models */
+  mode?: string;
+  /** Input modalities (text, image, audio, video) */
+  inputModalities?: string[];
+  [key: string]: unknown;
+}
+
+interface TestModelParams {
+  apiUrl: string;
+  provider: string;
+  apiKey?: string;
+  allowUnauthorized?: boolean;
+}
+
+interface ConnectionTestResult {
+  success: boolean;
+  status?: number;
+  message?: string;
+  error?: string;
+  latencyMs?: number;
+}
+
+// ─── Fetch Models Types ────────────────────────────────────────────────────────────
+
+interface FetchModelsParams {
+  apiUrl: string;
+  provider: string;
+  apiKey?: string;
+  allowUnauthorized?: boolean;
+}
+
+interface FetchModelsResult {
+  success: boolean;
+  models?: { id: string; name: string; inputModalities?: string[] }[];
+  error?: string;
+}

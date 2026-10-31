@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, master]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, develop, master]
+
+env:
+  NODE_VERSION: '22'
+  GO_VERSION: '1.24'
+
+jobs:
+  typecheck:
+    name: Typecheck Desktop Proxy (tsc --noEmit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run lint
+
+  test-proxy:
+    name: Desktop Proxy Tests (vitest) (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+  test-daemon:
+    name: Go Daemon Bridge Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: remote/daemon/go.sum
+
+      - name: Run Go Unit Tests
+        working-directory: remote/daemon
+        run: go test -v -timeout 10m ./...
+
+  test-mobile:
+    name: Flutter Mobile Tests & Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter Dependencies
+        run: |
+          cd remote/mobile
+          flutter pub get
+
+      - name: Generate l10n
+        run: |
+          cd remote/mobile
+          flutter gen-l10n
+
+      - name: Analyze Flutter
+        run: |
+          cd remote/mobile
+          flutter analyze
+
+      - name: Run Unit Tests
+        run: |
+          cd remote/mobile
+          flutter test --exclude-tags=live
+
+  build:
+    name: Build & Release Artifacts
+    runs-on: ubuntu-latest
+    needs: [typecheck, test-proxy, test-daemon, test-mobile]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+          if-no-files-found: warn

@@ -1,0 +1,616 @@
+package discovery
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/antigravity/remote-daemon/pkg/connectrpc"
+)
+
+type LocalHarnessInfo struct {
+	PID             int
+	ProcessName     string
+	CSRFToken       string
+	ExtensionCSRF   string
+	ExtensionPort   int
+	HTTPSServerPort int
+	WorkspaceID     string
+	SubclientType   string
+	ConnectRPCPort  int
+	UseTLS          bool
+}
+
+type procEntry struct {
+	pid         int
+	name        string
+	commandLine string
+}
+
+func bindHost() string {
+	if h := os.Getenv("AG_BIND_HOST"); h != "" {
+		return h
+	}
+	return "127.0.0.1"
+}
+
+func Discover() (*LocalHarnessInfo, error) {
+	procs, err := getProcesses()
+	if err != nil {
+		return nil, err
+	}
+	if len(procs) == 0 {
+		return nil, fmt.Errorf("language_server introuvable — IDE Antigravity ouvert ?")
+	}
+
+	// Priorité absolue à Antigravity 2.0 (hubs) pour synchronisation directe 2.0 ↔ Remote,
+	// avec repli sur Antigravity IDE (ideMain) si 2.0 n'est pas démarré.
+	var hubs []procEntry
+	var ideMain []procEntry
+	var ideActive []procEntry
+	var ideOther []procEntry
+	var fallback []procEntry
+
+	for _, p := range procs {
+		isIde := strings.Contains(p.commandLine, "antigravity-ide") || strings.Contains(p.name, "language_server_windows_x64")
+		is20 := (!isIde) && (strings.Contains(p.commandLine, "--subclient_type hub") || (strings.Contains(p.commandLine, "--standalone") && !strings.Contains(p.commandLine, "--subclient_type ide")) || strings.Contains(p.commandLine, "--app_data_dir antigravity"))
+		if is20 {
+			hubs = append(hubs, p)
+		} else if isIde && strings.Contains(p.commandLine, "--subclient_type ide") && !strings.Contains(p.commandLine, "--enable_lsp") {
+			ideMain = append(ideMain, p)
+		} else if strings.Contains(p.commandLine, "--workspace_id") || strings.Contains(p.commandLine, "--enable_lsp") {
+			ideActive = append(ideActive, p)
+		} else if strings.Contains(p.commandLine, "--subclient_type ide") {
+			ideOther = append(ideOther, p)
+		} else {
+			fallback = append(fallback, p)
+		}
+	}
+
+	var sortedProcs []procEntry
+	sortedProcs = append(sortedProcs, hubs...) // Antigravity 2.0 en priorité absolue !
+	sortedProcs = append(sortedProcs, ideMain...)
+	sortedProcs = append(sortedProcs, ideActive...)
+	sortedProcs = append(sortedProcs, ideOther...)
+	sortedProcs = append(sortedProcs, fallback...)
+	if len(sortedProcs) == 0 {
+		sortedProcs = procs
+	}
+
+	for _, pick := range sortedProcs {
+		info := &LocalHarnessInfo{
+			PID:             pick.pid,
+			ProcessName:     pick.name,
+			CSRFToken:       extractArg(pick.commandLine, "csrf_token"),
+			ExtensionCSRF:   extractArg(pick.commandLine, "extension_server_csrf_token"),
+			ExtensionPort:   atoi(extractArg(pick.commandLine, "extension_server_port")),
+			HTTPSServerPort: atoi(extractArg(pick.commandLine, "https_server_port")),
+			WorkspaceID:     extractArg(pick.commandLine, "workspace_id"),
+			SubclientType:   extractArg(pick.commandLine, "subclient_type"),
+		}
+
+		if info.ExtensionCSRF == "" {
+			info.ExtensionCSRF = info.CSRFToken
+		}
+
+		candidates := candidatePorts(info, &pick)
+		tokens := []string{info.ExtensionCSRF}
+		if info.CSRFToken != "" && info.CSRFToken != info.ExtensionCSRF {
+			tokens = append(tokens, info.CSRFToken)
+		}
+		for _, tok := range tokens {
+			if tok == "" {
+				continue
+			}
+			if port, useTLS := probePorts(candidates, tok); port > 0 {
+				info.ConnectRPCPort = port
+				info.UseTLS = useTLS
+				info.ExtensionCSRF = tok
+				return info, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("aucun port ne répond au service RPC parmi les %d processus testés", len(sortedProcs))
+}
+
+// DiscoverAll découvre tous les processus language_server actifs et retourne leurs informations de connexion RPC.
+func DiscoverAll() ([]*LocalHarnessInfo, error) {
+	procs, err := getProcesses()
+	if err != nil {
+		return nil, err
+	}
+	var results []*LocalHarnessInfo
+	for _, pick := range procs {
+		info := &LocalHarnessInfo{
+			PID:             pick.pid,
+			ProcessName:     pick.name,
+			CSRFToken:       extractArg(pick.commandLine, "csrf_token"),
+			ExtensionCSRF:   extractArg(pick.commandLine, "extension_server_csrf_token"),
+			ExtensionPort:   atoi(extractArg(pick.commandLine, "extension_server_port")),
+			HTTPSServerPort: atoi(extractArg(pick.commandLine, "https_server_port")),
+			WorkspaceID:     extractArg(pick.commandLine, "workspace_id"),
+			SubclientType:   extractArg(pick.commandLine, "subclient_type"),
+		}
+		if info.ExtensionCSRF == "" {
+			info.ExtensionCSRF = info.CSRFToken
+		}
+		candidates := candidatePorts(info, &pick)
+		tokens := []string{info.ExtensionCSRF}
+		if info.CSRFToken != "" && info.CSRFToken != info.ExtensionCSRF {
+			tokens = append(tokens, info.CSRFToken)
+		}
+		for _, tok := range tokens {
+			if tok == "" {
+				continue
+			}
+			if port, useTLS := probePorts(candidates, tok); port > 0 {
+				info.ConnectRPCPort = port
+				info.UseTLS = useTLS
+				info.ExtensionCSRF = tok
+				results = append(results, info)
+				break
+			}
+		}
+	}
+	return results, nil
+}
+
+type probeResult struct {
+	port   int
+	useTLS bool
+}
+
+// probePorts sonde les ports candidats EN PARALLÈLE (worker pool borné — le
+// premier port qui répond gagne). L'ancien balayage séquentiel coûtait jusqu'à
+// 20 × timeout HTTP (3 s) = 60 s au pire quand le hub était sur un port haut.
+func probePorts(ports []int, csrfToken string) (int, bool) {
+	if len(ports) == 0 {
+		return 0, false
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan probeResult, 1)
+
+	workers := len(ports)
+	if workers > 8 {
+		workers = 8 // 8 workers suffisent : le goulot est le timeout réseau
+	}
+	sem := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+	for _, port := range ports {
+		port := port // capture de boucle (Go < 1.22)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+			if ok, useTLS := probeService(port, csrfToken); ok {
+				select {
+				case result <- probeResult{port: port, useTLS: useTLS}:
+					cancel() // le premier gagnant arrête les autres sondes
+				default:
+				}
+			}
+		}()
+	}
+	go func() { wg.Wait(); close(result) }()
+
+	for res := range result {
+		return res.port, res.useTLS
+	}
+	return 0, false
+}
+
+// candidatePorts : https_server_port, active_port file, netstat PID ports, extension_server_port+1..+20.
+func candidatePorts(info *LocalHarnessInfo, p *procEntry) []int {
+	var ports []int
+
+	// 0. Si --https_server_port est explicitement dans la ligne de commande, le prioriser !
+	if info.HTTPSServerPort > 0 {
+		ports = append(ports, info.HTTPSServerPort)
+	}
+
+	// 1. Ports réels en écoute pour ce PID (netstat) — prioritaire sur active_port
+	if p != nil && p.pid > 0 {
+		ports = append(ports, listeningPortsForPID(p.pid)...)
+	}
+
+	// 2. Plage extension_server_port si présent
+	if info.ExtensionPort > 0 {
+		for offset := 1; offset <= 20; offset++ {
+			ports = append(ports, info.ExtensionPort+offset)
+		}
+	}
+
+	// 3. Vérifier le fichier active_port standard ~/.gemini/antigravity/active_port en repli
+	if activePort := readActivePortFile(); activePort > 0 {
+		ports = append(ports, activePort, activePort+1, activePort+2)
+	}
+	return dedupeInts(ports)
+}
+
+func dedupeInts(in []int) []int {
+	seen := make(map[int]bool)
+	var out []int
+	for _, v := range in {
+		if v > 0 && v <= 65535 && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func readActivePortFile() int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0
+	}
+	path := filepath.Join(home, ".gemini", "antigravity", "active_port")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	portStr := strings.TrimSpace(string(data))
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 || port > 65535 {
+		return 0
+	}
+	return port
+}
+
+// listeningPortsForPID récupère les ports d'écoute du PID via netstat.
+func listeningPortsForPID(pid int) []int {
+	var out bytes.Buffer
+	cmd := exec.Command("netstat", "-ano")
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return nil
+	}
+	pidStr := strconv.Itoa(pid)
+	var ports []int
+	for _, line := range strings.Split(out.String(), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 || fields[4] != pidStr {
+			continue
+		}
+		if !strings.Contains(fields[3], "LISTEN") {
+			continue
+		}
+		// format : TCP <AG_BIND_HOST>:<port> ... -> extraire le port après le ':'
+		addr := fields[1]
+		idx := strings.LastIndex(addr, ":")
+		if idx < 0 {
+			continue
+		}
+		port, err := strconv.Atoi(addr[idx+1:])
+		if err == nil && port > 0 {
+			ports = append(ports, port)
+		}
+	}
+	return ports
+}
+
+// isPortTLS effectue une négociation TLS rapide pour déterminer si le port écoute en HTTPS.
+// Cela empêche l'envoi de requêtes HTTP en clair sur un port TLS, éliminant ainsi le message d'erreur
+// "client sent an HTTP request to an HTTPS server" dans les logs du Language Server.
+func isPortTLS(port int) bool {
+	dialer := &net.Dialer{Timeout: 600 * time.Millisecond}
+	conn, err := tls.DialWithDialer(dialer, "tcp", fmt.Sprintf("%s:%d", bindHost(), port), &tls.Config{
+		InsecureSkipVerify: true, // #nosec G402 — certificat auto-signé du LS
+	})
+	if err == nil {
+		_ = conn.Close()
+		return true
+	}
+	errStr := strings.ToLower(err.Error())
+	if strings.Contains(errStr, "tls:") && !strings.Contains(errStr, "first record does not look like a tls handshake") {
+		return true
+	}
+	return false
+}
+
+// probeService vérifie que le port expose bien le LanguageServerService avec authentification valide.
+// Il teste d'abord si le port est TLS afin de ne sonder QUE le protocole approprié (HTTPS ou HTTP).
+func probeService(port int, csrfToken string) (bool, bool) {
+	if isPortTLS(port) {
+		if probeHTTPSHeartbeat(port, csrfToken) {
+			return true, true
+		}
+		if probeHTTPSGetUserStatus(port, csrfToken) {
+			return true, true
+		}
+		return false, false
+	}
+
+	if probeHTTPHeartbeat(port, csrfToken) {
+		return true, false
+	}
+	if probeHTTPGetUserStatus(port, csrfToken) {
+		return true, false
+	}
+	return false, false
+}
+
+func probeHTTPHeartbeat(port int, csrfToken string) bool {
+	url := fmt.Sprintf("http://%s:%d/%s/%s", bindHost(), port, connectrpc.ServiceName, connectrpc.MethodHeartbeat)
+	body := make([]byte, 5) // frame gRPC-Web vide
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/grpc-web+proto")
+	req.Header.Set("Accept", "application/grpc-web+proto,application/grpc-web-text")
+	req.Header.Set("x-codeium-csrf-token", csrfToken)
+	req.Header.Set("Connect-Protocol-Version", "1")
+	req.Header.Set("X-Grpc-Web", "1")
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	if st := resp.Header.Get("grpc-status"); st != "" && st != "0" {
+		return false
+	}
+	if st := resp.Trailer.Get("grpc-status"); st != "" && st != "0" {
+		return false
+	}
+	if bytes.Contains(raw, []byte("invalid CSRF token")) {
+		return false
+	}
+	return true
+}
+
+func probeHTTPSHeartbeat(port int, csrfToken string) bool {
+	url := fmt.Sprintf("https://%s:%d/%s/%s", bindHost(), port, connectrpc.ServiceName, connectrpc.MethodHeartbeat)
+	body := make([]byte, 5) // frame gRPC-Web vide
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/grpc-web+proto")
+	req.Header.Set("Accept", "application/grpc-web+proto,application/grpc-web-text")
+	req.Header.Set("x-codeium-csrf-token", csrfToken)
+	req.Header.Set("Connect-Protocol-Version", "1")
+	req.Header.Set("X-Grpc-Web", "1")
+
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 — certificat auto-signé LS
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	if st := resp.Header.Get("grpc-status"); st != "" && st != "0" {
+		return false
+	}
+	if st := resp.Trailer.Get("grpc-status"); st != "" && st != "0" {
+		return false
+	}
+	if bytes.Contains(raw, []byte("invalid CSRF token")) {
+		return false
+	}
+	return true
+}
+
+func probeHTTPGetUserStatus(port int, csrfToken string) bool {
+	body := []byte(`{"metadata":{"ideName":"antigravity"}}`)
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s:%d/%s/%s", bindHost(), port, connectrpc.ServiceName, connectrpc.MethodGetUserStatus), bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Connect-Protocol-Version", "1")
+	req.Header.Set("x-codeium-csrf-token", csrfToken)
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode == http.StatusOK && bytes.Contains(raw, []byte("user_status"))
+}
+
+func probeHTTPSGetUserStatus(port int, csrfToken string) bool {
+	body := []byte(`{"metadata":{"ideName":"antigravity"}}`)
+	req, err := http.NewRequest("POST", fmt.Sprintf("https://%s:%d/%s/%s", bindHost(), port, connectrpc.ServiceName, connectrpc.MethodGetUserStatus), bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Connect-Protocol-Version", "1")
+	req.Header.Set("X-Codeium-Csrf-Token", csrfToken)
+
+	// Certificat auto-signé du LS : on accepte tout (le jeton CSRF authentifie).
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 — jeton CSRF requis
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode == http.StatusOK && bytes.Contains(raw, []byte("user_status"))
+}
+
+func getProcesses() ([]procEntry, error) {
+	if runtime.GOOS == "windows" {
+		ps := "Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*language_server*' } | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json -Compress"
+		cmd := exec.Command("powershell", "-NoProfile", "-Command", ps)
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		if err := cmd.Run(); err != nil {
+			return nil, err
+		}
+		str := strings.TrimSpace(out.String())
+		if str == "" {
+			return nil, nil
+		}
+		// ConvertTo-Json -Compress n'échappe pas les backslashes : analyse regex.
+		var procs []procEntry
+		for _, l := range splitJsonObjects(str) {
+			procs = append(procs, procEntry{
+				pid:         extractJsonInt(l, "ProcessId"),
+				name:        extractJsonString(l, "Name"),
+				commandLine: extractJsonString(l, "CommandLine"),
+			})
+		}
+		return procs, nil
+	}
+	// macOS / Linux
+	cmd := exec.Command("sh", "-c", "ps aux | grep -i language_server | grep -v grep")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+	var procs []procEntry
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		pid, _ := strconv.Atoi(fields[1])
+		procs = append(procs, procEntry{pid: pid, name: fields[0], commandLine: line})
+	}
+	return procs, nil
+}
+
+func splitJsonObjects(s string) []string {
+	trimmed := strings.TrimSpace(s)
+	trimmed = strings.TrimPrefix(trimmed, "[")
+	trimmed = strings.TrimSuffix(trimmed, "]")
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed == "" {
+		return nil
+	}
+	// Objet unique (pas de séparateur d'array)
+	if !strings.Contains(trimmed, "},{") {
+		return []string{trimmed}
+	}
+	parts := strings.Split(trimmed, "},{")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if !strings.HasPrefix(p, "{") {
+			p = "{" + p
+		}
+		if !strings.HasSuffix(p, "}") {
+			p = p + "}"
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func extractJsonString(s, key string) string {
+	re := regexp.MustCompile(`"` + key + `"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+	m := re.FindStringSubmatch(s)
+	if len(m) > 1 {
+		return strings.ReplaceAll(m[1], `\"`, `"`)
+	}
+	return ""
+}
+
+func extractJsonInt(s, key string) int {
+	re := regexp.MustCompile(`"` + key + `"\s*:\s*(\d+)`)
+	m := re.FindStringSubmatch(s)
+	if len(m) > 1 {
+		v, _ := strconv.Atoi(m[1])
+		return v
+	}
+	return 0
+}
+
+func extractArg(cmdLine, name string) string {
+	// Format réel observé : "--csrf_token <value>" (espace), parfois "--name=<value>".
+	// Parsing par tokens : simple, et évite les pièges de regex (guillemets,
+	// '=' dans la valeur, flag sans valeur qui avalerait le flag suivant).
+	target := "--" + name
+	for _, tok := range strings.Fields(cmdLine) {
+		if strings.HasPrefix(tok, target+"=") {
+			v := strings.TrimPrefix(tok, target+"=")
+			return strings.Trim(v, `"`)
+		}
+		if tok == target {
+			// La valeur est le token suivant — seulement si ce n'est pas un flag.
+			rest := strings.Fields(cmdLine)
+			for i, t := range rest {
+				if t == target && i+1 < len(rest) && !strings.HasPrefix(rest[i+1], "--") {
+					return strings.Trim(rest[i+1], `"`)
+				}
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+func atoi(s string) int {
+	v, _ := strconv.Atoi(s)
+	return v
+}
+
+// GetActiveWorkspaces scanne les processus language_server en cours d'exécution
+// et extrait la liste unique des chemins de workspaces actifs (--workspace_id).
+func GetActiveWorkspaces() []string {
+	procs, err := getProcesses()
+	if err != nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var active []string
+	for _, p := range procs {
+		ws := extractArg(p.commandLine, "workspace_id")
+		if ws != "" {
+			// Normalisation du chemin (séparateurs, file:///)
+			cleanWs := strings.TrimPrefix(ws, "file:///")
+			cleanWs = strings.ReplaceAll(cleanWs, `\`, `/`)
+			cleanWs = strings.TrimRight(cleanWs, "/")
+			if !seen[cleanWs] {
+				seen[cleanWs] = true
+				active = append(active, cleanWs)
+			}
+		}
+	}
+	return active
+}

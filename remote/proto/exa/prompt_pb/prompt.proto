@@ -1,0 +1,61 @@
+﻿syntax = "proto3";
+
+// file: exa/prompt_pb/prompt.proto
+// package: exa.prompt_pb
+message PendingCommand {
+  optional string instruction = 1;
+  optional string completion = 2;
+}
+message CommandIntentInfo {
+  optional string selection = 1;
+  optional string instruction = 2;
+  optional .exa.codeium_common_pb.Document input_document = 3;
+  optional uint64 selection_start_line = 4;
+  optional uint64 selection_end_line = 5;
+  optional .exa.codeium_common_pb.TerminalCommandData terminal_command_data = 6;
+  repeated .exa.codeium_common_pb.TerminalShellCommand previous_commands = 7;
+  repeated .exa.prompt_pb.PendingCommand pending_commands = 8;
+  optional .exa.codeium_common_pb.CommandRequestSource request_source = 9;
+  repeated .exa.codeium_common_pb.IntellisenseSuggestion intellisense_prompt = 10;
+  repeated .exa.codeium_common_pb.CodeDiagnostic diagnostics_prompt = 11;
+}
+message UnifiedPromptComponents {
+  optional .exa.context_module_pb.ContextModuleResult context_module_result = 2;
+  optional .gemini_coder.Trajectory cortex_trajectory = 3;
+  optional .exa.prompt_pb.CommandIntentInfo command_intent_info = 4;
+  repeated .exa.chat_pb.ChatMessage chat_messages = 1;
+  repeated .exa.codeium_common_pb.CodeDiagnostic code_diagnostics = 5;
+  repeated .exa.codeium_common_pb.KnowledgeBaseGroup knowledge_base_groups = 8;
+}
+message SystemPromptConstructionConfig {
+  optional string element_separator = 1;
+}
+message CommandPromptCacheConfig {
+  optional int64 max_tracked_files = 1;
+  optional int64 max_cache_age_seconds = 2;
+}
+message CumulativePromptConfig {
+  optional float persistent_context_multiplier = 7;
+  optional float persistent_active_document_multiplier = 10;
+  optional float persistent_open_docs_multiplier = 11;
+  optional int64 persistent_max_tokens_per_open_doc = 17;
+  optional int64 persistent_max_ccis_considered = 12;
+  optional float persistent_document_suffix_frac = 20;
+  optional float trajectory_context_multiplier = 2;
+  optional float trajectory_refresh_threshold_multiplier = 15;
+  optional float trajectory_truncation_multiplier = 16;
+  optional float ephemeral_context_multiplier = 9;
+  optional int64 intent_reservation_tokens = 6;
+  optional float ephemeral_active_document_multiplier = 13;
+  optional int64 ephemeral_max_ccis_considered = 14;
+  optional float ephemeral_document_suffix_frac = 21;
+  repeated .exa.cortex_pb.CortexStepType allowed_cascade_step_types = 18;
+  repeated .exa.prompt_pb.CumulativePromptConfig.AllowedImplicitStepTypesEntry allowed_implicit_step_types = 22;
+  optional bool disable_custom_step_id = 23;
+  optional int32 trajectory_start_index = 24;
+  optional int32 trajectory_index_increment = 25;
+  message AllowedImplicitStepTypesEntry {
+    optional string key = 1;
+    optional bool value = 2;
+  }
+}

@@ -1,0 +1,546 @@
+/**
+ * Constants for the proxy module.
+ * Centralizes magic numbers and configuration values to improve maintainability.
+ */
+
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import providersData from './config/providers.json';
+
+// ─── Environment Helpers & Auto-loader ────────────────────────────────────
+function loadEnvFiles(): void {
+  const candidates = [
+    path.join(__dirname, '..', '.env'),
+    path.join(__dirname, '.env'),
+    path.join(os.homedir(), '.gemini', 'antigravity', '.env'),
+  ];
+  for (const filePath of candidates) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        for (const line of content.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            const k = trimmed.slice(0, eqIdx).trim();
+            const v = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+            if (!process.env[k]) process.env[k] = v;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+}
+loadEnvFiles();
+
+function getEnvString(key: string, fallback: string): string {
+  return process.env[key] || fallback;
+}
+
+function getEnvInt(key: string, fallback: number): number {
+  const val = process.env[key];
+  if (val) {
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+// ─── App Constants (used by main.ts, languageServer.ts, paths.ts) ─────────
+
+export const DEFAULT_BIND_HOST = getEnvString('AG_BIND_HOST', '127.0.0.1');
+
+/** Default host for remote runtime connection. Configurable via AG_REMOTE_HOST. */
+export const DEFAULT_REMOTE_HOST = getEnvString('AG_REMOTE_HOST', '');
+
+/** Auth token for remote runtime connection. Must be set via AG_REMOTE_TOKEN env var. */
+export const DEFAULT_REMOTE_TOKEN = getEnvString('AG_REMOTE_TOKEN', '');
+
+// ─── Multi-Account Pool Environment Variables ─────────────────────────────
+export const ENV_ACCOUNTS_JSON = 'AG_ACCOUNTS_JSON';
+export const ENV_ACCOUNTS_FILE = 'AG_ACCOUNTS_FILE';
+export const ENV_ACTIVE_ACCOUNT = 'AG_ACTIVE_ACCOUNT';
+export const ENV_AUTO_ROTATE = 'AG_AUTO_ROTATE';
+
+// ─── Google OAuth Credential Overrides ────────────────────────────────────
+/** Override bundled Google OAuth client ID (fallback to hardcoded when unset). */
+export const ENV_GOOGLE_OAUTH_CLIENT_ID = 'GOOGLE_OAUTH_CLIENT_ID';
+/** Override bundled Google OAuth client secret. */
+export const ENV_GOOGLE_OAUTH_CLIENT_SECRET = 'GOOGLE_OAUTH_CLIENT_SECRET';
+/** Override bundled Gemini CLI OAuth client ID. */
+export const ENV_GEMINI_CLI_OAUTH_CLIENT_ID = 'GEMINI_CLI_OAUTH_CLIENT_ID';
+/** Override bundled Gemini CLI OAuth client secret. */
+export const ENV_GEMINI_CLI_OAUTH_CLIENT_SECRET = 'GEMINI_CLI_OAUTH_CLIENT_SECRET';
+
+/** Origin used by the main BrowserWindow. */
+export const WINDOW_ORIGIN = `https://${DEFAULT_BIND_HOST}`;
+
+/** Pass 0 to the LS so the OS assigns an available port automatically. */
+export const DYNAMIC_PORT = 0;
+
+/** Log file name for the language server. */
+export const LS_LOG_FILE_NAME = 'language_server.log';
+
+/** SHA-256 fingerprint of the bundled language server certificate (overrideable via AG_LS_CERT_FINGERPRINT). */
+export const LS_CERT_FINGERPRINT =
+  process.env.AG_LS_CERT_FINGERPRINT || 'sha256/sTZpQemOWEytaZqa7P/y/dNXbHMdOAzMvzHEhUwHZXw=';
+
+// ─── Cryptography Constants ────────────────────────────────────────────────
+/** Standard OWASP PBKDF2 iteration count for password hashing/derivation. */
+export const PBKDF2_ITERATIONS = 600_000;
+
+/** Legacy PBKDF2 iteration count for backward-compatible decryption. */
+export const PBKDF2_LEGACY_ITERATIONS = 100_000;
+
+/** Derived key length in bytes for AES-256-GCM. */
+export const PBKDF2_KEY_LEN = 32;
+
+/** Hash algorithm for PBKDF2 key derivation. */
+export const PBKDF2_DIGEST = 'sha256';
+
+// ─── Network ───────────────────────────────────────────────────────────────
+
+/**
+ * Default port for the local proxy server.
+ *
+ * Override via the AG_PROXY_PORT environment variable. If the default is in
+ * use, the proxy will bind to a random dynamic port as a last resort.
+ */
+export const DEFAULT_PROXY_PORT = getEnvInt('AG_PROXY_PORT', 51074);
+
+/**
+ * Default port for the ag-doctor-ui emergency proxy stub.
+ * Kept separate from DEFAULT_PROXY_PORT to prevent conflicts.
+ */
+export const STUB_PORT_DEFAULT = getEnvInt('AG_STUB_PORT', 51999);
+
+/** Path (relative to home) where the active proxy port is persisted for IPC. */
+export const ACTIVE_PORT_FILE = '.gemini/antigravity/active_port';
+
+/**
+ * Maximum request body size in bytes (default: 100 MB).
+ * Override via AG_MAX_BODY_SIZE (in bytes) or AG_MAX_BODY_SIZE_MB (in megabytes).
+ */
+export const DEFAULT_MAX_BODY_SIZE = getEnvInt(
+  'AG_MAX_BODY_SIZE',
+  getEnvInt('AG_MAX_BODY_SIZE_MB', 100) * 1024 * 1024,
+);
+
+
+
+/** Timeout for Google proxy requests (default: 90 seconds). */
+export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 90_000);
+
+/** Timeout for waiting for initial response headers in multi-account pools (default: 25 seconds). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 25_000);
+
+/** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 10 seconds to cut black holes without premature drops on network jitter or prompt prefill). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 15_000);
+
+/** Timeout for waiting for initial response headers on large payloads or thinking models (default: 65 seconds). */
+export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 75_000);
+
+/** Background proactive pre-flight health check interval across Google account pool (default: 20 minutes). */
+export const PREFLIGHT_HEALTH_CHECK_INTERVAL_MS = getEnvInt('AG_PREFLIGHT_HEALTH_CHECK_INTERVAL_MS', 20 * 60_000);
+
+/** Strict per-account timeout for pre-flight ping probe (default: 3.5 seconds). */
+export const PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS = getEnvInt('AG_PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS', 3_500);
+
+/** P2C score delta for top-tier candidate eligibility in Google account pool (default: 45 points). */
+export const P2C_SCORE_DELTA = getEnvInt('AG_P2C_SCORE_DELTA', 45);
+
+/** Maximum time to wait for a 429 rate-limited account cooldown to expire before failing (default: 65 seconds). */
+export const RATE_LIMIT_RELIEF_WAIT_MS = getEnvInt('AG_RATE_LIMIT_RELIEF_WAIT_MS', 65_000);
+
+/** Speculative hedged request delay for streaming pools (default: 2,500ms). If no headers arrive in 2.5s, hedge with next candidate. */
+export const HEDGED_REQUEST_DELAY_MS = getEnvInt('AG_HEDGED_REQUEST_DELAY_MS', 2_500);
+
+/** Number of consecutive 503 Capacity Unavailable errors across different pool accounts before cascading to Claude (default: 2). */
+export const CAPACITY_503_CASCADE_THRESHOLD = getEnvInt('AG_CAPACITY_503_CASCADE_THRESHOLD', 2);
+
+/** Number of consecutive 504 Gateway Timeout errors across different pool accounts before cascading to Claude/fallback (default: 2). */
+export const CONSECUTIVE_504_CASCADE_THRESHOLD = getEnvInt('AG_CONSECUTIVE_504_CASCADE_THRESHOLD', 4);
+
+/**
+ * Preventive anti-lockout quota threshold percentage (default: 10%).
+ * Supports either integer percentage (e.g. 10) or fraction (e.g. 0.10).
+ * If an account's weekly quota falls to or below this threshold,
+ * the account is protected from selection to prevent hitting 0% and triggering
+ * Google's 7-day (167-hour) hard lockout.
+ */
+function parsePreventiveThreshold(): number {
+  const envVal = process.env.AG_QUOTA_PREVENTIVE_THRESHOLD || process.env.AG_QUOTA_PREVENTIVE_THRESHOLD_PCT;
+  if (!envVal) return 10;
+  const num = parseFloat(envVal);
+  if (isNaN(num)) return 10;
+  return num > 0 && num <= 1.0 ? Math.round(num * 100) : Math.round(num);
+}
+export const PREVENTIVE_QUOTA_THRESHOLD_PCT = parsePreventiveThreshold();
+
+/**
+ * Preventive cooldown duration when an account hits the preventive threshold (default: 4 hours).
+ */
+export const PREVENTIVE_COOLDOWN_MS = getEnvInt('AG_PREVENTIVE_COOLDOWN_MS', 4 * 60 * 60 * 1000);
+
+
+
+/** Timeout for downloading file content from external URIs (30 seconds). */
+export const FILE_DOWNLOAD_TIMEOUT_MS = getEnvInt('AG_FILE_DOWNLOAD_TIMEOUT_MS', 30_000);
+
+/** Interval for periodic background model health checks (default: 60 seconds). Set to 0 to disable. */
+export const HEALTH_CHECK_INTERVAL_MS = getEnvInt('AG_HEALTH_CHECK_INTERVAL_MS', 60_000);
+
+/** Cache TTL for model health check results (default: 60 seconds). */
+export const HEALTH_CHECK_CACHE_TTL_MS = getEnvInt('AG_HEALTH_CHECK_CACHE_TTL_MS', 60_000);
+
+/**
+ * Per-chunk idle timeout for streaming upstream responses.
+ *
+ * If no new SSE chunk arrives within this window, the proxy treats the
+ * upstream as stuck and aborts the request. This is fundamentally different
+ * from a *total* request timeout (which `request.setTimeout()` enforces):
+ * a total timeout kills healthy streams that legitimately take several
+ * minutes; the idle timeout only fires when the upstream *stops saying
+ * anything* mid-stream.
+ *
+ * Ported from vscode-unify-chat-provider's `withIdleTimeout` (vendors/...).
+ * Default: 60 seconds — generous enough for slow reasoning models, short
+ * enough that a stuck upstream doesn't tie up the proxy indefinitely.
+ */
+export const STREAM_IDLE_TIMEOUT_MS = getEnvInt('AG_STREAM_IDLE_TIMEOUT_MS', 60_000);
+
+/**
+ * Default request timeout for custom model requests.
+ *
+ * Lowered from 120_000 to 30_000 to bound the worst-case blocking time
+ * of an upstream connection (3 attempts × 30s = 90s max). Combined with
+ * DEFAULT_MAX_RETRIES = 1, a fully-failing model holds the proxy open
+ * for at most 60s before giving up, freeing connections for the rest of
+ * the dropdown models.
+ */
+export const DEFAULT_MODEL_REQUEST_TIMEOUT_MS = getEnvInt('AG_MODEL_REQUEST_TIMEOUT_MS', 30_000);
+
+/** Default retry delay for streaming errors (1 second). */
+export const STREAM_RETRY_BASE_DELAY_MS = 1_000;
+
+/** Default retry delay for non-streaming errors (1 second). */
+export const NON_STREAM_RETRY_BASE_DELAY_MS = 1_000;
+
+/** Base delay for 429 rate-limit retries (2 seconds). */
+export const RATE_LIMIT_RETRY_BASE_DELAY_MS = 2_000;
+
+/** Base delay for 5xx server error retries (1 second). */
+export const SERVER_ERROR_RETRY_BASE_DELAY_MS = 1_000;
+
+/**
+ * Exponential backoff multiplier (AWS-style decorrelated jitter).
+ *
+ * The delay for attempt N is roughly:
+ *     min(initialDelay * MULTIPLIER^N, maxDelay) * (1 +/- JITTER)
+ *
+ * 2x is the AWS-recommended default — fast enough to recover from transient
+ * errors, gentle enough to avoid pile-up.
+ */
+export const RETRY_BACKOFF_MULTIPLIER = 2;
+
+/**
+ * Jitter factor in [0, 1]. With 0.1, each delay is randomly scaled within
+ * +/-10% of its computed value, preventing retry-wave synchronization when
+ * many concurrent requests hit the same upstream at the same time.
+ *
+ * Inspired by `vscode-unify-chat-provider`'s DEFAULT_CHAT_RETRY_CONFIG.
+ */
+export const RETRY_BACKOFF_JITTER_FACTOR = 0.1;
+
+// ─── Retry Configuration ──────────────────────────────────────────────────
+
+/**
+ * Default maximum number of retries per model.
+ *
+ * Lowered from 3 to 1 to prevent retry storms: a stuck upstream used to
+ * block the proxy for up to ~360s (3 × 120s) per model, which cascaded
+ * across 8+ custom models and starved the rest of the dropdown.
+ * With 1 retry, a fully-failing model gives up in ≤ 60s (2 × 30s).
+ */
+export const DEFAULT_MAX_RETRIES = getEnvInt('AG_MAX_RETRIES', 1);
+
+/** Minimum allowed retry count. */
+export const MIN_MAX_RETRIES = 0;
+
+/** Maximum allowed retry count. */
+export const MAX_MAX_RETRIES = 5;
+
+// ─── Circuit Breaker ──────────────────────────────────────────────────────
+
+/** Maximum consecutive cache refresh failures before backing off. */
+export const CACHE_REFRESH_MAX_FAILURES = getEnvInt('AG_CACHE_REFRESH_MAX_FAILURES', 3);
+
+/** Backoff duration after circuit breaker trips (5 minutes). */
+export const CACHE_REFRESH_BACKOFF_MS = getEnvInt('AG_CACHE_REFRESH_BACKOFF_MS', 5 * 60 * 1000);
+
+// ─── Model Capabilities ────────────────────────────────────────────────────
+
+/** Maximum input tokens for custom models. */
+export const CUSTOM_MODEL_MAX_TOKENS = getEnvInt('AG_CUSTOM_MODEL_MAX_TOKENS', 1_048_576);
+
+/** Maximum output tokens for custom models. */
+export const CUSTOM_MODEL_MAX_OUTPUT_TOKENS = getEnvInt('AG_CUSTOM_MODEL_MAX_OUTPUT_TOKENS', 4_096);
+
+/** Default sampling temperature for non-thinking models. */
+export const DEFAULT_TEMPERATURE = parseFloat(process.env.AG_DEFAULT_TEMPERATURE || '0.7');
+
+/** Default top-P sampling parameter. */
+export const DEFAULT_TOP_P = parseFloat(process.env.AG_DEFAULT_TOP_P || '0.9');
+
+/** Default top-K sampling parameter. */
+export const DEFAULT_TOP_K = getEnvInt('AG_DEFAULT_TOP_K', 40);
+
+// ─── Model Placeholder ID Generation ──────────────────────────────────────
+
+/** Initial seed for DJB2 hashing algorithm used in deterministic model ID generation. */
+export const DJB2_SEED = 5381;
+
+/** Base number for placeholder IDs (e.g., MODEL_PLACEHOLDER_M400). */
+export const PLACEHOLDER_ID_BASE = 400;
+
+/** Range for placeholder IDs (e.g., 200 = IDs from 400 to 599). */
+export const PLACEHOLDER_ID_RANGE = 200;
+
+// ─── DNS Resolution ───────────────────────────────────────────────────────
+
+/** Public DNS servers used to bypass local DNS poisoning. */
+export const PUBLIC_DNS_SERVERS = ['8.8.8.8', '1.1.1.1', '8.8.4.4'];
+
+
+
+// ─── Google API Hosts ─────────────────────────────────────────────────────
+
+export const GOOGLE_HOSTS = {
+  CLOUD_CODE: getEnvString('AG_GOOGLE_CLOUDCODE_HOST', 'daily-cloudcode-pa.googleapis.com'),
+  CLOUD_CODE_PROD: getEnvString('AG_GOOGLE_CLOUDCODE_PROD_HOST', 'cloudcode-pa.googleapis.com'),
+  GENERATIVE_LANGUAGE: getEnvString('AG_GOOGLE_GENLANG_HOST', 'generativelanguage.googleapis.com'),
+} as const;
+
+// ─── Loopback Hosts ───────────────────────────────────────────────────────
+
+export const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'] as const;
+
+// ─── Local Service Defaults ────────────────────────────────────────────────
+
+export const LOCAL_SERVICES = {
+  OLLAMA: getEnvString('OLLAMA_HOST', `http://${DEFAULT_BIND_HOST}:11434`),
+  LMSTUDIO: getEnvString('LMSTUDIO_HOST', `http://${DEFAULT_BIND_HOST}:1234`),
+  LLAMACPP: getEnvString('LLAMACPP_HOST', `http://${DEFAULT_BIND_HOST}:8080`),
+} as const;
+
+// ─── Content Types ────────────────────────────────────────────────────────
+
+export const CONTENT_TYPES = {
+  JSON: 'application/json',
+  EVENT_STREAM: 'text/event-stream',
+  GRPC_WEB_PROTO: 'application/grpc-web+proto',
+} as const;
+
+// ─── Provider Names ───────────────────────────────────────────────────────
+// Single source of truth for all supported providers.
+
+export const PROVIDERS = {
+  OPENAI: 'openai',
+  OLLAMA: 'ollama',
+  OPENROUTER: 'openrouter',
+  CUSTOM: 'custom',
+  GROQ: 'groq',
+  MISTRAL: 'mistral',
+  CEREBRAS: 'cerebras',
+  NVIDIA: 'nvidia',
+  OPENCODE: 'opencode',
+  CODESTRAL: 'codestral',
+  // Anthropic-compatible transport
+  ANTHROPIC: 'anthropic',
+  DEEPSEEK: 'deepseek',
+  KIMI: 'kimi',
+  FIREWORKS: 'fireworks',
+  LMSTUDIO: 'lmstudio',
+  LLAMACPP: 'llamacpp',
+  WAFER: 'wafer',
+  ZAI: 'zai',
+  MINIMAX: 'minimax',
+  // Native
+  GOOGLE: 'google',
+  // Google AI Studio (independent developer API key & quota)
+  GOOGLE_GEMINI: 'google-gemini',
+  // Gemini CLI (production Cloud Code endpoint with separate OAuth client & quota)
+  GEMINI_CLI: 'gemini-cli',
+  XAI: 'xai',
+  COHERE: 'cohere',
+} as const;
+
+export type ProviderName = (typeof PROVIDERS)[keyof typeof PROVIDERS];
+
+/** All provider names as an array, useful for validation. */
+export const ALL_PROVIDERS: readonly ProviderName[] = Object.values(PROVIDERS);
+
+/** Providers that use OpenAI-compatible API format (chat/completions). */
+export const OPENAI_COMPATIBLE_PROVIDERS = [
+  PROVIDERS.OPENAI,
+  PROVIDERS.CUSTOM,
+  PROVIDERS.OPENROUTER,
+] as const;
+
+/** Providers that use OpenAI-compatible transport (expanded set for registry). */
+export const OPENAI_COMPAT = new Set<string>([
+  PROVIDERS.OPENAI,
+  PROVIDERS.OLLAMA,
+  PROVIDERS.OPENROUTER,
+  PROVIDERS.CUSTOM,
+  PROVIDERS.GROQ,
+  PROVIDERS.MISTRAL,
+  PROVIDERS.CEREBRAS,
+  PROVIDERS.NVIDIA,
+  PROVIDERS.OPENCODE,
+  PROVIDERS.CODESTRAL,
+  PROVIDERS.MINIMAX,
+  PROVIDERS.XAI,
+  PROVIDERS.COHERE,
+]);
+
+/** Providers that use Anthropic-compatible transport. */
+export const ANTHROPIC_COMPAT = new Set<string>([
+  PROVIDERS.ANTHROPIC,
+  PROVIDERS.DEEPSEEK,
+  PROVIDERS.KIMI,
+  PROVIDERS.FIREWORKS,
+  PROVIDERS.LMSTUDIO,
+  PROVIDERS.LLAMACPP,
+  PROVIDERS.WAFER,
+  PROVIDERS.ZAI,
+]);
+
+/** Providers that require an API key for authentication. */
+export const PROVIDERS_REQUIRING_API_KEY: readonly ProviderName[] = [
+  PROVIDERS.OPENAI,
+  PROVIDERS.ANTHROPIC,
+  PROVIDERS.OPENROUTER,
+  PROVIDERS.GOOGLE,
+  PROVIDERS.DEEPSEEK,
+  PROVIDERS.GROQ,
+  PROVIDERS.MISTRAL,
+  PROVIDERS.CEREBRAS,
+  PROVIDERS.KIMI,
+  PROVIDERS.FIREWORKS,
+  PROVIDERS.NVIDIA,
+  PROVIDERS.OPENCODE,
+  PROVIDERS.CODESTRAL,
+  PROVIDERS.WAFER,
+  PROVIDERS.ZAI,
+  PROVIDERS.MINIMAX,
+  PROVIDERS.XAI,
+  PROVIDERS.COHERE,
+];
+
+/** Default API URLs per provider. Override per-model via apiUrl in custom_models.json or environment variables. */
+export const PROVIDER_DEFAULT_URLS: Record<ProviderName, string> = {
+  [PROVIDERS.OPENAI]: process.env.OPENAI_BASE_URL
+    ? `${process.env.OPENAI_BASE_URL.replace(/\/$/, '')}/chat/completions`
+    : 'https://api.openai.com/v1/chat/completions',
+  [PROVIDERS.ANTHROPIC]: process.env.ANTHROPIC_BASE_URL
+    ? `${process.env.ANTHROPIC_BASE_URL.replace(/\/$/, '')}/messages`
+    : 'https://api.anthropic.com/v1/messages',
+  [PROVIDERS.OPENROUTER]: process.env.OPENROUTER_BASE_URL
+    ? `${process.env.OPENROUTER_BASE_URL.replace(/\/$/, '')}/chat/completions`
+    : 'https://openrouter.ai/api/v1/chat/completions',
+  [PROVIDERS.OLLAMA]: process.env.OLLAMA_BASE_URL
+    ? `${process.env.OLLAMA_BASE_URL.replace(/\/$/, '')}/chat/completions`
+    : process.env.OLLAMA_HOST
+      ? `${process.env.OLLAMA_HOST.replace(/\/$/, '')}/v1/chat/completions`
+      : 'http://localhost:11434/v1/chat/completions',
+  [PROVIDERS.GOOGLE]: process.env.GOOGLE_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/models/',
+  [PROVIDERS.GOOGLE_GEMINI]: process.env.GOOGLE_GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+  [PROVIDERS.CUSTOM]: process.env.CUSTOM_PROVIDER_URL || '',
+  [PROVIDERS.DEEPSEEK]: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
+  [PROVIDERS.GROQ]: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+  [PROVIDERS.MISTRAL]: process.env.MISTRAL_BASE_URL || 'https://api.mistral.ai/v1',
+  [PROVIDERS.CEREBRAS]: process.env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1',
+  [PROVIDERS.KIMI]: process.env.KIMI_BASE_URL || process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.ai/v1',
+  [PROVIDERS.FIREWORKS]: process.env.FIREWORKS_BASE_URL || 'https://api.fireworks.ai/inference/v1',
+  [PROVIDERS.LMSTUDIO]: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234/v1',
+  [PROVIDERS.LLAMACPP]: process.env.LLAMACPP_BASE_URL || 'http://localhost:8080/v1',
+  [PROVIDERS.NVIDIA]: process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1',
+  [PROVIDERS.OPENCODE]: process.env.OPENCODE_BASE_URL || '',
+  [PROVIDERS.CODESTRAL]: process.env.CODESTRAL_BASE_URL || 'https://codestral.mistral.ai/v1',
+  [PROVIDERS.WAFER]: process.env.WAFER_BASE_URL || '',
+  [PROVIDERS.ZAI]: process.env.ZAI_BASE_URL || '',
+  [PROVIDERS.MINIMAX]: process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.chat/v1/chat/completions',
+  [PROVIDERS.GEMINI_CLI]: 'https://cloudcode-pa.googleapis.com/v1internal',
+  [PROVIDERS.XAI]: process.env.XAI_BASE_URL || 'https://api.x.ai/v1',
+  [PROVIDERS.COHERE]: process.env.COHERE_BASE_URL || 'https://api.cohere.com/v1',
+};
+
+export interface SuggestedModel {
+  id: string;
+  displayName: string;
+}
+
+export interface DetailedProviderPreset {
+  id: ProviderName;
+  label: string;
+  defaultApiUrl: string;
+  suggestedModels: SuggestedModel[];
+}
+
+const CORE_DETAILED_PROVIDERS: ProviderName[] = [
+  PROVIDERS.OPENAI,
+  PROVIDERS.DEEPSEEK,
+  PROVIDERS.OPENROUTER,
+  PROVIDERS.GROQ,
+  PROVIDERS.OLLAMA,
+  PROVIDERS.ANTHROPIC,
+  PROVIDERS.MISTRAL,
+  PROVIDERS.KIMI,
+];
+
+export const DETAILED_PROVIDER_PRESETS: DetailedProviderPreset[] = CORE_DETAILED_PROVIDERS.map((providerId) => {
+  const p = (providersData as any[]).find((entry) => entry.provider === providerId);
+  const envVar = `${providerId.toUpperCase()}_BASE_URL`;
+  const envOverride = process.env[envVar] || (providerId === PROVIDERS.OLLAMA ? (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST) : undefined);
+  return {
+    id: providerId,
+    label: p?.label || p?.name || providerId,
+    defaultApiUrl: envOverride || p?.defaultApiUrl || '',
+    suggestedModels: (p?.suggestedModels || []) as SuggestedModel[],
+  };
+});
+
+export const STANDARD_GOOGLE_MODELS = [
+  { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+  { id: 'gemini-4-argon-high', displayName: 'Gemini 4 Argon (High)', enabled: true },
+  { id: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5 (Medium)', enabled: false },
+  { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5 (Low)', enabled: false },
+  { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: true },
+  { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
+];
+
+/**
+ * Checks whether a given model identifier or display name corresponds to an obsolete/deprecated model.
+ * Matches deprecated Gemini models (1.5, 2.0, 2.5, 3.0, 3.1, 3.5, 3.6, 3.7 Flash, etc.) and legacy GPT models.
+ */
+export function isObsoleteModel(idOrName?: string, displayName?: string): boolean {
+  if (!idOrName && !displayName) return false;
+  const str = `${idOrName || ''} ${displayName || ''}`.toLowerCase();
+  if (str.includes('argon')) return false;
+
+  // Deprecated Gemini / Google models: 1.x, 2.x, 3.0, 3.1, 3.5, 3.6, 3.7
+  if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[01567])/i.test(str)) return true;
+  if (/\bgemini[-_\s]*(?:3(?:\.0)?(?:-pro|-flash|\b)|pro-agent)/i.test(str) && !str.includes('3.8')) return true;
+
+  // GPT models (gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5, gpt-oss, etc.)
+  if (/\bgpt[-_\s]*(?:3\.5|4o|4|oss|3)/i.test(str) || str.startsWith('gpt-')) return true;
+
+  // Old Claude 3.5
+  if (/claude[-_\s]*3[-_\s]*5/i.test(str)) return true;
+
+  return false;
+}
+

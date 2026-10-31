@@ -1,0 +1,302 @@
+﻿syntax = "proto3";
+
+// file: exa/google/internal/cloud/code/v1internal/jetski_service.proto
+// package: google.internal.cloud.code.v1internal
+message ProvisionConversationBundleDirRequest {
+}
+message ProvisionConversationBundleDirResponse {
+  optional string bundle_dir = 1;
+}
+message GetBundleWriteMintRequest {
+}
+message GetBundleWriteMintResponse {
+  optional string bundle_dir = 1;
+  optional bytes bundle_write_mint = 2;
+  optional .google.protobuf.Timestamp mint_expiry_time = 3;
+}
+message SetUserSettingsRequest {
+  optional .google.internal.cloud.code.v1internal.UserSettings user_settings = 1;
+}
+message SetUserSettingsResponse {
+  optional .google.internal.cloud.code.v1internal.UserSettings user_settings = 1;
+}
+message UserSettings {
+  optional bool telemetry_enabled = 1;
+  optional bool user_data_collection_force_disabled = 2;
+  optional bool marketing_emails_enabled = 3;
+}
+message FetchUserInfoRequest {
+  optional string project = 1;
+}
+message FetchUserInfoResponse {
+  optional .google.internal.cloud.code.v1internal.UserSettings user_settings = 6;
+  repeated string user_tags = 7;
+  optional string region_code = 8;
+}
+message GetAgentPluginRequest {
+  optional string name = 1;
+}
+message ListAgentPluginsRequest {
+  optional string filter = 1;
+  optional int32 page_size = 2;
+  optional string page_token = 3;
+}
+message ListAgentPluginsResponse {
+  repeated .google.internal.cloud.code.v1internal.AgentPlugin agent_plugins = 1;
+  optional string next_page_token = 2;
+}
+message ListBuildWithGooglePluginsRequest {
+  optional string filter = 1;
+  optional int32 page_size = 2;
+  optional string page_token = 3;
+}
+message ListBuildWithGooglePluginsResponse {
+  repeated .google.internal.cloud.code.v1internal.BuildWithGooglePlugin build_with_google_plugins = 1;
+  optional string next_page_token = 2;
+}
+message ListCascadeNuxesRequest {
+  optional string filter = 1;
+  optional int32 page_size = 2;
+  optional string page_token = 3;
+}
+message ListCascadeNuxesResponse {
+  repeated .google.internal.cloud.code.v1internal.CascadeNux cascade_nuxes = 1;
+  optional string next_page_token = 2;
+}
+message ListWebDocsOptionsRequest {
+  optional int32 page_size = 1;
+  optional string page_token = 2;
+}
+message ListWebDocsOptionsResponse {
+  repeated .google.internal.cloud.code.v1internal.WebDocsOption web_docs_options = 1;
+  optional string next_page_token = 2;
+}
+message RewriteUriRequest {
+  optional string original_uri = 1;
+}
+message RewriteUriResponse {
+  optional string redirect_uri = 1;
+}
+message WebDocsOption {
+  optional string label = 1;
+  optional string docs_uri = 2;
+  optional string docs_search_domain = 3;
+  repeated string synonyms = 4;
+  optional bool is_featured = 5;
+}
+message WebSearchRedirect {
+  optional string search_domain = 1;
+  repeated string redirect_paths = 2;
+  optional string llms_full_txt_uri = 3;
+  optional string llms_txt_uri = 4;
+}
+message AgentPlugin {
+  optional string name = 1;
+  optional string uid = 2;
+  optional string link = 3;
+  optional string description = 4;
+  optional .google.internal.cloud.code.v1internal.AgentPluginLocalConfig local = 9;
+  optional .google.internal.cloud.code.v1internal.AgentPluginRemoteConfig remote = 10;
+  optional int64 installation_count = 6;
+  optional string trust_level = 7;
+  optional string readme = 8;
+}
+message GStaticSource {
+  optional string link = 1;
+}
+message Google3Source {
+  optional string depot_path = 1;
+}
+message BuildWithGooglePlugin {
+  optional .google.internal.cloud.code.v1internal.AgentPlugin plugin = 1;
+  optional .google.internal.cloud.code.v1internal.GStaticSource gstatic = 3;
+  optional .google.internal.cloud.code.v1internal.Google3Source google3 = 5;
+  repeated .google.internal.cloud.code.v1internal.BuildWithGooglePlugin.VersionShasEntry version_shas = 4;
+  message VersionShasEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message AgentPluginLocalConfig {
+  repeated .google.internal.cloud.code.v1internal.AgentPluginLocalConfig.CommandsEntry commands = 1;
+  message CommandsEntry {
+    optional string key = 1;
+    optional .google.internal.cloud.code.v1internal.AgentPluginCommand value = 2;
+  }
+}
+message AgentPluginRemoteConfig {
+  optional .google.internal.cloud.code.v1internal.AgentPluginRemoteConfigTemplate remote_template = 2;
+}
+message AgentPluginRemoteConfigTemplate {
+  optional string server_url = 1;
+  repeated .google.internal.cloud.code.v1internal.AgentPluginRemoteConfigTemplate.HeadersEntry headers = 2;
+  optional string auth_provider_type = 3;
+  message HeadersEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message AgentPluginCommand {
+  optional .google.internal.cloud.code.v1internal.AgentPluginCommandTemplate command_template = 1;
+  repeated .google.internal.cloud.code.v1internal.AgentPluginCommandVariable variables = 2;
+}
+message AgentPluginCommandTemplate {
+  optional string command = 1;
+  repeated string args = 2;
+  repeated .google.internal.cloud.code.v1internal.AgentPluginCommandTemplate.EnvEntry env = 3;
+  message EnvEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+}
+message AgentPluginCommandVariable {
+  optional string name = 1;
+  optional string title = 2;
+  optional string description = 3;
+  optional string link = 4;
+}
+message CascadeNux {
+  optional int32 uid = 1;
+  optional .google.internal.cloud.code.v1internal.CascadeNuxLocation location = 2;
+  optional .google.internal.cloud.code.v1internal.CascadeNuxTrigger trigger = 3;
+  optional string analytics_event = 4;
+  optional string learn_more_uri = 7;
+  optional int32 priority = 8;
+  optional .google.internal.cloud.code.v1internal.CascadeNuxIcon icon = 10;
+  optional bool requires_idle_cascade = 11;
+  optional string title = 12;
+  optional string body = 13;
+  optional string image_url = 14;
+  optional string video_url = 15;
+  optional .google.internal.cloud.code.v1internal.NuxFilter filter = 16;
+  repeated .google.internal.cloud.code.v1internal.NUXInteractionType available_interactions = 17;
+  optional string learn_more_button_text = 18;
+  optional string primary_cta_text = 19;
+}
+message NuxVersionFilter {
+  optional string min_version = 1;
+  optional string max_version = 2;
+  repeated string exact_versions = 3;
+}
+message NuxFilter {
+  repeated .google.internal.cloud.code.v1internal.NuxClient clients = 1;
+  optional .google.internal.cloud.code.v1internal.NuxVersionFilter version_filter = 2;
+  repeated string subclients = 3;
+  repeated string user_tiers = 4;
+}
+message Interaction {
+  optional .google.internal.cloud.code.v1internal.NUXInteraction nux_interaction = 1;
+}
+message NUXInteraction {
+  optional int32 nux_id = 1;
+  optional .google.internal.cloud.code.v1internal.NUXInteractionType interaction_type = 2;
+}
+message RegisterInteractionRequest {
+  optional .google.internal.cloud.code.v1internal.Interaction interaction = 1;
+}
+message RegisterInteractionResponse {
+  optional string message = 1;
+}
+message TabChatRequest {
+  optional string project = 1;
+  optional .exa.api_server_pb.GetChatMessageRequest request = 2;
+}
+message TabChatResponse {
+  optional .exa.api_server_pb.GetChatMessageResponse response = 1;
+}
+message CheckUrlDenylistRequest {
+  optional string url = 1;
+}
+message CheckUrlDenylistResponse {
+  optional bool is_denied = 1;
+}
+message CheckUrlAntivirusRequest {
+  optional string url = 1;
+}
+message CheckUrlAntivirusResponse {
+  optional bool is_clean = 1;
+  optional string reason = 2;
+}
+message GetHealthRequest {
+  optional string name = 1;
+}
+message Health {
+  optional string name = 1;
+}
+message RecordTrajectoryAnalyticsRequest {
+  optional .google.protobuf.Struct trajectory = 5;
+  optional int32 start_step_index = 2;
+  optional int32 start_generator_metadata_index = 3;
+  optional .google.protobuf.Struct metadata = 6;
+  repeated int32 mendel_experiment_ids = 7;
+}
+message RecordTrajectoryAnalyticsResponse {
+}
+message WriteTrajectoryACLsRequest {
+  optional string trajectory_id = 1;
+}
+message WriteTrajectoryACLsResponse {
+}
+message FetchFromTrawlerCacheRequest {
+  optional string url = 1;
+  optional bool live_fetch = 2;
+}
+message FetchFromTrawlerCacheResponse {
+  optional string content = 1;
+}
+message BattleModeOverridesRequest {
+  repeated string model_ids = 1;
+  optional bool auto_triggered = 2;
+  optional string trigger_tag = 3;
+}
+message BattleModeOverridesResponse {
+  optional bool should_override = 1;
+  repeated string override_model_ids = 2;
+}
+message BattleModeAutoTriggerRequest {
+  optional .google.protobuf.Timestamp last_auto_trigger_request_time = 1;
+  optional string model_id = 2;
+  optional string prompt = 3;
+}
+message BattleModeAutoTriggerResponse {
+  optional int32 target_battle_n = 1;
+  optional string trigger_tag = 2;
+  optional string banner_text = 3;
+}
+message UploadPerformanceProfileRequest {
+  optional .google.internal.cloud.code.v1internal.PerformanceProfile performance_profile = 1;
+}
+message UploadPerformanceProfileResponse {
+}
+message PerformanceProfile {
+  optional bytes profile_bytes = 1;
+  optional .google.internal.cloud.code.v1internal.PerformanceProfile.Type profile_type = 2;
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    CPU = 1;
+    HEAP = 2;
+  }
+}
+service JetskiService {
+  rpc ListAgentPlugins(.google.internal.cloud.code.v1internal.ListAgentPluginsRequest) returns (.google.internal.cloud.code.v1internal.ListAgentPluginsResponse);
+  rpc ListBuildWithGooglePlugins(.google.internal.cloud.code.v1internal.ListBuildWithGooglePluginsRequest) returns (.google.internal.cloud.code.v1internal.ListBuildWithGooglePluginsResponse);
+  rpc GetAgentPlugin(.google.internal.cloud.code.v1internal.GetAgentPluginRequest) returns (.google.internal.cloud.code.v1internal.AgentPlugin);
+  rpc ListCascadeNuxes(.google.internal.cloud.code.v1internal.ListCascadeNuxesRequest) returns (.google.internal.cloud.code.v1internal.ListCascadeNuxesResponse);
+  rpc ListWebDocsOptions(.google.internal.cloud.code.v1internal.ListWebDocsOptionsRequest) returns (.google.internal.cloud.code.v1internal.ListWebDocsOptionsResponse);
+  rpc RewriteUri(.google.internal.cloud.code.v1internal.RewriteUriRequest) returns (.google.internal.cloud.code.v1internal.RewriteUriResponse);
+  rpc FetchUserInfo(.google.internal.cloud.code.v1internal.FetchUserInfoRequest) returns (.google.internal.cloud.code.v1internal.FetchUserInfoResponse);
+  rpc SetUserSettings(.google.internal.cloud.code.v1internal.SetUserSettingsRequest) returns (.google.internal.cloud.code.v1internal.SetUserSettingsResponse);
+  rpc TabChat(.google.internal.cloud.code.v1internal.TabChatRequest) returns (.google.internal.cloud.code.v1internal.TabChatResponse);
+  rpc CheckUrlDenylist(.google.internal.cloud.code.v1internal.CheckUrlDenylistRequest) returns (.google.internal.cloud.code.v1internal.CheckUrlDenylistResponse);
+  rpc CheckUrlAntivirus(.google.internal.cloud.code.v1internal.CheckUrlAntivirusRequest) returns (.google.internal.cloud.code.v1internal.CheckUrlAntivirusResponse);
+  rpc GetHealth(.google.internal.cloud.code.v1internal.GetHealthRequest) returns (.google.internal.cloud.code.v1internal.Health);
+  rpc RecordTrajectoryAnalytics(.google.internal.cloud.code.v1internal.RecordTrajectoryAnalyticsRequest) returns (.google.internal.cloud.code.v1internal.RecordTrajectoryAnalyticsResponse);
+  rpc WriteTrajectoryACLs(.google.internal.cloud.code.v1internal.WriteTrajectoryACLsRequest) returns (.google.internal.cloud.code.v1internal.WriteTrajectoryACLsResponse);
+  rpc FetchFromTrawlerCache(.google.internal.cloud.code.v1internal.FetchFromTrawlerCacheRequest) returns (.google.internal.cloud.code.v1internal.FetchFromTrawlerCacheResponse);
+  rpc RegisterInteraction(.google.internal.cloud.code.v1internal.RegisterInteractionRequest) returns (.google.internal.cloud.code.v1internal.RegisterInteractionResponse);
+  rpc BattleModeOverrides(.google.internal.cloud.code.v1internal.BattleModeOverridesRequest) returns (.google.internal.cloud.code.v1internal.BattleModeOverridesResponse);
+  rpc BattleModeAutoTrigger(.google.internal.cloud.code.v1internal.BattleModeAutoTriggerRequest) returns (.google.internal.cloud.code.v1internal.BattleModeAutoTriggerResponse);
+  rpc UploadPerformanceProfile(.google.internal.cloud.code.v1internal.UploadPerformanceProfileRequest) returns (.google.internal.cloud.code.v1internal.UploadPerformanceProfileResponse);
+  rpc ProvisionConversationBundleDir(.google.internal.cloud.code.v1internal.ProvisionConversationBundleDirRequest) returns (.google.internal.cloud.code.v1internal.ProvisionConversationBundleDirResponse);
+  rpc GetBundleWriteMint(.google.internal.cloud.code.v1internal.GetBundleWriteMintRequest) returns (.google.internal.cloud.code.v1internal.GetBundleWriteMintResponse);
+}

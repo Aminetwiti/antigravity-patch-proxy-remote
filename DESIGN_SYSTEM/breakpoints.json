@@ -1,0 +1,23 @@
+{
+  "mobile": "0px",
+  "tablet": "768px",
+  "desktop": "1024px",
+  "wide": "1440px",
+  "ultrawide": "1920px",
+  "behaviors": {
+    "mobile": {
+      "sidebar": "drawer",
+      "activityPanel": "drawer",
+      "chatComposer": "fixed-bottom"
+    },
+    "tablet": {
+      "sidebar": "collapsible",
+      "activityPanel": "overlay"
+    },
+    "desktop": {
+      "sidebar": "persistent",
+      "activityPanel": "docked"
+    }
+  },
+  "_source": "remote/mobile/design.md: L358-386"
+}

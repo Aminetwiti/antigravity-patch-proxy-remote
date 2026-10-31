@@ -1,0 +1,22 @@
+﻿syntax = "proto3";
+
+// file: google/protobuf/struct.proto
+// package: google.protobuf
+message Struct {
+  repeated .google.protobuf.Struct.FieldsEntry fields = 1;
+  message FieldsEntry {
+    optional string key = 1;
+    optional .google.protobuf.Value value = 2;
+  }
+}
+message Value {
+  optional .google.protobuf.NullValue null_value = 1;
+  optional double number_value = 2;
+  optional string string_value = 3;
+  optional bool bool_value = 4;
+  optional .google.protobuf.Struct struct_value = 5;
+  optional .google.protobuf.ListValue list_value = 6;
+}
+message ListValue {
+  repeated .google.protobuf.Value values = 1;
+}

@@ -1,0 +1,700 @@
+/**
+ * Shared translator utility functions.
+ * Extracted from proxy.js to avoid duplication across translator modules.
+ */
+
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import log from 'electron-log';
+
+// ─── Types ────────────────────────────────────────────────────────────────
+
+export interface GeminiParameterProperties {
+  type?: string;
+  properties?: GeminiParameterProperties;
+  items?: GeminiParameterProperties;
+  [key: string]: unknown;
+}
+
+export interface ToolCallArgs {
+  CommandLine?: string;
+  Cwd?: string;
+  [key: string]: unknown;
+}
+
+export interface TranslatedToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface TranslatedCallInfo {
+  originalName: string;
+  translatedName: string;
+  cmd: string;
+  cwd?: string;
+}
+
+export interface MatchResult {
+  Filename: string;
+  LineNumber: number;
+  LineContent: string;
+}
+
+export interface DirectoryItem {
+  name: string;
+  isDir: boolean;
+  sizeBytes?: number;
+}
+
+export interface FileListResponse {
+  files?: DirectoryItem[];
+  children?: DirectoryItem[];
+  content?: string;
+  CodeContent?: string;
+}
+
+export type ToolResponse = string | DirectoryItem[] | MatchResult[] | FileListResponse;
+
+// ─── Tool Parameter Normalization ──────────────────────────────────────────
+
+const TOOL_PARAM_NORMALIZATION: Record<string, { primaryKey: string; aliases: string[] }> = {
+  view_file: {
+    primaryKey: 'AbsolutePath',
+    aliases: [
+      'absolute_path',
+      'absolutePath',
+      'path',
+      'file_path',
+      'filePath',
+      'file',
+      'filename',
+      'FilePath',
+      'FileName',
+      'target',
+      'source',
+      'input',
+      'uri',
+    ],
+  },
+  list_dir: {
+    primaryKey: 'DirectoryPath',
+    aliases: [
+      'directory_path',
+      'directoryPath',
+      'path',
+      'dir_path',
+      'dirPath',
+      'dir',
+      'directory',
+      'folder',
+      'FolderPath',
+      'folder_path',
+      'target',
+      'root',
+      'base',
+    ],
+  },
+  grep_search: {
+    primaryKey: 'Query',
+    aliases: [
+      'query',
+      'search',
+      'SearchQuery',
+      'search_query',
+      'searchQuery',
+      'pattern',
+      'Pattern',
+      'regex',
+      'Regex',
+      'term',
+      'keyword',
+      'text',
+      'needle',
+    ],
+  },
+  'grep_search.SearchPath': {
+    primaryKey: 'SearchPath',
+    aliases: [
+      'search_path',
+      'searchPath',
+      'path',
+      'directory',
+      'DirectoryPath',
+      'directory_path',
+      'folder',
+      'dir',
+      'root',
+      'base',
+    ],
+  },
+  replace_file_content: {
+    primaryKey: 'TargetFile',
+    aliases: [
+      'target_file',
+      'targetFile',
+      'file',
+      'AbsolutePath',
+      'absolute_path',
+      'filePath',
+      'file_path',
+      'path',
+      'FilePath',
+      'target',
+      'filename',
+      'source',
+    ],
+  },
+  write_file: {
+    primaryKey: 'AbsolutePath',
+    aliases: [
+      'absolute_path',
+      'absolutePath',
+      'path',
+      'file_path',
+      'filePath',
+      'file',
+      'filename',
+      'FilePath',
+      'FileName',
+      'target_file',
+      'targetFile',
+      'target',
+      'dest',
+      'destination',
+    ],
+  },
+  write_to_file: {
+    primaryKey: 'TargetFile',
+    aliases: [
+      'target_file',
+      'targetFile',
+      'TargetFile',
+      'file',
+      'filePath',
+      'file_path',
+      'path',
+      'AbsolutePath',
+      'absolute_path',
+      'filename',
+      'FileName',
+      'target',
+      'dest',
+      'destination',
+    ],
+  },
+  'write_to_file.CodeContent': {
+    primaryKey: 'CodeContent',
+    aliases: ['code_content', 'codeContent', 'content', 'Code', 'code', 'text', 'body', 'data', 'contents'],
+  },
+  'write_to_file.Overwrite': {
+    primaryKey: 'Overwrite',
+    aliases: ['overwrite', 'force', 'replace'],
+  },
+  'write_to_file.Description': {
+    primaryKey: 'Description',
+    aliases: ['description', 'desc', 'summary', 'comment'],
+  },
+  'replace_file_content.TargetContent': {
+    primaryKey: 'TargetContent',
+    aliases: ['target_content', 'targetContent', 'oldContent', 'old_content', 'search', 'target'],
+  },
+  'replace_file_content.ReplacementContent': {
+    primaryKey: 'ReplacementContent',
+    aliases: ['replacement_content', 'replacementContent', 'newContent', 'new_content', 'replace', 'replacement'],
+  },
+  'replace_file_content.Instruction': {
+    primaryKey: 'Instruction',
+    aliases: ['instruction', 'description', 'desc', 'comment'],
+  },
+  run_command: {
+    primaryKey: 'CommandLine',
+    aliases: [
+      'command_line',
+      'commandLine',
+      'cmd',
+      'command',
+      'Command',
+      'Cmd',
+      'shell_command',
+      'shellCommand',
+      'script',
+      'exec',
+      'execute',
+    ],
+  },
+  'run_command.Cwd': {
+    primaryKey: 'Cwd',
+    aliases: ['cwd', 'working_dir', 'workingDirectory', 'working_directory', 'dir', 'directory', 'path', 'folder'],
+  },
+  read_file: {
+    primaryKey: 'AbsolutePath',
+    aliases: [
+      'absolute_path',
+      'absolutePath',
+      'path',
+      'file_path',
+      'filePath',
+      'file',
+      'filename',
+      'FilePath',
+      'FileName',
+      'target',
+      'source',
+      'input',
+    ],
+  },
+  search_files: {
+    primaryKey: 'SearchPath',
+    aliases: [
+      'search_path',
+      'searchPath',
+      'path',
+      'directory',
+      'DirectoryPath',
+      'directory_path',
+      'folder',
+      'dir',
+      'root',
+      'base',
+    ],
+  },
+  create_directory: {
+    primaryKey: 'DirectoryPath',
+    aliases: ['directory_path', 'directoryPath', 'path', 'dir_path', 'dirPath', 'dir', 'folder', 'target', 'name'],
+  },
+  delete_file: {
+    primaryKey: 'AbsolutePath',
+    aliases: [
+      'absolute_path',
+      'absolutePath',
+      'path',
+      'file_path',
+      'filePath',
+      'file',
+      'filename',
+      'FilePath',
+      'target',
+    ],
+  },
+  move_file: {
+    primaryKey: 'SourcePath',
+    aliases: [
+      'source_path',
+      'sourcePath',
+      'source',
+      'from',
+      'src',
+      'path',
+      'file_path',
+      'filePath',
+      'AbsolutePath',
+      'absolute_path',
+    ],
+  },
+  'move_file.DestinationPath': {
+    primaryKey: 'DestinationPath',
+    aliases: ['destination_path', 'destinationPath', 'dest', 'destination', 'to', 'dst', 'target'],
+  },
+};
+
+/**
+ * Normalizes parameter names from external models to match Antigravity's expected PascalCase format.
+ */
+export function normalizeToolArgs(
+  name: string,
+  args: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  if (!args || typeof args !== 'object') return args || {};
+
+  // Handle array args
+  if (Array.isArray(args)) {
+    const config = TOOL_PARAM_NORMALIZATION[name];
+    if (config && args.length > 0 && typeof args[0] === 'string') {
+      return { [config.primaryKey]: args[0] };
+    }
+    return {};
+  }
+
+  const config = TOOL_PARAM_NORMALIZATION[name];
+  if (!config) {
+    return applyUniversalPathFallback(args);
+  }
+
+  const normalized: Record<string, unknown> = {};
+  const usedKeys = new Set<string>();
+
+  for (const [key, value] of Object.entries(args)) {
+    let matched = false;
+
+    if (key === config.primaryKey || (config.aliases && config.aliases.includes(key))) {
+      normalized[config.primaryKey] = value;
+      usedKeys.add(key);
+      matched = true;
+    }
+
+    if (!matched) {
+      const subConfigKey = name + '.' + key;
+      const subConfig = TOOL_PARAM_NORMALIZATION[subConfigKey];
+      if (subConfig) {
+        normalized[subConfig.primaryKey] = value;
+        usedKeys.add(key);
+        matched = true;
+      }
+    }
+
+    if (!matched) {
+      for (const [ck, cv] of Object.entries(TOOL_PARAM_NORMALIZATION)) {
+        if (ck.startsWith(name + '.') && cv.aliases && cv.aliases.includes(key)) {
+          normalized[cv.primaryKey] = value;
+          usedKeys.add(key);
+          matched = true;
+          break;
+        }
+      }
+    }
+
+    if (!matched) {
+      normalized[key] = value;
+    }
+  }
+
+  if (!normalized[config.primaryKey]) {
+    const unassigned = Object.entries(args).filter(([k]) => !usedKeys.has(k));
+    let found = unassigned.find(
+      ([, v]) => typeof v === 'string' && (v.includes('/') || v.includes('\\') || v.includes('.')),
+    );
+    if (!found) found = unassigned.find(([, v]) => typeof v === 'string' && v.length > 0);
+    if (!found) {
+      found = Object.entries(args).find(
+        ([, v]) => typeof v === 'string' && (v.includes('/') || v.includes('\\') || v.includes('.')),
+      );
+      if (!found) found = Object.entries(args).find(([, v]) => typeof v === 'string' && v.length > 0);
+    }
+    if (found) {
+      normalized[config.primaryKey] = found[1];
+      log.info(
+        `[Utils] normalizeToolArgs fallback: "${name}" extracted ${config.primaryKey}=${found[1]} from key "${found[0]}"`,
+      );
+    } else {
+      log.warn(
+        `[Utils] normalizeToolArgs: "${name}" could not find value for "${config.primaryKey}". args=${JSON.stringify(args)}`,
+      );
+    }
+  }
+
+  sanitizePathProperties(normalized);
+  return normalized;
+}
+
+/**
+ * Cleans malformed file path arguments from model tool calls (e.g. leading slashes before drive letters, wrapping quotes, file:// URIs).
+ */
+export function cleanFilePath(rawPath: unknown): unknown {
+  if (typeof rawPath !== 'string') return rawPath;
+  let p = rawPath.trim();
+  // Strip surrounding quotes: "c:/foo" -> c:/foo
+  p = p.replace(/^["']+|["']+$/g, '');
+  // Strip file:// protocol: file:///c:/foo -> c:/foo
+  p = p.replace(/^file:\/\/\/?/i, '');
+  // Strip leading slashes/quotes before Windows drive letter: /"c:/foo -> c:/foo or /c:/foo -> c:/foo
+  p = p.replace(/^["'/\\]+([a-zA-Z]:)/, '$1');
+  // Strip any trailing quotes
+  p = p.replace(/["']+$/, '');
+  return p;
+}
+
+const PATH_PROP_KEYS = ['AbsolutePath', 'DirectoryPath', 'TargetFile', 'SearchPath', 'SourcePath', 'DestinationPath', 'Cwd'];
+
+function sanitizePathProperties(obj: Record<string, unknown>): void {
+  for (const pk of PATH_PROP_KEYS) {
+    if (typeof obj[pk] === 'string') {
+      obj[pk] = cleanFilePath(obj[pk]);
+    }
+  }
+}
+
+function applyUniversalPathFallback(args: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...args };
+  const aliasMap: Record<string, string> = {
+    path: 'AbsolutePath',
+    file_path: 'AbsolutePath',
+    filePath: 'AbsolutePath',
+    file: 'AbsolutePath',
+    filename: 'AbsolutePath',
+    target: 'AbsolutePath',
+    directory_path: 'DirectoryPath',
+    directoryPath: 'DirectoryPath',
+    dir: 'DirectoryPath',
+    directory: 'DirectoryPath',
+    folder: 'DirectoryPath',
+    target_file: 'TargetFile',
+    targetFile: 'TargetFile',
+    source: 'SourcePath',
+    sourcePath: 'SourcePath',
+    source_path: 'SourcePath',
+    dest: 'DestinationPath',
+    destination: 'DestinationPath',
+  };
+
+  for (const [key, value] of Object.entries(args)) {
+    const mappedKey = aliasMap[key];
+    if (mappedKey) {
+      result[mappedKey] = value;
+      delete result[key];
+      sanitizePathProperties(result);
+      return result;
+    }
+  }
+
+  sanitizePathProperties(result);
+  return result;
+}
+
+// ─── Utility Functions ────────────────────────────────────────────────────
+
+/**
+ * Recursively converts Gemini parameter types (UPPERCASE) to lowercase format.
+ * Gemini uses uppercase (STRING, NUMBER); OpenAI/Anthropic need lowercase.
+ */
+export function fixParamTypes(properties: Record<string, unknown> | undefined): void {
+  if (!properties) return;
+  for (const key of Object.keys(properties)) {
+    const val = properties[key];
+    if (val && typeof val === 'object') {
+      const obj = val as Record<string, unknown>;
+      if (typeof obj.type === 'string') {
+        obj.type = (obj.type as string).toLowerCase();
+      }
+      if (obj.properties && typeof obj.properties === 'object') {
+        fixParamTypes(obj.properties as Record<string, unknown>);
+      }
+      if (obj.items && typeof obj.items === 'object') {
+        const items = obj.items as Record<string, unknown>;
+        if (typeof items.type === 'string') {
+          items.type = (items.type as string).toLowerCase();
+        }
+        if (items.properties && typeof items.properties === 'object') {
+          fixParamTypes(items.properties as Record<string, unknown>);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Resolves the absolute path to the remote-exec bridge script.
+ * Prefers the persistent ~/.gemini/antigravity/scripts/remote-exec.js path.
+ */
+export function getRemoteExecScriptPath(): string {
+  const userGeminiPath = path.join(os.homedir(), '.gemini', 'antigravity', 'scripts', 'remote-exec.js');
+  if (fs.existsSync(userGeminiPath)) return userGeminiPath;
+
+  const rel1 = path.resolve(__dirname, '../../../scripts/remote-exec.js');
+  if (fs.existsSync(rel1)) return rel1;
+
+  const rel2 = path.resolve(__dirname, '../../scripts/remote-exec.js');
+  if (fs.existsSync(rel2)) return rel2;
+
+  return userGeminiPath;
+}
+
+/**
+ * Wraps a shell command to execute remotely via the remote-exec daemon bridge.
+ */
+export function wrapCommandForRemoteExec(cmd: string, remoteCwd?: string): string {
+  // Remote VPS mode disabled by user - always execute locally
+  return cmd;
+}
+
+/**
+ * Translates generic shell/terminal commands (run_command) into native Antigravity file tools.
+ */
+export function translateToolCallToNative(
+  name: string,
+  args: ToolCallArgs,
+  isRemoteOverride?: boolean,
+): TranslatedToolCall {
+  if (name !== 'run_command' || !args || !args.CommandLine) {
+    return { name, args: args as Record<string, unknown> };
+  }
+
+  const cmd = args.CommandLine.trim();
+  const cwd = args.Cwd || process.cwd();
+
+  // 1. list_dir translation
+  const isListDir = /^(ls|dir)(\s+[\w\-\/\\\.\*"]+)*$/i.test(cmd);
+  if (isListDir) {
+    let dirPath = cwd;
+    const tokens = cmd.split(/\s+/).slice(1);
+    const pathToken = tokens.find((t) => !t.startsWith('-') && !t.startsWith('/'));
+    if (pathToken) {
+      const cleanToken = pathToken.replace(/^["']|["']$/g, '');
+      dirPath = path.isAbsolute(cleanToken) ? cleanToken : path.resolve(cwd, cleanToken);
+    }
+    log.debug(`[Proxy] Translating run_command "${cmd}" to list_dir on "${dirPath}"`);
+    return { name: 'list_dir', args: { DirectoryPath: dirPath } };
+  }
+
+  // 2. view_file translation
+  const catMatch = /^(cat|type)\s+(["']?)(.*?)\2$/i.exec(cmd);
+  if (catMatch) {
+    const filePath = catMatch[3].trim();
+    const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
+    log.debug(`[Proxy] Translating run_command "${cmd}" to view_file on "${absPath}"`);
+    return { name: 'view_file', args: { AbsolutePath: absPath } };
+  }
+
+  // 2b. write_file translation (echo redirect)
+  const echoRedirectMatch = /^(echo|printf)\s+(.+?)\s*>\s*(.+)$/i.exec(cmd);
+  if (echoRedirectMatch) {
+    const content = echoRedirectMatch[2].replace(/^["']|["']$/g, '');
+    const filePath = echoRedirectMatch[3].trim();
+    const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
+    log.debug(`[Proxy] Translating run_command "${cmd}" to write_file on "${absPath}"`);
+    return { name: 'write_file', args: { AbsolutePath: absPath, Content: content, Append: cmd.includes('>>') } };
+  }
+
+  // 3. grep_search translation
+  if (cmd.toLowerCase().startsWith('grep') || cmd.toLowerCase().startsWith('findstr')) {
+    let query = '';
+    let searchPath = '.';
+    const regexQuotes = /"([^"]+)"|'([^']+)'/g;
+    const quotesFound = [...cmd.matchAll(regexQuotes)];
+    if (quotesFound.length > 0) {
+      query = quotesFound[0][1] || quotesFound[0][2];
+      const isFlag = (t: string) => !t || t.startsWith('-') || /^\/[a-zA-Z](:|$)/.test(t);
+      const unquotedTokens = cmd.replace(regexQuotes, ' ').split(/\s+/).slice(1).filter((t) => !isFlag(t));
+      if (unquotedTokens.length > 0) {
+        searchPath = unquotedTokens[unquotedTokens.length - 1];
+      }
+    } else {
+      const isFlag = (t: string) => !t || t.startsWith('-') || /^\/[a-zA-Z](:|$)/.test(t);
+      const nonFlagTokens = cmd.split(/\s+/).slice(1).filter((t) => !isFlag(t));
+      if (nonFlagTokens.length > 0) {
+        query = nonFlagTokens[0];
+        if (nonFlagTokens.length > 1) {
+          searchPath = nonFlagTokens[nonFlagTokens.length - 1];
+        }
+      }
+    }
+    if (query) {
+      // Antigravity Language Server (grep_handler.go:518) splits ripgrep output with strings.Split(line, ":").
+      // On Windows with drive letters (e.g. C:\...) or explicit single file paths (e.g. /path/to/file.ts),
+      // parts mismatch causes strconv.Atoi to fail. Keep as native run_command shell execution to avoid IDE parse crash.
+      if (/^[a-zA-Z]:/i.test(searchPath) || ((searchPath.includes('/') || searchPath.includes('\\')) && !searchPath.includes('*') && /\.[a-zA-Z0-9]{1,8}$/i.test(searchPath))) {
+        log.debug(`[Proxy] run_command grep target "${searchPath}" has Windows drive letter or is an explicit file path. Leaving as native shell command to avoid IDE parse bugs.`);
+        return { name, args: args as Record<string, unknown> };
+      }
+
+      try {
+        const resolvedPath = path.isAbsolute(searchPath) ? searchPath : path.resolve(cwd, searchPath);
+        if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
+          log.debug(`[Proxy] run_command grep target "${resolvedPath}" is a file. Leaving as native shell command to avoid IDE parse bugs.`);
+          return { name, args: args as Record<string, unknown> };
+        }
+      } catch (err) {
+        // Ignore stat errors
+      }
+
+      log.debug(`[Proxy] Translating run_command "${cmd}" to grep_search (Query: "${query}", Path: "${searchPath}")`);
+      return {
+        name: 'grep_search',
+        args: {
+          Query: query,
+          SearchPath: searchPath,
+          CaseInsensitive: cmd.includes('-i') || cmd.toLowerCase().includes('/i'),
+          IsRegex: false,
+          MatchPerLine: true,
+        },
+      };
+    }
+  }
+
+  return { name, args: args as Record<string, unknown> };
+}
+
+/**
+ * Formats native file tool outputs (JSON/Array) back into standard textual command-line outputs.
+ */
+export function formatTranslatedResponse(translatedInfo: TranslatedCallInfo | string, responseData: unknown): string {
+  const translatedName = typeof translatedInfo === 'string' ? translatedInfo : translatedInfo?.translatedName;
+  const cmd = typeof translatedInfo === 'object' ? translatedInfo?.cmd : '';
+  // S-3: Redact secrets before logging — SSH passwords, Bearer tokens, API keys.
+  const safeCmd = (cmd ?? '')
+    .replace(/(-pw\s+|--password[= ])\S+/gi, '$1[REDACTED]')
+    .replace(/(Authorization:\s*(?:Bearer|Basic)\s+)\S+/gi, '$1[REDACTED]')
+    .replace(/(apikey|api_key|api-key)[=: ]+\S+/gi, '$1=[REDACTED]');
+  if (translatedName) {
+    log.debug(`[Proxy] Formatting native response back to CLI for translated tool "${translatedName}"${safeCmd ? ` (Cmd: "${safeCmd}")` : ''}`);
+  }
+
+  if (translatedName === 'list_dir') {
+    if (Array.isArray(responseData)) {
+      return (responseData as any[])
+        .map((item) => {
+          const isDir = item.isDir ?? item.IsDir;
+          const name = item.name ?? item.Name ?? '';
+          const sizeBytes = item.sizeBytes ?? item.SizeBytes ?? item.size ?? 0;
+          const typeIndicator = isDir ? '<DIR>' : '     ';
+          const sizeStr = isDir ? '' : ` (${sizeBytes} bytes)`;
+          return `${typeIndicator}  ${name}${sizeStr}`;
+        })
+        .join('\n');
+    }
+    if (responseData && typeof responseData === 'object') {
+      const data = responseData as any;
+      const items = data.files || data.Files || data.children || data.Children || data.entries || data.items || [];
+      if (Array.isArray(items)) {
+        return items.map((item: any) => `${(item.isDir ?? item.IsDir) ? '<DIR>' : '     '}  ${item.name ?? item.Name ?? ''}`).join('\n');
+      }
+    }
+    return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
+  }
+
+  if (translatedName === 'view_file') {
+    if (responseData && typeof responseData === 'object') {
+      const data = responseData as any;
+      const fileText = data.content ?? data.Content ?? data.CodeContent ?? data.codeContent ?? data.file_content ?? data.text;
+      if (fileText !== undefined) {
+        return typeof fileText === 'string' ? fileText : JSON.stringify(fileText);
+      }
+      return JSON.stringify(responseData);
+    }
+    return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
+  }
+
+  if (translatedName === 'grep_search') {
+    const list = Array.isArray(responseData)
+      ? responseData
+      : (responseData && typeof responseData === 'object')
+        ? ((responseData as any).matches || (responseData as any).results || (responseData as any).Matches || (responseData as any).Results)
+        : null;
+    if (Array.isArray(list)) {
+      return list
+        .map((match: any) => {
+          const file = match.Filename ?? match.filename ?? match.file ?? match.path ?? '';
+          const line = match.LineNumber ?? match.lineNumber ?? match.line ?? '';
+          const content = match.LineContent ?? match.lineContent ?? match.content ?? match.text ?? '';
+          return `${file}${line !== '' ? `:${line}` : ''}:${content}`;
+        })
+        .join('\n');
+    }
+    return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
+  }
+
+  if (translatedName === 'write_file') {
+    if (responseData && typeof responseData === 'object') {
+      const data = responseData as any;
+      const success = data.success ?? data.Success;
+      const targetPath = data.path ?? data.Path;
+      const error = data.error ?? data.Error;
+      if (success) return `File written successfully: ${targetPath || 'unknown'}`;
+      return `Failed to write file: ${error || 'Unknown error'}`;
+    }
+    return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
+  }
+
+  return typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
+}
+
