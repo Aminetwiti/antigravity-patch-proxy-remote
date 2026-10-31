@@ -137,10 +137,10 @@ export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 9
 export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 25_000);
 
 /** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 10 seconds to cut black holes without premature drops on network jitter or prompt prefill). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 15_000);
+export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 10_000);
 
 /** Timeout for waiting for initial response headers on large payloads or thinking models (default: 65 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 75_000);
+export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 65_000);
 
 /** Background proactive pre-flight health check interval across Google account pool (default: 20 minutes). */
 export const PREFLIGHT_HEALTH_CHECK_INTERVAL_MS = getEnvInt('AG_PREFLIGHT_HEALTH_CHECK_INTERVAL_MS', 20 * 60_000);
@@ -161,7 +161,7 @@ export const HEDGED_REQUEST_DELAY_MS = getEnvInt('AG_HEDGED_REQUEST_DELAY_MS', 2
 export const CAPACITY_503_CASCADE_THRESHOLD = getEnvInt('AG_CAPACITY_503_CASCADE_THRESHOLD', 2);
 
 /** Number of consecutive 504 Gateway Timeout errors across different pool accounts before cascading to Claude/fallback (default: 2). */
-export const CONSECUTIVE_504_CASCADE_THRESHOLD = getEnvInt('AG_CONSECUTIVE_504_CASCADE_THRESHOLD', 4);
+export const CONSECUTIVE_504_CASCADE_THRESHOLD = getEnvInt('AG_CONSECUTIVE_504_CASCADE_THRESHOLD', 2);
 
 /**
  * Preventive anti-lockout quota threshold percentage (default: 10%).
