@@ -36,8 +36,11 @@ function classify(result: { ok: boolean; statusCode?: number; error?: string }):
  *  ag-doctor is a plain Node CLI and cannot use Electron's safeStorage, so
  *  `enc:` API keys are opaque blobs it cannot send. A non-2xx response from
  *  such an endpoint is therefore *unverifiable* rather than a real failure. */
-function isKeyUsable(model: { apiKey?: string } | undefined): boolean {
+function isKeyUsable(model: { apiKey?: string; provider?: string } | undefined): boolean {
   const k = model?.apiKey;
+  // Ephemeral ya29 OAuth tokens expire in 60m and are refreshed by the proxy runtime.
+  // The CLI does not refresh tokens, so a non-2xx status on an expired ya29 token is unverifiable.
+  if (model?.provider === 'google' && String(k).startsWith('ya29')) return false;
   return !!k && !String(k).startsWith('enc:');
 }
 

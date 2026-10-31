@@ -130,7 +130,14 @@ export async function probe(
   } catch (e) {
     return { url, ok: false, error: `invalid URL: ${(e as Error).message}` };
   }
-  const extraHeaders = { ...(options.headers ?? {}), ...authHeaders(options.provider, options.apiKey) };
+  const isCloudCodeRpc = parsed.pathname.includes('/v1internal:');
+  const method = isCloudCodeRpc ? 'POST' : 'GET';
+  const rpcPayload = isCloudCodeRpc ? '{}' : undefined;
+  const extraHeaders = {
+    ...(options.headers ?? {}),
+    ...(isCloudCodeRpc ? { 'Content-Type': 'application/json', 'Content-Length': '2' } : {}),
+    ...authHeaders(options.provider, options.apiKey),
+  };
   return new Promise((resolve) => {
     let settled = false;
     const deadline = setTimeout(() => {
@@ -147,7 +154,7 @@ export async function probe(
     const lib = parsed.protocol === 'https:' ? https : http;
     const req = lib.request(
       {
-        method: 'GET',
+        method,
         hostname: parsed.hostname,
         port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
         path: parsed.pathname + parsed.search,
@@ -198,6 +205,7 @@ export async function probe(
     req.on('close', () => {
       finish({ url, ok: false, latencyMs: Date.now() - started, error: 'connection closed', errorCategory: 'reset' });
     });
+    if (rpcPayload) req.write(rpcPayload);
     req.end();
   });
 }

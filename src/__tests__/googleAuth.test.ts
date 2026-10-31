@@ -413,7 +413,7 @@ describe('googleAuth service', () => {
     });
     it('prevents background polls from overwriting active 0% quota exhaustion until future reset', async () => {
       _clearLiveQuotasForTests();
-      const accountKey = 'google:amine.twiti39@gmail.com';
+      const accountKey = 'google:quota-exhausted-account@example.com';
       const futureReset = new Date(Date.now() + 68 * 3600 * 1000).toISOString();
 
       // Set active exhaustion

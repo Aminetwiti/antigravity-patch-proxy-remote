@@ -51,5 +51,25 @@ describe('Security Remediations', () => {
       expect(isAllowedOrigin(mockReq('127.0.0.1:51074', 'https://attacker.storage.googleapis.com'))).toBe(false);
       expect(isAllowedOrigin(mockReq('127.0.0.1:51074', 'https://firebase.googleapis.com'))).toBe(false);
     });
+
+    it('rejects external socket remoteAddress spoofing loopback Host header', () => {
+      const spoofedReq = {
+        headers: { host: '127.0.0.1:51074' },
+        socket: { remoteAddress: '192.168.1.50' },
+      } as unknown as http.IncomingMessage;
+      expect(isAllowedOrigin(spoofedReq)).toBe(false);
+
+      const legitimateReq = {
+        headers: { host: '127.0.0.1:51074' },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as unknown as http.IncomingMessage;
+      expect(isAllowedOrigin(legitimateReq)).toBe(true);
+
+      const ipv6LoopbackReq = {
+        headers: { host: 'localhost:51074' },
+        socket: { remoteAddress: '::ffff:127.0.0.1' },
+      } as unknown as http.IncomingMessage;
+      expect(isAllowedOrigin(ipv6LoopbackReq)).toBe(true);
+    });
   });
 });
