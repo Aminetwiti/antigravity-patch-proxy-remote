@@ -79,7 +79,7 @@ describe('Settings View Adversarial Remediations', () => {
 
     it('accepts both BackupBundle format and raw provider array on import', () => {
       const bundleJson = JSON.stringify({
-        version: '3.8.1',
+        version: '3.8.2',
         exportedAt: '2026-10-31T12:00:00.000Z',
         providers: [{ id: 'p1', name: 'OpenAI' }],
       });

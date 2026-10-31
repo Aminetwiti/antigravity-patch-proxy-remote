@@ -2,6 +2,19 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.8.2] - 2026-10-31 (Public Sanitization, Security Hardening & Zero-Leak Release)
+
+### Added
+- **Dynamic Multi-Account Challenge Discovery**: Refactored scripts/get-challenge-urls.js and scripts/unlock-runner.js to dynamically load account configurations with defensive fallback and optional CLI targeting.
+- **Quota Family Isolation Tests**: Added regression tests ensuring Gemini 5h quota exhaustion does not leak into Claude availability in Google multi-account pool.
+- **Enhanced Cloud Code RPC Detection**: Support for fetchAvailableModels URL mapping on Google Cloud Code endpoints.
+
+### Changed
+- **Privacy & Security Sanitization**: Eliminated static personal identifiers, test emails, and hardcoded absolute paths across test suites and scripts.
+- **Hardened Git & Release Policies**: Streamlined .gitignore with strict exclusion of local diagnostic logs, ephemeral challenge dumps, and untracked binaries.
+- Bumped project release version to v3.8.2 across desktop proxy, daemon, ag-doctor CLI/UI, and mobile companion.
+
+---
 ## [3.8.1] - 2026-10-27 (Experiments Engine, Token Management & Intelligent Updater)
 
 ### Added

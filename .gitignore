@@ -184,3 +184,6 @@ inspect_*.js
 issues*.json
 release/*
 .impeccable/
+bin/*.exe
+bin/
+
