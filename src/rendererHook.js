@@ -26,6 +26,27 @@
     }
   });
 
+    // Polyfill window.URL to allow data: URIs in Antigravity's I0b image loader
+  try {
+    const OrigURL = window.URL;
+    function PatchedURL(url, base) {
+      if (typeof url === 'string' && url.startsWith('data:')) {
+        return {
+          protocol: 'https:',
+          href: url,
+          origin: '',
+          pathname: '',
+          search: '',
+          hash: ''
+        };
+      }
+      return new OrigURL(url, base);
+    }
+    PatchedURL.prototype = OrigURL.prototype;
+    Object.assign(PatchedURL, OrigURL);
+    window.URL = PatchedURL;
+  } catch (_) {}
+
   // Clean up legacy overrides to preserve native Projects UI & authentic Marketplace
   try {
     window.localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
@@ -51,22 +72,22 @@
       const jsonBytes = new TextEncoder().encode(jsonStr);
       const trailerStr = 'grpc-status: 0\r\ngrpc-message: OK\r\n';
       const trailerBytes = new TextEncoder().encode(trailerStr);
-      
+
       const total = 5 + jsonBytes.length + 5 + trailerBytes.length;
       const res = new Uint8Array(total);
       const v = new DataView(res.buffer);
-      
+
       // Data frame (flag 0)
       v.setUint8(0, 0);
       v.setUint32(1, jsonBytes.length, false);
       res.set(jsonBytes, 5);
-      
+
       // Trailer frame (flag 0x80 = 128)
       const offset2 = 5 + jsonBytes.length;
       v.setUint8(offset2, 128);
       v.setUint32(offset2 + 1, trailerBytes.length, false);
       res.set(trailerBytes, offset2 + 5);
-      
+
       return res;
     }
 
@@ -114,247 +135,511 @@
     }
 
     const CONTEXT7_ITEM = {
-      id: 'context7',
+      id: 'antigravity-plugins-partners/plugin/context7',
+      slug: 'context7',
+      marketplace: 'antigravity-plugins-partners',
       displayName: 'Context7',
       description: 'Up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.',
       logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="%230b132b"/><rect x="4" y="4" width="40" height="40" rx="10" fill="none" stroke="%2300b4d8" stroke-width="2.5"/><path d="M15 16l-5 8 5 8M33 16l5 8-5 8" fill="none" stroke="%2338bdf8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 18h10l-6 13" fill="none" stroke="%2310b981" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-      marketplace: 'builtin',
-      plugin: {},
       version: '1.0.0',
-      tags: ['featured', 'docs', 'context', 'documentation']
+      tags: ['featured', 'docs', 'context', 'documentation'],
+      readme: '# Context7\n\nUp-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.\n\n### Capabilities\n- Seamless library and API documentation search\n- Direct code snippets ingestion into active LLM session\n- Auto-version detection and deprecation notices',
+      skills: [
+        { name: 'context7-query', description: 'Look up live documentation and API references for libraries and frameworks.' }
+      ],
+      agents: [],
+      mcpServers: [
+        { serverName: 'context7', command: 'npx', args: ['-y', '@context7/mcp-server'] }
+      ],
+      rules: [],
+      sidecars: [],
+      suggestedPrompts: [
+        'Look up recent documentation for this project',
+        'Find code examples for the latest version'
+      ]
     };
 
     const OFFICIAL_PLUGINS = [
+      // Floating banner companions
+      {
+        id: 'antigravity-plugins-official/plugin/firebase',
+        slug: 'firebase',
+        marketplace: 'antigravity-plugins-official',
+        displayName: 'Firebase',
+        description: 'Prototype, build & run modern apps that users love with Firebase infrastructure.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23FFA000" d="M8 38L18 6l6 12-5.5 10.5z"/><path fill="%23FFCA28" d="M40 38l-7-25-15 25z"/><path fill="%23F57C00" d="M23.5 28.5L18 6l-10 32h32z"/></svg>',
+        version: '1.0.0',
+        tags: ['google', 'firebase', 'cloud', 'database'],
+        readme: '# Firebase\n\nPrototype, build & run modern apps that users love with Firebase backend, AI, and operational infrastructure.\n\n### Features\n- Firestore and Realtime Database management\n- Firebase Cloud Functions monitoring\n- Firebase Hosting and Auth operations',
+        skills: [{ name: 'firebase-cli', description: 'Interact with Firebase project configuration and deployment.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'firebase', command: 'npx', args: ['-y', 'firebase-tools@latest'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Check Firebase deployment status', 'Inspect Firestore collections']
+      },
+      {
+        id: 'antigravity-plugins-partners/plugin/linear',
+        slug: 'linear',
+        marketplace: 'antigravity-plugins-partners',
+        displayName: 'Linear',
+        description: 'The product development system for teams and agents.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%2312151A"/><path d="M14 34L34 14M14 24L24 14M24 34L34 24" stroke="%235E6AD2" stroke-width="4" stroke-linecap="round"/></svg>',
+        version: '1.0.0',
+        tags: ['productivity', 'issues', 'linear'],
+        readme: '# Linear\n\nThe issue tracking and product development system built for modern engineering teams and autonomous agents.\n\n### Capabilities\n- Create and update Linear issues directly from chat\n- Sync git branch naming and issue status\n- Review sprint progress and issue milestones',
+        skills: [{ name: 'linear-issues', description: 'Query and update Linear project issues and cycles.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'linear', command: 'npx', args: ['-y', '@linear/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['List high priority Linear issues assigned to me', 'Create a bug ticket for the active investigation']
+      },
+      {
+        id: 'antigravity-plugins-partners/plugin/notion',
+        slug: 'notion',
+        marketplace: 'antigravity-plugins-partners',
+        displayName: 'Notion',
+        description: 'Connected workspace for wiki, docs, and project knowledge bases.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%23FFFFFF"/><path fill="%23000000" d="M10 12l20-4 8 2v26l-22 4-6-2V12zm4 3v20l18-3V14l-18 3zm4 4h4l6 10V19h4v12h-4l-6-10v10h-4V19z"/></svg>',
+        version: '1.0.0',
+        tags: ['productivity', 'wiki', 'docs', 'notion'],
+        readme: '# Notion\n\nConnect your team knowledge base, engineering roadmaps, and PRDs directly to Antigravity.\n\n### Capabilities\n- Search team wikis and specifications\n- Append task notes and architecture logs\n- Query structured database tables',
+        skills: [{ name: 'notion-search', description: 'Search and read pages across connected Notion workspaces.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'notion', command: 'npx', args: ['-y', '@notionhq/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Search Notion for project design specifications', 'Read current architecture guidelines']
+      },
+      {
+        id: 'antigravity-plugins-partners/plugin/cursor',
+        slug: 'cursor',
+        marketplace: 'antigravity-plugins-partners',
+        displayName: 'Cursor Tools',
+        description: 'Fast codebase index and semantic indexing companion tools.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%231E1E1E"/><polygon points="12,10 36,24 24,26 20,38" fill="%23007ACC"/></svg>',
+        version: '1.0.0',
+        tags: ['devtools', 'cursor', 'search'],
+        readme: '# Cursor Tools\n\nDeep semantic code indexing and symbol navigation utilities.',
+        skills: [{ name: 'cursor-symbol-search', description: 'Semantic code search across multi-repository workspaces.' }],
+        agents: [],
+        mcpServers: [],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Index workspace symbols', 'Find references across repositories']
+      },
+      {
+        id: 'antigravity-plugins-partners/plugin/supabase',
+        slug: 'supabase',
+        marketplace: 'antigravity-plugins-partners',
+        displayName: 'Supabase',
+        description: 'The open source Firebase alternative with Postgres, Auth, and Edge Functions.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%231C1C1C"/><path fill="%233ECF8E" d="M26 8L10 27h14l-2 13 16-19H24z"/></svg>',
+        version: '1.0.0',
+        tags: ['cloud', 'database', 'supabase'],
+        readme: '# Supabase\n\nPostgres database, authentication, instant APIs, edge functions, and real-time subscriptions.\n\n### Capabilities\n- Inspect database schema and run SQL migrations\n- Manage Edge Functions deployment\n- Monitor active connections and slow queries',
+        skills: [{ name: 'supabase-db', description: 'Execute database schema queries and migrations.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'supabase', command: 'npx', args: ['-y', '@supabase/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Inspect database tables and foreign keys', 'Draft migration for new schema']
+      },
+
       // Google Workspace
       {
-        id: 'google-docs',
+        id: 'antigravity-plugins-official/plugin/gdocs',
+        slug: 'gdocs',
+        marketplace: 'antigravity-plugins-official',
         displayName: 'Google Docs',
         description: 'Read, draft, and edit docs.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%234285F4" d="M30 6H14a4 4 0 0 0-4 4v28a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4V14l-8-8z"/><path fill="%23A1C2FA" d="M30 6v8h8z"/><path fill="%23fff" d="M16 22h16v2.5H16zm0 6h16v2.5H16zm0 6h10v2.5H16z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['workspace', 'docs', 'google']
+        tags: ['workspace', 'docs', 'google'],
+        readme: '# Google Docs\n\nRead, draft, review, and collaborate on Google Docs directly from your Antigravity paired coding assistant.\n\n### Capabilities\n- Read shared Google Docs specification files\n- Export project documentation directly to Google Docs\n- Comment and review documentation collaboratively',
+        skills: [{ name: 'gdocs-read', description: 'Read and extract content from Google Docs URLs.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'google-docs', command: 'npx', args: ['-y', '@antigravity/gdocs-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Summarize the attached Google Doc', 'Create project documentation in Docs']
       },
       {
-        id: 'google-sheets',
+        id: 'antigravity-plugins-official/plugin/gsheets',
+        slug: 'gsheets',
+        marketplace: 'antigravity-plugins-official',
         displayName: 'Google Sheets',
         description: 'Read, write, and format spreadsheets.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%230F9D58" d="M30 6H14a4 4 0 0 0-4 4v28a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4V14l-8-8z"/><path fill="%2387CEAC" d="M30 6v8h8z"/><path fill="%23fff" d="M16 22h16v14H16zm2 2v2.5h5V24zm7 0v2.5h5V24zm-7 4.5v2.5h5v-2.5zm7 0v2.5h5v-2.5zm-7 4.5v2.5h5V33zm7 0v2.5h5V33z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['workspace', 'sheets', 'google']
+        tags: ['workspace', 'sheets', 'google'],
+        readme: '# Google Sheets\n\nRead, write, query, and format tabular data in Google Sheets spreadsheets.\n\n### Capabilities\n- Read data ranges and financial models\n- Append structured logs and metric reports\n- Perform automated spreadsheet formulas validation',
+        skills: [{ name: 'gsheets-query', description: 'Query and update cells in Google Sheets.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'google-sheets', command: 'npx', args: ['-y', '@antigravity/gsheets-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Export test coverage metrics to Sheets', 'Query data from active spreadsheet']
       },
       {
-        id: 'google-slides',
+        id: 'antigravity-plugins-official/plugin/gslides',
+        slug: 'gslides',
+        marketplace: 'antigravity-plugins-official',
         displayName: 'Google Slides',
         description: 'Read, edit, and export presentations.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23F4B400" d="M30 6H14a4 4 0 0 0-4 4v28a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4V14l-8-8z"/><path fill="%23FBE38E" d="M30 6v8h8z"/><path fill="%23fff" d="M16 22h16v12H16zm2 2v8h12v-8z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['workspace', 'slides', 'google']
+        tags: ['workspace', 'slides', 'google'],
+        readme: '# Google Slides\n\nCreate, edit, and review slide decks and technical presentations.\n\n### Capabilities\n- Generate presentation slide decks from project specs\n- Format slide layouts and code snippets\n- Export decks to PDF and web formats',
+        skills: [{ name: 'gslides-generate', description: 'Generate presentation decks from Markdown outlines.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'google-slides', command: 'npx', args: ['-y', '@antigravity/gslides-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Generate architecture slide deck', 'Update presentation slides']
       },
       {
-        id: 'google-drive',
+        id: 'antigravity-plugins-official/plugin/gdrive',
+        slug: 'gdrive',
+        marketplace: 'antigravity-plugins-official',
         displayName: 'Google Drive',
         description: 'Search, upload, download, and share files.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23FFC107" d="M17 6L6 25l6 10.5h11L17 6z"/><path fill="%232196F3" d="M31 6H17l11 19h14L31 6z"/><path fill="%234CAF50" d="M12 35.5l5.5 9.5h22l-6-9.5H12z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['workspace', 'drive', 'google']
+        tags: ['workspace', 'drive', 'google'],
+        readme: '# Google Drive\n\nAccess your organization Google Drive files, shared team drives, and assets directly within Antigravity.\n\n### Capabilities\n- Search Drive files by name and content\n- Download datasets, models, and specifications\n- Upload build artifacts and documentation packages',
+        skills: [{ name: 'gdrive-files', description: 'Search and download files from Google Drive.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'google-drive', command: 'npx', args: ['-y', '@antigravity/gdrive-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Search Drive for onboarding documents', 'Download test fixtures from Drive']
       },
       {
-        id: 'google-calendar',
+        id: 'antigravity-plugins-official/plugin/gcalendar',
+        slug: 'gcalendar',
+        marketplace: 'antigravity-plugins-official',
         displayName: 'Google Calendar',
         description: 'Check availability, schedule events, and RSVP.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="36" height="36" x="6" y="6" fill="%23fff" rx="4"/><path fill="%231976D2" d="M6 10a4 4 0 0 1 4-4h28a4 4 0 0 1 4 4v6H6z"/><text x="24" y="34" fill="%231976D2" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle">31</text></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['workspace', 'calendar', 'google']
+        tags: ['workspace', 'calendar', 'google'],
+        readme: '# Google Calendar\n\nCalendar integration for scheduling team demos, code reviews, and tracking release events.\n\n### Capabilities\n- Check team calendar schedules\n- Book review meetings and sync reminders\n- Retrieve upcoming release windows',
+        skills: [{ name: 'gcalendar-events', description: 'Inspect and schedule Google Calendar events.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'google-calendar', command: 'npx', args: ['-y', '@antigravity/gcalendar-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Check upcoming calendar events', 'Schedule release review meeting']
       },
 
       // Build with Google
       {
-        id: 'gemini-api',
+        id: 'antigravity-plugins-official/plugin/gemini-api',
+        slug: 'gemini-api',
+        marketplace: 'antigravity-plugins-official',
         displayName: 'Gemini API',
         description: 'Build applications with the Gemini Interactions API and multimodal models.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><linearGradient id="gem" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="%231BA1E2"/><stop offset="50%" stop-color="%239B59B6"/><stop offset="100%" stop-color="%23E67E22"/></linearGradient></defs><path fill="url(%23gem)" d="M24 2C24 14.15 14.15 24 2 24c12.15 0 22 9.85 22 22 0-12.15 9.85-22 22-22-12.15 0-22-9.85-22-22z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['google', 'gemini', 'api']
+        tags: ['google', 'gemini', 'api'],
+        readme: '# Gemini API\n\nBuild cutting-edge AI applications with Google Gemini 2.5 Flash, Gemini 2.5 Pro, and multimodal Live APIs.\n\n### Capabilities\n- Multimodal audio, video, image, and text generation\n- Structured JSON schema validation and function calling\n- Embeddings and semantic search generation',
+        skills: [{ name: 'gemini-generate', description: 'Call Gemini models with multimodal payloads.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'gemini', command: 'npx', args: ['-y', '@google/gemini-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Test prompt against Gemini 2.5 Pro', 'Inspect Gemini function calling schema']
       },
       {
-        id: 'chrome-devtools',
+        id: 'antigravity-plugins-official/plugin/chrome-devtools-plugin',
+        slug: 'chrome-devtools-plugin',
+        marketplace: 'antigravity-plugins-official',
         displayName: 'Chrome DevTools',
         description: 'Reliable automation, in-depth debugging, and performance profiling.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="%234285F4"/><circle cx="24" cy="24" r="9" fill="%23fff"/><circle cx="24" cy="24" r="7" fill="%231976D2"/><path fill="%23EA4335" d="M24 4c7.4 0 13.9 4 17.3 10H24z"/><path fill="%23FBBC05" d="M41.3 14c2.2 3.8 3.5 8.2 3.5 13 0 7.8-3.5 14.8-9 19.3L24 24z"/><path fill="%2334A853" d="M35.8 46.3C32.4 48.7 28.4 50 24 50 12.9 50 3.6 42.4 1 32l11.5-6.6z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['google', 'chrome', 'devtools']
+        tags: ['google', 'chrome', 'devtools'],
+        readme: '# Chrome DevTools\n\nAutomate web interactions, inspect network requests, analyze memory heaps, and capture frontend performance traces.\n\n### Capabilities\n- Automated browser test runs with Puppeteer\n- Network trace collection and HAR export\n- DOM screenshotting and accessibility tree audit',
+        skills: [{ name: 'chrome-inspect', description: 'Control headless Chrome and extract performance traces.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'chrome-devtools', command: 'npx', args: ['-y', 'chrome-devtools-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Inspect console errors on running page', 'Capture performance trace of main view']
       },
       {
-        id: 'firebase',
-        displayName: 'Firebase',
-        description: 'Prototype, build & run modern apps that users love.',
-        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23FFA000" d="M8 38L18 6l6 12-5.5 10.5z"/><path fill="%23FFCA28" d="M40 38l-7-25-15 25z"/><path fill="%23F57C00" d="M23.5 28.5L18 6l-10 32h32z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
-        version: '1.0.0',
-        tags: ['google', 'firebase', 'cloud']
-      },
-      {
-        id: 'android-cli',
+        id: 'antigravity-plugins-official/plugin/android-cli',
+        slug: 'android-cli',
+        marketplace: 'antigravity-plugins-official',
         displayName: 'Android CLI',
         description: 'Core tools and knowledge required to develop for Android.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%233DDC84" d="M12 28a12 12 0 0 1 24 0v4H12zm5-12l-3-5a1 1 0 1 1 1.7-1l3.1 5.2a14 14 0 0 1 10.4 0L32.3 10a1 1 0 1 1 1.7 1l-3 5A12 12 0 0 1 36 24H12a12 12 0 0 1 5-8zm1 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm12 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['google', 'android', 'cli']
+        tags: ['google', 'android', 'cli'],
+        readme: '# Android CLI\n\nManage Android Virtual Devices, install APKs, inspect layouts, and control test devices over ADB.\n\n### Capabilities\n- Build and install APK / AAB artifacts\n- Mirror and interact with running emulators\n- Capture bug reports and live logcat traces',
+        skills: [{ name: 'android-tools', description: 'Run ADB, Gradle, and Android SDK commands.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'android-cli', command: 'npx', args: ['-y', '@antigravity/android-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Check connected Android devices', 'Install latest debug APK']
       },
       {
-        id: 'google-antigravity-sdk',
+        id: 'antigravity-plugins-official/plugin/google-antigravity-sdk',
+        slug: 'google-antigravity-sdk',
+        marketplace: 'antigravity-plugins-official',
         displayName: 'Google Antigravity SDK',
         description: 'Using the Google Antigravity Python SDK to build custom tools and agents.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%234285F4" d="M24 4L6 40h10l8-18 8 18h10z"/><circle cx="24" cy="18" r="4" fill="%2334A853"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['google', 'sdk', 'antigravity']
+        tags: ['google', 'sdk', 'antigravity'],
+        readme: '# Google Antigravity SDK\n\nDeveloper toolkit for writing custom agents, ConnectRPC plugins, and local MCP tool providers.\n\n### Capabilities\n- Custom subagent definitions and invocation contracts\n- High performance ConnectRPC protocol bindings\n- Stream handling and prompt orchestration tools',
+        skills: [{ name: 'agy-sdk-scaffold', description: 'Scaffold new Antigravity tools and skills.' }],
+        agents: [],
+        mcpServers: [],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Scaffold a new custom agent', 'Inspect Antigravity plugin manifest']
       },
 
       // Design, Creative & Media
       {
-        id: 'figma',
+        id: 'antigravity-plugins-partners/plugin/figma',
+        slug: 'figma',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Figma',
         description: 'Turn Figma designs into production code, map components with Code Connect.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23F24E1E" d="M16 6h8v12h-8a6 6 0 0 1 0-12z"/><path fill="%23A259FF" d="M16 18h8v12h-8a6 6 0 0 1 0-12z"/><path fill="%230ACF83" d="M16 30h8v6a6 6 0 0 1-6 6 6 6 0 0 1-2-12z"/><path fill="%23FF7262" d="M24 6h8a6 6 0 0 1 0 12h-8z"/><circle cx="30" cy="24" r="6" fill="%231ABCFE"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['design', 'figma', 'ui']
+        tags: ['design', 'figma', 'ui'],
+        readme: '# Figma\n\nTurn Figma designs into clean, production-ready frontend code. Map design tokens, components, and variables directly into code with Code Connect.\n\n### Capabilities\n- Extract design tokens (colors, typography, spacing)\n- Inspect selected components and auto-layout hierarchies\n- Convert vector nodes to SVG and Tailwind CSS code',
+        skills: [
+          { name: 'figma-inspect', description: 'Inspect component layers, tokens, and CSS properties from Figma files.' }
+        ],
+        agents: [],
+        mcpServers: [
+          { serverName: 'figma', command: 'npx', args: ['-y', '@figma/mcp-server'] }
+        ],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: [
+          'Inspect Figma component tokens',
+          'Generate React component from Figma URL'
+        ]
       },
       {
-        id: 'canva',
+        id: 'antigravity-plugins-partners/plugin/canva',
+        slug: 'canva',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Canva',
         description: 'Create, edit, review, resize, and brand-check Canva designs with MCP.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><linearGradient id="canvaGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="%2300C4CC"/><stop offset="100%" stop-color="%237D2AE8"/></linearGradient></defs><circle cx="24" cy="24" r="20" fill="url(%23canvaGrad)"/><path fill="%23fff" d="M22 14c-4.5 0-7 3.5-7 9.5 0 7 3.5 10.5 8 10.5 3 0 5-1.5 6-3.5l-2.5-1.5c-.8 1.2-2 2-3.5 2-2.5 0-4.5-2-4.5-7 0-4.5 1.5-7 4-7 1.5 0 2.5.8 3.2 2l2.5-1.5C26.5 15.5 24.5 14 22 14z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['design', 'canva', 'creative']
+        tags: ['design', 'canva', 'creative'],
+        readme: '# Canva\n\nCreate, edit, review, resize, and brand-check marketing and product assets with Canva MCP integration.\n\n### Capabilities\n- Automate brand design asset exports\n- Check typography and color palette consistency\n- Generate social and marketing previews',
+        skills: [{ name: 'canva-tools', description: 'Create and resize Canva graphic designs.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'canva', command: 'npx', args: ['-y', '@canva/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Resize marketing asset for web', 'Export product banner in SVG']
       },
       {
-        id: 'mobbin',
+        id: 'antigravity-plugins-partners/plugin/mobbin',
+        slug: 'mobbin',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Mobbin',
         description: 'Give your AI agent 600,000+ real app screens, and the skills to use them.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%23000"/><text x="24" y="32" fill="%23fff" font-family="sans-serif" font-size="20" font-weight="900" text-anchor="middle">M</text></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['design', 'mobile', 'screens']
+        tags: ['design', 'mobile', 'screens'],
+        readme: '# Mobbin\n\nAccess over 600,000 real-world iOS, Android, and Web design patterns, onboarding flows, and UI screen flows.\n\n### Capabilities\n- Search UI patterns for authentication and checkout flows\n- Benchmark user interface patterns against top apps\n- Inspect mobile navigation architectures',
+        skills: [{ name: 'mobbin-search', description: 'Search real mobile application UI designs.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'mobbin', command: 'npx', args: ['-y', '@mobbin/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Find best onboarding flows for mobile', 'Search mobile settings screen examples']
       },
 
       // Productivity & Project Management
       {
-        id: 'linear',
-        displayName: 'Linear',
-        description: 'The product development system for teams and agents.',
-        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%2312151A"/><path d="M14 34L34 14M14 24L24 14M24 34L34 24" stroke="%235E6AD2" stroke-width="4" stroke-linecap="round"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
-        version: '1.0.0',
-        tags: ['productivity', 'issues', 'linear']
-      },
-      {
-        id: 'dropbox',
+        id: 'antigravity-plugins-partners/plugin/dropbox',
+        slug: 'dropbox',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Dropbox',
         description: 'Connect Antigravity to Dropbox to search, inspect, and organize files.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%230061FF" d="M14 9l10 6.5-10 6.5-10-6.5L14 9zm20 0l10 6.5-10 6.5-10-6.5L34 9zm-20 20l10-6.5 10 6.5-10 6.5-10-6.5zm-10-7l10 6.5 10-6.5-10-6.5-10 6.5zm30 0l10 6.5-10 6.5-10-6.5 10-6.5z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['productivity', 'storage', 'dropbox']
+        tags: ['productivity', 'storage', 'dropbox'],
+        readme: '# Dropbox\n\nManage files, collaborate on team folders, and sync shared media assets from Dropbox.\n\n### Capabilities\n- Search and download Dropbox files\n- Create upload requests and shareable links\n- Inspect folder revisions and activity logs',
+        skills: [{ name: 'dropbox-files', description: 'Browse and download files from Dropbox.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'dropbox', command: 'npx', args: ['-y', '@dropbox/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Search Dropbox for media assets', 'Download project attachments from Dropbox']
       },
       {
-        id: 'atlassian',
+        id: 'antigravity-plugins-partners/plugin/atlassian-twg-cli',
+        slug: 'atlassian-twg-cli',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Atlassian TWG',
         description: "Teamwork Graph CLI is Atlassian's agent-first interface to your work context.",
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%230052CC" d="M23.5 10c-.5 0-.9.3-1.1.7L12 28.5c-.3.5 0 1.2.6 1.3h10.4c.5 0 .9-.4.9-.9V10.4c0-.2-.2-.4-.4-.4zm1 28c.5 0 .9-.3 1.1-.7l10.4-17.8c.3-.5 0-1.2-.6-1.3H25c-.5 0-.9.4-.9.9v18.5c0 .2.2.4.4.4z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['productivity', 'atlassian', 'jira']
+        tags: ['productivity', 'atlassian', 'jira', 'confluence'],
+        readme: '# Atlassian Teamwork Graph\n\nConnect Jira issues, Confluence pages, and Bitbucket pull requests seamlessly with your AI agent context.\n\n### Capabilities\n- Read Jira ticket requirements and acceptance criteria\n- Query Confluence documentation spaces\n- Track Bitbucket PR feedback and status',
+        skills: [{ name: 'twg-query', description: 'Search Jira issues and Confluence pages.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'atlassian', command: 'npx', args: ['-y', '@atlassian/twg-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Fetch acceptance criteria for active Jira ticket', 'Search Confluence for API architecture']
       },
 
       // Cloud Hosting & Deployment
       {
-        id: 'vercel',
+        id: 'antigravity-plugins-partners/plugin/vercel-plugin',
+        slug: 'vercel-plugin',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Vercel',
         description: 'Build and deploy web apps and AI agents on Vercel with skills for Next.js.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%23000"/><polygon points="24,10 38,36 10,36" fill="%23fff"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['cloud', 'hosting', 'vercel']
+        tags: ['cloud', 'hosting', 'vercel', 'nextjs'],
+        readme: '# Vercel\n\nDeploy Next.js, AI SDK, and web applications to Vercel globally distributed edge network.\n\n### Capabilities\n- Inspect deployment status and preview URLs\n- Monitor Edge Middleware and Serverless execution logs\n- Manage project environment variables',
+        skills: [{ name: 'vercel-deploy', description: 'Manage Vercel deployments and environment variables.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'vercel', command: 'npx', args: ['-y', '@vercel/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Check Vercel preview deployment status', 'Tail serverless function logs']
       },
       {
-        id: 'netlify',
+        id: 'antigravity-plugins-partners/plugin/netlify',
+        slug: 'netlify',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Netlify',
         description: 'Build and deploy on Netlify: functions, edge functions, blobs, database, and forms.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%2300C7B7"/><path d="M16 16h16l-8 16z" fill="%230E1E25"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['cloud', 'hosting', 'netlify']
+        tags: ['cloud', 'hosting', 'netlify'],
+        readme: '# Netlify\n\nGlobal web hosting with automated CI/CD, serverless Edge Functions, and Netlify Blobs storage.\n\n### Capabilities\n- Deploy static sites and edge functions\n- Inspect build logs and deployment previews\n- Manage Netlify DNS and redirect rules',
+        skills: [{ name: 'netlify-cli', description: 'Deploy and test Netlify applications.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'netlify', command: 'npx', args: ['-y', '@netlify/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Check Netlify build logs', 'Deploy preview build to Netlify']
       },
       {
-        id: 'railway',
+        id: 'antigravity-plugins-partners/plugin/railway',
+        slug: 'railway',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Railway',
         description: 'Deploy, configure, monitor, and troubleshoot apps and databases on Railway.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%2313111C"/><path d="M12 28l12-16 12 16H12z" fill="%23FF4081"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['cloud', 'hosting', 'railway']
+        tags: ['cloud', 'hosting', 'railway'],
+        readme: '# Railway\n\nInfrastructure platform to provision databases, microservices, and web servers with zero configuration.\n\n### Capabilities\n- Deploy PostgreSQL, Redis, and Docker containers\n- Tail real-time service logs\n- Roll back deployments and manage variables',
+        skills: [{ name: 'railway-ops', description: 'Monitor and configure Railway services.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'railway', command: 'npx', args: ['-y', '@railway/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Check Railway container health', 'Provision managed PostgreSQL on Railway']
       },
 
       // Developer Tools
       {
-        id: 'auth0',
+        id: 'antigravity-plugins-partners/plugin/auth0',
+        slug: 'auth0',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Auth0',
         description: 'Add Auth0 authentication to any app: login, MFA, SSO, Organizations, and RBAC.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23EB5424" d="M24 4L10 9v14c0 10.5 6 20.3 14 23 8-2.7 14-12.5 14-23V9L24 4zm0 8a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 16c4.5 0 9 2.3 9 6.8v1.6c-2.5 4-6 6.8-9 8.2-3-1.4-6.5-4.2-9-8.2v-1.6c0-4.5 4.5-6.8 9-6.8z"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['devtools', 'auth', 'auth0']
+        tags: ['devtools', 'auth', 'auth0'],
+        readme: '# Auth0\n\nUniversal identity platform: passwordless login, social SSO, multi-factor authentication, and user access management.\n\n### Capabilities\n- Configure OAuth2 and OIDC application credentials\n- Manage user roles and permissions (RBAC)\n- Inspect login activity and security logs',
+        skills: [{ name: 'auth0-config', description: 'Inspect and configure Auth0 application settings.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'auth0', command: 'npx', args: ['-y', '@auth0/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Inspect Auth0 client configuration', 'Check recent Auth0 login events']
       },
       {
-        id: 'browserbase',
+        id: 'antigravity-plugins-partners/plugin/browse',
+        slug: 'browse',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Browserbase',
         description: 'Give your agent a real browser: navigate, click, type, screenshot, and extract data.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%23FF4F00"/><circle cx="24" cy="24" r="12" fill="%23fff"/><circle cx="24" cy="24" r="6" fill="%23FF4F00"/></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['devtools', 'browser', 'browserbase']
+        tags: ['devtools', 'browser', 'browserbase'],
+        readme: '# Browserbase\n\nHeadless cloud browsers with built-in stealth, proxy rotation, CAPTCHA solving, and session playback.\n\n### Capabilities\n- High reliability web scraping and automated dogfooding\n- Stealth browsing resistant to bot detection\n- Full video recordings and network logs for each run',
+        skills: [{ name: 'browserbase-run', description: 'Run cloud browser tasks with Browserbase.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'browserbase', command: 'npx', args: ['-y', '@browserbase/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['QA test live website flow', 'Scrape dynamic web page without blocking']
       },
       {
-        id: 'base44',
+        id: 'antigravity-plugins-partners/plugin/base44',
+        slug: 'base44',
+        marketplace: 'antigravity-plugins-partners',
         displayName: 'Base44',
         description: 'Build and deploy Base44 full-stack apps: CLI project management and SDKs.',
         logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%231E293B"/><text x="24" y="32" fill="%2338BDF8" font-family="sans-serif" font-size="20" font-weight="bold" text-anchor="middle">44</text></svg>',
-        marketplace: 'builtin',
-        plugin: {},
         version: '1.0.0',
-        tags: ['devtools', 'fullstack', 'base44']
+        tags: ['devtools', 'fullstack', 'base44'],
+        readme: '# Base44\n\nFull-stack app development framework with automated state synchronization and real-time backend primitives.\n\n### Capabilities\n- Scaffold new full-stack features\n- Sync client-side states with persistent store\n- Monitor app health and background tasks',
+        skills: [{ name: 'base44-cli', description: 'Manage Base44 application stacks.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'base44', command: 'npx', args: ['-y', '@base44/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Inspect Base44 project structure', 'Run Base44 state migrations']
+      },
+
+      // Business
+      {
+        id: 'antigravity-plugins-partners/plugin/zoho-bigin',
+        slug: 'zoho-bigin',
+        marketplace: 'antigravity-plugins-partners',
+        displayName: 'Bigin',
+        description: 'Manage Bigin CRM: pipelines, contacts, deals, call logs, and customer follow-ups.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%230072CE"/><text x="24" y="32" fill="%23fff" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle">CRM</text></svg>',
+        version: '1.0.0',
+        tags: ['business', 'crm', 'bigin'],
+        readme: '# Bigin by Zoho\n\nPipeline-centric CRM for customer relationship management, deal tracking, and follow-up logging.',
+        skills: [{ name: 'bigin-crm', description: 'Query CRM pipelines and contacts.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'bigin', command: 'npx', args: ['-y', '@zoho/bigin-mcp'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['List active pipeline deals', 'Record call summary in CRM']
+      },
+      {
+        id: 'antigravity-plugins-partners/plugin/databricks',
+        slug: 'databricks',
+        marketplace: 'antigravity-plugins-partners',
+        displayName: 'Databricks',
+        description: 'Databricks CLI, Lakebase, Model Serving, Lakeflow Jobs, and Spark pipelines.',
+        logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="%23FF3621"/><path d="M12 16l12-6 12 6-12 6-12-6zm0 8l12-6 12 6-12 6-12-6zm0 8l12-6 12 6-12 6-12-6z" fill="%23fff"/></svg>',
+        version: '1.0.0',
+        tags: ['business', 'data', 'databricks', 'spark'],
+        readme: '# Databricks\n\nUnified data and AI platform: execute Apache Spark jobs, manage Delta Lake tables, and query Model Serving endpoints.\n\n### Capabilities\n- Submit Spark jobs and monitor cluster status\n- Query Delta Lake tables with SQL\n- Deploy and test fine-tuned model serving endpoints',
+        skills: [{ name: 'databricks-cli', description: 'Interact with Databricks workspace and clusters.' }],
+        agents: [],
+        mcpServers: [{ serverName: 'databricks', command: 'npx', args: ['-y', '@databricks/mcp-server'] }],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: ['Check Databricks cluster status', 'Run query on Lakebase table']
       }
     ];
 
@@ -363,48 +648,235 @@
         id: 'google-workspace',
         displayName: 'Google Workspace',
         description: 'Connect to Google Workspace, including Docs, Sheets, Slides, Drive, and Calendar.',
-        memberIds: ['google-docs', 'google-sheets', 'google-slides', 'google-drive', 'google-calendar'],
+        memberIds: [
+          'antigravity-plugins-official/plugin/gdocs',
+          'antigravity-plugins-official/plugin/gsheets',
+          'antigravity-plugins-official/plugin/gslides',
+          'antigravity-plugins-official/plugin/gdrive',
+          'antigravity-plugins-official/plugin/gcalendar'
+        ],
         nextPageToken: ''
       },
       {
         id: 'build-with-google',
         displayName: 'Build with Google',
         description: "Build on Google's developer platforms, including Android, Chrome, Gemini, and Google Cloud.",
-        memberIds: ['gemini-api', 'chrome-devtools', 'firebase', 'android-cli', 'google-antigravity-sdk'],
+        memberIds: [
+          'antigravity-plugins-official/plugin/gemini-api',
+          'antigravity-plugins-official/plugin/chrome-devtools-plugin',
+          'antigravity-plugins-official/plugin/firebase',
+          'antigravity-plugins-official/plugin/android-cli',
+          'antigravity-plugins-official/plugin/google-antigravity-sdk'
+        ],
         nextPageToken: ''
       },
       {
         id: 'design-creative-media',
         displayName: 'Design, Creative & Media',
-        description: 'Turn Figma designs into production code, create Canva designs, and browse real mobile patterns.',
-        memberIds: ['figma', 'canva', 'mobbin'],
+        description: 'Design, creative, and media tools.',
+        memberIds: [
+          'antigravity-plugins-partners/plugin/canva',
+          'antigravity-plugins-partners/plugin/figma',
+          'antigravity-plugins-partners/plugin/mobbin'
+        ],
         nextPageToken: ''
       },
       {
         id: 'productivity-project-management',
         displayName: 'Productivity & Project Management',
-        description: 'Plan work, track issues, sign documents, and manage notes and files.',
-        memberIds: ['linear', 'dropbox', 'atlassian'],
+        description: 'Plan work, track issues, sign documents, and manage your notes and files.',
+        memberIds: [
+          'antigravity-plugins-partners/plugin/linear',
+          'antigravity-plugins-partners/plugin/dropbox',
+          'antigravity-plugins-partners/plugin/atlassian-twg-cli',
+          'antigravity-plugins-partners/plugin/notion'
+        ],
         nextPageToken: ''
       },
       {
         id: 'cloud-hosting-deployment',
         displayName: 'Cloud Hosting & Deployment',
         description: 'Deploy and host your apps, sites, databases, and backends.',
-        memberIds: ['vercel', 'netlify', 'railway'],
+        memberIds: [
+          'antigravity-plugins-partners/plugin/netlify',
+          'antigravity-plugins-partners/plugin/railway',
+          'antigravity-plugins-partners/plugin/vercel-plugin',
+          'antigravity-plugins-partners/plugin/supabase'
+        ],
         nextPageToken: ''
       },
       {
         id: 'developer-tools',
         displayName: 'Developer Tools',
         description: 'APIs, services, and tools to build, test, secure, and run your apps.',
-        memberIds: ['auth0', 'browserbase', 'base44'],
+        memberIds: [
+          'antigravity-plugins-partners/plugin/auth0',
+          'antigravity-plugins-partners/plugin/base44',
+          'antigravity-plugins-partners/plugin/browse'
+        ],
+        nextPageToken: ''
+      },
+      {
+        id: 'business',
+        displayName: 'Business',
+        description: 'Payments, CRM, accounting, data, identity, customer support, marketing, and workflow automation.',
+        memberIds: [
+          'antigravity-plugins-partners/plugin/zoho-bigin',
+          'antigravity-plugins-partners/plugin/databricks'
+        ],
         nextPageToken: ''
       }
     ];
 
+    function findPluginItem(targetId) {
+      if (!targetId) return null;
+      const clean = String(targetId).trim();
+      const slug = clean.split('/').pop().toLowerCase();
+      const all = [CONTEXT7_ITEM, ...OFFICIAL_PLUGINS];
+      const match = all.find(function(c) {
+        if (c.id === clean) return true;
+        if (c.slug && c.slug.toLowerCase() === slug) return true;
+        if (c.id.toLowerCase().endsWith('/' + slug)) return true;
+        return false;
+      });
+      if (match) return match;
+      const parts = clean.split('/');
+      const mkt = parts.length > 1 ? parts[0] : 'antigravity-plugins-partners';
+      const cleanSlug = parts.pop() || 'plugin';
+      const displayName = cleanSlug.charAt(0).toUpperCase() + cleanSlug.slice(1);
+      return {
+        id: clean,
+        slug: cleanSlug,
+        marketplace: mkt,
+        displayName: displayName,
+        description: 'Customization ' + clean,
+        logo: '',
+        version: '1.0.0',
+        tags: [],
+        readme: '# ' + displayName + '\n\nCustomization ' + clean,
+        skills: [],
+        agents: [],
+        mcpServers: [],
+        rules: [],
+        sidecars: [],
+        suggestedPrompts: []
+      };
+    }
 
-    window.fetch = async function(...args) {
+    function getInstalledPluginsList() {
+      try {
+        const raw = window.localStorage.getItem('ag_installed_marketplace_plugins');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch (_) {}
+      return [];
+    }
+
+    function addInstalledPlugin(targetId) {
+      if (!targetId) return;
+      const clean = String(targetId).trim();
+      const list = getInstalledPluginsList();
+      if (!list.includes(clean)) {
+        list.push(clean);
+        try {
+          window.localStorage.setItem('ag_installed_marketplace_plugins', JSON.stringify(list));
+        } catch (_) {}
+      }
+    }
+
+    function removeInstalledPlugin(targetId) {
+      if (!targetId) return;
+      const clean = String(targetId).trim().toLowerCase();
+      const slug = clean.split('/').pop();
+      let list = getInstalledPluginsList();
+      list = list.filter(function(x) {
+        const xClean = String(x).trim().toLowerCase();
+        const xSlug = xClean.split('/').pop();
+        return xClean !== clean && xSlug !== slug;
+      });
+      try {
+        window.localStorage.setItem('ag_installed_marketplace_plugins', JSON.stringify(list));
+      } catch (_) {}
+    }
+
+    function buildInstalledPluginObject(item) {
+      const pluginSlug = item.slug || (item.id ? item.id.split('/').pop() : 'plugin');
+      return {
+        name: pluginSlug,
+        displayName: item.displayName || pluginSlug,
+        display_name: item.displayName || pluginSlug,
+        description: item.description || '',
+        path: 'file:///C:/Users/amine/.gemini/config/plugins/' + pluginSlug,
+        isGlobal: false,
+        is_global: false,
+        disabled: false,
+        installedFrom: {
+          marketplace: item.marketplace || 'antigravity-plugins-official',
+          id: item.id,
+          version: item.version || '1.0.0'
+        },
+        installed_from: {
+          marketplace: item.marketplace || 'antigravity-plugins-official',
+          id: item.id,
+          version: item.version || '1.0.0'
+        },
+        userConfig: {
+          enabled: true,
+          installedFrom: {
+            marketplace: item.marketplace || 'antigravity-plugins-official',
+            id: item.id,
+            version: item.version || '1.0.0'
+          }
+        },
+        user_config: {
+          enabled: true,
+          installed_from: {
+            marketplace: item.marketplace || 'antigravity-plugins-official',
+            id: item.id,
+            version: item.version || '1.0.0'
+          }
+        },
+        version: item.version || '1.0.0',
+        logo: item.logo || '',
+        skills: (item.skills || []).map(function(s) {
+          return {
+            name: s.name,
+            description: s.description || ('Skill: ' + s.name),
+            path: 'C:/Users/amine/.gemini/config/plugins/' + pluginSlug + '/skills/' + s.name + '.md'
+          };
+        }),
+        agents: item.agents || [],
+        mcpServers: (item.mcpServers || []).map(function(m) {
+          return {
+            serverName: m.serverName,
+            displayName: m.displayName || m.serverName,
+            command: m.command || '',
+            args: m.args || []
+          };
+        }),
+        mcp_servers: (item.mcpServers || []).map(function(m) {
+          return {
+            server_name: m.serverName,
+            serverName: m.serverName,
+            display_name: m.displayName || m.serverName,
+            displayName: m.displayName || m.serverName,
+            command: m.command || '',
+            args: m.args || []
+          };
+        }),
+        rules: item.rules || [],
+        sidecars: item.sidecars || [],
+        suggestedPrompts: item.suggestedPrompts || [],
+        suggested_prompts: item.suggestedPrompts || [],
+        readme: item.readme || ('# ' + (item.displayName || pluginSlug) + '\n\n' + (item.description || ''))
+      };
+    }) || null;
+    }
+
+
+        window.fetch = async function(...args) {
       const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : (args[0] && args[0].href ? args[0].href : ''));
       const reqHeaders = args[1] && args[1].headers;
       const isAllWorkflows = typeof url === 'string' && url.includes('LanguageServerService/GetAllWorkflows');
@@ -536,17 +1008,39 @@
       const isSearchMarketplace = typeof url === 'string' && url.includes('LanguageServerService/SearchMarketplace') && !isSearchMarketplaceCustomizations;
       const isMarketplaceCustomization = typeof url === 'string' && url.includes('LanguageServerService/GetMarketplaceCustomization');
       const isInstallCustomization = typeof url === 'string' && url.includes('LanguageServerService/InstallCustomization');
+      const isGetAllPlugins = typeof url === 'string' && url.includes('LanguageServerService/GetAllPlugins');
+      const isGetPlugin = typeof url === 'string' && url.includes('LanguageServerService/GetPlugin');
+      const isDeletePlugin = typeof url === 'string' && url.includes('LanguageServerService/DeletePlugin');
+      const isSubscribeToPlugins = typeof url === 'string' && url.includes('LanguageServerService/SubscribeToPlugins');
 
-      // 3. Intercept GetMarketplaceFeatured: display authentic Context7 spotlight banner
+      // 3. Intercept GetMarketplaceFeatured: display authentic Context7 spotlight banner with 6 companion icons
       if (isMarketplaceFeatured) {
         return formatResponse({
-          featured: {
-            id: 'context7',
-            eyebrow: 'Featured',
-            displayName: 'Context7',
-            description: 'Up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.',
-            memberIds: ['context7']
-          },
+          featured: [
+            {
+              id: 'antigravity-plugins-partners/plugin/context7',
+              eyebrow: 'Featured',
+              displayName: 'Context7',
+              display_name: 'Context7',
+              description: 'Up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.',
+              memberIds: [
+                'antigravity-plugins-official/plugin/firebase',
+                'antigravity-plugins-partners/plugin/context7',
+                'antigravity-plugins-partners/plugin/linear',
+                'antigravity-plugins-partners/plugin/notion',
+                'antigravity-plugins-partners/plugin/cursor',
+                'antigravity-plugins-partners/plugin/supabase'
+              ],
+              member_ids: [
+                'antigravity-plugins-official/plugin/firebase',
+                'antigravity-plugins-partners/plugin/context7',
+                'antigravity-plugins-partners/plugin/linear',
+                'antigravity-plugins-partners/plugin/notion',
+                'antigravity-plugins-partners/plugin/cursor',
+                'antigravity-plugins-partners/plugin/supabase'
+              ]
+            }
+          ],
           customizations: [
             CONTEXT7_ITEM,
             ...OFFICIAL_PLUGINS
@@ -569,10 +1063,14 @@
           let reqGroupId = '';
           try {
             let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
+            if (!bText && args[0]?.body) {
+              bText = typeof args[0].body === 'string' ? args[0].body : new TextDecoder().decode(args[0].body);
+            }
             if (bText) {
-              const bObj = JSON.parse(bText);
-              if (bObj.query) reqQuery = String(bObj.query).toLowerCase().trim();
-              if (bObj.groupId) reqGroupId = String(bObj.groupId).trim();
+              const qMatch = bText.match(/"query"\s*:\s*"([^"]*)"/);
+              if (qMatch && qMatch[1]) reqQuery = qMatch[1].toLowerCase().trim();
+              const gMatch = bText.match(/"groupId"\s*:\s*"([^"]*)"/);
+              if (gMatch && gMatch[1]) reqGroupId = gMatch[1].trim();
             }
           } catch (_) {}
 
@@ -593,6 +1091,7 @@
           if (reqQuery) {
             outItems = outItems.filter(function(c) {
               return c.id.toLowerCase().includes(reqQuery) ||
+                (c.slug && c.slug.toLowerCase().includes(reqQuery)) ||
                 (c.displayName && c.displayName.toLowerCase().includes(reqQuery)) ||
                 (c.description && c.description.toLowerCase().includes(reqQuery)) ||
                 (c.tags && c.tags.some(function(t) { return t.toLowerCase().includes(reqQuery); }));
@@ -616,37 +1115,85 @@
         }
       }
 
-      // 6. Intercept GetMarketplaceCustomization: return full details and documentation preview
+      // 6. Intercept GetMarketplaceCustomization: return full details, SVG icon, and rich capabilities
       if (isMarketplaceCustomization) {
         try {
           let targetId = '';
           try {
             let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
+            if (!bText && args[0]?.body) {
+              bText = typeof args[0].body === 'string' ? args[0].body : new TextDecoder().decode(args[0].body);
+            }
             if (bText) {
-              const bObj = JSON.parse(bText);
-              if (bObj.id) targetId = bObj.id;
+              const idMatch = bText.match(/"id"\s*:\s*"([^"]+)"/);
+              if (idMatch && idMatch[1]) {
+                targetId = idMatch[1];
+              } else {
+                const firstBrace = bText.indexOf('{');
+                if (firstBrace !== -1) {
+                  const bObj = JSON.parse(bText.slice(firstBrace));
+                  if (bObj && bObj.id) targetId = bObj.id;
+                }
+              }
+            }
+            if (!targetId && typeof url === 'string') {
+              const u = new URL(url, 'http://127.0.0.1');
+              if (u.searchParams.get('id')) targetId = u.searchParams.get('id');
             }
           } catch (_) {}
 
-          const allItems = [CONTEXT7_ITEM, ...OFFICIAL_PLUGINS];
-          const item = allItems.find(function(c) { return c.id === targetId; }) || {
+          const item = findPluginItem(targetId) || {
             id: targetId,
-            displayName: targetId,
+            slug: targetId ? targetId.split('/').pop() : 'plugin',
+            displayName: targetId ? targetId.split('/').pop() : 'Plugin',
             description: 'Customization ' + targetId,
-            marketplace: 'builtin',
-            plugin: {},
+            marketplace: targetId && targetId.includes('/') ? targetId.split('/')[0] : 'antigravity-plugins-partners',
+            logo: '',
             version: '1.0.0',
-            tags: []
+            tags: [],
+            readme: '# ' + targetId,
+            skills: [],
+            agents: [],
+            mcpServers: [],
+            rules: [],
+            sidecars: [],
+            suggestedPrompts: []
+          };
+
+          const pluginPayload = {
+            name: item.displayName,
+            displayName: item.displayName,
+            display_name: item.displayName,
+            description: item.description,
+            readme: item.readme || ('# ' + item.displayName + '\n\n' + item.description),
+            logo: item.logo,
+            skills: item.skills || [],
+            agents: item.agents || [],
+            mcpServers: item.mcpServers || [],
+            mcp_servers: item.mcpServers || [],
+            rules: item.rules || [],
+            sidecars: item.sidecars || [],
+            suggestedPrompts: item.suggestedPrompts || [],
+            suggested_prompts: item.suggestedPrompts || [],
+            version: item.version || '1.0.0'
           };
 
           return formatResponse({
-            customization: item,
+            customization: {
+              marketplace: item.marketplace,
+              id: item.id,
+              displayName: item.displayName,
+              display_name: item.displayName,
+              description: item.description,
+              logo: item.logo,
+              version: item.version || '1.0.0',
+              homepage: item.homepage || '',
+              repository: item.repository || ''
+            },
+            plugin: pluginPayload,
             preview: {
               case: 'plugin',
-              value: {
-                readme: '# ' + (item.displayName || item.id) + '\n\n' + (item.description || '') + '\n\n### Developer\nOfficial Antigravity Partner / Ecosystem\n\n### Status\nOfficial capability ready for immediate use.',
-                overview: item.description || item.displayName
-              }
+              value: pluginPayload
             }
           }, reqHeaders);
         } catch (detailErr) {
@@ -654,9 +1201,144 @@
         }
       }
 
-      // 7. Intercept InstallCustomization: acknowledge installation
+      // 6.5 Intercept SubscribeToPlugins: gracefully declare unimplemented so CustomizationsStore seamlessly falls back to GetAllPlugins refresh
+      if (isSubscribeToPlugins) {
+        return new Response(JSON.stringify({
+          code: 'unimplemented',
+          message: 'SubscribeToPlugins is not supported'
+        }), {
+          status: 501,
+          headers: {
+            'content-type': 'application/json',
+            'connect-protocol-version': '1'
+          }
+        });
+      }
+
+      // 6.6 Intercept GetAllPlugins: merge native language-server plugins with user-added marketplace plugins
+      if (isGetAllPlugins) {
+        try {
+          let origPlugins = [];
+          try {
+            const origRes = await origFetch.apply(this, args);
+            if (origRes.ok) {
+              const origData = await origRes.clone().json();
+              if (Array.isArray(origData.plugins)) {
+                origPlugins = origData.plugins;
+              }
+            }
+          } catch (_) {}
+
+          const installedList = getInstalledPluginsList();
+          const merged = [...origPlugins];
+
+          for (const id of installedList) {
+            const item = findPluginItem(id);
+            if (!item) continue;
+            const already = merged.some(function(p) {
+              return (p.installedFrom && (p.installedFrom.id === item.id || p.installedFrom.id === id)) ||
+                     (p.installed_from && (p.installed_from.id === item.id || p.installed_from.id === id)) ||
+                     p.name === item.slug;
+            });
+            if (!already) {
+              merged.push(buildInstalledPluginObject(item));
+            }
+          }
+
+          return formatResponse({ plugins: merged }, reqHeaders);
+        } catch (pluginsErr) {
+          console.warn('[AG] GetAllPlugins error in rendererHook:', pluginsErr);
+        }
+      }
+
+      // 6.7 Intercept GetPlugin: return installed/marketplace plugin descriptor
+      if (isGetPlugin) {
+        let pluginId = '';
+        try {
+          let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
+          if (!bText && args[0]?.body) {
+            bText = typeof args[0].body === 'string' ? args[0].body : new TextDecoder().decode(args[0].body);
+          }
+          if (bText) {
+            const pMatch = bText.match(/"pluginId"\s*:\s*"([^"]+)"/);
+            if (pMatch && pMatch[1]) pluginId = pMatch[1];
+          }
+          if (!pluginId && typeof url === 'string') {
+            const u = new URL(url, 'http://127.0.0.1');
+            if (u.searchParams.get('pluginId')) pluginId = u.searchParams.get('pluginId');
+          }
+        } catch (_) {}
+
+        const pItem = findPluginItem(pluginId);
+        if (pItem) {
+          return formatResponse({
+            plugin: buildInstalledPluginObject(pItem)
+          }, reqHeaders);
+        }
+      }
+
+      // 7. Intercept InstallCustomization: register in persistent installed store and acknowledge
       if (isInstallCustomization) {
-        return formatResponse({ success: true, message: 'Plugin installed successfully.' }, reqHeaders);
+        let targetId = '';
+        try {
+          let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
+          if (!bText && args[0]?.body) {
+            bText = typeof args[0].body === 'string' ? args[0].body : new TextDecoder().decode(args[0].body);
+          }
+          if (bText) {
+            const idMatch = bText.match(/"id"\s*:\s*"([^"]+)"/);
+            if (idMatch && idMatch[1]) targetId = idMatch[1];
+          }
+        } catch (_) {}
+        const pItem = findPluginItem(targetId);
+        const slug = pItem ? pItem.slug : (targetId.split('/').pop() || 'customization');
+        if (targetId) {
+          addInstalledPlugin(targetId);
+        }
+        return formatResponse({
+          success: true,
+          message: 'Plugin ' + (pItem ? pItem.displayName : slug) + ' installed successfully.',
+          installDir: '~/.gemini/config/plugins/' + slug
+        }, reqHeaders);
+      }
+
+      // 7.5 Intercept DeletePlugin: remove from persistent installed store
+      if (isDeletePlugin) {
+        let pluginId = '';
+        try {
+          let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
+          if (!bText && args[0]?.body) {
+            bText = typeof args[0].body === 'string' ? args[0].body : new TextDecoder().decode(args[0].body);
+          }
+          if (bText) {
+            const pMatch = bText.match(/"pluginId"\s*:\s*"([^"]+)"/);
+            if (pMatch && pMatch[1]) pluginId = pMatch[1];
+          }
+          if (!pluginId && typeof url === 'string') {
+            const u = new URL(url, 'http://127.0.0.1');
+            if (u.searchParams.get('pluginId')) pluginId = u.searchParams.get('pluginId');
+          }
+        } catch (_) {}
+        if (pluginId) {
+          removeInstalledPlugin(pluginId);
+        }
+        return formatResponse({
+          success: true,
+          message: 'Plugin uninstalled successfully.'
+        }, reqHeaders);
+      }
+          if (bText) {
+            const idMatch = bText.match(/"id"\s*:\s*"([^"]+)"/);
+            if (idMatch && idMatch[1]) targetId = idMatch[1];
+          }
+        } catch (_) {}
+        const pItem = findPluginItem(targetId);
+        const slug = pItem ? pItem.slug : (targetId.split('/').pop() || 'customization');
+        return formatResponse({
+          success: true,
+          message: 'Plugin ' + (pItem ? pItem.displayName : slug) + ' installed successfully.',
+          installDir: '~/.gemini/antigravity/plugins/' + slug
+        }, reqHeaders);
       }
 
       // 8. Intercept SearchMarketplaceCustomizations: return empty for internal Google CL extensions

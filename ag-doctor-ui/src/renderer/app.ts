@@ -12791,6 +12791,8 @@ function initGoogleAccountsToolbarOnce(): void {
             const qRes = await window.ag.providers.fetchAccountQuotas(tokenToUse || account.refreshToken, account.refreshToken);
             if (qRes.success && qRes.quotas) {
               account.quotas = qRes.quotas;
+              account.updatedAt = Date.now();
+              if (account.quotas) account.quotas.updatedAt = Date.now();
               if (qRes.quotas.isUnlicensed) {
                 account.isUnlicensed = true;
               } else {
@@ -13976,6 +13978,8 @@ async function loadGoogleAccounts(forceRefresh: boolean = false): Promise<void> 
         }
       });
       await Promise.all(workers);
+      renderGoogleAccountsList(googleAccountsCache);
+      updateGoogleAccountsTokenStats(googleAccountsCache);
       try {
         const provs = (await window.ag.providers.get()) as any[];
         const googleProv = provs?.find((p: any) => p && (p.provider === 'google' || p.provider === 'gemini'));

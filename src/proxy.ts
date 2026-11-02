@@ -2607,8 +2607,8 @@ export async function executeGoogleCloudCodeWithPool(
       ? (isContextualPayload ? Math.min(60_000, GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout)
       : (isContextualPayload ? Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS) : Math.min(45_000, GOOGLE_PROXY_TIMEOUT_MS));
     const largeTimeoutMs = hasOtherCandidates
-      ? (healthySiblingAccountsCount >= 2 ? Math.min(65_000, Math.max(45_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)) : 75_000)
-      : Math.min(75_000, GOOGLE_PROXY_TIMEOUT_MS);
+      ? (healthySiblingAccountsCount >= 2 ? Math.min(GOOGLE_PROXY_TIMEOUT_MS, Math.max(45_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)) : Math.min(95_000, GOOGLE_PROXY_TIMEOUT_MS))
+      : Math.min(GOOGLE_PROXY_TIMEOUT_MS, 95_000);
     const standardTimeoutMs = hasOtherCandidates
       ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_MS : 35_000)
       : Math.min(45_000, GOOGLE_PROXY_TIMEOUT_MS);
@@ -3433,8 +3433,10 @@ export async function executeGoogleCloudCodeWithPool(
         if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
           consecutive504TimeoutCount++;
           const combinedOutageCount = consecutive504TimeoutCount + consecutive503CapacityCount;
-          // Dynamically scale outage threshold with pool size: strictly bounded to max 3 so 504s trigger fast failover before 210s budget expires
-          const outageThreshold = Math.min(3, Math.max(CONSECUTIVE_504_CASCADE_THRESHOLD, 2));
+          // Dynamically scale outage threshold with pool size: dynamically scales up to CONSECUTIVE_504_CASCADE_THRESHOLD (default 7)
+          // while ensuring small pools do not wait more than 40% of their total candidate accounts.
+          const dynamicPoolThreshold = Math.max(2, Math.min(CONSECUTIVE_504_CASCADE_THRESHOLD, Math.ceil(sortedAccounts.length * 0.4)));
+          const outageThreshold = dynamicPoolThreshold;
           if (consecutive504TimeoutCount >= outageThreshold || combinedOutageCount >= outageThreshold) {
             log.warn(
               `[Proxy] ⚠️ Cluster Failure Spike on [${targetModel}] (${consecutive504TimeoutCount} consecutive 504 timeouts, ${combinedOutageCount} total outages). Triggering fast failover / cascade to prevent pool freeze across ${totalAttempts} accounts...`,

@@ -1000,21 +1000,25 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
 
           if (!cacheEntry && !isMarkedUnlicensed && !hasGeminiCd && !hasClaudeCd) continue;
           if (!acc.quotas) acc.quotas = {};
-          
-          if (cacheEntry && typeof cacheEntry.geminiFiveHourPct === 'number') {
+
+          const cacheAgeMs = cacheEntry?.updatedAt ? (now - Number(cacheEntry.updatedAt)) : Infinity;
+          const accAgeMs = acc.quotas?.updatedAt ? (now - Number(acc.quotas.updatedAt)) : Infinity;
+          const isCacheFreshEnough = cacheAgeMs <= 10 * 60 * 1000 || cacheAgeMs <= accAgeMs;
+
+          if (cacheEntry && typeof cacheEntry.geminiFiveHourPct === 'number' && (isCacheFreshEnough || typeof acc.quotas.geminiFiveHourPct !== 'number')) {
             acc.quotas.geminiFiveHourPct = cacheEntry.geminiFiveHourPct;
           }
-          if (cacheEntry && typeof cacheEntry.geminiWeeklyPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.geminiWeeklyPct === 'number' && (isCacheFreshEnough || typeof acc.quotas.geminiWeeklyPct !== 'number')) {
             acc.quotas.geminiWeeklyPct = cacheEntry.geminiWeeklyPct;
           }
-          if (cacheEntry && typeof cacheEntry.fiveHourPercentage === 'number') {
+          if (cacheEntry && typeof cacheEntry.fiveHourPercentage === 'number' && (isCacheFreshEnough || typeof acc.quotas.fiveHourPercentage !== 'number')) {
             acc.quotas.fiveHourPercentage = cacheEntry.fiveHourPercentage;
-          } else if (cacheEntry && typeof cacheEntry.geminiFiveHourPct === 'number') {
+          } else if (cacheEntry && typeof cacheEntry.geminiFiveHourPct === 'number' && (isCacheFreshEnough || typeof acc.quotas.fiveHourPercentage !== 'number')) {
             acc.quotas.fiveHourPercentage = cacheEntry.geminiFiveHourPct;
           }
-          if (cacheEntry && typeof cacheEntry.weeklyPercentage === 'number') {
+          if (cacheEntry && typeof cacheEntry.weeklyPercentage === 'number' && (isCacheFreshEnough || typeof acc.quotas.weeklyPercentage !== 'number')) {
             acc.quotas.weeklyPercentage = cacheEntry.weeklyPercentage;
-          } else if (cacheEntry && typeof cacheEntry.geminiWeeklyPct === 'number') {
+          } else if (cacheEntry && typeof cacheEntry.geminiWeeklyPct === 'number' && (isCacheFreshEnough || typeof acc.quotas.weeklyPercentage !== 'number')) {
             acc.quotas.weeklyPercentage = cacheEntry.geminiWeeklyPct;
           }
           if (cacheEntry && (cacheEntry.geminiFiveHourReset || cacheEntry.geminiResetTime)) {
@@ -1024,10 +1028,10 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           if (cacheEntry && cacheEntry.geminiWeeklyReset) {
             acc.quotas.geminiWeeklyReset = cacheEntry.geminiWeeklyReset;
           }
-          if (cacheEntry && typeof cacheEntry.claudeFiveHourPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.claudeFiveHourPct === 'number' && (isCacheFreshEnough || typeof acc.quotas.claudeFiveHourPct !== 'number')) {
             acc.quotas.claudeFiveHourPct = cacheEntry.claudeFiveHourPct;
           }
-          if (cacheEntry && typeof cacheEntry.claudeWeeklyPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.claudeWeeklyPct === 'number' && (isCacheFreshEnough || typeof acc.quotas.claudeWeeklyPct !== 'number')) {
             acc.quotas.claudeWeeklyPct = cacheEntry.claudeWeeklyPct;
           }
           if (cacheEntry && (cacheEntry.claudeFiveHourReset || cacheEntry.claudeResetTime)) {
@@ -1037,10 +1041,10 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           if (cacheEntry && cacheEntry.claudeWeeklyReset) {
             acc.quotas.claudeWeeklyReset = cacheEntry.claudeWeeklyReset;
           }
-          if (cacheEntry && typeof cacheEntry.argonFiveHourPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.argonFiveHourPct === 'number' && (isCacheFreshEnough || typeof acc.quotas.argonFiveHourPct !== 'number')) {
             acc.quotas.argonFiveHourPct = cacheEntry.argonFiveHourPct;
           }
-          if (cacheEntry && typeof cacheEntry.argonWeeklyPct === 'number') {
+          if (cacheEntry && typeof cacheEntry.argonWeeklyPct === 'number' && (isCacheFreshEnough || typeof acc.quotas.argonWeeklyPct !== 'number')) {
             acc.quotas.argonWeeklyPct = cacheEntry.argonWeeklyPct;
           }
           if (cacheEntry && cacheEntry.argonFiveHourReset) {
@@ -1049,8 +1053,11 @@ ipcMain.handle(DOCTOR_IPC_CHANNELS.PROVIDERS_GET, async () => {
           if (cacheEntry && cacheEntry.argonWeeklyReset) {
             acc.quotas.argonWeeklyReset = cacheEntry.argonWeeklyReset;
           }
-          if (cacheEntry && cacheEntry.updatedAt) {
+          if (cacheEntry && cacheEntry.updatedAt && (isCacheFreshEnough || !acc.quotas.updatedAt)) {
             acc.quotas.updatedAt = cacheEntry.updatedAt;
+            acc.updatedAt = cacheEntry.updatedAt;
+          } else if (acc.quotas.updatedAt && !acc.updatedAt) {
+            acc.updatedAt = acc.quotas.updatedAt;
           }
           if (cacheEntry && cacheEntry.tier) acc.tier = cacheEntry.tier;
           if (cacheEntry && cacheEntry.tierId) acc.tierId = cacheEntry.tierId;
