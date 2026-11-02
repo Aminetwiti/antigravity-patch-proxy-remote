@@ -353,7 +353,13 @@ export async function ensureGeminiCliGcpProject(accessToken: string): Promise<st
  * Queries Google Cloud Code v1internal:fetchAvailableModels to discover real model quotas and reset times.
  */
 export async function fetchRealGoogleModelQuotas(accessToken: string): Promise<AccountQuotaSummary | null> {
-  const hosts = ['https://cloudcode-pa.googleapis.com', 'https://daily-cloudcode-pa.googleapis.com'];
+  const preferredHost = process.env.AG_GOOGLE_CLOUDCODE_HOST || 'daily-cloudcode-pa.googleapis.com';
+  const hosts = [
+    `https://${preferredHost}`,
+    preferredHost === 'daily-cloudcode-pa.googleapis.com'
+      ? 'https://cloudcode-pa.googleapis.com'
+      : 'https://daily-cloudcode-pa.googleapis.com',
+  ];
   for (const host of hosts) {
     try {
       const res = await fetch(`${host}/v1internal:fetchAvailableModels`, {
@@ -381,6 +387,8 @@ export async function fetchRealGoogleModelQuotas(accessToken: string): Promise<A
       let geminiFiveHourReset: string | undefined;
       let claudeFiveHourPct: number | undefined;
       let claudeFiveHourReset: string | undefined;
+      let argonFiveHourPct: number | undefined;
+      let argonFiveHourReset: string | undefined;
 
       for (const [modelId, modelData] of Object.entries<any>(models)) {
         const qInfo = modelData?.quotaInfo;
@@ -403,7 +411,12 @@ export async function fetchRealGoogleModelQuotas(accessToken: string): Promise<A
         }
 
         const lower = modelId.toLowerCase();
-        if (lower.includes('claude')) {
+        if (lower.includes('argon')) {
+          if (argonFiveHourPct === undefined || pct < argonFiveHourPct) {
+            argonFiveHourPct = pct;
+            argonFiveHourReset = resetTime;
+          }
+        } else if (lower.includes('claude')) {
           if (claudeFiveHourPct === undefined || pct < claudeFiveHourPct) {
             claudeFiveHourPct = pct;
             claudeFiveHourReset = resetTime;
@@ -432,6 +445,9 @@ export async function fetchRealGoogleModelQuotas(accessToken: string): Promise<A
           claudeFiveHourPct: effClaude5h,
           claudeFiveHourReset: effClaudeReset,
           claudeWeeklyPct: 100,
+          argonFiveHourPct,
+          argonFiveHourReset,
+          argonWeeklyPct: 100,
           groups: [
             {
               displayName: 'Gemini Models',
@@ -706,6 +722,36 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
     // If this host's response lacked the Gemini group entirely, try the next host
     if (geminiFiveHourPct === undefined && geminiWeeklyPct === undefined && hosts.indexOf(host) + 1 < hosts.length) {
       continue;
+    }
+
+    // Enrich missing Gemini quota from real per-model quotas (v1internal:fetchAvailableModels)
+    if (geminiFiveHourPct === undefined) {
+      try {
+        const realModelQuotas = await fetchRealGoogleModelQuotas(accessToken);
+        if (realModelQuotas) {
+          if (typeof realModelQuotas.geminiFiveHourPct === 'number') {
+            geminiFiveHourPct = realModelQuotas.geminiFiveHourPct;
+            geminiFiveHourReset = realModelQuotas.geminiFiveHourReset;
+          }
+          if (typeof realModelQuotas.geminiWeeklyPct === 'number' && realModelQuotas.geminiWeeklyPct < 100) {
+            geminiWeeklyPct = realModelQuotas.geminiWeeklyPct;
+            geminiWeeklyReset = realModelQuotas.geminiWeeklyReset;
+          }
+          if (typeof realModelQuotas.argonFiveHourPct === 'number' && argonFiveHourPct === undefined) {
+            argonFiveHourPct = realModelQuotas.argonFiveHourPct;
+            argonFiveHourReset = realModelQuotas.argonFiveHourReset;
+          }
+          if (Array.isArray(realModelQuotas.groups)) {
+            for (const mg of realModelQuotas.groups) {
+              if (!groups.some((g) => g.displayName?.toLowerCase().includes('gemini'))) {
+                groups.unshift(mg);
+              }
+            }
+          }
+        }
+      } catch {
+        // Best-effort enrichment
+      }
     }
 
     // If weekly quota is 0, the rolling 5-hour limit is blocked

@@ -168,6 +168,56 @@ describe('ideAccountDiscovery', () => {
       expect(quotas!.claudeWeeklyPct).toBe(45);
     });
 
+    it('enriches missing Gemini quotas from fetchRealGoogleModelQuotas when retrieveUserQuotaSummary only returns Claude', async () => {
+      const claudeOnlyResponse = {
+        groups: [
+          {
+            displayName: 'Claude and GPT models',
+            buckets: [
+              { bucketId: '3p-5h', window: '5h', remainingFraction: 1.0, resetTime: '2026-11-02T16:00:00Z' },
+              { bucketId: '3p-weekly', window: 'weekly', remainingFraction: 1.0, resetTime: '2026-11-09T11:00:00Z' },
+            ],
+          },
+        ],
+      };
+
+      const fetchAvailableModelsResponse = {
+        models: {
+          'gemini-3.8-flash-tiered': {
+            quotaInfo: {
+              remainingFraction: 0.86,
+              resetTime: '2026-11-02T12:48:00Z',
+            },
+          },
+        },
+      };
+
+      // Mock retrieveUserQuotaSummary on host 1 and host 2 returning claude-only
+      // Then fetchAvailableModels returns real gemini 86%
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => claudeOnlyResponse,
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => claudeOnlyResponse,
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => fetchAvailableModelsResponse,
+        } as any);
+
+      const quotas = await fetchGoogleAccountQuotas('ya29.mock-token');
+      expect(quotas).not.toBeNull();
+      expect(quotas!.geminiFiveHourPct).toBe(86);
+      expect(quotas!.fiveHourPercentage).toBe(86);
+      expect(quotas!.geminiFiveHourReset).toBe('2026-11-02T12:48:00Z');
+      expect(quotas!.claudeFiveHourPct).toBe(100);
+      expect(quotas!.claudeWeeklyPct).toBe(100);
+      expect(quotas!.groups.some((g) => g.displayName.includes('Gemini'))).toBe(true);
+    });
+
     it('handles 403 TOS violation response by returning unlicensed status with errorDetails', async () => {
       const mock403TOS = {
         error: {

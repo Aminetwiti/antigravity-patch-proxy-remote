@@ -212,14 +212,17 @@ export function matchAssetForPlatform(
         (a) => a.name.endsWith('.exe') && (a.name.includes('portable') || a.name.includes('Portable') || a.name === 'ag-doctor-ui.exe')
       );
       if (port) return port;
+      // Fallback to any matching .exe for portable mode
+      return assets.find((a) => a.name.endsWith('.exe')) || null;
     } else {
       // Prioritize NSIS setup executable if currently installed
-      const nsis = assets.find((a) => a.name.endsWith('.exe') && (a.name.includes('Setup') || a.name.includes('setup')));
+      const nsis = assets.find(
+        (a) => a.name.endsWith('.exe') && (a.name.includes('Setup') || a.name.includes('setup') || a.name.includes('installer') || a.name.includes('Installer'))
+      );
       if (nsis) return nsis;
+      // Do NOT fallback to portable executable for installed instances — portable exe cannot update NSIS install dir
+      return null;
     }
-    // Fallback to any matching .exe
-    const anyExe = assets.find((a) => a.name.endsWith('.exe'));
-    if (anyExe) return anyExe;
   } else if (platform === 'darwin') {
     // macOS: prefer DMG matching architecture
     const archKey = arch === 'arm64' ? 'arm64' : 'x64';
@@ -531,6 +534,31 @@ export async function installUpdate(filePath?: string, silent = false): Promise<
   try {
     if (process.platform === 'win32') {
       if (targetPath.endsWith('.exe')) {
+        const isPort = isPortableExecution();
+        const origPortableFile = process.env.PORTABLE_EXECUTABLE_FILE;
+
+        // If running in portable mode and the original portable executable path is known, swap in place
+        if (isPort && origPortableFile && fs.existsSync(origPortableFile)) {
+          const batPath = path.join(app.getPath('temp'), `update-portable-${Date.now()}.bat`);
+          const batContent = [
+            '@echo off',
+            'ping 127.0.0.1 -n 2 > nul',
+            `copy /y "${targetPath}" "${origPortableFile}" > nul`,
+            `start "" "${origPortableFile}"`,
+            `del "%~f0"`,
+          ].join('\r\n');
+          fs.writeFileSync(batPath, batContent, 'utf8');
+
+          const child = spawn('cmd.exe', ['/c', batPath], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+          });
+          child.unref();
+          setTimeout(() => app.quit(), 500);
+          return { success: true };
+        }
+
         // Spawn NSIS installer detached so it continues after app exits.
         // If silent is requested, pass /S flag.
         const args = silent ? ['/S'] : [];

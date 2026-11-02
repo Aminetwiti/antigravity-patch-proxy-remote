@@ -127,6 +127,18 @@ describe('UpdateService - SemVer Comparison & Core Logic', () => {
       expect(match?.name).toBe('ag-doctor-3.7.6-portable.exe');
     });
 
+    it('returns null on win32 when installed (non-portable) and only portable asset exists', () => {
+      const onlyPortable: UpdateAsset[] = [
+        {
+          name: 'ag-doctor-3.8.2-portable.exe',
+          browser_download_url: 'https://example.com/ag-doctor-3.8.2-portable.exe',
+          size: 80000000,
+        },
+      ];
+      const match = matchAssetForPlatform(onlyPortable, 'win32', 'x64', false);
+      expect(match).toBeNull();
+    });
+
     it('matches macOS DMG with correct architecture', () => {
       const matchArm = matchAssetForPlatform(assets, 'darwin', 'arm64');
       expect(matchArm).not.toBeNull();

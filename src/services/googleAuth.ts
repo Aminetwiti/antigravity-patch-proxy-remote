@@ -711,6 +711,131 @@ export function checkAccountClaude55Access(accessToken: string): Promise<boolean
 }
 
 /**
+ * Queries Google Cloud Code v1internal:fetchAvailableModels to discover real Gemini model quotas.
+ */
+export function fetchRealModelQuotas(accessToken: string): Promise<{
+  geminiFiveHourPct?: number;
+  geminiFiveHourReset?: string;
+  claudeFiveHourPct?: number;
+  claudeFiveHourReset?: string;
+  argonFiveHourPct?: number;
+  argonFiveHourReset?: string;
+} | null> {
+  const preferredHost = process.env.AG_GOOGLE_CLOUDCODE_HOST || 'daily-cloudcode-pa.googleapis.com';
+  const hosts = [
+    `https://${preferredHost}`,
+    preferredHost === 'daily-cloudcode-pa.googleapis.com'
+      ? 'https://cloudcode-pa.googleapis.com'
+      : 'https://daily-cloudcode-pa.googleapis.com',
+  ];
+  return new Promise((resolve) => {
+    const tryHost = (idx: number) => {
+      if (idx >= hosts.length) {
+        resolve(null);
+        return;
+      }
+      try {
+        const hostUrl = new URL(`${hosts[idx]}/v1internal:fetchAvailableModels`);
+        const body = '{}';
+        const req = https.request(
+          {
+            protocol: hostUrl.protocol,
+            hostname: hostUrl.hostname,
+            port: hostUrl.port ? Number(hostUrl.port) : 443,
+            path: hostUrl.pathname,
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(body),
+              'User-Agent': 'antigravity',
+            },
+            timeout: 5000,
+          },
+          (res) => {
+            let rawData = '';
+            res.on('data', (chunk) => (rawData += chunk));
+            res.on('end', () => {
+              if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                try {
+                  const data = JSON.parse(rawData);
+                  const models = data?.models || {};
+                  let minRemainingFrac = 1.0;
+                  let earliestReset: string | undefined;
+                  let geminiFiveHourPct: number | undefined;
+                  let geminiFiveHourReset: string | undefined;
+                  let claudeFiveHourPct: number | undefined;
+                  let claudeFiveHourReset: string | undefined;
+                  let argonFiveHourPct: number | undefined;
+                  let argonFiveHourReset: string | undefined;
+
+                  for (const [modelId, modelData] of Object.entries<any>(models)) {
+                    const qInfo = modelData?.quotaInfo;
+                    if (!qInfo) continue;
+                    const remainingFrac = typeof qInfo.remainingFraction === 'number' ? qInfo.remainingFraction : 1.0;
+                    const pct = Math.round(remainingFrac * 100);
+                    const resetTime = qInfo.resetTime;
+
+                    if (remainingFrac < minRemainingFrac) {
+                      minRemainingFrac = remainingFrac;
+                      earliestReset = resetTime;
+                    }
+
+                    const lower = modelId.toLowerCase();
+                    if (lower.includes('argon')) {
+                      if (argonFiveHourPct === undefined || pct < argonFiveHourPct) {
+                        argonFiveHourPct = pct;
+                        argonFiveHourReset = resetTime;
+                      }
+                    } else if (lower.includes('claude')) {
+                      if (claudeFiveHourPct === undefined || pct < claudeFiveHourPct) {
+                        claudeFiveHourPct = pct;
+                        claudeFiveHourReset = resetTime;
+                      }
+                    } else if (lower.includes('gemini')) {
+                      if (geminiFiveHourPct === undefined || pct < geminiFiveHourPct) {
+                        geminiFiveHourPct = pct;
+                        geminiFiveHourReset = resetTime;
+                      }
+                    }
+                  }
+
+                  const effGem5h = geminiFiveHourPct ?? Math.round(minRemainingFrac * 100);
+                  const effGemReset = geminiFiveHourReset ?? earliestReset;
+                  resolve({
+                    geminiFiveHourPct: effGem5h,
+                    geminiFiveHourReset: effGemReset,
+                    claudeFiveHourPct,
+                    claudeFiveHourReset,
+                    argonFiveHourPct,
+                    argonFiveHourReset,
+                  });
+                  return;
+                } catch {
+                  tryHost(idx + 1);
+                }
+              } else {
+                tryHost(idx + 1);
+              }
+            });
+          },
+        );
+        req.on('error', () => tryHost(idx + 1));
+        req.on('timeout', () => {
+          req.destroy();
+          tryHost(idx + 1);
+        });
+        req.write(body);
+        req.end();
+      } catch {
+        tryHost(idx + 1);
+      }
+    };
+    tryHost(0);
+  });
+}
+
+/**
  * Queries Google Cloud Code for live user quota summary (5h and weekly buckets).
  */
 export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuota | null> {
@@ -860,12 +985,13 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                     groups: rawGroups,
                   };
 
-                  // Non-blocking tier, project, and Claude 5.5 capability discovery
+                  // Non-blocking tier, project, Claude 5.5 capability, and real Gemini model quota discovery
                   Promise.allSettled([
                     fetchAccountTierAndProject(accessToken),
                     checkAccountClaude55Access(accessToken),
+                    geminiFiveHourPct === undefined ? fetchRealModelQuotas(accessToken) : Promise.resolve(null),
                   ])
-                    .then(([tierRes, has55Res]) => {
+                    .then(([tierRes, has55Res, modelQuotaRes]) => {
                       if (tierRes.status === 'fulfilled' && tierRes.value) {
                         const info = tierRes.value;
                         if (info.tierId) result.tierId = info.tierId;
@@ -879,6 +1005,21 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                         result.tier = 'partage';
                       } else if (has55Res.status === 'fulfilled' && has55Res.value === false) {
                         result.hasClaude55 = false;
+                      }
+                      if (modelQuotaRes.status === 'fulfilled' && modelQuotaRes.value) {
+                        const mq = modelQuotaRes.value;
+                        if (typeof mq.geminiFiveHourPct === 'number') {
+                          result.geminiFiveHourPct = mq.geminiFiveHourPct;
+                          result.fiveHourPercentage = mq.geminiFiveHourPct;
+                          if (mq.geminiFiveHourReset) {
+                            result.geminiFiveHourReset = mq.geminiFiveHourReset;
+                            result.geminiResetTime = mq.geminiFiveHourReset;
+                          }
+                        }
+                        if (typeof mq.argonFiveHourPct === 'number' && typeof result.argonFiveHourPct !== 'number') {
+                          result.argonFiveHourPct = mq.argonFiveHourPct;
+                          result.argonFiveHourReset = mq.argonFiveHourReset;
+                        }
                       }
                       resolve(result);
                     })

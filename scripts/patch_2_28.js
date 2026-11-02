@@ -128,6 +128,16 @@ async function main() {
     process.exit(1);
   }
 
+  // Ensure Antigravity processes are closed before staging and repacking
+  if (process.platform === 'win32' && path.resolve(asarOut) === path.resolve(defaultAsarOut)) {
+    console.log('[patch_2_28] Ensuring Antigravity processes are closed...');
+    try {
+      execSync('powershell -Command "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
+      const waitStart = Date.now();
+      while (Date.now() - waitStart < 1500) {}
+    } catch (_) {}
+  }
+
   // 1. Ensure build output is compiled
   if (!fs.existsSync(path.join(repoDist, 'proxy.js')) || !fs.existsSync(path.join(repoDist, 'config', 'providers.json'))) {
     console.log('[patch_2_28] Compiling TypeScript modules...');
@@ -411,12 +421,14 @@ try {
         }
       } catch (_) {}
 
-      // Clean up legacy featureEnvironmentOverride only if malformed
+      // Always remove featureEnvironmentOverride to preserve native Projects UI & authentic Marketplace
       try {
-        const val = window.localStorage.getItem('jetski.developer.featureEnvironmentOverride');
-        if (val && (val.includes('"host":1') || val.includes('"host": 1'))) {
-          window.localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
-        }
+        window.localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
+        const existingFlags = JSON.parse(window.localStorage.getItem('jetski.developer.customFlagOverrides') || '{}');
+        delete existingFlags['enable-conversation-navigator'];
+        delete existingFlags['enable-conversation-groups'];
+        delete existingFlags['enable-plugin-bundles'];
+        window.localStorage.setItem('jetski.developer.customFlagOverrides', JSON.stringify(existingFlags));
       } catch (_) {}
 
       try {
@@ -437,8 +449,6 @@ try {
             'enable-conversation-forking': true,
             'enable-fork-at-historical-step': true,
             'enable-fork-in-new-worktree': true,
-            'enable-conversation-navigator': true,
-            'enable-conversation-groups': true,
             'enable-conversation-sharing-prototype': true,
             'enable-trajectory-debug-tools': true,
             'enable-hub-builtin-browser': true,
@@ -448,7 +458,6 @@ try {
             'enable-voice-relay': true,
             'google-workspace-mentions': true,
             'enable-plugins': true,
-            'enable-plugin-bundles': true,
             'enable-plugin-context-providers': true,
             'enable-mcp-plugin-auth': true,
             'enable-split-view': true,
@@ -617,17 +626,6 @@ try {
 
   // 11. Repack asar (preserve chrome-devtools-mcp!)
   console.log('[patch_2_28] Step 7: Repacking app.asar (with unpackDir for MCP tools)...');
-
-  // Stop running Antigravity processes before writing asar to avoid EBUSY locks
-  if (process.platform === 'win32' && path.resolve(asarOut) === path.resolve(defaultAsarOut)) {
-    console.log('[patch_2_28] Ensuring Antigravity processes are closed before repacking...');
-    try {
-      execSync('powershell -Command "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
-      const waitStart = Date.now();
-      while (Date.now() - waitStart < 1200) {}
-    } catch (_) {}
-  }
-
   await asar.createPackageWithOptions(buildDir, asarOut, { unpackDir: '**/chrome-devtools-mcp' });
 
   // 12. Verification check

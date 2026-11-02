@@ -10,6 +10,14 @@ describe('Antigravity Version 2.28 Support', () => {
     expect(patch?.maxVersion).toBeNull();
   });
 
+  it('correctly matches Antigravity 2.28.2 to 2.6.0+ patch definition', () => {
+    const patch = findPatchForVersion('2.28.2');
+    expect(patch).not.toBeNull();
+    expect(patch?.versionRange).toBe('2.6.0+');
+    expect(patch?.minVersion).toBe('2.6.0');
+    expect(patch?.maxVersion).toBeNull();
+  });
+
   it('correctly matches Antigravity 2.28.0 patch definition', () => {
     const patch = findPatchForVersion('2.28.0');
     expect(patch).not.toBeNull();
