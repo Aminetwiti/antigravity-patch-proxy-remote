@@ -10472,8 +10472,10 @@ function getQuotaColor(pct: number): string {
 function isAiStudioAccount(acc: any): boolean {
   if (!acc) return false;
   if (acc.provider === 'google-gemini') return true;
-  if (typeof acc.apiKey === 'string' && (acc.apiKey.startsWith('AQ.') || acc.apiKey.startsWith('AIzaSy'))) return true;
+  if (typeof acc.id === 'string' && acc.id.toLowerCase().includes('studio')) return true;
   if (typeof acc.name === 'string' && acc.name.toLowerCase().includes('studio')) return true;
+  if (!acc.refreshToken && typeof acc.apiKey === 'string' && acc.apiKey.length > 0) return true;
+  if (typeof acc.apiKey === 'string' && (acc.apiKey.startsWith('AQ.') || acc.apiKey.startsWith('AIzaSy'))) return true;
   return false;
 }
 
@@ -14647,7 +14649,7 @@ function renderGoogleAccountsPoolHealth(accounts: any[]): void {
       <div class="ga-timeline-wrapper">
         <div class="ga-timeline-title">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          Prochains déblocages :
+          Prochains déblocages & renouvellements (5h) :
         </div>
         <div class="ga-timeline-items">
           ${timelineItems.map((item) => `

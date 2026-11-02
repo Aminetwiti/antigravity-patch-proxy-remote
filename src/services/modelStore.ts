@@ -192,12 +192,14 @@ export async function loadCustomModels(): Promise<CustomModelFileEntry[]> {
   const filePath = getCustomModelsPath();
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = JSON.parse(stripBom(content)) as { models?: CustomModelFileEntry[] };
+    const parsed = tryParseJsonWithBackupFallback<{ models?: CustomModelFileEntry[] }>(filePath, content) || {};
     return parsed.models || [];
   } catch (error) {
     if (isNodeError(error) && error.code === 'ENOENT') {
       return [];
     }
+    const fallback = tryParseJsonWithBackupFallback<{ models?: CustomModelFileEntry[] }>(filePath);
+    if (fallback?.models) return fallback.models;
     log.error('[CustomModelStore] Failed to load custom_models.json:', error);
     return [];
   }
@@ -229,7 +231,7 @@ export async function loadProviders(): Promise<ProviderFileEntry[]> {
   }
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = JSON.parse(stripBom(content)) as { models?: CustomModelFileEntry[], providers?: ProviderFileEntry[] };
+    const parsed = tryParseJsonWithBackupFallback<{ models?: CustomModelFileEntry[], providers?: ProviderFileEntry[] }>(filePath, content) || {};
 
     if (parsed.providers) {
       for (const p of parsed.providers) {
@@ -298,24 +300,66 @@ export function atomicWriteJson(filePath: string, payload: unknown): Promise<voi
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     const serialized = JSON.stringify(payload, null, 2);
-    await fs.writeFile(tmp, serialized, 'utf-8');
+
+    // ponytail: Windows NTFS hardware durability via open/write/sync to prevent zero-byte/null-byte corruption
+    let written = false;
+    try {
+      const openFn = (fs as any).open;
+      if (typeof openFn === 'function') {
+        const handle = await openFn(tmp, 'w');
+        try {
+          await handle.writeFile(serialized, 'utf-8');
+          if (typeof handle.sync === 'function') {
+            await handle.sync();
+          }
+          written = true;
+        } finally {
+          await handle.close();
+        }
+      }
+    } catch {}
+
+    if (!written) {
+      await fs.writeFile(tmp, serialized, 'utf-8');
+    }
+
+    // Maintain a valid .bak before replacing target file
+    try {
+      const existingText = tryReadFileSync(filePath);
+      if (existingText && !isCorruptedOrEmpty(existingText)) {
+        await fs.writeFile(`${filePath}.bak`, existingText, 'utf-8').catch(() => {});
+      }
+    } catch {}
+
     // ponytail: Windows NTFS retry on EPERM/EBUSY caused by active fs.watch or antivirus locks
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < 8; attempt++) {
       try {
         await fs.rename(tmp, filePath);
         try { setLastCustomModelsContentOnDisk(serialized); } catch (_) {}
         return;
       } catch (err: any) {
-        if ((err?.code === 'EPERM' || err?.code === 'EBUSY') && attempt < 3) {
-          await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+        if ((err?.code === 'EPERM' || err?.code === 'EBUSY') && attempt < 7) {
+          await new Promise((resolve) => setTimeout(resolve, 35 * (attempt + 1)));
           continue;
         }
         try {
-          await fs.copyFile(tmp, filePath);
-          await fs.unlink(tmp).catch(() => {});
+          const copyFn = (fs as any).copyFile;
+          if (typeof copyFn === 'function') {
+            await copyFn(tmp, filePath);
+          } else {
+            await fs.writeFile(filePath, serialized, 'utf-8');
+          }
+          const unlinkFn = (fs as any).unlink;
+          if (typeof unlinkFn === 'function') {
+            await unlinkFn(tmp).catch(() => {});
+          }
           try { setLastCustomModelsContentOnDisk(serialized); } catch (_) {}
           return;
         } catch {
+          const unlinkFn = (fs as any).unlink;
+          if (typeof unlinkFn === 'function') {
+            await unlinkFn(tmp).catch(() => {});
+          }
           throw err;
         }
       }
@@ -324,12 +368,10 @@ export function atomicWriteJson(filePath: string, payload: unknown): Promise<voi
 }
 
 function readExistingJson(filePath: string): Record<string, unknown> {
-  try {
-    const content = fsSync.readFileSync(filePath, 'utf-8');
-    return JSON.parse(stripBom(content)) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
+  const parsed = tryParseJsonWithBackupFallback<Record<string, unknown>>(filePath);
+  return (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+    ? parsed
+    : {};
 }
 
 async function saveProvidersInternal(providers: ProviderFileEntry[]): Promise<void> {
@@ -473,6 +515,53 @@ export function buildFallbackModelEntry(model: CustomModelFileEntry): FallbackMo
 
 function stripBom(content: string): string {
   return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+}
+
+export function isCorruptedOrEmpty(content: string): boolean {
+  if (!content) return true;
+  return content.replace(/\0/g, '').trim().length === 0;
+}
+
+function tryReadFileSync(filePath: string): string | null {
+  try {
+    return fsSync.readFileSync(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+export function tryParseJsonWithBackupFallback<T>(filePath: string, rawContent?: string): T | null {
+  const bakPath = `${filePath}.bak`;
+
+  if (rawContent !== undefined && !isCorruptedOrEmpty(rawContent)) {
+    try {
+      return JSON.parse(stripBom(rawContent)) as T;
+    } catch {
+      // Malformed JSON, proceed to backup recovery
+    }
+  }
+
+  const primaryContent = rawContent !== undefined ? rawContent : tryReadFileSync(filePath);
+  if (primaryContent && !isCorruptedOrEmpty(primaryContent)) {
+    try {
+      return JSON.parse(stripBom(primaryContent)) as T;
+    } catch {
+      // Primary corrupted, proceed to backup recovery
+    }
+  }
+
+  const bakContent = tryReadFileSync(bakPath);
+  if (bakContent && !isCorruptedOrEmpty(bakContent)) {
+    try {
+      const parsed = JSON.parse(stripBom(bakContent)) as T;
+      log.warn(`[CustomModelStore] 🛡️ Restored corrupted config at ${filePath} from backup ${bakPath}`);
+      return parsed;
+    } catch (err) {
+      log.error(`[CustomModelStore] Failed to read backup file ${bakPath}:`, err);
+    }
+  }
+
+  return null;
 }
 
 export function isMaskedApiKey(key: string): boolean {

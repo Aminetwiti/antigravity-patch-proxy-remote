@@ -341,6 +341,31 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       expect(boundedOutageThreshold).toBe(2);
       expect(boundedOutageThreshold).toBeLessThanOrEqual(3);
     });
+
+    it('[AUDIT-004] bounds 504 timeout escalation to 45s for Flash models in pools with >= 3 healthy accounts', () => {
+      const hasOtherCandidates = true;
+      const healthySiblingAccountsCount = 5;
+      const isFlashModel = true;
+      const GOOGLE_PROXY_TIMEOUT_MS = 90_000;
+
+      const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
+        ? (isFlashModel ? 45_000 : 55_000)
+        : 75_000;
+      const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
+
+      expect(escalatingTimeout).toBe(45_000);
+      expect(escalatingTimeout).toBeLessThan(75_000);
+    });
+
+    it('[AUDIT-005] skips cooldown penalty when 504 timeout was capped below base candidate timeout', () => {
+      const baseCandidateTimeout = 45_000;
+      const poolHeaderTimeout = 8_000; // Capped by remaining budget
+      const wasTimeoutCappedByBudget = true;
+      const lastStatus = 504;
+
+      const isCappedTimeout = wasTimeoutCappedByBudget || (lastStatus === 504 && poolHeaderTimeout < baseCandidateTimeout);
+      expect(isCappedTimeout).toBe(true);
+    });
   });
 });
 

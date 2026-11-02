@@ -348,6 +348,16 @@ function parseModelsSchema(models: CustomModel[], filePath: string): CustomModel
   return validateModels(decrypted);
 }
 
+let _lastValidCustomModels: CustomModel[] = [];
+
+export function getLastValidCustomModels(): CustomModel[] {
+  return [..._lastValidCustomModels];
+}
+
+export function resetLastValidCustomModelsForTest(): void {
+  _lastValidCustomModels = [];
+}
+
 /**
  * Loads custom models from disk, handling first-run defaults,
  * encryption migration, and validation.
@@ -364,6 +374,15 @@ export function loadCustomModels(): CustomModel[] {
     // Strip UTF-8 BOM if present
     if (content.charCodeAt(0) === 0xFEFF) {
       content = content.slice(1);
+    }
+    // Clean null bytes and trim whitespace (handles partial writes or NTFS preallocation zeros)
+    content = content.replace(/\0/g, '').trim();
+    if (!content) {
+      if (_lastValidCustomModels.length > 0) {
+        log.warn(`[Proxy] custom_models.json is empty or contains only null bytes. Serving ${_lastValidCustomModels.length} models from in-memory cache.`);
+        return [..._lastValidCustomModels];
+      }
+      return [];
     }
     const parsed = JSON.parse(content) as CustomModelsFile;
 
@@ -457,8 +476,16 @@ export function loadCustomModels(): CustomModel[] {
       .filter((m) => !(m.externalModelName || m.name || '').toLowerCase().includes('argon') || !isGoogleCloudCodeModel(m))
       .map((m) => ({ ...m, _poolOnly: true as const }));
 
-    return [...pooledGoogleModels, ...realGoogleModels, ...otherModels];
-  } catch (e) {
+    const result = [...pooledGoogleModels, ...realGoogleModels, ...otherModels];
+    if (result.length > 0) {
+      _lastValidCustomModels = result;
+    }
+    return result;
+  } catch (e: any) {
+    if (_lastValidCustomModels.length > 0) {
+      log.warn(`[Proxy] Failed to parse custom_models.json (${e?.message || e}). Preserving in-memory cache of ${_lastValidCustomModels.length} models to avoid service interruption.`);
+      return [..._lastValidCustomModels];
+    }
     log.error('[Proxy] Failed to parse custom_models.json (preserving file on disk):', e);
     return [];
   }

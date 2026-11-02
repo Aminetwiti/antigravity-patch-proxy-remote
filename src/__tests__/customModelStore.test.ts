@@ -52,6 +52,8 @@ import {
   isMaskedApiKey,
   buildFallbackModelEntry,
   testProviderHealth,
+  isCorruptedOrEmpty,
+  tryParseJsonWithBackupFallback,
 } from '../customModelStore';
 
 
@@ -300,6 +302,41 @@ describe('customModelStore', () => {
       expect(res.error).toContain('Invalid API URL');
     });
   });
+  describe('Auto-recovery from NTFS corruption and null bytes', () => {
+    it('isCorruptedOrEmpty identifies strings containing only 0x00 bytes or spaces', () => {
+      expect(isCorruptedOrEmpty('')).toBe(true);
+      expect(isCorruptedOrEmpty('   ')).toBe(true);
+      expect(isCorruptedOrEmpty('\0\0\0\0')).toBe(true);
+      expect(isCorruptedOrEmpty('  \0  \0  ')).toBe(true);
+      expect(isCorruptedOrEmpty('{"valid": true}')).toBe(false);
+    });
+
+    it('tryParseJsonWithBackupFallback restores valid backup when primary is filled with 0x00 null bytes', () => {
+      const mockPrimary = '\0'.repeat(1000);
+      const mockBackup = JSON.stringify({
+        providers: [
+          {
+            id: 'provider-test',
+            name: 'Restored Provider',
+            provider: 'openai',
+            enabled: true,
+            models: [{ id: 'gpt-4o', enabled: true }],
+          },
+        ],
+      });
+
+      // When primary is null bytes, tryParseJsonWithBackupFallback should bypass and read .bak
+      vi.mocked(fsSync.readFileSync).mockImplementation((p: any) => {
+        if (String(p).endsWith('.bak')) {
+          return mockBackup;
+        }
+        return mockPrimary;
+      });
+
+      const res = tryParseJsonWithBackupFallback<{ providers: any[] }>('/mock/home/.gemini/antigravity/custom_models.json', mockPrimary);
+      expect(res).toBeDefined();
+      expect(res?.providers).toHaveLength(1);
+      expect(res?.providers[0].name).toBe('Restored Provider');
+    });
+  });
 });
-
-

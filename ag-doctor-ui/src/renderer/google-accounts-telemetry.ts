@@ -509,7 +509,11 @@ export function getPoolStrategicAdvice(
   const readyGeminiAccounts = accounts.filter((a) => {
     if (!a || a.enabled === false) return false;
     if (isAccountValidationRequiredTelemetry(a) || isAccountBlockedTelemetry(a)) return false;
-    const isStudio = a.provider === 'google-gemini' || (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
+    const isStudio = a.provider === 'google-gemini' ||
+      (typeof a.id === 'string' && a.id.toLowerCase().includes('studio')) ||
+      (typeof a.name === 'string' && a.name.toLowerCase().includes('studio')) ||
+      (!a.refreshToken && typeof a.apiKey === 'string' && a.apiKey.length > 0) ||
+      (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
     const isCli = a.provider === 'gemini-cli' || (typeof a.id === 'string' && a.id.startsWith('gemini-cli'));
     if (isStudio || isCli) return true;
     if (isAccountInCooldownTelemetry(a, 'gemini', activeCooldowns, nowMs)) return false;
@@ -523,7 +527,11 @@ export function getPoolStrategicAdvice(
   const readyClaudeAccounts = accounts.filter((a) => {
     if (!a || a.enabled === false) return false;
     if (isAccountValidationRequiredTelemetry(a) || isAccountBlockedTelemetry(a)) return false;
-    const isStudio = a.provider === 'google-gemini' || (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
+    const isStudio = a.provider === 'google-gemini' ||
+      (typeof a.id === 'string' && a.id.toLowerCase().includes('studio')) ||
+      (typeof a.name === 'string' && a.name.toLowerCase().includes('studio')) ||
+      (!a.refreshToken && typeof a.apiKey === 'string' && a.apiKey.length > 0) ||
+      (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
     const isCli = a.provider === 'gemini-cli' || (typeof a.id === 'string' && a.id.startsWith('gemini-cli'));
     if (isStudio || isCli) return false;
     if (isAccountInCooldownTelemetry(a, 'claude', activeCooldowns, nowMs)) return false;
@@ -644,7 +652,11 @@ export function calculatePoolResilienceScore(
   for (const a of accounts) {
     if (!a || a.enabled === false) continue;
     if (isAccountValidationRequiredTelemetry(a) || isAccountBlockedTelemetry(a)) continue;
-    const isStudio = a.provider === 'google-gemini' || (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
+    const isStudio = a.provider === 'google-gemini' ||
+      (typeof a.id === 'string' && a.id.toLowerCase().includes('studio')) ||
+      (typeof a.name === 'string' && a.name.toLowerCase().includes('studio')) ||
+      (!a.refreshToken && typeof a.apiKey === 'string' && a.apiKey.length > 0) ||
+      (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
     const isCli = a.provider === 'gemini-cli' || (typeof a.id === 'string' && a.id.startsWith('gemini-cli'));
 
     if (isStudio || isCli) {
@@ -750,7 +762,11 @@ export function getPoolFallbackChain(
   for (const a of accounts) {
     if (!a || a.enabled === false) continue;
     if (isAccountValidationRequiredTelemetry(a) || isAccountBlockedTelemetry(a)) continue;
-    const isStudio = a.provider === 'google-gemini' || (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
+    const isStudio = a.provider === 'google-gemini' ||
+      (typeof a.id === 'string' && a.id.toLowerCase().includes('studio')) ||
+      (typeof a.name === 'string' && a.name.toLowerCase().includes('studio')) ||
+      (!a.refreshToken && typeof a.apiKey === 'string' && a.apiKey.length > 0) ||
+      (typeof a.apiKey === 'string' && (a.apiKey.startsWith('AQ.') || a.apiKey.startsWith('AIzaSy')));
     if (isStudio) {
       hasStudio = true;
       continue;

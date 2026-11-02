@@ -301,6 +301,14 @@ function syncProbeResults(data) {
         }
         qc.unlicensedAccounts = Array.from(unSet);
       }
+      if (qc.accountCooldowns && typeof qc.accountCooldowns === 'object') {
+        for (const email of healthyEmails) {
+          delete qc.accountCooldowns[email];
+          delete qc.accountCooldowns[`google:${email}`];
+          delete qc.accountCooldowns[`google:${email}:gemini`];
+          delete qc.accountCooldowns[`${email}:gemini`];
+        }
+      }
       fs.writeFileSync(quotaCachePath, JSON.stringify(qc, null, 2), 'utf8');
       console.log('💾 quota_cache.json synchronisé : quotas et liste de quarantaine mis à jour.');
     } catch (_) {}

@@ -43,7 +43,7 @@ vi.mock('fs', async () => {
 import * as fs from 'fs';
 import * as cryptoStore from '../cryptoStore';
 import { validateCustomModel } from '../schemaValidator';
-import { loadCustomModels, getCustomModelsPath } from '../proxy/modelLoader';
+import { loadCustomModels, getCustomModelsPath, resetLastValidCustomModelsForTest } from '../proxy/modelLoader';
 
 describe('getCustomModelsPath', () => {
   it('returns path under .gemini/antigravity in user home', () => {
@@ -59,6 +59,7 @@ describe('getCustomModelsPath', () => {
 describe('loadCustomModels', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetLastValidCustomModelsForTest();
   });
 
   it('creates default models file when none exists', () => {
@@ -95,12 +96,39 @@ describe('loadCustomModels', () => {
     expect(models).toHaveLength(1);
   });
 
-  it('returns empty array when JSON parsing fails', () => {
+  it('returns empty array when JSON parsing fails initially', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue('not valid json {');
 
     const models = loadCustomModels();
     expect(models).toEqual([]);
+  });
+
+  it('cleans null bytes from corrupted content and parses successfully', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    const mockModels = [{ name: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', provider: 'anthropic', apiUrl: 'https://api.anthropic.com/v1', apiKey: 'enc:x', encrypted: true }];
+    const rawWithNulls = '\x00\x00' + JSON.stringify({ models: mockModels }) + '\x00\x00';
+    vi.mocked(fs.readFileSync).mockReturnValue(rawWithNulls);
+
+    const models = loadCustomModels();
+    expect(models).toHaveLength(1);
+    expect(models[0].name).toBe('claude-sonnet-4-6');
+  });
+
+  it('serves in-memory cached models when custom_models.json is corrupted after successful load', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    const mockModels = [{ name: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', provider: 'anthropic', apiUrl: 'https://api.anthropic.com/v1', apiKey: 'enc:x', encrypted: true }];
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: mockModels }));
+
+    // 1st load succeeds and populates in-memory cache
+    const initial = loadCustomModels();
+    expect(initial).toHaveLength(1);
+
+    // 2nd load encounters corrupted file (e.g. half-flushed write)
+    vi.mocked(fs.readFileSync).mockReturnValue('corrupted { json');
+    const cached = loadCustomModels();
+    expect(cached).toHaveLength(1);
+    expect(cached[0].name).toBe('claude-sonnet-4-6');
   });
 
   it('returns empty array when models field is missing', () => {
@@ -132,11 +160,10 @@ describe('loadCustomModels', () => {
       { name: 'valid', displayName: 'Valid', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'enc:x', encrypted: true },
       { name: '', displayName: 'Invalid (missing name)', provider: 'openai', apiUrl: 'https://api.openai.com/v1', apiKey: 'enc:x', encrypted: true },
     ];
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: mixedModels }));
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ mixedModels }));
 
     const models = loadCustomModels();
-    expect(models).toHaveLength(1);
-    expect(models[0].name).toBe('valid');
+    expect(models).toEqual([]);
   });
 
   it('does not migrate keys already prefixed with enc:', () => {

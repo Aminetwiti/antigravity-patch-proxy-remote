@@ -2629,7 +2629,11 @@ export async function executeGoogleCloudCodeWithPool(
     // Escalating retry timeout on 504: If a prior candidate experienced a timeout on this payload,
     // escalate candidate timeout to allow larger prompts to finish prefill, safely bounded by remainingPoolBudgetMs.
     if (consecutive504TimeoutCount > 0) {
-      const escalatingTimeout = Math.min(75_000, GOOGLE_PROXY_TIMEOUT_MS);
+      // In pools with >= 3 healthy candidates, bound escalation so 2 slow nodes do not consume the entire loop budget
+      const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
+        ? (isFlashModel ? 45_000 : 55_000)
+        : 75_000;
+      const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
       if (escalatingTimeout > poolHeaderTimeout) {
         log.info(`[Proxy] Prior candidate experienced 504 timeout. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
         poolHeaderTimeout = escalatingTimeout;
@@ -2638,10 +2642,20 @@ export async function executeGoogleCloudCodeWithPool(
 
     // Safety Cap: Bound poolHeaderTimeout by remaining pool loop safety budget (MAX_POOL_LOOP_DURATION_MS = 210s)
     // with an 8s margin to allow graceful error responses before the Go Language Server 5m0s context deadline
-    const remainingPoolBudgetMs = Math.max(8_000, MAX_POOL_LOOP_DURATION_MS - (Date.now() - poolLoopStartTime) - 8_000);
-    if (poolHeaderTimeout > remainingPoolBudgetMs) {
+    const remainingPoolBudgetMs = MAX_POOL_LOOP_DURATION_MS - (Date.now() - poolLoopStartTime) - 8_000;
+    const minViableTimeout = isLargePayloadOrThinking ? 20_000 : 12_000;
+
+    if (remainingPoolBudgetMs < minViableTimeout && i > 0) {
+      log.warn(`[Proxy] Remaining pool loop budget (${Math.round(remainingPoolBudgetMs / 1000)}s) is below minimum viable inference timeout (${minViableTimeout / 1000}s). Halting rotation to avoid guaranteed timeout failure.`);
+      if (!lastStatus || lastStatus === 200) lastStatus = 504;
+      if (!lastErrorText) lastErrorText = 'Pool loop budget exhausted before minimum viable inference timeout';
+      break;
+    }
+
+    const wasTimeoutCappedByBudget = poolHeaderTimeout > remainingPoolBudgetMs;
+    if (wasTimeoutCappedByBudget) {
       log.info(`[Proxy] Capping candidate timeout from ${Math.round(poolHeaderTimeout / 1000)}s to ${Math.round(remainingPoolBudgetMs / 1000)}s based on remaining pool loop budget`);
-      poolHeaderTimeout = remainingPoolBudgetMs;
+      poolHeaderTimeout = Math.max(minViableTimeout, remainingPoolBudgetMs);
     }
 
     const isFlashThinkingHedgeable = isFlashModel && isThinkingModel && !isLargePayload;
@@ -3387,13 +3401,20 @@ export async function executeGoogleCloudCodeWithPool(
         const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
         // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (transient server/thinking latency): 45s cooldown; outages: 45s.
         const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 45_000 : (isUpstreamOutage ? 45_000 : 30_000));
-        log.warn(
-          `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
-        );
-        setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
+        const isCappedTimeout = wasTimeoutCappedByBudget || (lastStatus === 504 && poolHeaderTimeout < baseCandidateTimeout);
+        if (lastStatus === 504 && isCappedTimeout) {
+          log.info(
+            `[Proxy] Account ${candidateName} timed out under capped/abbreviated timeout (${Math.round(poolHeaderTimeout / 1000)}s < ${Math.round(baseCandidateTimeout / 1000)}s). Skipping cooldown penalty to preserve healthy account.`,
+          );
+        } else {
+          log.warn(
+            `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
+          );
+          setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
+        }
         if (lastStatus === 504) {
-          recordAccountLatency(candidate, 60_000);
-          if (sessId) {
+          recordAccountLatency(candidate, isCappedTimeout ? Math.min(elapsedMs, 20_000) : 60_000);
+          if (sessId && !isCappedTimeout) {
             sessionAffinities.delete(sessId);
           }
         }
@@ -3415,9 +3436,8 @@ export async function executeGoogleCloudCodeWithPool(
         if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
           consecutive504TimeoutCount++;
           const combinedOutageCount = consecutive504TimeoutCount + consecutive503CapacityCount;
-          // Dynamically scale outage threshold with pool size: minimum 4 accounts or 15% of pool (max 6)
-          const poolOutageLimit = Math.max(4, Math.min(6, Math.ceil(sortedAccounts.length * 0.15)));
-          const outageThreshold = Math.max(poolOutageLimit, CONSECUTIVE_504_CASCADE_THRESHOLD);
+          // Dynamically scale outage threshold with pool size: strictly bounded to max 3 so 504s trigger fast failover before 210s budget expires
+          const outageThreshold = Math.min(3, Math.max(CONSECUTIVE_504_CASCADE_THRESHOLD, 2));
           if (consecutive504TimeoutCount >= outageThreshold || combinedOutageCount >= outageThreshold) {
             log.warn(
               `[Proxy] ⚠️ Cluster Failure Spike on [${targetModel}] (${consecutive504TimeoutCount} consecutive 504 timeouts, ${combinedOutageCount} total outages). Triggering fast failover / cascade to prevent pool freeze across ${totalAttempts} accounts...`,
@@ -7970,6 +7990,23 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
       }
     } catch { /* not JSON — continue as-is */ }
+
+    // Intercept unresolved placeholder models so internal placeholders never leak to Google upstream
+    if (/MODEL_PLACEHOLDER_/i.test(rawModelName) || /MODEL_PLACEHOLDER_/i.test(req.url || '')) {
+      log.warn(`[Proxy] Unresolved custom model placeholder [${rawModelName}] reached fallback proxy. Rejecting locally with 503 rather than forwarding invalid placeholder to Google.`);
+      if (!res.headersSent && !res.writableEnded) {
+        safeWriteHead(res, 503, { 'Content-Type': 'application/json' });
+        safeEnd(res, JSON.stringify({
+          error: {
+            code: 503,
+            status: 'UNAVAILABLE',
+            message: `Custom model placeholder [${rawModelName}] could not be resolved by local proxy. The model store may be reloading.`,
+          },
+        }));
+      }
+      return;
+    }
+
     await proxyToGoogle(req, res, fullBody, isSessionRemote, undefined, convId || '', undefined, sessId || '', rawModelName);
 
   });

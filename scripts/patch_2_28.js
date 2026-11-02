@@ -54,10 +54,36 @@ fs.readFileSync = function(pathStr, options) {
 const asar = require('@electron/asar');
 
 const defaultLocalAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-const defaultAsarOriginal = path.join(defaultLocalAppData, 'Programs', 'antigravity', 'resources', 'app.asar.backup-fresh-2.28.1');
 const defaultAsarOut = path.join(defaultLocalAppData, 'Programs', 'antigravity', 'resources', 'app.asar');
 
-const asarIn = process.argv[2] || (fs.existsSync(defaultAsarOriginal) ? defaultAsarOriginal : defaultAsarOut);
+function resolveAsarIn() {
+  if (process.argv[2]) return process.argv[2];
+
+  let hasOverlay = false;
+  if (fs.existsSync(defaultAsarOut)) {
+    try {
+      const listFn = asar.listPackage ?? (asar.default || {}).listPackage;
+      const files = listFn(defaultAsarOut) || [];
+      hasOverlay = files.some(e => String(e).replace(/\\/g, '/').includes('proxy-runner.js'));
+    } catch (_) {}
+  }
+
+  if (hasOverlay) {
+    const candidates = [
+      path.join(defaultLocalAppData, 'Programs', 'antigravity', 'resources', 'app.asar.backup-fresh-2.28.2'),
+      path.join(defaultLocalAppData, 'Programs', 'antigravity', 'resources', 'app.asar.backup-fresh-2.28.1'),
+      path.join(defaultLocalAppData, 'Programs', 'antigravity', 'resources', 'app.asar.backup-fresh'),
+      `${defaultAsarOut}.bak`,
+    ];
+    for (const cand of candidates) {
+      if (fs.existsSync(cand)) return cand;
+    }
+  }
+
+  return defaultAsarOut;
+}
+
+const asarIn = resolveAsarIn();
 const buildDir = process.argv[3] || path.join(os.tmpdir(), `ag-patch-2.28-stage-${Date.now()}`);
 const asarOut = process.argv[4] || defaultAsarOut;
 
@@ -124,6 +150,22 @@ async function main() {
   console.log(`[patch_2_28] Verified official package version: ${pkg.version}`);
   if (!pkg.version.startsWith('2.28.')) {
     console.warn(`[patch_2_28] Warning: expected v2.28.x but found v${pkg.version}. Proceeding with surgical surgery.`);
+  }
+
+  // Guarantee pristine backup of this specific version
+  const resourcesDir = path.dirname(asarOut);
+  const versionedBackup = path.join(resourcesDir, `app.asar.backup-fresh-${pkg.version}`);
+  const genericBackup = path.join(resourcesDir, 'app.asar.backup-fresh');
+  if (!fs.existsSync(versionedBackup) && fs.existsSync(asarIn)) {
+    try {
+      fs.copyFileSync(asarIn, versionedBackup);
+      console.log(`[patch_2_28] Created fresh pristine backup at: ${versionedBackup}`);
+    } catch (_) {}
+  }
+  if (!fs.existsSync(genericBackup) && fs.existsSync(asarIn)) {
+    try {
+      fs.copyFileSync(asarIn, genericBackup);
+    } catch (_) {}
   }
 
   // Backup official files to strictly guarantee zero-clobber
@@ -575,10 +617,21 @@ try {
 
   // 11. Repack asar (preserve chrome-devtools-mcp!)
   console.log('[patch_2_28] Step 7: Repacking app.asar (with unpackDir for MCP tools)...');
+
+  // Stop running Antigravity processes before writing asar to avoid EBUSY locks
+  if (process.platform === 'win32' && path.resolve(asarOut) === path.resolve(defaultAsarOut)) {
+    console.log('[patch_2_28] Ensuring Antigravity processes are closed before repacking...');
+    try {
+      execSync('powershell -Command "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
+      const waitStart = Date.now();
+      while (Date.now() - waitStart < 1200) {}
+    } catch (_) {}
+  }
+
   await asar.createPackageWithOptions(buildDir, asarOut, { unpackDir: '**/chrome-devtools-mcp' });
 
   // 12. Verification check
-  console.log('[patch_2_28] Step 8: Verifying repacked 2.28.1 integrity...');
+  console.log('[patch_2_28] Step 8: Verifying repacked 2.28.x integrity...');
   const repackedFiles = asar.listPackage(asarOut).map(f => f.replace(/\\/g, '/').replace(/^\//, ''));
   const hasMain = repackedFiles.includes('dist/main.js');
   const hasLS = repackedFiles.includes('dist/languageServer.js');
@@ -587,11 +640,12 @@ try {
   const hasProxyRunner = repackedFiles.includes('proxy-runner.js');
   const hasProxy = repackedFiles.includes('dist/proxy.js');
 
-  // Verify 2.28.1 specific features:
+  // Verify 2.28.x specific features:
   const hasScriptJail = repackedFiles.includes('dist/scriptJail.js');
   const hasWebviewBrowser = repackedFiles.includes('dist/webviewBrowser.js');
   const hasWebAuthn = repackedFiles.includes('dist/webauthn.js');
   const hasBeyondCorp = repackedFiles.includes('dist/beyondcorpPac.js');
+  const hasWebviewWebAuthn = repackedFiles.includes('dist/webviewWebAuthnPreload.js');
 
   console.log(`  dist/main.js present: ${hasMain}`);
   console.log(`  dist/languageServer.js present: ${hasLS}`);
@@ -599,13 +653,32 @@ try {
   console.log(`  dist/ideInstall/ present: ${hasIde}`);
   console.log(`  proxy-runner.js present: ${hasProxyRunner}`);
   console.log(`  dist/proxy.js present: ${hasProxy}`);
-  console.log(`  dist/scriptJail.js (2.28.1 feature) present: ${hasScriptJail}`);
-  console.log(`  dist/webviewBrowser.js (2.28.1 feature) present: ${hasWebviewBrowser}`);
-  console.log(`  dist/webauthn.js (2.28.1 feature) present: ${hasWebAuthn}`);
-  console.log(`  dist/beyondcorpPac.js (2.28.1 feature) present: ${hasBeyondCorp}`);
+  console.log(`  dist/scriptJail.js (2.28.x feature) present: ${hasScriptJail}`);
+  console.log(`  dist/webviewBrowser.js (2.28.x feature) present: ${hasWebviewBrowser}`);
+  console.log(`  dist/webauthn.js (2.28.x feature) present: ${hasWebAuthn}`);
+  console.log(`  dist/beyondcorpPac.js (2.28.x feature) present: ${hasBeyondCorp}`);
+  console.log(`  dist/webviewWebAuthnPreload.js (2.28.x feature) present: ${hasWebviewWebAuthn}`);
 
   if (!hasMain || !hasLS || !hasWSL || !hasIde || !hasProxyRunner || !hasScriptJail || !hasWebviewBrowser || !hasWebAuthn || !hasBeyondCorp) {
-    throw new Error('Integrity check failed: one or more required 2.28.1 components missing from repacked asar!');
+    throw new Error('Integrity check failed: one or more required 2.28.x components missing from repacked asar!');
+  }
+
+  // Update auto-heal cache in ~/.gemini/antigravity/scratch/
+  const scratchDir = path.join(os.homedir(), '.gemini', 'antigravity', 'scratch');
+  if (fs.existsSync(scratchDir)) {
+    try {
+      const cachedAsar = path.join(scratchDir, 'app.asar.patched');
+      fs.copyFileSync(asarOut, cachedAsar);
+      console.log(`[patch_2_28] Synced patched asar to auto-heal cache: ${cachedAsar}`);
+      const unpackedTarget = `${asarOut}.unpacked`;
+      const cachedUnpacked = path.join(scratchDir, 'app.asar.unpacked');
+      if (fs.existsSync(unpackedTarget)) {
+        copyRecursive(unpackedTarget, cachedUnpacked, true);
+        console.log(`[patch_2_28] Synced unpacked modules to auto-heal cache`);
+      }
+    } catch (e) {
+      console.warn(`[patch_2_28] Failed to update auto-heal cache:`, e.message);
+    }
   }
 
   // Clean staging
@@ -614,7 +687,7 @@ try {
   } catch (_) {}
 
   console.log('════════════════════════════════════════════════════════════════');
-  console.log(' [patch_2_28] SUCCESS: Clean surgical patch applied to v2.28.1!');
+  console.log(` [patch_2_28] SUCCESS: Clean surgical patch applied to v${pkg.version}!`);
   console.log('════════════════════════════════════════════════════════════════');
 }
 
