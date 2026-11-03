@@ -218,7 +218,11 @@ export function applyCpuOptimizations(customPaths?: string[]): {
         continue;
       }
 
-      const existing = parseJsonc(raw) || {};
+      const existing = parseJsonc(raw);
+      if (!existing) {
+        errors.push(`${filePath}: Failed to parse settings JSONC — skipping modification to prevent data loss`);
+        continue;
+      }
 
       // Deep merge object configs (files.watcherExclude, search.exclude, watchOptions)
       const merged: Record<string, unknown> = { ...existing };

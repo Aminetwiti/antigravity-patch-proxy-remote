@@ -661,6 +661,17 @@ try {
     throw new Error('Integrity check failed: one or more required 2.28.x components missing from repacked asar!');
   }
 
+  // Reconcile and clean conversation summaries (prevent archived resurrect)
+  try {
+    const reconciler = require('../dist/services/summaryReconciler');
+    if (typeof reconciler.reconcileSummariesOnBoot === 'function') {
+      const recRes = reconciler.reconcileSummariesOnBoot();
+      console.log('[patch_2_28] Reconciled summaries: archived=' + recRes.reconciledArchivedRawCount + ', fts=' + recRes.reconciledFtsCount + ', scrubbed=' + recRes.scrubbedStorageKeysCount);
+    }
+  } catch (e) {
+    console.warn('[patch_2_28] Summary reconciliation skipped:', e.message);
+  }
+
   // Update auto-heal cache in ~/.gemini/antigravity/scratch/
   const scratchDir = path.join(os.homedir(), '.gemini', 'antigravity', 'scratch');
   if (fs.existsSync(scratchDir)) {

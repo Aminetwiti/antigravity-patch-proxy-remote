@@ -5,7 +5,7 @@ import {
   filterSignalOnly,
   explainError,
   ParsedLogEntry,
-} from './log-viewer';
+} from '../components/log-viewer';
 
 describe('Log Viewer Facets & Error Explainability', () => {
   const sampleLogs: ParsedLogEntry[] = [

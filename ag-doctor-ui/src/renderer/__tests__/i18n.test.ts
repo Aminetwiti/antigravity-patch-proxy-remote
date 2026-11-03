@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { t, setLocale, getLocale, TRANSLATIONS } from './i18n';
+import { t, setLocale, getLocale, TRANSLATIONS } from '../utils/i18n';
 
 describe('ag-doctor-ui i18n Engine', () => {
   beforeEach(() => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { TrafficInspectorEngine } from './traffic-inspector';
-import { exportProvidersToJson, importProvidersFromJson, ExportableProviderConfig } from './config-export-import';
-import { evaluateSystemHealth, SystemHealthState } from './health-sentinel';
+import { TrafficInspectorEngine } from '../services/traffic-inspector';
+import { exportProvidersToJson, importProvidersFromJson, ExportableProviderConfig } from '../utils/config-export-import';
+import { evaluateSystemHealth, SystemHealthState } from '../services/health-sentinel';
 
 /**
  * Unit tests for Traffic Inspector, Config Export/Import & Health Sentinel Modules.

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CUSTOM_PROVIDER_FAILURE_SCENARIOS,
   findScenarioForError,
-} from './custom-error-scenarios';
+} from '../services/custom-error-scenarios';
 
 if (typeof globalThis.document === 'undefined') {
   // Minimal DOM stub so the showcase module can be imported and tested in Node.
@@ -45,7 +45,7 @@ import {
   renderFailureScenariosShowcase,
   wireShowcaseTrigger,
   wireShowcaseAutoRender,
-} from './failure-scenario-showcase';
+} from '../services/failure-scenario-showcase';
 
 describe('failure-scenario-showcase module (20 Tests)', () => {
   it('renders 0 when document.createElement is missing (defensive)', () => {

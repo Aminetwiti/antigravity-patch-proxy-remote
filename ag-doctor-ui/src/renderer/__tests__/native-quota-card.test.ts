@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NativeQuotaCardRenderer } from './native-quota-card';
+import { NativeQuotaCardRenderer } from '../components/native-quota-card';
 
 /**
  * Extended Unit Tests for NativeQuotaCardRenderer Component (50 Tests)

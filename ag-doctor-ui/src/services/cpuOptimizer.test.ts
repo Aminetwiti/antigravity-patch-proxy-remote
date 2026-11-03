@@ -93,4 +93,15 @@ describe('cpuOptimizer service', () => {
     expect(parsed['files.watcherExclude']['**/node_modules/**']).toBe(true);
     expect(parsed['typescript.tsserver.maxTsServerMemory']).toBe(2048);
   });
+
+  it('safely aborts and avoids wiping file if JSONC parsing fails (AUDIT-003)', () => {
+    const brokenContent = '{\n  "editor.fontSize": 14,\n  [corrupted syntax';
+    fs.writeFileSync(testSettingsPath, brokenContent, 'utf-8');
+    const res = applyCpuOptimizations([testSettingsPath]);
+    expect(res.success).toBe(false);
+    expect(res.errors.length).toBeGreaterThan(0);
+    expect(res.modified).toHaveLength(0);
+    // Ensure file was NOT overwritten with empty JSON
+    expect(fs.readFileSync(testSettingsPath, 'utf-8')).toBe(brokenContent);
+  });
 });

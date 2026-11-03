@@ -296,3 +296,48 @@ declare function triggerUpdateCheck(manual?: boolean): Promise<void>;
 // NOT redeclare it here to avoid TS2300 "Duplicate identifier" when both
 // files are compiled together. Consumers that need the type can refer to
 // it directly from smart-banner.ts via a triple-slash reference or import.
+
+// Shared Cross-View Declarations
+interface ProviderModel {
+  id: string;
+  name?: string;
+  displayName?: string;
+  enabled: boolean;
+  capabilities?: string[];
+  [key: string]: any;
+}
+
+interface ProviderEntry {
+  id: string;
+  name: string;
+  provider: string;
+  apiUrl: string;
+  apiKey: string;
+  enabled: boolean;
+  allowUnauthorized?: boolean;
+  models: ProviderModel[];
+  accounts?: any[];
+  status?: 'healthy' | 'degraded' | 'offline' | 'untested';
+  latencyMs?: number;
+  lastLatencyMs?: number;
+  lastTestedAt?: string;
+  lastError?: string;
+  picture?: string;
+  [key: string]: any;
+}
+
+declare let allLoadedModels: any[];
+declare let providersCache: ProviderEntry[];
+declare let googleAccountsCache: any[];
+declare function detectModelCapabilities(id: string): string[];
+declare function renderProviderList(container?: any): void;
+declare function openProviderManagerModal(provider?: any): void;
+declare function openProviderForm(provider?: any): void;
+declare function showAntigravityVerificationResolutionModal(data?: any): void;
+declare function loadGoogleAccounts(showSpinner?: boolean): Promise<void>;
+declare function loadModels(): Promise<void>;
+declare function loadLogs(): Promise<void>;
+declare function loadTraffic(): Promise<void>;
+declare function loadDashboard(): Promise<void>;
+declare function loadRemoteView(): Promise<void>;
+

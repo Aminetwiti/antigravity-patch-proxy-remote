@@ -219,6 +219,15 @@ function ensureOnboardingCompleted() {
 app.whenReady().then(async () => {
   w('runner: app ready');
   ensureOnboardingCompleted();
+  try {
+    const reconciler = require('./dist/services/summaryReconciler');
+    if (typeof reconciler.reconcileSummariesOnBoot === 'function') {
+      const recRes = reconciler.reconcileSummariesOnBoot();
+      w('runner: reconcileSummariesOnBoot executed: ' + JSON.stringify(recRes));
+    }
+  } catch (e) {
+    w('runner: reconcileSummariesOnBoot failed (non-blocking): ' + (e && e.message || e));
+  }
   // MITM-443 auto-launch — only if explicitly enabled via AG_ENABLE_MITM
   if (process.env.AG_ENABLE_MITM === '1') {
     try { spawnAntigravityMitm443(); } catch (e) { w('runner: MITM-443 dispatch threw: ' + (e && e.stack || e)); }

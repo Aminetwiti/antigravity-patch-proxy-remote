@@ -2965,29 +2965,49 @@
     </div>
   </div>
 
-  <script src="state.js"></script>
-  <script src="providers-config.js"></script>
-  <script src="i18n.js"></script>
-  <script src="error-decoder.js"></script>
-  <script src="modal-manager.js"></script>
-  <script src="smart-banner.js"></script>
-  <script src="traffic-inspector.js"></script>
-  <script src="config-export-import.js"></script>
-  <script src="account-import.js"></script>
-  <script src="health-sentinel.js"></script>
-  <script src="failure-scenario-showcase.js"></script>
-  <script src="custom-error-scenarios.js"></script>
-  <script src="native-quota-card.js"></script>
-  <script src="execution-feed.js"></script>
-  <script src="log-viewer.js"></script>
-  <script src="log-minimap.js"></script>
-  <script src="log-inspector.js"></script>
-  <script src="ping-pong-tester.js"></script>
-  <script src="token-tracker.js"></script>
-  <script src="google-accounts-telemetry.js"></script>
-  <script src="update-notification.js"></script>
-  <script src="app.js"></script>
-  <script src="features.js"></script>
+  <!-- Core & State -->
+  <script src="core/state.js"></script>
+  <script src="core/providers-config.js"></script>
+  <script src="utils/i18n.js"></script>
+  <script src="services/error-decoder.js"></script>
+  <script src="components/modal-manager.js"></script>
+  <script src="components/smart-banner.js"></script>
+  <script src="services/traffic-inspector.js"></script>
+  <script src="utils/config-export-import.js"></script>
+  <script src="services/account-import.js"></script>
+  <script src="services/health-sentinel.js"></script>
+  <script src="services/failure-scenario-showcase.js"></script>
+  <script src="services/custom-error-scenarios.js"></script>
+  <script src="components/native-quota-card.js"></script>
+  <script src="components/execution-feed.js"></script>
+  <script src="components/log-viewer.js"></script>
+  <script src="components/log-minimap.js"></script>
+  <script src="components/log-inspector.js"></script>
+  <script src="services/ping-pong-tester.js"></script>
+  <script src="services/token-tracker.js"></script>
+  <script src="services/google-accounts-telemetry.js"></script>
+  <script src="services/update-notification.js"></script>
+
+  <!-- Modularized Renderer View Controllers & UI -->
+  <script src="utils/dom-utils.js"></script>
+  <script src="utils/ansi-formatter.js"></script>
+  <script src="core/nav-router.js"></script>
+  <script src="components/command-palette.js"></script>
+  <script src="components/modal-provider.js"></script>
+  <script src="views/view-traffic.js"></script>
+  <script src="views/view-dashboard.js"></script>
+  <script src="views/view-diagnostic.js"></script>
+  <script src="views/view-models.js"></script>
+  <script src="views/view-mitm.js"></script>
+  <script src="views/view-patch.js"></script>
+  <script src="views/view-logs.js"></script>
+  <script src="views/view-antigravity.js"></script>
+  <script src="views/view-settings.js"></script>
+  <script src="views/view-remote.js"></script>
+  <script src="views/view-google-accounts.js"></script>
+
+  <script src="core/app.js"></script>
+  <script src="core/features.js"></script>
 </body>
 </html>
 

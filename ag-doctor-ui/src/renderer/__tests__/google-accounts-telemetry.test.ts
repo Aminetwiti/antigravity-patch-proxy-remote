@@ -17,7 +17,7 @@ import {
   GEMINI_5H_QUOTA_TOKENS,
   GEMINI_WEEKLY_RATIO,
   CLAUDE_5H_TO_WEEKLY_RATIO,
-} from './google-accounts-telemetry';
+} from '../services/google-accounts-telemetry';
 
 describe('google-accounts-telemetry', () => {
   describe('calculatePoolRunway', () => {

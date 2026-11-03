@@ -4,7 +4,7 @@ import {
   calculatePoolRunway,
   getPoolFallbackChain,
   isAccountInCooldownTelemetry,
-} from './google-accounts-telemetry';
+} from '../services/google-accounts-telemetry';
 
 describe('Audit Remediation (AUDIT-001 through AUDIT-004)', () => {
   describe('AUDIT-001: Model Family Cooldown Isolation in Telemetry', () => {

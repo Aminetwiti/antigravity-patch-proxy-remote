@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { NativeQuotaCardRenderer } from './native-quota-card';
+import { NativeQuotaCardRenderer } from '../components/native-quota-card';
 import {
   CUSTOM_PROVIDER_FAILURE_SCENARIOS,
   findScenarioForError,
   type FailureScenario,
-} from './custom-error-scenarios';
+} from '../services/custom-error-scenarios';
 
 /**
  * Integration tests: NativeQuotaCardRenderer + FailureScenario catalog.

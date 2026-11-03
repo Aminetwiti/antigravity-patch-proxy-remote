@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ExecutionFeedRenderer, ExecutionStepItem } from './execution-feed';
+import { ExecutionFeedRenderer, ExecutionStepItem } from '../components/execution-feed';
 
 describe('ExecutionFeedRenderer — Antigravity 2.0 Fidelity Tests', () => {
   const renderer = new ExecutionFeedRenderer();

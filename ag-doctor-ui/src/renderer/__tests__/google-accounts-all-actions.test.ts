@@ -4,7 +4,7 @@ import {
   normalizeAccountEntry,
   findMatchingAccount,
   mergeAccountWithExisting,
-} from './account-import';
+} from '../services/account-import';
 
 describe('Google Accounts — Comprehensive Actions Validation', () => {
   let mockAccounts: any[];

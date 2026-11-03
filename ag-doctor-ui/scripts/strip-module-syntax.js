@@ -15,8 +15,21 @@ const path = require('path');
 const dir = path.join(__dirname, '..', 'dist', 'renderer');
 let patched = 0;
 
-for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
-  const fp = path.join(dir, f);
+function getAllJsFiles(directory) {
+  let files = [];
+  if (!fs.existsSync(directory)) return files;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files = files.concat(getAllJsFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+for (const fp of getAllJsFiles(dir)) {
   const src = fs.readFileSync(fp, 'utf8');
   const out = src
     .replace(/^export\s*\{[^}]*\}\s*;?\s*$/gm, '') // export { x } → (removed)

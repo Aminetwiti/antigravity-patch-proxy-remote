@@ -2333,7 +2333,7 @@ export async function executeGoogleCloudCodeWithPool(
   }
 
   const poolLoopStartTime = Date.now();
-  const MAX_POOL_LOOP_DURATION_MS = 210_000; // 3m30s max: prevents Go Language Server 5m0s stream idle timeout
+  const MAX_POOL_LOOP_DURATION_MS = 280_000; // 3m30s max: prevents Go Language Server 5m0s stream idle timeout
 
   let networkAttemptCount = 0;
   for (let i = 0; i < sortedAccounts.length && networkAttemptCount < totalAttempts; i++) {
@@ -5903,6 +5903,64 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       });
       return;
     }
+  }
+
+  // Plugin Disk Sync Bridge (GET/POST /api/plugins/install and /api/plugins/uninstall)
+  if (req.url === '/api/plugins/install' && req.method === 'POST') {
+    const chunks: Buffer[] = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+        const item = body.item || {};
+        const id = body.id || item.id || '';
+        const slug = item.slug || (id ? id.split('/').pop() : 'plugin');
+        const pluginsBase = path.join(os.homedir(), '.gemini', 'config', 'plugins');
+        const targetDir = path.join(pluginsBase, slug);
+        fs.mkdirSync(targetDir, { recursive: true });
+        const pluginJson = {
+          name: slug,
+          displayName: item.displayName || slug,
+          version: item.version || '1.0.0',
+          description: item.description || '',
+          logo: item.logo || '',
+          suggestedPrompts: item.suggestedPrompts || [],
+          keywords: item.tags || []
+        };
+        fs.writeFileSync(path.join(targetDir, 'plugin.json'), JSON.stringify(pluginJson, null, 2), 'utf-8');
+        if (item.readme) {
+          fs.writeFileSync(path.join(targetDir, 'README.md'), item.readme, 'utf-8');
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: true, installDir: targetDir }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: false, error: err?.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.url === '/api/plugins/uninstall' && req.method === 'POST') {
+    const chunks: Buffer[] = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+        const rawId = body.pluginId || body.id || body.slug || '';
+        const slug = rawId.split('/').pop() || rawId;
+        const targetDir = path.join(os.homedir(), '.gemini', 'config', 'plugins', slug);
+        if (fs.existsSync(targetDir)) {
+          fs.rmSync(targetDir, { recursive: true, force: true });
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: false, error: err?.message }));
+      }
+    });
+    return;
   }
 
   // UI & Chat Enhancements Configuration Bridge (GET/POST /api/ui/config)

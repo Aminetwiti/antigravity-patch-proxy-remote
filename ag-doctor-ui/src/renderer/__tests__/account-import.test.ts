@@ -4,7 +4,7 @@ import {
   normalizeAccountEntry,
   findMatchingAccount,
   mergeAccountWithExisting,
-} from './account-import';
+} from '../services/account-import';
 
 describe('Account Import & Normalization', () => {
   it('parses raw array format (antigravity_accounts_2026-09-11.json)', () => {

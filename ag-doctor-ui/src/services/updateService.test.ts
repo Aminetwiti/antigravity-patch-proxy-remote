@@ -5,6 +5,7 @@ import {
   compareVersions,
   shouldCheckForUpdates,
   matchAssetForPlatform,
+  downloadUpdate,
   loadUpdateSettings,
   saveUpdateSettings,
   getSettingsPath,
@@ -187,6 +188,14 @@ describe('UpdateService - SemVer Comparison & Core Logic', () => {
         channel: 'stable',
         checkIntervalHours: 24,
       });
+    });
+  });
+
+  describe('Security validation (AUDIT-001)', () => {
+    it('rejects unencrypted HTTP download urls', async () => {
+      const res = await downloadUpdate('http://example.com/untrusted.exe');
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('HTTPS');
     });
   });
 });

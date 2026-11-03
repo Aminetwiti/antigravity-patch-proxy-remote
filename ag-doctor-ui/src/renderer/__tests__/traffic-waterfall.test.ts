@@ -5,7 +5,7 @@ import {
   computeTimingBreakdown,
   filterByStatusCategory,
   TrafficEntry,
-} from './traffic-inspector';
+} from '../services/traffic-inspector';
 
 describe('Traffic Waterfall & cURL Generation Module', () => {
   it('computes timing breakdown with DNS, TLS, TTFT and Stream durations', () => {

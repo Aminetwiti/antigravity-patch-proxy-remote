@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LogInspectorDrawer, detectRemediation } from './log-inspector';
-import { ParsedLogEntry } from './log-viewer';
+import { LogInspectorDrawer, detectRemediation } from '../components/log-inspector';
+import { ParsedLogEntry } from '../components/log-viewer';
 
 describe('LogInspector - Remediation detection', () => {
   it('detects 429 quota exhaustion remediation', () => {

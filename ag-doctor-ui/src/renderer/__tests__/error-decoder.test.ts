@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { decodeCustomProviderError, decodeError, formatBytes, parseResetSeconds } from './error-decoder';
+import { decodeCustomProviderError, decodeError, formatBytes, parseResetSeconds } from '../services/error-decoder';
 
 describe('parseResetSeconds', () => {
   it('parses "retry-after: 45"', () => {

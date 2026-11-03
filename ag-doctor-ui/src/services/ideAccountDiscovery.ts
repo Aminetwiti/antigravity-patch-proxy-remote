@@ -1102,10 +1102,32 @@ export function switchActiveIdeAccount(params: {
 
       if (row && row.value) {
         let text = Buffer.from(row.value, 'base64').toString('utf8');
-        text = text.replace(/ya29\.[A-Za-z0-9_-]+/, params.accessToken);
-        if (params.refreshToken) {
-          text = text.replace(/(?:g1\/\/|1\/\/)[A-Za-z0-9_-]+/, params.refreshToken);
+        const origText = text;
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object') {
+            parsed.access_token = params.accessToken;
+            if (params.refreshToken) parsed.refresh_token = params.refreshToken;
+            text = JSON.stringify(parsed);
+          }
+        } catch {
+          text = text.replace(/ya29\.[A-Za-z0-9_-]+/, params.accessToken);
+          if (params.refreshToken) {
+            text = text.replace(/(?:g1\/\/|1\/\/)[A-Za-z0-9_-]+/, params.refreshToken);
+          }
         }
+
+        // If pattern replacement did not match (e.g. non-ya29 token format), build clean token blob (AUDIT-006)
+        if (text === origText && !text.includes(params.accessToken)) {
+          const fallbackObj = {
+            access_token: params.accessToken,
+            refresh_token: params.refreshToken || '',
+            token_type: 'Bearer',
+            expiry_date: Date.now() + 3600 * 1000,
+          };
+          text = JSON.stringify(fallbackObj);
+        }
+
         const newVal = Buffer.from(text, 'utf8').toString('base64');
         db.prepare("UPDATE ItemTable SET value = ? WHERE key = 'antigravityUnifiedStateSync.oauthToken'").run(newVal);
       } else {

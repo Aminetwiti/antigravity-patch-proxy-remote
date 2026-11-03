@@ -405,8 +405,17 @@ export async function downloadUpdate(
     }
 
     const parsed = new URL(targetUrl);
+    if (parsed.protocol !== 'https:') {
+      return { success: false, error: `Insecure protocol ${parsed.protocol} rejected — updates require HTTPS` };
+    }
     const baseName = path.basename(parsed.pathname) || 'ag-doctor-update.exe';
-    const tempDir = path.join(app.getPath('temp'), 'ag-doctor-updates');
+    let tempBase = '';
+    try {
+      tempBase = app.getPath('temp');
+    } catch {
+      tempBase = require('os').tmpdir();
+    }
+    const tempDir = path.join(tempBase, 'ag-doctor-updates');
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
@@ -437,7 +446,10 @@ export async function downloadUpdate(
         }
 
         const u = new URL(urlStr);
-        const transport = u.protocol === 'http:' ? http : https;
+        if (u.protocol !== 'https:') {
+          return reject(new Error(`Insecure protocol ${u.protocol} rejected — updates require HTTPS`));
+        }
+        const transport = https;
 
         const req = transport.get(
           urlStr,
@@ -539,12 +551,18 @@ export async function installUpdate(filePath?: string, silent = false): Promise<
 
         // If running in portable mode and the original portable executable path is known, swap in place
         if (isPort && origPortableFile && fs.existsSync(origPortableFile)) {
+          const sanitizeWinPath = (p: string) => p.replace(/["%^&|<>]/g, '');
+          const cleanTarget = sanitizeWinPath(targetPath);
+          const cleanOrig = sanitizeWinPath(origPortableFile);
+          if (!cleanTarget || !cleanOrig) {
+            return { success: false, error: 'Invalid update target path' };
+          }
           const batPath = path.join(app.getPath('temp'), `update-portable-${Date.now()}.bat`);
           const batContent = [
             '@echo off',
             'ping 127.0.0.1 -n 2 > nul',
-            `copy /y "${targetPath}" "${origPortableFile}" > nul`,
-            `start "" "${origPortableFile}"`,
+            `copy /y "${cleanTarget}" "${cleanOrig}" > nul`,
+            `start "" "${cleanOrig}"`,
             `del "%~f0"`,
           ].join('\r\n');
           fs.writeFileSync(batPath, batContent, 'utf8');

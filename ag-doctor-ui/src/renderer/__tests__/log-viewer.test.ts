@@ -8,7 +8,7 @@ import {
   escapeHtml,
   matchesFacetedQuery,
   sanitizeLogText,
-} from './log-viewer';
+} from '../components/log-viewer';
 
 describe('Structured Log Viewer - classifyLogLevel', () => {
   it('classifies Go glog ERROR prefix as error', () => {

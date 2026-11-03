@@ -131,9 +131,13 @@ class ProxyManager {
         // intercepted request (`kind: 'mitm:traffic'`). We fan it out to every
         // BrowserWindow as `mitm:traffic` IPC so the Traffic Inspector view can
         // paint in real time. Non-JSON lines are passed through to the console.
+        let stdoutBuf = '';
         this.proxyProcess.stdout?.on('data', (data) => {
-          const output = data.toString();
-          for (const line of output.split('\n')) {
+          stdoutBuf += data.toString();
+          let idx;
+          while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
+            const line = stdoutBuf.slice(0, idx);
+            stdoutBuf = stdoutBuf.slice(idx + 1);
             const trimmed = line.trim();
             if (!trimmed) continue;
             if (trimmed.startsWith('{')) {
@@ -155,20 +159,27 @@ class ProxyManager {
 
         // Capture stderr — the proxy uses this channel to emit structured
         // JSON proxy errors (one per line) so the tray/renderer can react.
+        let stderrBuf = '';
         this.proxyProcess.stderr?.on('data', (data) => {
-          const output = data.toString().trim();
-          log.error(`[ProxyServer] ERROR: ${output}`);
-          for (const line of output.split('\n')) {
-            if (!line.startsWith('{')) continue;
-            try {
-              const payload = JSON.parse(line);
-              if (payload && payload.provider && payload.title) {
-                for (const win of BrowserWindow.getAllWindows()) {
-                  if (!win.isDestroyed()) win.webContents.send('proxy:error', payload);
+          stderrBuf += data.toString();
+          let idx;
+          while ((idx = stderrBuf.indexOf('\n')) >= 0) {
+            const line = stderrBuf.slice(0, idx);
+            stderrBuf = stderrBuf.slice(idx + 1);
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            log.error(`[ProxyServer] ERROR: ${trimmed}`);
+            if (trimmed.startsWith('{')) {
+              try {
+                const payload = JSON.parse(trimmed);
+                if (payload && payload.provider && payload.title) {
+                  for (const win of BrowserWindow.getAllWindows()) {
+                    if (!win.isDestroyed()) win.webContents.send('proxy:error', payload);
+                  }
                 }
+              } catch {
+                // Not JSON — leave it for the console log.
               }
-            } catch {
-              // Not JSON — leave it for the console log.
             }
           }
         });

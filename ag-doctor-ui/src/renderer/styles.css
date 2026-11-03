@@ -4332,11 +4332,14 @@ body.is-window-blurred *::after,
   border-color: rgba(249, 115, 22, 0.5) !important;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25) !important;
 }
+.ga-action-btn.ga-delete {
+  color: var(--text-3);
+}
 .ga-action-btn.ga-delete:hover {
-  background: rgba(239, 68, 68, 0.2) !important;
+  background: rgba(239, 68, 68, 0.22) !important;
   color: #f87171 !important;
   border-color: rgba(239, 68, 68, 0.6) !important;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25) !important;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3) !important;
 }
 
 /* LED indicator for Primary Active Account */
@@ -4393,9 +4396,31 @@ body.is-window-blurred *::after,
 #gaAccountsContainer {
   transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
+.ga-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+.ga-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.ga-table th,
+.ga-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+}
+.ga-table th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.05em;
+  background: var(--bg-1, #18181b);
+}
 .ga-table-wrapper,
 .agy-provider-row {
-  animation: ga-fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Fluid entrance on mount */
 }
 @keyframes ga-fade-in {
   from {
@@ -4660,7 +4685,6 @@ body.is-window-blurred *::after,
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   font-weight: 700;
   letter-spacing: 0.3px;
-  animation: ga-target-glow 2.4s infinite ease-in-out;
 }
 @keyframes ga-target-glow {
   0%, 100% {

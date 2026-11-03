@@ -872,7 +872,6 @@
         suggested_prompts: item.suggestedPrompts || [],
         readme: item.readme || ('# ' + (item.displayName || pluginSlug) + '\n\n' + (item.description || ''))
       };
-    }) || null;
     }
 
 
@@ -1115,15 +1114,29 @@
         }
       }
 
+            function extractRequestBodyText(callArgs) {
+        try {
+          const raw = callArgs[1]?.body || (callArgs[0] && callArgs[0].body);
+          if (!raw) return '';
+          if (typeof raw === 'string') return raw;
+          const u8 = raw instanceof Uint8Array ? raw : (raw.buffer ? new Uint8Array(raw.buffer, raw.byteOffset || 0, raw.byteLength || raw.length) : null);
+          if (u8) {
+            if (u8.length > 5 && u8[0] === 0) {
+              const len = new DataView(u8.buffer, u8.byteOffset, 5).getUint32(1, false);
+              return new TextDecoder().decode(u8.subarray(5, 5 + len));
+            }
+            return new TextDecoder().decode(u8);
+          }
+        } catch (_) {}
+        return '';
+      }
+
       // 6. Intercept GetMarketplaceCustomization: return full details, SVG icon, and rich capabilities
       if (isMarketplaceCustomization) {
         try {
           let targetId = '';
           try {
-            let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
-            if (!bText && args[0]?.body) {
-              bText = typeof args[0].body === 'string' ? args[0].body : new TextDecoder().decode(args[0].body);
-            }
+            const bText = extractRequestBodyText(args);
             if (bText) {
               const idMatch = bText.match(/"id"\s*:\s*"([^"]+)"/);
               if (idMatch && idMatch[1]) {
@@ -1201,37 +1214,46 @@
         }
       }
 
-      // 6.5 Intercept SubscribeToPlugins: gracefully declare unimplemented so CustomizationsStore seamlessly falls back to GetAllPlugins refresh
+      // 6.5 Intercept SubscribeToPlugins: return Unimplemented (code 12) so CustomizationsStore cleanly disables streaming and falls back to GetAllPlugins without stream errors
       if (isSubscribeToPlugins) {
-        return new Response(JSON.stringify({
-          code: 'unimplemented',
-          message: 'SubscribeToPlugins is not supported'
-        }), {
-          status: 501,
+        return new Response('', {
+          status: 404,
           headers: {
-            'content-type': 'application/json',
-            'connect-protocol-version': '1'
+            'content-type': 'application/grpc-web+proto',
+            'grpc-status': '12',
+            'grpc-message': 'Unimplemented',
+            'x-grpc-web': '1'
           }
         });
       }
 
-      // 6.6 Intercept GetAllPlugins: merge native language-server plugins with user-added marketplace plugins
+      // 6.6 Intercept GetAllPlugins: decode gRPC-Web framing, merge native plugins with user-added marketplace plugins
       if (isGetAllPlugins) {
         try {
+          const origRes = await origFetch.apply(this, args);
           let origPlugins = [];
-          try {
-            const origRes = await origFetch.apply(this, args);
-            if (origRes.ok) {
-              const origData = await origRes.clone().json();
-              if (Array.isArray(origData.plugins)) {
-                origPlugins = origData.plugins;
+          if (origRes && origRes.ok) {
+            try {
+              const origBuf = await origRes.clone().arrayBuffer();
+              const u8 = new Uint8Array(origBuf);
+              let jsonText = '';
+              if (u8.length > 5 && u8[0] === 0) {
+                const len = new DataView(u8.buffer, u8.byteOffset, 5).getUint32(1, false);
+                jsonText = new TextDecoder().decode(u8.subarray(5, 5 + len));
+              } else {
+                jsonText = new TextDecoder().decode(u8);
               }
+              if (jsonText) {
+                const parsed = JSON.parse(jsonText);
+                if (Array.isArray(parsed.plugins)) origPlugins = parsed.plugins;
+              }
+            } catch (decErr) {
+              console.warn('[AG] Could not parse orig plugins buffer in GetAllPlugins:', decErr);
             }
-          } catch (_) {}
+          }
 
           const installedList = getInstalledPluginsList();
           const merged = [...origPlugins];
-
           for (const id of installedList) {
             const item = findPluginItem(id);
             if (!item) continue;
@@ -1255,10 +1277,7 @@
       if (isGetPlugin) {
         let pluginId = '';
         try {
-          let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
-          if (!bText && args[0]?.body) {
-            bText = typeof args[0].body === 'string' ? args[0].body : new TextDecoder().decode(args[0].body);
-          }
+          const bText = extractRequestBodyText(args);
           if (bText) {
             const pMatch = bText.match(/"pluginId"\s*:\s*"([^"]+)"/);
             if (pMatch && pMatch[1]) pluginId = pMatch[1];
@@ -1277,17 +1296,18 @@
         }
       }
 
-      // 7. Intercept InstallCustomization: register in persistent installed store and acknowledge
+      // 7. Intercept InstallCustomization: register in persistent installed store and disk
       if (isInstallCustomization) {
         let targetId = '';
         try {
-          let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
-          if (!bText && args[0]?.body) {
-            bText = typeof args[0].body === 'string' ? args[0].body : new TextDecoder().decode(args[0].body);
-          }
+          const bText = extractRequestBodyText(args);
           if (bText) {
             const idMatch = bText.match(/"id"\s*:\s*"([^"]+)"/);
             if (idMatch && idMatch[1]) targetId = idMatch[1];
+          }
+          if (!targetId && typeof url === 'string') {
+            const u = new URL(url, 'http://127.0.0.1');
+            if (u.searchParams.get('id')) targetId = u.searchParams.get('id');
           }
         } catch (_) {}
         const pItem = findPluginItem(targetId);
@@ -1295,21 +1315,26 @@
         if (targetId) {
           addInstalledPlugin(targetId);
         }
+        try {
+          fetch(LOCAL_PROXY_ORIGIN + '/api/plugins/install', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id: targetId, item: pItem || { id: targetId, slug: slug } })
+          }).catch(() => {});
+        } catch (_) {}
         return formatResponse({
           success: true,
           message: 'Plugin ' + (pItem ? pItem.displayName : slug) + ' installed successfully.',
-          installDir: '~/.gemini/config/plugins/' + slug
+          installDir: '~/.gemini/config/plugins/' + slug,
+          install_dir: '~/.gemini/config/plugins/' + slug
         }, reqHeaders);
       }
 
-      // 7.5 Intercept DeletePlugin: remove from persistent installed store
+      // 7.5 Intercept DeletePlugin: remove from persistent installed store and disk
       if (isDeletePlugin) {
         let pluginId = '';
         try {
-          let bText = typeof args[1]?.body === 'string' ? args[1].body : (args[1]?.body ? new TextDecoder().decode(args[1].body) : '');
-          if (!bText && args[0]?.body) {
-            bText = typeof args[0].body === 'string' ? args[0].body : new TextDecoder().decode(args[0].body);
-          }
+          const bText = extractRequestBodyText(args);
           if (bText) {
             const pMatch = bText.match(/"pluginId"\s*:\s*"([^"]+)"/);
             if (pMatch && pMatch[1]) pluginId = pMatch[1];
@@ -1322,26 +1347,20 @@
         if (pluginId) {
           removeInstalledPlugin(pluginId);
         }
+        try {
+          fetch(LOCAL_PROXY_ORIGIN + '/api/plugins/uninstall', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ pluginId: pluginId })
+          }).catch(() => {});
+        } catch (_) {}
         return formatResponse({
           success: true,
           message: 'Plugin uninstalled successfully.'
         }, reqHeaders);
       }
-          if (bText) {
-            const idMatch = bText.match(/"id"\s*:\s*"([^"]+)"/);
-            if (idMatch && idMatch[1]) targetId = idMatch[1];
-          }
-        } catch (_) {}
-        const pItem = findPluginItem(targetId);
-        const slug = pItem ? pItem.slug : (targetId.split('/').pop() || 'customization');
-        return formatResponse({
-          success: true,
-          message: 'Plugin ' + (pItem ? pItem.displayName : slug) + ' installed successfully.',
-          installDir: '~/.gemini/antigravity/plugins/' + slug
-        }, reqHeaders);
-      }
 
-      // 8. Intercept SearchMarketplaceCustomizations: return empty for internal Google CL extensions
+// 8. Intercept SearchMarketplaceCustomizations: return empty for internal Google CL extensions
       if (isSearchMarketplaceCustomizations) {
         return formatResponse({
           extensions: [],

@@ -8,6 +8,8 @@ export interface TokenPrice {
   outputPerMillion: number;
 }
 
+const sharedTextEncoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+
 export const MODEL_PRICING: Record<string, TokenPrice> = {
   'gemini-4-argon-medium': { inputPerMillion: 1.25, outputPerMillion: 5.0 },
   'gemini-3.8-pro': { inputPerMillion: 1.25, outputPerMillion: 5.0 },
@@ -278,7 +280,7 @@ export function tokenizeText(text: string, modelName = 'gemini-3.8-flash'): Toke
 
   const getBytes = (s: string) => {
     try {
-      return new TextEncoder().encode(s).length;
+      return sharedTextEncoder ? sharedTextEncoder.encode(s).length : s.length;
     } catch (_) {
       return s.length;
     }

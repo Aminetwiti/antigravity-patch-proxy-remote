@@ -91,7 +91,7 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
       orphanIds.push(row.conversation_id);
       toDeleteIds.add(row.conversation_id);
     } else if (archivedIds.has(row.conversation_id)) {
-      toDeleteIds.add(row.conversation_id);
+      // Keep archived conversations in DB with archived: true so Language Server never resurrects them
       archivedCount++;
     }
   }
@@ -191,6 +191,12 @@ export function pruneConversationSummaries(options: { dryRun?: boolean; dataDir?
       writeDb.exec("UPDATE conversation_summaries SET not_fully_idle = 0, status = 'CASCADE_RUN_STATUS_IDLE' WHERE not_fully_idle = 1 OR status = 'CASCADE_RUN_STATUS_RUNNING';");
     } catch (_) {}
     writeDb.exec('COMMIT;');
+
+    // Reconcile and fix any out-of-sync archived annotations in SQLite
+    try {
+      const { reconcileSummariesOnBoot } = require('../../../src/services/summaryReconciler');
+      reconcileSummariesOnBoot({ dataDir });
+    } catch (_) {}
 
     // Checkpoint WAL and VACUUM to reclaim space
     try {

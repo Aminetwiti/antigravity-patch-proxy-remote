@@ -6,7 +6,7 @@ import {
   formatApiError,
   testSingleModel,
   testBatchModels,
-} from './ping-pong-tester';
+} from '../services/ping-pong-tester';
 
 describe('ping-pong-tester module', () => {
   describe('getSpeedTier', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LogMinimap } from './log-minimap';
+import { LogMinimap } from '../components/log-minimap';
 
 describe('LogMinimap - Canvas error barcode', () => {
   it('instantiates and handles entries safely in headless environment', () => {

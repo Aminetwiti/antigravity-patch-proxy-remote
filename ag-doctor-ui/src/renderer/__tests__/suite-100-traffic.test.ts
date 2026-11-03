@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TrafficInspectorEngine, TrafficEntry } from './traffic-inspector';
+import { TrafficInspectorEngine, TrafficEntry } from '../services/traffic-inspector';
 
 /**
  * Suite 100+: Comprehensive Unit Tests for Traffic Export, Retry & Filter Engine

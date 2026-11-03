@@ -1,5 +1,6 @@
 import http from 'http';
 import https from 'https';
+import crypto from 'crypto';
 import { shell, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
@@ -200,7 +201,17 @@ function getSuccessHtml(): string {
 </html>`;
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function getErrorHtml(message: string): string {
+  const safeMessage = escapeHtml(message);
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -216,7 +227,7 @@ function getErrorHtml(message: string): string {
 <body>
   <div class="card">
     <h1>Échec de la connexion</h1>
-    <p>${message}</p>
+    <p>${safeMessage}</p>
   </div>
 </body>
 </html>`;
@@ -405,6 +416,7 @@ export async function startGoogleOAuthLogin(
     'https://www.googleapis.com/auth/userinfo.profile',
   ].join(' ');
 
+  const oauthState = crypto.randomBytes(16).toString('hex');
   const authParams: Record<string, string> = {
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -412,6 +424,7 @@ export async function startGoogleOAuthLogin(
     scope: scopes,
     access_type: 'offline',
     prompt: 'consent',
+    state: oauthState,
   };
   if (loginHint && typeof loginHint === 'string' && loginHint.includes('@')) {
     authParams.login_hint = loginHint.trim();
@@ -436,6 +449,15 @@ export async function startGoogleOAuthLogin(
       if (reqUrl.pathname !== '/oauth2callback') {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not found');
+        return;
+      }
+
+      const receivedState = reqUrl.searchParams.get('state');
+      if (!receivedState || receivedState !== oauthState) {
+        res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(getErrorHtml('Requête OAuth invalide ou expirée (state mismatch).'));
+        cleanup();
+        resolve({ success: false, error: 'OAuth state mismatch (potential CSRF)' });
         return;
       }
 

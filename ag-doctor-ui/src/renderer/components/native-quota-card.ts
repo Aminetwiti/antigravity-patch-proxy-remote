@@ -131,7 +131,7 @@ if (typeof exports !== 'undefined') {
 // matching native quota/error card in the #modalBackdrop managed by
 // ModalManager. The bridge is a tiny singleton — no need for a full
 // controller class when the only job is to map a payload to a scenario.
-import { findScenarioForError, type FailureScenario } from './custom-error-scenarios';
+import { findScenarioForError, type FailureScenario } from '../services/custom-error-scenarios';
 
 type ProxyErrorPayload = {
   traceId: string;

@@ -4,7 +4,7 @@ import {
   findScenarioForError,
   getAllScenarios,
   groupScenariosByCategory,
-} from './custom-error-scenarios';
+} from '../services/custom-error-scenarios';
 
 /**
  * Unit tests for CUSTOM_PROVIDER_FAILURE_SCENARIOS catalog.

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { testBatchModels, PingPongResult } from './ping-pong-tester';
+import { testBatchModels, PingPongResult } from '../services/ping-pong-tester';
 
 describe('Models Remediation Audit Verification', () => {
   describe('AUDIT-007: Ping-Pong batch AbortSignal cancellation', () => {
