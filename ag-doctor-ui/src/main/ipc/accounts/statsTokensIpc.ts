@@ -1,7 +1,8 @@
 import { app, ipcMain } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { execFileSync } from 'child_process';
+import util from 'util';
+import { execFile } from 'child_process';
 import { DOCTOR_IPC_CHANNELS } from '../../../ipc/channels';
 import { EnvironmentConfig } from '../../../config/environment';
 import { PROXY_STATS_MAX } from '../../../constants';
@@ -24,11 +25,13 @@ let tokenEventsCache: {
   recentEvents: any[];
 } | null = null;
 
-function queryConversationSummariesDb(dbPath: string): {
+const execFileAsync = util.promisify(execFile);
+
+async function queryConversationSummariesDb(dbPath: string): Promise<{
   agg: { c?: number; s?: number; max_s?: number } | null;
   daily: Array<{ day: string; convs: number; steps: number }>;
   sessions: Array<{ conversation_id: string; title: string; step_count: number; last_modified_time: string }>;
-} {
+}> {
   // Method 1: node:sqlite (native if supported in runtime)
   try {
     const { DatabaseSync } = require('node:sqlite');
@@ -38,7 +41,9 @@ function queryConversationSummariesDb(dbPath: string): {
     const sessions = db.prepare('SELECT conversation_id, title, step_count, last_modified_time FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 300').all() as any[];
     db.close();
     return { agg, daily, sessions };
-  } catch {}
+  } catch {
+    // node:sqlite unavailable or failed, fallback to python/sqlite3
+  }
 
   // Method 2: Python (standard library sqlite3 available on macOS/Linux/Windows)
   const pyScript = `import sqlite3, json, sys
@@ -57,32 +62,34 @@ except Exception as e:
     print(json.dumps({"error": str(e)}))
 `;
 
-  try {
-    const out = execFileSync('python', ['-c', pyScript, dbPath], { encoding: 'utf-8', timeout: 4000 });
-    const res = JSON.parse(out);
-    if (!res.error && res.daily) return res;
-  } catch {}
-
-  try {
-    const out = execFileSync('python3', ['-c', pyScript, dbPath], { encoding: 'utf-8', timeout: 4000 });
-    const res = JSON.parse(out);
-    if (!res.error && res.daily) return res;
-  } catch {}
+  for (const pyBin of ['python', 'python3']) {
+    try {
+      const { stdout } = await execFileAsync(pyBin, ['-c', pyScript, dbPath], { encoding: 'utf-8', timeout: 4000 });
+      const res = JSON.parse(stdout);
+      if (!res.error && res.daily) return res;
+    } catch {
+      // Python binary not found or timed out, try next
+    }
+  }
 
   // Method 3: sqlite3 CLI fallback
   try {
-    const aggJson = execFileSync('sqlite3', [dbPath, '-json', 'SELECT count(*) as c, sum(step_count) as s, max(step_count) as max_s FROM conversation_summaries'], { encoding: 'utf-8', timeout: 3000 });
-    const dailyJson = execFileSync('sqlite3', [dbPath, '-json', 'SELECT substr(last_modified_time, 1, 10) as day, count(*) as convs, sum(step_count) as steps FROM conversation_summaries GROUP BY day ORDER BY day DESC'], { encoding: 'utf-8', timeout: 3000 });
-    const sessJson = execFileSync('sqlite3', [dbPath, '-json', 'SELECT conversation_id, title, step_count, last_modified_time FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 300'], { encoding: 'utf-8', timeout: 3000 });
-    const aggParsed = JSON.parse(aggJson);
-    const dailyParsed = JSON.parse(dailyJson);
-    const sessParsed = JSON.parse(sessJson);
+    const [aggRes, dailyRes, sessRes] = await Promise.all([
+      execFileAsync('sqlite3', [dbPath, '-json', 'SELECT count(*) as c, sum(step_count) as s, max(step_count) as max_s FROM conversation_summaries'], { encoding: 'utf-8', timeout: 3000 }),
+      execFileAsync('sqlite3', [dbPath, '-json', 'SELECT substr(last_modified_time, 1, 10) as day, count(*) as convs, sum(step_count) as steps FROM conversation_summaries GROUP BY day ORDER BY day DESC'], { encoding: 'utf-8', timeout: 3000 }),
+      execFileAsync('sqlite3', [dbPath, '-json', 'SELECT conversation_id, title, step_count, last_modified_time FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 300'], { encoding: 'utf-8', timeout: 3000 }),
+    ]);
+    const aggParsed = JSON.parse(aggRes.stdout);
+    const dailyParsed = JSON.parse(dailyRes.stdout);
+    const sessParsed = JSON.parse(sessRes.stdout);
     return {
       agg: Array.isArray(aggParsed) && aggParsed.length > 0 ? aggParsed[0] : null,
       daily: Array.isArray(dailyParsed) ? dailyParsed : [],
       sessions: Array.isArray(sessParsed) ? sessParsed : [],
     };
-  } catch {}
+  } catch {
+    // sqlite3 CLI not found or query failed
+  }
 
   return { agg: null, daily: [], sessions: [] };
 }
@@ -245,7 +252,7 @@ export function registerStatsTokensIpc(ctx: MainContext): void {
 
       if (fs.existsSync(dbPath)) {
         try {
-          const queryResult = queryConversationSummariesDb(dbPath);
+          const queryResult = await queryConversationSummariesDb(dbPath);
           if (queryResult.agg) {
             totalConversations = Number(queryResult.agg.c) || 0;
             totalSteps = Number(queryResult.agg.s) || 0;

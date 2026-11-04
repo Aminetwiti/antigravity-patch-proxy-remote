@@ -14,6 +14,7 @@
 import { BrowserWindow } from 'electron';
 import { ChildProcess, spawn } from 'child_process';
 import path from 'path';
+import fs from 'fs';
 import net from 'net';
 import { EnvironmentConfig } from '../../config/environment';
 
@@ -57,13 +58,18 @@ export class ProxyManager implements IProxyManager {
     this.port = options?.port ?? EnvironmentConfig.mitmPort;
     this.host = options?.host ?? EnvironmentConfig.bindHost;
     // Path to the MITM proxy script
-    this.scriptPath = options?.scriptPath ?? path.join(__dirname, '..', '..', '..', 'scripts', 'mitm', 'mitm_443.js');
-    // If constructed from src/proxy-manager.ts backward-compatibility fallback
-    if (!options?.scriptPath && !require('fs').existsSync(this.scriptPath)) {
-      const fallbackPath = path.join(__dirname, '..', '..', 'scripts', 'mitm', 'mitm_443.js');
-      if (require('fs').existsSync(fallbackPath)) {
-        this.scriptPath = fallbackPath;
-      }
+    if (options?.scriptPath) {
+      this.scriptPath = options.scriptPath;
+    } else {
+      const candidates = [
+        path.resolve(__dirname, '../../../../scripts/mitm/mitm_443.js'),
+        path.resolve(__dirname, '../../../scripts/mitm/mitm_443.js'),
+        path.resolve(__dirname, '../../scripts/mitm/mitm_443.js'),
+        path.resolve(process.cwd(), '../scripts/mitm/mitm_443.js'),
+        path.resolve(process.cwd(), 'scripts/mitm/mitm_443.js'),
+        path.join((process as any).resourcesPath || '', 'scripts', 'mitm', 'mitm_443.js'),
+      ];
+      this.scriptPath = candidates.find((c) => fs.existsSync(c)) || candidates[0];
     }
   }
 

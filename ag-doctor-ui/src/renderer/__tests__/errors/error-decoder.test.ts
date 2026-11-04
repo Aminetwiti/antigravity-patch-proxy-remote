@@ -147,11 +147,13 @@ describe('decodeError', () => {
     expect(r.action).toBe('none');
   });
 
-  for (let i = 1; i <= 30; i++) {
-    it(`decodes error string variant ${i} cleanly`, () => {
-      const r = decodeError(`Error variant ${i}`);
-      expect(r).toHaveProperty('matched');
-      expect(r).toHaveProperty('action');
-    });
-  }
+  it.each([
+    { input: 'Unexpected token in JSON response', expectedMatched: true, expectedAction: 'run-doctor' },
+    { input: 'ETIMEDOUT while connecting to remote endpoint', expectedMatched: true, expectedAction: 'show-retry-toast' },
+    { input: 'Completely unhandled arbitrary system error', expectedMatched: false, expectedAction: 'none' },
+  ])('decodes "$input" (matched: $expectedMatched, action: $expectedAction)', ({ input, expectedMatched, expectedAction }) => {
+    const r = decodeError(input);
+    expect(r.matched).toBe(expectedMatched);
+    expect(r.action).toBe(expectedAction);
+  });
 });
