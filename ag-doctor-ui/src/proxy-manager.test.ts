@@ -1,76 +1,116 @@
-import { describe, expect, it } from 'vitest';
-import { getProxyManager, ProxyServerStatus } from './proxy-manager';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import net from 'net';
+import { getProxyManager, ProxyManager } from './proxy-manager';
 import { EnvironmentConfig } from './config/environment';
 
-/**
- * Extended Unit Tests for ProxyManager (55 tests)
- * Covers: Singleton, Status evaluation, Environment setup, Socket listening checks,
- * Process lifecycle simulation, Error handling, and Signals.
- */
-
-describe('ProxyManager Singleton & Default Configuration (10 Tests)', () => {
-  it('returns a persistent singleton instance', () => {
-    const instance1 = getProxyManager();
-    const instance2 = getProxyManager();
-    expect(instance1).toBe(instance2);
+describe('ProxyManager', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
   });
 
-  for (let i = 1; i <= 9; i++) {
-    it(`verifies singleton persistence across call sequence ${i}`, () => {
-      const mgr = getProxyManager();
-      expect(mgr).toBeDefined();
-      expect(typeof mgr.getStatus).toBe('function');
-      expect(typeof mgr.start).toBe('function');
-      expect(typeof mgr.stop).toBe('function');
+  describe('Singleton & Configuration', () => {
+    it('returns a persistent singleton instance across invocations', () => {
+      const instance1 = getProxyManager();
+      const instance2 = getProxyManager();
+      expect(instance1).toBe(instance2);
     });
-  }
-});
 
-describe('ProxyManager Status Evaluation (15 Tests)', () => {
-  it('evaluates status as not running when process is uninitialized', async () => {
-    const mgr = getProxyManager();
-    const status: ProxyServerStatus = await mgr.getStatus();
-    expect(status.running).toBe(false);
-    expect(status.port).toBe(EnvironmentConfig.mitmPort);
-    expect(status.pid).toBeUndefined();
-    expect(status.error).toBeUndefined();
+    it('honors custom options when instantiated directly', () => {
+      const custom = new ProxyManager({ port: 54321, host: '0.0.0.0', scriptPath: '/custom/path.js' });
+      expect(custom).toBeInstanceOf(ProxyManager);
+    });
   });
 
-  for (let i = 1; i <= 14; i++) {
-    it(`evaluates status configuration for port variant ${50000 + i}`, async () => {
-      const mgr = getProxyManager();
-      const status: ProxyServerStatus = await mgr.getStatus();
-      expect(status.port).toBeGreaterThan(0);
-      expect(typeof status.running).toBe('boolean');
+  describe('getStatus', () => {
+    it('reports not running when process is uninitialized', async () => {
+      const mgr = new ProxyManager({ port: 9999 });
+      vi.spyOn(mgr, 'isListening').mockResolvedValue(false);
+
+      const status = await mgr.getStatus();
+      expect(status.running).toBe(false);
+      expect(status.port).toBe(9999);
+      expect(status.pid).toBeUndefined();
+      expect(status.error).toBeUndefined();
     });
-  }
-});
 
-describe('ProxyManager Environment Variables Contract (15 Tests)', () => {
-  for (let i = 1; i <= 15; i++) {
-    it(`prepares expected environment variables for port variant ${50990 + i}`, () => {
-      const port = 50990 + i;
-      const host = '127.0.0.1';
-      const env = {
-        ...process.env,
-        AG_MITM_PORT: String(port),
-        AG_MITM_HOST: host,
-        AG_PROXY_TARGET: `http://127.0.0.1:51074`,
-      };
+    it('reports error when child process exists but is not listening', async () => {
+      const mgr = new ProxyManager({ port: 9999 });
+      (mgr as any).proxyProcess = { exitCode: null, pid: 12345 };
+      vi.spyOn(mgr, 'isListening').mockResolvedValue(false);
 
-      expect(env.AG_MITM_PORT).toBe(String(port));
-      expect(env.AG_MITM_HOST).toBe('127.0.0.1');
-      expect(env.AG_PROXY_TARGET).toBe(`http://127.0.0.1:51074`);
+      const status = await mgr.getStatus();
+      expect(status.running).toBe(false);
+      expect(status.pid).toBe(12345);
+      expect(status.error).toBe('Server process running but not listening');
     });
-  }
-});
 
-describe('ProxyManager Socket Listening & Helper Resilience (15 Tests)', () => {
-  for (let i = 1; i <= 15; i++) {
-    it(`checks isListening resilience on attempt ${i}`, async () => {
-      const mgr = getProxyManager();
+    it('reports running when child process is active and socket is listening', async () => {
+      const mgr = new ProxyManager({ port: 9999 });
+      (mgr as any).proxyProcess = { exitCode: null, pid: 54321 };
+      vi.spyOn(mgr, 'isListening').mockResolvedValue(true);
+
+      const status = await mgr.getStatus();
+      expect(status.running).toBe(true);
+      expect(status.pid).toBe(54321);
+      expect(status.error).toBeUndefined();
+    });
+  });
+
+  describe('isListening boundary check', () => {
+    it('resolves true when socket connects successfully', async () => {
+      const mgr = new ProxyManager({ port: 9999, host: '127.0.0.1' });
+
+      vi.spyOn(net, 'Socket').mockImplementation(() => {
+        const handlers: Record<string, () => void> = {};
+        return {
+          connect: vi.fn(() => {
+            setTimeout(() => handlers['connect']?.(), 5);
+          }),
+          on: vi.fn((event: string, cb: () => void) => {
+            handlers[event] = cb;
+          }),
+          destroy: vi.fn(),
+        } as unknown as net.Socket;
+      });
+
       const listening = await mgr.isListening();
-      expect(typeof listening).toBe('boolean');
+      expect(listening).toBe(true);
     });
-  }
+
+    it('resolves false when socket emits connection error', async () => {
+      const mgr = new ProxyManager({ port: 9999, host: '127.0.0.1' });
+
+      vi.spyOn(net, 'Socket').mockImplementation(() => {
+        const handlers: Record<string, (err?: any) => void> = {};
+        return {
+          connect: vi.fn(() => {
+            setTimeout(() => handlers['error']?.(new Error('ECONNREFUSED')), 5);
+          }),
+          on: vi.fn((event: string, cb: (err?: any) => void) => {
+            handlers[event] = cb;
+          }),
+          destroy: vi.fn(),
+        } as unknown as net.Socket;
+      });
+
+      const listening = await mgr.isListening();
+      expect(listening).toBe(false);
+    });
+  });
+
+  describe('start & stop lifecycle guards', () => {
+    it('fails to start when proxy script file does not exist', async () => {
+      const mgr = new ProxyManager({ scriptPath: '/non/existent/script_mitm.js' });
+      const res = await mgr.start();
+      expect(res.ok).toBe(false);
+      expect(res.message).toBeDefined();
+    });
+
+    it('returns ok on stop when no process is running', async () => {
+      const mgr = new ProxyManager();
+      const res = await mgr.stop();
+      expect(res.ok).toBe(true);
+      expect(res.message).toContain('not running');
+    });
+  });
 });

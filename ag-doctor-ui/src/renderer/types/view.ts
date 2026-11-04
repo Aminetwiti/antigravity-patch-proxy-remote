@@ -2,10 +2,16 @@
  * types/view.ts
  *
  * Contrat standardisé pour toutes les vues du Renderer (SOLID - Liskov & Interface Segregation).
- * Permet un couplage faible entre le routeur de navigation et les contrôleurs de page.
+ * Déclaré en mode ambient script pour être disponible dans tout le projet Renderer.
  */
 
-export interface IView {
+interface IDisposable {
+  dispose(): void;
+}
+
+type LifecycleHook = () => Promise<void> | void;
+
+interface IView {
   /** Identifiant unique de la vue (ex: 'dashboard', 'logs', 'traffic') */
   readonly id: string;
 
@@ -25,4 +31,10 @@ export interface IView {
   refresh?(): Promise<void> | void;
 }
 
-export type ViewFactory = () => IView;
+type IViewController = IView;
+
+type ViewFactory = () => IView;
+
+if (typeof exports !== 'undefined') {
+  // ambient types only
+}

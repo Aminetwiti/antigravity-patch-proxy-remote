@@ -31,29 +31,8 @@ bin/
 ag-doctor-ui/dist/
 ag-doctor-ui/release/
 ag-doctor-ui/tools/*
-remote/daemon/bin/
-remote/daemon/*.exe
-remote/daemon/*.exe~
-remote/daemon/*.dll
-remote/daemon/*.cmd
-remote/daemon/*.vbs
-remote/daemon/*.ps1
-remote/daemon/*.js
-remote/daemon/*.txt
-remote/daemon/%TEMP%/
-remote/daemon/*.crt
-remote/daemon/*.key
 
 # Mobile / Flutter / Gradle outputs & caches
-remote/mobile/.gradle/
-remote/mobile/.flutter-plugins
-remote/mobile/.flutter-plugins-dependencies
-remote/mobile/.dart_tool/
-remote/mobile/build/
-remote/mobile/ephemeral/
-remote/mobile/android/.gradle/
-remote/mobile/ios/Pods/
-remote/mobile/ios/.symlinks/
 
 # OS metadata & editor temp files
 .DS_Store
@@ -82,7 +61,6 @@ eslint_out.txt
 git_status.txt
 tsc_*.txt
 standalone*.log
-remote/daemon/*.log
 
 # Temporary test, extract & scratch directories
 scratch/
@@ -93,12 +71,6 @@ review/
 videos/
 tools/*
 tool/
-remote/tools/*
-remote/tools1/*
-remote/tools2/*
-remote/tools3/*
-remote/vendor/*
-remote/insperer/*
 release/*
 archive/
 _archive/

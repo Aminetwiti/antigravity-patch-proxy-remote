@@ -153,7 +153,10 @@ let exitCode = 0;
 // 2.5.x/2.6.x/2.7.x+ use the full overlay patcher; the explicit startsWith checks
 // cover 2.5-2.9, while /^2\.[1-9]\d+\./ is a best-effort catch-all for future
 // 2.10+ builds (the layout may change in newer majors — verify after applying).
-if (version.startsWith('2.28.') || version.startsWith('2.29.') || /^2\.(2[8-9]|[3-9]\d+)\./.test(version)) {
+if (version.startsWith('2.29.') || /^2\.(29|[3-9]\d+)\./.test(version)) {
+  targetScript = path.join(scriptsDir, 'patch_2_29.js');
+  console.log(`[patch-version] dispatching to patch_2_29.js (pure surgical 2.29 patch) for Antigravity ${version}`);
+} else if (version.startsWith('2.28.')) {
   targetScript = path.join(scriptsDir, 'patch_2_28.js');
   console.log(`[patch-version] dispatching to patch_2_28.js (pure surgical 2.28 patch) for Antigravity ${version}`);
 } else if (version.startsWith('2.25.')) {

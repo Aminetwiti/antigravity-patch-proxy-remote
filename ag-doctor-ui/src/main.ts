@@ -12,7 +12,7 @@ import { app, BrowserWindow, shell } from 'electron';
 import type { ChildProcess } from 'child_process';
 import { DOCTOR_IPC_CHANNELS } from './ipc/channels';
 import { getProxyManager } from './proxy-manager';
-import { initAutoUpdateScheduler } from './services/updateService';
+import { initAutoUpdateScheduler } from './services/runtime/updateService';
 import { CliWorkerPool } from './main/cliWorkerPool';
 import {
   createWindow,
@@ -36,6 +36,14 @@ import {
   cleanupDaemonProcess,
 } from './main/ipc';
 import type { MainContext } from './main/types';
+
+process.on('uncaughtException', (error) => {
+  console.error('[main:uncaughtException]', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[main:unhandledRejection]', reason);
+});
 
 // Post-Quantum TLS stability: prevent oversized Kyber handshakes dropping in Go backend
 process.env.GODEBUG = (process.env.GODEBUG ? process.env.GODEBUG + ',' : '') + 'tlsmlkem=0';

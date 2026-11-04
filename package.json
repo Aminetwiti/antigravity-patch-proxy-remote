@@ -10,9 +10,7 @@
   "license": "Apache-2.0",
   "workspaces": [
     "ag-doctor",
-    "ag-doctor-ui",
-    "remote/antigravity-remote-daemon",
-    "remote/cli"
+    "ag-doctor-ui"
   ],
   "main": "dist/main.js",
   "scripts": {
@@ -49,6 +47,7 @@
     "patch:2.23": "node scripts/patch_2_23.js",
     "patch:2.25": "node scripts/patch_2_25.js",
     "patch:2.28": "node scripts/patch_2_28.js",
+    "patch:2.29": "node scripts/patch_2_29.js",
     "repack:installed": "node scripts/repack-installed.js",
     "repack:win": "powershell -ExecutionPolicy Bypass -File scripts/repack/repack.ps1",
     "repack:mac": "bash scripts/deploy/deploy.sh",
@@ -56,9 +55,7 @@
     "mitm:start": "powershell -ExecutionPolicy Bypass -File scripts/mitm/start_mitm_443.ps1",
     "mitm:restart": "cmd /c scripts\\\\mitm\\\\restart-mitm.bat",
     "repatch": "cmd /c repatch.bat",
-    "start:mitm": "cmd /c \"Start Antigravity MITM.bat\"",
-    "remote:ui": "npm --prefix remote/antigravity-remote-daemon start",
-    "remote:build": "npm --prefix remote/antigravity-remote-daemon run build"
+    "start:mitm": "cmd /c \"Start Antigravity MITM.bat\""
   },
   "dependencies": {
     "chrome-devtools-mcp": "^1.8.0",

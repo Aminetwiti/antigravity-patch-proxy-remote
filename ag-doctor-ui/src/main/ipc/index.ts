@@ -1,12 +1,12 @@
 import type { MainContext } from '../types';
-import { registerDaemonNetworkIpc } from './daemonNetworkIpc';
-import { registerProvidersIpc } from './providersIpc';
-import { registerGoogleAccountsIpc } from './googleAccountsIpc';
-import { registerAntigravityIpc } from './antigravityIpc';
-import { registerProxyLifecycleIpc } from './proxyLifecycleIpc';
-import { registerStatsTokensIpc } from './statsTokensIpc';
-import { registerUpdatesConfigIpc } from './updatesConfigIpc';
-import { registerCliStreamIpc } from './cliStreamIpc';
+import { registerDaemonNetworkIpc } from './system/daemonNetworkIpc';
+import { registerProvidersIpc } from './accounts/providersIpc';
+import { registerGoogleAccountsIpc } from './accounts/googleAccountsIpc';
+import { registerAntigravityIpc } from './system/antigravityIpc';
+import { registerProxyLifecycleIpc } from './system/proxyLifecycleIpc';
+import { registerStatsTokensIpc } from './accounts/statsTokensIpc';
+import { registerUpdatesConfigIpc } from './system/updatesConfigIpc';
+import { registerCliStreamIpc } from './system/cliStreamIpc';
 
 export function registerAllIpcHandlers(ctx: MainContext): void {
   registerDaemonNetworkIpc(ctx);
@@ -19,11 +19,11 @@ export function registerAllIpcHandlers(ctx: MainContext): void {
   registerCliStreamIpc(ctx);
 }
 
-export * from './daemonNetworkIpc';
-export * from './providersIpc';
-export * from './googleAccountsIpc';
-export * from './antigravityIpc';
-export * from './proxyLifecycleIpc';
-export * from './statsTokensIpc';
-export * from './updatesConfigIpc';
-export * from './cliStreamIpc';
+export * from './system/daemonNetworkIpc';
+export * from './accounts/providersIpc';
+export * from './accounts/googleAccountsIpc';
+export * from './system/antigravityIpc';
+export * from './system/proxyLifecycleIpc';
+export * from './accounts/statsTokensIpc';
+export * from './system/updatesConfigIpc';
+export * from './system/cliStreamIpc';

@@ -21,7 +21,7 @@ vi.mock('../cryptoStore', () => ({
 }));
 
 import { classifyError } from '../proxy/errorClassifier';
-import { parseResetSeconds } from '../../ag-doctor-ui/src/renderer/error-decoder';
+import { parseResetSeconds } from '../../ag-doctor-ui/src/renderer/services/error-decoder';
 import {
   validateCandidate,
   validateGenerateContentResponse,

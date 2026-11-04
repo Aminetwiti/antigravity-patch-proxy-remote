@@ -39,6 +39,7 @@ export class CliWorkerPool {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const worker: CliWorker = { proc, busy: false, pending: null, buffer: '', errBuffer: '' };
+    proc.stdin?.on('error', (err) => { /* prevent crash on EPIPE */ });
     proc.stdout?.on('data', (chunk: Buffer) => this.handleData(worker, chunk));
     proc.stderr?.on('data', (chunk: Buffer) => {
       worker.errBuffer += chunk.toString();

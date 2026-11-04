@@ -333,7 +333,7 @@
         pill.setAttribute('data-ag-suggestion', sug.text);
         pill.setAttribute('aria-label', `Insérer la suggestion ${sug.label}`);
         pill.title = `Insérer: "${sug.text}"`;
-        pill.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:10px;font-size:12px;font-weight:500;font-family:system-ui,-apple-system,sans-serif;color:var(--vscode-editor-foreground, #f4f4f5);background:var(--vscode-badge-background, rgba(255,255,255,0.06));border:1px solid var(--vscode-widget-border, rgba(255,255,255,0.12));cursor:pointer;transition:all 0.15s ease-in-out;backdrop-filter:blur(4px);white-space:nowrap;outline:none;flex-shrink:0;';
+        pill.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:10px;font-size:12px;font-weight:500;font-family:system-ui,-apple-system,sans-serif;color:var(--foreground, var(--vscode-editor-foreground, #f4f4f5));background:var(--onyx-well, var(--vscode-badge-background, rgba(255,255,255,0.06)));border:1px solid var(--border, var(--vscode-widget-border, rgba(255,255,255,0.12)));cursor:pointer;transition:all 0.15s ease-in-out;backdrop-filter:blur(4px);white-space:nowrap;outline:none;flex-shrink:0;';
 
         pill.innerHTML = `
           <span style="opacity:0.65;font-size:10px;">✦</span>
@@ -341,22 +341,22 @@
         `;
 
         pill.onmouseenter = () => {
-          pill.style.background = 'var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.14))';
-          pill.style.borderColor = 'var(--vscode-focusBorder, rgba(255,255,255,0.25))';
-          pill.style.color = '#ffffff';
+          pill.style.background = 'var(--onyx-selected, var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.14)))';
+          pill.style.borderColor = 'var(--primary, var(--vscode-focusBorder, rgba(255,255,255,0.25)))';
+          pill.style.color = 'var(--foreground, #ffffff)';
           pill.style.transform = 'translateY(-1px)';
         };
         pill.onmouseleave = () => {
-          pill.style.background = 'var(--vscode-badge-background, rgba(255,255,255,0.06))';
-          pill.style.borderColor = 'var(--vscode-widget-border, rgba(255,255,255,0.12))';
-          pill.style.color = 'var(--vscode-editor-foreground, #f4f4f5)';
+          pill.style.background = 'var(--onyx-well, var(--vscode-badge-background, rgba(255,255,255,0.06)))';
+          pill.style.borderColor = 'var(--border, var(--vscode-widget-border, rgba(255,255,255,0.12)))';
+          pill.style.color = 'var(--foreground, var(--vscode-editor-foreground, #f4f4f5))';
           pill.style.transform = 'translateY(0)';
         };
         pill.onfocus = () => {
-          pill.style.borderColor = 'var(--vscode-focusBorder, #3b82f6)';
+          pill.style.borderColor = 'var(--primary, var(--vscode-focusBorder, #3b82f6))';
         };
         pill.onblur = () => {
-          pill.style.borderColor = 'var(--vscode-widget-border, rgba(255,255,255,0.12))';
+          pill.style.borderColor = 'var(--border, var(--vscode-widget-border, rgba(255,255,255,0.12)))';
         };
 
         pill.onclick = (e) => {
@@ -371,8 +371,13 @@
 
     try {
       if (inputCard && inputCard.parentElement && inputCard.parentElement.contains(inputCard)) {
-        if (inputCard.previousElementSibling !== bar) {
-          inputCard.parentElement.insertBefore(bar, inputCard);
+        // v2.29+ safety: Never insert between .agy-live-dock-slot and .surface-composer,
+        // which would break the native CSS rule: .agy-live-dock-slot:has(+ .surface-composer)
+        const targetSlot = (inputCard.previousElementSibling && inputCard.previousElementSibling.classList && inputCard.previousElementSibling.classList.contains('agy-live-dock-slot'))
+          ? inputCard.previousElementSibling
+          : inputCard;
+        if (targetSlot && targetSlot.parentElement && targetSlot.previousElementSibling !== bar) {
+          targetSlot.parentElement.insertBefore(bar, targetSlot);
         }
       }
     } catch (_) {}
@@ -427,15 +432,15 @@
       retryBtn.setAttribute('aria-label', 'Retry');
       retryBtn.setAttribute('data-testid', 'inline-retry-button');
       retryBtn.title = 'Retry / Continue (Reprendre)';
-      retryBtn.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 10px;margin-left:4px;border-radius:12px;font-size:12px;font-weight:600;font-family:system-ui,-apple-system,sans-serif;cursor:pointer;user-select:none;transition:all 0.15s ease-in-out;background:var(--vscode-button-background, #0b57d0);color:var(--vscode-button-foreground, #ffffff);border:none;box-shadow:0 1px 2px rgba(0,0,0,0.25);outline:none;';
+      retryBtn.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 10px;margin-left:4px;border-radius:12px;font-size:12px;font-weight:600;font-family:system-ui,-apple-system,sans-serif;cursor:pointer;user-select:none;transition:all 0.15s ease-in-out;background:var(--primary, var(--vscode-button-background, #0b57d0));color:var(--primary-foreground, var(--vscode-button-foreground, #ffffff));border:none;box-shadow:0 1px 2px rgba(0,0,0,0.25);outline:none;';
       retryBtn.innerHTML = `
         <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;">
           <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
         </svg>
         <span>Retry</span>
       `;
-      retryBtn.onmouseenter = () => { retryBtn.style.background = 'var(--vscode-button-hoverBackground, #1b6ef3)'; };
-      retryBtn.onmouseleave = () => { retryBtn.style.background = 'var(--vscode-button-background, #0b57d0)'; };
+      retryBtn.onmouseenter = () => { retryBtn.style.opacity = '0.9'; retryBtn.style.transform = 'translateY(-1px)'; };
+      retryBtn.onmouseleave = () => { retryBtn.style.opacity = '1'; retryBtn.style.transform = 'translateY(0)'; };
 
       retryBtn.onclick = (e) => {
         e.stopPropagation();

@@ -326,6 +326,23 @@ interface ProviderEntry {
   [key: string]: any;
 }
 
+interface VerificationDetectionData {
+  found?: boolean;
+  hasChallenge?: boolean;
+  logFile?: string;
+  activeLogFile?: string;
+  validationUrl?: string;
+  rawLogLine?: string;
+  qrCodeDataUrl?: string;
+  qrDataUrl?: string;
+  timestamp?: string;
+  accountEmail?: string;
+  reason?: string;
+  message?: string;
+  carrierWarning?: string;
+  error?: string;
+}
+
 declare let allLoadedModels: any[];
 declare let providersCache: ProviderEntry[];
 declare let googleAccountsCache: any[];
@@ -340,4 +357,45 @@ declare function loadLogs(): Promise<void>;
 declare function loadTraffic(): Promise<void>;
 declare function loadDashboard(): Promise<void>;
 declare function loadRemoteView(): Promise<void>;
+declare function runDoctor(): Promise<void>;
+declare function setObjective(key: any, state: any, detail?: string): void;
 
+
+
+declare function registerViewLoader(viewName: string, loader: (view?: any) => void | Promise<void>): void;
+declare function registerViewController(controller: any): void;
+declare function getCurrentView(): string;
+declare function navigate(viewName: string): void;
+declare function initNavigation(): void;
+declare function loadFailures(): void;
+declare function openProviderModal(provider?: any): void;
+declare function closeProviderModal(): void;
+declare function formatCompactTokens(num: number): string;
+declare function renderHeatmapMatrix(range: string, mode: 'daily' | 'weekly' | 'cumulative', customStats?: any): void;
+declare function showDayInspector(cellDate: Date, tokensDay: number, mode: string, anchorEl: HTMLElement, dayData?: any): void;
+declare function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boolean, isCardView?: boolean): string;
+declare function renderDynamicExtraQuotaGroups(quotas: any, showAll: boolean, isWeekly: boolean): string;
+declare function openGoogleAccountModal(existingId?: string, presetType?: 'google-gemini' | 'gemini-cli' | 'antigravity'): void;
+declare function closeGoogleAccountModal(): void;
+
+declare let gaCurrentQuotaWindow: '5h' | 'weekly';
+declare function getAccountActiveCooldown(account: any, family?: 'gemini' | 'claude' | 'any'): any;
+declare function getAccountEffectiveQuotas(account: any): any;
+declare function estimateAccountTokens(acc: any): any;
+declare function calculatePoolTokenSummary(accounts: any[], isWeekly?: boolean): any;
+declare function isAccountCapExhausted(a: any, windowMode?: '5h' | 'weekly'): boolean;
+declare function formatResetCountdown(isoDateStr?: string): string;
+declare function formatCompactCountdown(isoDateStr?: string): string;
+declare function formatLastUsed(ts?: number | string): string;
+declare function maskKeyPreview(key: string): string;
+declare function getAiStudioQuotaEstimate(acc: any): any;
+declare function getGeminiCliQuotaEstimate(acc: any): any;
+declare function formatQuotaPercent(val: number | undefined | null): string;
+declare function getQuotaColor(val: number | undefined | null): string;
+declare function isAiStudioAccount(acc: any): boolean;
+declare function isGeminiCliAccount(acc: any): boolean;
+declare let gaLastQuotaRefreshTimestamp: number;
+declare function estimateAccountTokens(acc: any, windowMode?: string): any;
+declare function getAccountTier(acc: any): string;
+declare let gaCurrentQuotaWindow: '5h' | 'weekly';
+declare let gaActiveCooldownsCache: Record<string, any>;

@@ -15,20 +15,46 @@ export interface ProxyErrorEntry {
   at: number;
 }
 
-export interface MainContext {
+/**
+ * ISP (Interface Segregation Principle):
+ * Context separated into granular role-based contracts.
+ */
+export interface IWindowContext {
   getMainWindow: () => BrowserWindow | null;
   createWindow: () => BrowserWindow;
+}
+
+export interface IPathContext {
   getCliPath: () => string;
   getConfigPath: () => string;
   getAssetsPath: () => string;
+}
+
+export interface IConfigContext {
   getInfoPayload: () => Record<string, unknown>;
   getConfigPayload: () => Record<string, unknown>;
   invalidateConfigCache: () => void;
+}
+
+export interface ITrayContext {
   updateTray: (status: 'ok' | 'warn' | 'err') => void;
   pushProxyErrorHistory: (entry: ProxyErrorEntry) => void;
   getProxyErrorHistory: () => ProxyErrorEntry[];
   notifyProxyError: (payload: { traceId: string; provider: string; title: string; message: string }) => void;
+}
+
+export interface IExecutionContext {
   activeStreams: Map<string, ChildProcess>;
   getCliPool: () => CliWorkerPool;
   checkAndNotifyOAuthIntercept: (chunk: string) => void;
 }
+
+/**
+ * Composite MainContext for full backward compatibility.
+ */
+export interface MainContext
+  extends IWindowContext,
+    IPathContext,
+    IConfigContext,
+    ITrayContext,
+    IExecutionContext {}

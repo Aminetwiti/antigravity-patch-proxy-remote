@@ -1869,7 +1869,12 @@
               openRemoteConfigModal();
             }
           };
-          inputContainer.parentElement.insertBefore(pill, inputContainer);
+          const targetSlot = (inputContainer.previousElementSibling && inputContainer.previousElementSibling.classList && inputContainer.previousElementSibling.classList.contains('agy-live-dock-slot'))
+            ? inputContainer.previousElementSibling
+            : inputContainer;
+          if (targetSlot && targetSlot.parentElement) {
+            targetSlot.parentElement.insertBefore(pill, targetSlot);
+          }
         }
       } else if (pill) {
         pill.remove();

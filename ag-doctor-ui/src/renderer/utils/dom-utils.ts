@@ -373,3 +373,22 @@ function confirmModal(title: string, body: string, opts?: ConfirmModalOpts): Pro
   }
   return Promise.resolve(confirm(`${title}\n\n${body}`));
 }
+
+function formatCompactTokens(num: number): string {
+  if (num >= 1_000_000_000) {
+    const v = num / 1_000_000_000;
+    return `${v >= 10 ? v.toFixed(1) : v.toFixed(2)}B`;
+  }
+  if (num >= 1_000_000) {
+    const v = num / 1_000_000;
+    return `${v >= 10 ? v.toFixed(1) : v.toFixed(2)}M`;
+  }
+  if (num >= 1_000) {
+    const v = num / 1_000;
+    return `${v.toFixed(1)}k`;
+  }
+  return (num || 0).toLocaleString();
+}
+if (typeof window !== 'undefined') {
+  (window as any).formatCompactTokens = formatCompactTokens;
+}

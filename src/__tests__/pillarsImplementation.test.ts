@@ -25,7 +25,7 @@ vi.mock('../services/modelStore', () => ({
 import { trackTokenUsage, getRealtimeStats, reset as resetMetrics } from '../metrics';
 import { HealthProbeService } from '../services/healthProbe';
 import { exportAgBoxPackage, importAgBoxPackage } from '../services/cryptoStore';
-import { TrafficInspectorEngine } from '../../ag-doctor-ui/src/renderer/traffic-inspector';
+import { TrafficInspectorEngine } from '../../ag-doctor-ui/src/renderer/services/traffic-inspector';
 
 describe('Pillar 1: Real-time Telemetry & Token Stats', () => {
   it('tracks token usage per provider correctly', () => {

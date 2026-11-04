@@ -18,7 +18,8 @@
     "dist:all": "npm run build && electron-builder --win nsis portable",
     "dist:dir": "npm run build && electron-builder --dir",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:limits": "node scripts/verify-limits.js"
   },
   "keywords": [
     "antigravity",
@@ -79,14 +80,6 @@
       {
         "from": "../ag-doctor/package.json",
         "to": "ag-doctor/package.json"
-      },
-      {
-        "from": "../remote/daemon",
-        "to": "remote/daemon",
-        "filter": [
-          "daemon.exe",
-          "bin/**/*"
-        ]
       }
     ],
     "win": {
