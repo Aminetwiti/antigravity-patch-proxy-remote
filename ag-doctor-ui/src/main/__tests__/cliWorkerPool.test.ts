@@ -8,6 +8,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { CliWorkerPool } from '../cliWorkerPool';
+import { WORKER_CMD_TIMEOUT_MS } from '../../constants';
 
 describe('CliWorkerPool', () => {
   let pool: CliWorkerPool;
@@ -92,6 +93,34 @@ describe('CliWorkerPool', () => {
     mockProc.emit('close');
 
     await expect(runPromise).rejects.toThrow('CLI worker closed unexpectedly');
+  });
+
+  it('kills worker and rejects when command execution times out', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+
+      const mockProc = new EventEmitter() as any;
+      mockProc.pid = 7777;
+      mockProc.stdin = { write: vi.fn(), end: vi.fn(), on: vi.fn() };
+      mockProc.stdout = new EventEmitter();
+      mockProc.stderr = new EventEmitter();
+      mockProc.kill = vi.fn();
+
+      mockSpawn.mockReturnValue(mockProc);
+
+      pool = new CliWorkerPool('/path/to/cli.js');
+
+      const runPromise = pool.run(['long-running-command'], 0);
+
+      // Advance time beyond WORKER_CMD_TIMEOUT_MS
+      vi.advanceTimersByTime(WORKER_CMD_TIMEOUT_MS + 500);
+
+      await expect(runPromise).rejects.toThrow(/CLI worker timed out after 60s/);
+      expect(mockProc.kill).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shuts down cleanly and empties workers and wait queue', () => {

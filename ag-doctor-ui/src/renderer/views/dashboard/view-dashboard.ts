@@ -1,3 +1,9 @@
+declare function openTokenDetailModal(entry: any): void;
+declare function closeTokenDetailModal(): void;
+declare function openTokenWrappedModal(): void;
+declare function closeTokenWrappedModal(): void;
+declare function copyTokenWrappedSummary(): void;
+
 ﻿// ─────────────────────────────────────────────────────────────────────────────
 // Tokenizer & Token Consumption Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1740,7 +1746,6 @@ const tokenDetailCost = $('#tokenDetailCost') as HTMLDivElement | null;
 const tokenDetailRaw = $('#tokenDetailRaw') as HTMLPreElement | null;
 const tokenCopyJsonBtn = $('#tokenCopyJsonBtn') as HTMLButtonElement | null;
 
-let currentSelectedTokenEntry: TokenUsageEntryItem | null = null;
 let currentTokenSortField: 'timestamp' | 'totalTokens' | 'promptTokens' | 'completionTokens' | 'latencyMs' | 'tokensPerSec' | 'estimatedCost' | 'provider' | 'model' = 'timestamp';
 let currentTokenSortOrder: 'desc' | 'asc' = 'desc';
 let currentTokenLogsPage = 1;
@@ -2785,61 +2790,8 @@ async function loadTokenizer(): Promise<void> {
     }
   });
 
-  // Detail Modal close buttons
-  if (tokenDetailCloseBtn && !tokenDetailCloseBtn.dataset.bound) {
-    tokenDetailCloseBtn.dataset.bound = '1';
-    tokenDetailCloseBtn.addEventListener('click', closeTokenDetailModal);
-  }
-  if (tokenDetailFooterCloseBtn && !tokenDetailFooterCloseBtn.dataset.bound) {
-    tokenDetailFooterCloseBtn.dataset.bound = '1';
-    tokenDetailFooterCloseBtn.addEventListener('click', closeTokenDetailModal);
-  }
-  if (tokenDetailBackdrop && !tokenDetailBackdrop.dataset.bound) {
-    tokenDetailBackdrop.dataset.bound = '1';
-    tokenDetailBackdrop.addEventListener('click', (ev) => {
-      if (ev.target === tokenDetailBackdrop) closeTokenDetailModal();
-    });
-  }
-  if (tokenCopyJsonBtn && !tokenCopyJsonBtn.dataset.bound) {
-    tokenCopyJsonBtn.dataset.bound = '1';
-    tokenCopyJsonBtn.addEventListener('click', () => {
-      if (currentSelectedTokenEntry && navigator.clipboard) {
-        navigator.clipboard.writeText(JSON.stringify(currentSelectedTokenEntry, null, 2)).then(() => {
-          toast('JSON copié dans le presse-papiers !', 'ok', 1600);
-        }).catch(() => {});
-      }
-    });
-  }
-
-  // Token Wrapped Modal bindings
-  const tokenShareWrappedBtn = $('#tokenShareWrappedBtn') as HTMLButtonElement | null;
-  const tokenWrappedCloseBtn = $('#tokenWrappedCloseBtn') as HTMLButtonElement | null;
-  const tokenWrappedFooterCloseBtn = $('#tokenWrappedFooterCloseBtn') as HTMLButtonElement | null;
-  const tokenWrappedBackdrop = $('#tokenWrappedBackdrop') as HTMLDivElement | null;
-  const tokenWrappedCopyBtn = $('#tokenWrappedCopyBtn') as HTMLButtonElement | null;
-
-  if (tokenShareWrappedBtn && !tokenShareWrappedBtn.dataset.bound) {
-    tokenShareWrappedBtn.dataset.bound = '1';
-    tokenShareWrappedBtn.addEventListener('click', openTokenWrappedModal);
-  }
-  if (tokenWrappedCloseBtn && !tokenWrappedCloseBtn.dataset.bound) {
-    tokenWrappedCloseBtn.dataset.bound = '1';
-    tokenWrappedCloseBtn.addEventListener('click', closeTokenWrappedModal);
-  }
-  if (tokenWrappedFooterCloseBtn && !tokenWrappedFooterCloseBtn.dataset.bound) {
-    tokenWrappedFooterCloseBtn.dataset.bound = '1';
-    tokenWrappedFooterCloseBtn.addEventListener('click', closeTokenWrappedModal);
-  }
-  if (tokenWrappedBackdrop && !tokenWrappedBackdrop.dataset.bound) {
-    tokenWrappedBackdrop.dataset.bound = '1';
-    tokenWrappedBackdrop.addEventListener('click', (ev) => {
-      if (ev.target === tokenWrappedBackdrop) closeTokenWrappedModal();
-    });
-  }
-  if (tokenWrappedCopyBtn && !tokenWrappedCopyBtn.dataset.bound) {
-    tokenWrappedCopyBtn.dataset.bound = '1';
-    tokenWrappedCopyBtn.addEventListener('click', copyTokenWrappedSummary);
-  }
+  // Dashboard Modals delegated to dashboard-modals.ts
+  (window as any).initDashboardModals?.();
 
   // Tokenizer Tool inputs
   if (tokenizerInputText && !tokenizerInputText.dataset.bound) {

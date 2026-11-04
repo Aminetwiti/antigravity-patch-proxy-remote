@@ -5078,183 +5078,22 @@ function renderGoogleAccountsList(accounts: any[]): void {
 }
 
 function updateGaModelsCounter(): void {
-  if (!gaFormModelsCountBadge) return;
-  const total = currentGaFetchedModels.length;
-  const selected = currentGaFetchedModels.filter((m) => m.enabled !== false).length;
-  gaFormModelsCountBadge.textContent = `${selected} / ${total} selected for Antigravity`;
-  if (selected === 0) {
-    gaFormModelsCountBadge.className = 'badge badge-warn';
-  } else if (selected === total && total > 0) {
-    gaFormModelsCountBadge.className = 'badge badge-ok';
-  } else {
-    gaFormModelsCountBadge.className = 'badge badge-primary';
-  }
+  (window as any).updateGaModelsCounter?.();
 }
 
 function renderGaFormModelsList(): void {
-  if (!gaFormModelsList) return;
-  updateGaModelsCounter();
-  if (currentGaFetchedModels.length === 0) {
-    gaFormModelsList.innerHTML = `
-      <div class="pm-models-hint" style="font-size: 12px; color: var(--text-2); text-align: center; padding: 20px;">
-        Click <strong>"Get Models from Endpoint"</strong> or choose a Preset above to add models.
-      </div>
-    `;
-    return;
-  }
-
-  let html = `<div style="display: flex; flex-direction: column; gap: 4px;">`;
-  currentGaFetchedModels.forEach((m, idx) => {
-    const isChecked = m.enabled !== false;
-    html += `
-      <label style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: var(--r-sm); cursor: pointer;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <input type="checkbox" class="ga-model-cb" data-idx="${idx}" ${isChecked ? 'checked' : ''} style="width: 15px; height: 15px; cursor: pointer;" />
-          <span style="font-size: 13px; font-weight: 500;">${escapeHtml(m.displayName || m.id)}</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 11px; color: var(--text-2); font-family: var(--font-mono);">${escapeHtml(m.id)}</span>
-          <button type="button" class="agy-icon-btn ga-remove-model-btn" data-idx="${idx}" title="Remove model" style="opacity: 0.6; padding: 2px;">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-      </label>
-    `;
-  });
-  html += `</div>`;
-  gaFormModelsList.innerHTML = html;
-
-  gaFormModelsList.querySelectorAll<HTMLInputElement>('.ga-model-cb').forEach((cb) => {
-    cb.addEventListener('change', (e) => {
-      const target = e.currentTarget as HTMLInputElement;
-      const idx = parseInt(target.dataset.idx || '0', 10);
-      if (currentGaFetchedModels[idx]) {
-        currentGaFetchedModels[idx].enabled = target.checked;
-        updateGaModelsCounter();
-      }
-    });
-  });
-
-  gaFormModelsList.querySelectorAll<HTMLButtonElement>('.ga-remove-model-btn').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const idx = parseInt(btn.dataset.idx || '0', 10);
-      if (currentGaFetchedModels[idx]) {
-        currentGaFetchedModels.splice(idx, 1);
-        renderGaFormModelsList();
-      }
-    });
-  });
+  (window as any).renderGaFormModelsList?.();
 }
 
-let lastFocusedGaElement: HTMLElement | null = null;
-
 function openGoogleAccountModal(existingId?: string, presetType?: 'google-gemini' | 'gemini-cli' | 'antigravity'): void {
-  if (!gaModalBackdrop || !gaFormName || !gaFormUrl || !gaFormKey) return;
-  lastFocusedGaElement = document.activeElement as HTMLElement | null;
-  editingGoogleAccountId = null;
-  currentGaFetchedModels = [];
-  if (gaFormError) {
-    gaFormError.hidden = true;
-    gaFormError.textContent = '';
-  }
-
-  if (existingId) {
-    const account = googleAccountsCache.find((x) => x.id === existingId);
-    if (account) {
-      editingGoogleAccountId = account.id;
-      const isIde = account.id.startsWith('google-ide-') || (account.apiKey && account.apiKey.startsWith('ya29.')) || (account as any).source === 'antigravity-ide';
-      const isGeminiCli = account.provider === 'gemini-cli' || account.id.startsWith('gemini-cli-');
-      if (gaModalTitle) gaModalTitle.textContent = `Edit Google Account: ${account.name}`;
-      gaFormName.value = account.name;
-      gaFormUrl.value = account.apiUrl || (isGeminiCli ? 'https://cloudcode-pa.googleapis.com/v1internal' : 'https://generativelanguage.googleapis.com/v1beta');
-      gaFormKey.value = account.apiKey || '';
-
-      if (gaAccountTypeBanner) {
-        gaAccountTypeBanner.hidden = !isIde && !isGeminiCli;
-      }
-      if (gaFormKeyLabel) {
-        gaFormKeyLabel.textContent = (isIde || isGeminiCli) ? `${isGeminiCli ? 'Antigravity CLI' : 'Antigravity IDE'} Token / Clé API` : 'Google AI Studio API Key';
-      }
-      if (gaFormKeyHelper) {
-        gaFormKeyHelper.innerHTML = (isIde || isGeminiCli)
-          ? `Compte authentifié via session ${isGeminiCli ? 'Antigravity CLI' : 'IDE'} (OAuth ya29…). Vous pouvez conserver ce jeton ou entrer une clé <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a> (AIzaSy…).`
-          : 'Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.';
-      }
-      if (gaFormKey) {
-        gaFormKey.placeholder = (isIde || isGeminiCli) ? 'Géré automatiquement (OAuth ya29…) — ou entrez une clé AIzaSy…' : 'AIzaSy…';
-      }
-
-      currentGaFetchedModels = getUnifiedGoogleModelsList();
-    }
-  } else {
-    const isAiStudio = presetType === 'google-gemini';
-    if (gaModalTitle) gaModalTitle.textContent = isAiStudio ? 'Ajouter une Clé API Google AI Studio' : 'Add Google Account';
-    if (gaAccountTypeBanner) gaAccountTypeBanner.hidden = true;
-    if (gaFormKeyLabel) gaFormKeyLabel.textContent = 'Google AI Studio API Key';
-    if (gaFormKeyHelper) {
-      gaFormKeyHelper.innerHTML = 'Obtain a free key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. No credit card required.';
-    }
-    if (gaFormKey) gaFormKey.placeholder = 'AIzaSy…';
-    gaFormName.value = isAiStudio ? 'Google AI Studio' : '';
-    gaFormUrl.value = 'https://generativelanguage.googleapis.com/v1beta';
-    gaFormKey.value = '';
-    currentGaFetchedModels = getUnifiedGoogleModelsList();
-  }
-
-  renderGaFormModelsList();
-  gaModalBackdrop.hidden = false;
-  if (presetType === 'google-gemini') {
-    gaFormKey.focus();
-  } else {
-    gaFormName.focus();
-  }
+  (window as any).openGoogleAccountModal?.(existingId, presetType);
 }
 
 function closeGoogleAccountModal(): void {
-  if (gaModalBackdrop) gaModalBackdrop.hidden = true;
-  if (gaAccountTypeBanner) gaAccountTypeBanner.hidden = true;
-  editingGoogleAccountId = null;
-  currentGaFetchedModels = [];
-  lastFocusedGaElement?.focus();
+  (window as any).closeGoogleAccountModal?.();
 }
 
-// Bind modal controls
-if (gaModalClose) gaModalClose.addEventListener('click', closeGoogleAccountModal);
-if (gaFormCancelBtn) gaFormCancelBtn.addEventListener('click', closeGoogleAccountModal);
-if (gaModalBackdrop) {
-  gaModalBackdrop.addEventListener('click', (e) => {
-    if (e.target === gaModalBackdrop) closeGoogleAccountModal();
-  });
-}
-document.addEventListener('keydown', (e) => {
-  if (!gaModalBackdrop || gaModalBackdrop.hidden) return;
-  if (e.key === 'Escape') {
-    closeGoogleAccountModal();
-    return;
-  }
-  if (e.key === 'Tab') {
-    const focusable = Array.from(
-      gaModalBackdrop.querySelectorAll<HTMLElement>(
-        'button:not([disabled]):not([hidden]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      )
-    ).filter((el) => el.offsetParent !== null);
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
-});
-
-// Bind Add buttons
-gaAddAccountBtn?.addEventListener('click', () => openGoogleAccountModal());
+(window as any).initGoogleAccountModal?.();
 
 const gaDiscoverIdeBtn = $('#gaDiscoverIdeBtn') as HTMLButtonElement | null;
 
@@ -5519,7 +5358,7 @@ gaFormFetchModelsBtn?.addEventListener('click', async () => {
   if (!gaFormUrl || !gaFormKey) return;
   const apiUrl = gaFormUrl.value.trim();
   const apiKey = gaFormKey.value.trim();
-  const isIde = apiKey.startsWith('ya29.') || (editingGoogleAccountId && editingGoogleAccountId.startsWith('google-ide-'));
+  const isIde = apiKey.startsWith('ya29.') || (editingGoogleAccountId && String(editingGoogleAccountId).startsWith('google-ide-'));
 
   if (!apiKey) {
     toast(isIde ? 'Jeton Antigravity IDE manquant' : 'Please enter your Google AI Studio API key first', 'warn');

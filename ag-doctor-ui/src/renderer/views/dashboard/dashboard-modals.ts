@@ -3,7 +3,7 @@
  * Extracted from view-dashboard.ts for Single Responsibility (SRP) and modularity.
  */
 
-let currentSelectedTokenEntry: any = null;
+let currentSelectedModalTokenEntry: any = null;
 
 function openTokenDetailModal(entry: any): void {
   const tokenDetailBackdrop = document.getElementById('tokenDetailBackdrop') as HTMLDivElement | null;
@@ -16,7 +16,7 @@ function openTokenDetailModal(entry: any): void {
   const tokenDetailRaw = document.getElementById('tokenDetailRaw');
 
   if (!tokenDetailBackdrop) return;
-  currentSelectedTokenEntry = entry;
+  currentSelectedModalTokenEntry = entry;
   if (tokenDetailTitle) tokenDetailTitle.textContent = `${entry.model} (${entry.provider})`;
   if (tokenDetailMeta) {
     const dt = new Date(entry.timestamp).toLocaleString();
@@ -35,7 +35,7 @@ function openTokenDetailModal(entry: any): void {
 function closeTokenDetailModal(): void {
   const tokenDetailBackdrop = document.getElementById('tokenDetailBackdrop') as HTMLDivElement | null;
   if (!tokenDetailBackdrop) return;
-  currentSelectedTokenEntry = null;
+  currentSelectedModalTokenEntry = null;
   tokenDetailBackdrop.hidden = true;
   tokenDetailBackdrop.classList.remove('open');
 }

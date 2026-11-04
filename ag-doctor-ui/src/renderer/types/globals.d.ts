@@ -399,3 +399,10 @@ declare function estimateAccountTokens(acc: any, windowMode?: string): any;
 declare function getAccountTier(acc: any): string;
 declare let gaCurrentQuotaWindow: '5h' | 'weekly';
 declare let gaActiveCooldownsCache: Record<string, any>;
+
+declare function openTokenDetailModal(entry: any): void;
+declare function closeTokenDetailModal(): void;
+declare function openTokenWrappedModal(): void;
+declare function closeTokenWrappedModal(): void;
+declare function copyTokenWrappedSummary(): void;
+declare function initDashboardModals(): void;

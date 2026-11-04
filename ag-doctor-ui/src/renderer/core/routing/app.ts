@@ -50,7 +50,6 @@ window.addEventListener('unhandledrejection', (e) => {
 registerViewLoader('google-accounts', () => void loadGoogleAccounts());
 registerViewLoader('models', () => void loadModels());
 registerViewLoader('patch', () => void loadPatchStatus());
-registerViewLoader('info', () => void loadAntigravityStatus());
 registerViewLoader('logs', () => void loadLogs());
 registerViewLoader('mitm', () => void loadMitmStatus());
 registerViewLoader('settings', () => void loadSettings());

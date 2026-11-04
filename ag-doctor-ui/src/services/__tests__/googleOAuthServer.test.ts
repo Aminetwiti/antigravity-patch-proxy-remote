@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import http from 'http';
+import https from 'https';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
+import EventEmitter from 'events';
 
 vi.mock('electron', () => ({
   app: {
@@ -102,6 +104,55 @@ describe('googleOAuthServer', () => {
       const result = await flowPromise;
       expect(result.success).toBe(false);
       expect(result.error).toBe('access_denied');
+    });
+
+    it('completes nominal authentication flow and returns account details (Happy Path)', async () => {
+      // Mock HTTPS token exchange request to Google
+      vi.spyOn(https, 'request').mockImplementation((_url: any, _options: any, callback: any) => {
+        const res = new EventEmitter() as any;
+        res.statusCode = 200;
+
+        const req = new EventEmitter() as any;
+        req.write = vi.fn();
+        req.end = vi.fn(() => {
+          callback(res);
+          res.emit('data', JSON.stringify({
+            access_token: 'ya29.valid-mock-token',
+            refresh_token: '1//valid-refresh-token',
+            expires_in: 3600,
+          }));
+          res.emit('end');
+        });
+        req.destroy = vi.fn();
+        return req;
+      });
+
+      const flowPromise = startGoogleOAuthLogin('antigravity');
+      await new Promise((r) => setTimeout(r, 60));
+
+      const { shell } = await import('electron');
+      const authUrl = (shell.openExternal as any).mock.calls[(shell.openExternal as any).mock.calls.length - 1][0];
+      const parsedUrl = new URL(authUrl);
+      const stateToken = parsedUrl.searchParams.get('state')!;
+      const redirectUri = parsedUrl.searchParams.get('redirect_uri')!;
+      const port = new URL(redirectUri).port;
+
+      // Simulate browser returning authorization code
+      await new Promise((resolve, reject) => {
+        const req = http.get(`http://127.0.0.1:${port}/oauth2callback?code=mock_valid_code&state=${stateToken}`, (res) => {
+          resolve(res.statusCode);
+        });
+        req.on('error', reject);
+      });
+
+      const result = await flowPromise;
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.account.email).toBe('test@example.com');
+        expect(result.account.accessToken).toBe('ya29.valid-mock-token');
+        expect(result.account.refreshToken).toBe('1//valid-refresh-token');
+        expect(result.account.id).toBe('google-test-example-com');
+      }
     });
   });
 });
