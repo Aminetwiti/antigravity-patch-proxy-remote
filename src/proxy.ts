@@ -2364,12 +2364,15 @@ export function executeGoogleCloudCodeRequest(
   });
 }
 
-export function trimOldestHistory(obj: any): boolean {
+export function trimOldestHistory(obj: any, maxKeep?: number): boolean {
   if (!obj || typeof obj !== 'object') return false;
   const contents = obj.contents || obj.request?.contents;
   if (Array.isArray(contents) && contents.length > 4) {
     const first = contents[0];
-    const keepCount = Math.max(3, Math.floor(contents.length * 0.7));
+    let keepCount = Math.max(3, Math.floor(contents.length * 0.7));
+    if (typeof maxKeep === 'number' && maxKeep >= 3) {
+      keepCount = Math.min(keepCount, maxKeep);
+    }
     const trimmed = [first, ...contents.slice(contents.length - keepCount)];
     if (obj.contents) obj.contents = trimmed;
     if (obj.request?.contents) obj.request.contents = trimmed;
@@ -2409,12 +2412,13 @@ export async function executeGoogleCloudCodeWithPool(
   // Optimize prompt payload by removing redundant duplicate file injections
   reqJson = trimContextPayload(reqJson as unknown as GeminiRequestBody) as unknown as Record<string, unknown>;
 
-  // Proactive History Trimming: If session has accumulated heavy history (>60 turns),
-  // proactively trim historical turns before the first network dispatch to prevent 35s TTFT timeouts.
+  // Proactive History Trimming: If session has accumulated heavy history (>50 turns),
+  // proactively trim historical turns before the first network dispatch to prevent 35s-60s TTFT timeouts.
   const initialContents = (reqJson.request as any)?.contents || (reqJson as any).contents;
-  if (Array.isArray(initialContents) && initialContents.length > 60) {
+  if (Array.isArray(initialContents) && initialContents.length > 50) {
     const turnsCount = initialContents.length;
-    if (trimOldestHistory(reqJson)) {
+    // Cap history to 40 turns (+ initial prompt = 41 turns) to keep TTFT well under 10s on Google Cloud Code
+    if (trimOldestHistory(reqJson, 40)) {
       const remainingTurns = ((reqJson.request || reqJson) as any)?.contents?.length;
       log.info(`[Proxy] ⚡ [Proactive Context Trimmer] Heavy session detected (${turnsCount} turns). Proactively trimmed oldest history to ${remainingTurns} turns before first network dispatch.`);
     }
@@ -2859,8 +2863,20 @@ export async function executeGoogleCloudCodeWithPool(
     if (typeof reqJson.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqJson.planModel)) {
       reqJson.planModel = targetModel;
     }
+    const reqObj = (reqJson.request && typeof reqJson.request === 'object')
+      ? (reqJson.request as Record<string, unknown>)
+      : (reqJson as Record<string, unknown>);
+    {
+      reqObj.model = targetModel;
+      if (typeof reqObj.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.requestedModel)) {
+        reqObj.requestedModel = targetModel;
+      }
+      if (typeof reqObj.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.planModel)) {
+        reqObj.planModel = targetModel;
+      }
+      sanitizeCloudCodeGenerationConfig(reqObj, targetModel);
+    }
     if (reqJson.request && typeof reqJson.request === 'object') {
-      const reqObj = reqJson.request as Record<string, unknown>;
       reqObj.model = targetModel;
       if (typeof reqObj.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.requestedModel)) {
         reqObj.requestedModel = targetModel;
@@ -3025,13 +3041,18 @@ export async function executeGoogleCloudCodeWithPool(
       poolHeaderTimeout = 25_000;
     }
 
-    const isFlashThinkingHedgeable = isFlashModel && isThinkingModel && !isLargePayload;
+    const initialTurnsCount = Array.isArray((reqJson.request as any)?.contents || (reqJson as any)?.contents)
+      ? ((reqJson.request as any)?.contents || (reqJson as any)?.contents).length
+      : 0;
+    const isHeavyHistory = initialTurnsCount > 40;
+    const isFlashThinkingHedgeable = isFlashModel && isThinkingModel && !isLargePayload && !isHeavyHistory;
     const canHedge =
       isStreamReq &&
       hasOtherCandidates &&
       isFlashModel &&
       (!isLargePayloadOrThinking || isFlashThinkingHedgeable) &&
       !isLargePayload &&
+      !isHeavyHistory &&
       !res.headersSent &&
       !res.writableEnded &&
       poolHeaderTimeout > HEDGED_REQUEST_DELAY_MS;
@@ -3762,7 +3783,7 @@ export async function executeGoogleCloudCodeWithPool(
         const isCappedTimeout = wasTimeoutCappedByBudget || (lastStatus === 504 && poolHeaderTimeout < baseCandidateTimeout);
         if (lastStatus === 504) {
           log.info(
-            `[Proxy] Account ${candidateName} timed out (HTTP 504, ${elapsedMs}ms). Skipping cooldown penalty to preserve healthy pool account.`,
+            `[Proxy] Account ${candidateName} timed out (HTTP 504, ${elapsedMs}ms). Placing in 30s transient cooldown to avoid immediate repeat stall.`,
           );
         } else {
           log.warn(
@@ -3781,11 +3802,12 @@ export async function executeGoogleCloudCodeWithPool(
           if (Array.isArray(reqObj?.contents) && reqObj.contents.length > 4) {
             log.info(`[Proxy] 504 timeout on heavy session (${reqObj.contents.length} turns). Running context trimmer & history compaction before rotating to next account...`);
             trimContextPayload(reqJson as unknown as GeminiRequestBody);
-            const didTrim = trimOldestHistory(reqJson);
+            // On 504, aggressively cap remaining history to 30 turns to immediately break prefill timeout cascade
+            const didTrim = trimOldestHistory(reqJson, 30);
             if (didTrim) {
               const remainingTurns = ((reqJson.request || reqJson) as any)?.contents?.length;
-              log.warn(`[Proxy] ✂️ [Context Auto-Trimmer] Trimmed 30% oldest history (${remainingTurns} turns remaining) to break 504 timeout cascade for subsequent pool candidates.`);
-              consecutive504TimeoutCount = 0;
+              log.warn(`[Proxy] ✂️ [Context Auto-Trimmer] Trimmed history (${remainingTurns} turns remaining) to break 504 timeout cascade for subsequent pool candidates.`);
+              consecutive504TimeoutCount = Math.min(consecutive504TimeoutCount, 1);
             }
             normalizeConversationTurns(reqObj.contents);
           }

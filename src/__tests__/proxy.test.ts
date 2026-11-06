@@ -683,5 +683,40 @@ describe('trimOldestHistory cascade trimming', () => {
     expect(trimOldestHistory(reqJson)).toBe(false);
     expect(reqJson.request.contents).toHaveLength(4);
   });
-});
 
+  it('aggressively caps history with maxKeep parameter for heavy sessions (e.g. 341 turns -> 41 turns)', () => {
+    const contents = Array.from({ length: 341 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'model',
+      parts: [{ text: 'Turn ' + i + ' content' }],
+    }));
+
+    const reqJson: any = {
+      request: { contents },
+    };
+
+    // Trim with maxKeep = 40 (first turn + 40 most recent = 41 turns)
+    const trimmed = trimOldestHistory(reqJson, 40);
+    expect(trimmed).toBe(true);
+    expect(reqJson.request.contents).toHaveLength(41);
+    expect(reqJson.request.contents[0].parts[0].text).toBe('Turn 0 content');
+    expect(reqJson.request.contents[1].parts[0].text).toBe('Turn 301 content');
+    expect(reqJson.request.contents[40].parts[0].text).toBe('Turn 340 content');
+  });
+
+  it('caps history to 30 turns during 504 recovery on multi-turn sessions', () => {
+    const contents = Array.from({ length: 125 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'model',
+      parts: [{ text: 'Turn ' + i + ' content' }],
+    }));
+
+    const reqJson: any = {
+      request: { contents },
+    };
+
+    const trimmed = trimOldestHistory(reqJson, 30);
+    expect(trimmed).toBe(true);
+    expect(reqJson.request.contents).toHaveLength(31);
+    expect(reqJson.request.contents[0].parts[0].text).toBe('Turn 0 content');
+    expect(reqJson.request.contents[1].parts[0].text).toBe('Turn 95 content');
+  });
+});

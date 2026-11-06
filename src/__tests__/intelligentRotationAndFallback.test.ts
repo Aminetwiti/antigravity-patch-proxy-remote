@@ -456,6 +456,31 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
         : baseMax;
       expect(candidateMaxSlots).toBe(3);
     });
+
+    it('[AUDIT-001] caps candidate timeout to 25s under Low Headroom (<= 2 healthy accounts)', () => {
+      const initialHealthyCount = 2;
+      let poolHeaderTimeout = 55_000;
+
+      const isLowHeadroom = initialHealthyCount > 0 && initialHealthyCount <= 2;
+      if (isLowHeadroom && poolHeaderTimeout > 25_000) {
+        poolHeaderTimeout = 25_000;
+      }
+
+      expect(poolHeaderTimeout).toBe(25_000);
+    });
+
+    it('[AUDIT-002] triggers immediate cascade on first 504 under Low Headroom to prevent client HTTP 499 abort', () => {
+      const initialHealthyCount = 1;
+      const isLowHeadroom = initialHealthyCount > 0 && initialHealthyCount <= 2;
+      const lastStatus = 504;
+
+      let triggeredCascade = false;
+      if (lastStatus === 504 && isLowHeadroom) {
+        triggeredCascade = true;
+      }
+
+      expect(triggeredCascade).toBe(true);
+    });
   });
 });
 

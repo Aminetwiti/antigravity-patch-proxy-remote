@@ -1631,7 +1631,12 @@ export function stripSyntheticErrorTurns(contents: any[]): boolean {
           text.includes('Le service Google Cloud Code a expiré') ||
           text.includes('All Google Cloud Code accounts are currently unavailable') ||
           text.includes('[Proxy] La connexion au modèle a été interrompue') ||
-          text.includes('ag-system-error-marker');
+          text.includes('ag-system-error-marker') ||
+          text.includes('comptes vérifiés') ||
+          text.includes('ont été testés automatiquement en arrière-plan') ||
+          text.includes('Quota exhausted — 5h cooldown') ||
+          (text.includes('rate_limit') && text.includes('configurés')) ||
+          (text.includes('WARNING') && text.includes('Model unavailable'));
         return !isSyntheticError;
       });
 
