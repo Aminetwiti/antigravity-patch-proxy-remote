@@ -2318,7 +2318,7 @@ export function executeGoogleCloudCodeRequest(
       });
 
       let effectiveTimeout = timeoutMs || GOOGLE_PROXY_TIMEOUT_MS;
-      if (/flash/i.test(modelName) && effectiveTimeout > 35_000) {
+      if (!timeoutMs && /flash/i.test(modelName) && effectiveTimeout > 35_000) {
         effectiveTimeout = 35_000;
       }
       if (typeof proxyReq?.setTimeout === 'function') {
@@ -3749,7 +3749,7 @@ export async function executeGoogleCloudCodeWithPool(
           const combinedOutageCount = consecutive504TimeoutCount + consecutive503CapacityCount;
           // Dynamically scale outage threshold with pool size: dynamically scales up to CONSECUTIVE_504_CASCADE_THRESHOLD (default 7)
           // while ensuring small pools do not wait more than 40% of their total candidate accounts.
-          const dynamicPoolThreshold = Math.max(2, Math.min(CONSECUTIVE_504_CASCADE_THRESHOLD, Math.ceil(sortedAccounts.length * 0.4)));
+          const dynamicPoolThreshold = Math.min(3, Math.max(2, Math.min(CONSECUTIVE_504_CASCADE_THRESHOLD, Math.ceil(sortedAccounts.length * 0.25))));
           const outageThreshold = dynamicPoolThreshold;
           if (consecutive504TimeoutCount >= outageThreshold || combinedOutageCount >= outageThreshold) {
             log.warn(
@@ -3867,8 +3867,8 @@ export async function executeGoogleCloudCodeWithPool(
 
   // Strict Model Locking: NEVER cascade or degrade to another model family or version.
   // The user selected this exact model; when its pool accounts fail, report the error directly without substituting another model.
-  const allowCrossModelFallback = process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
-  const allCustomModels = expandModelsWithEffort(loadCustomModels());
+  const allowCrossModelFallback = process.env.AG_ENABLE_CROSS_MODEL_FALLBACK !== '0';
+  const allCustomModels = expandModelsWithEffort(loadCustomModels(true));
   const currentBase = normalizeCloudCodeModelId((reqJson.model as string) || (reqJson.request as any)?.model || '');
   if (currentBase) attemptedModels.add(currentBase.toLowerCase());
   const isClaudeRequest = currentBase.toLowerCase().includes('claude');

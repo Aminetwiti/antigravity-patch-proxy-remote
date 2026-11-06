@@ -204,11 +204,11 @@ function validateModels(decrypted: CustomModel[]): CustomModel[] {
   return validModels;
 }
 
-export function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel[] {
+export function parseProvidersSchema(providers: RawProviderEntry[], includeDisabled = false): CustomModel[] {
   const flatModels: CustomModel[] = [];
   for (const p of providers) {
     const hasEnabledAccounts = Array.isArray((p as any).accounts) && (p as any).accounts.some((a: any) => a && a.enabled !== false);
-    if (p.enabled === false && !hasEnabledAccounts) continue;
+    if (p.enabled === false && !hasEnabledAccounts && !includeDisabled) continue;
 
     const accounts = Array.isArray((p as any).accounts) && (p as any).accounts.length > 0
       ? (p as any).accounts
@@ -234,7 +234,7 @@ export function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel
     }
 
     for (const acc of accounts) {
-      if (acc.enabled === false) continue;
+      if (acc.enabled === false && !includeDisabled) continue;
       const accEmail = (acc.email || (acc as any).accountEmail || '').trim().toLowerCase();
       if (isGoogle && accEmail && (acc as any).quotas) {
         const prefix = isGeminiCli ? 'gemini-cli' : 'google';
@@ -246,10 +246,10 @@ export function parseProvidersSchema(providers: RawProviderEntry[]): CustomModel
       const targetModels = Array.isArray((acc as any).models) && (acc as any).models.length > 0 ? (acc as any).models : models;
       for (const rawM of targetModels) {
         const m = typeof rawM === 'string' ? { id: rawM, displayName: '', enabled: true } : rawM;
-        if (m.enabled === false) continue;
+        if (m.enabled === false && !includeDisabled) continue;
         const mId = m.id ?? '';
         const normMId = isGoogle ? normalizeCloudCodeModelId(mId) : '';
-        if (disabledProviderModelIds.has(mId) || (normMId && disabledProviderModelIds.has(normMId))) continue;
+        if ((disabledProviderModelIds.has(mId) || (normMId && disabledProviderModelIds.has(normMId))) && !includeDisabled) continue;
         if (isObsoleteModel(mId, m.displayName)) continue;
         if (isGeminiCli && (mId.includes('gemini-2') || mId.includes('gemini-3.1') || mId.includes('gemini-3.0') || mId.includes('gemini-1'))) {
           continue;
@@ -362,7 +362,7 @@ export function resetLastValidCustomModelsForTest(): void {
  * Loads custom models from disk, handling first-run defaults,
  * encryption migration, and validation.
  */
-export function loadCustomModels(): CustomModel[] {
+export function loadCustomModels(includeDisabled = false): CustomModel[] {
   const filePath = getCustomModelsPath();
 
   if (!fs.existsSync(filePath)) {
@@ -388,7 +388,7 @@ export function loadCustomModels(): CustomModel[] {
 
     let loadedModels: CustomModel[] = [];
     if (parsed.providers && Array.isArray(parsed.providers)) {
-      loadedModels = parseProvidersSchema(parsed.providers);
+      loadedModels = parseProvidersSchema(parsed.providers, includeDisabled);
     } else {
       const models = parsed.models || [];
       loadedModels = parseModelsSchema(models, filePath);

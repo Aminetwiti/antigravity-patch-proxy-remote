@@ -24,9 +24,11 @@ if (!fs.existsSync(asarPath)) {
 }
 
 // 1. Resolve pristine source asar
+const freshPath = path.join(classicDir, 'resources', 'app.asar.backup-fresh-2.29.0');
+const freshGeneric = path.join(classicDir, 'resources', 'app.asar.backup-fresh');
 const origPath = path.join(classicDir, 'resources', 'app.asar.original-2.23.0');
 const bakPath = asarPath + '.bak';
-const sourceAsar = fs.existsSync(origPath) ? origPath : (fs.existsSync(bakPath) ? bakPath : asarPath);
+const sourceAsar = fs.existsSync(freshPath) ? freshPath : (fs.existsSync(freshGeneric) ? freshGeneric : (fs.existsSync(origPath) ? origPath : (fs.existsSync(bakPath) ? bakPath : asarPath)));
 if (!fs.existsSync(bakPath) && fs.existsSync(sourceAsar)) {
   console.log('[repack-installed] Creating backup:', bakPath);
   fs.copyFileSync(sourceAsar, bakPath);

@@ -287,10 +287,8 @@ try {
   const mainJsPath = path.join(buildDir, 'dist', 'main.js');
   let mainJs = fs.readFileSync(mainJsPath, 'utf8');
 
-  const mainMarker = mainJs.indexOf('// [Antigravity Proxy');
-  if (mainMarker !== -1) {
-    mainJs = mainJs.substring(0, mainMarker).trimEnd() + '\n';
-  }
+  // Clean any previous injection cleanly without truncating the rest of main.js
+  mainJs = mainJs.replace(/\/\/ \[Antigravity Proxy[^]*?require\('\.\.\/proxy-runner'\); \}\r?\n/g, '');
 
   if (!mainJs.includes('proxy-runner')) {
     const mainHook = [
