@@ -1,0 +1,83 @@
+# .gitleaks.toml — Gitleaks configuration for antigravity-patch-proxy
+# Docs: https://github.com/gitleaks/gitleaks/tree/master#configuration
+
+title = "Antigravity Patch Proxy — Secret Scanner"
+
+[extend]
+# Inherit all default rules (AWS keys, GitHub tokens, generic API keys, etc.)
+useDefault = true
+
+# ─── Custom rules specific to this project ───────────────────────────────────
+
+[[rules]]
+id          = "antigravity-oauth-access-token"
+description = "Google OAuth access token (Antigravity ya29.* bearer)"
+regex       = '''ya29\.[A-Za-z0-9_\-]{20,}'''
+tags        = ["google", "oauth", "antigravity"]
+severity    = "critical"
+
+[[rules]]
+id          = "google-refresh-token"
+description = "Google OAuth refresh token (1//... format)"
+regex       = '''1//[A-Za-z0-9_\-]{20,}'''
+tags        = ["google", "oauth", "refresh-token"]
+severity    = "critical"
+
+[[rules]]
+id          = "google-aistudio-key"
+description = "Google AI Studio API key (AIzaSy... format)"
+regex       = '''AIzaSy[A-Za-z0-9_\-]{33}'''
+tags        = ["google", "api-key", "aistudio"]
+severity    = "critical"
+
+[[rules]]
+id          = "antigravity-aq-key"
+description = "Antigravity AQ.Ab8RN... account key"
+regex       = '''AQ\.Ab8RN[A-Za-z0-9_\-\.]{20,}'''
+tags        = ["antigravity", "account-key"]
+severity    = "critical"
+
+[[rules]]
+id          = "generic-access-token-json"
+description = "accessToken field in JSON (OAuth token stored in code/tests)"
+regex       = '''"accessToken"\s*:\s*"[A-Za-z0-9_\-\.]{20,}"'''
+tags        = ["generic", "json", "token"]
+severity    = "high"
+# Allow mock/fake tokens in test files
+[rules.allowlist]
+  regexes   = ['''mock|fake|example|placeholder|dummy|test|PLACEHOLDER|ya29\.valid-mock|ya29\.test''']
+  paths     = ['''_test\.ts$|\.test\.ts$|\.spec\.ts$|_test\.go$|test_.*\.go$''']
+
+[[rules]]
+id          = "generic-refresh-token-json"
+description = "refreshToken field in JSON"
+regex       = '''"refreshToken"\s*:\s*"[A-Za-z0-9_\-]{15,}"'''
+tags        = ["generic", "json", "token"]
+severity    = "high"
+[rules.allowlist]
+  regexes   = ['''mock|fake|example|placeholder|dummy|1\/\/valid-refresh''']
+  paths     = ['''_test\.ts$|\.test\.ts$|\.spec\.ts$''']
+
+# ─── Global allowlist: files that are NEVER scanned ──────────────────────────
+
+[allowlist]
+description = "Files safe to skip"
+paths = [
+  # Lock files & package metadata
+  '''package-lock\.json$''',
+  '''yarn\.lock$''',
+  '''go\.sum$''',
+  # Example / template credential files (no real values)
+  '''\.env\.example$''',
+  '''accounts\.env\.example$''',
+  '''\.env\.schema\.json$''',
+  # Binary & built files
+  '''\.asar$''',
+  '''\.node$''',
+  '''dist/''',
+  '''dist-build/''',
+  # This config file itself
+  '''\.gitleaks\.toml$''',
+  # Proto files (contain field names like "refresh_token" as identifiers)
+  '''\.proto$''',
+]
