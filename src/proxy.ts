@@ -1920,7 +1920,13 @@ export async function proxyToGoogle(
     log.debug('[Proxy] Upstream request closed traceId=', traceId, 'after', ms, 'ms');
   });
 
-  const forwardTimeoutMs = /flash/i.test(originalModel || '') ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_PROXY_TIMEOUT_MS;
+  const isFlashDirect = /flash/i.test(originalModel || '');
+  const isDirectLargeOrThinking = (reqBody && reqBody.length > 120_000) ||
+    /thinking|thought|-high$|-medium$/i.test(originalModel || '') ||
+    (reqBody && reqBody.includes(Buffer.from('/think-')));
+  const forwardTimeoutMs = isFlashDirect
+    ? (isDirectLargeOrThinking ? Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS) : Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS))
+    : GOOGLE_PROXY_TIMEOUT_MS;
   proxyReq.setTimeout(forwardTimeoutMs, () => {
     log.error(`[Proxy] Google proxy request timed out after ${forwardTimeoutMs / 1000}s (${req.method} ${req.url})`);
     proxyReq.destroy();
@@ -2317,9 +2323,13 @@ export function executeGoogleCloudCodeRequest(
         metricObserve('proxy_upstream_ms', ms, { upstream: targetHost, trace_id: traceId });
       });
 
-      let effectiveTimeout = timeoutMs || GOOGLE_PROXY_TIMEOUT_MS;
-      if (!timeoutMs && /flash/i.test(modelName) && effectiveTimeout > 35_000) {
-        effectiveTimeout = 35_000;
+      // ponytail: respect explicit caller timeout (pool header timeout, large payload, or thinking config)
+      // up to GOOGLE_PROXY_TIMEOUT_MS. Only clamp to 35s when timeoutMs was omitted for standard flash requests.
+      let effectiveTimeout: number;
+      if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+        effectiveTimeout = Math.min(timeoutMs, GOOGLE_PROXY_TIMEOUT_MS);
+      } else {
+        effectiveTimeout = /flash/i.test(modelName) ? 35_000 : GOOGLE_PROXY_TIMEOUT_MS;
       }
       if (typeof proxyReq?.setTimeout === 'function') {
         proxyReq.setTimeout(effectiveTimeout, () => {
@@ -2350,6 +2360,20 @@ export function executeGoogleCloudCodeRequest(
       finish({ success: false, statusCode: 500, error: 'DNS resolution failed: ' + (dnsErr as Error).message, isTransportError: true });
     });
   });
+}
+
+function trimOldestHistory(obj: any): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  const contents = obj.contents || obj.request?.contents;
+  if (Array.isArray(contents) && contents.length > 4) {
+    const first = contents[0];
+    const keepCount = Math.max(3, Math.floor(contents.length * 0.7));
+    const trimmed = [first, ...contents.slice(contents.length - keepCount)];
+    if (obj.contents) obj.contents = trimmed;
+    if (obj.request?.contents) obj.request.contents = trimmed;
+    return true;
+  }
+  return false;
 }
 
 export async function executeGoogleCloudCodeWithPool(
@@ -2900,7 +2924,7 @@ export async function executeGoogleCloudCodeWithPool(
     const reqContents = (candidateReqObj?.contents || reqJson.contents) as any[] | undefined;
     const isMultiTurn = Array.isArray(reqContents) && reqContents.length > 1;
     const isContextualPayload = updatedBody.length > 8_000 || isMultiTurn;
-    const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel) || hasThinkingConfig;
+    const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel) || hasThinkingConfig || updatedBody.includes('/think-');
     const isFlashModel = isFlash;
     const isLargePayload = updatedBody.length > 120_000;
     const isLargePayloadOrThinking = isLargePayload || isThinkingModel;
@@ -2921,7 +2945,7 @@ export async function executeGoogleCloudCodeWithPool(
 
     const baseCandidateTimeout = isFlashModel
       ? (hasOtherCandidates
-          ? (isLargePayload ? Math.min(55_000, GOOGLE_PROXY_TIMEOUT_MS) : flashTimeoutMs)
+          ? (isLargePayloadOrThinking ? Math.min(55_000, GOOGLE_PROXY_TIMEOUT_MS) : flashTimeoutMs)
           : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS))
       : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs);
 
@@ -2929,15 +2953,18 @@ export async function executeGoogleCloudCodeWithPool(
     // but keep flash models strictly bounded to prevent freezing the agent session.
     let poolHeaderTimeout = hasOtherCandidates
       ? baseCandidateTimeout
-      : (isFlashModel ? (isLargePayload ? 55_000 : flashTimeoutMs) : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS));
+      : (isFlashModel ? (isLargePayloadOrThinking ? 60_000 : flashTimeoutMs) : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS));
 
     // Escalating retry timeout on 504: If a prior candidate experienced a timeout on this payload,
     // escalate candidate timeout to allow larger prompts to finish prefill, safely bounded by remainingPoolBudgetMs.
     if (consecutive504TimeoutCount > 0) {
       // In pools with >= 3 healthy candidates, bound escalation so 2 slow nodes do not consume the entire loop budget
+      const flashEscalation = isLargePayloadOrThinking
+        ? 60_000
+        : (isContextualPayload ? 45_000 : 30_000);
       const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
-        ? (isFlashModel ? 30_000 : 55_000)
-        : (isFlashModel ? 35_000 : 75_000);
+        ? (isFlashModel ? flashEscalation : 55_000)
+        : (isFlashModel ? (isLargePayloadOrThinking ? 65_000 : (isContextualPayload ? 50_000 : 35_000)) : 75_000);
       const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
       if (escalatingTimeout > poolHeaderTimeout) {
         log.info(`[Proxy] Prior candidate experienced 504 timeout. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
@@ -3577,18 +3604,7 @@ export async function executeGoogleCloudCodeWithPool(
 
     if (outcome.statusCode === 400 && /context.*length|token.*limit|payload.*exceed|too large|request.*large|exceeds.*limit/i.test(outcome.error || '')) {
       log.warn(`[Proxy] Detected Context/Token limit error from upstream on ${candidateName}. Trimming 30% oldest history and retrying...`);
-      const trimHistory = (obj: any) => {
-        if (!obj || typeof obj !== 'object') return;
-        const contents = obj.contents || obj.request?.contents;
-        if (Array.isArray(contents) && contents.length > 4) {
-          const first = contents[0];
-          const keepCount = Math.max(3, Math.floor(contents.length * 0.7));
-          const trimmed = [first, ...contents.slice(contents.length - keepCount)];
-          if (obj.contents) obj.contents = trimmed;
-          if (obj.request?.contents) obj.request.contents = trimmed;
-        }
-      };
-      trimHistory(reqJson);
+      trimOldestHistory(reqJson);
       const retryBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
       const retryOutcome = await executeGoogleCloudCodeRequest(
         req,
@@ -3706,10 +3722,11 @@ export async function executeGoogleCloudCodeWithPool(
         const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
         // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (transient server/thinking latency): 45s cooldown; outages: 45s.
         const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 45_000 : (isUpstreamOutage ? 45_000 : 30_000));
+        const isPayloadInducedTimeout = lastStatus === 504 && (isLargePayload || isContextualPayload || isMultiTurn || consecutive504TimeoutCount > 0);
         const isCappedTimeout = wasTimeoutCappedByBudget || (lastStatus === 504 && poolHeaderTimeout < baseCandidateTimeout);
-        if (lastStatus === 504 && isCappedTimeout) {
+        if (lastStatus === 504 && (isCappedTimeout || isPayloadInducedTimeout)) {
           log.info(
-            `[Proxy] Account ${candidateName} timed out under capped/abbreviated timeout (${Math.round(poolHeaderTimeout / 1000)}s < ${Math.round(baseCandidateTimeout / 1000)}s). Skipping cooldown penalty to preserve healthy account.`,
+            `[Proxy] Account ${candidateName} timed out on ${isPayloadInducedTimeout ? 'heavy/contextual conversation' : 'capped timeout'}. Skipping cooldown penalty to preserve healthy pool accounts.`,
           );
         } else {
           log.warn(
@@ -3718,15 +3735,20 @@ export async function executeGoogleCloudCodeWithPool(
           setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
         }
         if (lastStatus === 504) {
-          recordAccountLatency(candidate, isCappedTimeout ? Math.min(elapsedMs, 20_000) : 60_000);
+          recordAccountLatency(candidate, (isCappedTimeout || isPayloadInducedTimeout) ? Math.min(elapsedMs, 25_000) : 60_000);
           if (sessId) {
             sessionAffinities.delete(sessId);
           }
-          // On 504 on a large context payload, compact historical turns before candidate rotation
+          // On 504 on a large context payload, compact historical turns & trim oldest turns before candidate rotation
           const reqObj = (reqJson.request || reqJson) as any;
-          if (Array.isArray(reqObj?.contents) && reqObj.contents.length > 8) {
-            log.info(`[Proxy] 504 timeout on heavy session (${reqObj.contents.length} turns). Running context trimmer before rotating to next account...`);
+          if (Array.isArray(reqObj?.contents) && reqObj.contents.length > 4) {
+            log.info(`[Proxy] 504 timeout on heavy session (${reqObj.contents.length} turns). Running context trimmer & history compaction before rotating to next account...`);
             trimContextPayload(reqJson as unknown as GeminiRequestBody);
+            const didTrim = trimOldestHistory(reqJson);
+            if (didTrim) {
+              const remainingTurns = ((reqJson.request || reqJson) as any)?.contents?.length;
+              log.warn(`[Proxy] ✂️ [Context Auto-Trimmer] Trimmed 30% oldest history (${remainingTurns} turns remaining) to break 504 timeout cascade for subsequent pool candidates.`);
+            }
           }
         }
 

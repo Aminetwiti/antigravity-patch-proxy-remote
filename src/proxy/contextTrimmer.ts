@@ -11,8 +11,8 @@ import type { GeminiRequestBody } from './types';
 const RECENT_TURNS_PRESERVE_COUNT = 8;
 const MAX_HISTORICAL_TOOL_OUTPUT_CHARS = 4_096;
 
-function compactHistoricalString(val: string, headChars = 2000, tailChars = 800): string {
-  if (val.length <= MAX_HISTORICAL_TOOL_OUTPUT_CHARS) return val;
+function compactHistoricalString(val: string, headChars = 2000, tailChars = 800, threshold = MAX_HISTORICAL_TOOL_OUTPUT_CHARS): string {
+  if (val.length <= threshold) return val;
   const head = val.slice(0, headChars);
   const tail = val.slice(-tailChars);
   const pruned = val.length - (headChars + tailChars);
@@ -43,6 +43,14 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
       totalTurns > RECENT_TURNS_PRESERVE_COUNT &&
       turnIndex < totalTurns - RECENT_TURNS_PRESERVE_COUNT;
 
+    const isVeryDeepHistory = totalTurns > 25 && turnIndex < totalTurns - 15;
+    const toolThreshold = isVeryDeepHistory ? 2_048 : MAX_HISTORICAL_TOOL_OUTPUT_CHARS;
+    const toolHead = isVeryDeepHistory ? 1000 : 2000;
+    const toolTail = isVeryDeepHistory ? 400 : 800;
+    const rawTextThreshold = isVeryDeepHistory ? 4_000 : 8_000;
+    const textHead = isVeryDeepHistory ? 1000 : 1800;
+    const textTail = isVeryDeepHistory ? 400 : 700;
+
     // 1. Compact oversized historical outputs in old turns (>8 turns in the past)
     const compactedParts = content.parts.map((part) => {
       if (!isHistoricalTurn) return part;
@@ -50,13 +58,13 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
       // Compact oversized functionResponse outputs in historical turns
       if (part.functionResponse && part.functionResponse.response) {
         const resp = part.functionResponse.response;
-        if (typeof resp === 'string' && resp.length > MAX_HISTORICAL_TOOL_OUTPUT_CHARS) {
-          compactedBytesTotal += Math.max(0, resp.length - 2800);
+        if (typeof resp === 'string' && resp.length > toolThreshold) {
+          compactedBytesTotal += Math.max(0, resp.length - (toolHead + toolTail));
           return {
             ...part,
             functionResponse: {
               ...part.functionResponse,
-              response: compactHistoricalString(resp),
+              response: compactHistoricalString(resp, toolHead, toolTail, toolThreshold),
             },
           };
         }
@@ -65,9 +73,9 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
           const clonedResp: Record<string, unknown> = { ...(resp as Record<string, unknown>) };
           for (const key of Object.keys(clonedResp)) {
             const fieldVal = clonedResp[key];
-            if (typeof fieldVal === 'string' && fieldVal.length > MAX_HISTORICAL_TOOL_OUTPUT_CHARS) {
-              compactedBytesTotal += Math.max(0, fieldVal.length - 2800);
-              clonedResp[key] = compactHistoricalString(fieldVal);
+            if (typeof fieldVal === 'string' && fieldVal.length > toolThreshold) {
+              compactedBytesTotal += Math.max(0, fieldVal.length - (toolHead + toolTail));
+              clonedResp[key] = compactHistoricalString(fieldVal, toolHead, toolTail, toolThreshold);
               modified = true;
             }
           }
@@ -83,18 +91,18 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
         }
       }
 
-      // Compact oversized raw text blocks in historical turns (>8,000 chars)
+      // Compact oversized raw text blocks in historical turns (>8,000 chars, or >4,000 in very deep history)
       if (
         part.text &&
-        part.text.length > 8_000 &&
+        part.text.length > rawTextThreshold &&
         !part.functionCall &&
         !(part as any).thought &&
         (part as any).type !== 'thinking'
       ) {
-        compactedBytesTotal += Math.max(0, part.text.length - 2500);
+        compactedBytesTotal += Math.max(0, part.text.length - (textHead + textTail));
         return {
           ...part,
-          text: compactHistoricalString(part.text, 1800, 700),
+          text: compactHistoricalString(part.text, textHead, textTail, rawTextThreshold),
         };
       }
 

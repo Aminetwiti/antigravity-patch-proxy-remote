@@ -1479,6 +1479,31 @@ describe('Google Multi-Account Pool & Failover', () => {
       _resetAllAccountCooldowns();
     });
 
+    it('skips exporting and restoring transient/short cooldowns (< 60s) to keep pool fresh across restarts', () => {
+      _resetAllAccountCooldowns();
+      const transientModel: CustomModel = {
+        name: 'models/google:gemini-3.8-flash:transient',
+        provider: 'google',
+        accountEmail: 'transient@example.com',
+      };
+      const key = getAccountQuotaKey(transientModel);
+
+      // Set a 30s transient cooldown
+      setAccountCooldown(transientModel, 30_000, 'gemini');
+      expect(isAccountInCooldown(transientModel, 'gemini')).toBe(true);
+
+      // getActiveAccountCooldowns should not export it
+      const active = getActiveAccountCooldowns();
+      expect(active[`${key}:gemini`]).toBeUndefined();
+
+      // restoreActiveAccountCooldowns should ignore any short cooldowns under 60s
+      _resetAllAccountCooldowns();
+      restoreActiveAccountCooldowns({ [`${key}:gemini`]: Date.now() + 45_000 });
+      expect(isAccountInCooldown(transientModel, 'gemini')).toBe(false);
+
+      _resetAllAccountCooldowns();
+    });
+
     it('wakes up accounts with stored healthy quotas after reconciliation', () => {
       _resetAllAccountCooldowns();
       _clearLiveQuotasForTests();

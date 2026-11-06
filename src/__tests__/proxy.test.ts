@@ -13,7 +13,8 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-import { parseRetryAfter, matchesCustomModel, isNativeCloudCodeModel, sanitizeCandidatesInResponse, transformGoogleStreamForRemote } from '../proxy';
+import { parseRetryAfter, matchesCustomModel, isNativeCloudCodeModel, sanitizeCandidatesInResponse, transformGoogleStreamForRemote, executeGoogleCloudCodeRequest } from '../proxy';
+import https from 'https';
 import * as zlib from 'zlib';
 import { EventEmitter } from 'events';
 import { DEFAULT_MAX_BODY_SIZE } from '../constants';
@@ -508,5 +509,136 @@ describe('transformGoogleStreamForRemote', () => {
     expect(output).not.toContain(']\n');
   });
 });
+
+describe('executeGoogleCloudCodeRequest timeout calibration', () => {
+  it('respects explicitly provided timeoutMs (e.g. 55s, 60s, 65s) for Flash models without clamping to 35s', async () => {
+    let capturedTimeout = 0;
+    const mockClientReq: any = new EventEmitter();
+    mockClientReq.setTimeout = vi.fn((ms: number) => {
+      capturedTimeout = ms;
+      return mockClientReq;
+    });
+    mockClientReq.write = vi.fn();
+    mockClientReq.end = vi.fn();
+    mockClientReq.destroy = vi.fn();
+
+    const requestSpy = vi.spyOn(https, 'request').mockImplementation((_url: any, _opts: any, cb: any) => {
+      const mockProxyRes: any = new EventEmitter();
+      mockProxyRes.statusCode = 200;
+      mockProxyRes.headers = {};
+      mockProxyRes.pipe = vi.fn();
+      process.nextTick(() => cb(mockProxyRes));
+      return mockClientReq;
+    });
+
+    const mockReq: any = new EventEmitter();
+    mockReq.url = 'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent';
+    mockReq.method = 'POST';
+    mockReq.headers = {};
+
+    const mockRes: any = new EventEmitter();
+    mockRes.headersSent = false;
+    mockRes.writableEnded = false;
+    mockRes.writeHead = vi.fn();
+
+    const outcome = await executeGoogleCloudCodeRequest(
+      mockReq,
+      mockRes,
+      Buffer.from('{}'),
+      false,
+      undefined,
+      'test-conv',
+      undefined,
+      60_000,
+      'gemini-3.8-flash-tiered',
+    );
+
+    expect(mockClientReq.setTimeout.mock.calls[0][0]).toBe(60_000);
+    expect(outcome.success).toBe(true);
+    requestSpy.mockRestore();
+  });
+
+  it('clamps to 35s when timeoutMs is omitted for a Flash model', async () => {
+    const mockClientReq: any = new EventEmitter();
+    mockClientReq.setTimeout = vi.fn().mockReturnValue(mockClientReq);
+    mockClientReq.write = vi.fn();
+    mockClientReq.end = vi.fn();
+    mockClientReq.destroy = vi.fn();
+
+    const requestSpy = vi.spyOn(https, 'request').mockImplementation((_url: any, _opts: any, cb: any) => {
+      const mockProxyRes: any = new EventEmitter();
+      mockProxyRes.statusCode = 200;
+      mockProxyRes.headers = {};
+      mockProxyRes.pipe = vi.fn();
+      process.nextTick(() => cb(mockProxyRes));
+      return mockClientReq;
+    });
+
+    const mockReq: any = new EventEmitter();
+    mockReq.url = 'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent';
+    mockReq.method = 'POST';
+    mockReq.headers = {};
+
+    const mockRes: any = new EventEmitter();
+    mockRes.headersSent = false;
+    mockRes.writableEnded = false;
+    mockRes.writeHead = vi.fn();
+
+    const outcome = await executeGoogleCloudCodeRequest(
+      mockReq,
+      mockRes,
+      Buffer.from('{}'),
+      false,
+      undefined,
+      'test-conv',
+      undefined,
+      undefined,
+      'gemini-3.8-flash-tiered',
+    );
+
+    expect(mockClientReq.setTimeout.mock.calls[0][0]).toBe(35_000);
+    expect(outcome.success).toBe(true);
+    requestSpy.mockRestore();
+  });
+
+  it('escalates 504 retry timeout to 60s for Flash models with large payload or thinking', () => {
+    const hasOtherCandidates = true;
+    const healthySiblingAccountsCount = 4;
+    const isFlashModel = true;
+    const isLargePayloadOrThinking = true;
+    const isContextualPayload = true;
+    const GOOGLE_PROXY_TIMEOUT_MS = 120_000;
+
+    const flashEscalation = isLargePayloadOrThinking
+      ? 60_000
+      : (isContextualPayload ? 45_000 : 30_000);
+    const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
+      ? (isFlashModel ? flashEscalation : 55_000)
+      : (isFlashModel ? (isLargePayloadOrThinking ? 65_000 : (isContextualPayload ? 50_000 : 35_000)) : 75_000);
+    const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
+
+    expect(escalatingTimeout).toBe(60_000);
+  });
+
+  it('escalates 504 retry timeout to 65s for Flash models with thinking when healthy siblings < 3', () => {
+    const hasOtherCandidates = true;
+    const healthySiblingAccountsCount = 1;
+    const isFlashModel = true;
+    const isLargePayloadOrThinking = true;
+    const isContextualPayload = true;
+    const GOOGLE_PROXY_TIMEOUT_MS = 120_000;
+
+    const flashEscalation = isLargePayloadOrThinking
+      ? 60_000
+      : (isContextualPayload ? 45_000 : 30_000);
+    const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
+      ? (isFlashModel ? flashEscalation : 55_000)
+      : (isFlashModel ? (isLargePayloadOrThinking ? 65_000 : (isContextualPayload ? 50_000 : 35_000)) : 75_000);
+    const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
+
+    expect(escalatingTimeout).toBe(65_000);
+  });
+});
+
 
 

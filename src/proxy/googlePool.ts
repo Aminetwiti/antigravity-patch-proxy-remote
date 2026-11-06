@@ -701,7 +701,12 @@ export function getActiveAccountCooldowns(): Record<string, number> {
   const res: Record<string, number> = {};
   for (const [k, until] of googleAccountCooldowns.entries()) {
     if (until > now) {
-      res[k] = until;
+      const remainingMs = until - now;
+      // ponytail: only persist cooldowns with significant remaining duration (>= 60s) or confirmed quota exhaustion.
+      // Transient server hiccups (20s-45s) must not persist across restarts.
+      if (remainingMs >= 60_000 || quotaExhaustedAccountKeys.has(k)) {
+        res[k] = until;
+      }
     }
   }
   return res;
@@ -713,6 +718,10 @@ export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>,
   for (const [k, until] of Object.entries(cooldowns)) {
     if (typeof until === 'number' && until > now) {
       const durationMs = until - now;
+      // Skip transient/short cooldowns (< 60s) upon restore: after a restart, transient server hiccups are obsolete
+      if (durationMs < 60_000 && !quotaExhaustedAccountKeys.has(k)) {
+        continue;
+      }
       // Skip restoring quota-exhausted cooldowns (> 5h) if the persisted quota
       // for this account is still fresh and shows positive remaining quota.
       // The quota poller runs within 3 minutes and will confirm the real state.

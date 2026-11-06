@@ -136,12 +136,16 @@ async function main() {
 
   // Ensure Antigravity processes are closed before staging and repacking
   if (process.platform === 'win32' && path.resolve(asarOut) === path.resolve(defaultAsarOut)) {
-    console.log('[patch_2_29] Ensuring Antigravity processes are closed...');
-    try {
-      execSync('powershell -Command "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
-      const waitStart = Date.now();
-      while (Date.now() - waitStart < 1500) {}
-    } catch (_) {}
+    if (process.env.AG_NO_KILL !== '1') {
+      console.log('[patch_2_29] Ensuring Antigravity processes are closed...');
+      try {
+        execSync('powershell -Command "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
+        const waitStart = Date.now();
+        while (Date.now() - waitStart < 1500) {}
+      } catch (_) {}
+    } else {
+      console.log('[patch_2_29] AG_NO_KILL=1: Preserving running Antigravity without killing.');
+    }
   }
 
   // 1. Ensure build output is compiled

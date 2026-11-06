@@ -177,4 +177,34 @@ describe('ContextTrimmer (AUDIT-002 Regression & Collision Prevention)', () => {
     expect(recentOutput.length).toBe(25_000);
     expect(recentOutput).toBe(hugeOutput);
   });
+
+  it('compacts deep historical turns (>25 turns session, turn < totalTurns - 15) down to ~1400 chars', () => {
+    const hugeOutput = 'Y'.repeat(25_000);
+
+    // Create a 30-turn conversation: turn 0 is very deep history
+    const contents = Array.from({ length: 30 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'model',
+      parts: [
+        {
+          functionResponse: {
+            name: 'read_file',
+            response: { output: hugeOutput },
+          },
+        },
+      ],
+    }));
+
+    const body: GeminiRequestBody = {
+      request: { contents },
+    };
+
+    const trimmed = trimContextPayload(body);
+    const deepHistoricalTurn = trimmed.request?.contents?.[0];
+
+    const output = (deepHistoricalTurn?.parts?.[0]?.functionResponse?.response as any)?.output;
+    expect(output.length).toBeLessThan(2000);
+    expect(output).toContain('Output truncated for context optimization');
+    expect(output.startsWith('Y'.repeat(1000))).toBe(true);
+    expect(output.endsWith('Y'.repeat(400))).toBe(true);
+  });
 });
