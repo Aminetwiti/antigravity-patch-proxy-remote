@@ -441,6 +441,39 @@ describe('thoughtSignature handling', () => {
       injectAntiHallucinationInstruction(req);
       expect(req.systemInstruction.parts.length).toBe(1);
     });
+
+    it('recovers zero-argument pseudo-tool calls [Executed tool: get_current_time]', () => {
+      const text = 'Checking time:\n[Executed tool: get_current_time]\nDone.';
+      const data = {
+        candidates: [
+          {
+            content: {
+              role: 'model',
+              parts: [{ text }],
+            },
+          },
+        ],
+      };
+
+      const modified = sanitizeCandidatesInResponse(data);
+      expect(modified).toBe(true);
+      const parts = data.candidates[0].content.parts as any[];
+      expect(parts.length).toBe(3);
+      expect(parts[0].text).toBe('Checking time:');
+      expect(parts[1].functionCall.name).toBe('get_current_time');
+      expect(parts[1].functionCall.args).toEqual({});
+      expect(parts[2].text).toBe('Done.');
+    });
+
+    it('extractAllPseudoToolCalls extracts mixed zero-arg and with-args tools with surrounding text', () => {
+      const text = 'Intro\n[Executed tool: get_status]\nMiddle\n[Executed tool: run_cmd with arguments: {"cmd":"dir"}]\nOutro';
+      const calls = extractAllPseudoToolCalls(text);
+      expect(calls.length).toBe(2);
+      expect(calls[0].fnName).toBe('get_status');
+      expect(calls[0].args).toEqual({});
+      expect(calls[1].fnName).toBe('run_cmd');
+      expect(calls[1].args).toEqual({ cmd: 'dir' });
+    });
   });
 
   describe('corrupted signature tracking and clearing', () => {

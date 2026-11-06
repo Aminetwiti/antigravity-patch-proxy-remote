@@ -949,13 +949,37 @@ export function extractAllPseudoToolCalls(text: string): Array<{ fnName: string;
     if (startIdx === -1) break;
 
     const afterMarker = text.slice(startIdx + marker.length);
+    const closeBracketIdx = afterMarker.indexOf(']');
     const withArgsIdx = afterMarker.indexOf('with arguments:');
+
+    // Case 1: Zero-argument tool call [Executed tool: tool_name]
+    if (closeBracketIdx !== -1 && (withArgsIdx === -1 || closeBracketIdx < withArgsIdx)) {
+      const potentialFn = afterMarker.slice(0, closeBracketIdx).trim();
+      if (/^[a-zA-Z0-9_\-\.:]+$/.test(potentialFn)) {
+        const fullEndIdx = startIdx + marker.length + closeBracketIdx + 1;
+        results.push({
+          fnName: potentialFn,
+          args: {},
+          fullMatch: text.slice(startIdx, fullEndIdx),
+          startIdx,
+          endIdx: fullEndIdx,
+        });
+        cursor = fullEndIdx;
+        continue;
+      }
+    }
+
+    // Case 2: Tool call with arguments
     if (withArgsIdx === -1) {
       cursor = startIdx + marker.length;
       continue;
     }
 
     const fnName = afterMarker.slice(0, withArgsIdx).trim();
+    if (!/^[a-zA-Z0-9_\-\.:]+$/.test(fnName)) {
+      cursor = startIdx + marker.length;
+      continue;
+    }
     const argsStartInText = startIdx + marker.length + withArgsIdx + 'with arguments:'.length;
 
     const parsedJson = parseBalancedJson(text, argsStartInText);
@@ -1448,6 +1472,22 @@ export function transformGoogleStreamForRemote(
             pseudoToolBaseItem = data;
             pseudoToolEol = line.endsWith('\r') ? '\r\n' : '\n';
           }
+
+          // Isolate and emit any prefix text preceding [Executed tool: immediately
+          const markerIdx = pseudoToolBuffer.indexOf(PSEUDO_TOOL_MARKER);
+          if (markerIdx > 0) {
+            const prefixText = pseudoToolBuffer.slice(0, markerIdx);
+            pseudoToolBuffer = pseudoToolBuffer.slice(markerIdx);
+            if (pseudoToolBaseItem) {
+              const cands = pseudoToolBaseItem.candidates || (pseudoToolBaseItem.response && pseudoToolBaseItem.response.candidates);
+              if (Array.isArray(cands) && cands[0]?.content?.parts) {
+                cands[0].content.parts = [{ text: prefixText }];
+                sanitizeCandidatesInResponse(pseudoToolBaseItem);
+                clientRes.write('data: ' + JSON.stringify(pseudoToolBaseItem) + pseudoToolEol);
+              }
+            }
+          }
+
           const trimmedBuf = pseudoToolBuffer.trimStart();
           if (trimmedBuf.length < PSEUDO_TOOL_MARKER.length) {
             if (PSEUDO_TOOL_MARKER.startsWith(trimmedBuf)) {
