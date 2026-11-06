@@ -73,6 +73,8 @@ import { invalidateModelStoreCache } from './services/modelStore';
 import { invalidateHealthCache } from './proxy/modelHealthChecker';
 import { recordProviderUsage } from './customModelStore';
 import { classifyError, ErrorDiagnostic, type ErrorType } from './proxy/errorClassifier';
+import { readBodyWithLimit } from './proxy/bodyLimitGuard';
+import { saveRemoteStateAsync } from './proxy/remoteSessionStore';
 import { shouldRetryStatus, computeRetryDelay, isRetryableNetworkError, type RetryStrategy } from './proxy/retryStrategy';
 import { getOpenBreaker, recordFailure, recordSuccess, CIRCUIT_BREAKER_RESET_MS } from './proxy/circuitBreaker';
 import { IdleTimeoutGuard } from './proxy/idleTimeout';
@@ -2936,7 +2938,7 @@ export async function executeGoogleCloudCodeWithPool(
     const isMultiTurn = Array.isArray(reqContents) && reqContents.length > 1;
     const isContextualPayload = updatedBody.length > 8_000 || isMultiTurn;
     const rawModelIdentifiers = `${targetModel} ${reqJson.requestedModel || ''} ${reqJson.model || ''} ${targetRaw || ''} ${candidate.name || ''} ${candidate.displayName || ''}`;
-    const isThinkingModel = /thinking|thought|-high$|-medium$|\(medium\)|\(high\)/i.test(rawModelIdentifiers) || hasThinkingConfig || updatedBody.includes('/think-');
+    const isThinkingModel = /thinking|thought|-high$|-medium$|\(medium\)|\(high\)|-tiered$|tiered/i.test(rawModelIdentifiers) || hasThinkingConfig || updatedBody.includes('/think-');
     const isFlashModel = isFlash;
     // Dynamic Adaptive Sizing: consider >60 KB as heavy payload to account for TPU prefill latency
     const isLargePayload = updatedBody.length > 60_000;
@@ -2982,11 +2984,11 @@ export async function executeGoogleCloudCodeWithPool(
     if (consecutive504TimeoutCount > 0) {
       // In pools with >= 3 healthy candidates, bound escalation so 2 slow nodes do not consume the entire loop budget
       const flashEscalation = isLargePayloadOrThinking
-        ? 60_000
-        : (isContextualPayload ? 45_000 : 30_000);
+        ? 65_000
+        : (isContextualPayload ? 55_000 : 45_000);
       const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
         ? (isFlashModel ? flashEscalation : 55_000)
-        : (isFlashModel ? (isLargePayloadOrThinking ? 65_000 : (isContextualPayload ? 50_000 : 35_000)) : 75_000);
+        : (isFlashModel ? (isLargePayloadOrThinking ? 70_000 : (isContextualPayload ? 60_000 : 45_000)) : 75_000);
       const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
       if (escalatingTimeout > poolHeaderTimeout) {
         log.info(`[Proxy] Prior candidate experienced 504 timeout. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
@@ -3792,12 +3794,10 @@ export async function executeGoogleCloudCodeWithPool(
         // Fast-fail 504 timeout cascade: If multiple accounts consecutively time out on the same model/payload,
         // the upstream TPU cluster is saturated. Trigger immediate fallback cascade instead of exhausting all accounts in the pool.
         if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
-          if (!isPayloadInducedTimeout) {
-            consecutive504TimeoutCount++;
-          }
+          consecutive504TimeoutCount++;
           const combinedOutageCount = consecutive504TimeoutCount + consecutive503CapacityCount;
-          // Dynamically scale outage threshold with pool size: test at least half the pool before declaring cluster outage
-          const dynamicPoolThreshold = Math.min(CONSECUTIVE_504_CASCADE_THRESHOLD, Math.max(4, Math.ceil(sortedAccounts.length * 0.5)));
+          // Fast-fail to Claude fallback after at most 3 consecutive timeouts on heavy sessions/clusters
+          const dynamicPoolThreshold = Math.min(CONSECUTIVE_504_CASCADE_THRESHOLD, Math.max(3, Math.ceil(sortedAccounts.length * 0.25)));
           const outageThreshold = dynamicPoolThreshold;
           if (consecutive504TimeoutCount >= outageThreshold || combinedOutageCount >= outageThreshold) {
             log.warn(
@@ -6236,11 +6236,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       return;
     }
     if (req.method === 'POST') {
-      const chunks: Buffer[] = [];
-      req.on('data', (c) => chunks.push(c));
-      req.on('end', () => {
+      readBodyWithLimit(req, res).then((buf) => {
+        if (!buf) return;
         try {
-          const b = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
+          const b = JSON.parse(buf.toString('utf-8')) as {
             active?: boolean;
             host?: string;
             token?: string;
@@ -6557,11 +6556,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   // Lift cooldown for a specific account or family directly in proxy memory
   if (req.method === 'POST' && (req.url === '/pool/lift-cooldown' || req.url === '/lift-cooldown')) {
-    let rawPayload = '';
-    req.on('data', (chunk) => (rawPayload += chunk));
-    req.on('end', () => {
+    readBodyWithLimit(req, res).then((buf) => {
+      if (!buf) return;
       try {
-        const payload = JSON.parse(rawPayload || '{}');
+        const payload = JSON.parse(buf.toString('utf-8') || '{}');
         const target = payload.account || payload.email || payload.key;
         const family = payload.family;
         if (target) {

@@ -46,13 +46,14 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
       totalTurns > RECENT_TURNS_PRESERVE_COUNT &&
       turnIndex < totalTurns - RECENT_TURNS_PRESERVE_COUNT;
 
-    const isVeryDeepHistory = totalTurns > 25 && turnIndex < totalTurns - 15;
-    const toolThreshold = isVeryDeepHistory ? 2_048 : MAX_HISTORICAL_TOOL_OUTPUT_CHARS;
-    const toolHead = isVeryDeepHistory ? 1000 : 2000;
-    const toolTail = isVeryDeepHistory ? 400 : 800;
-    const rawTextThreshold = isVeryDeepHistory ? 4_000 : 8_000;
-    const textHead = isVeryDeepHistory ? 1000 : 1800;
-    const textTail = isVeryDeepHistory ? 400 : 700;
+    const isUltraDeepHistory = totalTurns > 40 && turnIndex < totalTurns - 20;
+    const isVeryDeepHistory = isUltraDeepHistory || (totalTurns > 20 && turnIndex < totalTurns - 10);
+    const toolThreshold = isUltraDeepHistory ? 1_500 : (isVeryDeepHistory ? 2_048 : MAX_HISTORICAL_TOOL_OUTPUT_CHARS);
+    const toolHead = isUltraDeepHistory ? 800 : (isVeryDeepHistory ? 1000 : 2000);
+    const toolTail = isUltraDeepHistory ? 300 : (isVeryDeepHistory ? 400 : 800);
+    const rawTextThreshold = isUltraDeepHistory ? 3_000 : (isVeryDeepHistory ? 4_000 : 8_000);
+    const textHead = isUltraDeepHistory ? 800 : (isVeryDeepHistory ? 1000 : 1800);
+    const textTail = isUltraDeepHistory ? 300 : (isVeryDeepHistory ? 400 : 700);
 
     // 1. Sanitize synthetic proxy error/warning cards and compact oversized historical outputs
     const compactedParts = content.parts.map((part) => {
