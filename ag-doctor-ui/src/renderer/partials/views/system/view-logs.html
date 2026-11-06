@@ -1,0 +1,89 @@
+      <div class="view" id="view-logs" role="tabpanel" aria-labelledby="nav-tab-logs">
+        <div class="view-header">
+          <div>
+            <h1>Logs</h1>
+            <p class="subtitle">Live output from <code>language_server</code> and related processes</p>
+          </div>
+          <div class="header-actions">
+            <div class="btn-group" role="group" aria-label="Share and clipboard">
+              <button class="btn btn-ghost" id="logsExportGithubBtn" type="button" title="Export sanitized logs for GitHub issue">Export GitHub</button>
+              <button class="btn btn-ghost" id="logsCopyErrorsBtn" type="button" title="Copy only errors and warnings">Copy errors</button>
+              <button class="btn btn-ghost" id="logsCopyBtn" type="button" aria-label="Copy logs to clipboard">Copy all</button>
+            </div>
+            <button class="btn btn-ghost" id="logsClearBtn" type="button" aria-label="Clear logs" title="Clear logs (Ctrl+K)">Clear</button>
+            <div class="btn-group stream-control-group" role="group" aria-label="Stream controls">
+              <button class="btn btn-ghost" id="logsFreezeBtn" type="button" title="Pause / Resume visual stream (Space)">Freeze</button>
+              <button class="btn btn-primary" id="logsFollowBtn" type="button" aria-label="Follow live logs">
+                <span class="dot-live"></span>
+                Follow live
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs for log sources -->
+        <div class="tabs" role="tablist" id="logsTabs">
+          <button class="tab active" role="tab" aria-selected="true" data-source="language_server" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            language_server
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-source="proxy" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Proxy
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-source="main" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            Main (App)
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-source="daemon" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Daemon
+          </button>
+        </div>
+
+        <div class="logs-toolbar" id="logsToolbar">
+          <div class="logs-filters">
+            <button class="logs-filter-btn" data-level="all" id="filterAllBtn" type="button" aria-pressed="false" title="Show all levels">ALL <span class="filter-count" id="countAll">0</span></button>
+            <button class="logs-filter-btn active" data-level="info" id="filterInfoBtn" type="button" aria-pressed="true" title="Toggle INFO logs">INFO <span class="filter-count" id="countInfo">0</span></button>
+            <button class="logs-filter-btn active" data-level="warn" id="filterWarnBtn" type="button" aria-pressed="true" title="Toggle WARN logs">WARN <span class="filter-count" id="countWarn">0</span></button>
+            <button class="logs-filter-btn active" data-level="error" id="filterErrorBtn" type="button" aria-pressed="true" title="Toggle ERROR logs">ERROR <span class="filter-count" id="countError">0</span></button>
+            <button class="logs-filter-btn panic-btn" data-level="panic" id="filterPanicBtn" type="button" aria-pressed="false" title="Toggle PANIC / CRASH logs" style="display:none">CRASH <span class="filter-count" id="countPanic">0</span></button>
+          </div>
+          <button class="logs-filter-btn active" id="logsCleanViewBtn" type="button" aria-pressed="true" title="Clean View: Hide routine noise (CORTEX canceled steps, SSE traces, skipped configs)">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Clean View
+          </button>
+          <div class="logs-search-box">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="logs-search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="search" id="logsSearch" class="logs-search" placeholder="Filter logs (e.g. lvl:err, sub:proxy, -noise)…" aria-label="Filter logs by keyword or facet" />
+            <span id="logsSearchCount" class="logs-search-count"></span>
+          </div>
+          <div class="logs-stats">
+            <span id="logsVelocity" class="logs-badge velocity" title="Log stream velocity">0/s</span>
+            <span id="logsLineCount" class="logs-badge">0 lines</span>
+            <span id="logsDedupCount" class="logs-badge dim">0 deduped</span>
+          </div>
+        </div>
+
+
+        <div class="panel">
+          <div class="panel-body panel-body-flush logs-panel-body">
+            <div class="logs-container-wrapper">
+              <pre class="terminal terminal-flush" id="logsOutput" tabindex="0" role="region" aria-label="Log stream output"></pre>
+              <canvas id="logsMinimap" class="logs-minimap" width="14" height="420" title="Click to jump to log position"></canvas>
+            </div>
+            <button id="logsScrollBottomBtn" class="logs-scroll-bottom-btn" title="Scroll to bottom" type="button" style="display:none">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+              Bottom
+            </button>
+            <div id="logsSkeleton" style="display:none; padding:16px">
+              <div class="skeleton skeleton-line long"></div>
+              <div class="skeleton skeleton-line medium"></div>
+              <div class="skeleton skeleton-line short"></div>
+              <div class="skeleton skeleton-line long"></div>
+              <div class="skeleton skeleton-line medium"></div>
+            </div>
+          </div>
+        </div>
+        <aside id="logsInspectorDrawer" class="logs-inspector-drawer" aria-label="Log Inspector"></aside>
+      </div>

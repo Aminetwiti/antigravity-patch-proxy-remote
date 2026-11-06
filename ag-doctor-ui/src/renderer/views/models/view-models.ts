@@ -916,7 +916,7 @@ if (typeof window !== 'undefined' && (window as any).ag?.providers?.onChanged) {
   providersCache = [];
   const modelsViewActive = Boolean(document.getElementById('view-models')?.classList.contains('active'));
   if (modelsViewActive) void loadModels();
-  const pmModal = document.getElementById('providerManagerModal');
+  const pmModal = document.getElementById('providerManagerModalBackdrop');
   const isPmModalOpen = Boolean(pmModal && !pmModal.hidden && pmModal.style.display !== 'none');
   if (isPmModalOpen) void renderProviderList();
   // Synchronisation temps réel automatique du dashboard Google Accounts sans re-fetch réseau bloquant

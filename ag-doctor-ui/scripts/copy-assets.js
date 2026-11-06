@@ -43,6 +43,10 @@ function copyRecursive(src, dst) {
 
 copyRecursive(SRC, DST);
 
+// Assemble modular index.html with partials
+const { assembleIndexHtml } = require('./build-html');
+assembleIndexHtml(path.join(SRC, 'index.html'), path.join(DST, 'index.html'));
+
 // Copy top-level assets (icons, tray icons)
 const ASSETS_SRC = path.join(ROOT, 'assets');
 const ASSETS_DST = path.join(ROOT, 'dist', 'assets');

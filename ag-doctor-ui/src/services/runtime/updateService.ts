@@ -67,7 +67,8 @@ export function getDataDir(): string {
       fs.mkdirSync(dir, { recursive: true });
     }
     return dir;
-  } catch {
+  } catch (err) {
+    console.warn('[UpdateService] Failed to create data dir in home, falling back to cwd:', err);
     return process.cwd();
   }
 }
@@ -80,7 +81,8 @@ export function getDefaultChannel(): UpdateChannel {
   try {
     const version = app.getVersion();
     return version.includes('-') ? 'beta' : 'stable';
-  } catch {
+  } catch (err) {
+    console.warn('[UpdateService] Failed to get app version, defaulting to stable channel:', err);
     return 'stable';
   }
 }
@@ -105,8 +107,8 @@ export function loadUpdateSettings(): UpdateSettings {
         channel: parsed.channel === 'beta' ? 'beta' : 'stable',
       };
     }
-  } catch {
-    // fallback to defaults on corruption or read error
+  } catch (err) {
+    console.warn('[UpdateService] Failed to load update_settings.json, falling back to defaults:', err);
   }
   return defaults;
 }
@@ -188,7 +190,8 @@ export function isPortableExecution(): boolean {
   try {
     const exeName = path.basename(process.execPath).toLowerCase();
     return exeName.includes('portable');
-  } catch {
+  } catch (err) {
+    console.warn('[UpdateService] Could not inspect process execPath for portable mode:', err);
     return false;
   }
 }
@@ -343,7 +346,8 @@ export async function checkForUpdates(
         const list = await fetchJson<any[]>(fallbackUrl);
         const nonPre = list.find((r) => !r.prerelease);
         latestRelease = nonPre || list[0];
-      } catch {
+      } catch (fallbackErr) {
+        console.warn('[UpdateService] Stable releases fallback query also failed:', fallbackErr);
         // Propagate original error
         throw err;
       }
@@ -412,7 +416,8 @@ export async function downloadUpdate(
     let tempBase = '';
     try {
       tempBase = app.getPath('temp');
-    } catch {
+    } catch (err) {
+      console.warn('[UpdateService] app.getPath("temp") unavailable, falling back to os.tmpdir():', err);
       tempBase = require('os').tmpdir();
     }
     const tempDir = path.join(tempBase, 'ag-doctor-updates');
@@ -426,7 +431,8 @@ export async function downloadUpdate(
       if (fs.existsSync(destPath)) {
         fs.unlinkSync(destPath);
       }
-    } catch {
+    } catch (unlinkErr) {
+      console.warn('[UpdateService] Existing temp update file locked or in-use, generating timestamped name:', unlinkErr);
       // If locked (EBUSY), use unique name
       destPath = path.join(tempDir, `${Date.now()}-${baseName}`);
     }

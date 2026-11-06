@@ -13,7 +13,7 @@ const pmAddBtn = $('#pmAddBtn') as HTMLButtonElement;
 const pmImportLocalBtn = $('#pmImportLocalBtn') as HTMLButtonElement;
 const pmFormBack = $('#pmFormBack') as HTMLButtonElement;
 const pmFormBack2 = $('#pmFormBack2') as HTMLButtonElement;
-const pmFormTitle = $('#pmFormTitle') as HTMLHeadingElement;
+const pmFormTitle = ($('#pmModalTitle') || $('#pmFormTitle')) as HTMLHeadingElement | null;
 const pmFormName = $('#pmFormName') as HTMLInputElement;
 const pmFormType = $('#pmFormType') as HTMLSelectElement;
 const pmFormUrl = $('#pmFormUrl') as HTMLInputElement;
@@ -41,26 +41,7 @@ const pmModelsCountBadge = $('#pmModelsCountBadge') as HTMLSpanElement | null;
 const pmCapFilters = $('#pmCapFilters') as HTMLDivElement | null;
 let activeCapFilter: 'all' | 'reasoning' | 'vision' | 'code' = 'all';
 
-function applyProviderPreset(presetKey: string): void {
-  (window as any).applyProviderPreset?.(presetKey);
-}
-
-function updatePmModelsCounter(): void {
-  (window as any).updatePmModelsCounter?.();
-}
-
-function renderPmModelsCatalog(): void {
-  (window as any).renderPmModelsCatalog?.();
-}
-
-function triggerSmartFailover(failingProviderId?: string): void {
-  const fallback = providersCache.find((p) => p.enabled && p.id !== failingProviderId && (p.status === 'healthy' || !p.status));
-  if (fallback) {
-    toast(`Switched to fallback provider ${fallback.name}`, 'ok');
-  } else {
-    toast(`No alternative healthy provider available`, 'warn');
-  }
-}
+// Catalog helpers are loaded globally from pm-catalog.js
 
 function handleProviderError(errorMsg: string, status?: number, _p?: ProviderEntry): void {
   const label = status === 401 ? 'Auth error — check API key'
@@ -76,6 +57,7 @@ function showPmView(view: 'list' | 'form'): void {
     pmListContainer.hidden = false;
     pmFormContainer.hidden = true;
     if (pmModalFooterList) pmModalFooterList.hidden = false;
+    if (pmFormTitle) pmFormTitle.textContent = 'Provider Manager';
   } else {
     pmListContainer.hidden = true;
     pmFormContainer.hidden = false;
@@ -222,7 +204,276 @@ function resetProviderForm(): void {
   editingProviderId = null;
   activeCapFilter = 'all';
 }
-  // Initialize PM Catalog handlers
+function openProviderForm(existingId?: string): void {
+  pmModelsSearchQuery = '';
+  if (pmModelsSearch) pmModelsSearch.value = '';
+  resetProviderForm();
+  if (existingId) {
+    const p = providersCache.find((x) => x.id === existingId);
+    if (p) {
+      editingProviderId = p.id;
+      if (pmFormTitle) pmFormTitle.textContent = 'Edit Provider';
+      pmFormName.value = p.name;
+      pmFormType.value = p.provider;
+      pmFormUrl.value = p.apiUrl;
+      pmFormKey.value = p.apiKey;
+      pmFormInsecure.checked = p.allowUnauthorized ?? false;
+      let pModels = p.models;
+      if ((!pModels || pModels.length === 0) && (p.provider === 'google' || p.id === 'provider-google')) {
+        const accWithModels = Array.isArray(p.accounts) ? p.accounts.find((a: any) => Array.isArray(a.models) && a.models.length > 0) : null;
+        pModels = accWithModels ? accWithModels.models : [
+          { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+          { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', enabled: false },
+          { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: false },
+          { id: 'gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', enabled: true },
+        ];
+      }
+      currentFetchedModels = (pModels || []).map((m: any) => ({
+        id: m.id,
+        displayName: m.displayName || m.id,
+        enabled: m.enabled !== false,
+      }));
+      (window as any).currentFetchedModels = currentFetchedModels;
+      renderPmModelsCatalog();
+    }
+  } else {
+    if (pmFormTitle) pmFormTitle.textContent = 'Add Provider';
+    currentFetchedModels = [];
+    (window as any).currentFetchedModels = currentFetchedModels;
+    renderPmModelsCatalog();
+  }
+  showPmView('form');
+}
+
+function openProviderManagerModal(): void {
+  pmBackdrop.hidden = false;
+  showPmView('list');
+  void renderProviderList();
+}
+
+if (pmClose) pmClose.addEventListener('click', () => { pmBackdrop.hidden = true; });
+// Close the provider manager with Escape or a backdrop click (standard modal UX).
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pmBackdrop && !pmBackdrop.hidden) pmBackdrop.hidden = true;
+});
+if (pmBackdrop) {
+  pmBackdrop.addEventListener('click', (e) => { if (e.target === pmBackdrop) pmBackdrop.hidden = true; });
+}
+if (pmModalClose2) pmModalClose2.addEventListener('click', () => { pmBackdrop.hidden = true; });
+if (pmAddBtn) pmAddBtn.addEventListener('click', () => openProviderForm());
+if (pmImportLocalBtn) {
+  pmImportLocalBtn.addEventListener('click', async () => {
+    const orig = pmImportLocalBtn.innerHTML;
+    pmImportLocalBtn.disabled = true;
+    pmImportLocalBtn.textContent = 'Detecting account...';
+    try {
+      const res = await window.ag.providers.discoverIdeAccount();
+      if (!res || !res.success || !res.account) {
+        toast(res?.error || 'No Antigravity account found in system keyring.', 'warn', 5000);
+        return;
+      }
+
+      const acc = res.account;
+      const email = acc.email || 'antigravity-user@google.com';
+      const refreshToken = acc.refreshToken || acc.accessToken;
+      if (!refreshToken) {
+        toast('Discovered account has no valid credentials.', 'err');
+        return;
+      }
+
+      // Check if already in providers
+      const existing = providersCache.find(
+        (x) => x.provider === 'google' && (x.apiKey === refreshToken || x.name.includes(email)),
+      );
+
+      const entry: ProviderEntry = {
+        id: existing?.id || `provider-google-local-${Date.now()}`,
+        name: existing?.name || `Google (${email})`,
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        apiKey: refreshToken,
+        enabled: true,
+        allowUnauthorized: false,
+        models: [
+          { id: 'gemini-4-argon-medium', displayName: 'Gemini 4 Argon (Medium)', enabled: true },
+          { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash Tiered', enabled: true },
+          { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true },
+          { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', enabled: true },
+        ],
+      };
+
+      const saveRes = (await window.ag.providers.save(entry)) as { success: boolean; error?: string };
+      if (saveRes.success) {
+        toast(`Imported Google account (${email}) from IDE!`, 'ok');
+        await renderProviderList();
+        await loadModels();
+      } else {
+        toast(`Import failed: ${saveRes.error}`, 'err');
+      }
+    } catch (err) {
+      toast(`Import error: ${(err as Error).message}`, 'err');
+    } finally {
+      pmImportLocalBtn.disabled = false;
+      pmImportLocalBtn.innerHTML = orig;
+    }
+  });
+}
+if (pmFormBack) pmFormBack.addEventListener('click', () => showPmView('list'));
+if (pmFormBack2) pmFormBack2.addEventListener('click', () => showPmView('list'));
+
+if (pmFormType) {
+  pmFormType.addEventListener('change', () => {
+    const t = pmFormType.value;
+    pmFormUrl.value = getRendererDefaultUrl(t);
+  });
+}
+
+if (pmFormSave) {
+  pmFormSave.addEventListener('click', async () => {
+    const name = pmFormName.value.trim();
+    const provider = pmFormType.value;
+    const apiUrl = pmFormUrl.value.trim();
+    const apiKey = pmFormKey.value.trim();
+    const allowUnauthorized = pmFormInsecure.checked;
+
+    if (!name) {
+      pmFormError.textContent = 'Provider name is required.';
+      pmFormError.hidden = false;
+      return;
+    }
+    if (!apiUrl) {
+      pmFormError.textContent = 'API URL is required.';
+      pmFormError.hidden = false;
+      return;
+    }
+
+    const modelsPool: Array<{ id: string; displayName?: string; enabled: boolean }> =
+      (window as any).currentFetchedModels || currentFetchedModels;
+    const selectedModels = modelsPool
+      .filter((m) => m.enabled !== false)
+      .map((m) => ({ id: m.id, displayName: m.displayName || m.id, enabled: true }));
+
+    if (selectedModels.length === 0 && modelsPool.length > 0) {
+      pmFormError.textContent = 'Please select at least one model to save.';
+      pmFormError.hidden = false;
+      return;
+    }
+
+    const entry: ProviderEntry = {
+      id: editingProviderId || `provider-${Date.now()}`,
+      name,
+      provider,
+      apiUrl,
+      apiKey: apiKey || 'none',
+      allowUnauthorized,
+      enabled: true,
+      models: selectedModels,
+    };
+
+    pmFormSave.disabled = true;
+    pmFormSave.textContent = 'Saving…';
+    try {
+      const r = (await window.ag.providers.save(entry)) as { success: boolean; error?: string };
+      if (r.success) {
+        toast('Provider saved', 'ok');
+        showPmView('list');
+        await renderProviderList();
+        await loadModels();
+      } else {
+        pmFormError.textContent = r.error || 'Failed to save provider.';
+        pmFormError.hidden = false;
+      }
+    } catch (err) {
+      pmFormError.textContent = (err as Error).message;
+      pmFormError.hidden = false;
+    } finally {
+      pmFormSave.disabled = false;
+      pmFormSave.textContent = 'Save provider';
+    }
+  });
+}
+
+if (pmFormTest) {
+  pmFormTest.addEventListener('click', async () => {
+    const apiUrl = pmFormUrl.value.trim();
+    const apiKey = pmFormKey.value.trim();
+    const allowUnauthorized = pmFormInsecure.checked;
+    if (!apiUrl) {
+      toast('Enter an API URL first', 'warn');
+      return;
+    }
+    pmFormTest.disabled = true;
+    pmFormTest.textContent = 'Testing…';
+    try {
+      const r = (await window.ag.providers.test({ apiUrl, apiKey: apiKey || 'none', allowUnauthorized } as any)) as {
+        success: boolean;
+        latencyMs?: number;
+        error?: string;
+      };
+      if (r.success) {
+        toast(`Connection successful (${r.latencyMs ?? 0}ms)`, 'ok');
+      } else {
+        toast(`Test failed: ${r.error}`, 'err', 5000);
+      }
+    } catch (err) {
+      toast(`Test failed: ${(err as Error).message}`, 'err');
+    } finally {
+      pmFormTest.disabled = false;
+      pmFormTest.textContent = 'Test connection';
+    }
+  });
+}
+
+if (pmFormFetchModelsBtn) {
+  pmFormFetchModelsBtn.addEventListener('click', async () => {
+    const provider = pmFormType.value;
+    const apiUrl = pmFormUrl.value.trim();
+    const apiKey = pmFormKey.value.trim();
+    if (!apiUrl) {
+      toast('Enter API URL first', 'warn');
+      return;
+    }
+    pmFormFetchModelsBtn.disabled = true;
+    pmFormFetchModelsBtn.textContent = 'Fetching…';
+    try {
+      const r = (await window.ag.providers.fetchModels({ provider, apiUrl, apiKey: apiKey || 'none' } as any)) as {
+        success: boolean;
+        models?: Array<{ id: string; displayName?: string }>;
+        error?: string;
+      };
+      if (r.success && r.models) {
+        currentFetchedModels = r.models.map((m) => ({
+          id: m.id,
+          displayName: m.displayName || m.id,
+          enabled: true,
+        }));
+        (window as any).currentFetchedModels = currentFetchedModels;
+        renderPmModelsCatalog();
+        toast(`Fetched ${r.models.length} models`, 'ok');
+      } else {
+        toast(`Fetch models failed: ${r.error}`, 'err');
+      }
+    } catch (err) {
+      toast(`Fetch failed: ${(err as Error).message}`, 'err');
+    } finally {
+      pmFormFetchModelsBtn.disabled = false;
+      pmFormFetchModelsBtn.textContent = 'Fetch models';
+    }
+  });
+}
+
+if (pmCapFilters) {
+  pmCapFilters.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('.pm-cap-filter');
+    if (!btn || !btn.dataset.cap) return;
+    activeCapFilter = btn.dataset.cap as 'all' | 'reasoning' | 'vision' | 'code';
+    pmCapFilters.querySelectorAll('.pm-cap-filter').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderPmModelsCatalog();
+  });
+}
+
+// Initialize PM Catalog handlers
 (window as any).initPmCatalogHandlers?.();
 
 // Bind all Add Model buttons across views
@@ -236,7 +487,6 @@ $('#emptyAddModelBtn')?.addEventListener('click', openProviderManagerModal);
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-
 function openProviderModal(provider?: any): void {
   if (provider) {
     openProviderForm(typeof provider === 'string' ? provider : provider?.id);
@@ -249,4 +499,11 @@ function closeProviderModal(): void {
   if (typeof pmBackdrop !== 'undefined' && pmBackdrop) {
     pmBackdrop.hidden = true;
   }
+}
+
+if (typeof window !== 'undefined') {
+  (window as any).openProviderManagerModal = openProviderManagerModal;
+  (window as any).openProviderForm = openProviderForm;
+  (window as any).openProviderModal = openProviderModal;
+  (window as any).closeProviderModal = closeProviderModal;
 }

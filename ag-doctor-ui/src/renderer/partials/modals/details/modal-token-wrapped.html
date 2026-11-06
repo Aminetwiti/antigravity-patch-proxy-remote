@@ -1,0 +1,66 @@
+      <div class="modal-backdrop" id="tokenWrappedBackdrop" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tokenWrappedTitle" style="max-width:560px; width:92%;">
+          <div class="modal-header" style="border-bottom:1px solid var(--border);">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:18px;">✨</span>
+              <h2 id="tokenWrappedTitle" style="margin:0; font-size:16px; font-weight:700;">Antigravity Token Wrapped</h2>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="tokenWrappedCloseBtn" type="button" aria-label="Fermer la modale">✕</button>
+          </div>
+          <div class="modal-body" style="padding:20px; display:flex; flex-direction:column; gap:16px;">
+            <!-- Visual Card to Copy or Preview -->
+            <div class="token-wrapped-card" id="tokenWrappedCard">
+              <div class="token-wrapped-header">
+                <div class="token-wrapped-brand">
+                  <span class="token-wrapped-sparkle">✦</span>
+                  <span class="token-wrapped-title">ANTIGRAVITY STATS</span>
+                </div>
+                <div class="token-wrapped-badge" id="wrappedTierBadge">Power User</div>
+              </div>
+              
+              <div class="token-wrapped-hero">
+                <div class="token-wrapped-hero-label">LIFETIME TOKENS</div>
+                <div class="token-wrapped-hero-val" id="wrappedLifetimeTokens">0</div>
+                <div class="token-wrapped-hero-sub" id="wrappedTasksCount">0 étapes &amp; sessions analysées</div>
+              </div>
+
+              <div class="token-wrapped-grid">
+                <div class="token-wrapped-stat">
+                  <div class="stat-lbl">Record Quotidien</div>
+                  <div class="stat-val" id="wrappedPeakDay">0 tok</div>
+                </div>
+                <div class="token-wrapped-stat">
+                  <div class="stat-lbl">Série Record</div>
+                  <div class="stat-val" id="wrappedMaxStreak">0 jours</div>
+                </div>
+                <div class="token-wrapped-stat">
+                  <div class="stat-lbl">Modèle Favori</div>
+                  <div class="stat-val" id="wrappedTopModel">Gemini Flash</div>
+                </div>
+                <div class="token-wrapped-stat">
+                  <div class="stat-lbl">Économie Estimée</div>
+                  <div class="stat-val accent-green" id="wrappedSavings">$0.00</div>
+                </div>
+              </div>
+
+              <div class="token-wrapped-footer">
+                <span style="opacity:0.75;">Propulsé par Google Antigravity IDE</span>
+                <span class="token-wrapped-handle">#AntigravityAI</span>
+              </div>
+            </div>
+
+            <p style="font-size:12px; color:var(--text-2); margin:0; text-align:center;">
+              Copiez le récapitulatif formaté pour le partager directement sur <strong>X / Twitter</strong> ou <strong>Discord</strong>.
+            </p>
+          </div>
+          <div class="modal-footer" style="padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <span id="wrappedCopyFeedback" style="font-size:12px; color:var(--ok); font-weight:600; opacity:0; transition:opacity 0.2s ease;">✓ Copié dans le presse-papier !</span>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-ghost btn-sm" id="tokenWrappedFooterCloseBtn" type="button">Fermer</button>
+              <button class="btn btn-primary btn-sm" id="tokenWrappedCopyBtn" type="button">
+                📋 Copier pour X / Discord
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>

@@ -1,0 +1,131 @@
+      <div class="view" id="view-tokenizer" role="tabpanel" aria-labelledby="nav-tab-tokenizer">
+        <div class="view-header" style="align-items:flex-start;">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <h1 style="font-size:26px; font-weight:700; margin:0; letter-spacing:-0.02em;">Vue d'ensemble des Tokens</h1>
+              <span class="badge" style="background:rgba(66, 133, 244, 0.16); color:#60a5fa; border:1px solid rgba(66, 133, 244, 0.35); font-weight:600;">Données Réelles</span>
+            </div>
+            <p class="subtitle" style="font-size:13px; color:var(--text-2); margin-top:4px;">Statistiques d'activité globale, répartition par modèle et consommation réelle.</p>
+          </div>
+          <div class="view-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div class="rpm-safety-meter" id="rpmSafetyMeter" title="Santé des quotas requêtes/min">
+              <span class="rpm-live-dot" title="Surveillance RPM en temps réel active"></span>
+              <span style="font-weight:600;">RPM</span>
+              <div class="rpm-safety-track">
+                <div class="rpm-safety-fill" id="rpmSafetyFill"></div>
+              </div>
+              <span id="rpmSafetyVal" style="font-weight:600; font-family:var(--font-mono, monospace); color:var(--text-0);">4%</span>
+            </div>
+            <select id="statsRangeSelect" style="padding:6px 12px; font-size:12px; font-weight:500; border-radius:8px; border:1px solid var(--border); background:var(--bg-1); color:var(--text-0); cursor:pointer;">
+              <option value="today">Aujourd'hui</option>
+              <option value="yesterday">Hier</option>
+              <option value="24h">Dernières 24 heures</option>
+              <option value="7d">7 derniers jours</option>
+              <option value="30d">30 derniers jours</option>
+              <option value="this_month">Ce mois-ci</option>
+              <option value="last_month">Mois dernier</option>
+              <option value="7m" selected>7 derniers mois</option>
+              <option value="this_year">Cette année</option>
+              <option value="all">Tout l'historique</option>
+              <option value="custom">📅 Personnalisé (Calendrier)...</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="tokenCalendarBtn" type="button" title="Ouvrir le sélecteur de dates / calendrier" style="display:inline-flex; align-items:center; gap:5px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              <span>Calendrier</span>
+            </button>
+            <button class="btn btn-ghost btn-sm" id="tokenRefreshBtn" type="button" title="Actualiser les métriques réelles">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            </button>
+            <button class="btn btn-ghost btn-sm" id="tokenExportCsvBtn" type="button" title="Exporter au format CSV">Export CSV</button>
+            <button class="btn btn-ghost btn-sm" id="tokenExportJsonBtn" type="button" title="Exporter au format JSON">Export JSON</button>
+            <button class="btn btn-ghost btn-sm btn-wrapped-share" id="tokenShareWrappedBtn" type="button" title="Générer ma carte de statistiques Antigravity">
+              🏆 Partager mes stats
+            </button>
+          </div>
+        </div>
+
+        <!-- Dedicated Interactive Calendar & Date Filter Bar -->
+        <div id="statsCalendarBar" class="stats-calendar-bar" style="display:none; margin:10px 0 14px 0; padding:12px 16px; background:var(--bg-1); border:1px solid var(--border); border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.25);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <!-- Left: Custom Date Range Inputs -->
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <span style="font-size:12px; font-weight:600; color:var(--text-1); display:flex; align-items:center; gap:6px;">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#60a5fa" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <span>Plage de dates :</span>
+              </span>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label for="statsDateStart" style="font-size:11px; color:var(--text-2);">Du</label>
+                <input type="date" id="statsDateStart" class="stats-date-input" style="padding:5px 10px; font-size:12px; font-family:var(--font-mono); border-radius:6px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0); cursor:pointer;">
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label for="statsDateEnd" style="font-size:11px; color:var(--text-2);">Au</label>
+                <input type="date" id="statsDateEnd" class="stats-date-input" style="padding:5px 10px; font-size:12px; font-family:var(--font-mono); border-radius:6px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0); cursor:pointer;">
+              </div>
+              <button class="btn btn-primary btn-sm" id="statsDateApplyBtn" type="button" style="padding:5px 14px; font-size:12px; font-weight:600;">
+                Appliquer
+              </button>
+              <button class="btn btn-ghost btn-sm" id="statsDateResetBtn" type="button" style="padding:5px 10px; font-size:12px; color:var(--text-2);">
+                Réinitialiser
+              </button>
+            </div>
+
+            <!-- Right: Quick Date Range Chips -->
+            <div class="stats-quick-dates" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              <span style="font-size:11px; color:var(--text-2); margin-right:2px;">Raccourcis :</span>
+              <button type="button" class="quick-date-chip" data-range="today">Aujourd'hui</button>
+              <button type="button" class="quick-date-chip" data-range="yesterday">Hier</button>
+              <button type="button" class="quick-date-chip" data-range="7d">7j</button>
+              <button type="button" class="quick-date-chip" data-range="30d">30j</button>
+              <button type="button" class="quick-date-chip" data-range="this_month">Ce mois</button>
+              <button type="button" class="quick-date-chip" data-range="last_month">Mois dernier</button>
+              <button type="button" class="quick-date-chip active" data-range="7m">7 mois</button>
+              <button type="button" class="quick-date-chip" data-range="this_year">Cette année</button>
+              <button type="button" class="quick-date-chip" data-range="all">Tout</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="statsCalendarCloseBtn" type="button" title="Fermer le panneau" style="padding:2px 8px; font-size:12px; color:var(--text-2); margin-left:4px;">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dedicated Dashboard Modes Selector (Overview / Insights / Classic) with Active Filter Pill & Quick Buttons -->
+        <div class="stats-modes-bar" style="display:flex; justify-content:space-between; align-items:center; margin:8px 0 16px 0; border-bottom:1px solid var(--border); padding-bottom:10px; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div id="statsActiveRangePill" style="display:flex; align-items:center; gap:8px;">
+              <span id="statsRangePillBtn" style="display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--text-0); background:rgba(255,255,255,0.06); border:1px solid var(--border); padding:4px 10px; border-radius:999px; cursor:pointer;" title="Cliquez pour ouvrir/fermer le calendrier">
+                <span style="color:#60a5fa;">📅</span>
+                <span id="statsActiveRangeText">7 derniers mois</span>
+                <button type="button" id="statsClearRangeBtn" style="display:none; background:none; border:none; color:var(--text-2); cursor:pointer; font-size:12px; padding:0 2px; margin-left:4px; line-height:1;" title="Réinitialiser à 7 mois">✕</button>
+              </span>
+            </div>
+
+            <!-- Quick Filter Buttons in the main toolbar -->
+            <div class="stats-quick-buttons-row" style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+              <button type="button" class="quick-date-chip" data-range="today">Aujourd'hui</button>
+              <button type="button" class="quick-date-chip" data-range="yesterday">Hier</button>
+              <button type="button" class="quick-date-chip" data-range="24h">24h</button>
+              <button type="button" class="quick-date-chip" data-range="7d">7j</button>
+              <button type="button" class="quick-date-chip" data-range="30d">30j</button>
+              <button type="button" class="quick-date-chip" data-range="this_month">Ce mois</button>
+              <button type="button" class="quick-date-chip" data-range="last_month">Mois dernier</button>
+              <button type="button" class="quick-date-chip active" data-range="7m">7 mois</button>
+              <button type="button" class="quick-date-chip" data-range="this_year">Cette année</button>
+              <button type="button" class="quick-date-chip" data-range="all">Tout</button>
+              <button type="button" class="quick-date-chip" data-range="custom" id="statsQuickCustomBtn" title="Choisir une période personnalisée avec calendrier">📅 Personnalisé</button>
+            </div>
+          </div>
+          <div class="token-mode-segmented-control" id="tokenModeSegmentedControl">
+            <button type="button" class="token-mode-btn" data-stats-mode="overview" id="btnModeOverview" title="Vue Cockpit & Télémétrie en temps réel">
+              <span class="mode-icon">&gt;_</span> <span>Overview</span>
+            </button>
+            <button type="button" class="token-mode-btn active" data-stats-mode="insights" id="btnModeInsights" title="Vue Apple Bento & Heatmap calendaire">
+              <span class="mode-icon">✨</span> <span>Insights</span>
+            </button>
+            <button type="button" class="token-mode-btn" data-stats-mode="classic" id="btnModeClassic" title="Vue Analytique & Tabulaire">
+              <span class="mode-icon">📊</span> <span>Classic</span>
+            </button>
+          </div>
+        </div>

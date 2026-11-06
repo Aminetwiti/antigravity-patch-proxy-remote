@@ -5,6 +5,7 @@
  * Flags:
  *   --check   Compare local version with the latest GitHub release (no deploy)
  */
+import fs from 'fs';
 import https from 'https';
 import path from 'path';
 import { spawnInherit } from '../core/process';
@@ -120,12 +121,22 @@ export async function runUpdate(ctx: CommandContext): Promise<number> {
   const platform = process.platform;
   try {
     let code = 0;
+    const findDeployScript = (scriptName: string) => {
+      const candidates = [
+        path.join(parent, 'scripts', 'deploy', scriptName),
+        path.join(parent, scriptName),
+        path.join(process.cwd(), 'scripts', 'deploy', scriptName),
+        path.join(process.cwd(), scriptName),
+      ];
+      return candidates.find((c) => fs.existsSync(c)) || candidates[0];
+    };
+
     if (platform === 'win32') {
-      code = await spawnInherit('powershell', ['-ExecutionPolicy', 'Bypass', '-File', path.join(parent, 'deploy.ps1')]);
+      code = await spawnInherit('powershell', ['-ExecutionPolicy', 'Bypass', '-File', findDeployScript('deploy.ps1')]);
     } else if (platform === 'darwin') {
-      code = await spawnInherit('bash', [path.join(parent, 'deploy.sh')]);
+      code = await spawnInherit('bash', [findDeployScript('deploy.sh')]);
     } else {
-      code = await spawnInherit('bash', [path.join(parent, 'deploy_linux.sh')]);
+      code = await spawnInherit('bash', [findDeployScript('deploy_linux.sh')]);
     }
     return code === 0 ? 0 : 2;
   } catch (e) {

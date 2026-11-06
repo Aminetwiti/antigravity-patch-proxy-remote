@@ -1,0 +1,179 @@
+      <div class="view" id="view-google-accounts" role="tabpanel" aria-labelledby="nav-tab-google-accounts">
+        <div class="view-header">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h1>Comptes Google</h1>
+              <span class="badge badge-primary" id="gaAccountCountBadge">0 comptes</span>
+            </div>
+            <p class="subtitle">Gérez vos comptes Google, inspectez les quotas réels et synchronisez les modèles dans Antigravity sans reconnexion.</p>
+          </div>
+          <div class="header-actions">
+            <!-- Unified Connect Account Dropdown (Primary CTA) -->
+            <div class="ga-dropdown-wrap" id="gaAddDropdownWrap">
+              <button class="btn btn-primary" id="gaAddAccountUnifiedBtn" type="button" aria-haspopup="true" aria-expanded="false" style="display: inline-flex; align-items: center; gap: 7px; font-weight: 500;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Connecter un compte
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="ga-dropdown-menu" id="gaAddAccountMenu" hidden>
+                <button type="button" class="ga-dropdown-item" id="gaMenuAntigravityOAuth">
+                  <span class="ga-dropdown-item-badge google">G</span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Antigravity IDE (OAuth)</strong>
+                    <small>Compte Google principal de l'IDE</small>
+                  </div>
+                  <span class="badge badge-accent" style="font-size: 10px; margin-left: auto;">Recommandé</span>
+                </button>
+                <button type="button" class="ga-dropdown-item" id="gaMenuGeminiCli">
+                  <span class="ga-dropdown-item-badge cli">CLI</span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Gemini CLI (Code Assist)</strong>
+                    <small>Jeton séparé Google Cloud Code Assist</small>
+                  </div>
+                  <span class="badge badge-muted" style="font-size: 10px; margin-left: auto;">Cloud Code</span>
+                </button>
+                <button type="button" class="ga-dropdown-item" id="gaMenuDiscoverIde">
+                  <span class="ga-dropdown-item-badge ide">✦</span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Importer depuis IDE actif</strong>
+                    <small>Détection automatique de session IDE</small>
+                  </div>
+                  <span class="badge badge-primary" style="font-size: 10px; margin-left: auto;">1-clic</span>
+                </button>
+                <div class="ga-dropdown-divider"></div>
+                <button type="button" class="ga-dropdown-item" id="gaMenuAiStudio">
+                  <span class="ga-dropdown-item-badge studio">⚡</span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Clé Google AI Studio</strong>
+                    <small>Clé d'API gratuite direct Gemini Studio</small>
+                  </div>
+                  <span class="badge badge-muted" style="font-size: 10px; margin-left: auto;">Gratuit</span>
+                </button>
+              </div>
+            </div>
+
+            <button class="btn btn-ghost" id="gaTestAllBtn" type="button" aria-label="Tester la réactivité de tous les comptes Google" title="Envoyer une requête légère de ping pour vérifier la réactivité immédiate de chaque compte">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              Tester Réactivité
+            </button>
+            <button class="btn btn-ghost" id="gaSyncAllBtn" type="button" aria-label="Synchroniser les modèles pour tous les comptes">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Synchroniser modèles
+            </button>
+            <button class="btn btn-ghost" id="gaRepairCooldownsBtn" type="button" aria-label="Corriger les cooldowns et réveiller les comptes" title="Vérifier les quotas, lever les cooldowns et réveiller les comptes Google">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              Corriger
+            </button>
+            <button class="btn btn-ghost" id="gaDensityToggleBtn" type="button" aria-label="Basculer la densité du cockpit télémétrique" title="Basculer entre vue Essentielle (4 KPI) et vue Expert (8 KPI)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <span id="gaDensityToggleLabel">Vue Essentielle</span>
+            </button>
+            <!-- Preserved IDs for backward compatibility and automated tests -->
+            <button id="gaOAuthAntigravityBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="gaDiscoverIdeBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="gaAddAiStudioBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="gaOAuthLoginBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="gaAddAccountBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1"></button>
+          </div>
+        </div>
+        <!-- Antigravity Google Pool 8 KPI Operational Cockpit Grid -->
+        <div class="ga-telemetry-grid" role="region" aria-label="Antigravity pool live quota & operational telemetry">
+          <!-- Card 1: Capacité Moyenne du Pool -->
+          <div class="stat-card ga-token-stat-card card-value stat-card--primary-hero" role="group" aria-label="Capacité moyenne du pool">
+            <div class="stat-icon ok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"/><line x1="22" y1="11" x2="22" y2="13"/><line x1="6" y1="10" x2="6" y2="14"/><line x1="10" y1="10" x2="10" y2="14"/><line x1="14" y1="10" x2="14" y2="14"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Capacité Moyenne</div>
+              <div class="stat-value" id="gaStatPoolValue" role="status" aria-live="polite">100%</div>
+              <div class="stat-sub" id="gaStatPoolValueSub" title="Comptes actifs en rotation">Calcul de la disponibilité...</div>
+            </div>
+          </div>
+
+          <!-- Card 2: Score de Résilience Pool -->
+          <div class="stat-card ga-token-stat-card card-resilience" role="group" aria-label="Score de résilience du pool">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Résilience Pool</div>
+              <div class="stat-value" id="gaStatResilienceScore" role="status">--</div>
+              <div class="stat-sub" id="gaStatResilienceSub" title="Capacité d'absorption des pannes">Évaluation du pool...</div>
+            </div>
+          </div>
+
+          <!-- Card 3: Flotte Gemini Prête -->
+          <div class="stat-card ga-token-stat-card card-gemini" role="group" aria-label="Comptes Gemini prêts">
+            <div class="stat-icon ok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Flotte Gemini Prête</div>
+              <div class="stat-value" id="gaStatGeminiReady" role="status">--</div>
+              <div class="stat-sub" id="gaStatGeminiReadySub" title="Comptes Gemini opérationnels">Flotte active</div>
+            </div>
+          </div>
+
+          <!-- Card 4: Prochain Reset Google -->
+          <div class="stat-card ga-token-stat-card card-reset" role="group" aria-label="Compte à rebours du prochain renouvellement">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Prochain Reset</span>
+                <span class="ga-token-pill-mode badge-reset" id="gaNextResetBadge">Hebdo</span>
+              </div>
+              <div class="stat-value" id="gaStatNextReset" role="status" aria-live="polite">--</div>
+              <div class="stat-sub" id="gaStatNextResetSub" title="Calcul du prochain reset...">Calcul du prochain reset...</div>
+            </div>
+          </div>
+
+          <!-- Card 5: Vélocité RPM (Débit) -->
+          <div class="stat-card ga-token-stat-card card-velocity" role="group" aria-label="Vélocité et débit du pool">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Vélocité Pool</div>
+              <div class="stat-value" id="gaStatVelocityRpm" role="status">0 RPM</div>
+              <div class="stat-sub" id="gaStatVelocitySub" title="Rythme des requêtes">Charge fluide</div>
+            </div>
+          </div>
+
+          <!-- Card 6: Runway Autonomie -->
+          <div class="stat-card ga-token-stat-card card-runway" role="group" aria-label="Autonomie estimée du pool">
+            <div class="stat-icon ok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Runway Autonomie</div>
+              <div class="stat-value" id="gaStatRunwayHours" role="status">> 24h</div>
+              <div class="stat-sub" id="gaStatRunwaySub" title="Autonomie restante">Temps de travail disponible</div>
+            </div>
+          </div>
+
+          <!-- Card 7: Comptes en Cooldown Anti-Burst -->
+          <div class="stat-card ga-token-stat-card card-cooldown" role="group" aria-label="Comptes temporairement en pause ou cooldown">
+            <div class="stat-icon warn">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Comptes en Cooldown</div>
+              <div class="stat-value" id="gaStatCooldownCount" role="status">0</div>
+              <div class="stat-sub" id="gaStatCooldownSub" title="Protection anti-burst">Zéro cooldown actif</div>
+            </div>
+          </div>
+
+          <!-- Card 8: Requêtes Traitées (Proxy) -->
+          <div class="stat-card ga-token-stat-card card-capacity" role="group" aria-label="Volume total des requêtes traitées">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            </div>
+            <div class="stat-body" style="min-width: 0; width: 100%;">
+              <div class="stat-label">Requêtes Traitées</div>
+              <div class="stat-value" id="gaStatTotalCapacity" role="status">0 req</div>
+              <div class="stat-sub" id="gaStatTotalCapacitySub" title="Requêtes réussies du proxy">Quotas Antigravity pool</div>
+            </div>
+          </div>
+        </div>

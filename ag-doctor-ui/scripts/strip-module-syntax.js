@@ -6,8 +6,11 @@
  * at runtime (no bundler, no ES module loader).
  *
  * This script strips:
- *   - `export ` prefix → keeps the declaration as a global
- *   - `import … from '…';` lines → removed (globals available from prior scripts)
+ *   - All `import ... from '...';` and `import '...';` statements (single-line & multi-line)
+ *   - All `export { ... };` statements (single-line & multi-line)
+ *   - `export * from '...';`
+ *   - `export default ` prefix
+ *   - `export ` prefix from declarations (function, class, const, let, var, async)
  */
 const fs = require('fs');
 const path = require('path');
@@ -29,12 +32,27 @@ function getAllJsFiles(directory) {
   return files;
 }
 
+function stripModuleSyntax(src) {
+  return src
+    // Multi-line and single-line imports with "from"
+    .replace(/(?:^|\r?\n)\s*import\s+[\s\S]*?\s+from\s+['"][^'"]+['"];?\s*(?=\r?\n|$)/g, '\n')
+    // Side-effect imports like import './styles.css';
+    .replace(/(?:^|\r?\n)\s*import\s+['"][^'"]+['"];?\s*(?=\r?\n|$)/g, '\n')
+    // Multi-line and single-line export * from '...';
+    .replace(/(?:^|\r?\n)\s*export\s*\*\s*from\s*['"][^'"]+['"];?\s*(?=\r?\n|$)/g, '\n')
+    // Multi-line and single-line export { ... };
+    .replace(/(?:^|\r?\n)\s*export\s*\{[\s\S]*?\}\s*;?\s*(?=\r?\n|$)/g, '\n')
+    // export default
+    .replace(/(?:^|\r?\n)\s*export\s+default\s+/g, '\n')
+    // export const/let/var/function/class/async
+    .replace(/(?:^|\r?\n)\s*export\s+(?=(?:async\s+)?(?:function|class|const|let|var)\b)/g, '\n')
+    // Any remaining export at start of line
+    .replace(/^\s*export\s+/gm, '');
+}
+
 for (const fp of getAllJsFiles(dir)) {
   const src = fs.readFileSync(fp, 'utf8');
-  const out = src
-    .replace(/^export\s*\{[^}]*\}\s*;?\s*$/gm, '') // export { x } → (removed)
-    .replace(/^export /gm, '')           // export function foo → function foo
-    .replace(/^import .+;\s*$/gm, '');   // import { x } from './y.js'; → (removed)
+  const out = stripModuleSyntax(src);
 
   if (out !== src) {
     fs.writeFileSync(fp, out);

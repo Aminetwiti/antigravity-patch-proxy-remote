@@ -1,0 +1,34 @@
+      <div class="view" id="view-failures" role="tabpanel" aria-labelledby="nav-tab-failures">
+        <div class="view-header">
+          <div>
+            <h1>Failure Scenarios</h1>
+            <p class="subtitle">All custom provider error states — visual preview of native Antigravity-style error cards</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" id="openFailureShowcaseBtn2" type="button" title="Refresh the scenario showcase below">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Category filter chips -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-body" style="padding:12px 16px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+            <span style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:var(--text-2); margin-right:4px;">Filter:</span>
+            <button class="btn btn-ghost btn-sm agy-filter-chip active" data-filter="all" type="button">All (11)</button>
+            <button class="btn btn-ghost btn-sm agy-filter-chip" data-filter="auth_401" type="button">Auth 401</button>
+            <button class="btn btn-ghost btn-sm agy-filter-chip" data-filter="quota_429" type="button">Quota 429</button>
+            <button class="btn btn-ghost btn-sm agy-filter-chip" data-filter="credits_402" type="button">Credits 402</button>
+            <button class="btn btn-ghost btn-sm agy-filter-chip" data-filter="context_400" type="button">Context 400</button>
+            <button class="btn btn-ghost btn-sm agy-filter-chip" data-filter="offline_econn" type="button">Offline</button>
+            <button class="btn btn-ghost btn-sm agy-filter-chip" data-filter="network_timeout" type="button">Timeout</button>
+            <button class="btn btn-ghost btn-sm agy-filter-chip" data-filter="invalid_json" type="button">Invalid JSON</button>
+            <button class="btn btn-ghost btn-sm agy-filter-chip" data-filter="model_not_found" type="button">Not Found</button>
+            <button class="btn btn-ghost btn-sm agy-filter-chip" data-filter="generic" type="button">Generic</button>
+          </div>
+        </div>
+
+        <!-- Scenario showcase grid -->
+        <div id="failureScenarioShowcase" class="agy-showcase-grid"></div>
+      </div>

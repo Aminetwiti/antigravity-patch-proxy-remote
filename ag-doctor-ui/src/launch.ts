@@ -13,6 +13,12 @@ const FILTERED_PATTERNS = [
   /Failed to create GLES3 context/,
   /fallback to GLES2/,
   /Failed to create shared context for virtualization/,
+  /cache_util_win\.cc/,
+  /disk_cache\.cc/,
+  /gpu_disk_cache\.cc/,
+  /Gpu Cache Creation failed/,
+  /Unable to move the cache/,
+  /Unable to create cache/,
 ] as const;
 
 function shouldFilter(line: string): boolean {

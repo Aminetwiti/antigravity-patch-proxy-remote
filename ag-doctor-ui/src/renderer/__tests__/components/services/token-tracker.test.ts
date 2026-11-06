@@ -231,12 +231,30 @@ describe('token-tracker', () => {
       expect(stats.requestCount).toBe(0);
     });
 
-    it('seeds demo data when empty', () => {
-      engine.seedDemoData();
-      expect(engine.getEntries().length).toBeGreaterThan(0);
+    it('tracks multiple usage entries and computes stats', () => {
+      engine.clear();
+      engine.logUsage({
+        timestamp: Date.now(),
+        provider: 'google',
+        model: 'gemini-3.8-flash',
+        promptTokens: 1000,
+        completionTokens: 200,
+        latencyMs: 150,
+        status: 200,
+      });
+      engine.logUsage({
+        timestamp: Date.now(),
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        promptTokens: 2000,
+        completionTokens: 500,
+        latencyMs: 300,
+        status: 200,
+      });
+      expect(engine.getEntries().length).toBe(2);
       const stats = engine.getStats();
-      expect(stats.totalTokens).toBeGreaterThan(1000);
-      expect(Object.keys(stats.byProvider).length).toBeGreaterThan(1);
+      expect(stats.totalTokens).toBe(3700);
+      expect(Object.keys(stats.byProvider).length).toBe(2);
     });
 
     it('loads real SQLite sessions and computes metrics', () => {

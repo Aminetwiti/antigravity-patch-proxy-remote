@@ -420,8 +420,16 @@ export function registerGoogleAccountsIpc(ctx: MainContext): void {
 
   ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_PROBE_POOL, async (_evt, dryRun?: boolean) => {
     try {
-      const probeScript = path.resolve(__dirname, '..', '..', '..', 'scripts', 'probe-pool.js');
-      if (!fs.existsSync(probeScript)) {
+      const appPath = typeof app?.getAppPath === 'function' ? app.getAppPath() : null;
+      const candidates = [
+        path.resolve(__dirname, '..', '..', '..', '..', '..', 'scripts', 'probe-pool.js'),
+        path.resolve(__dirname, '..', '..', '..', 'scripts', 'probe-pool.js'),
+        path.resolve(process.cwd(), 'scripts', 'probe-pool.js'),
+        path.resolve(process.cwd(), '..', 'scripts', 'probe-pool.js'),
+        ...(appPath ? [path.resolve(appPath, '..', 'scripts', 'probe-pool.js'), path.resolve(appPath, 'scripts', 'probe-pool.js')] : []),
+      ];
+      const probeScript = candidates.find((x) => fs.existsSync(x));
+      if (!probeScript) {
         return { success: false, error: 'probe-pool.js script not found' };
       }
       const { runProbe, syncProbeResults } = require(probeScript);

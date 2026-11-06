@@ -48,14 +48,29 @@ process.on('unhandledRejection', (reason) => {
 // Post-Quantum TLS stability: prevent oversized Kyber handshakes dropping in Go backend
 process.env.GODEBUG = (process.env.GODEBUG ? process.env.GODEBUG + ',' : '') + 'tlsmlkem=0';
 
-// Disable hardware acceleration cleanly for software rendering if requested
-if (process.env.AG_DISABLE_GPU === '1') {
-  app.disableHardwareAcceleration();
-} else {
-  app.commandLine.appendSwitch('disable-gpu-sandbox');
-  app.commandLine.appendSwitch('enable-gpu-rasterization');
-  app.commandLine.appendSwitch('enable-zero-copy');
-  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// Hardware acceleration is enabled by default for smooth 60fps rendering, compositing and scrolling.
+// Set AG_DISABLE_GPU=1 only on headless environments or broken virtual machine drivers.
+if (app) {
+  if (process.env.AG_DISABLE_GPU === '1') {
+    try { app.disableHardwareAcceleration(); } catch {}
+    app.commandLine?.appendSwitch('disable-gpu');
+  }
+
+  const gotTheLock = typeof app.requestSingleInstanceLock === 'function'
+    ? app.requestSingleInstanceLock()
+    : true;
+
+  if (!gotTheLock) {
+    app.quit();
+  } else {
+    app.on('second-instance', () => {
+      const mainWindow = getMainWindow();
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+    });
+  }
 }
 
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,SpareRendererForSitePerProcess');

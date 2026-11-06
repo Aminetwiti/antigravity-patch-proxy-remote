@@ -236,8 +236,8 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
               }
             }
           }
-        } catch {
-          // Best-effort enrichment
+        } catch (enrichErr) {
+          console.debug?.('[UserQuotaClient] Secondary quota enrichment failed:', enrichErr);
         }
       }
 
@@ -273,8 +273,8 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
         argonWeeklyReset,
         groups,
       };
-    } catch {
-      // Continue to next host on network failure
+    } catch (hostErr) {
+      console.debug?.('[UserQuotaClient] Host request failed (' + host + '):', hostErr);
     }
   }
 
@@ -283,8 +283,8 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
     if (realModelQuotas) {
       return realModelQuotas;
     }
-  } catch {
-    // Continue to fallback 2
+  } catch (modelQuotasErr) {
+    console.debug?.('[UserQuotaClient] Fallback real model quotas failed:', modelQuotasErr);
   }
 
   try {
@@ -312,8 +312,8 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
         ],
       };
     }
-  } catch {
-    // Ignore fallback error
+  } catch (cloudCodeProjErr) {
+    console.debug?.('[UserQuotaClient] Cloud Code project fallback failed:', cloudCodeProjErr);
   }
 
   if (nonTos403Error) {
@@ -358,8 +358,8 @@ export async function warmupGoogleAccount(accessToken: string): Promise<boolean>
         signal: AbortSignal.timeout(7000),
       });
       if (res.ok) return true;
-    } catch {
-      // Try next host
+    } catch (warmupErr) {
+      console.debug?.('[UserQuotaClient] Warmup ping failed on ' + host + ':', warmupErr);
     }
   }
   return false;

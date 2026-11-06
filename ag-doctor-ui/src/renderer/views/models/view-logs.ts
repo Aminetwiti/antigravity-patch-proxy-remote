@@ -584,10 +584,17 @@ if (logsSearchInput) {
 // Floating scroll to bottom button
 const logsScrollBottomBtn = $('#logsScrollBottomBtn') as HTMLButtonElement | null;
 if (logsScrollBottomBtn) {
+  let isScrollingTicking = false;
   logsOutput.addEventListener('scroll', () => {
-    const distanceToBottom = logsOutput.scrollHeight - logsOutput.scrollTop - logsOutput.clientHeight;
-    logsScrollBottomBtn.style.display = distanceToBottom > 160 ? 'inline-flex' : 'none';
-  });
+    if (!isScrollingTicking) {
+      isScrollingTicking = true;
+      requestAnimationFrame(() => {
+        isScrollingTicking = false;
+        const distanceToBottom = logsOutput.scrollHeight - logsOutput.scrollTop - logsOutput.clientHeight;
+        logsScrollBottomBtn.style.display = distanceToBottom > 160 ? 'inline-flex' : 'none';
+      });
+    }
+  }, { passive: true });
   logsScrollBottomBtn.addEventListener('click', () => {
     logsOutput.scrollTo({ top: logsOutput.scrollHeight, behavior: 'smooth' });
     logsScrollBottomBtn.style.display = 'none';

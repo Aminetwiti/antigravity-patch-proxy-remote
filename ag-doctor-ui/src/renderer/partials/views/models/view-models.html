@@ -1,0 +1,121 @@
+      <div class="view" id="view-models" role="tabpanel" aria-labelledby="nav-tab-models">
+        <div class="view-header">
+          <div>
+            <h1>Custom models</h1>
+            <p class="subtitle">Configured providers and their status</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-secondary" id="modelsPingPongBtn" type="button" aria-label="Test Ping-Pong & Benchmark" title="Test de latence Ping-Pong en direct sur les modèles">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+              🏓 Ping-Pong Test
+            </button>
+            <button class="btn btn-ghost" id="modelsTestBtn" type="button" aria-label="Test all custom models">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              Test all models
+            </button>
+            <button class="btn btn-ghost" id="modelsTestHideBtn" type="button" aria-label="Test all models and auto-disable failing ones" title="Test every provider endpoint. Models that fail are automatically disabled.">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Test & Auto-Disable
+            </button>
+            <label class="sentinel-toggle" title="Auto-Sentinel: periodically test all providers and auto-disable failing ones">
+              <input type="checkbox" id="autoSentinelToggle" aria-label="Auto-Sentinel" />
+              <span class="sentinel-slider"></span>
+              <span class="sentinel-label" id="autoSentinelLabel">Auto-Sentinel</span>
+            </label>
+            <button class="btn btn-primary" id="modelsAddBtn" type="button" aria-label="Add a custom model">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add model
+            </button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-body">
+            <div class="models-toolbar">
+              <div class="models-search-wrap">
+                <svg class="search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="modelsSearchInput" class="input-sm models-search-input" placeholder="Search models by name, provider, model ID, or endpoint…" aria-label="Search models">
+                <button type="button" class="models-search-clear" id="modelsSearchClearBtn" aria-label="Clear search" title="Clear search" hidden>&times;</button>
+              </div>
+              <div class="models-category-tabs" role="tablist" aria-label="Model status filter">
+                <button class="models-cat-tab active" data-cat="all" role="tab" aria-selected="true">All</button>
+                <button class="models-cat-tab" data-cat="active" role="tab" aria-selected="false">Active</button>
+                <button class="models-cat-tab" data-cat="disabled" role="tab" aria-selected="false">Disabled</button>
+              </div>
+              <div class="models-cap-filters" id="modelsCapFilters" role="group" aria-label="Filter models by capability">
+                <button type="button" class="models-cap-filter active" data-cap="all" aria-pressed="true">All</button>
+                <button type="button" class="models-cap-filter" data-cap="reasoning" aria-pressed="false" title="Reasoning models (o1, r1, thinking, etc.)">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 10 10 0 0 0-10-10z"/><path d="M12 6a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/></svg> Reasoning
+                </button>
+                <button type="button" class="models-cap-filter" data-cap="vision" aria-pressed="false" title="Vision models (4o, sonnet, flash, etc.)">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Vision
+                </button>
+                <button type="button" class="models-cap-filter" data-cap="code" aria-pressed="false" title="Code models (coder, starcoder, etc.)">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> Code
+                </button>
+              </div>
+              <div class="models-filter-selects">
+                <select id="modelsProviderFilter" class="input-sm models-provider-filter" aria-label="Filter by provider" title="Filter by provider">
+                  <option value="all">All providers</option>
+                </select>
+                <select id="modelsSortSelect" class="input-sm models-sort-select" aria-label="Sort models" title="Sort models">
+                  <option value="default">Default order</option>
+                  <option value="name-asc">Name (A → Z)</option>
+                  <option value="name-desc">Name (Z → A)</option>
+                  <option value="provider">By Provider</option>
+                  <option value="status">Active first</option>
+                </select>
+              </div>
+              <div class="models-bulk-actions">
+                <label class="models-select-all" title="Select all models on this page" style="display:flex;align-items:center;gap:6px;margin-right:6px;font-size:12px;cursor:pointer;">
+                  <input type="checkbox" id="modelsSelectAllCb" aria-label="Select all models on current page" /> Select page
+                </label>
+                <span id="modelsSelectedBadge" class="badge badge-primary" style="display: none; font-size: 11px;">0 selected</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="modelsSelectAllMatchesBtn" title="Select all models matching active filter" style="display: none;">Select all (<span id="modelsSelectAllCount">0</span>)</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="modelsClearSelectionBtn" title="Clear selection" style="display: none;">Clear</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="modelsBulkTestBtn" title="Test selected models" disabled>
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                  Test
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="modelsBulkEnableBtn" title="Enable selected models" disabled>
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  Enable
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="modelsBulkDisableBtn" title="Disable selected models" disabled>
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                  Disable
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm btn-danger-hover" id="modelsBulkDeleteBtn" title="Delete selected models" disabled>
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            <div id="modelsList" class="models-list">
+              <div class="empty-state">
+                <div class="empty-icon">
+                  <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>
+                </div>
+                <p>No models configured yet. <strong>Add model</strong> to connect a custom OpenAI- or Anthropic-compatible provider.</p>
+              </div>
+            </div>
+
+            <div id="modelsPaginationNav" class="models-pagination-nav" style="display: none;">
+              <div class="models-pagination-controls">
+                <button class="btn btn-ghost btn-sm" id="modelsPrevPageBtn" disabled aria-label="Previous Page">‹ Prev</button>
+                <div id="modelsPageNumbers" class="models-page-numbers"></div>
+                <button class="btn btn-ghost btn-sm" id="modelsNextPageBtn" disabled aria-label="Next Page">Next ›</button>
+              </div>
+              <div class="models-pagination-settings">
+                <span id="modelsPaginationInfo" class="models-pagination-info">Showing 0 models</span>
+                <select id="modelsPageSizeSelect" class="input-sm models-pagesize-select" aria-label="Models per page">
+                  <option value="5">5 per page</option>
+                  <option value="10">10 per page</option>
+                  <option value="20" selected>20 per page</option>
+                  <option value="50">50 per page</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>

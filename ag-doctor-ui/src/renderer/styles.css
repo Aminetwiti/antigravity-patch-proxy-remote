@@ -523,6 +523,8 @@ body {
   padding: 24px 32px 32px;
   scrollbar-width: thin;
   scrollbar-color: var(--bg-4) transparent;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .content::-webkit-scrollbar { width: 8px; height: 8px; }
 .content::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 4px; }

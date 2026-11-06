@@ -11,7 +11,6 @@
 'use strict';
 
 const path = require('path');
-const { Writable } = require('stream');
 const { spawn } = require('child_process');
 
 const isWorker = process.argv.includes('--worker');
@@ -40,23 +39,6 @@ if (isWorker) {
     process.stderr.write('ag-doctor worker: CLI does not expose a callable entry\n');
     process.exit(1);
   }
-
-  // Reusable Writable stream that accumulates chunks into a buffer.
-  // Reusing the stream avoids per-command allocation.
-  const captureStream = () => {
-    let buf = '';
-    const writable = new Writable({
-      write(chunk, _enc, cb) {
-        buf += typeof chunk === 'string' ? chunk : chunk.toString();
-        cb();
-      },
-    });
-    return { writable, getBuffer: () => buf, clear: () => { buf = ''; } };
-  };
-
-  // Pre-build capture streams (reused across commands — no GC pressure)
-  const out = captureStream();
-  const err = captureStream();
 
   let buffer = '';
   let busy = false;
@@ -98,32 +80,42 @@ if (isWorker) {
     }
     const args = Array.isArray(payload.args) ? payload.args : [];
 
-    // Capture stdout/stderr by piping through our Writable streams.
-    // This is much faster than monkey-patching process.stdout.write per call.
-    out.clear();
-    err.clear();
-    const origStdout = process.stdout;
-    const origStderr = process.stderr;
-    Object.defineProperty(process, 'stdout', { value: out.writable, configurable: true });
-    Object.defineProperty(process, 'stderr', { value: err.writable, configurable: true });
+    let outBuf = '';
+    let errBuf = '';
+    const origStdoutWrite = process.stdout.write.bind(process.stdout);
+    const origStderrWrite = process.stderr.write.bind(process.stderr);
+
+    process.stdout.write = function (chunk, enc, cb) {
+      outBuf += typeof chunk === 'string' ? chunk : chunk.toString();
+      if (typeof enc === 'function') enc();
+      else if (typeof cb === 'function') cb();
+      return true;
+    };
+    process.stderr.write = function (chunk, enc, cb) {
+      errBuf += typeof chunk === 'string' ? chunk : chunk.toString();
+      if (typeof enc === 'function') enc();
+      else if (typeof cb === 'function') cb();
+      return true;
+    };
+
     try {
       const code = await Promise.resolve(runFn(args));
       const result = {
         code: typeof code === 'number' ? code : 0,
-        stdout: out.getBuffer(),
-        stderr: err.getBuffer(),
+        stdout: outBuf,
+        stderr: errBuf,
       };
-      origStdout.write(JSON.stringify(result) + '\n');
+      origStdoutWrite(JSON.stringify(result) + '\n');
     } catch (e) {
       const result = {
         code: -1,
-        stdout: out.getBuffer(),
-        stderr: err.getBuffer() + String(e && e.message ? e.message : e),
+        stdout: outBuf,
+        stderr: errBuf + String(e && e.message ? e.message : e),
       };
-      origStdout.write(JSON.stringify(result) + '\n');
+      origStdoutWrite(JSON.stringify(result) + '\n');
     } finally {
-      Object.defineProperty(process, 'stdout', { value: origStdout, configurable: true });
-      Object.defineProperty(process, 'stderr', { value: origStderr, configurable: true });
+      process.stdout.write = origStdoutWrite;
+      process.stderr.write = origStderrWrite;
     }
   }
 } else {

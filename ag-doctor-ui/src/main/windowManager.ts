@@ -9,11 +9,13 @@ let _configPath: string | null = null;
 
 export function getAssetsPath(): string {
   if (_assetsPath === null) {
+    const resPath = (process as any).resourcesPath;
+    const appPath = typeof app?.getAppPath === 'function' ? app.getAppPath() : null;
     const candidates = [
       path.join(__dirname, '..', 'assets'),
       path.join(__dirname, '..', '..', 'assets'),
-      path.join(process.resourcesPath, 'assets'),
-      path.join(app.getAppPath(), 'assets'),
+      ...(resPath ? [path.join(resPath, 'assets')] : []),
+      ...(appPath ? [path.join(appPath, 'assets')] : []),
     ];
     for (const c of candidates) {
       if (fs.existsSync(c)) {
@@ -29,11 +31,33 @@ export function getAssetsPath(): string {
 }
 
 export function getCliPath(): string {
-  if (_cliPath === null) {
-    if (app.isPackaged) {
-      _cliPath = path.join(process.resourcesPath, 'ag-doctor', 'bin', 'ag-doctor.js');
-    } else {
-      _cliPath = path.join(__dirname, '..', '..', 'ag-doctor', 'bin', 'ag-doctor.js');
+  if (_cliPath === null || !fs.existsSync(_cliPath)) {
+    const resPath = (process as any).resourcesPath;
+    const appPath = typeof app?.getAppPath === 'function' ? app.getAppPath() : null;
+    const candidates = [
+      ...(resPath ? [path.join(resPath, 'ag-doctor', 'bin', 'ag-doctor.js')] : []),
+      ...(appPath ? [
+        path.join(appPath, '..', 'ag-doctor', 'bin', 'ag-doctor.js'),
+        path.join(appPath, 'ag-doctor', 'bin', 'ag-doctor.js'),
+      ] : []),
+      path.join(__dirname, '..', '..', '..', 'ag-doctor', 'bin', 'ag-doctor.js'),
+      path.join(__dirname, '..', '..', 'ag-doctor', 'bin', 'ag-doctor.js'),
+      path.join(process.cwd(), 'ag-doctor', 'bin', 'ag-doctor.js'),
+      path.join(process.cwd(), '..', 'ag-doctor', 'bin', 'ag-doctor.js'),
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        _cliPath = path.normalize(c);
+        break;
+      }
+    }
+    if (!_cliPath) {
+      _cliPath = path.join(
+        app?.isPackaged && resPath ? resPath : path.join(__dirname, '..', '..', '..'),
+        'ag-doctor',
+        'bin',
+        'ag-doctor.js'
+      );
     }
   }
   return _cliPath;
@@ -128,6 +152,26 @@ export function createWindow(): BrowserWindow {
     },
   });
 
+  mainWindow.webContents.on('console-message', (_e, level, msg, line, src) => {
+    console.log('[Renderer:' + level + '] ' + msg + ' (' + path.basename(src || '') + ':' + line + ')');
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[CRITICAL: render-process-gone]', JSON.stringify(details));
+  });
+
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('[CRITICAL: webContents unresponsive]');
+  });
+
+  mainWindow.on('unresponsive', () => {
+    console.error('[CRITICAL: mainWindow unresponsive]');
+  });
+
+  mainWindow.on('close', () => {
+    console.log('[mainWindow close event]');
+  });
+
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   let shown = false;
@@ -138,7 +182,7 @@ export function createWindow(): BrowserWindow {
     mainWindow.show();
   };
 
-  const showFallback = setTimeout(showWindow, 1500);
+  const showFallback = setTimeout(showWindow, 2000);
   mainWindow.once('ready-to-show', showWindow);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

@@ -186,6 +186,26 @@ export function registerStatsTokensIpc(ctx: MainContext): void {
       if (fs.existsSync(eventsPath)) {
         try {
           const stat = await fs.promises.stat(eventsPath);
+          const cacheDiskPath = path.join(dataDir, 'token_events_cache.json');
+          if (!tokenEventsCache && fs.existsSync(cacheDiskPath)) {
+            try {
+              const raw = JSON.parse(await fs.promises.readFile(cacheDiskPath, 'utf8'));
+              if (raw && typeof raw.totalTokens === 'number') {
+                tokenEventsCache = {
+                  mtimeMs: raw.mtimeMs || 0,
+                  size: raw.size || 0,
+                  totalTokens: raw.totalTokens || 0,
+                  promptTokens: raw.promptTokens || 0,
+                  completionTokens: raw.completionTokens || 0,
+                  cachedTokens: raw.cachedTokens || 0,
+                  requestsCount: raw.requestsCount || 0,
+                  dailyEventsMap: new Map(Object.entries(raw.dailyEvents || {})),
+                  recentEvents: Array.isArray(raw.recentEvents) ? raw.recentEvents : [],
+                };
+              }
+            } catch {}
+          }
+
           if (tokenEventsCache && tokenEventsCache.mtimeMs === stat.mtimeMs && tokenEventsCache.size === stat.size) {
             realTotalTokens = tokenEventsCache.totalTokens;
             realPromptTokens = tokenEventsCache.promptTokens;
@@ -221,14 +241,27 @@ export function registerStatsTokensIpc(ctx: MainContext): void {
                 }
 
                 if (ev.timestamp) {
-                  const day = String(ev.timestamp).slice(0, 10);
-                  const existing = dMap.get(day) || { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 };
-                  existing.requests++;
-                  existing.promptTokens += prompt;
-                  existing.completionTokens += comp;
-                  existing.totalTokens += total;
-                  existing.cachedTokens += cached;
-                  dMap.set(day, existing);
+                  let day = '';
+                  if (typeof ev.timestamp === 'number') {
+                    const d = new Date(ev.timestamp);
+                    if (!isNaN(d.getTime())) day = d.toISOString().slice(0, 10);
+                  } else if (typeof ev.timestamp === 'string') {
+                    if (ev.timestamp.includes('T')) {
+                      day = ev.timestamp.slice(0, 10);
+                    } else {
+                      const d = new Date(Number(ev.timestamp) || ev.timestamp);
+                      if (!isNaN(d.getTime())) day = d.toISOString().slice(0, 10);
+                    }
+                  }
+                  if (day) {
+                    const existing = dMap.get(day) || { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 };
+                    existing.requests++;
+                    existing.promptTokens += prompt;
+                    existing.completionTokens += comp;
+                    existing.totalTokens += total;
+                    existing.cachedTokens += cached;
+                    dMap.set(day, existing);
+                  }
                 }
               } catch {}
             }
@@ -246,6 +279,27 @@ export function registerStatsTokensIpc(ctx: MainContext): void {
               dailyEventsMap: dMap,
               recentEvents: recent,
             };
+
+            // Persist cache to disk asynchronously
+            try {
+              const dailyObj: Record<string, any> = {};
+              for (const [k, v] of dMap.entries()) dailyObj[k] = v;
+              fs.promises.writeFile(
+                cacheDiskPath,
+                JSON.stringify({
+                  mtimeMs: stat.mtimeMs,
+                  size: stat.size,
+                  totalTokens: realTotalTokens,
+                  promptTokens: realPromptTokens,
+                  completionTokens: realCompletionTokens,
+                  cachedTokens: realCachedTokens,
+                  requestsCount: realTotalRequests,
+                  dailyEvents: dailyObj,
+                  recentEvents: recent,
+                }),
+                'utf8'
+              ).catch(() => {});
+            } catch {}
           }
         } catch {}
       }
@@ -283,8 +337,10 @@ export function registerStatsTokensIpc(ctx: MainContext): void {
         } catch {}
       }
 
+      const existingDaysSet = new Set(activityByDay.map((a) => a.day));
       for (const [day, ev] of dailyEventsMap.entries()) {
-        if (!activityByDay.some((a) => a.day === day)) {
+        if (!existingDaysSet.has(day)) {
+          existingDaysSet.add(day);
           activityByDay.push({
             day,
             convs: 1,

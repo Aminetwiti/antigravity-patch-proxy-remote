@@ -1,0 +1,52 @@
+      <div class="view" id="view-doctor" role="tabpanel" aria-labelledby="nav-tab-doctor">
+        <div class="view-header">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <h1>Diagnostic</h1>
+              <span class="badge badge-muted" id="doctorLastRunBadge" style="font-size: 11px;">Not run yet</span>
+            </div>
+            <p class="subtitle">Detailed output from <code>ag-doctor doctor</code></p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" id="doctorRebuildSidebarBtn" type="button" title="Reconstruire l'index de la sidebar des conversations, restaurer les titres et l'ordre chronologique" aria-label="Rebuild sidebar">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Rebuild Sidebar
+            </button>
+            <button class="btn btn-ghost" id="doctorPruneBtn" type="button" title="Purge orphan conversation trajectories & vacuum SQLite database" aria-label="Prune database">Prune Database</button>
+            <button class="btn btn-ghost" id="doctorJsonBtn" type="button" style="display: none;" aria-hidden="true" tabindex="-1">Show JSON</button>
+            <button class="btn btn-primary" id="doctorRunBtn" type="button" aria-label="Run doctor diagnostic again">Run doctor again</button>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px;">
+          <div class="tabs" role="tablist" style="margin-bottom: 0;">
+            <button class="tab active" id="doctorTabConsoleBtn" role="tab" aria-selected="true" type="button">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              Console Output
+            </button>
+            <button class="tab" id="doctorTabJsonBtn" role="tab" aria-selected="false" type="button">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              Raw JSON
+            </button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="btn btn-ghost btn-xs" id="doctorCopyBtn" type="button" title="Copy diagnostic output to clipboard" aria-label="Copy output">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy
+            </button>
+            <button class="btn btn-ghost btn-xs" id="doctorClearBtn" type="button" title="Clear terminal (Double-click to restore)" aria-label="Clear terminal">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div id="doctorStatusAnnouncer" class="sr-only" aria-live="polite"></div>
+
+        <div class="panel">
+          <div class="panel-body">
+            <div id="doctorExecutionFeed"></div>
+            <pre class="terminal" id="doctorOutput" tabindex="0" role="region" aria-label="Diagnostic terminal output">$ ag-doctor doctor</pre>
+          </div>
+        </div>
+      </div>

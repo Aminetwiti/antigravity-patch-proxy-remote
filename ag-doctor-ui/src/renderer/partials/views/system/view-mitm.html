@@ -1,0 +1,42 @@
+      <div class="view" id="view-mitm" role="tabpanel" aria-labelledby="nav-tab-mitm">
+        <div class="view-header">
+          <div>
+            <h1>MITM Proxy</h1>
+            <p class="subtitle">Gestion du proxy TLS local et du certificat racine d'interception</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" id="mitmOpenTrafficBtn" type="button" aria-label="Ouvrir Traffic Inspector" title="Inspecter les requêtes LLM interceptées en direct">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <span>Traffic Inspector</span>
+            </button>
+            <button class="btn btn-primary" id="mitmProxyOnBtn" type="button" aria-label="Enable MITM proxy">Enable proxy</button>
+            <button class="btn btn-secondary" id="mitmProxyOffBtn" type="button" aria-label="Disable MITM proxy" style="display:none;">Disable proxy</button>
+            <div class="mitm-cert-actions-group" style="display: inline-flex; gap: 4px;">
+              <button class="btn btn-secondary" id="mitmInstallBtn" type="button" aria-label="Install MITM CA certificate">Install CA certificate</button>
+              <button class="btn btn-danger btn-ghost" id="mitmUninstallBtn" type="button" aria-label="Remove MITM CA certificate" style="display:none;">Remove CA certificate</button>
+              <button class="btn btn-ghost" id="mitmExportCaBtn" type="button" aria-label="Export MITM CA certificate">Export CA</button>
+            </div>
+            <button class="btn btn-ghost" id="mitmRefreshBtn" type="button" aria-label="Refresh MITM Status">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+        <div class="patch-banner ok" id="mitmBypassedBanner" role="status" aria-live="polite" style="display: none; margin-bottom: 16px;">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <div class="patch-banner-body">
+            <div class="patch-banner-title">Routage direct actif (Patch binaire) — Interception TLS globale optionnelle</div>
+            <div class="patch-banner-text">Le Language Server d'Antigravity communique directement avec le proxy local sur le port 51074. L'interception TLS MITM sur le port 443 n'est pas requise.</div>
+          </div>
+        </div>
+        <div class="patch-banner err" id="mitmRequiredBanner" role="alert" aria-live="polite" style="display: none; margin-bottom: 16px;">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div class="patch-banner-body">
+            <div class="patch-banner-title">MITM on port 443 required for Antigravity 2.2.x – 2.4.x (up to 2.4.2)</div>
+            <div class="patch-banner-text">Antigravity 2.2.x, 2.3.x, and 2.4.x (up to 2.4.2) <strong>require</strong> MITM on port 443. Without it, the language server fails with <code>127.0.0.1:443 refused</code>. Make sure the proxy is listening on 443 and the CA certificate is installed.</div>
+          </div>
+        </div>
+        <div id="mitmStatus" class="mitm-status">
+          <div class="empty-state"><p>Loading MITM status…</p></div>
+        </div>
+      </div>

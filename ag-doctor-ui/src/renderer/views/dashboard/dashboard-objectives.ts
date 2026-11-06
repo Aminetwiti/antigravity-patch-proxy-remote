@@ -127,7 +127,13 @@ async function runDoctor(): Promise<void> {
     if (result.code !== 0 && !result.stdout) {
       throw new Error(result.stderr || `Exited with code ${result.code}`);
     }
-    const results = JSON.parse(result.stdout) as CheckResult[];
+    const stdout = (result.stdout || '').trim();
+    const jsonStart = stdout.indexOf('[');
+    const jsonEnd = stdout.lastIndexOf(']');
+    const rawJson = (jsonStart >= 0 && jsonEnd > jsonStart)
+      ? stdout.slice(jsonStart, jsonEnd + 1)
+      : stdout;
+    const results = JSON.parse(rawJson) as CheckResult[];
     lastResults = results;
     healthFilter = 'all';
     updateStats(results);

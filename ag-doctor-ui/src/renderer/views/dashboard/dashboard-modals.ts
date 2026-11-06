@@ -120,10 +120,73 @@ Propulsé par Google Antigravity IDE 🚀 #AntigravityAI #GoogleAntigravity`;
   }
 }
 
+function initDashboardModals(): void {
+  const tokenDetailCloseBtn = document.getElementById('tokenDetailCloseBtn');
+  const tokenDetailFooterCloseBtn = document.getElementById('tokenDetailFooterCloseBtn');
+  const tokenDetailBackdrop = document.getElementById('tokenDetailBackdrop');
+  const tokenCopyJsonBtn = document.getElementById('tokenCopyJsonBtn');
+
+  if (tokenDetailCloseBtn && !tokenDetailCloseBtn.dataset.bound) {
+    tokenDetailCloseBtn.dataset.bound = '1';
+    tokenDetailCloseBtn.addEventListener('click', closeTokenDetailModal);
+  }
+  if (tokenDetailFooterCloseBtn && !tokenDetailFooterCloseBtn.dataset.bound) {
+    tokenDetailFooterCloseBtn.dataset.bound = '1';
+    tokenDetailFooterCloseBtn.addEventListener('click', closeTokenDetailModal);
+  }
+  if (tokenDetailBackdrop && !tokenDetailBackdrop.dataset.bound) {
+    tokenDetailBackdrop.dataset.bound = '1';
+    tokenDetailBackdrop.addEventListener('click', (ev) => {
+      if (ev.target === tokenDetailBackdrop) closeTokenDetailModal();
+    });
+  }
+  if (tokenCopyJsonBtn && !tokenCopyJsonBtn.dataset.bound) {
+    tokenCopyJsonBtn.dataset.bound = '1';
+    tokenCopyJsonBtn.addEventListener('click', () => {
+      if (currentSelectedModalTokenEntry && navigator.clipboard) {
+        navigator.clipboard.writeText(JSON.stringify(currentSelectedModalTokenEntry, null, 2)).then(() => {
+          toast('JSON copié dans le presse-papiers !', 'ok', 1600);
+        }).catch(() => {});
+      }
+    });
+  }
+
+  // Token Wrapped Modal bindings
+  const tokenShareWrappedBtn = document.getElementById('tokenShareWrappedBtn');
+  const tokenWrappedCloseBtn = document.getElementById('tokenWrappedCloseBtn');
+  const tokenWrappedFooterCloseBtn = document.getElementById('tokenWrappedFooterCloseBtn');
+  const tokenWrappedBackdrop = document.getElementById('tokenWrappedBackdrop');
+  const tokenWrappedCopyBtn = document.getElementById('tokenWrappedCopyBtn');
+
+  if (tokenShareWrappedBtn && !tokenShareWrappedBtn.dataset.bound) {
+    tokenShareWrappedBtn.dataset.bound = '1';
+    tokenShareWrappedBtn.addEventListener('click', openTokenWrappedModal);
+  }
+  if (tokenWrappedCloseBtn && !tokenWrappedCloseBtn.dataset.bound) {
+    tokenWrappedCloseBtn.dataset.bound = '1';
+    tokenWrappedCloseBtn.addEventListener('click', closeTokenWrappedModal);
+  }
+  if (tokenWrappedFooterCloseBtn && !tokenWrappedFooterCloseBtn.dataset.bound) {
+    tokenWrappedFooterCloseBtn.dataset.bound = '1';
+    tokenWrappedFooterCloseBtn.addEventListener('click', closeTokenWrappedModal);
+  }
+  if (tokenWrappedBackdrop && !tokenWrappedBackdrop.dataset.bound) {
+    tokenWrappedBackdrop.dataset.bound = '1';
+    tokenWrappedBackdrop.addEventListener('click', (ev) => {
+      if (ev.target === tokenWrappedBackdrop) closeTokenWrappedModal();
+    });
+  }
+  if (tokenWrappedCopyBtn && !tokenWrappedCopyBtn.dataset.bound) {
+    tokenWrappedCopyBtn.dataset.bound = '1';
+    tokenWrappedCopyBtn.addEventListener('click', copyTokenWrappedSummary);
+  }
+}
+
 if (typeof window !== 'undefined') {
   (window as any).openTokenDetailModal = openTokenDetailModal;
   (window as any).closeTokenDetailModal = closeTokenDetailModal;
   (window as any).openTokenWrappedModal = openTokenWrappedModal;
   (window as any).closeTokenWrappedModal = closeTokenWrappedModal;
   (window as any).copyTokenWrappedSummary = copyTokenWrappedSummary;
+  (window as any).initDashboardModals = initDashboardModals;
 }

@@ -49,7 +49,8 @@ export function getAntigravityLogRoots(): string[] {
   return roots.filter((r) => {
     try {
       return fs.existsSync(r);
-    } catch {
+    } catch (err) {
+      console.debug?.('[VerificationResolver] Path check failed:', err);
       return false;
     }
   });
@@ -144,8 +145,8 @@ export async function detectAntigravityVerificationChallenge(): Promise<Verifica
               try {
                 const stat = fs.statSync(subLog);
                 logFiles.push({ path: subLog, mtime: stat.mtimeMs });
-              } catch {
-                // Ignore stat errors
+              } catch (statErr) {
+                console.debug?.('[VerificationResolver] Stat error on ' + subLog + ':', statErr);
               }
             }
           }
@@ -153,13 +154,13 @@ export async function detectAntigravityVerificationChallenge(): Promise<Verifica
           try {
             const stat = fs.statSync(fullPath);
             logFiles.push({ path: fullPath, mtime: stat.mtimeMs });
-          } catch {
-            // Ignore stat errors
+          } catch (statErr) {
+            console.debug?.('[VerificationResolver] Stat error on ' + fullPath + ':', statErr);
           }
         }
       }
-    } catch {
-      // Ignore directory read errors
+    } catch (dirErr) {
+      console.debug?.('[VerificationResolver] Directory read error on ' + root + ':', dirErr);
     }
   }
 
@@ -207,8 +208,8 @@ export async function detectAntigravityVerificationChallenge(): Promise<Verifica
             'Attention : Ne pas envoyer de SMS vers les numéros courts US (244444 / 96831) qui échouent hors USA. Privilégiez l\'option "Vérification sur l\'appareil (Device check)" ou Google Prompt / Authenticator.',
         };
       }
-    } catch {
-      // Skip unreadable files
+    } catch (readErr) {
+      console.debug?.('[VerificationResolver] Log file read failed for ' + candidate.path + ':', readErr);
     }
   }
 
@@ -228,14 +229,14 @@ export function resetAntigravityOnboarding(): { success: boolean; message: strin
     if (process.platform === 'win32') {
       try {
         execSync('taskkill /F /IM language_server.exe /T', { stdio: 'ignore', windowsHide: true });
-      } catch {
-        // Process might not be running
+      } catch (killErr) {
+        console.debug?.('[VerificationResolver] No running language_server.exe to kill:', killErr);
       }
     } else {
       try {
         execSync('pkill -f language_server', { stdio: 'ignore' });
-      } catch {
-        // Process might not be running
+      } catch (killErr) {
+        console.debug?.('[VerificationResolver] No running language_server to kill:', killErr);
       }
     }
 
@@ -272,13 +273,13 @@ export function resetAntigravityOnboarding(): { success: boolean; message: strin
               try {
                 fs.rmSync(path.join(folder, f), { recursive: true, force: true });
                 clearedCount++;
-              } catch {
-                // Ignore individual file removal errors
+              } catch (rmErr) {
+                console.debug?.('[VerificationResolver] Could not remove ' + f + ':', rmErr);
               }
             }
           }
-        } catch {
-          // Ignore directory access error
+        } catch (readDirErr) {
+          console.debug?.('[VerificationResolver] Could not read folder ' + folder + ':', readDirErr);
         }
       }
     }

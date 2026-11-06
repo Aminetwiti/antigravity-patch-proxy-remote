@@ -1,0 +1,112 @@
+        <div id="tokenTabDashboardContent">
+          <!-- MODE 1: OVERVIEW / COCKPIT -->
+          <div class="stats-mode-section" id="statsModeOverview" style="display:none;">
+            <div class="cockpit-top-grid">
+              <!-- Dispatch & Consumption Report -->
+              <div class="cockpit-card cockpit-main-report">
+                <div class="cockpit-card-header">
+                  <div class="cockpit-title-row">
+                    <span class="cockpit-dot-live"></span>
+                    <h2 class="cockpit-title">DISPATCH &amp; CONSUMPTION REPORT</h2>
+                  </div>
+                  <span class="cockpit-period-badge" id="cockpitPeriodBadge">Period: Live</span>
+                </div>
+                <div class="cockpit-report-body">
+                  <div class="cockpit-stat-col">
+                    <div class="cockpit-metric-lbl">TOTAL USAGE</div>
+                    <div class="cockpit-metric-val" id="cockpitTotalTokens">0</div>
+                    <div class="cockpit-metric-sub" id="cockpitTokenRatio">In: 0 (50%) / Out: 0 (50%) / Thk: 0 (0%)</div>
+                  </div>
+
+                  <!-- Central Radial Summary Gauge -->
+                  <div class="cockpit-radial-wrap">
+                    <div class="radial-sunburst-container">
+                      <svg width="150" height="150" viewBox="0 0 150 150" class="radial-sunburst-svg" id="cockpitRadialSvg">
+                        <!-- Populated dynamically via JS -->
+                      </svg>
+                      <div class="radial-sunburst-center">
+                        <span class="radial-center-count" id="cockpitRadialCount">0</span>
+                        <span class="radial-center-label">SUMMARY</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cockpit-finops-col">
+                    <div class="cockpit-metric-lbl">PREDICTED SPEND <span style="font-size:9px; opacity:0.75; font-weight:500; margin-left:3px;">(VALEUR MARCHÉ)</span> <span class="cockpit-pricing-link" id="cockpitPricingLink">Pricing Matrix ↗</span></div>
+                    <div class="cockpit-spend-val" id="cockpitPredictedSpend">$0.00</div>
+                    <div class="cockpit-spend-sub" id="cockpitSpendSub">avg ~$0.0000 / req</div>
+                    <div class="cockpit-cache-save-block">
+                      <span class="cockpit-cache-save-lbl">CACHE SAVED</span>
+                      <div class="cockpit-cache-save-val" id="cockpitCacheSaved">+$0.00</div>
+                      <span class="cockpit-cache-save-pct" id="cockpitCacheHitPct">0.0% Hit</span>
+                    </div>
+                    <div class="cockpit-gateway-status">Gateway status <span style="color:#22c55e;">normal</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Live Account / Models / Users Sidebar Tabs -->
+              <div class="cockpit-card cockpit-sidebar-tabs">
+                <div class="cockpit-sidebar-nav">
+                  <button type="button" class="cockpit-nav-pill active" data-cockpit-tab="accounts" id="cockpitTabAccounts">Accounts</button>
+                  <button type="button" class="cockpit-nav-pill" data-cockpit-tab="models" id="cockpitTabModels">Models</button>
+                  <button type="button" class="cockpit-nav-pill" data-cockpit-tab="users" id="cockpitTabUsers">Users</button>
+                </div>
+                <div class="cockpit-sidebar-body" id="cockpitSidebarContent">
+                  <div class="cockpit-empty-state">No active telemetry</div>
+                </div>
+                <div class="cockpit-sidebar-footer">
+                  <span>Gateway Anti-abuse</span>
+                  <span class="cockpit-active-pill">● Active</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cockpit Bottom 2-Card Row: 24H Activity Pulse & Efficiency Index -->
+            <div class="cockpit-bottom-row">
+              <div class="cockpit-card cockpit-pulse-card">
+                <div class="cockpit-card-header">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:#22c55e;">🕒</span>
+                    <h3 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">24H Activity Pulse</h3>
+                  </div>
+                  <div style="font-size:11px; color:var(--text-2);">
+                    Avg Load: <strong id="cockpitAvgLoad" style="color:var(--text-0);">0</strong> &bull; Peak: <span id="cockpitPeakHour">12:00</span>
+                  </div>
+                </div>
+                <div class="cockpit-pulse-bars-track" id="cockpitPulseBarsTrack">
+                  <!-- 24 hourly green bars populated dynamically -->
+                </div>
+                <div class="cockpit-pulse-footer">
+                  <span>⚖️ In/Out Ratio: <strong id="cockpitInOutRatio">1.0 : 1</strong></span>
+                  <span style="font-size:11px; color:var(--text-2);">Trough: <span id="cockpitTroughHour">13:00</span></span>
+                </div>
+              </div>
+
+              <div class="cockpit-card cockpit-efficiency-card">
+                <div class="cockpit-card-header">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:#f59e0b;">🔥</span>
+                    <h3 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">Efficiency Index &bull; J23</h3>
+                  </div>
+                  <span class="cockpit-latency-badge" id="cockpitZeroLatency">⚡ Zero Latency</span>
+                </div>
+                <div class="cockpit-efficiency-body">
+                  <div class="cockpit-arc-gauge-wrap">
+                    <svg width="180" height="95" viewBox="0 0 180 95" class="cockpit-arc-svg" id="cockpitArcSvg">
+                      <!-- Semicircle radial gauge populated dynamically -->
+                    </svg>
+                    <div class="cockpit-arc-center">
+                      <div class="cockpit-arc-hit" id="cockpitArcHit">Hit Rate: 0.0%</div>
+                      <div class="cockpit-arc-cached" id="cockpitArcCached">0</div>
+                      <div class="cockpit-arc-sub">CACHED TOKENS</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="cockpit-efficiency-footer">
+                  <span>Uncached Input: <strong id="cockpitUncachedInput">0</strong></span>
+                  <span style="color:#22c55e; font-weight:600;" id="cockpitSavingsGreen">+$0.00 Saved</span>
+                </div>
+              </div>
+            </div>
+          </div>

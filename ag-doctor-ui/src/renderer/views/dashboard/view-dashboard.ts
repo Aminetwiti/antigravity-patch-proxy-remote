@@ -1510,7 +1510,7 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
               <circle cx="${p.x}" cy="${p.y}" r="3.5" fill="#3b82f6" stroke="var(--bg-1)" stroke-width="1.5">
                 <title>${p.day}: ${currentBentoMetricType === 'cost' ? '$' + p.val.toFixed(2) : formatCompactTokens(p.val)}</title>
               </circle>
-              <text x="${p.x}" y="${chartH - 8}" fill="var(--text-2)" font-size="10" font-family="monospace" text-anchor="middle">${p.day.slice(5)}</text>
+              <text x="${p.x}" y="${chartH - 8}" fill="var(--text-2)" font-size="10" font-family="monospace" text-anchor="middle">${p.day ? p.day.slice(5) : ''}</text>
             `;
           });
         } else {
@@ -1525,7 +1525,7 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
               <rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="4" fill="url(#bentoBarGrad)" opacity="0.9">
                 <title>${d.day}: ${currentBentoMetricType === 'cost' ? '$' + val.toFixed(2) : formatCompactTokens(val)}</title>
               </rect>
-              <text x="${x + barWidth / 2}" y="${chartH - 8}" fill="var(--text-2)" font-size="10" font-family="monospace" text-anchor="middle">${d.day.slice(5)}</text>
+              <text x="${x + barWidth / 2}" y="${chartH - 8}" fill="var(--text-2)" font-size="10" font-family="monospace" text-anchor="middle">${d.day ? d.day.slice(5) : ''}</text>
             `;
           });
         }
@@ -1619,7 +1619,7 @@ function renderStatsBoard(stats?: ReturnType<TokenTrackerEngineInstance['getStat
             const x = padL + i * stepX + stepX / 2;
             const y = padT + plotH - h;
             points.push(`${x},${y}`);
-            svgContent += `<text x="${x}" y="${chartH - padB + 16}" fill="var(--text-2)" font-size="10" font-family="monospace" text-anchor="middle">${d.day.slice(5)}</text>`;
+            svgContent += `<text x="${x}" y="${chartH - padB + 16}" fill="var(--text-2)" font-size="10" font-family="monospace" text-anchor="middle">${d.day ? d.day.slice(5) : ''}</text>`;
           });
           const polyPoints = `${padL + stepX / 2},${padT + plotH} ` + points.join(' ') + ` ${padL + (days.length - 1) * stepX + stepX / 2},${padT + plotH}`;
           svgContent += `
@@ -2906,4 +2906,12 @@ async function loadDashboard(): Promise<void> {
   if (typeof renderTokenDashboard === 'function') {
     renderTokenDashboard();
   }
+}
+
+if (typeof window !== 'undefined') {
+  const w = window as any;
+  w.ensureRealTokenStats = ensureRealTokenStats;
+  w.renderTokenDashboard = renderTokenDashboard;
+  w.loadTokenizer = loadTokenizer;
+  w.loadDashboard = loadDashboard;
 }

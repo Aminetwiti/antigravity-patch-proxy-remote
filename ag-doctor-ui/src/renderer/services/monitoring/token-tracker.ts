@@ -839,37 +839,6 @@ export class TokenTrackerEngine {
 
     return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
   }
-
-  public seedDemoData(): void {
-    if (this.entries.length > 0) return;
-
-    const samples = [
-      { provider: 'google', model: 'gemini-4-argon-medium', prompt: 8420, completion: 1150, cached: 6200, latency: 680, status: 200, offset: 3 },
-      { provider: 'google', model: 'gemini-3.8-flash', prompt: 3100, completion: 420, cached: 2100, latency: 190, status: 200, offset: 8 },
-      { provider: 'google', model: 'gemini-3.8-flash-tiered', prompt: 4600, completion: 1840, cached: 3200, latency: 1120, status: 200, offset: 15 },
-      { provider: 'google', model: 'gemini-4-argon-medium', prompt: 14200, completion: 820, cached: 11000, latency: 1450, status: 200, offset: 32 },
-      { provider: 'anthropic', model: 'claude-sonnet-4-6', prompt: 1420, completion: 480, cached: 0, latency: 1250, status: 200, offset: 45 },
-      { provider: 'google', model: 'gemini-3.8-flash', prompt: 1950, completion: 310, cached: 1400, latency: 175, status: 200, offset: 60 },
-      { provider: 'openai', model: 'gpt-4o', prompt: 2150, completion: 820, cached: 0, latency: 1840, status: 200, offset: 75 },
-      { provider: 'deepseek', model: 'deepseek-r1', prompt: 3200, completion: 1450, cached: 0, latency: 3100, status: 200, offset: 95 },
-      { provider: 'ollama', model: 'qwen-2.5-coder', prompt: 950, completion: 320, cached: 0, latency: 1650, status: 200, offset: 120 },
-    ];
-
-    const now = Date.now();
-    for (const s of samples) {
-      this.logUsage({
-        timestamp: now - s.offset * 60 * 1000,
-        provider: s.provider,
-        model: s.model,
-        promptTokens: s.prompt,
-        completionTokens: s.completion,
-        cachedTokens: s.cached,
-        latencyMs: s.latency,
-        status: s.status,
-        endpoint: '/v1internal:streamGenerateContent',
-      });
-    }
-  }
 }
 
 // Global attachment for plain browser scripts without module loader

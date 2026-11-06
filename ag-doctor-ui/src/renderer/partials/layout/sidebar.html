@@ -1,0 +1,96 @@
+    <!-- Sidebar -->
+    <nav class="sidebar" aria-label="Main navigation">
+      <div class="sidebar-cta-wrap">
+        <button class="btn sidebar-cta" id="sidebarRunBtn" type="button" aria-label="Run doctor diagnostic" title="Run diagnostic scan (Ctrl+R)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span>Run doctor</span>
+          <kbd class="sidebar-cta-kbd">Ctrl+R</kbd>
+        </button>
+      </div>
+
+      <ul class="nav-list" role="tablist" aria-orientation="vertical" aria-label="Main Navigation">
+        <li class="nav-group">
+          <ul>
+            <li><span class="nav-group-label">Overview</span></li>
+            <li><button class="nav-item active" id="nav-tab-dashboard" data-view="dashboard" type="button" role="tab" aria-selected="true" tabindex="0" aria-controls="view-dashboard" title="Dashboard">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <span>Dashboard</span>
+            </button></li>
+            <li><button class="nav-item" id="nav-tab-tokenizer" data-view="tokenizer" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-tokenizer" title="Tokens &amp; Usage Overview">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+              <span>Stats &amp; Tokens</span>
+            </button></li>
+          </ul>
+        </li>
+
+        <li class="nav-group">
+          <ul>
+            <li><span class="nav-group-label">Diagnostics</span></li>
+            <li><button class="nav-item" id="nav-tab-doctor" data-view="doctor" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-doctor" title="Diagnostic">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              <span>Diagnostic</span>
+            </button></li>
+            <li><button class="nav-item" id="nav-tab-logs" data-view="logs" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-logs" title="Logs">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              <span>Logs</span>
+            </button></li>
+            <li><button class="nav-item" id="nav-tab-patch" data-view="patch" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-patch" title="Patch">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+              <span>Patch</span>
+            </button></li>
+            <li><button class="nav-item" id="nav-tab-mitm" data-view="mitm" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-mitm" title="MITM Proxy">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+              <span>MITM Proxy</span>
+            </button></li>
+            <li><button class="nav-item" id="nav-tab-traffic" data-view="traffic" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-traffic" title="Traffic Inspector">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <span>Traffic Inspector</span>
+            </button></li>
+          </ul>
+        </li>
+
+        <li class="nav-group">
+          <ul>
+            <li><span class="nav-group-label">Configuration</span></li>
+            <li><button class="nav-item" id="nav-tab-google-accounts" data-view="google-accounts" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-google-accounts" title="Google Accounts">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span>Google Accounts</span>
+            </button></li>
+            <li><button class="nav-item" id="nav-tab-models" data-view="models" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-models" title="Models">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08l4.24 4.24M1 12h6m10 0h6M4.22 19.78l4.24-4.24m7.08-7.08l4.24-4.24"/></svg>
+              <span>Models</span>
+            </button></li>
+            <li><button class="nav-item" id="nav-tab-antigravity" data-view="antigravity" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-antigravity" title="Antigravity">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              <span>Antigravity</span>
+            </button></li>
+            <li><button class="nav-item" id="nav-tab-settings" data-view="settings" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-settings" title="Settings">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Settings</span>
+            </button></li>
+          </ul>
+        </li>
+
+        <li class="nav-group">
+          <ul>
+            <li><span class="nav-group-label">Remote &amp; Companion</span></li>
+            <li><button class="nav-item" id="nav-tab-remote" data-view="remote" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="view-remote" title="Remote Server">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+              <span>Remote Server</span>
+            </button></li>
+          </ul>
+        </li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-footer-card">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+            <span class="sidebar-footer-title" style="margin:0;">AG Doctor</span>
+            <span style="font-size:10px; font-family:var(--font-mono); color:var(--text-3); background:var(--bg-2); padding:1px 5px; border-radius:var(--r-sm); border:1px solid var(--border);">v3.8.2</span>
+          </div>
+          <p style="font-size:11px; color:var(--text-2); margin:0; line-height:1.4;">
+            Diagnostics &amp; model injection suite.
+          </p>
+        </div>
+      </div>
+    </nav>

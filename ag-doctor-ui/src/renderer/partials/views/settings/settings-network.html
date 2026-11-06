@@ -1,0 +1,108 @@
+        </div>
+<div class="panel" style="margin-top:24px" id="settingsChatEnhancementsPanel">
+          <div class="panel-header"><h2>Chat Enhancements & Suggestions (Antigravity Patch)</h2></div>
+          <div class="panel-body">
+            <label class="toggle-row" for="retryBtnToggle">
+              <span class="toggle-label">
+                <span class="toggle-title">Inline Retry Button</span>
+                <span class="toggle-subtitle">Display a quick "Retry" button next to the Send button in the Antigravity chat input bar.</span>
+              </span>
+              <span class="toggle-control">
+                <input type="checkbox" id="retryBtnToggle" aria-label="Enable inline retry button" checked />
+                <span class="toggle-slider" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="toggle-row" for="suggestionPillsToggle" style="margin-top:16px">
+              <span class="toggle-label">
+                <span class="toggle-title">Suggestion Pills Bar</span>
+                <span class="toggle-subtitle">Display quick action pills above the prompt box (Continue, Analyser et auditer, Keep going, etc.).</span>
+              </span>
+              <span class="toggle-control">
+                <input type="checkbox" id="suggestionPillsToggle" aria-label="Enable suggestion pills bar" checked />
+                <span class="toggle-slider" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <div id="suggestionsEditorContainer" style="margin-top:24px; border-top:1px solid var(--border); padding-top:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div>
+                  <div style="font-weight:600; font-size:14px;">Quick Action Suggestions</div>
+                  <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Customize the action pills shown above the input box in Antigravity.</div>
+                </div>
+                <button class="btn btn-ghost btn-sm" id="resetSuggestionsBtn" type="button">Reset to default</button>
+              </div>
+
+              <div id="suggestionsList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;"></div>
+
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input type="text" id="newSuggestionLabel" class="input" placeholder="Button Label (ex: Continue)" style="flex:1;" />
+                <input type="text" id="newSuggestionText" class="input" placeholder="Prompt text to insert into input" style="flex:2;" />
+                <button class="btn btn-primary btn-sm" id="addSuggestionBtn" type="button">+ Add Pill</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header"><h2>Notifications</h2></div>
+          <div class="panel-body">
+            <label class="toggle-row" for="notifyToggle">
+              <span class="toggle-label">
+                <span class="toggle-title">Do not notify on provider errors</span>
+                <span class="toggle-subtitle">Stop OS notifications when an upstream provider returns 401/403/429/5xx or times out. The tray badge and modal still show the error.</span>
+              </span>
+              <span class="toggle-control">
+                <input type="checkbox" id="notifyToggle" data-label="notify-toggle" aria-label="Do not notify on provider errors" />
+                <span class="toggle-slider" aria-hidden="true"></span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:24px" id="settingsUpdatePanel">
+          <div class="panel-header"><h2>Mises à jour automatiques</h2></div>
+          <div class="panel-body">
+            <label class="toggle-row" for="autoUpdateToggle">
+              <span class="toggle-label">
+                <span class="toggle-title">Recherche automatique en arrière-plan</span>
+                <span class="toggle-subtitle">Vérifie périodiquement la présence de nouvelles versions sur GitHub et télécharge automatiquement les binaires.</span>
+              </span>
+              <span class="toggle-control">
+                <input type="checkbox" id="autoUpdateToggle" aria-label="Activer les mises à jour automatiques" checked />
+                <span class="toggle-slider" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Canal de diffusion</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Choisissez entre les versions certifiées (Stable) ou les préversions (Beta).</div>
+              </div>
+              <select id="updateChannelSelect" class="input" style="width:140px; padding:4px 8px; font-size:12px; border-radius:var(--r-sm);">
+                <option value="stable">Stable</option>
+                <option value="beta">Beta / Préversion</option>
+              </select>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Vérification manuelle</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;" id="updateSettingsStatus">Prêt à vérifier</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="updateSettingsCheckBtn" type="button" style="border-radius:var(--r-sm);">
+                Rechercher maintenant
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header"><h2>Proxy error history</h2></div>
+          <div class="panel-body">
+            <div class="patch-row">
+              <div class="patch-row-label">Recent</div>
+              <div class="patch-row-value" id="proxyErrorHistoryEmpty" data-label="proxy-error-history-empty">No provider errors captured yet.</div>
+            </div>
+            <ul class="proxy-error-history" id="proxyErrorHistoryList" data-label="proxy-error-history" aria-label="Recent proxy errors"></ul>
+          </div>
+        </div>

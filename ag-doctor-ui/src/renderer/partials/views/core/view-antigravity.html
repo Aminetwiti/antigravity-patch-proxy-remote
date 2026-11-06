@@ -1,0 +1,233 @@
+      <div class="view" id="view-antigravity" role="tabpanel" aria-labelledby="nav-tab-antigravity">
+        <div class="view-header">
+          <div>
+            <h1>Antigravity</h1>
+            <p class="subtitle">Version, status, and lifecycle controls for the installed app</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" id="agLaunchBtn" type="button" aria-label="Launch Antigravity">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Launch
+            </button>
+            <button class="btn btn-secondary" id="agLaunchLogsBtn" type="button" title="Launch Antigravity and follow live logs" aria-label="Launch Antigravity and follow live logs">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Launch &amp; logs
+            </button>
+            <span class="action-divider" aria-hidden="true"></span>
+            <button class="btn btn-ghost" id="agRestartBtn" type="button" aria-label="Restart Antigravity" title="Restart Antigravity processes">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Restart
+            </button>
+            <button class="btn btn-ghost btn-danger-hover" id="agKillBtn" type="button" aria-label="Close Antigravity" title="Terminate Antigravity and language_server processes">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12"/></svg>
+              Close Antigravity
+            </button>
+            <span class="action-divider" aria-hidden="true"></span>
+            <div class="ga-dropdown-wrap" id="agToolsDropdownWrap">
+              <button class="btn btn-ghost" id="agToolsDropdownBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Maintenance &amp; repair tools" style="display:inline-flex; align-items:center; gap:6px;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Tools</span>
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="ga-dropdown-menu" id="agToolsMenu" hidden style="min-width: 260px;">
+                <button type="button" class="ga-dropdown-item" id="agResolveVerificationBtn" title="Scan recent logs to extract challenge validation URL and unlock Antigravity">
+                  <span class="ga-dropdown-item-badge studio">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v3"/></svg>
+                  </span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Resolve Verification</strong>
+                    <small>Résoudre le défi 403 Google</small>
+                  </div>
+                </button>
+                <div class="ga-dropdown-divider"></div>
+                <button type="button" class="ga-dropdown-item" id="agRebuildSidebarBtn" title="Rebuild Antigravity conversation sidebar index">
+                  <span class="ga-dropdown-item-badge ide">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  </span>
+                  <div class="ga-dropdown-item-content">
+                    <strong>Rebuild Sidebar</strong>
+                    <small>Réindexer l'historique des chats</small>
+                  </div>
+                </button>
+              </div>
+            </div>
+            <button class="btn btn-ghost" id="agRefreshBtn" type="button" title="Refresh Antigravity status" aria-label="Refresh status">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-card" data-stat="ag-version">
+            <div class="stat-icon ok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Version</div>
+              <div class="stat-value" id="agVersionValue">—</div>
+            </div>
+          </div>
+          <div class="stat-card stat-card-nav" data-stat="ag-running" role="button" tabindex="0" aria-label="Toggle or refresh Antigravity status" title="Click to launch or refresh status">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Status</div>
+              <div class="stat-value" id="agRunningValue" aria-live="polite">—</div>
+            </div>
+            <span class="stat-nav-hint" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
+          </div>
+          <div class="stat-card stat-card-nav" data-stat="ag-proxy" role="button" tabindex="0" aria-label="Go to MITM Proxy view" title="Click to manage MITM proxy">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Proxy</div>
+              <div class="stat-value" id="agProxyValue">—</div>
+            </div>
+            <span class="stat-nav-hint" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
+          </div>
+          <div class="stat-card stat-card-nav" data-stat="ag-ls" role="button" tabindex="0" aria-label="Scroll to language_server PIDs" title="Click to view running processes">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">language_server</div>
+              <div class="stat-value" id="agLsValue">—</div>
+            </div>
+            <span class="stat-nav-hint" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header">
+            <h2>Installation</h2>
+            <span class="badge" id="agSourceBadge">—</span>
+          </div>
+          <div class="panel-body">
+            <div class="patch-row" style="align-items:center;">
+              <div class="patch-row-label">Install path</div>
+              <div class="patch-row-value" id="agInstallPath" style="font-family:var(--font-mono); font-size:12px; word-break:break-all;">—</div>
+              <button class="btn btn-ghost btn-sm" id="agCopyInstallPathBtn" type="button" title="Copy install path" aria-label="Copy install path" style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; min-height:30px; font-size:11.5px;">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span class="copy-label">Copy</span>
+              </button>
+            </div>
+            <div class="patch-row" style="align-items:center;">
+              <div class="patch-row-label">app.asar</div>
+              <div class="patch-row-value" id="agAppAsar" style="font-family:var(--font-mono); font-size:12px; word-break:break-all;">—</div>
+              <button class="btn btn-ghost btn-sm" id="agCopyAppAsarBtn" type="button" title="Copy app.asar path" aria-label="Copy app.asar path" style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; min-height:30px; font-size:11.5px;">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span class="copy-label">Copy</span>
+              </button>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">Version</div>
+              <div class="patch-row-value" id="agVersionRow">—</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">Channel</div>
+              <div class="patch-row-value" id="agChannelRow">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header">
+            <h2>Running processes</h2>
+            <span class="badge" id="agPidsBadge">0 PIDs</span>
+          </div>
+          <div class="panel-body">
+            <div class="patch-row">
+              <div class="patch-row-label">Antigravity.exe</div>
+              <div class="patch-row-value" id="agAgPids">—</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">language_server.exe</div>
+              <div class="patch-row-value" id="agLsPids">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" id="agCpuOptPanel" style="margin-top:24px">
+          <div class="panel-header">
+            <div>
+              <h2>Performance &amp; CPU Optimization</h2>
+              <p style="font-size:12px; color:var(--text-2); margin-top:2px;">
+                Exclude heavy file watchers (node_modules, caches, build) and optimize LSP memory and polling
+              </p>
+            </div>
+            <span class="badge" id="agCpuOptBadge">—</span>
+          </div>
+          <div class="panel-body">
+            <div class="patch-row">
+              <div class="patch-row-label">CPU Fix Status</div>
+              <div class="patch-row-value" id="agCpuOptStatus" aria-live="polite">—</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">Ignored Watchers</div>
+              <div class="patch-row-value" id="agCpuOptWatchers">node_modules, .git, .venv, __pycache__, dist, build, .next, target, .cache</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">LSP Servers</div>
+              <div class="patch-row-value" id="agCpuOptLsp">TypeScript (2048 MB, useFsEvents) · Python (lightweight indexing)</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">Detected Profiles</div>
+              <div class="patch-row-value" id="agCpuOptProfiles">—</div>
+            </div>
+            <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center;">
+              <button class="btn btn-primary" id="agApplyCpuOptBtn" type="button" aria-label="Apply CPU Optimization">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Apply CPU Optimization
+              </button>
+              <button class="btn btn-ghost" id="agRevertCpuOptBtn" type="button" style="display:none;" aria-label="Restore Backup">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Restore Backup
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" id="agAuthPanel" style="margin-top:24px">
+          <div class="panel-header">
+            <div>
+              <h2>Authentication &amp; Account Eligibility (403 Fixes)</h2>
+              <p style="font-size:12px; color:var(--text-2); margin-top:2px;">
+                Resolve 403 VALIDATION_REQUIRED blocks, Google account age verification, and purge stale OS keychain credentials
+              </p>
+            </div>
+            <span class="badge" id="agAuthBadge">—</span>
+          </div>
+          <div class="panel-body">
+            <div class="patch-row">
+              <div class="patch-row-label">OS Keychain (Credentials)</div>
+              <div class="patch-row-value" id="agAuthCredentialsValue">—</div>
+            </div>
+            <div class="patch-row">
+              <div class="patch-row-label">Eligibility &amp; 403 Logs</div>
+              <div class="patch-row-value" id="agAuthStatusValue" aria-live="polite">—</div>
+            </div>
+            <div style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+              <button class="btn btn-primary" id="agAuthFixBtn" type="button" aria-label="Run Auth Repair">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                Run Auth Repair
+              </button>
+              <button class="btn btn-secondary" id="agAuthAgeCheckBtn" type="button" aria-label="Verify Google Account Age">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Verify Google Account Age
+              </button>
+              <button class="btn btn-ghost" id="agAuthPurgeBtn" type="button" aria-label="Clear OS Keychain">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                Clear OS Keychain
+              </button>
+              <button class="btn btn-ghost" id="agAuthCheckBtn" type="button" aria-label="Refresh Status">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      

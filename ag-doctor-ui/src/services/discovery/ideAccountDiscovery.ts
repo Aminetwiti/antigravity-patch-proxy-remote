@@ -108,8 +108,8 @@ export async function discoverIdeAccount(): Promise<DiscoveredAccount | null> {
           }
         }
       }
-    } catch {
-      // Continue to next DB or fallback
+    } catch (dbErr) {
+      console.debug?.('[IdeAccountDiscovery] Candidate DB read error:', dbErr);
     }
   }
 
@@ -144,7 +144,9 @@ export function switchActiveIdeAccount(params: {
       const backupPath = `${dbPath}.backup`;
       try {
         fs.copyFileSync(dbPath, backupPath);
-      } catch {}
+      } catch (backupErr) {
+        console.warn(`[IdeAccountDiscovery] Could not create backup at ${backupPath}:`, backupErr);
+      }
 
       const { DatabaseSync } = require('node:sqlite');
       const db = new DatabaseSync(dbPath);
@@ -161,7 +163,8 @@ export function switchActiveIdeAccount(params: {
             if (params.refreshToken) parsed.refresh_token = params.refreshToken;
             text = JSON.stringify(parsed);
           }
-        } catch {
+        } catch (parseErr) {
+          console.debug?.('[IdeAccountDiscovery] Token is not valid JSON, applying fallback pattern replacement:', parseErr);
           text = text.replace(/ya29\.[A-Za-z0-9_-]+/, params.accessToken);
           if (params.refreshToken) {
             text = text.replace(/(?:g1\/\/|1\/\/)[A-Za-z0-9_-]+/, params.refreshToken);

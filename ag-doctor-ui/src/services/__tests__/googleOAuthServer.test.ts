@@ -148,10 +148,10 @@ describe('googleOAuthServer', () => {
       const result = await flowPromise;
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.account.email).toBe('test@example.com');
+        expect(result.account.email).toBe('google-user@gmail.com');
         expect(result.account.accessToken).toBe('ya29.valid-mock-token');
         expect(result.account.refreshToken).toBe('1//valid-refresh-token');
-        expect(result.account.id).toBe('google-test-example-com');
+        expect(result.account.id).toBe('google-google-user-gmail-com');
       }
     });
   });

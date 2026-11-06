@@ -1,0 +1,90 @@
+  <div class="modal-backdrop" id="googleAccountModalBackdrop" hidden>
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="gaModalTitle">
+      <div class="modal-header">
+        <div class="modal-header-title-wrap">
+          <div class="modal-header-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><circle cx="12" cy="12" r="2"/></svg>
+          </div>
+          <h2 id="gaModalTitle" class="pm-modal-title">Ajouter un compte Google</h2>
+        </div>
+        <button class="modal-close" id="googleAccountModalClose" type="button" aria-label="Fermer la boîte de dialogue">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="gaFormContainer" class="pm-form" onsubmit="return false;">
+          <div id="gaAccountTypeBanner" class="patch-banner info" hidden style="margin-bottom: 14px; font-size: 12px; display: flex; align-items: flex-start; gap: 10px;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <div id="gaAccountTypeBannerText">
+              <strong>Compte connecté via Antigravity IDE (OAuth)</strong><br />
+              Ce compte utilise votre session active Antigravity IDE. Les quotas et modèles natifs sont synchronisés automatiquement.
+            </div>
+          </div>
+
+          <div class="pm-form-section">
+            <h3 class="pm-form-section-title">1. Identifiants du compte</h3>
+            <div class="pm-form-grid">
+              <label class="form-field" for="gaFormName">
+                <span>Nom / Libellé du compte</span>
+                <input type="text" id="gaFormName" placeholder="ex. Perso, Pro, Secondaire" autocomplete="off" />
+              </label>
+              <label class="form-field" for="gaFormUrl">
+                <span>URL du point de terminaison API</span>
+                <input type="url" id="gaFormUrl" value="https://generativelanguage.googleapis.com/v1beta" autocomplete="off" />
+              </label>
+            </div>
+
+            <label class="form-field" for="gaFormKey">
+              <span id="gaFormKeyLabel">Clé d'API Google AI Studio</span>
+              <div class="input-with-action">
+                <input type="password" id="gaFormKey" placeholder="AIzaSy…" autocomplete="off" />
+                <button type="button" class="agy-icon-btn" id="gaKeyToggle" title="Afficher/Masquer la clé API" aria-label="Afficher ou masquer la clé API">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+              <small id="gaFormKeyHelper" class="form-hint" style="margin-top: 4px; display: block;">
+                Obtenez une clé gratuite sur <a href="https://aistudio.google.com/apikey" target="_blank" id="gaOpenAiStudioLink" style="color: var(--accent-blue-bright); text-decoration: underline;">Google AI Studio</a>. Sans carte de crédit.
+              </small>
+              <div id="gaKeyValidationBadge" style="margin-top: 6px; font-size: 11px; display: none;"></div>
+            </label>
+          </div>
+
+          <div class="pm-form-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 class="pm-form-section-title" style="margin: 0;">2. Modèles disponibles pour ce compte</h3>
+              <button type="button" class="btn btn-primary btn-sm" id="gaFormFetchModelsBtn">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Découvrir les modèles
+              </button>
+            </div>
+            <div id="gaFormModelsCountBadge" class="badge badge-muted" style="margin-bottom: 8px;">0 modèle sélectionné</div>
+            <div class="pm-manual-model-row" style="display: flex; gap: 6px; margin-bottom: 8px;">
+              <input type="text" id="gaFormCustomModelInput" placeholder="Ajouter ID de modèle (ex. gemini-3.8-flash-tiered)…" aria-label="Ajouter un identifiant de modèle personnalisé" class="input-sm" style="flex: 1;" autocomplete="off" />
+              <button type="button" class="btn btn-ghost btn-sm" id="gaFormAddCustomModelBtn">+ Ajouter</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gaFormSelectAllBtn">Tout sélectionner</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gaFormDeselectAllBtn">Tout désélectionner</button>
+            </div>
+            <div class="ga-model-presets" style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; font-size: 11px;">
+              <span style="color: var(--text-2); margin-right: 2px;">Presets :</span>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-4-argon-medium" data-name="Gemini 4 Argon (Medium)" style="cursor: pointer;">+ Gemini 4 Argon</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="gemini-3.8-flash-tiered" data-name="Gemini 3.8 Flash" style="cursor: pointer;">+ Gemini 3.8 Flash</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="claude-sonnet-4-6" data-name="Claude Sonnet 4.6" style="cursor: pointer;">+ Claude Sonnet 4.6</button>
+              <button type="button" class="badge badge-muted ga-preset-btn" data-id="claude-opus-4-6-thinking" data-name="Claude Opus 4.6" style="cursor: pointer;">+ Claude Opus 4.6</button>
+            </div>
+            <div id="gaFormModelsList" class="pm-models-list" style="max-height: 220px; overflow-y: auto; background: var(--bg-0); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px;">
+              <div class="pm-models-hint" style="font-size: 12px; color: var(--text-2); text-align: center; padding: 20px;">
+                Saisissez votre clé API et cliquez sur "Découvrir les modèles" pour charger les modèles disponibles.
+              </div>
+            </div>
+          </div>
+
+          <div id="gaFormError" class="patch-banner err" hidden style="margin-top: 10px;"></div>
+
+          <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+            <button type="button" class="btn btn-ghost" id="gaFormCancelBtn">Annuler</button>
+            <button type="button" class="btn btn-primary" id="gaFormSaveBtn">Enregistrer le compte</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>

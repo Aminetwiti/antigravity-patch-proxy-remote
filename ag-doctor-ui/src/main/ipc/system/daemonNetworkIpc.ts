@@ -47,15 +47,23 @@ export function getPhysicalLanIp(): string {
 }
 
 export function getDaemonExePath(): string {
-  if (app.isPackaged) {
-    const packagedPath = path.join(process.resourcesPath, 'remote', 'daemon', 'daemon.exe');
-    if (fs.existsSync(packagedPath)) return packagedPath;
+  const resPath = (process as any).resourcesPath;
+  const appPath = typeof app?.getAppPath === 'function' ? app.getAppPath() : null;
+  const candidates = [
+    ...(resPath ? [path.join(resPath, 'remote', 'daemon', 'daemon.exe')] : []),
+    ...(appPath ? [
+      path.join(appPath, '..', 'remote', 'daemon', 'daemon.exe'),
+      path.join(appPath, 'remote', 'daemon', 'daemon.exe'),
+    ] : []),
+    path.join(__dirname, '..', '..', '..', '..', '..', 'remote', 'daemon', 'daemon.exe'),
+    path.join(__dirname, '..', '..', '..', 'remote', 'daemon', 'daemon.exe'),
+    path.join(process.cwd(), 'remote', 'daemon', 'daemon.exe'),
+    path.join(process.cwd(), '..', 'remote', 'daemon', 'daemon.exe'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return path.normalize(c);
   }
-  const devPath = path.join(__dirname, '..', '..', '..', 'remote', 'daemon', 'daemon.exe');
-  if (fs.existsSync(devPath)) return devPath;
-  const cwdPath = path.join(process.cwd(), 'remote', 'daemon', 'daemon.exe');
-  if (fs.existsSync(cwdPath)) return cwdPath;
-  return devPath;
+  return path.normalize(candidates[0] || path.join(process.cwd(), 'remote', 'daemon', 'daemon.exe'));
 }
 
 export function killOrphanDaemonProcesses(port?: number): void {

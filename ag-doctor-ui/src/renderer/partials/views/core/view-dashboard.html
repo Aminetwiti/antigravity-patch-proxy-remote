@@ -1,0 +1,133 @@
+      <div class="view active" id="view-dashboard" role="tabpanel" aria-labelledby="nav-tab-dashboard">
+        <div class="view-header">
+          <div>
+            <h1>Dashboard</h1>
+            <p class="subtitle">Antigravity diagnostic &amp; repair dashboard</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost agy-icon-btn-text" id="refreshBtn" type="button" aria-label="Refresh diagnostics" title="Refresh diagnostics">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            </button>
+            <button class="btn btn-ghost" id="repairBtn" type="button" title="Quick patch repair (no admin elevation)" aria-label="Quick repair">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              Quick repair
+            </button>
+            <button class="btn btn-ghost" id="dashboardResolveVerificationBtn" type="button" title="Scan logs and resolve Antigravity verification challenge (VALIDATION_REQUIRED)" aria-label="Resolve verification" style="display: none;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v3"/></svg>
+              Resolve verification
+            </button>
+            <button class="btn btn-warning" id="fixAllBtn" type="button" title="Run full auto-repair with admin elevation (UAC)" aria-label="Run full auto-repair with admin elevation">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.5 0 4.76 1.02 6.39 2.66"/></svg>
+              Fix All (UAC)
+            </button>
+            <button class="btn btn-primary" id="runDoctorBtn" type="button" aria-label="Run doctor diagnostic">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run doctor
+            </button>
+            <!-- Hidden secondary actions -->
+            <button id="startStubBtn" type="button" style="display:none;" aria-hidden="true" tabindex="-1"></button>
+            <button id="dashboardAddModelBtn" type="button" style="display:none;" aria-hidden="true" tabindex="-1"></button>
+          </div>
+        </div>
+
+        <div class="home-intro">
+          <div class="home-intro-icon">
+            <img src="assets/icon-128.png" width="32" height="32" alt="Logo" style="border-radius:6px; display:block;" />
+          </div>
+          <div class="home-intro-body">
+            <h2>System objectives</h2>
+            <p>ag-doctor checks Antigravity, manages the MITM proxy, applies binary patches, and verifies your custom models. Use the checklist below to track each objective.</p>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-card" data-stat="ok" role="button" tabindex="0" aria-label="Filter healthy checks" aria-pressed="false">
+            <div class="stat-icon ok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Healthy</div>
+              <div class="stat-value" id="statOk">—</div>
+            </div>
+          </div>
+          <div class="stat-card" data-stat="warn" role="button" tabindex="0" aria-label="Filter warning checks" aria-pressed="false">
+            <div class="stat-icon warn">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Warnings</div>
+              <div class="stat-value" id="statWarn">—</div>
+            </div>
+          </div>
+          <div class="stat-card" data-stat="err" role="button" tabindex="0" aria-label="Filter issue checks" aria-pressed="false">
+            <div class="stat-icon err">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Issues</div>
+              <div class="stat-value" id="statErr">—</div>
+            </div>
+          </div>
+          <div class="stat-card" data-stat="models" role="button" tabindex="0" aria-label="Navigate to Custom Models">
+            <div class="stat-icon info">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-label">Custom models</div>
+              <div class="stat-value" id="statModels">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Objectives</h2>
+            <span class="badge" id="lastRunBadge">never run</span>
+          </div>
+          <div class="panel-body">
+            <div id="objectiveList" class="objective-list">
+              <div class="objective-item" id="obj-antigravity" role="button" tabindex="0" aria-label="Antigravity status & version objective">
+                <div class="objective-icon pending"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg></div>
+                <div class="objective-body"><div class="objective-title">Verify Antigravity status &amp; version</div><div class="objective-status">Pending</div></div>
+              </div>
+              <div class="objective-item" id="obj-mitm" role="button" tabindex="0" aria-label="MITM proxy objective">
+                <div class="objective-icon pending"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg></div>
+                <div class="objective-body"><div class="objective-title">Verify &amp; manage MITM proxy</div><div class="objective-status">Pending</div></div>
+              </div>
+              <div class="objective-item" id="obj-doctor" role="button" tabindex="0" aria-label="System diagnostic objective">
+                <div class="objective-icon pending"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg></div>
+                <div class="objective-body"><div class="objective-title">Run system diagnostic</div><div class="objective-status">Pending</div></div>
+              </div>
+              <div class="objective-item" id="obj-patch" role="button" tabindex="0" aria-label="Repair patch objective">
+                <div class="objective-icon pending"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg></div>
+                <div class="objective-body"><div class="objective-title">Apply repair patch</div><div class="objective-status">Pending</div></div>
+              </div>
+              <div class="objective-item" id="obj-logs" role="button" tabindex="0" aria-label="System logs objective">
+                <div class="objective-icon pending"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg></div>
+                <div class="objective-body"><div class="objective-title">View &amp; follow system logs</div><div class="objective-status">Pending</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header">
+            <h2>Health overview</h2>
+            <span id="healthFilterBadge" class="badge" style="display: none; cursor: pointer;" title="Click to clear filter"></span>
+          </div>
+          <div class="panel-body">
+            <div id="healthList" class="health-list">
+              <div class="empty-state">
+                <div class="empty-icon">
+                  <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                </div>
+                <p style="margin-bottom: 12px;">No diagnostic results yet. We'll scan Antigravity, MITM, patches, and models — usually finishes in under 5 seconds.</p>
+                <button class="btn btn-primary btn-sm" id="emptyStateRunDoctorBtn" type="button" aria-label="Run doctor diagnostic">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Run doctor
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>

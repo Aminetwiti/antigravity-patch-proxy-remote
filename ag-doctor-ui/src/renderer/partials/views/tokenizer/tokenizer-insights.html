@@ -1,0 +1,255 @@
+
+          <!-- MODE 2: INSIGHTS (AUTHENTIC APPLE BENTO GRID) -->
+          <div class="stats-mode-section" id="statsModeInsights">
+            <!-- 1. Apple 4 Bento Top Cards (Total Usage, Estimated Spend, Cache Efficiency, Active Network) -->
+            <div class="bento-top-grid">
+              <!-- Bento 1: Total Usage -->
+              <div class="bento-card bento-card-tokens">
+                <div class="bento-card-head">
+                  <span class="bento-card-title">CONSOMMATION TOTALE</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,22 Q21,18 42,12 T84,6" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="6" r="3" fill="#3b82f6"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div class="bento-val-hero" id="bentoTotalUsageVal">0</div>
+                  <div class="bento-sub-hero" id="bentoInOutSub">In 0 / Out 0</div>
+                </div>
+                <div class="bento-card-foot">
+                  <div class="bento-progress-pill">
+                    <div class="bento-progress-fill-in" id="bentoFillIn" style="width:50%;"></div>
+                    <div class="bento-progress-fill-out" id="bentoFillOut" style="width:50%;"></div>
+                  </div>
+                  <div class="bento-ratio-labels">
+                    <span id="bentoInPct">50% In</span>
+                    <span id="bentoOutPct">50% Out</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bento 2: Estimated Spend -->
+              <div class="bento-card bento-card-spend">
+                <div class="bento-card-head">
+                  <span class="bento-card-title text-green">COÛT ESTIMÉ</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,24 Q28,20 56,10 T84,4" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="4" r="3" fill="#10b981"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div class="bento-val-hero text-green" id="bentoSpendVal">$0.00</div>
+                  <div class="bento-sub-hero">Accumulation pondérée en temps réel</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Base de facturation</span>
+                  <span class="bento-link text-green" id="bentoPricingMatrixLink">Grille tarifaire ↗</span>
+                </div>
+              </div>
+
+              <!-- Bento 3: Cache Efficiency -->
+              <div class="bento-card bento-card-cache">
+                <div class="bento-card-head">
+                  <span class="bento-card-title text-cyan">EFFICACITÉ DU CACHE</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,22 Q28,14 56,12 T84,8" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="8" r="3" fill="#06b6d4"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <div class="bento-val-hero" id="bentoCachedVal">0</div>
+                    <span class="bento-badge-cyan" id="bentoCacheHitBadge">0.0% Hit</span>
+                  </div>
+                  <div class="bento-sub-hero" id="bentoCacheSavedSub">Économie d'environ $0.00</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Réutilisation Contexte</span>
+                  <span class="text-cyan" style="font-size:11px; font-weight:600;">Zéro Latence</span>
+                </div>
+              </div>
+
+              <!-- Bento 4: Active Dispatch Network -->
+              <div class="bento-card bento-card-network">
+                <div class="bento-card-head">
+                  <span class="bento-card-title text-purple">RÉSEAU DE DISPATCH</span>
+                  <div class="bento-sparkline-wrap">
+                    <svg width="84" height="28" viewBox="0 0 84 28">
+                      <path d="M0,20 Q28,18 56,14 T84,8" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="84" cy="8" r="3" fill="#a855f7"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="bento-card-body">
+                  <div style="display:flex; align-items:baseline; gap:12px;">
+                    <div><span class="bento-val-hero" id="bentoAccountsCount">0</span> <span style="font-size:11px; color:var(--text-2);">Account</span></div>
+                    <div><span class="bento-val-hero text-purple" id="bentoModelsCount">0</span> <span style="font-size:11px; color:var(--text-2);">Model</span></div>
+                  </div>
+                  <div class="bento-sub-hero" id="bentoInteractionsSub">0 total interactions</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Load Balance Ready</span>
+                  <span class="text-green" style="font-size:11px; font-weight:600;">100% Smooth</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Apple Bento Row: Activity 91-Day Matrix & 24-Hour Rhythm -->
+            <div class="bento-middle-grid">
+              <!-- Left Card: Activity 91-Day View -->
+              <div class="bento-card bento-heatmap-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#3b82f6;">📅</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Activité</span>
+                    <span style="font-size:11px; color:var(--text-2);">Vue 91 Jours</span>
+                  </div>
+                  <div id="bentoStreakBadgeWrap">
+                    <span style="font-size:11px; color:var(--text-2);">Grille 13 Semaines</span>
+                  </div>
+                </div>
+
+                <div class="bento-heatmap-body">
+                  <div class="bento-heatmap-matrix-wrap">
+                    <div class="heatmap-matrix" id="statsHeatmapMatrix">
+                      <!-- 13 cols x 7 rows cells populated dynamically -->
+                    </div>
+                  </div>
+
+                  <div class="bento-heatmap-stat-col">
+                    <div style="font-size:11px; color:var(--text-2);">Volume 13 Semaines</div>
+                    <div style="font-size:20px; font-weight:800; font-family:monospace; color:var(--text-0); margin:2px 0 6px 0;" id="bentoRangeTokens">0 Tokens</div>
+                    <div style="font-size:12px; color:var(--text-1); display:flex; justify-content:space-between;">
+                      <span>Jours Actifs</span>
+                      <strong id="bentoActiveDays">0 (0%)</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bento-card-foot">
+                  <div class="bento-legend-levels">
+                    <span style="font-size:10px; color:var(--text-2); margin-right:4px;">Moins</span>
+                    <span class="bento-leg-box level-0"></span>
+                    <span class="bento-leg-box level-1"></span>
+                    <span class="bento-leg-box level-2"></span>
+                    <span class="bento-leg-box level-3"></span>
+                    <span class="bento-leg-box level-4"></span>
+                    <span style="font-size:10px; color:var(--text-2); margin-left:4px;">Plus</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);">Cadence cumulée</span>
+                </div>
+              </div>
+
+              <!-- Right Card: 24-Hour Rhythm & Diagnostics -->
+              <div class="bento-card bento-rhythm-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#f59e0b;">✨</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Rythme 24 Heures</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoPeakRhythmSub">Pic : Aucun &bull; Jour : 0</span>
+                </div>
+
+                <!-- 24 Slim Vertical Bars -->
+                <div class="bento-rhythm-bars" id="bentoRhythmBars">
+                  <!-- Populated dynamically via JS -->
+                </div>
+
+                <!-- 2 Micro Metric Capsules -->
+                <div class="bento-capsules-grid">
+                  <div class="bento-capsule">
+                    <span class="bento-capsule-lbl">Tokens moyens / requête</span>
+                    <span class="bento-capsule-val" id="bentoAvgPerReq">0 Tokens</span>
+                  </div>
+                  <div class="bento-capsule">
+                    <span class="bento-capsule-lbl">Coût pour 1M Tokens</span>
+                    <span class="bento-capsule-val text-green" id="bentoCostPerM">$0.00 / 1M</span>
+                  </div>
+                </div>
+
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Pipeline Antigravity</span>
+                  <span class="text-green" style="font-size:11px; font-weight:600;">Haute Disponibilité</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Apple Bento Row: Core Models Share & Account Usage Leaderboard -->
+            <div class="bento-middle-grid">
+              <!-- Left Card: Core Models Share -->
+              <div class="bento-card bento-share-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#3b82f6;">⚙️</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Modèles Clés</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoCoreModelsCount">0 modèles</span>
+                </div>
+                <div class="bento-list-body" id="bentoCoreModelsList">
+                  <div class="bento-empty-text">Aucune activité enregistrée</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Top modèles en production</span>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoAccumulatedModelCost">Coût cumulé : $0.00</span>
+                </div>
+              </div>
+
+              <!-- Right Card: Account Usage Leaderboard -->
+              <div class="bento-card bento-leaderboard-card">
+                <div class="bento-card-head">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#a855f7;">👥</span>
+                    <span style="font-size:13px; font-weight:700; color:var(--text-0);">Classement par Compte</span>
+                  </div>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoTotalAccountsCount">0 compte au total</span>
+                </div>
+                <div class="bento-list-body" id="bentoAccountLeaderboardList">
+                  <div class="bento-empty-text">Aucun appel par compte</div>
+                </div>
+                <div class="bento-card-foot">
+                  <span style="font-size:11px; color:var(--text-2);">Isolation au niveau compte</span>
+                  <span style="font-size:11px; color:var(--text-2);" id="bentoActiveAccountsFoot">Comptes actifs : 0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. Apple Bento Bottom: Model Token Timeline (Full Width) -->
+            <div class="bento-card bento-timeline-card">
+              <div class="bento-card-head" style="flex-wrap:wrap; gap:10px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="color:#3b82f6;">📈</span>
+                  <span style="font-size:13px; font-weight:700; color:var(--text-0);">Chronologie des Tokens par Modèle</span>
+                </div>
+
+                <!-- 3 Apple-Style Capsule Toggle Groups -->
+                <div class="bento-timeline-toggles">
+                  <div class="bento-toggle-pill-group" id="bentoChartTypeToggle">
+                    <button type="button" class="bento-toggle-btn active" data-chart="area">Area</button>
+                    <button type="button" class="bento-toggle-btn" data-chart="bar">Bar</button>
+                  </div>
+                  <div class="bento-toggle-pill-group" id="bentoMetricTypeToggle">
+                    <button type="button" class="bento-toggle-btn active" data-metric="tokens">Tokens</button>
+                    <button type="button" class="bento-toggle-btn" data-metric="cost">Cost ($)</button>
+                  </div>
+                  <div class="bento-toggle-pill-group" id="bentoGroupToggle">
+                    <button type="button" class="bento-toggle-btn active" data-group="model">By Model</button>
+                    <button type="button" class="bento-toggle-btn" data-group="account">By Account</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- SVG Interactive Timeline Area/Bar Chart -->
+              <div class="bento-timeline-chart-wrap" id="bentoTimelineChartWrap">
+                <svg width="100%" height="220" viewBox="0 0 900 220" preserveAspectRatio="none" id="bentoTimelineSvg">
+                  <!-- Rendered dynamically via JS -->
+                </svg>
+              </div>
+            </div>
+          </div>
+          <!-- Fin MODE 2: INSIGHTS -->

@@ -88,6 +88,44 @@ export function registerProxyLifecycleIpc(ctx: MainContext): void {
     }
   });
 
+  ipcMain.handle(DOCTOR_IPC_CHANNELS.PROXY_STUB_STATUS, async () => {
+    const t0 = Date.now();
+    try {
+      const isAlive = await new Promise<boolean>((resolve) => {
+        const req = require('http').request(
+          { hostname: EnvironmentConfig.bindHost, port: EnvironmentConfig.stubPort, path: '/health', method: 'GET', timeout: 1500 },
+          (res: { resume: () => void; statusCode?: number }) => {
+            res.resume();
+            resolve(res.statusCode === 200);
+          },
+        );
+        req.on('error', () => resolve(false));
+        req.end();
+      });
+      const latencyMs = Date.now() - t0;
+      return {
+        ok: true,
+        data: {
+          ok: isAlive,
+          stub: true,
+          latencyMs,
+          error: isAlive ? undefined : 'Stub port is not responding',
+        },
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        error: (e as Error).message,
+        data: {
+          ok: false,
+          stub: true,
+          latencyMs: Date.now() - t0,
+          error: (e as Error).message,
+        },
+      };
+    }
+  });
+
   ipcMain.handle(DOCTOR_IPC_CHANNELS.PROXY_CHECK_MAIN_PORT, async () => {
     try {
       const MAIN_PORT = EnvironmentConfig.proxyPort;
@@ -147,9 +185,17 @@ export function registerProxyLifecycleIpc(ctx: MainContext): void {
     try {
       const isWin = process.platform === 'win32';
       const scriptName = isWin ? 'repair-all.ps1' : 'repair-all.sh';
-      const scriptPath = app.isPackaged
-        ? path.join(process.resourcesPath, scriptName)
-        : path.join(__dirname, '..', '..', '..', 'resources', scriptName);
+      const resPath = (process as any).resourcesPath;
+      const appPath = typeof app?.getAppPath === 'function' ? app.getAppPath() : null;
+      const candidates = [
+        ...(resPath ? [path.join(resPath, scriptName), path.join(resPath, 'resources', scriptName)] : []),
+        ...(appPath ? [path.join(appPath, 'resources', scriptName), path.join(appPath, '..', 'resources', scriptName)] : []),
+        path.join(__dirname, '..', '..', '..', '..', 'resources', scriptName),
+        path.join(__dirname, '..', '..', '..', 'resources', scriptName),
+        path.join(process.cwd(), 'ag-doctor-ui', 'resources', scriptName),
+        path.join(process.cwd(), 'resources', scriptName),
+      ];
+      const scriptPath = candidates.find((x) => fs.existsSync(x)) || candidates[0];
 
       if (!fs.existsSync(scriptPath)) {
         return { ok: false, error: `Repair script not found at ${scriptPath}` };

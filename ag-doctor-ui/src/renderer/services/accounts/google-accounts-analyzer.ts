@@ -397,6 +397,22 @@ if (typeof exports !== 'undefined') {
   });
 }
 
+if (typeof window !== 'undefined') {
+  Object.assign(window, {
+    isAccountValidationRequired,
+    isAccountUnlicensed,
+    hasAccountErrorOrValidation,
+    getQuotaColor,
+    isAiStudioAccount,
+    isGeminiCliAccount,
+    getAccountTier,
+    formatQuotaPercent,
+    getAccountEffectiveQuotas,
+    estimateAccountTokens,
+    calculatePoolTokenSummary,
+  });
+}
+
 export {
   isAccountValidationRequired,
   isAccountUnlicensed,

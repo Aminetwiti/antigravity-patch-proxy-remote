@@ -1,0 +1,115 @@
+
+          <!-- MODE 3: CLASSIC (6 KPIS + USAGE TREND + BY ACCOUNT) -->
+          <div class="stats-mode-section" id="statsModeClassic" style="display:none;">
+            <!-- 6 Direct KPI Cards Bar -->
+            <div class="classic-kpis-grid">
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#60a5fa;">⚡</span>
+                  <span class="classic-kpi-lbl">Total Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicTotalTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#38bdf8;">📈</span>
+                  <span class="classic-kpi-lbl">Input Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicInputTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#c084fc;">📉</span>
+                  <span class="classic-kpi-lbl">Output Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicOutputTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#2dd4bf;">💾</span>
+                  <span class="classic-kpi-lbl">Cached Tokens</span>
+                </div>
+                <div class="classic-kpi-val" id="classicCachedTokens">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#4ade80;">👥</span>
+                  <span class="classic-kpi-lbl">Active Accounts</span>
+                </div>
+                <div class="classic-kpi-val" id="classicActiveAccounts">0</div>
+              </div>
+
+              <div class="classic-kpi-card">
+                <div class="classic-kpi-header">
+                  <span class="classic-kpi-icon" style="color:#fbbf24;">⚙️</span>
+                  <span class="classic-kpi-lbl">Models Used</span>
+                </div>
+                <div class="classic-kpi-val" id="classicModelsUsed">0</div>
+              </div>
+            </div>
+
+            <!-- Main Model Usage Trend Card -->
+            <div class="classic-card classic-trend-card">
+              <div class="classic-card-header">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="color:#60a5fa;">📊</span>
+                  <h4 style="margin:0; font-size:14px; font-weight:600; color:var(--text-0);">Model Usage Trend</h4>
+                </div>
+                <div class="classic-controls-row">
+                  <div class="classic-pill-toggle" id="classicChartTypeToggle">
+                    <button type="button" class="classic-pill-btn active" data-chart="bar">📊 Bar</button>
+                    <button type="button" class="classic-pill-btn" data-chart="area">📈 Area</button>
+                  </div>
+                  <div class="classic-pill-toggle" id="classicMetricTypeToggle">
+                    <button type="button" class="classic-pill-btn active" data-metric="tokens">⚡ Tokens</button>
+                    <button type="button" class="classic-pill-btn" data-metric="cost">💵 Cost ($)</button>
+                  </div>
+                  <div class="classic-pill-toggle" id="classicGroupingToggle">
+                    <button type="button" class="classic-pill-btn active" data-group="model">By Model</button>
+                    <button type="button" class="classic-pill-btn" data-group="account">By Account</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="classic-chart-container" id="classicTrendChartContainer">
+                <svg width="100%" height="240" viewBox="0 0 900 240" preserveAspectRatio="none" id="classicTrendChartSvg">
+                  <!-- Dynamic SVG Bar or Area chart populated via JS -->
+                </svg>
+              </div>
+            </div>
+
+            <!-- Bottom 2-card Grid: Token Usage Trend breakdown & By Account List -->
+            <div class="classic-bottom-row">
+              <div class="classic-card" style="flex:1;">
+                <div class="classic-card-header">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#38bdf8;">📊</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">Token Usage Trend</h4>
+                  </div>
+                </div>
+                <div class="classic-table-wrap" id="classicTokenUsageList">
+                  <!-- Model breakdown table populated dynamically -->
+                </div>
+              </div>
+
+              <div class="classic-card" style="flex:1;">
+                <div class="classic-card-header">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#4ade80;">👥</span>
+                    <h4 style="margin:0; font-size:13px; font-weight:600; color:var(--text-0);">By Account</h4>
+                  </div>
+                </div>
+                <div class="classic-table-wrap" id="classicByAccountList">
+                  <!-- Account breakdown table populated dynamically -->
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Fin MODE 3: CLASSIC -->
+        </div>
+
+      </div>

@@ -1,0 +1,25 @@
+<!-- Status Bar -->
+    <footer class="statusbar" role="contentinfo">
+      <div class="statusbar-section">
+        <span class="statusbar-item" id="statusProxyPort" title="Local Proxy Host &amp; Port (Interception &amp; Translation)">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span class="statusbar-label" style="font-weight:600; opacity:0.8;">Proxy:</span>
+          <span>127.0.0.1:51074</span>
+        </span>
+        <span class="statusbar-item" id="statusLsState" title="Language Server Connection">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span id="statusLsText">Language Server: Connected</span>
+        </span>
+      </div>
+      <div class="statusbar-section statusbar-section-right">
+        <button type="button" class="statusbar-item statusbar-btn" id="statusTheme" title="Toggle dark/light theme" aria-label="Toggle dark/light theme">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <span>Dark theme</span>
+        </button>
+        <span class="statusbar-item" id="statusPlatform">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <span id="statusPlatformText">Desktop</span>
+        </span>
+        <span class="statusbar-item" id="statusVersion" title="Antigravity Doctor UI Version">v3.8.2</span>
+      </div>
+    </footer>

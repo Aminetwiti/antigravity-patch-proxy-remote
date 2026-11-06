@@ -1,0 +1,33 @@
+      <div class="view" id="view-traffic" role="tabpanel" aria-labelledby="nav-tab-traffic">
+        <div class="view-header">
+          <div>
+            <h1>Traffic Inspector</h1>
+            <p class="subtitle">Real-time network requests and payload translation log</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-ghost" id="trafficExportBtn" type="button" data-label="traffic-export-btn">Export Traffic</button>
+            <button class="btn btn-ghost" id="trafficClearBtn" type="button">Clear Traffic</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+            <h2>Intercepted Requests (Gemini ↔ Custom Providers)</h2>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <input type="text" id="trafficSearchInput" placeholder="Filter path / model..." style="padding:4px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);" data-label="traffic-search-input" aria-label="Filter traffic by path or model" />
+              <select id="trafficProviderSelect" style="padding:4px 8px; font-size:12px; border-radius:4px; border:1px solid var(--border); background:var(--bg-0); color:var(--text-0);" data-label="traffic-provider-select" aria-label="Filter traffic by provider">
+                <option value="all">All Providers</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="gemini">Gemini</option>
+                <option value="groq">Groq</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="trafficEntriesList" style="display:flex; flex-direction:column; gap:8px;">
+            </div>
+          </div>
+        </div>
+      </div>

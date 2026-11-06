@@ -88,9 +88,22 @@ function navigate(viewName: string): void {
     // Invoke legacy registered view loader if available
     const loader = viewLoaders.get(viewName);
     if (loader) {
-      void loader();
+      try {
+        const res = loader();
+        if (res && typeof (res as any).catch === 'function') {
+          (res as Promise<void>).catch((err) => {
+            console.error(`[nav-router] Async error in view "${viewName}":`, err);
+          });
+        }
+      } catch (err) {
+        console.error(`[nav-router] Synchronous error loading view "${viewName}":`, err);
+      }
     } else if (viewName === 'failures') {
-      loadFailures();
+      try {
+        loadFailures();
+      } catch (err) {
+        console.error('[nav-router] loadFailures error:', err);
+      }
     }
   }
 }

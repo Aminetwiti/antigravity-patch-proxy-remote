@@ -1,0 +1,37 @@
+      <div class="modal-backdrop" id="tokenDetailBackdrop" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tokenDetailTitle" style="max-width:680px; width:90%;">
+          <div class="modal-header">
+            <h2 id="tokenDetailTitle" style="margin:0; font-size:16px;">Consumption Details</h2>
+            <button class="btn btn-ghost btn-sm" id="tokenDetailCloseBtn" type="button" aria-label="Close modal">✕</button>
+          </div>
+          <div class="modal-body" style="padding:16px; display:flex; flex-direction:column; gap:14px; max-height:70vh; overflow-y:auto;">
+            <div id="tokenDetailMeta" style="font-family:ui-monospace,monospace; font-size:12px; color:var(--text-2); padding:10px; background:var(--bg-0); border-radius:6px; border:1px solid var(--border);"></div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">
+              <div style="padding:10px; background:var(--bg-1); border:1px solid var(--border); border-radius:6px;">
+                <div style="font-size:11px; color:var(--text-2);">Prompt Tokens (In)</div>
+                <div id="tokenDetailPrompt" style="font-size:16px; font-weight:700; color:var(--text-0); margin-top:2px;">0</div>
+              </div>
+              <div style="padding:10px; background:var(--bg-1); border:1px solid var(--border); border-radius:6px;">
+                <div style="font-size:11px; color:var(--text-2);">Completion Tokens (Out)</div>
+                <div id="tokenDetailCompletion" style="font-size:16px; font-weight:700; color:var(--text-0); margin-top:2px;">0</div>
+              </div>
+              <div style="padding:10px; background:var(--bg-1); border:1px solid var(--border); border-radius:6px;">
+                <div style="font-size:11px; color:var(--text-2);">Total Tokens</div>
+                <div id="tokenDetailTotal" style="font-size:16px; font-weight:700; color:var(--accent); margin-top:2px;">0</div>
+              </div>
+              <div style="padding:10px; background:var(--bg-1); border:1px solid var(--border); border-radius:6px;">
+                <div style="font-size:11px; color:var(--text-2);">Estimated Cost ($)</div>
+                <div id="tokenDetailCost" style="font-size:16px; font-weight:700; color:#10b981; margin-top:2px;">$0.0000</div>
+              </div>
+            </div>
+            <div>
+              <h3 style="margin:0 0 6px 0; font-size:12px; color:var(--text-1);">Call Specification</h3>
+              <pre id="tokenDetailRaw" style="margin:0; padding:12px; background:var(--bg-0); border:1px solid var(--border); border-radius:6px; font-family:ui-monospace,monospace; font-size:11px; white-space:pre-wrap; word-break:break-all; max-height:200px; overflow-y:auto;"></pre>
+            </div>
+          </div>
+          <div class="modal-footer" style="padding:12px 16px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px;">
+            <button class="btn btn-primary btn-sm" id="tokenCopyJsonBtn" type="button">Copy JSON</button>
+            <button class="btn btn-ghost btn-sm" id="tokenDetailFooterCloseBtn" type="button">Close</button>
+          </div>
+        </div>
+      </div>

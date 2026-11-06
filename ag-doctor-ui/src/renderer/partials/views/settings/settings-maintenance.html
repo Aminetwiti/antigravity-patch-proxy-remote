@@ -1,0 +1,111 @@
+
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header"><h2>Database &amp; Storage Maintenance</h2></div>
+          <div class="panel-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Prune Orphan Trajectories &amp; Reconcile DB</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Clean dead sessions in conversation_summaries.db, sync protobuf state, and scrub app_storage.json.</div>
+                <div style="font-size:11px; color:var(--text-3); margin-top:3px;">Tip: Close Antigravity IDE beforehand to prevent SQLite file-lock conflicts.</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="settingsPruneDbBtn" type="button" style="border-radius:var(--r-sm);">Prune Database</button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Rebuild Sidebar Index</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Reindex conversation summaries so all active chats show properly in Antigravity.</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="settingsRebuildSidebarBtn" type="button" style="border-radius:var(--r-sm);">Rebuild Sidebar</button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Purge Quota Cache &amp; Cooldowns</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Clear cached Google AI Studio / Gemini quota limits and burst cooldown blocks.</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="settingsPurgeQuotaBtn" type="button" style="border-radius:var(--r-sm);">Purge Cache</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header"><h2>Network &amp; Proxy Configuration</h2></div>
+          <div class="panel-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">MITM Proxy Port</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Local port where the patch proxy intercepts and injects models (default 51074).</div>
+                <div style="font-size:11px; color:var(--accent-amber, #f59e0b); margin-top:3px;">⚠️ Changing this port requires repatching Antigravity (<code>npm run repatch</code>) to update Language Server URL table.</div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input type="number" id="settingsMitmPortInput" class="input" style="width:100px; padding:4px 8px; font-size:12px; text-align:center;" min="1024" max="65535" placeholder="51074" />
+                <button class="btn btn-primary btn-sm" id="settingsMitmPortSaveBtn" type="button" style="border-radius:var(--r-sm);">Save</button>
+              </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Diagnostic Polling Interval</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Frequency of background health checks and metrics refresh.</div>
+              </div>
+              <select id="settingsDoctorIntervalSelect" class="input" style="width:140px; padding:4px 8px; font-size:12px; border-radius:var(--r-sm);">
+                <option value="3000">3 seconds (Fast)</option>
+                <option value="5000">5 seconds (Default)</option>
+                <option value="10000">10 seconds</option>
+                <option value="30000">30 seconds (Eco)</option>
+              </select>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:16px;">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text-1);">Quick Traffic Inspector</div>
+                <div style="font-size:12px; color:var(--text-2); margin-top:2px;">Inspect real-time translated HTTP payloads and token streams.</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="settingsOpenTrafficBtn" type="button" style="border-radius:var(--r-sm);">Open Traffic Inspector →</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <h2>Configuration file</h2>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button class="btn btn-ghost btn-sm" id="revealConfigFileBtn" type="button" title="Reveal configuration file in folder" style="display:flex; align-items:center; gap:6px;">
+                <span>📂</span><span>Open in Explorer</span>
+              </button>
+              <button class="btn btn-ghost btn-sm" id="copyConfigJsonBtn" type="button" title="Copy raw JSON to clipboard" style="display:flex; align-items:center; gap:6px;">
+                <span>📋</span><span id="copyConfigJsonBtnText">Copy JSON</span>
+              </button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="patch-row">
+              <div class="patch-row-label">Path</div>
+              <div class="patch-row-value" id="settingsConfigPath">—</div>
+            </div>
+            <pre class="terminal" id="settingsConfigBody" tabindex="0" role="region" aria-label="Configuration file content" style="margin-top:16px">Loading config file…</pre>
+            <div id="settingsConfigSkeleton" style="margin-top:16px; display:none">
+              <div class="skeleton skeleton-line long"></div>
+              <div class="skeleton skeleton-line medium"></div>
+              <div class="skeleton skeleton-line long"></div>
+              <div class="skeleton skeleton-line short"></div>
+              <div class="skeleton skeleton-line medium"></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-header"><h2>Backup, Restore &amp; Reset</h2></div>
+          <div class="panel-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button class="btn btn-ghost" id="exportProvidersBtn" type="button">Export Providers (.json)</button>
+                <button class="btn btn-primary" id="importProvidersBtn" type="button">Import Providers (.json)</button>
+              </div>
+              <div style="display:flex; gap:10px; align-items:center; border-left:1px solid var(--border, rgba(255,255,255,0.1)); padding-left:16px; flex-wrap:wrap;">
+                <button class="btn btn-warning btn-sm" id="restoreBackupBtn" type="button" title="Restore previous valid custom_models.json configuration from .bak file">Restore from .bak</button>
+                <button class="btn btn-danger btn-sm" id="resetAllSettingsBtn" type="button" title="Reset all configuration values to defaults">Reset to Defaults</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>

@@ -63,7 +63,8 @@ registerViewLoader('remote', () => void loadRemoteView());
 // Expose views globally for template inline calls and IPC events
 if (typeof window !== 'undefined') {
   const w = window as any;
-  if (typeof runDoctorView !== 'undefined') w.runDoctor = runDoctorView;
+  if (typeof runDoctorView !== 'undefined') w.runDoctorView = runDoctorView;
+  if (typeof runDoctor !== 'undefined') w.runDoctor = runDoctor;
   if (typeof loadDoctor !== 'undefined') w.loadDoctor = loadDoctor;
   if (typeof loadPatchStatus !== 'undefined') w.loadPatchStatus = loadPatchStatus;
   if (typeof loadMitmStatus !== 'undefined') w.loadMitmStatus = loadMitmStatus;
@@ -120,9 +121,12 @@ function triggerAutoSyncGoogleAccounts(): void {
       const isModalOpen = Boolean(document.querySelector('.modal-backdrop:not([hidden])'));
       const isDropdownOpen = Boolean(document.querySelector('.ga-more-dropdown-wrap.open'));
       if (isModalOpen || isDropdownOpen) return;
-      void loadGoogleAccounts(false).catch((err: unknown) => {
-        console.warn('[AutoSync] loadGoogleAccounts failed:', err);
-      });
+      const fn = (window as any).loadGoogleAccounts || (typeof loadGoogleAccounts === 'function' ? loadGoogleAccounts : null);
+      if (typeof fn === 'function') {
+        void fn(false).catch((err: unknown) => {
+          console.warn('[AutoSync] loadGoogleAccounts failed:', err);
+        });
+      }
     }
   }, 300);
 }
@@ -159,5 +163,12 @@ setInterval(() => {
   } catch {
     setStatus('Ready');
   }
-  whenIdle(() => void runDoctorView(), 1200);
+  whenIdle(() => {
+    const rd = (window as any).runDoctor || (typeof runDoctor === 'function' ? runDoctor : null);
+    if (typeof rd === 'function') {
+      void rd();
+    } else if (typeof runDoctorView === 'function') {
+      void runDoctorView();
+    }
+  }, 400);
 })();
