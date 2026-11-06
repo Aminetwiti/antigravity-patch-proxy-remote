@@ -9,8 +9,9 @@ import {
   markConvCorruptedSignatures,
   isConvCorruptedSignatures,
   clearThoughtSignaturesForConv,
+  ANTI_HALLUCINATION_TOOL_INSTRUCTION,
 } from '../proxy/shared';
-import { sanitizeCandidatesInResponse } from '../proxy';
+import { sanitizeCandidatesInResponse, injectAntiHallucinationInstruction, autoUnstickConversation } from '../proxy';
 
 describe('thoughtSignature handling', () => {
   beforeEach(() => {
@@ -413,6 +414,27 @@ describe('thoughtSignature handling', () => {
       expect(thoughtSignatureCache.has('test-conv:funcA')).toBe(false);
       expect(thoughtSignatureCache.has('test-conv:__last__')).toBe(false);
       expect(thoughtSignatureCache.get('unrelated:funcA')).toBe('sigKeep');
+    });
+  });
+
+  describe('anti-hallucination instruction & auto-unstick', () => {
+    it('injects ANTI_HALLUCINATION_TOOL_INSTRUCTION into systemInstruction parts', () => {
+      const targetReq: any = { contents: [] };
+      injectAntiHallucinationInstruction(targetReq);
+
+      expect(targetReq.systemInstruction).toBeDefined();
+      expect(Array.isArray(targetReq.systemInstruction.parts)).toBe(true);
+      expect(targetReq.systemInstruction.parts[0].text).toContain(ANTI_HALLUCINATION_TOOL_INSTRUCTION);
+
+      // Idempotency: calling again should not duplicate
+      injectAntiHallucinationInstruction(targetReq);
+      expect(targetReq.systemInstruction.parts.length).toBe(1);
+    });
+
+    it('safely handles autoUnstickConversation with non-existent or null convId', () => {
+      expect(() => autoUnstickConversation(undefined)).not.toThrow();
+      expect(() => autoUnstickConversation('')).not.toThrow();
+      expect(() => autoUnstickConversation('non-existent-conv-id')).not.toThrow();
     });
   });
 });

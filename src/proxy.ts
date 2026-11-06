@@ -57,6 +57,7 @@ import {
   restoreThoughtSignatures,
   sanitizeUnsignedToolCalls,
   flattenAllToolCallsToText,
+  ANTI_HALLUCINATION_TOOL_INSTRUCTION,
   detectAndMitigateToolLoops,
   markConvCorruptedSignatures,
   isConvCorruptedSignatures,
@@ -1080,6 +1081,55 @@ export function writeSafeSseChunk(res: http.ServerResponse, chunk: any): boolean
   }
 }
 
+/**
+ * Injects a strict system instruction into Cloud Code request payloads to ensure
+ * models do not hallucinate plain-text tool invocations (e.g. `[Executed tool: ...]`)
+ * when continuing after cross-model fallback or sanitized turns.
+ */
+export function injectAntiHallucinationInstruction(targetReq: any): void {
+  if (!targetReq || typeof targetReq !== 'object') return;
+  if (!targetReq.systemInstruction || typeof targetReq.systemInstruction !== 'object') {
+    targetReq.systemInstruction = { parts: [] };
+  }
+  if (!Array.isArray(targetReq.systemInstruction.parts)) {
+    targetReq.systemInstruction.parts = [];
+  }
+  const hasInstruction = targetReq.systemInstruction.parts.some((p: any) =>
+    typeof p?.text === 'string' && p.text.includes('CRITICAL TOOL INVOCATION RULE')
+  );
+  if (!hasInstruction) {
+    targetReq.systemInstruction.parts.push({ text: ANTI_HALLUCINATION_TOOL_INSTRUCTION });
+  }
+}
+
+/**
+ * Automatically resets a stuck conversation session in SQLite conversation_summaries.db
+ * from CASCADE_RUN_STATUS_RUNNING / not_fully_idle=1 back to IDLE when an upstream network
+ * error or timeout terminates the stream prematurely, preventing permanent UI "Working" locks.
+ */
+export function autoUnstickConversation(convId?: string): void {
+  if (!convId || typeof convId !== 'string') return;
+  try {
+    const dataDir = path.join(os.homedir(), '.gemini', 'antigravity');
+    const dbPath = path.join(dataDir, 'conversation_summaries.db');
+    if (!fs.existsSync(dbPath)) return;
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.prepare("UPDATE conversation_summaries SET not_fully_idle = 0, status = 'CASCADE_RUN_STATUS_IDLE' WHERE conversation_id = ? AND (not_fully_idle = 1 OR status != 'CASCADE_RUN_STATUS_IDLE')").run(convId);
+      const protoPath = path.join(dataDir, 'agyhub_summaries_proto.pb');
+      if (fs.existsSync(protoPath)) {
+        try { fs.unlinkSync(protoPath); } catch (_) {}
+      }
+      log.info(`[Proxy] 🔓 Auto-unstick applied to conversation ${convId} after upstream stream drop.`);
+    } finally {
+      db.close();
+    }
+  } catch (e: any) {
+    log.debug(`[Proxy] Auto-unstick non-fatal notice for ${convId}:`, e?.message);
+  }
+}
+
 export function transformGoogleStreamForRemote(
   proxyRes: http.IncomingMessage,
   clientRes: http.ServerResponse,
@@ -1178,6 +1228,7 @@ export function transformGoogleStreamForRemote(
     onTimeout: (err) => {
       log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} — aborting socket`);
       cleanupHeartbeat();
+      autoUnstickConversation(convId);
       try { proxyRes.destroy(err); } catch (_) {}
       if (stream !== proxyRes && typeof (stream as any).destroy === 'function') {
         try { (stream as any).destroy(err); } catch (_) {}
@@ -1225,6 +1276,25 @@ export function transformGoogleStreamForRemote(
     }
   };
 
+  // Buffer for fragmentary pseudo-tool text streamed across multiple SSE chunks
+  let pseudoToolBuffer = '';
+  let pseudoToolBaseItem: any = null;
+  let pseudoToolEol = '\n';
+
+  const flushPseudoToolBuffer = (): void => {
+    if (!pseudoToolBuffer) return;
+    if (pseudoToolBaseItem) {
+      const cands = pseudoToolBaseItem.candidates || (pseudoToolBaseItem.response && pseudoToolBaseItem.response.candidates);
+      if (Array.isArray(cands) && cands[0]?.content?.parts) {
+        cands[0].content.parts = [{ text: pseudoToolBuffer }];
+        sanitizeCandidatesInResponse(pseudoToolBaseItem);
+        clientRes.write('data: ' + JSON.stringify(pseudoToolBaseItem) + pseudoToolEol);
+      }
+    }
+    pseudoToolBuffer = '';
+    pseudoToolBaseItem = null;
+  };
+
   const processLine = (line: string): void => {
     const trimmed = line.trimEnd();
     if (trimmed.startsWith('data:')) {
@@ -1259,6 +1329,23 @@ export function transformGoogleStreamForRemote(
         // Cache any thought_signature values from this response chunk
         inspectFinishReason(data);
         extractAndCacheThoughtSignatures(data, convId);
+
+        const cands = data.candidates || (data.response && data.response.candidates);
+        const firstPart = cands?.[0]?.content?.parts?.[0];
+        const rawText = typeof firstPart?.text === 'string' ? firstPart.text : '';
+
+        // Fragmented pseudo-tool buffering across SSE deltas
+        if (pseudoToolBuffer || (rawText && rawText.includes('[Executed tool:') && !rawText.includes(']'))) {
+          pseudoToolBuffer += rawText;
+          if (!pseudoToolBaseItem) {
+            pseudoToolBaseItem = data;
+            pseudoToolEol = line.endsWith('\r') ? '\r\n' : '\n';
+          }
+          if (pseudoToolBuffer.includes(']') || pseudoToolBuffer.length > 8192) {
+            flushPseudoToolBuffer();
+          }
+          return;
+        }
 
         // Antigravity Language Server crash protection:
         // In codeassistclient.(*CodeAssistClient).getStreamingTextCompletion-range1,
@@ -1295,6 +1382,7 @@ export function transformGoogleStreamForRemote(
   });
 
   stream.on('end', () => {
+    flushPseudoToolBuffer();
     cleanupHeartbeat();
     buffer += decoder.end();
     if (buffer.length > 0) {
@@ -1350,6 +1438,7 @@ export function transformGoogleStreamForRemote(
   });
 
   stream.on('error', (err) => {
+    flushPseudoToolBuffer();
     cleanupHeartbeat();
     idleGuard.dispose();
     if (typeof clientRes?.off === 'function') {
@@ -1379,6 +1468,7 @@ export function transformGoogleStreamForRemote(
     } else {
       clientRes.destroy(err);
     }
+    autoUnstickConversation(convId);
   });
 }
 
@@ -2602,9 +2692,13 @@ export async function executeGoogleCloudCodeWithPool(
         return host.includes('cloudcode') ? host : undefined;
       } catch { return undefined; }
     })() : undefined;
+    const isUpstreamDegraded = consecutive504TimeoutCount > 0 || consecutiveTimeoutCount > 0;
     const hostOverride = isGeminiCliModel(candidate)
       ? GOOGLE_HOSTS.CLOUD_CODE_PROD
-      : (candidateHost || GOOGLE_HOSTS.CLOUD_CODE);
+      : (candidateHost || (isUpstreamDegraded ? GOOGLE_HOSTS.CLOUD_CODE_PROD : GOOGLE_HOSTS.CLOUD_CODE));
+    if (isUpstreamDegraded && !candidateHost && !isGeminiCliModel(candidate)) {
+      log.info(`[Proxy] Upstream daily endpoint experienced timeout. Routing candidate [${candidateName}] via production endpoint (${GOOGLE_HOSTS.CLOUD_CODE_PROD}).`);
+    }
     const hasOtherCandidates = sortedAccounts.slice(i + 1).some((c) => {
       if (isAccountInCooldown(c, modelFamily) || getOpenBreaker(c) || getModelQuotaScore(c, modelFamily) <= 0) return false;
       if ((c as any).enabled === false || isAccountUnlicensed(c) || (c as any).isValidationRequired) return false;
@@ -3691,9 +3785,12 @@ export async function executeGoogleCloudCodeWithPool(
                 // If original model failed with HTTP 400, unverified/corrupted tool calls in history
                 // must be flattened to plain text so fallback Gemini does not repeat the same 400 failure
                 flattenAllToolCallsToText(fbContents);
+                injectAntiHallucinationInstruction((reqJson.request as Record<string, unknown>) || reqJson);
               } else {
                 restoreThoughtSignatures(fbContents, convId || '', fallbackModel);
-                sanitizeUnsignedToolCalls(fbContents);
+                if (sanitizeUnsignedToolCalls(fbContents)) {
+                  injectAntiHallucinationInstruction((reqJson.request as Record<string, unknown>) || reqJson);
+                }
               }
             }
             normalizeConversationTurns(fbContents);
@@ -7802,12 +7899,14 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             if (flattenAllToolCallsToText(targetReq.contents)) {
               contentsNormalized = true;
               normalizeConversationTurns(targetReq.contents);
+              injectAntiHallucinationInstruction(targetReq);
             }
           } else {
             signaturesRestored = restoreThoughtSignatures(targetReq.contents, sessionKey, effectiveModelName);
             if (sanitizeUnsignedToolCalls(targetReq.contents)) {
               contentsNormalized = true;
               normalizeConversationTurns(targetReq.contents);
+              injectAntiHallucinationInstruction(targetReq);
             }
           }
         }

@@ -140,7 +140,7 @@ export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TI
 export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 20_000);
 
 /** Timeout for waiting for initial response headers on large payloads or thinking models (default: 65 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 85_000);
+export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 65_000);
 
 /** Background proactive pre-flight health check interval across Google account pool (default: 20 minutes). */
 export const PREFLIGHT_HEALTH_CHECK_INTERVAL_MS = getEnvInt('AG_PREFLIGHT_HEALTH_CHECK_INTERVAL_MS', 20 * 60_000);

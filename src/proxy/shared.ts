@@ -340,6 +340,9 @@ export function restoreThoughtSignatures(
   return restoredCount > 0;
 }
 
+export const ANTI_HALLUCINATION_TOOL_INSTRUCTION =
+  'CRITICAL TOOL INVOCATION RULE: When calling a tool (such as write_file, run_command, etc.), you MUST invoke the tool natively via the system function call API. NEVER output "[Executed tool: ...]" or fake tool execution syntax in plain text.';
+
 /**
  * For Gemini 2.5 / 3+ models on Vertex AI / Cloud Code:
  * If a functionCall part has NO thought_signature and none could be restored from cache,
