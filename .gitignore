@@ -112,3 +112,15 @@ scripts/patch_result.txt
 scripts/freebuff/extraction-output.txt
 scripts/freebuff/pkce-output.txt
 UsersAdminAppDataLocalTemppv-test-*
+
+# Security — files that have contained secrets (never re-commit)
+temp_ui_main.js
+certs/
+gitleaks-report.json
+gitleaks-report.sarif
+docs/phases/PHASE19_REAL_VPS.md
+docs/phases/PHASE19_SECURITY_INCIDENT.md
+docs/phases/PHASE20_SECRET_FINAL.md
+PHASE19_REAL_VPS.md
+PHASE19_SECURITY_INCIDENT.md
+PHASE20_SECRET_FINAL.md

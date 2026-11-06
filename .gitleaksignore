@@ -1,0 +1,16 @@
+# .gitleaksignore — Known historical findings to suppress
+# These are findings in OLD commits (not in current code).
+# The corresponding code has been removed from HEAD.
+# Format: <commit_sha>:<file>:<rule_id>:<line>
+#
+# To regenerate: gitleaks detect --config=.gitleaks.toml --report-format json --report-path gitleaks-report.json
+#                then read the Fingerprint field of each known-safe finding.
+
+# src/preload.ts — DEFAULT_TOKEN and token= URL params in old remote UI code (removed)
+875719d6501e3262fe165949f85827193a2068bb:src/preload.ts:generic-api-key:323
+53c7afd67380161e54bdcf6dfa3e489b67ca75ba:src/preload.ts:generic-api-key:203
+50305ba35e561ecc4e447118f3429753f088f227:src/preload.ts:generic-api-key:220
+50305ba35e561ecc4e447118f3429753f088f227:src/preload.ts:generic-api-key:279
+
+# scripts/patch_ide_remote.py — token= in URL construction (not a credential)
+5b437fa44e1900d9ddc0809ccb734e568b75869f:scripts/patch_ide_remote.py:generic-api-key:38

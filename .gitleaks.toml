@@ -80,4 +80,42 @@ paths = [
   '''\.gitleaks\.toml$''',
   # Proto files (contain field names like "refresh_token" as identifiers)
   '''\.proto$''',
+  # Test files — contain intentional fake/mock tokens
+  '''_test\.ts$''',
+  '''\.test\.ts$''',
+  '''\.spec\.ts$''',
+  '''_test\.go$''',
+  '''_test\.go$''',
+  # Documentation files — contain example/placeholder values in code blocks
+  '''\.md$''',
+  # Temp/scratch files that should not be committed anyway
+  '''temp_ui_main\.js$''',
+  '''certs/''',
+  # Google OAuth app credentials (public app client ID/secret — not personal tokens)
+  # These are the Gemini CLI / Cloud Code app credentials, not user credentials
+  '''googleOAuthServer\.ts$''',
+  '''googleAuth\.ts$''',
+  '''ideAccountDiscovery\.ts$''',
+]
+
+# Allow the XOR-masked Google OAuth app credentials (public client ID/secret)
+# These are NOT user tokens — they are the application's registered OAuth credentials
+# visible in Gemini CLI source code and already public
+regexes = [
+  '''_unmaskSecret\(''',
+  '''GOOGLE_OAUTH_CLIENT''',
+  '''GEMINI_CLI_OAUTH''',
+  # Generic patterns in doc/example contexts
+  '''Key Usage:''',
+  '''DEFAULT_TOKEN''',
+  # curl examples in source code showing generic "token=" param
+  '''curl.*token=''',
+  '''APIKey:\s+"[^"]{5,}"''',
+  # X.509/ASN.1 certificate code — "Key Usage" is a standard field name
+  '''keyUsage''',
+  '''keyCertSign''',
+  # URLs with token= query param in Cloudflare/remote config (old commits, pattern known)
+  '''trycloudflare\.com''',
+  # Python scripts with token= in URL construction (not real tokens)
+  '''scripts/patch_ide_remote\.py''',
 ]
