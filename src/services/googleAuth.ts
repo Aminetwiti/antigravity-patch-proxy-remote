@@ -1635,6 +1635,7 @@ export function stripSyntheticErrorTurns(contents: any[]): boolean {
           text.includes('comptes vérifiés') ||
           text.includes('ont été testés automatiquement en arrière-plan') ||
           text.includes('Quota exhausted — 5h cooldown') ||
+          text.includes('[Previous step encountered a network timeout') ||
           (text.includes('rate_limit') && text.includes('configurés')) ||
           (text.includes('WARNING') && text.includes('Model unavailable'));
         return !isSyntheticError;
@@ -1701,6 +1702,27 @@ export function normalizeConversationTurns(contents: any[]): boolean {
       if (hasFnResponse && item.role !== 'user') {
         item.role = 'user';
         modified = true;
+      }
+    }
+  }
+
+  // 1b. Safety: Convert orphaned functionResponse parts to text if not preceded by a model functionCall
+  for (let i = 0; i < contents.length; i++) {
+    const item = contents[i];
+    if (item && Array.isArray(item.parts)) {
+      const prevTurn = i > 0 ? contents[i - 1] : null;
+      const prevHasFunctionCall = prevTurn?.role === 'model' && Array.isArray(prevTurn.parts) &&
+        prevTurn.parts.some((p: any) => p && p.functionCall);
+      for (let j = 0; j < item.parts.length; j++) {
+        const p = item.parts[j];
+        if (p && p.functionResponse && !prevHasFunctionCall) {
+          const respContent = p.functionResponse.response;
+          const textVal = typeof respContent === 'string'
+            ? respContent
+            : (respContent?.output || JSON.stringify(respContent || ''));
+          item.parts[j] = { text: `[Tool Output (${p.functionResponse.name || 'tool'})]: ${textVal}` };
+          modified = true;
+        }
       }
     }
   }

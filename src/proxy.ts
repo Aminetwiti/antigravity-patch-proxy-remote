@@ -2378,7 +2378,16 @@ export function trimOldestHistory(obj: any, maxKeep?: number): boolean {
     if (typeof maxKeep === 'number' && maxKeep >= 3) {
       keepCount = Math.min(keepCount, maxKeep);
     }
-    const trimmed = [first, ...contents.slice(contents.length - keepCount)];
+    let sliceStart = contents.length - keepCount;
+    // Ensure sliceStart does not split a functionCall / functionResponse pair
+    if (sliceStart > 1 && sliceStart < contents.length) {
+      const candidateTurn = contents[sliceStart];
+      const hasFnResponse = Array.isArray(candidateTurn?.parts) && candidateTurn.parts.some((p: any) => p && p.functionResponse);
+      if (hasFnResponse && sliceStart > 1) {
+        sliceStart--;
+      }
+    }
+    const trimmed = [first, ...contents.slice(sliceStart)];
     if (obj.contents) obj.contents = trimmed;
     if (obj.request?.contents) obj.request.contents = trimmed;
     return true;
@@ -2871,16 +2880,6 @@ export async function executeGoogleCloudCodeWithPool(
     const reqObj = (reqJson.request && typeof reqJson.request === 'object')
       ? (reqJson.request as Record<string, unknown>)
       : (reqJson as Record<string, unknown>);
-    {
-      reqObj.model = targetModel;
-      if (typeof reqObj.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.requestedModel)) {
-        reqObj.requestedModel = targetModel;
-      }
-      if (typeof reqObj.planModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.planModel)) {
-        reqObj.planModel = targetModel;
-      }
-      sanitizeCloudCodeGenerationConfig(reqObj, targetModel);
-    }
     if (reqJson.request && typeof reqJson.request === 'object') {
       reqObj.model = targetModel;
       if (typeof reqObj.requestedModel === 'string' && /MODEL_PLACEHOLDER_/i.test(reqObj.requestedModel)) {
@@ -3310,7 +3309,7 @@ export async function executeGoogleCloudCodeWithPool(
       const isGenuineUpstreamStall = outcome.statusCode === 504 || (elapsedMs >= poolHeaderTimeout && !res.headersSent);
       if (isGenuineUpstreamStall) {
         log.warn(`[Proxy] Account [${candidateName}] genuinely stalled upstream for ${Math.round(elapsedMs / 1000)}s before client closed (HTTP 499). Placing in 30s cooldown to protect pool from black-hole accounts.`);
-        setAccountCooldown(candidate, 30_000, currentFamily, true);
+        setAccountCooldown(candidate, 30_000, currentFamily, false);
         // ponytail: recording 60s latency permanently harms P2C ranking via EWMA for 15min. Record actual elapsedMs capped at 20s.
         recordAccountLatency(candidate, Math.min(elapsedMs, 20_000));
       }
@@ -3796,7 +3795,7 @@ export async function executeGoogleCloudCodeWithPool(
           log.info(
             `[Proxy] Account ${candidateName} timed out (HTTP 504, ${elapsedMs}ms). Placing in 30s transient cooldown to avoid immediate repeat stall.`,
           );
-          setAccountCooldown(candidate, 30_000, currentFamily, true);
+          setAccountCooldown(candidate, 30_000, currentFamily, false);
         } else {
           log.warn(
             `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
