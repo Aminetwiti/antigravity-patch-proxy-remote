@@ -1348,8 +1348,13 @@ export function transformGoogleStreamForRemote(
     stream = inflate;
   }
 
+  const isExtendedThinking = /thinking|opus|thought/i.test(modelName || '');
+  const effectiveIdleTimeoutMs = isExtendedThinking
+    ? Math.max(STREAM_IDLE_TIMEOUT_MS, 180_000)
+    : STREAM_IDLE_TIMEOUT_MS;
+
   idleGuard = new IdleTimeoutGuard(proxyRes, {
-    idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+    idleTimeoutMs: effectiveIdleTimeoutMs,
     label: modelName || 'google-stream',
     onTimeout: (err) => {
       log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} — aborting socket`);
@@ -2415,10 +2420,10 @@ export async function executeGoogleCloudCodeWithPool(
   // Proactive History Trimming: If session has accumulated heavy history (>50 turns),
   // proactively trim historical turns before the first network dispatch to prevent 35s-60s TTFT timeouts.
   const initialContents = (reqJson.request as any)?.contents || (reqJson as any).contents;
-  if (Array.isArray(initialContents) && initialContents.length > 50) {
+  if (Array.isArray(initialContents) && initialContents.length > 35) {
     const turnsCount = initialContents.length;
     // Cap history to 40 turns (+ initial prompt = 41 turns) to keep TTFT well under 10s on Google Cloud Code
-    if (trimOldestHistory(reqJson, 40)) {
+    if (trimOldestHistory(reqJson, 30)) {
       const remainingTurns = ((reqJson.request || reqJson) as any)?.contents?.length;
       log.info(`[Proxy] ⚡ [Proactive Context Trimmer] Heavy session detected (${turnsCount} turns). Proactively trimmed oldest history to ${remainingTurns} turns before first network dispatch.`);
     }
@@ -2976,20 +2981,20 @@ export async function executeGoogleCloudCodeWithPool(
       dynamicAdaptiveTimeout = 35_000;
     }
     const flashTimeoutMs = hasOtherCandidates
-      ? (healthySiblingAccountsCount >= 2
+      ? (healthySiblingAccountsCount >= 1
           ? (isLargePayloadOrThinking ? Math.min(40_000, Math.max(30_000, dynamicAdaptiveTimeout)) : dynamicAdaptiveTimeout)
           : (isLargePayloadOrThinking ? Math.max(55_000, dynamicAdaptiveTimeout) : dynamicAdaptiveTimeout))
       : (isLargePayloadOrThinking ? 65_000 : Math.min(50_000, GOOGLE_PROXY_TIMEOUT_MS));
     const largeTimeoutMs = Math.min(
       isFlashModel
-        ? (hasOtherCandidates && healthySiblingAccountsCount >= 2
+        ? (hasOtherCandidates && healthySiblingAccountsCount >= 1
             ? (isThinkingModel ? 42_000 : 35_000)
             : (isThinkingModel ? (updatedBody.length > 100_000 ? 80_000 : 65_000) : 55_000))
         : 85_000,
       GOOGLE_PROXY_TIMEOUT_MS,
     );
     const standardTimeoutMs = hasOtherCandidates
-      ? (healthySiblingAccountsCount >= 2 ? Math.max(GOOGLE_POOL_HEADER_TIMEOUT_MS, dynamicAdaptiveTimeout) : dynamicAdaptiveTimeout)
+      ? (healthySiblingAccountsCount >= 1 ? Math.max(GOOGLE_POOL_HEADER_TIMEOUT_MS, dynamicAdaptiveTimeout) : dynamicAdaptiveTimeout)
       : Math.min(dynamicAdaptiveTimeout, GOOGLE_PROXY_TIMEOUT_MS);
 
     const baseCandidateTimeout = isFlashModel
@@ -3007,13 +3012,13 @@ export async function executeGoogleCloudCodeWithPool(
     // Escalating retry timeout on 504: If a prior candidate experienced a timeout on this payload,
     // escalate candidate timeout to allow larger prompts to finish prefill, safely bounded by remainingPoolBudgetMs.
     if (consecutive504TimeoutCount > 0) {
-      // In pools with >= 3 healthy candidates, bound escalation so 2 slow nodes do not consume the entire loop budget
-      const flashEscalation = isLargePayloadOrThinking
-        ? 65_000
-        : (isContextualPayload ? 55_000 : 45_000);
-      const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
-        ? (isFlashModel ? flashEscalation : 55_000)
-        : (isFlashModel ? (isLargePayloadOrThinking ? 70_000 : (isContextualPayload ? 60_000 : 45_000)) : 75_000);
+      // In pools with >= 2 healthy candidates, bound escalation on Flash models so slow/stalled nodes fail fast
+      const flashEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 2)
+        ? 35_000
+        : (isLargePayloadOrThinking ? 50_000 : 40_000);
+      const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 2)
+        ? (isFlashModel ? flashEscalation : 45_000)
+        : (isFlashModel ? (isLargePayloadOrThinking ? 65_000 : 45_000) : 75_000);
       const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
       if (escalatingTimeout > poolHeaderTimeout) {
         log.info(`[Proxy] Prior candidate experienced 504 timeout. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
@@ -3791,6 +3796,7 @@ export async function executeGoogleCloudCodeWithPool(
           log.info(
             `[Proxy] Account ${candidateName} timed out (HTTP 504, ${elapsedMs}ms). Placing in 30s transient cooldown to avoid immediate repeat stall.`,
           );
+          setAccountCooldown(candidate, 30_000, currentFamily, true);
         } else {
           log.warn(
             `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
@@ -4614,8 +4620,13 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
   // Phase 2: Per-chunk idle timeout guard. Vendor pattern from
   // `withIdleTimeout`'s stream wrapper. If no SSE chunk arrives for
   // STREAM_IDLE_TIMEOUT_MS, treat the upstream as stuck and abort.
+  const isExtendedThinkingCustom = /thinking|opus|thought/i.test(model?.name || '');
+  const effectiveIdleTimeoutMsCustom = isExtendedThinkingCustom
+    ? Math.max(STREAM_IDLE_TIMEOUT_MS, 180_000)
+    : STREAM_IDLE_TIMEOUT_MS;
+
   const idleGuard = new IdleTimeoutGuard(apiRes, {
-    idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+    idleTimeoutMs: effectiveIdleTimeoutMsCustom,
     label: model.name,
     onTimeout: (err) => {
       log.warn(`[Proxy] ${err.message} — aborting request for ${model.name}`);
