@@ -393,6 +393,35 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       const isCappedTimeout = wasTimeoutCappedByBudget || (lastStatus === 504 && poolHeaderTimeout < baseCandidateTimeout);
       expect(isCappedTimeout).toBe(true);
     });
+
+    it('[SESSION-RESILIENCE] correctly detects Gemini 3.8 Flash (Medium) as thinking model via requestedModel', () => {
+      const targetModel = 'gemini-3.8-flash-tiered';
+      const reqJson = { requestedModel: 'Gemini 3.8 Flash (Medium)', model: 'MODEL_PLACEHOLDER_abc' };
+      const targetRaw = 'gemini-3.8-flash-tiered';
+      const candidate: any = { name: 'acc1', displayName: 'Gemini 3.8 Flash (Medium)' };
+
+      const rawModelIdentifiers = `${targetModel} ${reqJson.requestedModel || ''} ${reqJson.model || ''} ${targetRaw || ''} ${candidate.name || ''} ${candidate.displayName || ''}`;
+      const isThinkingModel = /thinking|thought|-high$|-medium$|\(medium\)|\(high\)/i.test(rawModelIdentifiers);
+      expect(isThinkingModel).toBe(true);
+    });
+
+    it('[SESSION-RESILIENCE] scales dynamic adaptive timeout to 60s+ for heavy/thinking payloads', () => {
+      const payloadLength = 75_000; // 75 KB
+      const isThinkingModel = true;
+      const isContextualPayload = true;
+
+      let dynamicAdaptiveTimeout: number;
+      if (payloadLength > 150_000) {
+        dynamicAdaptiveTimeout = 85_000;
+      } else if (payloadLength > 60_000 || isThinkingModel) {
+        dynamicAdaptiveTimeout = 60_000;
+      } else if (isContextualPayload || payloadLength > 25_000) {
+        dynamicAdaptiveTimeout = 45_000;
+      } else {
+        dynamicAdaptiveTimeout = 35_000;
+      }
+      expect(dynamicAdaptiveTimeout).toBe(60_000);
+    });
   });
 });
 

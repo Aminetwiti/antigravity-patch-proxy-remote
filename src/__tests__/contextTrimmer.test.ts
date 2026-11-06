@@ -207,4 +207,43 @@ describe('ContextTrimmer (AUDIT-002 Regression & Collision Prevention)', () => {
     expect(output.startsWith('Y'.repeat(1000))).toBe(true);
     expect(output.endsWith('Y'.repeat(400))).toBe(true);
   });
+
+  it('handles massive 100+ turns sessions safely and preserves recent turns intact', () => {
+    const turns = Array.from({ length: 120 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'model',
+      parts: [{ text: `Turn ${i} text payload` }],
+    }));
+
+    const body: GeminiRequestBody = {
+      request: { contents: turns },
+    };
+
+    const trimmed = trimContextPayload(body);
+    expect(trimmed.request?.contents?.length).toBe(120);
+    // Recent turns preserved intact
+    const lastTurn = trimmed.request?.contents?.[119];
+    expect(lastTurn?.parts?.[0]?.text).toBe('Turn 119 text payload');
+  });
+
+  it('sanitizes synthetic proxy error/warning cards from session turns', () => {
+    const errorCard = '> **WARNING**\n> **Model unavailable: Request Timeout (4/12 comptes vérifiés)**\nLe service Google Cloud Code a expiré sur 4 comptes consécutifs (coupure amont détectée).';
+    const body: GeminiRequestBody = {
+      request: {
+        contents: [
+          {
+            role: 'model',
+            parts: [{ text: errorCard }],
+          },
+          {
+            role: 'user',
+            parts: [{ text: 'Please retry the command' }],
+          },
+        ],
+      },
+    };
+
+    const trimmed = trimContextPayload(body);
+    expect(trimmed.request?.contents?.[0].parts[0].text).toContain('Previous step encountered a network timeout');
+    expect(trimmed.request?.contents?.[0].parts[0].text).not.toContain('coupure amont détectée');
+  });
 });

@@ -2407,6 +2407,17 @@ export async function executeGoogleCloudCodeWithPool(
   // Optimize prompt payload by removing redundant duplicate file injections
   reqJson = trimContextPayload(reqJson as unknown as GeminiRequestBody) as unknown as Record<string, unknown>;
 
+  // Proactive History Trimming: If session has accumulated heavy history (>60 turns),
+  // proactively trim historical turns before the first network dispatch to prevent 35s TTFT timeouts.
+  const initialContents = (reqJson.request as any)?.contents || (reqJson as any).contents;
+  if (Array.isArray(initialContents) && initialContents.length > 60) {
+    const turnsCount = initialContents.length;
+    if (trimOldestHistory(reqJson)) {
+      const remainingTurns = ((reqJson.request || reqJson) as any)?.contents?.length;
+      log.info(`[Proxy] ⚡ [Proactive Context Trimmer] Heavy session detected (${turnsCount} turns). Proactively trimmed oldest history to ${remainingTurns} turns before first network dispatch.`);
+    }
+  }
+
   let targetRaw = String(reqJson.model || (reqJson.request as any)?.model || '');
   if (/MODEL_PLACEHOLDER_/i.test(targetRaw) || !targetRaw) {
     const poolCandidate = accountPool?.[0]?.externalModelName || accountPool?.[0]?.name;
@@ -2924,28 +2935,39 @@ export async function executeGoogleCloudCodeWithPool(
     const reqContents = (candidateReqObj?.contents || reqJson.contents) as any[] | undefined;
     const isMultiTurn = Array.isArray(reqContents) && reqContents.length > 1;
     const isContextualPayload = updatedBody.length > 8_000 || isMultiTurn;
-    const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel) || hasThinkingConfig || updatedBody.includes('/think-');
+    const rawModelIdentifiers = `${targetModel} ${reqJson.requestedModel || ''} ${reqJson.model || ''} ${targetRaw || ''} ${candidate.name || ''} ${candidate.displayName || ''}`;
+    const isThinkingModel = /thinking|thought|-high$|-medium$|\(medium\)|\(high\)/i.test(rawModelIdentifiers) || hasThinkingConfig || updatedBody.includes('/think-');
     const isFlashModel = isFlash;
-    const isLargePayload = updatedBody.length > 120_000;
+    // Dynamic Adaptive Sizing: consider >60 KB as heavy payload to account for TPU prefill latency
+    const isLargePayload = updatedBody.length > 60_000;
     const isLargePayloadOrThinking = isLargePayload || isThinkingModel;
-    // For streaming requests with sibling accounts in pool, use calibrated header timeouts:
-    // - Thinking models (Pro Thinking, Claude Thinking) or Large prompts (>120k bytes): 65-75s
-    // - Multi-turn / contextual prompts (8k-120k bytes): 30-45s
-    // - Flash models: strictly bounded to 25s-35s when healthy sibling accounts exist, preventing multi-minute "Working" lockups
-    const effectiveFlashTimeout = Math.max(15_000, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS);
+    const effectiveFlashTimeout = Math.max(25_000, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS);
+    
+    // Dynamic Adaptive Timeout based on payload size and thinking tier:
+    let dynamicAdaptiveTimeout: number;
+    if (updatedBody.length > 150_000) {
+      dynamicAdaptiveTimeout = 85_000;
+    } else if (updatedBody.length > 60_000 || isThinkingModel) {
+      dynamicAdaptiveTimeout = 60_000;
+    } else if (isContextualPayload || updatedBody.length > 25_000) {
+      dynamicAdaptiveTimeout = 45_000;
+    } else {
+      dynamicAdaptiveTimeout = 35_000;
+    }
     const flashTimeoutMs = hasOtherCandidates
-      ? (isContextualPayload ? Math.min(30_000, GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout)
-      : (isContextualPayload ? Math.min(45_000, GOOGLE_PROXY_TIMEOUT_MS) : Math.min(30_000, GOOGLE_PROXY_TIMEOUT_MS));
-    const largeTimeoutMs = hasOtherCandidates
-      ? (healthySiblingAccountsCount >= 2 ? Math.min(GOOGLE_PROXY_TIMEOUT_MS, Math.max(45_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)) : Math.min(95_000, GOOGLE_PROXY_TIMEOUT_MS))
-      : Math.min(GOOGLE_PROXY_TIMEOUT_MS, 95_000);
+      ? (isLargePayloadOrThinking ? Math.max(55_000, dynamicAdaptiveTimeout) : dynamicAdaptiveTimeout)
+      : (isLargePayloadOrThinking ? 65_000 : Math.min(50_000, GOOGLE_PROXY_TIMEOUT_MS));
+    const largeTimeoutMs = Math.min(
+      isFlashModel ? (isThinkingModel ? (updatedBody.length > 100_000 ? 80_000 : 65_000) : 55_000) : 85_000,
+      GOOGLE_PROXY_TIMEOUT_MS,
+    );
     const standardTimeoutMs = hasOtherCandidates
-      ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_MS : 35_000)
-      : Math.min(45_000, GOOGLE_PROXY_TIMEOUT_MS);
+      ? (healthySiblingAccountsCount >= 2 ? Math.max(GOOGLE_POOL_HEADER_TIMEOUT_MS, dynamicAdaptiveTimeout) : dynamicAdaptiveTimeout)
+      : Math.min(dynamicAdaptiveTimeout, GOOGLE_PROXY_TIMEOUT_MS);
 
     const baseCandidateTimeout = isFlashModel
       ? (hasOtherCandidates
-          ? (isLargePayloadOrThinking ? Math.min(55_000, GOOGLE_PROXY_TIMEOUT_MS) : flashTimeoutMs)
+          ? (isLargePayloadOrThinking ? largeTimeoutMs : flashTimeoutMs)
           : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS))
       : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs);
 
@@ -3725,9 +3747,9 @@ export async function executeGoogleCloudCodeWithPool(
         const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 45_000 : (isUpstreamOutage ? 45_000 : 30_000));
         const isPayloadInducedTimeout = lastStatus === 504 && (isLargePayload || isContextualPayload || isMultiTurn || consecutive504TimeoutCount > 0);
         const isCappedTimeout = wasTimeoutCappedByBudget || (lastStatus === 504 && poolHeaderTimeout < baseCandidateTimeout);
-        if (lastStatus === 504 && (isCappedTimeout || isPayloadInducedTimeout)) {
+        if (lastStatus === 504) {
           log.info(
-            `[Proxy] Account ${candidateName} timed out on ${isPayloadInducedTimeout ? 'heavy/contextual conversation' : 'capped timeout'}. Skipping cooldown penalty to preserve healthy pool accounts.`,
+            `[Proxy] Account ${candidateName} timed out (HTTP 504, ${elapsedMs}ms). Skipping cooldown penalty to preserve healthy pool account.`,
           );
         } else {
           log.warn(
@@ -3750,6 +3772,7 @@ export async function executeGoogleCloudCodeWithPool(
             if (didTrim) {
               const remainingTurns = ((reqJson.request || reqJson) as any)?.contents?.length;
               log.warn(`[Proxy] ✂️ [Context Auto-Trimmer] Trimmed 30% oldest history (${remainingTurns} turns remaining) to break 504 timeout cascade for subsequent pool candidates.`);
+              consecutive504TimeoutCount = 0;
             }
           }
         }
@@ -3769,11 +3792,12 @@ export async function executeGoogleCloudCodeWithPool(
         // Fast-fail 504 timeout cascade: If multiple accounts consecutively time out on the same model/payload,
         // the upstream TPU cluster is saturated. Trigger immediate fallback cascade instead of exhausting all accounts in the pool.
         if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
-          consecutive504TimeoutCount++;
+          if (!isPayloadInducedTimeout) {
+            consecutive504TimeoutCount++;
+          }
           const combinedOutageCount = consecutive504TimeoutCount + consecutive503CapacityCount;
-          // Dynamically scale outage threshold with pool size: dynamically scales up to CONSECUTIVE_504_CASCADE_THRESHOLD (default 7)
-          // while ensuring small pools do not wait more than 40% of their total candidate accounts.
-          const dynamicPoolThreshold = Math.min(3, Math.max(2, Math.min(CONSECUTIVE_504_CASCADE_THRESHOLD, Math.ceil(sortedAccounts.length * 0.25))));
+          // Dynamically scale outage threshold with pool size: test at least half the pool before declaring cluster outage
+          const dynamicPoolThreshold = Math.min(CONSECUTIVE_504_CASCADE_THRESHOLD, Math.max(4, Math.ceil(sortedAccounts.length * 0.5)));
           const outageThreshold = dynamicPoolThreshold;
           if (consecutive504TimeoutCount >= outageThreshold || combinedOutageCount >= outageThreshold) {
             log.warn(
@@ -3960,7 +3984,6 @@ export async function executeGoogleCloudCodeWithPool(
         let fallbackCandidates = allCustomModels.filter(
           (m) =>
             isGoogleCloudCodeModel(m) &&
-            (m as any).enabled !== false &&
             !isAccountUnlicensed(m) &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&

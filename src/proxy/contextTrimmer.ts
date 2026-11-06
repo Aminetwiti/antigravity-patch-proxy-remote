@@ -11,6 +11,9 @@ import type { GeminiRequestBody } from './types';
 const RECENT_TURNS_PRESERVE_COUNT = 8;
 const MAX_HISTORICAL_TOOL_OUTPUT_CHARS = 4_096;
 
+const SYNTHETIC_PROXY_ERROR_PATTERN =
+  /> \*\*WARNING\*\*[\s\S]*Model unavailable|Le service Google Cloud Code a expiré sur \d+ comptes consécutifs|Google pool request timed out waiting for response headers|Google Cloud Code API gateway timeout \(504\) across/i;
+
 function compactHistoricalString(val: string, headChars = 2000, tailChars = 800, threshold = MAX_HISTORICAL_TOOL_OUTPUT_CHARS): string {
   if (val.length <= threshold) return val;
   const head = val.slice(0, headChars);
@@ -51,8 +54,22 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
     const textHead = isVeryDeepHistory ? 1000 : 1800;
     const textTail = isVeryDeepHistory ? 400 : 700;
 
-    // 1. Compact oversized historical outputs in old turns (>8 turns in the past)
+    // 1. Sanitize synthetic proxy error/warning cards and compact oversized historical outputs
     const compactedParts = content.parts.map((part) => {
+      // Strip synthetic proxy error/warning cards that were saved into session history by previous failures
+      if (
+        part.text &&
+        SYNTHETIC_PROXY_ERROR_PATTERN.test(part.text) &&
+        !part.functionCall &&
+        !part.functionResponse
+      ) {
+        log.info('[ContextTrimmer] Sanitized synthetic error warning card from turn');
+        return {
+          ...part,
+          text: '[Previous step encountered a network timeout. Resuming task...]',
+        };
+      }
+
       if (!isHistoricalTurn) return part;
 
       // Compact oversized functionResponse outputs in historical turns
