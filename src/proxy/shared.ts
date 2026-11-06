@@ -353,45 +353,57 @@ export const ANTI_HALLUCINATION_TOOL_INSTRUCTION =
 export function sanitizeUnsignedToolCalls(contents: unknown[]): boolean {
   if (!Array.isArray(contents)) return false;
   let modified = false;
-  const convertedToolNames = new Set<string>();
 
-  for (const item of contents) {
-    const turn = item as { role?: string; parts?: unknown[] };
-    if (!Array.isArray(turn?.parts)) continue;
+  for (let i = 0; i < contents.length; i++) {
+    const item = contents[i] as { role?: string; parts?: unknown[] };
+    if (!Array.isArray(item?.parts)) continue;
 
-    turn.parts = turn.parts.map((part) => {
-      if (!part || typeof part !== 'object') return part;
-      const p = part as Record<string, unknown>;
+    if (item.role === 'model') {
+      const unsignedInThisTurn = new Set<string>();
+      item.parts = item.parts.map((part) => {
+        if (!part || typeof part !== 'object') return part;
+        const p = part as Record<string, unknown>;
 
-      const fc = (p.functionCall || p.function_call) as Record<string, unknown> | undefined;
-      if (fc && typeof fc === 'object') {
-        const sig =
-          (typeof p.thought_signature === 'string' && p.thought_signature) ||
-          (typeof p.thoughtSignature === 'string' && p.thoughtSignature);
-        if (!sig) {
-          modified = true;
-          const fnName = String(fc.name || 'tool');
-          convertedToolNames.add(fnName);
-          const args = fc.args ? (typeof fc.args === 'string' ? fc.args : JSON.stringify(fc.args)) : '{}';
-          return { text: `[Executed tool: ${fnName} with arguments: ${args}]` };
+        const fc = (p.functionCall || p.function_call) as Record<string, unknown> | undefined;
+        if (fc && typeof fc === 'object') {
+          const sig =
+            (typeof p.thought_signature === 'string' && p.thought_signature) ||
+            (typeof p.thoughtSignature === 'string' && p.thoughtSignature);
+          if (!sig) {
+            modified = true;
+            const fnName = String(fc.name || 'tool');
+            unsignedInThisTurn.add(fnName);
+            const args = fc.args ? (typeof fc.args === 'string' ? fc.args : JSON.stringify(fc.args)) : '{}';
+            return { text: `[Executed tool: ${fnName} with arguments: ${args}]` };
+          }
+        }
+        return part;
+      });
+
+      // If this model turn had unsigned function calls, convert ONLY the immediately following turn's matching responses
+      if (unsignedInThisTurn.size > 0 && i + 1 < contents.length) {
+        const nextItem = contents[i + 1] as { role?: string; parts?: unknown[] };
+        if (nextItem && nextItem.role === 'user' && Array.isArray(nextItem.parts)) {
+          nextItem.parts = nextItem.parts.map((npart) => {
+            if (!npart || typeof npart !== 'object') return npart;
+            const np = npart as Record<string, unknown>;
+            const fr = (np.functionResponse || np.function_response) as Record<string, unknown> | undefined;
+            if (fr && typeof fr === 'object') {
+              const fnName = String(fr.name || 'tool');
+              if (unsignedInThisTurn.has(fnName)) {
+                modified = true;
+                const rObj = fr.response as Record<string, unknown> | undefined;
+                const resp = fr.response
+                  ? (typeof fr.response === 'string' ? fr.response : (rObj?.output || rObj?.result || JSON.stringify(fr.response)))
+                  : '';
+                return { text: `[Tool ${fnName} output: ${resp}]` };
+              }
+            }
+            return npart;
+          });
         }
       }
-
-      const fr = (p.functionResponse || p.function_response) as Record<string, unknown> | undefined;
-      if (fr && typeof fr === 'object') {
-        const fnName = String(fr.name || 'tool');
-        if (convertedToolNames.has(fnName)) {
-          modified = true;
-          const rObj = fr.response as Record<string, unknown> | undefined;
-          const resp = fr.response
-            ? (typeof fr.response === 'string' ? fr.response : (rObj?.output || rObj?.result || JSON.stringify(fr.response)))
-            : '';
-          return { text: `[Tool ${fnName} output: ${resp}]` };
-        }
-      }
-
-      return part;
-    });
+    }
   }
 
   return modified;

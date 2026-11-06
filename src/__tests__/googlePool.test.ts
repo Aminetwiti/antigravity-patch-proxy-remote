@@ -243,9 +243,16 @@ describe('getModelQuotaScore', () => {
     expect(getModelQuotaScore(m)).toBe(0);
   });
 
-  it('allows positive score when weekly is above PREVENTIVE_QUOTA_THRESHOLD_PCT', () => {
+  it('returns 0 when fiveHour is at or below PREVENTIVE_QUOTA_THRESHOLD_PCT to prevent immediate 429 exhaustion', () => {
     const m = makeModel({
-      quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: PREVENTIVE_QUOTA_THRESHOLD_PCT + 5 } as any,
+      quotas: { geminiFiveHourPct: PREVENTIVE_QUOTA_THRESHOLD_PCT, geminiWeeklyPct: 100 } as any,
+    });
+    expect(getModelQuotaScore(m)).toBe(0);
+  });
+
+  it('allows positive score when weekly and fiveHour are above PREVENTIVE_QUOTA_THRESHOLD_PCT', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: PREVENTIVE_QUOTA_THRESHOLD_PCT + 5, geminiWeeklyPct: PREVENTIVE_QUOTA_THRESHOLD_PCT + 5 } as any,
     });
     expect(getModelQuotaScore(m)).toBeGreaterThan(0);
   });
@@ -255,6 +262,13 @@ describe('isAccountNearExhaustion', () => {
   it('returns true when weekly quota is <= PREVENTIVE_QUOTA_THRESHOLD_PCT', () => {
     const m = makeModel({
       quotas: { geminiFiveHourPct: 80, geminiWeeklyPct: 8 } as any,
+    });
+    expect(isAccountNearExhaustion(m, 'gemini')).toBe(true);
+  });
+
+  it('returns true when fiveHour quota is <= PREVENTIVE_QUOTA_THRESHOLD_PCT even if weekly is 100%', () => {
+    const m = makeModel({
+      quotas: { geminiFiveHourPct: 5, geminiWeeklyPct: 100 } as any,
     });
     expect(isAccountNearExhaustion(m, 'gemini')).toBe(true);
   });
@@ -616,6 +630,20 @@ describe('Burst Rate Limit Governor & Constants', () => {
     const chosen = selectCandidateP2C([accHigh, accMed], 'gemini');
     // Because accMed was used less recently (idle), P2C chooses accMed to balance load!
     expect(chosen).toBe(accMed);
+  });
+
+  it('excludes near-exhaustion accounts from P2C when healthy alternatives exist', () => {
+    const accHealthy = makeModel({
+      accountEmail: 'healthy@test.com',
+      quotas: { geminiFiveHourPct: 95, geminiWeeklyPct: 95 } as any,
+    });
+    const accNearExhausted = makeModel({
+      accountEmail: 'dying@test.com',
+      quotas: { geminiFiveHourPct: 5, geminiWeeklyPct: 100 } as any,
+    });
+
+    const chosen = selectCandidateP2C([accHealthy, accNearExhausted], 'gemini');
+    expect(chosen).toBe(accHealthy);
   });
 
   it('guarantees strict isolation: 429 on one account never puts other accounts in cooldown', () => {

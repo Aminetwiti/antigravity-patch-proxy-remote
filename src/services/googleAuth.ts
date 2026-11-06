@@ -1629,8 +1629,33 @@ export function stripSyntheticErrorTurns(contents: any[]): boolean {
           text.includes('coupure amont') ||
           text.includes('Suggested Actions:') ||
           text.includes('Le service Google Cloud Code a expiré') ||
-          text.includes('All Google Cloud Code accounts are currently unavailable');
+          text.includes('All Google Cloud Code accounts are currently unavailable') ||
+          text.includes('[Proxy] La connexion au modèle a été interrompue') ||
+          text.includes('ag-system-error-marker');
         return !isSyntheticError;
+      });
+
+      if (item.parts.length < originalLen) {
+        modified = true;
+      }
+
+      if (item.parts.length === 0) {
+        contents.splice(i, 1);
+        i--;
+        modified = true;
+      }
+    } else if (item?.role === 'user' && Array.isArray(item.parts)) {
+      const originalLen = item.parts.length;
+      item.parts = item.parts.filter((p: any) => {
+        if (!p || typeof p !== 'object') return true;
+        const text = p.text;
+        if (typeof text !== 'string') return true;
+        const isSyntheticUserNoise =
+          text.includes('All your subagents and background tasks have been stopped due to server restart') ||
+          (text.includes('API error') && text.includes('wsarecv: An existing connection was forcibly closed')) ||
+          (text.includes('API error') && text.includes('request failed: Post')) ||
+          text.includes('There was a network issue connecting to the server, please try again.');
+        return !isSyntheticUserNoise;
       });
 
       if (item.parts.length < originalLen) {
@@ -1703,7 +1728,14 @@ export function normalizeConversationTurns(contents: any[]): boolean {
     const curr = contents[i];
     if (prev?.role && curr?.role && prev.role === curr.role) {
       if (Array.isArray(prev.parts) && Array.isArray(curr.parts)) {
-        prev.parts.push(...curr.parts);
+        for (const cp of curr.parts) {
+          const cpTrim = typeof cp?.text === 'string' ? cp.text.trim() : null;
+          const isRedundantContinue = cpTrim && (cpTrim === 'Continue' || cpTrim === 'Continue.' || cpTrim.includes('<USER_REQUEST>\nContinue\n</USER_REQUEST>')) &&
+            prev.parts.some((pp: any) => typeof pp?.text === 'string' && (pp.text.trim() === 'Continue' || pp.text.trim() === 'Continue.' || pp.text.includes('<USER_REQUEST>\nContinue\n</USER_REQUEST>')));
+          if (!isRedundantContinue) {
+            prev.parts.push(cp);
+          }
+        }
       }
       contents.splice(i, 1);
       i--;

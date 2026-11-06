@@ -2479,6 +2479,9 @@ export async function executeGoogleCloudCodeWithPool(
     const hasQuotaA = getModelQuotaScore(a, modelFamily) > 0 ? 1 : 0;
     const hasQuotaB = getModelQuotaScore(b, modelFamily) > 0 ? 1 : 0;
     if (hasQuotaA !== hasQuotaB) return hasQuotaB - hasQuotaA;
+    const exhA = isAccountNearExhaustion(a, modelFamily) ? 1 : 0;
+    const exhB = isAccountNearExhaustion(b, modelFamily) ? 1 : 0;
+    if (exhA !== exhB) return exhA - exhB;
     const maxA = isAccountInProbation(a, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
     const maxB = isAccountInProbation(b, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
     const satA = getAccountInFlight(a) >= maxA ? 1 : 0;
@@ -2509,6 +2512,7 @@ export async function executeGoogleCloudCodeWithPool(
           !isAccountUnlicensed(m) &&
           !getOpenBreaker(m) &&
           !isAccountInCooldown(m, modelFamily) &&
+          !isAccountNearExhaustion(m, modelFamily) &&
           getModelQuotaScore(m, modelFamily) > 0
         );
       });
@@ -2566,6 +2570,9 @@ export async function executeGoogleCloudCodeWithPool(
       const hasQuotaA = getModelQuotaScore(a, modelFamily) > 0 ? 1 : 0;
       const hasQuotaB = getModelQuotaScore(b, modelFamily) > 0 ? 1 : 0;
       if (hasQuotaA !== hasQuotaB) return hasQuotaB - hasQuotaA;
+      const exhA = isAccountNearExhaustion(a, modelFamily) ? 1 : 0;
+      const exhB = isAccountNearExhaustion(b, modelFamily) ? 1 : 0;
+      if (exhA !== exhB) return exhA - exhB;
       const maxA = isAccountInProbation(a, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
       const maxB = isAccountInProbation(b, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
       const satA = getAccountInFlight(a) >= maxA ? 1 : 0;
@@ -2914,15 +2921,15 @@ export async function executeGoogleCloudCodeWithPool(
 
     const baseCandidateTimeout = isFlashModel
       ? (hasOtherCandidates
-          ? (isLargePayload ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : flashTimeoutMs)
-          : Math.min(50_000, GOOGLE_PROXY_TIMEOUT_MS))
+          ? (isLargePayload ? Math.min(55_000, GOOGLE_PROXY_TIMEOUT_MS) : flashTimeoutMs)
+          : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS))
       : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs);
 
     // When no other candidates exist, fallback to the full proxy timeout for non-flash models,
     // but keep flash models strictly bounded to prevent freezing the agent session.
     let poolHeaderTimeout = hasOtherCandidates
       ? baseCandidateTimeout
-      : (isFlashModel ? flashTimeoutMs : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS));
+      : (isFlashModel ? (isLargePayload ? 55_000 : flashTimeoutMs) : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS));
 
     // Escalating retry timeout on 504: If a prior candidate experienced a timeout on this payload,
     // escalate candidate timeout to allow larger prompts to finish prefill, safely bounded by remainingPoolBudgetMs.
@@ -2941,7 +2948,7 @@ export async function executeGoogleCloudCodeWithPool(
     // Safety Cap: Bound poolHeaderTimeout by remaining pool loop safety budget (MAX_POOL_LOOP_DURATION_MS = 210s)
     // with an 8s margin to allow graceful error responses before the Go Language Server 5m0s context deadline
     const remainingPoolBudgetMs = MAX_POOL_LOOP_DURATION_MS - (Date.now() - poolLoopStartTime) - 8_000;
-    const minViableTimeout = isLargePayloadOrThinking ? 20_000 : 12_000;
+    const minViableTimeout = isFlashModel ? 8_000 : (isLargePayloadOrThinking ? 20_000 : 12_000);
 
     if (remainingPoolBudgetMs < minViableTimeout && i > 0) {
       log.warn(`[Proxy] Remaining pool loop budget (${Math.round(remainingPoolBudgetMs / 1000)}s) is below minimum viable inference timeout (${minViableTimeout / 1000}s). Halting rotation to avoid guaranteed timeout failure.`);
@@ -3712,8 +3719,14 @@ export async function executeGoogleCloudCodeWithPool(
         }
         if (lastStatus === 504) {
           recordAccountLatency(candidate, isCappedTimeout ? Math.min(elapsedMs, 20_000) : 60_000);
-          if (sessId && !isCappedTimeout) {
+          if (sessId) {
             sessionAffinities.delete(sessId);
+          }
+          // On 504 on a large context payload, compact historical turns before candidate rotation
+          const reqObj = (reqJson.request || reqJson) as any;
+          if (Array.isArray(reqObj?.contents) && reqObj.contents.length > 8) {
+            log.info(`[Proxy] 504 timeout on heavy session (${reqObj.contents.length} turns). Running context trimmer before rotating to next account...`);
+            trimContextPayload(reqJson as unknown as GeminiRequestBody);
           }
         }
 

@@ -147,6 +147,18 @@ export function isAccountNearExhaustion(candidate: CustomModel, modelFamily?: st
     ? modelFamily.toLowerCase().includes('claude')
     : (candidate.externalModelName || candidate.name || '').toLowerCase().includes('claude'));
 
+  const fiveHour = isArgon
+    ? (typeof q.argonFiveHourPct === 'number'
+        ? q.argonFiveHourPct
+        : (typeof q.geminiFiveHourPct === 'number'
+          ? q.geminiFiveHourPct
+          : (typeof q.fiveHourPercentage === 'number' ? q.fiveHourPercentage : 100)))
+    : (isClaude
+      ? (typeof q.claudeFiveHourPct === 'number' ? q.claudeFiveHourPct : 0)
+      : (typeof q.geminiFiveHourPct === 'number'
+        ? q.geminiFiveHourPct
+        : (typeof q.fiveHourPercentage === 'number' ? q.fiveHourPercentage : 100)));
+
   const weekly = isArgon
     ? (typeof q.argonWeeklyPct === 'number'
         ? q.argonWeeklyPct
@@ -160,13 +172,22 @@ export function isAccountNearExhaustion(candidate: CustomModel, modelFamily?: st
         : 100);
 
   const now = Date.now();
+  const fiveHourResetStr = isArgon
+    ? (q.argonFiveHourReset || q.geminiFiveHourReset || q.fiveHourResetTime)
+    : (isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime));
+  const fiveHourResetTs = fiveHourResetStr ? new Date(fiveHourResetStr).getTime() : 0;
+  const fiveHourResetPassed = Boolean(fiveHourResetTs > 0 && (!q.updatedAt || fiveHourResetTs > q.updatedAt) && fiveHourResetTs <= now);
+
   const weeklyResetStr = isArgon
     ? (q.argonWeeklyReset || q.geminiWeeklyReset || q.weeklyResetTime)
     : (isClaude ? q.claudeWeeklyReset : (q.geminiWeeklyReset || q.weeklyResetTime));
   const weeklyResetTs = weeklyResetStr ? new Date(weeklyResetStr).getTime() : 0;
   const weeklyResetPassed = Boolean(weeklyResetTs > 0 && (!q.updatedAt || weeklyResetTs > q.updatedAt) && weeklyResetTs <= now);
 
-  return typeof weekly === 'number' && weekly <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !weeklyResetPassed;
+  const isWeeklyDepleted = typeof weekly === 'number' && weekly <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !weeklyResetPassed;
+  const isFiveHourDepleted = typeof fiveHour === 'number' && fiveHour <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !fiveHourResetPassed;
+
+  return isWeeklyDepleted || isFiveHourDepleted;
 }
 
 /**
@@ -1657,6 +1678,12 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   if (typeof weekly === 'number' && weekly <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !weeklyResetPassed) {
     return 0;
   }
+  // Rolling Rate Limit Guard:
+  // If 5-hour quota has dropped to or below PREVENTIVE_QUOTA_THRESHOLD_PCT (default: 10%),
+  // score as 0 because the rolling window cannot service requests without immediate 429 exhaustion.
+  if (typeof fiveHour === 'number' && fiveHour <= PREVENTIVE_QUOTA_THRESHOLD_PCT && !fiveHourResetPassed) {
+    return 0;
+  }
 
   const effFiveHour = (fiveHour <= 0 && fiveHourResetPassed) ? 50 : fiveHour;
   const effWeekly = (weekly <= 0 && weeklyResetPassed) ? 50 : weekly;
@@ -2073,7 +2100,12 @@ export function selectCandidateP2C(candidates: CustomModel[], modelFamily = 'gem
   const targetPool = freePool.length > 0 ? freePool : pool;
   if (targetPool.length === 1) return targetPool[0];
 
-  const sorted = [...targetPool].sort((a, b) => getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily));
+  // Prioritize non-near-exhaustion candidates when healthy accounts exist in pool
+  const nonExhausted = targetPool.filter((m) => !isAccountNearExhaustion(m, modelFamily));
+  const candidatePool = nonExhausted.length > 0 ? nonExhausted : targetPool;
+  if (candidatePool.length === 1) return candidatePool[0];
+
+  const sorted = [...candidatePool].sort((a, b) => getAccountDynamicScore(b, modelFamily) - getAccountDynamicScore(a, modelFamily));
   const topScore = getAccountDynamicScore(sorted[0], modelFamily);
 
   const delta = typeof P2C_SCORE_DELTA === 'number' ? P2C_SCORE_DELTA : 45;

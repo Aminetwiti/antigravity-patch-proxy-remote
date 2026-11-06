@@ -9,7 +9,7 @@ import log from 'electron-log';
 import type { GeminiRequestBody } from './types';
 
 const RECENT_TURNS_PRESERVE_COUNT = 8;
-const MAX_HISTORICAL_TOOL_OUTPUT_CHARS = 16_384;
+const MAX_HISTORICAL_TOOL_OUTPUT_CHARS = 4_096;
 
 function compactHistoricalString(val: string, headChars = 2000, tailChars = 800): string {
   if (val.length <= MAX_HISTORICAL_TOOL_OUTPUT_CHARS) return val;
@@ -83,18 +83,18 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
         }
       }
 
-      // Compact oversized raw text blocks in historical turns (>20,000 chars)
+      // Compact oversized raw text blocks in historical turns (>8,000 chars)
       if (
         part.text &&
-        part.text.length > 20_000 &&
+        part.text.length > 8_000 &&
         !part.functionCall &&
         !(part as any).thought &&
         (part as any).type !== 'thinking'
       ) {
-        compactedBytesTotal += Math.max(0, part.text.length - 4000);
+        compactedBytesTotal += Math.max(0, part.text.length - 2500);
         return {
           ...part,
-          text: compactHistoricalString(part.text, 3000, 1000),
+          text: compactHistoricalString(part.text, 1800, 700),
         };
       }
 
