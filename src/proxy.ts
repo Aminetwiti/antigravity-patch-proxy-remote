@@ -2623,17 +2623,16 @@ export async function executeGoogleCloudCodeWithPool(
     const isContextualPayload = updatedBody.length > 8_000 || isMultiTurn;
     const isThinkingModel = /thinking|thought|-high$|-medium$/i.test(targetModel) || hasThinkingConfig;
     const isFlashModel = isFlash;
-    const isLargePayload = updatedBody.length > 35_000;
+    const isLargePayload = updatedBody.length > 120_000;
     const isLargePayloadOrThinking = isLargePayload || isThinkingModel;
     // For streaming requests with sibling accounts in pool, use calibrated header timeouts:
-    // - Thinking models (Flash Thinking, Pro Thinking) or Large prompts (>35k bytes): 65-75s (allows reasoning tokens and KV-cache prefill without premature 504)
-    // - Multi-turn / contextual prompts (8k-35k bytes): 45s
-    // - Small/fresh non-thinking Flash requests (<8k bytes): calibrated TTFT (at least 10s) with speculative hedging
-    // - Standard models: 35-45s
+    // - Thinking models (Pro Thinking, Claude Thinking) or Large prompts (>120k bytes): 65-75s
+    // - Multi-turn / contextual prompts (8k-120k bytes): 30-45s
+    // - Flash models: strictly bounded to 25s-35s when healthy sibling accounts exist, preventing multi-minute "Working" lockups
     const effectiveFlashTimeout = Math.max(15_000, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS);
     const flashTimeoutMs = hasOtherCandidates
-      ? (isContextualPayload ? Math.min(60_000, GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout)
-      : (isContextualPayload ? Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS) : Math.min(45_000, GOOGLE_PROXY_TIMEOUT_MS));
+      ? (isContextualPayload ? Math.min(30_000, GOOGLE_PROXY_TIMEOUT_MS) : effectiveFlashTimeout)
+      : (isContextualPayload ? Math.min(45_000, GOOGLE_PROXY_TIMEOUT_MS) : Math.min(30_000, GOOGLE_PROXY_TIMEOUT_MS));
     const largeTimeoutMs = hasOtherCandidates
       ? (healthySiblingAccountsCount >= 2 ? Math.min(GOOGLE_PROXY_TIMEOUT_MS, Math.max(45_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)) : Math.min(95_000, GOOGLE_PROXY_TIMEOUT_MS))
       : Math.min(GOOGLE_PROXY_TIMEOUT_MS, 95_000);
@@ -2641,9 +2640,11 @@ export async function executeGoogleCloudCodeWithPool(
       ? (healthySiblingAccountsCount >= 2 ? GOOGLE_POOL_HEADER_TIMEOUT_MS : 35_000)
       : Math.min(45_000, GOOGLE_PROXY_TIMEOUT_MS);
 
-    const baseCandidateTimeout = isLargePayloadOrThinking
-      ? largeTimeoutMs
-      : (isFlashModel ? flashTimeoutMs : standardTimeoutMs);
+    const baseCandidateTimeout = isFlashModel
+      ? (hasOtherCandidates
+          ? (isLargePayload ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : flashTimeoutMs)
+          : Math.min(50_000, GOOGLE_PROXY_TIMEOUT_MS))
+      : (isLargePayloadOrThinking ? largeTimeoutMs : standardTimeoutMs);
 
     // When no other candidates exist, fallback to the full proxy timeout for non-flash models,
     // but keep flash models strictly bounded to prevent freezing the agent session.
@@ -2656,8 +2657,8 @@ export async function executeGoogleCloudCodeWithPool(
     if (consecutive504TimeoutCount > 0) {
       // In pools with >= 3 healthy candidates, bound escalation so 2 slow nodes do not consume the entire loop budget
       const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
-        ? (isFlashModel ? 45_000 : 55_000)
-        : 75_000;
+        ? (isFlashModel ? 30_000 : 55_000)
+        : (isFlashModel ? 35_000 : 75_000);
       const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
       if (escalatingTimeout > poolHeaderTimeout) {
         log.info(`[Proxy] Prior candidate experienced 504 timeout. Escalating candidate timeout to ${escalatingTimeout / 1000}s for [${candidateName}]`);
