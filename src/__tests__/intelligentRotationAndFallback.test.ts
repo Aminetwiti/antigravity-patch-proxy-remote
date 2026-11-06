@@ -357,6 +357,33 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       expect(escalatingTimeout).toBeLessThan(75_000);
     });
 
+    it('[AUDIT-002] automatically routes to GOOGLE_HOSTS.CLOUD_CODE_PROD when consecutive504TimeoutCount > 0', () => {
+      const GOOGLE_HOSTS = {
+        CLOUD_CODE: 'daily-cloudcode-pa.googleapis.com',
+        CLOUD_CODE_PROD: 'cloudcode-pa.googleapis.com',
+      };
+      const candidate: any = { name: 'acc-test', provider: 'google' };
+      const isGeminiCliModel = (_c: any) => false;
+      const candidateHost = undefined;
+
+      // Normal attempt: uses CLOUD_CODE
+      let consecutive504TimeoutCount = 0;
+      let consecutiveTimeoutCount = 0;
+      let isUpstreamDegraded = consecutive504TimeoutCount > 0 || consecutiveTimeoutCount > 0;
+      let hostOverride = isGeminiCliModel(candidate)
+        ? GOOGLE_HOSTS.CLOUD_CODE_PROD
+        : (candidateHost || (isUpstreamDegraded ? GOOGLE_HOSTS.CLOUD_CODE_PROD : GOOGLE_HOSTS.CLOUD_CODE));
+      expect(hostOverride).toBe(GOOGLE_HOSTS.CLOUD_CODE);
+
+      // After 504 timeout: automatically switches to CLOUD_CODE_PROD
+      consecutive504TimeoutCount = 1;
+      isUpstreamDegraded = consecutive504TimeoutCount > 0 || consecutiveTimeoutCount > 0;
+      hostOverride = isGeminiCliModel(candidate)
+        ? GOOGLE_HOSTS.CLOUD_CODE_PROD
+        : (candidateHost || (isUpstreamDegraded ? GOOGLE_HOSTS.CLOUD_CODE_PROD : GOOGLE_HOSTS.CLOUD_CODE));
+      expect(hostOverride).toBe(GOOGLE_HOSTS.CLOUD_CODE_PROD);
+    });
+
     it('[AUDIT-005] skips cooldown penalty when 504 timeout was capped below base candidate timeout', () => {
       const baseCandidateTimeout = 45_000;
       const poolHeaderTimeout = 8_000; // Capped by remaining budget

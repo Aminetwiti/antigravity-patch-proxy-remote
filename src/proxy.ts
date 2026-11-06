@@ -1239,6 +1239,7 @@ export function autoUnstickConversation(convId?: string): void {
     const { DatabaseSync } = require('node:sqlite');
     const db = new DatabaseSync(dbPath);
     try {
+      try { db.exec('PRAGMA busy_timeout = 2500;'); } catch (_) {}
       db.prepare("UPDATE conversation_summaries SET not_fully_idle = 0, status = 'CASCADE_RUN_STATUS_IDLE' WHERE conversation_id = ? AND (not_fully_idle = 1 OR status != 'CASCADE_RUN_STATUS_IDLE')").run(convId);
       const protoPath = path.join(dataDir, 'agyhub_summaries_proto.pb');
       if (fs.existsSync(protoPath)) {
@@ -1919,8 +1920,9 @@ export async function proxyToGoogle(
     log.debug('[Proxy] Upstream request closed traceId=', traceId, 'after', ms, 'ms');
   });
 
-  proxyReq.setTimeout(GOOGLE_PROXY_TIMEOUT_MS, () => {
-    log.error(`[Proxy] Google proxy request timed out after ${GOOGLE_PROXY_TIMEOUT_MS / 1000}s (${req.method} ${req.url})`);
+  const forwardTimeoutMs = /flash/i.test(originalModel || '') ? Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS) : GOOGLE_PROXY_TIMEOUT_MS;
+  proxyReq.setTimeout(forwardTimeoutMs, () => {
+    log.error(`[Proxy] Google proxy request timed out after ${forwardTimeoutMs / 1000}s (${req.method} ${req.url})`);
     proxyReq.destroy();
     const effectiveModel = originalModel || '';
     if (convId) {
@@ -2315,7 +2317,10 @@ export function executeGoogleCloudCodeRequest(
         metricObserve('proxy_upstream_ms', ms, { upstream: targetHost, trace_id: traceId });
       });
 
-      const effectiveTimeout = timeoutMs || GOOGLE_PROXY_TIMEOUT_MS;
+      let effectiveTimeout = timeoutMs || GOOGLE_PROXY_TIMEOUT_MS;
+      if (/flash/i.test(modelName) && effectiveTimeout > 35_000) {
+        effectiveTimeout = 35_000;
+      }
       if (typeof proxyReq?.setTimeout === 'function') {
         proxyReq.setTimeout(effectiveTimeout, () => {
           isTimedOut = true;

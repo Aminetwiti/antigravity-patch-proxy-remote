@@ -638,9 +638,33 @@ try {
     copyRecursive(unpackedIn, unpackedOut, false);
   }
 
-  // 11. Repack asar (preserve chrome-devtools-mcp!)
-  console.log('[patch_2_29] Step 7: Repacking app.asar (with unpackDir for MCP tools)...');
-  await asar.createPackageWithOptions(buildDir, asarOut, { unpackDir: '**/chrome-devtools-mcp' });
+  // 11. Repack asar atomically (preserve chrome-devtools-mcp!)
+  console.log('[patch_2_29] Step 7: Repacking app.asar atomically (with unpackDir for MCP tools)...');
+  const tempAsarOut = `${asarOut}.tmp.${Date.now()}`;
+  try {
+    await asar.createPackageWithOptions(buildDir, tempAsarOut, { unpackDir: '**/chrome-devtools-mcp' });
+    // Verify temporary asar header and file count before replacing target
+    const testList = asar.listPackage(tempAsarOut);
+    if (!Array.isArray(testList) || testList.length === 0) {
+      throw new Error('Produced temp asar is empty or invalid');
+    }
+    // Atomic replace with Windows retry fallback
+    try {
+      if (fs.existsSync(asarOut)) {
+        try { fs.unlinkSync(asarOut); } catch (_) {}
+      }
+      fs.renameSync(tempAsarOut, asarOut);
+    } catch (renameErr) {
+      // Fallback copy if rename across volumes/locks is restricted
+      fs.copyFileSync(tempAsarOut, asarOut);
+      try { fs.unlinkSync(tempAsarOut); } catch (_) {}
+    }
+  } catch (err) {
+    if (fs.existsSync(tempAsarOut)) {
+      try { fs.unlinkSync(tempAsarOut); } catch (_) {}
+    }
+    throw err;
+  }
 
   // 12. Verification check
   console.log('[patch_2_29] Step 8: Verifying repacked 2.29.x integrity...');

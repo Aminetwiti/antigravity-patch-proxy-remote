@@ -217,21 +217,8 @@ function ensureOnboardingCompleted() {
 }
 
 app.whenReady().then(async () => {
-  w('runner: app ready');
-  ensureOnboardingCompleted();
-  try {
-    const reconciler = require('./dist/services/summaryReconciler');
-    if (typeof reconciler.reconcileSummariesOnBoot === 'function') {
-      const recRes = reconciler.reconcileSummariesOnBoot();
-      w('runner: reconcileSummariesOnBoot executed: ' + JSON.stringify(recRes));
-    }
-  } catch (e) {
-    w('runner: reconcileSummariesOnBoot failed (non-blocking): ' + (e && e.message || e));
-  }
-  // MITM-443 auto-launch — only if explicitly enabled via AG_ENABLE_MITM
-  if (process.env.AG_ENABLE_MITM === '1') {
-    try { spawnAntigravityMitm443(); } catch (e) { w('runner: MITM-443 dispatch threw: ' + (e && e.stack || e)); }
-  }
+  w('runner: app ready — starting fast-bind proxy immediately');
+  // 1. Fast-bind proxy immediately so port 51074 is open before any internal LS request hits it
   try {
     const proxyMod = require('./dist/proxy');
     w('runner: proxy module loaded; calling startProxy()');
@@ -241,6 +228,28 @@ app.whenReady().then(async () => {
   } catch (e) {
     w('runner: startProxy FAILED: ' + (e && e.stack || e));
     // Do not call app.exit(3) to avoid crashing the IDE on proxy initialization error
+  }
+
+  // 2. Run onboarding check and non-blocking summary reconciliation
+  try {
+    ensureOnboardingCompleted();
+  } catch (e) {
+    w('runner: ensureOnboardingCompleted error: ' + (e && e.message || e));
+  }
+
+  try {
+    const reconciler = require('./dist/services/summaryReconciler');
+    if (typeof reconciler.reconcileSummariesOnBoot === 'function') {
+      const recRes = reconciler.reconcileSummariesOnBoot();
+      w('runner: reconcileSummariesOnBoot executed: ' + JSON.stringify(recRes));
+    }
+  } catch (e) {
+    w('runner: reconcileSummariesOnBoot failed (non-blocking): ' + (e && e.message || e));
+  }
+
+  // 3. MITM-443 auto-launch — only if explicitly enabled via AG_ENABLE_MITM
+  if (process.env.AG_ENABLE_MITM === '1') {
+    try { spawnAntigravityMitm443(); } catch (e) { w('runner: MITM-443 dispatch threw: ' + (e && e.stack || e)); }
   }
 }).catch((e) => w('runner: whenReady error: ' + (e && e.stack || e)));
 
