@@ -30,8 +30,8 @@
  */
 
 export interface IdleTimeoutOptions {
-  /** Maximum time to wait between data chunks. Fires `timer` if exceeded. */
-  idleTimeoutMs: number;
+  /** Maximum time to wait between data chunks (default: 45_000ms). Fires `timer` if exceeded. */
+  idleTimeoutMs?: number;
   /**
    * Optional human-readable label for the operation being guarded (used in
    * error messages and logging).
@@ -77,11 +77,15 @@ export class IdleTimeoutGuard {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
   private fired = false;
+  public readonly idleTimeoutMs: number;
 
   constructor(
     private readonly stream: NodeJS.ReadableStream,
     private readonly options: IdleTimeoutOptions,
   ) {
+    this.idleTimeoutMs = (options && typeof options.idleTimeoutMs === 'number' && options.idleTimeoutMs > 0)
+      ? options.idleTimeoutMs
+      : 45_000;
     this.arm();
     stream.on('data', this.onData);
     stream.on('end', this.onEnd);
@@ -129,7 +133,7 @@ export class IdleTimeoutGuard {
 
   private arm(): void {
     this.clear();
-    this.timer = setTimeout(() => this.fire(), this.options.idleTimeoutMs);
+    this.timer = setTimeout(() => this.fire(), this.idleTimeoutMs);
     // Don't keep the event loop alive just for the watchdog.
     if (typeof this.timer?.unref === 'function') {
       this.timer.unref();
@@ -147,8 +151,8 @@ export class IdleTimeoutGuard {
     if (this.disposed || this.fired) return;
     this.fired = true;
     const err = new IdleTimeoutError(
-      this.options.idleTimeoutMs,
-      this.options.label,
+      this.idleTimeoutMs,
+      this.options?.label,
     );
     try {
       this.options.onTimeout?.(err);

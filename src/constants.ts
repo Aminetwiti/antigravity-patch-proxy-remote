@@ -206,10 +206,10 @@ export const HEALTH_CHECK_CACHE_TTL_MS = getEnvInt('AG_HEALTH_CHECK_CACHE_TTL_MS
  * anything* mid-stream.
  *
  * Ported from vscode-unify-chat-provider's `withIdleTimeout` (vendors/...).
- * Default: 60 seconds — generous enough for slow reasoning models, short
- * enough that a stuck upstream doesn't tie up the proxy indefinitely.
+ * Default: 45 seconds — generous enough for slow reasoning models, short
+ * enough that a stuck upstream doesn't tie up in-flight concurrency slots.
  */
-export const STREAM_IDLE_TIMEOUT_MS = getEnvInt('AG_STREAM_IDLE_TIMEOUT_MS', 60_000);
+export const STREAM_IDLE_TIMEOUT_MS = getEnvInt('AG_STREAM_IDLE_TIMEOUT_MS', 45_000);
 
 /**
  * Default request timeout for custom model requests.
