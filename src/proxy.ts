@@ -3814,7 +3814,7 @@ export async function executeGoogleCloudCodeWithPool(
         }
 
         const remainingHealthyWithQuota = sortedAccounts.slice(i + 1).some(
-          (c) => !isAccountInCooldown(c, currentFamily) && getModelQuotaScore(c, currentFamily) > 20,
+          (c) => !isAccountInCooldown(c, currentFamily) && getModelQuotaScore(c, currentFamily) > 0,
         );
         if (isUpstreamOutage && !remainingHealthyWithQuota) {
           lastStatus = lastStatus;
@@ -3828,10 +3828,10 @@ export async function executeGoogleCloudCodeWithPool(
         // Fast-fail 504 timeout cascade: If multiple accounts consecutively time out on the same model/payload,
         // the upstream TPU cluster is saturated. Trigger immediate fallback cascade instead of exhausting all accounts in the pool.
         if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
-          // AUDIT-001 & AUDIT-002: In low headroom (<= 2 healthy accounts), break immediately on first 504
-          // to trigger cascade fallback without incurring compounding silence that triggers client HTTP 499 abort.
-          if (isLowHeadroom) {
-            log.warn(`[Proxy] ⚠️ Low headroom pool candidate timed out (${elapsedMs}ms). Triggering immediate cascade fallback to prevent client HTTP 499 disconnect...`);
+          // AUDIT-001 & AUDIT-002: In low headroom (<= 2 healthy accounts), only break immediately if NO healthy sibling candidate remains in pool
+          // to prevent abandoning healthy accounts, while still preventing compounding silence when the pool is truly exhausted.
+          if (isLowHeadroom && !remainingHealthyWithQuota) {
+            log.warn(`[Proxy] ⚠️ Low headroom pool candidate timed out (${elapsedMs}ms) with no remaining healthy accounts. Triggering immediate cascade fallback to prevent client HTTP 499 disconnect...`);
             break;
           }
           consecutive504TimeoutCount++;

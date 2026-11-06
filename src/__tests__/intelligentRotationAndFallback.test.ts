@@ -469,17 +469,32 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       expect(poolHeaderTimeout).toBe(25_000);
     });
 
-    it('[AUDIT-002] triggers immediate cascade on first 504 under Low Headroom to prevent client HTTP 499 abort', () => {
+    it('[AUDIT-002] triggers immediate cascade on first 504 under Low Headroom when no healthy sibling remains', () => {
       const initialHealthyCount = 1;
       const isLowHeadroom = initialHealthyCount > 0 && initialHealthyCount <= 2;
+      const remainingHealthyWithQuota = false;
       const lastStatus = 504;
 
       let triggeredCascade = false;
-      if (lastStatus === 504 && isLowHeadroom) {
+      if (lastStatus === 504 && isLowHeadroom && !remainingHealthyWithQuota) {
         triggeredCascade = true;
       }
 
       expect(triggeredCascade).toBe(true);
+    });
+
+    it('[AUDIT-003] does not abort low headroom pool on first 504 if sibling healthy candidate with quota remains', () => {
+      const initialHealthyCount = 2;
+      const isLowHeadroom = initialHealthyCount > 0 && initialHealthyCount <= 2;
+      const remainingHealthyWithQuota = true;
+      const lastStatus = 504;
+
+      let triggeredCascade = false;
+      if (lastStatus === 504 && isLowHeadroom && !remainingHealthyWithQuota) {
+        triggeredCascade = true;
+      }
+
+      expect(triggeredCascade).toBe(false);
     });
   });
 });
