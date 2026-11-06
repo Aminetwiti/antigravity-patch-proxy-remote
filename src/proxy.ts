@@ -898,6 +898,121 @@ function sendGracefulError(res: http.ServerResponse, isStream: boolean, diagnost
 
 // ─── Google Proxy ─────────────────────────────────────────────────────────
 
+export function parseBalancedJson(str: string, startIdx: number): { json: string; endIdx: number } | null {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let jsonStart = -1;
+
+  for (let i = startIdx; i < str.length; i++) {
+    const ch = str[i];
+    if (jsonStart === -1) {
+      if (ch === '{' || ch === '[') {
+        jsonStart = i;
+        depth = 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (ch === '\\') {
+        escape = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{' || ch === '[') {
+      depth++;
+    } else if (ch === '}' || ch === ']') {
+      depth--;
+      if (depth === 0) {
+        return { json: str.slice(jsonStart, i + 1), endIdx: i + 1 };
+      }
+    }
+  }
+  return null;
+}
+
+export function extractAllPseudoToolCalls(text: string): Array<{ fnName: string; args: any; fullMatch: string; startIdx: number; endIdx: number }> {
+  const results: Array<{ fnName: string; args: any; fullMatch: string; startIdx: number; endIdx: number }> = [];
+  const marker = '[Executed tool:';
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const startIdx = text.indexOf(marker, cursor);
+    if (startIdx === -1) break;
+
+    const afterMarker = text.slice(startIdx + marker.length);
+    const withArgsIdx = afterMarker.indexOf('with arguments:');
+    if (withArgsIdx === -1) {
+      cursor = startIdx + marker.length;
+      continue;
+    }
+
+    const fnName = afterMarker.slice(0, withArgsIdx).trim();
+    const argsStartInText = startIdx + marker.length + withArgsIdx + 'with arguments:'.length;
+
+    const parsedJson = parseBalancedJson(text, argsStartInText);
+    if (!parsedJson) {
+      cursor = startIdx + marker.length;
+      continue;
+    }
+
+    const remainder = text.slice(parsedJson.endIdx);
+    const closeBracketMatch = remainder.match(/^\s*\]/);
+    if (!closeBracketMatch) {
+      cursor = parsedJson.endIdx;
+      continue;
+    }
+
+    const fullEndIdx = parsedJson.endIdx + closeBracketMatch[0].length;
+    const fullMatch = text.slice(startIdx, fullEndIdx);
+
+    let parsedArgs: any = null;
+    try {
+      parsedArgs = JSON.parse(parsedJson.json);
+    } catch (_) {
+      try {
+        const normalized = parsedJson.json.replace(/"((?:[^"\\]|\\.)*)"/gs, (_m, inner) => {
+          const fixed = inner
+            .replace(/\r?\n/g, '\\n')
+            .replace(/\t/g, '\\t')
+            .replace(/\\([^\\"])/g, (match, char) => {
+              if (['"', '\\', '/'].includes(char)) return match;
+              return '\\\\' + char;
+            });
+          return '"' + fixed + '"';
+        });
+        parsedArgs = JSON.parse(normalized);
+      } catch (_) {
+        try {
+          parsedArgs = JSON.parse(parsedJson.json.replace(/\\(?![\"/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\'));
+        } catch (_) {}
+      }
+    }
+
+    if (parsedArgs !== null && fnName) {
+      results.push({
+        fnName,
+        args: parsedArgs,
+        fullMatch,
+        startIdx,
+        endIdx: fullEndIdx,
+      });
+      cursor = fullEndIdx;
+    } else {
+      cursor = parsedJson.endIdx;
+    }
+  }
+  return results;
+}
+
 export function sanitizeCandidatesInResponse(data: any): boolean {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
   let modified = false;
@@ -994,39 +1109,23 @@ export function sanitizeCandidatesInResponse(data: any): boolean {
                 modified = true;
               }
             } else if (typeof p.text === 'string' && p.text.includes('[Executed tool:')) {
-              const toolMatch = p.text.match(/\[Executed tool:\s*([a-zA-Z0-9_\-\.:]+)\s+with arguments:\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*\]/);
-              if (toolMatch) {
-                try {
-                  const fnName = toolMatch[1];
-                  const rawArgs = toolMatch[2];
-                  let parsedArgs: any;
-                  try {
-                    parsedArgs = JSON.parse(rawArgs);
-                  } catch (_) {
-                    // Resilient parse: fix unescaped Windows file paths (e.g. C:\Users\...) and lone backslashes in JSON strings
-                    const normalized = rawArgs.replace(/"((?:[^"\\]|\\.)*)"/g, (_m, inner) => {
-                      const fixed = inner.replace(/\\([^\\])/g, (match: string, char: string) => {
-                        if (['"', '\\', '/'].includes(char)) return match;
-                        return '\\\\' + char;
-                      });
-                      return '"' + fixed + '"';
-                    });
-                    try {
-                      parsedArgs = JSON.parse(normalized);
-                    } catch (_) {
-                      parsedArgs = JSON.parse(rawArgs.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\'));
-                    }
-                  }
-                  const before = p.text.slice(0, toolMatch.index).trim();
-                  const after = p.text.slice(toolMatch.index! + toolMatch[0].length).trim();
-                  const newParts: any[] = [];
+              const toolCalls = extractAllPseudoToolCalls(p.text);
+              if (toolCalls.length > 0) {
+                const newParts: any[] = [];
+                let lastIdx = 0;
+                for (const call of toolCalls) {
+                  const before = p.text.slice(lastIdx, call.startIdx).trim();
                   if (before) newParts.push({ text: before });
-                  newParts.push({ functionCall: { name: fnName, args: parsedArgs } });
-                  if (after) newParts.push({ text: after });
+                  newParts.push({ functionCall: { name: call.fnName, args: call.args } });
+                  lastIdx = call.endIdx;
+                }
+                const after = p.text.slice(lastIdx).trim();
+                if (after) newParts.push({ text: after });
+                if (newParts.length > 0) {
                   cand.content.parts.splice(pIdx, 1, ...newParts);
                   pIdx += newParts.length - 1;
                   modified = true;
-                } catch (_) {}
+                }
               }
             } else if (
               p.text === undefined &&
@@ -1095,7 +1194,7 @@ export function injectAntiHallucinationInstruction(targetReq: any): void {
     targetReq.systemInstruction.parts = [];
   }
   const hasInstruction = targetReq.systemInstruction.parts.some((p: any) =>
-    typeof p?.text === 'string' && p.text.includes('CRITICAL TOOL INVOCATION RULE')
+    typeof p?.text === 'string' && (p.text.includes('CRITICAL TOOL INVOCATION RULE') || p.text.includes('Always invoke tools using native'))
   );
   if (!hasInstruction) {
     targetReq.systemInstruction.parts.push({ text: ANTI_HALLUCINATION_TOOL_INSTRUCTION });
@@ -1335,13 +1434,43 @@ export function transformGoogleStreamForRemote(
         const rawText = typeof firstPart?.text === 'string' ? firstPart.text : '';
 
         // Fragmented pseudo-tool buffering across SSE deltas
-        if (pseudoToolBuffer || (rawText && rawText.includes('[Executed tool:') && !rawText.includes(']'))) {
+        const PSEUDO_TOOL_MARKER = '[Executed tool:';
+        const trimmedRaw = rawText.trimStart();
+        const isPotentialToolStart = !pseudoToolBuffer && Boolean(rawText) && (
+          PSEUDO_TOOL_MARKER.startsWith(trimmedRaw) ||
+          rawText.includes(PSEUDO_TOOL_MARKER) ||
+          (trimmedRaw.startsWith('[') && PSEUDO_TOOL_MARKER.startsWith(trimmedRaw.slice(0, Math.min(trimmedRaw.length, PSEUDO_TOOL_MARKER.length))))
+        );
+
+        if (pseudoToolBuffer || isPotentialToolStart) {
           pseudoToolBuffer += rawText;
           if (!pseudoToolBaseItem) {
             pseudoToolBaseItem = data;
             pseudoToolEol = line.endsWith('\r') ? '\r\n' : '\n';
           }
-          if (pseudoToolBuffer.includes(']') || pseudoToolBuffer.length > 8192) {
+          const trimmedBuf = pseudoToolBuffer.trimStart();
+          if (trimmedBuf.length < PSEUDO_TOOL_MARKER.length) {
+            if (PSEUDO_TOOL_MARKER.startsWith(trimmedBuf)) {
+              return;
+            } else {
+              flushPseudoToolBuffer();
+              return;
+            }
+          }
+          if (!trimmedBuf.startsWith(PSEUDO_TOOL_MARKER)) {
+            flushPseudoToolBuffer();
+            return;
+          }
+          const toolCalls = extractAllPseudoToolCalls(pseudoToolBuffer);
+          if (toolCalls.length > 0) {
+            const lastCall = toolCalls[toolCalls.length - 1];
+            const remainder = pseudoToolBuffer.slice(lastCall.endIdx).trim();
+            if (!remainder) {
+              flushPseudoToolBuffer();
+              return;
+            }
+          }
+          if (pseudoToolBuffer.length > 524288) {
             flushPseudoToolBuffer();
           }
           return;
@@ -1392,6 +1521,9 @@ export function transformGoogleStreamForRemote(
       }
       buffer = '';
     }
+    if (!sawFinishReason) {
+      autoUnstickConversation(convId);
+    }
     if (!sawFinishReason && !clientRes.writableEnded) {
       const finalChunk = {
         response: {
@@ -1441,6 +1573,7 @@ export function transformGoogleStreamForRemote(
     flushPseudoToolBuffer();
     cleanupHeartbeat();
     idleGuard.dispose();
+    autoUnstickConversation(convId);
     if (typeof clientRes?.off === 'function') {
       clientRes.off('close', onClientClose);
     }
@@ -7918,7 +8051,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
           contentsNormalized = true;
         }
 
-        if (signaturesRestored || contentsNormalized) {
+        if (!isClaudeRequest && (targetReq.tools || targetReq.toolConfig)) {
+            injectAntiHallucinationInstruction(targetReq);
+            contentsNormalized = true;
+          }
+
+          if (signaturesRestored || contentsNormalized) {
           fullBody = Buffer.from(JSON.stringify(reqJson), 'utf-8');
           log.debug(`[Proxy] Re-encoded Cloud Code request with normalized turns/signatures (convId=${sessionKey || 'draft'}, model=${effectiveModelName})`);
         }

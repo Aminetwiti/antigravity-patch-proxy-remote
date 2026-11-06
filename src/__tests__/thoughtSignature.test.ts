@@ -11,7 +11,7 @@ import {
   clearThoughtSignaturesForConv,
   ANTI_HALLUCINATION_TOOL_INSTRUCTION,
 } from '../proxy/shared';
-import { sanitizeCandidatesInResponse, injectAntiHallucinationInstruction, autoUnstickConversation } from '../proxy';
+import { sanitizeCandidatesInResponse, injectAntiHallucinationInstruction, autoUnstickConversation, extractAllPseudoToolCalls } from '../proxy';
 
 describe('thoughtSignature handling', () => {
   beforeEach(() => {
@@ -385,6 +385,61 @@ describe('thoughtSignature handling', () => {
       expect(part.functionCall.name).toBe('default_api:view_file');
       expect(part.functionCall.args.EndLine).toBe(175);
       expect(part.functionCall.args.AbsolutePath).toContain('DriverGeoService.php');
+    });
+
+    it('recovers multiple pseudo-tool calls in the same text part (non-greedy parsing)', () => {
+      const text = '[Executed tool: run_command with arguments: {"CommandLine":"git diff --check"}]\n[Executed tool: run_command with arguments: {"CommandLine":"git status"}]';
+      const data = {
+        candidates: [
+          {
+            content: {
+              role: 'model',
+              parts: [{ text }],
+            },
+          },
+        ],
+      };
+
+      const modified = sanitizeCandidatesInResponse(data);
+      expect(modified).toBe(true);
+      const parts = data.candidates[0].content.parts as any[];
+      expect(parts.length).toBe(2);
+      expect(parts[0].functionCall.name).toBe('run_command');
+      expect(parts[0].functionCall.args).toEqual({ CommandLine: 'git diff --check' });
+      expect(parts[1].functionCall.name).toBe('run_command');
+      expect(parts[1].functionCall.args).toEqual({ CommandLine: 'git status' });
+    });
+
+    it('recovers pseudo-tool calls containing nested markdown brackets inside JSON', () => {
+      const text = '[Executed tool: write_file with arguments: {"Path":"report.md","Content":"# Section [Review]\nSee [link](https://example.com)"}]';
+      const data = {
+        candidates: [
+          {
+            content: {
+              role: 'model',
+              parts: [{ text }],
+            },
+          },
+        ],
+      };
+
+      const modified = sanitizeCandidatesInResponse(data);
+      expect(modified).toBe(true);
+      const part = data.candidates[0].content.parts[0] as any;
+      expect(part.functionCall.name).toBe('write_file');
+      expect(part.functionCall.args.Path).toBe('report.md');
+      expect(part.functionCall.args.Content).toContain('[Review]');
+    });
+
+    it('injectAntiHallucinationInstruction injects system rule and prevents duplicates', () => {
+      const req: any = {};
+      injectAntiHallucinationInstruction(req);
+      expect(req.systemInstruction).toBeDefined();
+      expect(req.systemInstruction.parts[0].text).toContain('CRITICAL TOOL INVOCATION RULE');
+
+      // Second injection should not duplicate
+      injectAntiHallucinationInstruction(req);
+      expect(req.systemInstruction.parts.length).toBe(1);
     });
   });
 
