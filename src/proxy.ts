@@ -2362,7 +2362,7 @@ export function executeGoogleCloudCodeRequest(
   });
 }
 
-function trimOldestHistory(obj: any): boolean {
+export function trimOldestHistory(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false;
   const contents = obj.contents || obj.request?.contents;
   if (Array.isArray(contents) && contents.length > 4) {
@@ -3176,6 +3176,7 @@ export async function executeGoogleCloudCodeWithPool(
       if (outcome.success || outcome.statusCode === 200) {
         recordAccountLatency(successfulCandidate, reqDuration);
       } else if (outcome.statusCode === 504 || (outcome.error && /timed out/i.test(outcome.error))) {
+        metricObserve('proxy_upstream_ms', reqDuration, { upstream: hostOverride || 'cloudcode', status: '504', type: 'raw' });
         recordAccountLatency(candidate, Math.max(reqDuration, poolHeaderTimeout));
       }
     } finally {
@@ -3735,6 +3736,7 @@ export async function executeGoogleCloudCodeWithPool(
           setAccountCooldown(candidate, timeoutCooldownMs, currentFamily, true);
         }
         if (lastStatus === 504) {
+          metricObserve('proxy_upstream_ms', elapsedMs, { upstream: hostOverride || 'cloudcode', status: '504', type: 'raw' });
           recordAccountLatency(candidate, (isCappedTimeout || isPayloadInducedTimeout) ? Math.min(elapsedMs, 25_000) : 60_000);
           if (sessId) {
             sessionAffinities.delete(sessId);

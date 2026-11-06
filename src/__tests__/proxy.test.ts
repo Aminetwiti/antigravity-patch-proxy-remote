@@ -13,7 +13,7 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-import { parseRetryAfter, matchesCustomModel, isNativeCloudCodeModel, sanitizeCandidatesInResponse, transformGoogleStreamForRemote, executeGoogleCloudCodeRequest } from '../proxy';
+import { parseRetryAfter, matchesCustomModel, isNativeCloudCodeModel, sanitizeCandidatesInResponse, transformGoogleStreamForRemote, executeGoogleCloudCodeRequest, trimOldestHistory } from '../proxy';
 import https from 'https';
 import * as zlib from 'zlib';
 import { EventEmitter } from 'events';
@@ -639,6 +639,49 @@ describe('executeGoogleCloudCodeRequest timeout calibration', () => {
     expect(escalatingTimeout).toBe(65_000);
   });
 });
+describe('trimOldestHistory cascade trimming', () => {
+  it('successively trims 30% of oldest history across multiple passes (100% -> 70% -> 49%) while preserving initial turn', () => {
+    // Start with 20 turns
+    const contents = Array.from({ length: 20 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'model',
+      parts: [{ text: `Turn ${i} content` }],
+    }));
 
+    const reqJson: any = {
+      request: { contents },
+    };
 
+    // Pass 1: 20 turns -> 1 + Math.floor(20 * 0.7) = 1 + 14 = 15 turns
+    const trimmed1 = trimOldestHistory(reqJson);
+    expect(trimmed1).toBe(true);
+    expect(reqJson.request.contents).toHaveLength(15);
+    expect(reqJson.request.contents[0].parts[0].text).toBe('Turn 0 content'); // initial turn preserved
+    expect(reqJson.request.contents[1].parts[0].text).toBe('Turn 6 content');
+
+    // Pass 2: 15 turns -> 1 + Math.floor(15 * 0.7) = 1 + 10 = 11 turns
+    const trimmed2 = trimOldestHistory(reqJson);
+    expect(trimmed2).toBe(true);
+    expect(reqJson.request.contents).toHaveLength(11);
+    expect(reqJson.request.contents[0].parts[0].text).toBe('Turn 0 content'); // initial turn still preserved
+    expect(reqJson.request.contents[1].parts[0].text).toBe('Turn 10 content');
+
+    // Pass 3: 11 turns -> 1 + Math.floor(11 * 0.7) = 1 + 7 = 8 turns
+    const trimmed3 = trimOldestHistory(reqJson);
+    expect(trimmed3).toBe(true);
+    expect(reqJson.request.contents).toHaveLength(8);
+    expect(reqJson.request.contents[0].parts[0].text).toBe('Turn 0 content');
+  });
+
+  it('stops trimming when turn count <= 4 to prevent emptying the prompt', () => {
+    const contents = [
+      { role: 'user', parts: [{ text: '1' }] },
+      { role: 'model', parts: [{ text: '2' }] },
+      { role: 'user', parts: [{ text: '3' }] },
+      { role: 'model', parts: [{ text: '4' }] },
+    ];
+    const reqJson: any = { request: { contents } };
+    expect(trimOldestHistory(reqJson)).toBe(false);
+    expect(reqJson.request.contents).toHaveLength(4);
+  });
+});
 
