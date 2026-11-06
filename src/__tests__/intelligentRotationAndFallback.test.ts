@@ -27,6 +27,7 @@ import {
   executeGoogleCloudCodeWithPool,
   setAccountCooldown,
   isAccountInCooldown,
+  clearAccountCooldown,
   trimOldestHistory,
 } from '../proxy';
 import type { CustomModel } from '../types';
@@ -495,6 +496,38 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       }
 
       expect(triggeredCascade).toBe(false);
+    });
+
+    it('[AUDIT-004] applies 30s transient cooldown on HTTP 504 to prevent immediate repeat stall', () => {
+      const candidate: CustomModel = {
+        name: 'test-model',
+        apiKey: 'token-1',
+        accountEmail: 'timeout-user@gmail.com',
+      } as any;
+      const currentFamily = 'gemini';
+      const lastStatus = 504;
+
+      if (lastStatus === 504) {
+        setAccountCooldown(candidate, 30_000, currentFamily, true);
+      }
+
+      expect(isAccountInCooldown(candidate, currentFamily)).toBe(true);
+      clearAccountCooldown(candidate, currentFamily);
+    });
+
+    it('[AUDIT-005] bounds candidate timeout when at least 1 healthy sibling candidate is available', () => {
+      const hasOtherCandidates = true;
+      const healthySiblingAccountsCount = 1;
+      const dynamicAdaptiveTimeout = 60_000;
+      const isLargePayloadOrThinking = true;
+
+      const flashTimeoutMs = hasOtherCandidates
+        ? (healthySiblingAccountsCount >= 1
+            ? (isLargePayloadOrThinking ? Math.min(40_000, Math.max(30_000, dynamicAdaptiveTimeout)) : dynamicAdaptiveTimeout)
+            : (isLargePayloadOrThinking ? Math.max(55_000, dynamicAdaptiveTimeout) : dynamicAdaptiveTimeout))
+        : 65_000;
+
+      expect(flashTimeoutMs).toBe(40_000);
     });
   });
 });
