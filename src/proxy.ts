@@ -2976,10 +2976,16 @@ export async function executeGoogleCloudCodeWithPool(
       dynamicAdaptiveTimeout = 35_000;
     }
     const flashTimeoutMs = hasOtherCandidates
-      ? (isLargePayloadOrThinking ? Math.max(55_000, dynamicAdaptiveTimeout) : dynamicAdaptiveTimeout)
+      ? (healthySiblingAccountsCount >= 2
+          ? (isLargePayloadOrThinking ? Math.min(40_000, Math.max(30_000, dynamicAdaptiveTimeout)) : dynamicAdaptiveTimeout)
+          : (isLargePayloadOrThinking ? Math.max(55_000, dynamicAdaptiveTimeout) : dynamicAdaptiveTimeout))
       : (isLargePayloadOrThinking ? 65_000 : Math.min(50_000, GOOGLE_PROXY_TIMEOUT_MS));
     const largeTimeoutMs = Math.min(
-      isFlashModel ? (isThinkingModel ? (updatedBody.length > 100_000 ? 80_000 : 65_000) : 55_000) : 85_000,
+      isFlashModel
+        ? (hasOtherCandidates && healthySiblingAccountsCount >= 2
+            ? (isThinkingModel ? 42_000 : 35_000)
+            : (isThinkingModel ? (updatedBody.length > 100_000 ? 80_000 : 65_000) : 55_000))
+        : 85_000,
       GOOGLE_PROXY_TIMEOUT_MS,
     );
     const standardTimeoutMs = hasOtherCandidates
