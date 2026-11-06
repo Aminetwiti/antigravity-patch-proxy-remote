@@ -2337,6 +2337,9 @@ export async function executeGoogleCloudCodeWithPool(
   const MAX_POOL_LOOP_DURATION_MS = 280_000; // 3m30s max: prevents Go Language Server 5m0s stream idle timeout
 
   let networkAttemptCount = 0;
+  let busyEligibleAccountsCount = 0;
+  const busyCandidateAccounts: CustomModel[] = [];
+  let hasRetriedBusyPool = false;
   for (let i = 0; i < sortedAccounts.length && networkAttemptCount < totalAttempts; i++) {
     if (initialHealthyCount === 0) break;
     if (Date.now() - poolLoopStartTime >= MAX_POOL_LOOP_DURATION_MS) {
@@ -2361,8 +2364,9 @@ export async function executeGoogleCloudCodeWithPool(
 
     // Fast-skip: if this candidate is already in active cooldown for this model family
     if (isAccountInCooldown(candidate, modelFamily)) {
-      const hasEligibleRemaining = sortedAccounts.slice(i + 1).some(
-        (c) =>
+      const hasOtherEligibleInPool = sortedAccounts.some(
+        (c, idx) =>
+          idx !== i &&
           (c as any).enabled !== false &&
           !isAccountUnlicensed(c) &&
           !(c as any).isValidationRequired &&
@@ -2370,10 +2374,10 @@ export async function executeGoogleCloudCodeWithPool(
           !isAccountInCooldown(c, modelFamily) &&
           getModelQuotaScore(c, modelFamily) > 0,
       );
-      if (!hasEligibleRemaining) {
+      if (!hasOtherEligibleInPool && busyEligibleAccountsCount === 0) {
         lastStatus = 429;
         lastErrorText = `All accounts in Google Cloud Code pool are in active cooldown for ${modelFamily}`;
-        log.warn(`[Proxy] All remaining accounts in pool are in cooldown for ${modelFamily}. Stopping pool search.`);
+        log.warn(`[Proxy] All accounts in pool are in cooldown for ${modelFamily}. Stopping pool search.`);
         break;
       }
       continue;
@@ -2383,8 +2387,9 @@ export async function executeGoogleCloudCodeWithPool(
     const candidateQuotaScore = getModelQuotaScore(candidate, modelFamily);
     if (candidateQuotaScore <= 0) {
       log.info(`[Proxy] Fast-skipping candidate ${candidateName}: 0% quota remaining for ${modelFamily}`);
-      const hasEligibleRemaining = sortedAccounts.slice(i + 1).some(
-        (c) =>
+      const hasOtherEligibleInPool = sortedAccounts.some(
+        (c, idx) =>
+          idx !== i &&
           (c as any).enabled !== false &&
           !isAccountUnlicensed(c) &&
           !(c as any).isValidationRequired &&
@@ -2392,10 +2397,10 @@ export async function executeGoogleCloudCodeWithPool(
           !isAccountInCooldown(c, modelFamily) &&
           getModelQuotaScore(c, modelFamily) > 0,
       );
-      if (!hasEligibleRemaining) {
+      if (!hasOtherEligibleInPool && busyEligibleAccountsCount === 0) {
         lastStatus = 429;
         lastErrorText = `All accounts in Google Cloud Code pool have exhausted quota for ${modelFamily}`;
-        log.warn(`[Proxy] All remaining accounts in pool have exhausted quota for ${modelFamily}. Stopping pool search.`);
+        log.warn(`[Proxy] All accounts in pool have exhausted quota for ${modelFamily}. Stopping pool search.`);
         break;
       }
       continue;
@@ -2430,6 +2435,9 @@ export async function executeGoogleCloudCodeWithPool(
           log.info(
             `[Proxy] Account [${candidateName}] reached max concurrent in-flight limit (${getAccountInFlight(candidate)}/${candidateMaxSlots}). Diverting to available idle account in pool.`,
           );
+          if (!busyCandidateAccounts.includes(candidate)) {
+            busyCandidateAccounts.push(candidate);
+          }
           continue;
         }
 
@@ -2453,13 +2461,32 @@ export async function executeGoogleCloudCodeWithPool(
           );
           if (freedAccount) {
             log.info(`[Proxy] A slot freed up in pool after waiting. Diverting from [${candidateName}].`);
+            if (!busyCandidateAccounts.includes(candidate)) {
+              busyCandidateAccounts.push(candidate);
+            }
             continue;
           }
 
           // Hard limit: do NOT send request if account is strictly at or over capacity
+          busyEligibleAccountsCount++;
+          if (!busyCandidateAccounts.includes(candidate)) {
+            busyCandidateAccounts.push(candidate);
+          }
           log.warn(
-            `[Proxy] Account [${candidateName}] is at maximum in-flight capacity (${getAccountInFlight(candidate)}/${candidateMaxSlots}) with no pool slots available. Skipping candidate.`,
+            `[Proxy] Account [${candidateName}] is at maximum in-flight capacity (${getAccountInFlight(candidate)}/${candidateMaxSlots}) with no pool slots available. Skipping candidate (concurrency saturated).`,
           );
+          if (i === sortedAccounts.length - 1 && networkAttemptCount === 0 && !hasRetriedBusyPool && Date.now() - poolLoopStartTime < MAX_POOL_LOOP_DURATION_MS) {
+            hasRetriedBusyPool = true;
+            log.info(`[Proxy] All healthy candidate accounts in pool are at max in-flight capacity. Waiting up to 2500ms in microqueue for a slot to free up...`);
+            const slotFreed = await waitForAccountSlot(busyCandidateAccounts, modelFamily, 2500);
+            if (slotFreed) {
+              log.info(`[Proxy] A slot freed up in pool during microqueue wait. Re-scanning candidate accounts.`);
+              busyCandidateAccounts.length = 0;
+              busyEligibleAccountsCount = 0;
+              i = -1;
+              continue;
+            }
+          }
           continue;
         }
       }
@@ -3113,7 +3140,7 @@ export async function executeGoogleCloudCodeWithPool(
 
       // If all remaining candidates are in cooldown, break early to save latency
       const hasEligibleRemaining = sortedAccounts.slice(i + 1).some((c) => !isAccountInCooldown(c, currentFamily));
-      if (!hasEligibleRemaining) {
+      if (!hasEligibleRemaining && busyEligibleAccountsCount === 0) {
         log.warn(`[Proxy] No remaining healthy accounts left in pool for ${currentFamily}. Fast-failing pool.`);
         break;
       }
@@ -3544,6 +3571,12 @@ export async function executeGoogleCloudCodeWithPool(
       // Sub-second silent failover between accounts in the pool
       await new Promise((r) => setTimeout(r, 50));
     }
+  }
+
+  if (networkAttemptCount === 0 && busyEligibleAccountsCount > 0 && (!lastStatus || lastStatus === 500)) {
+    lastStatus = 429;
+    lastErrorText = `All eligible accounts in Google Cloud Code pool for ${modelFamily} reached maximum in-flight capacity (${MAX_CONCURRENT_PER_ACCOUNT}/${MAX_CONCURRENT_PER_ACCOUNT} concurrent requests). Preserving accounts without cooldown.`;
+    log.warn(`[Proxy] Concurrency limit reached: ${busyEligibleAccountsCount} eligible account(s) for ${modelFamily} are busy with in-flight requests. Preserving accounts without cooldown.`);
   }
 
   // Strict Model Locking: NEVER cascade or degrade to another model family or version.

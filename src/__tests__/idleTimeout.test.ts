@@ -172,4 +172,18 @@ describe('IdleTimeoutGuard', () => {
 
     expect(onTimeout).not.toHaveBeenCalled();
   });
+
+  it('defaults idleTimeoutMs to 45000 when omitted or non-positive', () => {
+    const s = new EventEmitter() as unknown as NodeJS.ReadableStream;
+    const onTimeout = vi.fn();
+    const guard = new IdleTimeoutGuard(s, { onTimeout });
+    expect(guard.idleTimeoutMs).toBe(45000);
+
+    vi.advanceTimersByTime(44000);
+    expect(onTimeout).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2000);
+    expect(onTimeout).toHaveBeenCalledOnce();
+    const err = onTimeout.mock.calls[0][0] as IdleTimeoutError;
+    expect(err.idleTimeoutMs).toBe(45000);
+  });
 });
