@@ -50,14 +50,19 @@ try {
     stdio: 'inherit',
   });
 
-  // 4. Update auto-heal cache
+  // 4. Update auto-heal cache (only if verified valid)
+  const asar = require('@electron/asar');
+  const verifiedList = asar.listPackage(asarPath);
+  if (!Array.isArray(verifiedList) || verifiedList.length === 0) {
+    throw new Error('Produced target asar is empty or invalid header');
+  }
   const scratchDir = path.join(os.homedir(), '.gemini', 'antigravity', 'scratch');
   if (!fs.existsSync(scratchDir)) {
     fs.mkdirSync(scratchDir, { recursive: true });
   }
   const cachePath = path.join(scratchDir, 'app.asar.patched');
   fs.copyFileSync(asarPath, cachePath);
-  console.log('[repack-installed] Cached patched asar for auto-heal:', cachePath);
+  console.log('[repack-installed] Cached verified patched asar for auto-heal:', cachePath);
 
   console.log('[repack-installed] SUCCESS! app.asar repacked and deployed successfully.');
 } catch (err) {
