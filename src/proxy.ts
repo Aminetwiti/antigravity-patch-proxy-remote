@@ -2720,7 +2720,10 @@ export async function executeGoogleCloudCodeWithPool(
 
     // Fast-skip: if this candidate reached max concurrent in-flight slots (2, or 1 in probation)
     // and other healthy candidates have free slots available, divert to an idle account to prevent Google 504 overload.
-    const candidateMaxSlots = isAccountInProbation(candidate, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+    const baseMaxSlots = isAccountInProbation(candidate, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+    const candidateMaxSlots = (fallbackDepth > 0 && !isAccountInProbation(candidate, modelFamily))
+      ? baseMaxSlots + 1
+      : baseMaxSlots;
     if (getAccountInFlight(candidate) >= candidateMaxSlots) {
       // If this candidate is the session's sticky account holding the KV-cache, give it a brief chance
       // (up to 2500ms) to release an in-flight slot before diverting, preventing KV-cache cache misses and 18s+ TTFT.
@@ -3012,6 +3015,14 @@ export async function executeGoogleCloudCodeWithPool(
     if (wasTimeoutCappedByBudget) {
       log.info(`[Proxy] Capping candidate timeout from ${Math.round(poolHeaderTimeout / 1000)}s to ${Math.round(remainingPoolBudgetMs / 1000)}s based on remaining pool loop budget`);
       poolHeaderTimeout = Math.max(minViableTimeout, remainingPoolBudgetMs);
+    }
+
+    // AUDIT-001: Under Low Headroom (<= 2 healthy accounts), strictly cap candidate timeout to 25s
+    // to guarantee that total attempts remain well under the client IDE abort threshold (~90-120s).
+    const isLowHeadroom = initialHealthyCount > 0 && initialHealthyCount <= 2;
+    if (isLowHeadroom && poolHeaderTimeout > 25_000) {
+      log.info(`[Proxy] Low headroom pool (only ${initialHealthyCount} healthy accounts). Capping candidate timeout from ${Math.round(poolHeaderTimeout / 1000)}s to 25s to prevent client HTTP 499 disconnect.`);
+      poolHeaderTimeout = 25_000;
     }
 
     const isFlashThinkingHedgeable = isFlashModel && isThinkingModel && !isLargePayload;
@@ -3776,6 +3787,7 @@ export async function executeGoogleCloudCodeWithPool(
               log.warn(`[Proxy] ✂️ [Context Auto-Trimmer] Trimmed 30% oldest history (${remainingTurns} turns remaining) to break 504 timeout cascade for subsequent pool candidates.`);
               consecutive504TimeoutCount = 0;
             }
+            normalizeConversationTurns(reqObj.contents);
           }
         }
 
@@ -3794,6 +3806,12 @@ export async function executeGoogleCloudCodeWithPool(
         // Fast-fail 504 timeout cascade: If multiple accounts consecutively time out on the same model/payload,
         // the upstream TPU cluster is saturated. Trigger immediate fallback cascade instead of exhausting all accounts in the pool.
         if (lastStatus === 504 || /timed out|deadline exceeded|gateway timeout/i.test(lastErrorText)) {
+          // AUDIT-001 & AUDIT-002: In low headroom (<= 2 healthy accounts), break immediately on first 504
+          // to trigger cascade fallback without incurring compounding silence that triggers client HTTP 499 abort.
+          if (isLowHeadroom) {
+            log.warn(`[Proxy] ⚠️ Low headroom pool candidate timed out (${elapsedMs}ms). Triggering immediate cascade fallback to prevent client HTTP 499 disconnect...`);
+            break;
+          }
           consecutive504TimeoutCount++;
           const combinedOutageCount = consecutive504TimeoutCount + consecutive503CapacityCount;
           // Fast-fail to Claude fallback after at most 3 consecutive timeouts on heavy sessions/clusters

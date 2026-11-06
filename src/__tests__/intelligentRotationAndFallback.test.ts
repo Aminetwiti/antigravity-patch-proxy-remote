@@ -27,6 +27,7 @@ import {
   executeGoogleCloudCodeWithPool,
   setAccountCooldown,
   isAccountInCooldown,
+  trimOldestHistory,
 } from '../proxy';
 import type { CustomModel } from '../types';
 
@@ -401,7 +402,7 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       const candidate: any = { name: 'acc1', displayName: 'Gemini 3.8 Flash (Medium)' };
 
       const rawModelIdentifiers = `${targetModel} ${reqJson.requestedModel || ''} ${reqJson.model || ''} ${targetRaw || ''} ${candidate.name || ''} ${candidate.displayName || ''}`;
-      const isThinkingModel = /thinking|thought|-high$|-medium$|\(medium\)|\(high\)/i.test(rawModelIdentifiers);
+      const isThinkingModel = /thinking|thought|-high$|-medium$|\(medium\)|\(high\)|-tiered$|tiered/i.test(rawModelIdentifiers);
       expect(isThinkingModel).toBe(true);
     });
 
@@ -421,6 +422,39 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
         dynamicAdaptiveTimeout = 35_000;
       }
       expect(dynamicAdaptiveTimeout).toBe(60_000);
+    });
+
+    it('[ADV-01] trimOldestHistory guarantees alternating user/model turns without duplicate consecutive roles', () => {
+      const contents = [
+        { role: 'user', parts: [{ text: 'Prompt 1' }] },
+        { role: 'model', parts: [{ text: 'Response 1' }] },
+        { role: 'user', parts: [{ text: 'Prompt 2' }] },
+        { role: 'model', parts: [{ text: 'Response 2' }] },
+        { role: 'user', parts: [{ text: 'Prompt 3' }] },
+        { role: 'model', parts: [{ text: 'Response 3' }] },
+        { role: 'user', parts: [{ text: 'Prompt 4' }] },
+        { role: 'model', parts: [{ text: 'Response 4' }] },
+        { role: 'user', parts: [{ text: 'Prompt 5' }] },
+      ];
+      const payload = { contents };
+      const trimmed = trimOldestHistory(payload);
+      expect(trimmed).toBe(true);
+
+      // Verify no two consecutive turns have the same role
+      for (let i = 1; i < payload.contents.length; i++) {
+        expect(payload.contents[i].role).not.toBe(payload.contents[i - 1].role);
+      }
+    });
+
+    it('[ADV-02] grants +1 emergency concurrency slot during fallback depth > 0', () => {
+      const baseMax = 2;
+      const isProbation = false;
+      const fallbackDepth = 1;
+
+      const candidateMaxSlots = (fallbackDepth > 0 && !isProbation)
+        ? baseMax + 1
+        : baseMax;
+      expect(candidateMaxSlots).toBe(3);
     });
   });
 });

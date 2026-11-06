@@ -54,7 +54,7 @@
     "repack:linux": "bash scripts/deploy/deploy_linux.sh",
     "mitm:start": "powershell -ExecutionPolicy Bypass -File scripts/mitm/start_mitm_443.ps1",
     "mitm:restart": "cmd /c scripts\\\\mitm\\\\restart-mitm.bat",
-    "repatch": "cmd /c repatch.bat",
+    "repatch": "npm run build && cmd /c repatch.bat",
     "start:mitm": "cmd /c \"Start Antigravity MITM.bat\"",
     "security:check": "gitleaks protect --staged --config=.gitleaks.toml --redact --no-banner",
     "security:scan": "gitleaks detect --config=.gitleaks.toml --redact --no-banner --report-format json --report-path gitleaks-report.json && echo No secrets found in history",

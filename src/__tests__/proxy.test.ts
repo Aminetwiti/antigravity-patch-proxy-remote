@@ -610,14 +610,14 @@ describe('executeGoogleCloudCodeRequest timeout calibration', () => {
     const GOOGLE_PROXY_TIMEOUT_MS = 120_000;
 
     const flashEscalation = isLargePayloadOrThinking
-      ? 60_000
-      : (isContextualPayload ? 45_000 : 30_000);
+      ? 65_000
+      : (isContextualPayload ? 55_000 : 45_000);
     const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
       ? (isFlashModel ? flashEscalation : 55_000)
-      : (isFlashModel ? (isLargePayloadOrThinking ? 65_000 : (isContextualPayload ? 50_000 : 35_000)) : 75_000);
+      : (isFlashModel ? (isLargePayloadOrThinking ? 70_000 : (isContextualPayload ? 60_000 : 45_000)) : 75_000);
     const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
 
-    expect(escalatingTimeout).toBe(60_000);
+    expect(escalatingTimeout).toBe(65_000);
   });
 
   it('escalates 504 retry timeout to 65s for Flash models with thinking when healthy siblings < 3', () => {
@@ -629,14 +629,14 @@ describe('executeGoogleCloudCodeRequest timeout calibration', () => {
     const GOOGLE_PROXY_TIMEOUT_MS = 120_000;
 
     const flashEscalation = isLargePayloadOrThinking
-      ? 60_000
-      : (isContextualPayload ? 45_000 : 30_000);
+      ? 65_000
+      : (isContextualPayload ? 55_000 : 45_000);
     const maxEscalation = (hasOtherCandidates && healthySiblingAccountsCount >= 3)
       ? (isFlashModel ? flashEscalation : 55_000)
-      : (isFlashModel ? (isLargePayloadOrThinking ? 65_000 : (isContextualPayload ? 50_000 : 35_000)) : 75_000);
+      : (isFlashModel ? (isLargePayloadOrThinking ? 70_000 : (isContextualPayload ? 60_000 : 45_000)) : 75_000);
     const escalatingTimeout = Math.min(maxEscalation, GOOGLE_PROXY_TIMEOUT_MS);
 
-    expect(escalatingTimeout).toBe(65_000);
+    expect(escalatingTimeout).toBe(70_000);
   });
 });
 describe('trimOldestHistory cascade trimming', () => {

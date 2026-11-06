@@ -61,10 +61,12 @@ export function encodeVarint(value: number): Buffer {
  */
 export function parseProto(buf: Buffer, offset: number, end: number): ProtoField[] {
   const fields: ProtoField[] = [];
+  const safeEndLimit = Math.min(end, buf.length);
   let pos = offset;
-  while (pos < end) {
+  while (pos < safeEndLimit) {
     const start = pos;
     const tagVarint = readVarint(buf, pos);
+    if (tagVarint.bytes <= 0) break;
     const tag = tagVarint.value;
     const wireType = tag & 0x07;
     const fieldNum = tag >>> 3;
@@ -72,12 +74,27 @@ export function parseProto(buf: Buffer, offset: number, end: number): ProtoField
 
     if (wireType === 0) {
       const v = readVarint(buf, pos);
+      if (v.bytes <= 0) break;
       fields.push({ tag, wireType, fieldNum, value: v.value, start, end: pos + v.bytes });
       pos += v.bytes;
     } else if (wireType === 2) {
       const lenVarint = readVarint(buf, pos);
+      if (lenVarint.bytes <= 0) break;
       pos += lenVarint.bytes;
       const len = lenVarint.value;
+      if (len < 0 || pos + len > safeEndLimit) {
+        // Buffer truncated or claims length beyond boundary: store available slice and terminate cleanly
+        const clampedEnd = Math.min(pos + Math.max(0, len), safeEndLimit);
+        fields.push({
+          tag,
+          wireType,
+          fieldNum,
+          value: buf.subarray(pos, clampedEnd),
+          start,
+          end: clampedEnd,
+        });
+        break;
+      }
       const children = parseProto(buf, pos, pos + len);
       const hasChildren = children.length > 0;
       fields.push({
@@ -90,9 +107,11 @@ export function parseProto(buf: Buffer, offset: number, end: number): ProtoField
       });
       pos += len;
     } else if (wireType === 1) {
+      if (pos + 8 > safeEndLimit) break;
       fields.push({ tag, wireType, fieldNum, value: buf.subarray(pos, pos + 8), start, end: pos + 8 });
       pos += 8;
     } else if (wireType === 5) {
+      if (pos + 4 > safeEndLimit) break;
       fields.push({ tag, wireType, fieldNum, value: buf.subarray(pos, pos + 4), start, end: pos + 4 });
       pos += 4;
     } else {
@@ -218,10 +237,12 @@ export interface RawProtoField {
  */
 export function parseProtoRaw(buf: Buffer, offset: number = 0, end: number = buf.length): RawProtoField[] {
   const fields: RawProtoField[] = [];
+  const safeEndLimit = Math.min(end, buf.length);
   let pos = offset;
-  while (pos < end) {
+  while (pos < safeEndLimit) {
     const start = pos;
     const tagVarint = readVarint(buf, pos);
+    if (tagVarint.bytes <= 0) break;
     const tag = tagVarint.value;
     const wireType = tag & 0x07;
     const fieldNum = tag >>> 3;
@@ -229,18 +250,27 @@ export function parseProtoRaw(buf: Buffer, offset: number = 0, end: number = buf
 
     if (wireType === 0) {
       const v = readVarint(buf, pos);
+      if (v.bytes <= 0) break;
       fields.push({ tag, wireType, fieldNum, value: v.value, start, end: pos + v.bytes });
       pos += v.bytes;
     } else if (wireType === 2) {
       const lenVarint = readVarint(buf, pos);
+      if (lenVarint.bytes <= 0) break;
       pos += lenVarint.bytes;
       const len = lenVarint.value;
+      if (len < 0 || pos + len > safeEndLimit) {
+        const clampedEnd = Math.min(pos + Math.max(0, len), safeEndLimit);
+        fields.push({ tag, wireType, fieldNum, raw: buf.subarray(pos, clampedEnd), start, end: clampedEnd });
+        break;
+      }
       fields.push({ tag, wireType, fieldNum, raw: buf.subarray(pos, pos + len), start, end: pos + len });
       pos += len;
     } else if (wireType === 1) {
+      if (pos + 8 > safeEndLimit) break;
       fields.push({ tag, wireType, fieldNum, raw: buf.subarray(pos, pos + 8), start, end: pos + 8 });
       pos += 8;
     } else if (wireType === 5) {
+      if (pos + 4 > safeEndLimit) break;
       fields.push({ tag, wireType, fieldNum, raw: buf.subarray(pos, pos + 4), start, end: pos + 4 });
       pos += 4;
     } else {

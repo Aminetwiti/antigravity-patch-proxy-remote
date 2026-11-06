@@ -1463,13 +1463,21 @@ interface SlotWaiter {
 
 const slotWaiters: SlotWaiter[] = [];
 
-export function notifySlotAvailable(): void {
-  while (slotWaiters.length > 0) {
-    const waiter = slotWaiters.shift();
-    if (waiter) {
-      clearTimeout(waiter.timer);
-      waiter.resolve(true);
+export function notifySlotAvailable(all = false): void {
+  if (all) {
+    while (slotWaiters.length > 0) {
+      const waiter = slotWaiters.shift();
+      if (waiter) {
+        clearTimeout(waiter.timer);
+        waiter.resolve(true);
+      }
     }
+    return;
+  }
+  const waiter = slotWaiters.shift();
+  if (waiter) {
+    clearTimeout(waiter.timer);
+    waiter.resolve(true);
   }
 }
 
