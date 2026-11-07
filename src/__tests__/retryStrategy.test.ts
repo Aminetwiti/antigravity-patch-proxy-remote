@@ -5,7 +5,7 @@ import {
   buildRetryDecision,
   isRetryableStatus,
   type RetryStrategy,
-} from '../proxy/retryStrategy';
+} from '../proxy/resilience/retryStrategy';
 import {
   STREAM_RETRY_BASE_DELAY_MS,
   SERVER_ERROR_RETRY_BASE_DELAY_MS,

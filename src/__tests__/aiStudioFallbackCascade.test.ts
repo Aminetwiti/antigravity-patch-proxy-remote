@@ -28,8 +28,8 @@ vi.mock('electron-log', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { getOpenBreaker, recordFailure, recordSuccess } from '../proxy/circuitBreaker';
-import type { CustomModel } from '../proxy/types';
+import { getOpenBreaker, recordFailure, recordSuccess } from '../proxy/resilience/circuitBreaker';
+import type { CustomModel } from '../proxy/core/types';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 

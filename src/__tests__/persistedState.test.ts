@@ -29,9 +29,9 @@ import {
   MIN_FLUSH_INTERVAL_MS,
   STATE_FILE_NAME,
   _resetFlushThrottle,
-} from '../proxy/persistedState';
-import { _resetAllBreakers } from '../proxy/circuitBreaker';
-import { _resetRetryBudget } from '../proxy/retryBudget';
+} from '../proxy/state/persistedState';
+import { _resetAllBreakers } from '../proxy/resilience/circuitBreaker';
+import { _resetRetryBudget } from '../proxy/resilience/retryBudget';
 
 function tmpDir(): string {
   return mkdtempSync(join(tmpdir(), 'p6-pstate-'));

@@ -43,7 +43,7 @@ vi.mock('fs', async () => {
 import * as fs from 'fs';
 import * as cryptoStore from '../cryptoStore';
 import { validateCustomModel } from '../schemaValidator';
-import { loadCustomModels, getCustomModelsPath, resetLastValidCustomModelsForTest } from '../proxy/modelLoader';
+import { loadCustomModels, getCustomModelsPath, resetLastValidCustomModelsForTest } from '../proxy/models/modelLoader';
 
 describe('getCustomModelsPath', () => {
   it('returns path under .gemini/antigravity in user home', () => {

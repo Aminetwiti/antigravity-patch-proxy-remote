@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { loadCustomModels } from '../proxy/modelLoader';
+import { loadCustomModels } from '../proxy/models/modelLoader';
 import { deduplicateModels } from '../proxy/modelInjector';
 
 describe('Unified Model Deduplication (Cloud Code + AI Studio Single Entry)', () => {

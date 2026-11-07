@@ -5,8 +5,8 @@ import { app } from 'electron';
 import log from 'electron-log/main';
 
 import * as cryptoStore from '../../cryptoStore';
-import { generateModelPlaceholderId } from '../../proxy/idGenerator';
-import { setLastCustomModelsContentOnDisk } from '../../proxy/modelLoader';
+import { generateModelPlaceholderId } from '../../proxy/models/idGenerator';
+import { setLastCustomModelsContentOnDisk } from '../../proxy/models/modelLoader';
 import { normalizeCloudCodeModelId, normalizeGoogleModelId } from '../googleAuth';
 import {
   CUSTOM_MODEL_MAX_TOKENS,

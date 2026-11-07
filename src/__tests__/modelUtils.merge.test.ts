@@ -4,7 +4,7 @@ import {
   resolveDefaultMode,
   modelHasReasoningCapability,
   type ModelModeConfig,
-} from '../proxy/modelUtils';
+} from '../proxy/models/modelUtils';
 
 function baseModel(overrides: Partial<ModelModeConfig> = {}): ModelModeConfig {
   return {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyError, generateDiagnosticCardMarkdown } from '../proxy/errorClassifier';
+import { classifyError, generateDiagnosticCardMarkdown } from '../proxy/resilience/errorClassifier';
 
 
 describe('Error Classifier', () => {

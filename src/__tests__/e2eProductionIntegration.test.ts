@@ -53,7 +53,7 @@ vi.mock('fs', () => ({
 }));
 
 import { loadProviders, saveProviders, recordProviderUsage } from '../customModelStore';
-import { generateModelPlaceholderId, toSlug } from '../proxy/idGenerator';
+import { generateModelPlaceholderId, toSlug } from '../proxy/models/idGenerator';
 
 describe('Real-World Production E2E Integration Suite', () => {
   beforeEach(() => {

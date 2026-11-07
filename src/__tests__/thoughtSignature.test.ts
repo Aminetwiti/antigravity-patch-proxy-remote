@@ -10,7 +10,7 @@ import {
   isConvCorruptedSignatures,
   clearThoughtSignaturesForConv,
   ANTI_HALLUCINATION_TOOL_INSTRUCTION,
-} from '../proxy/shared';
+} from '../proxy/core/shared';
 import { sanitizeCandidatesInResponse, injectAntiHallucinationInstruction, autoUnstickConversation, extractAllPseudoToolCalls } from '../proxy';
 
 describe('thoughtSignature handling', () => {

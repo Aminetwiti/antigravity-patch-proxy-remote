@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { parseProto, parseProtoRaw } from '../proxy/protobuf';
+import { parseProto, parseProtoRaw } from '../proxy/models/protobuf';
 import {
   notifySlotAvailable,
   waitForAccountSlot,
@@ -15,9 +15,9 @@ import {
   incrementAccountInFlight,
   decrementAccountInFlight,
   MAX_CONCURRENT_PER_ACCOUNT,
-} from '../proxy/googlePool';
-import { readBodyWithLimit } from '../proxy/bodyLimitGuard';
-import type { CustomModel } from '../proxy/types';
+} from '../proxy/resilience/googlePool';
+import { readBodyWithLimit } from '../proxy/http/bodyLimitGuard';
+import type { CustomModel } from '../proxy/core/types';
 import { EventEmitter } from 'events';
 import type * as http from 'http';
 

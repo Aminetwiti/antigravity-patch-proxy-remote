@@ -14,10 +14,10 @@ import {
   _buildSnapshot,
   formatSnapshot,
   knownDefaultProviders,
-} from '../proxy/diagnostics';
-import { _resetProviderGate } from '../proxy/providerGate';
-import { _resetAllBreakers } from '../proxy/circuitBreaker';
-import { _resetRetryBudget } from '../proxy/retryBudget';
+} from '../proxy/state/diagnostics';
+import { _resetProviderGate } from '../proxy/resilience/providerGate';
+import { _resetAllBreakers } from '../proxy/resilience/circuitBreaker';
+import { _resetRetryBudget } from '../proxy/resilience/retryBudget';
 
 describe('diagnostics / _buildSnapshot shape', () => {
   it('exposes the documented top-level keys', () => {

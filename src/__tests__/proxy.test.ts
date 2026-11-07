@@ -18,10 +18,10 @@ import https from 'https';
 import * as zlib from 'zlib';
 import { EventEmitter } from 'events';
 import { DEFAULT_MAX_BODY_SIZE } from '../constants';
-import { generateModelPlaceholderId, toSlug } from '../proxy/idGenerator';
-import { expandModelsWithEffort } from '../proxy/effortExpander';
+import { generateModelPlaceholderId, toSlug } from '../proxy/models/idGenerator';
+import { expandModelsWithEffort } from '../proxy/engine/effortExpander';
 import { injectCustomSlugsIntoAgentModelSorts } from '../proxy/modelInjector';
-import type { CustomModel } from '../proxy/types';
+import type { CustomModel } from '../proxy/core/types';
 
 describe('parseRetryAfter', () => {
   it('returns 0 when no Retry-After header', () => {

@@ -11,7 +11,7 @@ import {
   TIME_BUDGET_MAX_MS,
   TIME_BUDGET_BASE_MS,
   type TrustLookup,
-} from '../proxy/modelTimeBudget';
+} from '../proxy/engine/modelTimeBudget';
 
 const stubTrust = (t: number): TrustLookup => ({ trustOf: () => t });
 const NOW = 1_700_000_000_000;

@@ -4,7 +4,7 @@ import {
   injectCustomModelsIntoUserStatus,
   buildGrpcWebFrame,
   parseGrpcWebHeader,
-} from '../proxy/protoInjector';
+} from '../proxy/models/protoInjector';
 import {
   encodeProtoBuf,
   encodeVarint,
@@ -12,8 +12,8 @@ import {
   encodeMessageField,
   encodeStringField,
   encodeClientModelConfig,
-} from '../proxy/protobuf';
-import type { CustomModel } from '../proxy/types';
+} from '../proxy/models/protobuf';
+import type { CustomModel } from '../proxy/core/types';
 
 describe('buildGrpcWebFrame', () => {
   it('builds a valid gRPC-Web frame', () => {

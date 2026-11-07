@@ -3,7 +3,7 @@ import {
   EmptyStreamGuard,
   EMPTY_STREAM_MIN_USEFUL_BYTES,
   EMPTY_STREAM_MIN_FRAME_BYTES,
-} from '../proxy/emptyStream';
+} from '../proxy/engine/emptyStream';
 
 describe('emptyStream', () => {
   describe('constants', () => {

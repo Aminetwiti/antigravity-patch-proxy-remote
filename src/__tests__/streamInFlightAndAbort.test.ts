@@ -23,8 +23,8 @@ vi.mock('../services/googleAuth', async () => {
   };
 });
 
-vi.mock('../proxy/dnsResolver', async () => {
-  const actual = await vi.importActual<any>('../proxy/dnsResolver');
+vi.mock('../proxy/http/dnsResolver', async () => {
+  const actual = await vi.importActual<any>('../proxy/http/dnsResolver');
   return {
     ...actual,
     resolveGoogleIp: vi.fn().mockResolvedValue('142.250.80.46'),

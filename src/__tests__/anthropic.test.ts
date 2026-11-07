@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import * as shared from '../proxy/shared';
+import * as shared from '../proxy/core/shared';
 import { mapGeminiToAnthropic, mapAnthropicToGemini, mapAnthropicChunkToGemini } from '../proxy/translators/anthropic';
 
 

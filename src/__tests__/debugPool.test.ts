@@ -1,6 +1,6 @@
 import { it, expect } from 'vitest';
-import { loadCustomModels } from '../proxy/modelLoader';
-import { getGoogleAccountPool } from '../proxy/googlePool';
+import { loadCustomModels } from '../proxy/models/modelLoader';
+import { getGoogleAccountPool } from '../proxy/resilience/googlePool';
 
 it('debugs pool size for Flash Low', () => {
   const models = loadCustomModels();

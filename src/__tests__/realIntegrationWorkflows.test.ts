@@ -30,11 +30,11 @@ import {
   recordFailure,
   recordSuccess,
   _resetAllBreakers,
-} from '../proxy/circuitBreaker';
+} from '../proxy/resilience/circuitBreaker';
 import { validateGenerateContentResponse } from '../schemaValidator';
 import { mapGeminiToAnthropic, mapAnthropicToGemini } from '../proxy/translators/anthropic';
 import { mapOpenAIChunkToGemini } from '../proxy/translators/openai';
-import type { CustomModel } from '../proxy/types';
+import type { CustomModel } from '../proxy/core/types';
 
 describe('Real Integration Workflows — Proxy, Translators & Resilience', () => {
   beforeEach(() => {

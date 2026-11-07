@@ -5,8 +5,8 @@ import {
   recordSuccess,
   _resetAllBreakers,
   CIRCUIT_BREAKER_RESET_MS,
-} from '../proxy/circuitBreaker';
-import type { CustomModel } from '../proxy/types';
+} from '../proxy/resilience/circuitBreaker';
+import type { CustomModel } from '../proxy/core/types';
 
 const baseModel: CustomModel = {
   name: 'gpt-4o',

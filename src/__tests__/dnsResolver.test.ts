@@ -10,7 +10,7 @@ import {
   clearDnsCache,
   invalidateCachedDns,
   DNS_QUERY_TIMEOUT_MS,
-} from '../proxy/dnsResolver';
+} from '../proxy/http/dnsResolver';
 
 // dns is heavily callback-based; we stub its methods per-test.
 vi.mock('dns', async () => {

@@ -66,7 +66,7 @@ import {
   verifyAndReconcileCooldowns,
   _resetAllAccountCooldowns,
 } from '../proxy';
-import { recordFailure, recordSuccess, getOpenBreaker } from '../proxy/circuitBreaker';
+import { recordFailure, recordSuccess, getOpenBreaker } from '../proxy/resilience/circuitBreaker';
 import {
   isTokenCached,
   prewarmGoogleAccounts,
@@ -77,7 +77,7 @@ import {
   clearRevokedTokens,
   isTokenRevoked,
 } from '../services/googleAuth';
-import type { CustomModel } from '../proxy/types';
+import type { CustomModel } from '../proxy/core/types';
 
 describe('Google Multi-Account Pool & Failover', () => {
   beforeEach(() => {

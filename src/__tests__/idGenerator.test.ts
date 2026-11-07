@@ -4,8 +4,8 @@ import {
   toSlug,
   PLACEHOLDER_ID_BASE,
   PLACEHOLDER_ID_RANGE,
-} from '../proxy/idGenerator';
-import type { CustomModel } from '../proxy/types';
+} from '../proxy/models/idGenerator';
+import type { CustomModel } from '../proxy/core/types';
 
 const baseModel: CustomModel = {
   name: 'models/gpt-4o',

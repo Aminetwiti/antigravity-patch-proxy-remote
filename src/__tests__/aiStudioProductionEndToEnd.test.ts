@@ -40,7 +40,7 @@ import {
   recordFailure,
   recordSuccess,
   _resetAllBreakers,
-} from '../proxy/circuitBreaker';
+} from '../proxy/resilience/circuitBreaker';
 import {
   getTranslator,
   translateRequest,
@@ -48,8 +48,8 @@ import {
   translateStreamChunk,
   getProviderHeaders,
   supportsStreaming,
-} from '../proxy/registry';
-import { resolveProvider, resolveCustomModelUrl } from '../proxy/urlBuilder';
+} from '../proxy/core/registry';
+import { resolveProvider, resolveCustomModelUrl } from '../proxy/core/urlBuilder';
 import { getGoogleApiUrl, mapGoogleChunkToGemini } from '../proxy/translators/google';
 import {
   getAccountQuotaKey,
@@ -58,7 +58,7 @@ import {
   clearSessionModelFallbacks,
 } from '../proxy';
 import { PROVIDERS, ALL_PROVIDERS } from '../constants';
-import type { CustomModel } from '../proxy/types';
+import type { CustomModel } from '../proxy/core/types';
 
 // ── Mock Response Helper for SSE Streams ──────────────────────────────────────
 

@@ -16,7 +16,7 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-vi.mock('../proxy/dnsResolver', () => ({
+vi.mock('../proxy/http/dnsResolver', () => ({
   resolveGoogleIp: vi.fn().mockResolvedValue('142.250.180.206'),
   invalidateCachedDns: vi.fn(),
 }));
@@ -37,11 +37,11 @@ import {
   getLatestNativeErrorAsSession,
   updateLatestNativeErrorBody,
 } from '../proxy';
-import { isModelOrLabelDisabled } from '../proxy/protoInjector';
-import { expandModelsWithEffort } from '../proxy/effortExpander';
-import { generateModelPlaceholderId } from '../proxy/idGenerator';
+import { isModelOrLabelDisabled } from '../proxy/models/protoInjector';
+import { expandModelsWithEffort } from '../proxy/engine/effortExpander';
+import { generateModelPlaceholderId } from '../proxy/models/idGenerator';
 import { normalizeCloudCodeModelId } from '../services/googleAuth';
-import type { CustomModel } from '../proxy/types';
+import type { CustomModel } from '../proxy/core/types';
 
 describe('Strict Zero Fallback on Native Models', () => {
   beforeEach(() => {

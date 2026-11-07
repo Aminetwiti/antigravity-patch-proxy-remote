@@ -7,7 +7,7 @@ import {
   findModelEntryFieldTag,
   extractFieldMapping,
   encodeModelEntryForGetModels,
-} from '../proxy/protobuf';
+} from '../proxy/models/protobuf';
 
 describe('readVarint', () => {
   it('decodes a single-byte varint', () => {

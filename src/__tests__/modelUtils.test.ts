@@ -4,7 +4,7 @@ import {
   detectModelCapabilitiesByName,
   detectModelUXBadges,
   extractModelNameFromPayload,
-} from '../proxy/modelUtils';
+} from '../proxy/models/modelUtils';
 
 
 describe('detectModelCapabilities', () => {

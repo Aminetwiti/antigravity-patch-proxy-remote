@@ -18,7 +18,7 @@ import {
   untrust,
   snapshot,
   _resetProviderGate,
-} from '../proxy/providerGate';
+} from '../proxy/resilience/providerGate';
 
 beforeEach(() => {
   _resetProviderGate();

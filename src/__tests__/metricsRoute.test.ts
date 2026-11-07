@@ -15,7 +15,7 @@ import {
   metricsEnabled,
   negotiateContentType,
   getMetricsSnapshot,
-} from '../proxy/metricsRoute';
+} from '../proxy/http/metricsRoute';
 
 describe('metricsRoute / metricsEnabled', () => {
   it('defaults to false', () => {

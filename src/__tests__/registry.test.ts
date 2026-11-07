@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { getProviderHeaders, translateRequest } from '../proxy/registry';
+import { getProviderHeaders, translateRequest } from '../proxy/core/registry';
 
 
 // We need to mock electron-log and fs/path before importing the registry

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { expandModelsWithEffort } from '../proxy/effortExpander';
-import type { CustomModel } from '../proxy/types';
+import { expandModelsWithEffort } from '../proxy/engine/effortExpander';
+import type { CustomModel } from '../proxy/core/types';
 
 describe('expandModelsWithEffort', () => {
   it('expands reasoning-capable models into Low, Medium, High tiers', () => {

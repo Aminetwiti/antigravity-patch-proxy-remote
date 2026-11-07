@@ -2,7 +2,7 @@
  * Unit tests for OpenAI translator (openai.ts).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import * as shared from '../proxy/shared';
+import * as shared from '../proxy/core/shared';
 import { mapGeminiToOpenAI, mapOpenAIToGemini, mapOpenAIChunkToGemini } from '../proxy/translators/openai';
 
 // Reset shared state before each test

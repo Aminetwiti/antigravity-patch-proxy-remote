@@ -4,9 +4,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { fresh, toFile, compact } from '../proxy/persistedState';
-import { CIRCUIT_BREAKER_RESET_MS } from '../proxy/circuitBreaker';
-import { RETRY_BUDGET_HALF_LIFE_MS } from '../proxy/retryBudget';
+import { fresh, toFile, compact } from '../proxy/state/persistedState';
+import { CIRCUIT_BREAKER_RESET_MS } from '../proxy/resilience/circuitBreaker';
+import { RETRY_BUDGET_HALF_LIFE_MS } from '../proxy/resilience/retryBudget';
 
 const NOW = 1_700_000_000_000;
 const OPTS = {

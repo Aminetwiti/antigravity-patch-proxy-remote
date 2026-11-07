@@ -11,7 +11,7 @@ import {
   DEFAULT_MAX_SOCKETS,
   DEFAULT_MAX_FREE_SOCKETS,
   DEFAULT_FREE_SOCKET_TIMEOUT_MS,
-} from '../proxy/agentPool';
+} from '../proxy/resilience/agentPool';
 
 describe('agentPool', () => {
   beforeEach(() => {

@@ -8,8 +8,8 @@ import {
   RETRY_BUDGET_FLOOR,
   RETRY_BUDGET_BASE,
   RETRY_BUDGET_MAX_SAMPLES,
-} from '../proxy/retryBudget';
-import type { CustomModel } from '../proxy/types';
+} from '../proxy/resilience/retryBudget';
+import type { CustomModel } from '../proxy/core/types';
 
 const makeModel = (over: Partial<CustomModel> = {}): CustomModel => ({
   name: 'test-model',

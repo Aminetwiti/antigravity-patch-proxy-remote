@@ -20,7 +20,7 @@ vi.mock('../cryptoStore', () => ({
   decryptString: vi.fn((str: string) => (str.startsWith('enc:') ? str.slice(4) : str)),
 }));
 
-import { classifyError } from '../proxy/errorClassifier';
+import { classifyError } from '../proxy/resilience/errorClassifier';
 import { parseResetSeconds } from '../../ag-doctor-ui/src/renderer/services/errors/error-decoder';
 import {
   validateCandidate,
@@ -30,8 +30,8 @@ import {
 } from '../schemaValidator';
 import { maskApiKey, isMaskedApiKey } from '../services/modelStore';
 import { translateToolCallToNative, formatTranslatedResponse } from '../proxy/translators/utils';
-import { calculateBackoffDelay } from '../proxy/backoff';
-import { isRetryableStatus, isRetryableNetworkError } from '../proxy/retryStrategy';
+import { calculateBackoffDelay } from '../proxy/resilience/backoff';
+import { isRetryableStatus, isRetryableNetworkError } from '../proxy/resilience/retryStrategy';
 
 // ─── SUITE 1: Error Classification Matrix (50 Tests) ─────────────────────────
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { trimContextPayload } from '../proxy/contextTrimmer';
-import type { GeminiRequestBody } from '../proxy/types';
+import { trimContextPayload } from '../proxy/engine/contextTrimmer';
+import type { GeminiRequestBody } from '../proxy/core/types';
 
 vi.mock('electron-log', () => ({
   default: {

@@ -18,8 +18,8 @@ import {
   buildSyntheticModelsResponse,
   DEFAULT_CANONICAL_GOOGLE_MODELS,
 } from '../proxy/modelInjector';
-import { generateModelPlaceholderId } from '../proxy/idGenerator';
-import type { CustomModel } from '../proxy/types';
+import { generateModelPlaceholderId } from '../proxy/models/idGenerator';
+import type { CustomModel } from '../proxy/core/types';
 
 describe('mergeModels', () => {
   const sampleCustomModel: CustomModel = {

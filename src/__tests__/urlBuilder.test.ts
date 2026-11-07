@@ -5,8 +5,8 @@ import {
   resolveMaxRetries,
   resolveRequestTimeout,
   getBaseModelId,
-} from '../proxy/urlBuilder';
-import type { CustomModel } from '../proxy/types';
+} from '../proxy/core/urlBuilder';
+import type { CustomModel } from '../proxy/core/types';
 
 
 const baseModel: CustomModel = {

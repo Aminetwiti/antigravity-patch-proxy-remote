@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { repairPartialJson, repairPartialJsonOrThrow } from '../proxy/jsonRepair';
+import { repairPartialJson, repairPartialJsonOrThrow } from '../proxy/engine/jsonRepair';
 
 describe('repairPartialJson', () => {
   describe('valid JSON (fast path)', () => {
