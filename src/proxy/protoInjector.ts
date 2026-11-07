@@ -542,6 +542,10 @@ function injectCustomModelsIntoUserStatusJson(
         supportsImages: cap.supportsImages,
         isRecommended: false,
         allowedTiers: [
+          'free-tier',
+          'standard-tier',
+          'g1-pro-tier',
+          'TEAMS_TIER_FREE',
           'TEAMS_TIER_PRO',
           'TEAMS_TIER_TEAMS',
           'TEAMS_TIER_ENTERPRISE_SELF_HOSTED',
