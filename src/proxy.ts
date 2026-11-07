@@ -9,9 +9,9 @@ import {
   stopProxyServer,
   getProxyPort,
   isProxyRunning,
-} from './proxy/serverLifecycle';
+} from './proxy/http/serverLifecycle';
 
-import { handleRequest } from './proxy/httpRouter';
+import { handleRequest } from './proxy/http/httpRouter';
 
 export {
   setupCustomModelsWatcher,
@@ -41,21 +41,21 @@ export {
   proxyToGoogle,
   executeGoogleCloudCodeRequest,
   executeGoogleCloudCodeWithPool,
-} from './proxy/googleCloudEngine';
-export type { GoogleRequestOutcome } from './proxy/googleCloudEngine';
+} from './proxy/engine/googleCloudEngine';
+export type { GoogleRequestOutcome } from './proxy/engine/googleCloudEngine';
 
 // ─── Custom Model Engine Re-exports ────────────────────────────────────────
 
-export { handleCustomModelRequest } from './proxy/customModelEngine';
-export type { RetryDispatch, StreamRequestCtx } from './proxy/customModelEngine';
+export { handleCustomModelRequest } from './proxy/engine/customModelEngine';
+export type { RetryDispatch, StreamRequestCtx } from './proxy/engine/customModelEngine';
 
 // ─── Types & Models Re-exports ─────────────────────────────────────────────
 
-import type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse } from './proxy/types';
+import type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse } from './proxy/core/types';
 export type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse };
 
-export * from './proxy/googlePool';
-export * from './proxy/sessionAffinities';
+export * from './proxy/resilience/googlePool';
+export * from './proxy/resilience/sessionAffinities';
 
 // ─── Utilities & State Re-exports (Backwards Compatibility) ────────────────
 
@@ -65,15 +65,15 @@ export {
   clampSubagentReasoning,
   isSubagentRequest,
   matchesCustomModel,
-} from './proxy/modelUtils';
+} from './proxy/models/modelUtils';
 
-export { parseRetryAfter, isAllowedOrigin } from './proxy/httpUtils';
+export { parseRetryAfter, isAllowedOrigin } from './proxy/http/httpUtils';
 
 export {
   ResponseClaimer,
   createResponseClaimer,
   trimOldestHistory,
-} from './proxy/historyTrimmer';
+} from './proxy/engine/historyTrimmer';
 
 export {
   isRemoteVpsActive,
@@ -90,7 +90,7 @@ export {
   ensureRemoteExecScriptOnDisk,
   updateRemoteVpsConfig,
   remoteVpsState,
-} from './proxy/remoteState';
+} from './proxy/state/remoteState';
 
 export {
   enrichExperimentsPayload,
@@ -107,7 +107,7 @@ export {
   memoryListExperimentsTime,
   memoryFetchAvailableModelsTime,
   memoryLoadCodeAssistTime,
-} from './proxy/endpointHandlers';
+} from './proxy/http/endpointHandlers';
 
 export {
   generateGracefulMarkdown,
@@ -125,4 +125,4 @@ export {
   injectAntiHallucinationInstruction,
   autoUnstickConversation,
   transformGoogleStreamForRemote,
-} from './proxy/streamPipeline';
+} from './proxy/engine/streamPipeline';
