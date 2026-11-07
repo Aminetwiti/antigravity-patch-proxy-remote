@@ -13,7 +13,7 @@ import type {
   GeminiContent,
   GeminiCandidate,
   GeminiRequestBody,
-} from '../types';
+} from '../core/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 

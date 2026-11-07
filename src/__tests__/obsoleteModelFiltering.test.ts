@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isObsoleteModel, STANDARD_GOOGLE_MODELS } from '../constants';
-import { mergeModels } from '../proxy/modelInjector';
+import { mergeModels } from '../proxy/models/modelInjector';
 import type { CustomModel } from '../proxy/core/types';
 
 // Helper to construct legacy model identifiers dynamically so literal obsolete

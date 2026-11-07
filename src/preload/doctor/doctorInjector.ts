@@ -5,7 +5,7 @@
  */
 import { storageAPI } from '../api';
 import { preloadLog } from '../logger';
-import { openProviderManagerModal, getFocusableElements } from '../provider-manager';
+import { openProviderManagerModal, getFocusableElements } from '../providers/providerModal';
 import type { ProviderFileEntry } from '../types';
 import {
   renderCustomModelsList,

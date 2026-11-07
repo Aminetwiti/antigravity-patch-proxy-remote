@@ -17,7 +17,7 @@ import {
   mergeModels,
   buildSyntheticModelsResponse,
   DEFAULT_CANONICAL_GOOGLE_MODELS,
-} from '../proxy/modelInjector';
+} from '../proxy/models/modelInjector';
 import { generateModelPlaceholderId } from '../proxy/models/idGenerator';
 import type { CustomModel } from '../proxy/core/types';
 

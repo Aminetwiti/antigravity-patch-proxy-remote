@@ -20,7 +20,7 @@ import { EventEmitter } from 'events';
 import { DEFAULT_MAX_BODY_SIZE } from '../constants';
 import { generateModelPlaceholderId, toSlug } from '../proxy/models/idGenerator';
 import { expandModelsWithEffort } from '../proxy/engine/effortExpander';
-import { injectCustomSlugsIntoAgentModelSorts } from '../proxy/modelInjector';
+import { injectCustomSlugsIntoAgentModelSorts } from '../proxy/models/modelInjector';
 import type { CustomModel } from '../proxy/core/types';
 
 describe('parseRetryAfter', () => {

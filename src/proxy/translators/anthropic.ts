@@ -20,8 +20,8 @@ import {
   touchStateTimestamp,
   getSessionModelKey,
   StreamContext,
-} from '../shared';
-import { detectModelCapabilitiesByName } from '../modelUtils';
+} from '../core/shared';
+import { detectModelCapabilitiesByName } from '../models/modelUtils';
 
 import type {
   GeminiTool,
@@ -32,7 +32,7 @@ import type {
   GeminiFunctionCall,
   GeminiFunctionResponse,
   GeminiRequestBody,
-} from '../types';
+} from '../core/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 

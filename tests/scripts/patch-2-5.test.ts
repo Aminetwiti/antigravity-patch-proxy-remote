@@ -18,10 +18,10 @@ describe('patch_2_5 manifest and artifact inventory', () => {
     expect(manifest).toContain('constants.js');
 
     // 2. Must contain key proxy submodules
-    expect(manifest).toContain('dist/proxy/circuitBreaker.js');
-    expect(manifest).toContain('dist/proxy/retryBudget.js');
-    expect(manifest).toContain('dist/proxy/errorClassifier.js');
-    expect(manifest).toContain('dist/proxy/idGenerator.js');
+    expect(manifest).toContain('dist/proxy/resilience/circuitBreaker.js');
+    expect(manifest).toContain('dist/proxy/resilience/retryBudget.js');
+    expect(manifest).toContain('dist/proxy/resilience/errorClassifier.js');
+    expect(manifest).toContain('dist/proxy/models/idGenerator.js');
 
     // 3. Must contain key preload and IPC files
     expect(manifest).toContain('dist/preload/types.js');

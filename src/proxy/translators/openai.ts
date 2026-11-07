@@ -13,7 +13,7 @@ import {
   ToolCallArgs,
   TranslatedCallInfo,
 } from './utils';
-import { repairPartialJson } from '../jsonRepair';
+import { repairPartialJson } from '../engine/jsonRepair';
 import {
   modelToolCallIds,
   activeStreamContexts,
@@ -22,7 +22,7 @@ import {
   touchStateTimestamp,
   getSessionModelKey,
   StreamContext,
-} from '../shared';
+} from '../core/shared';
 import type {
   GeminiTool,
   GeminiFunctionDeclaration,
@@ -32,7 +32,7 @@ import type {
   GeminiFunctionCall,
   GeminiFunctionResponse,
   GeminiRequestBody,
-} from '../types';
+} from '../core/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
