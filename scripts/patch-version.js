@@ -43,9 +43,42 @@ if (!asarIn || !buildDir || !asarOut) {
   console.error('usage: node patch-version.js <asar-in> <build-dir> <asar-out>');
   process.exit(1);
 }
+/** True when the asar already contains the injected proxy-runner overlay. */
+function asarHasOverlay(asarFile) {
+  try {
+    const listFn = asar.listPackage ?? (asar.default || {}).listPackage;
+    if (typeof listFn !== 'function') return false;
+    // @electron/asar v4 lists entries with backslashes on Windows (e.g.
+    // "\proxy-runner.js") — normalize to forward slashes like ag-doctor's
+    // normalizeAsarEntry before matching.
+    return (listFn(asarFile) || []).some((e) =>
+      String(e).replace(/\\/g, '/').replace(/^\//, '').startsWith('proxy-runner.js'),
+    );
+  } catch {
+    return false;
+  }
+}
+
 let actualAsarIn = asarIn;
-if (path.resolve(asarIn) === path.resolve(asarOut) && fs.existsSync(`${asarIn}.bak`)) {
-  actualAsarIn = `${asarIn}.bak`;
+if (path.resolve(asarIn) === path.resolve(asarOut)) {
+  const asarDir = path.dirname(asarIn);
+  const pristineCandidates = [
+    path.join(asarDir, 'app.asar.backup-fresh-2.29.0'),
+    path.join(asarDir, 'app.asar.backup-fresh-2.28.2'),
+    path.join(asarDir, 'app.asar.backup-fresh'),
+  ];
+  let foundPristine = false;
+  for (const cand of pristineCandidates) {
+    if (fs.existsSync(cand) && !asarHasOverlay(cand)) {
+      actualAsarIn = cand;
+      foundPristine = true;
+      console.log(`[patch-version] using pristine backup as base: ${path.basename(actualAsarIn)}`);
+      break;
+    }
+  }
+  if (!foundPristine && fs.existsSync(`${asarIn}.bak`)) {
+    actualAsarIn = `${asarIn}.bak`;
+  }
 }
 if (!fs.existsSync(actualAsarIn)) {
   console.error(`[patch-version] asar-in not found: ${actualAsarIn}`);
@@ -60,22 +93,6 @@ function readAsarVersion(asarFile) {
     return pkg && typeof pkg.version === 'string' ? pkg.version : null;
   } catch (err) {
     return null;
-  }
-}
-
-/** True when the asar already contains the injected proxy-runner overlay. */
-function asarHasOverlay(asarFile) {
-  try {
-    const listFn = asar.listPackage ?? (asar.default || {}).listPackage;
-    if (typeof listFn !== 'function') return false;
-    // @electron/asar v4 lists entries with backslashes on Windows (e.g.
-    // "\proxy-runner.js") — normalize to forward slashes like ag-doctor's
-    // normalizeAsarEntry before matching.
-    return (listFn(asarFile) || []).some((e) =>
-      String(e).replace(/\\/g, '/').replace(/^\//, '').startsWith('proxy-runner.js'),
-    );
-  } catch {
-    return false;
   }
 }
 

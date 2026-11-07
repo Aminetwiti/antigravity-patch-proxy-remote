@@ -140,6 +140,10 @@ async function main() {
     'i18n',
     'wellKnown',
     'ipc',
+    'preload',
+    'ui',
+    'proxyGateway',
+    'main',
   ];
 
   for (const dir of safeCustomDirs) {
