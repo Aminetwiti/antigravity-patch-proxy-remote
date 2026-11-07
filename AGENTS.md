@@ -22,7 +22,14 @@ antigravity-add-model-main/
 ├── src/                             # Desktop Electron Patch Proxy
 │   ├── main.ts                      # Electron lifecycle, LS startup, proxy boot
 │   ├── proxy.ts                     # HTTP proxy server orchestration
-│   ├── preload.ts                   # contextBridge → window.* APIs (10 domains)
+│   ├── preload.ts                   # contextBridge entry point (registerApiBridge)
+│   ├── preload/                     # Modular preload bridge architecture
+│   │   ├── api.ts                   # ContextBridge registry & IPC dispatchers
+│   │   ├── doctor/                  # Doctor UI CSS tokens & DOM injector
+│   │   ├── providers/               # Provider Manager modal, list, card & form
+│   │   ├── model-fetcher.ts         # Remote provider model discovery & testing
+│   │   ├── native-quota-card.ts     # Quota summary UI card
+│   │   └── types.ts                 # Preload contracts & window types
 │   ├── ipcHandlers.ts               # Canonical IPC registry (src/ipc/ = channels only; migration pending)
 │   ├── constants.ts                 # PROVIDERS, ports, timeouts — source of truth
 │   ├── services/configExchange.ts   # Provider config import/export + AES-256-GCM
@@ -236,6 +243,7 @@ Determine for each change:
 | `src/proxy/state/` | Persisted state, diagnostics, remote session store, log throttling | Request handling, encryption |
 | `src/proxy/translators/` | Provider format mapping (request/response/stream) | Business logic, persistence |
 | `src/proxy/` (root) | Backward-compatible re-export facades | Subdomain implementations |
+| `src/preload/` | ContextBridge APIs, Doctor UI injection & Provider Manager UI | Main process, Proxy internals |
 | `src/services/` | Data persistence, encryption | HTTP handling, translation |
 | `src/` root | Main process, IPC, preload, config | Proxy internals (put in proxy/) |
 | `src/ipc/` | IPC channel constants + types | Canonical handlers remain in `src/ipcHandlers.ts` |

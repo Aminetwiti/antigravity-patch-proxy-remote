@@ -305,7 +305,8 @@ export function startProxyServer(requestHandler: RequestHandler): Promise<number
       });
 
       const tryListen = (port: number, host: string): void => {
-        server!.listen(port, host);
+        if (!server || (server as any).listening) return;
+        server.listen(port, host);
       };
 
       server.on('error', (err: NodeJS.ErrnoException) => {
