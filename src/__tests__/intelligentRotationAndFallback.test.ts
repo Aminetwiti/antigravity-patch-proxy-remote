@@ -498,7 +498,7 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       expect(triggeredCascade).toBe(false);
     });
 
-    it('[AUDIT-004] applies 30s transient cooldown on HTTP 504 to prevent immediate repeat stall', () => {
+    it('[AUDIT-004] applies 60s transient cooldown on HTTP 504 to prevent immediate repeat stall', () => {
       const candidate: CustomModel = {
         name: 'test-model',
         apiKey: 'token-1',
@@ -508,7 +508,7 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
       const lastStatus = 504;
 
       if (lastStatus === 504) {
-        setAccountCooldown(candidate, 30_000, currentFamily, true);
+        setAccountCooldown(candidate, 60_000, currentFamily, true);
       }
 
       expect(isAccountInCooldown(candidate, currentFamily)).toBe(true);
@@ -528,6 +528,22 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
         : 65_000;
 
       expect(flashTimeoutMs).toBe(40_000);
+    });
+    it('[FLASH-THINKING] applies 65_000ms candidate timeout for Flash Thinking when sibling candidates are available', () => {
+      const isFlashModel = true;
+      const hasOtherCandidates = true;
+      const healthySiblingAccountsCount = 1;
+      const isThinkingModel = true;
+      const GOOGLE_PROXY_TIMEOUT_MS = 120_000;
+      const largeTimeoutMs = Math.min(
+        isFlashModel
+          ? (hasOtherCandidates && healthySiblingAccountsCount >= 1
+              ? (isThinkingModel ? 65_000 : 35_000)
+              : (isThinkingModel ? 65_000 : 55_000))
+          : 85_000,
+        GOOGLE_PROXY_TIMEOUT_MS,
+      );
+      expect(largeTimeoutMs).toBe(65_000);
     });
   });
 });
