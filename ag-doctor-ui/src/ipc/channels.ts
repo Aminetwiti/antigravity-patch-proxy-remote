@@ -45,6 +45,7 @@ export const DOCTOR_IPC_CHANNELS = {
   GOOGLE_LIFT_ACCOUNT_COOLDOWN: 'ag:google:lift-account-cooldown',
   GOOGLE_LIFT_BURST_COOLDOWNS: 'ag:google:lift-burst-cooldowns',
   GOOGLE_PURGE_QUOTA_CACHE: 'ag:google:purge-quota-cache',
+  GOOGLE_FORCE_QUOTA_REFRESH: 'ag:google:force-quota-refresh',
   GOOGLE_REPAIR_ADC: 'ag:google:repair-adc',
   GOOGLE_PROBE_POOL: 'ag:google:probe-pool',
   GOOGLE_UNLOCK_ACCOUNT: 'ag:google:unlock-account',

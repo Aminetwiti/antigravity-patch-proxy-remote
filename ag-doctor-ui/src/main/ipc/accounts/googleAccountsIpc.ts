@@ -2,6 +2,7 @@ import { app, ipcMain, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { DOCTOR_IPC_CHANNELS } from '../../../ipc/channels';
+import { EnvironmentConfig } from '../../../config/environment';
 import {
   discoverIdeAccount,
   fetchGoogleAccountQuotas,
@@ -394,6 +395,37 @@ export function registerGoogleAccountsIpc(ctx: MainContext): void {
       return { success: true, cleared: clearedCount };
     } catch (err: any) {
       return { success: false, error: err.message || 'Erreur lors de la purge du cache de quota' };
+    }
+  });
+
+  ipcMain.handle(DOCTOR_IPC_CHANNELS.GOOGLE_FORCE_QUOTA_REFRESH, async () => {
+    try {
+      const http = require('http') as typeof import('http');
+      const host = EnvironmentConfig.bindHost || '127.0.0.1';
+      const port = EnvironmentConfig.proxyPort || 51074;
+      return await new Promise<{ success: boolean; error?: string }>((resolve) => {
+        const req = http.request(
+          {
+            hostname: host,
+            port,
+            path: '/force-quota-refresh',
+            method: 'POST',
+            timeout: 2000,
+          },
+          (res) => {
+            res.resume();
+            resolve({ success: res.statusCode === 200 || res.statusCode === 202 });
+          }
+        );
+        req.on('error', (err) => resolve({ success: false, error: err.message }));
+        req.on('timeout', () => {
+          req.destroy();
+          resolve({ success: false, error: 'Request timeout' });
+        });
+        req.end();
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Erreur lors du rafraîchissement des quotas du proxy' };
     }
   });
 

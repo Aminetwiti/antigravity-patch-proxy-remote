@@ -118,6 +118,10 @@ interface AgAPI {
       cleared: number;
       error?: string;
     }>;
+    forceProxyQuotaRefresh?(): Promise<{
+      success: boolean;
+      error?: string;
+    }>;
     probePool?(dryRun?: boolean): Promise<{
       success: boolean;
       results?: any[];
@@ -377,6 +381,9 @@ declare function renderAccountQuotaBlock(a: any, showAll: boolean, isWeekly: boo
 declare function renderDynamicExtraQuotaGroups(quotas: any, showAll: boolean, isWeekly: boolean): string;
 declare function openGoogleAccountModal(existingId?: string, presetType?: 'google-gemini' | 'gemini-cli' | 'antigravity'): void;
 declare function closeGoogleAccountModal(): void;
+declare function renderGaFormModelsList(): void;
+declare function updateGaModelsCounter(): void;
+declare function initGoogleAccountModal(): void;
 
 declare let gaCurrentQuotaWindow: '5h' | 'weekly';
 declare function getAccountActiveCooldown(account: any, family?: 'gemini' | 'claude' | 'any'): any;

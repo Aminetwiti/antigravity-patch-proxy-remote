@@ -3673,11 +3673,9 @@ let gaIsLoadingAccounts = false;
  *  Fire-and-forget: proxy responds 202 immediately, poll runs in background. */
 async function forceProxyQuotaRefresh(): Promise<void> {
   try {
-    const status = await window.ag.proxyStatus();
-    const port = status?.data?.port || 51074;
-    await fetch(`http://127.0.0.1:${port}/force-quota-refresh`, { method: 'POST' });
+    await window.ag?.providers?.forceProxyQuotaRefresh?.();
   } catch {
-    // Proxy might not be running — silently ignore
+    // Proxy might not be running
   }
 }
 
@@ -5077,21 +5075,6 @@ function renderGoogleAccountsList(accounts: any[]): void {
   gaAccountsContainer.innerHTML = html;
 }
 
-function updateGaModelsCounter(): void {
-  (window as any).updateGaModelsCounter?.();
-}
-
-function renderGaFormModelsList(): void {
-  (window as any).renderGaFormModelsList?.();
-}
-
-function openGoogleAccountModal(existingId?: string, presetType?: 'google-gemini' | 'gemini-cli' | 'antigravity'): void {
-  (window as any).openGoogleAccountModal?.(existingId, presetType);
-}
-
-function closeGoogleAccountModal(): void {
-  (window as any).closeGoogleAccountModal?.();
-}
 
 (window as any).initGoogleAccountModal?.();
 
