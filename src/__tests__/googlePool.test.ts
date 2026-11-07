@@ -397,6 +397,26 @@ describe('isPoolUnderQuotaStress', () => {
 });
 
 describe('classifyGoogleCloudCode429', () => {
+  it('classifies "You have exhausted your capacity on this model. Resets in 0s." as soft_rate_limit', () => {
+    const msg = 'You have exhausted your capacity on this model. Resets in 0s.';
+    const r = classifyGoogleCloudCode429(msg);
+    expect(r.category).toBe('soft_rate_limit');
+    expect(r.cooldownMs).toBe(3000);
+  });
+
+  it('classifies JSON payload with "Resets in 0s." as soft_rate_limit despite RESOURCE_EXHAUSTED', () => {
+    const body = JSON.stringify({
+      error: {
+        code: 429,
+        message: "You have exhausted your capacity on this model. Resets in 0s.",
+        status: "RESOURCE_EXHAUSTED",
+      },
+    });
+    const r = classifyGoogleCloudCode429(body);
+    expect(r.category).toBe('soft_rate_limit');
+    expect(r.cooldownMs).toBe(3000);
+  });
+
   it('classifies soft rate limit on "try again"', () => {
     const r = classifyGoogleCloudCode429('please try again later');
     expect(r.category).toBe('soft_rate_limit');

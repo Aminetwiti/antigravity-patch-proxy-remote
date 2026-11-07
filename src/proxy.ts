@@ -1,3 +1,27 @@
+import {
+  setupCustomModelsWatcher,
+  stopCustomModelsWatcher,
+  startQuotaPollingInterval,
+  stopQuotaPollingInterval,
+  loadPersistedState,
+  flushPersistedState,
+  startProxyServer,
+  stopProxyServer,
+  getProxyPort,
+  isProxyRunning,
+} from './proxy/serverLifecycle';
+
+export {
+  setupCustomModelsWatcher,
+  stopCustomModelsWatcher,
+  startQuotaPollingInterval,
+  stopQuotaPollingInterval,
+  loadPersistedState,
+  flushPersistedState,
+  getProxyPort,
+  isProxyRunning,
+};
+
 // ─── Constants & Imports ───────────────────────────────────────────────────
 
 import * as http from 'http';
@@ -93,6 +117,7 @@ import {
   MIN_FLUSH_INTERVAL_MS,
 } from './proxy/persistedState';
 import { metricsEnabled, getMetricsSnapshot, formatPrometheus, negotiateContentType } from './proxy/metricsRoute';
+import { handleInternalApiRoute } from './proxy/internalApiRoutes';
 import {
   resolveProvider,
   resolveCustomModelUrl,
@@ -102,8 +127,8 @@ import {
 } from './proxy/urlBuilder';
 import { generateModelPlaceholderId, toSlug } from './proxy/idGenerator';
 import { expandModelsWithEffort } from './proxy/effortExpander';
-import { isNativeCloudCodeModel, extractModelNameFromPayload, clampSubagentReasoning, isSubagentRequest } from './proxy/modelUtils';
-export { isNativeCloudCodeModel, extractModelNameFromPayload, clampSubagentReasoning, isSubagentRequest };
+import { isNativeCloudCodeModel, extractModelNameFromPayload, clampSubagentReasoning, isSubagentRequest, matchesCustomModel } from './proxy/modelUtils';
+export { isNativeCloudCodeModel, extractModelNameFromPayload, clampSubagentReasoning, isSubagentRequest, matchesCustomModel };
 import { resolveGoogleIp, invalidateCachedDns } from './proxy/dnsResolver';
 import { markProviderRateLimited, isProviderRateLimited } from './proxy/modelRouter';
 import { trimContextPayload } from './proxy/contextTrimmer';
@@ -189,7 +214,22 @@ import {
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
   PREVENTIVE_COOLDOWN_MS,
 } from './proxy/googlePool';
-import { safeWriteHead, safeEnd } from './proxy/httpUtils';
+import { safeWriteHead, safeEnd, parseRetryAfter, isAllowedOrigin } from './proxy/httpUtils';
+export { parseRetryAfter, isAllowedOrigin };
+
+import {
+  ResponseClaimer,
+  createResponseClaimer,
+  trimOldestHistory,
+  resolveFileData,
+  downloadFileContent,
+} from './proxy/historyTrimmer';
+
+export {
+  ResponseClaimer,
+  createResponseClaimer,
+  trimOldestHistory,
+};
 import {
   mergeModels,
   getMappedCustomModels,
@@ -216,1442 +256,113 @@ function newTraceId(): string {
   return randomBytes(8).toString('hex');
 }
 
-let server: http.Server | null = null;
-let proxyPort = 0;
-let isRemoteVpsActive = false;
-let remoteVpsHost = DEFAULT_REMOTE_HOST;
-let remoteVpsToken = DEFAULT_REMOTE_TOKEN;
-let remoteSessionsMap: Record<string, boolean> = {};
+import {
+  isRemoteVpsActive,
+  remoteVpsHost,
+  remoteVpsToken,
+  remoteSessionsMap,
+  TokenUsageEvent,
+  loadRemoteState,
+  saveRemoteState,
+  executeOnRemoteDaemon,
+  getRemoteStatePath,
+  getTokenEventsLogPath,
+  logTokenUsageEvent,
+  ensureRemoteExecScriptOnDisk,
+  updateRemoteVpsConfig,
+  remoteVpsState,
+} from './proxy/remoteState';
 
-function getRemoteStatePath(): string {
-  const home = os.homedir();
-  const dir = path.join(home, '.gemini', 'antigravity');
-  if (!fs.existsSync(dir)) {
-    try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {
-      log.warn('[Proxy] Failed to create ~/.gemini/antigravity dir:', e);
-    }
-  }
-  return path.join(dir, 'remote_vps_state.json');
-}
+export {
+  isRemoteVpsActive,
+  remoteVpsHost,
+  remoteVpsToken,
+  remoteSessionsMap,
+  TokenUsageEvent,
+  loadRemoteState,
+  saveRemoteState,
+  executeOnRemoteDaemon,
+  getRemoteStatePath,
+  getTokenEventsLogPath,
+  logTokenUsageEvent,
+  ensureRemoteExecScriptOnDisk,
+  updateRemoteVpsConfig,
+  remoteVpsState,
+};
 
-export interface TokenUsageEvent {
-  id: string;
-  timestamp: number;
-  conversationId?: string;
-  provider: string;
-  model: string;
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  cachedTokens?: number;
-  latencyMs: number;
-  status: number;
-  endpoint?: string;
-}
+import {
+  enrichExperimentsPayload,
+  unlockCodeAssistPayload,
+  isTelemetryRpcUrl,
+  loadCachedExperiments,
+  saveCachedExperiments,
+  loadCachedCodeAssist,
+  saveCachedCodeAssist,
+  loadCachedAvailableModels,
+  saveCachedAvailableModels,
+  handleGetAvailableModelsProxy,
+  handleGetUserStatusProxy,
+  memoryListExperimentsTime,
+  memoryFetchAvailableModelsTime,
+  memoryLoadCodeAssistTime,
+} from './proxy/endpointHandlers';
 
-let tokenEventsPathCache: string | null = null;
-function getTokenEventsLogPath(): string {
-  if (!tokenEventsPathCache) {
-    const home = process.env.USERPROFILE || process.env.HOME || os.homedir();
-    const dir = path.join(home, '.gemini', 'antigravity');
-    if (!fs.existsSync(dir)) {
-      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
-    }
-    tokenEventsPathCache = path.join(dir, 'token_usage_events.jsonl');
-  }
-  return tokenEventsPathCache;
-}
-
-export function logTokenUsageEvent(event: TokenUsageEvent): void {
-  try {
-    const logPath = getTokenEventsLogPath();
-    const line = JSON.stringify(event) + '\n';
-    fs.appendFile(logPath, line, (err) => {
-      if (err) {
-        log.debug('[Proxy] Could not append to token_usage_events.jsonl:', err.message);
-      }
-    });
-  } catch (_err) {
-    // Non-critical logging failure should never crash the proxy
-  }
-}
-
-function ensureRemoteExecScriptOnDisk(): void {
-  try {
-    const targetDir = path.join(os.homedir(), '.gemini', 'antigravity', 'scripts');
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
-    const targetPath = path.join(targetDir, 'remote-exec.js');
-    const candidates = [
-      path.resolve(__dirname, '../scripts/remote-exec.js'),
-      path.resolve(__dirname, '../../scripts/remote-exec.js'),
-      path.resolve(__dirname, 'scripts/remote-exec.js'),
-    ];
-    for (const src of candidates) {
-      if (fs.existsSync(src)) {
-        fs.copyFileSync(src, targetPath);
-        break;
-      }
-    }
-  } catch (e) {
-    log.warn('[Proxy] Could not sync remote-exec.js to ~/.gemini/antigravity/scripts:', e);
-  }
-}
-
-let lastRemoteStateSummary = '';
-
-export function loadRemoteState(): void {
-  try {
-    ensureRemoteExecScriptOnDisk();
-    const p = getRemoteStatePath();
-    if (fs.existsSync(p)) {
-      const raw = fs.readFileSync(p, 'utf-8').trim();
-      if (!raw) return;
-      let data: any;
-      try {
-        data = JSON.parse(raw);
-      } catch (jsonErr) {
-        // Self-heal: extract outermost JSON object if corrupted trailing characters were present
-        const firstBrace = raw.indexOf('{');
-        const lastBrace = raw.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace > firstBrace) {
-          try {
-            data = JSON.parse(raw.slice(firstBrace, lastBrace + 1));
-            log.info('[Proxy] Self-healed corrupted remote VPS state file.');
-          } catch {
-            log.warn('[Proxy] Unrecoverable remote VPS state file syntax:', jsonErr);
-            return;
-          }
-        } else {
-          return;
-        }
-      }
-      isRemoteVpsActive = !!data.active;
-      if (data.host) remoteVpsHost = String(data.host);
-      if (data.token && data.token !== 'null' && data.token !== 'undefined' && String(data.token).trim().length > 0) {
-        remoteVpsToken = String(data.token).trim();
-      } else {
-        remoteVpsToken = DEFAULT_REMOTE_TOKEN;
-      }
-      if (data.remoteSessions && typeof data.remoteSessions === 'object') {
-        remoteSessionsMap = data.remoteSessions;
-      }
-      const remoteSummary = `active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`;
-      if (remoteSummary !== lastRemoteStateSummary) {
-        lastRemoteStateSummary = remoteSummary;
-        log.debug(`[Proxy] Loaded Remote VPS state: ${remoteSummary}`);
-      } else {
-        log.debug(`[Proxy] Loaded Remote VPS state: ${remoteSummary}`);
-      }
-    }
-  } catch (e) {
-    log.warn('[Proxy] Failed to load remote VPS state from disk:', e);
-  }
-}
-
-export function saveRemoteState(): void {
-  try {
-    const p = getRemoteStatePath();
-    const tmpPath = `${p}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`;
-    const content = JSON.stringify({
-      active: isRemoteVpsActive,
-      host: remoteVpsHost,
-      token: remoteVpsToken || DEFAULT_REMOTE_TOKEN,
-      remoteSessions: remoteSessionsMap,
-    }, null, 2);
-    fs.writeFileSync(tmpPath, content, 'utf-8');
-    try {
-      fs.renameSync(tmpPath, p);
-    } catch {
-      // Fallback for Windows cross-device or temporary file-lock edge cases
-      fs.copyFileSync(tmpPath, p);
-      try { fs.unlinkSync(tmpPath); } catch {}
-    }
-  } catch (e) {
-    log.warn('[Proxy] Failed to save remote VPS state to disk:', e);
-  }
-}
-
-// ─── loadCodeAssist Cache (Login Resilience) ────────────────────────────────
-
-let memoryLoadCodeAssistCache: string | null = null;
-let memoryLoadCodeAssistTime = 0;
-
-function getLoadCodeAssistCachePath(): string {
-  const home = os.homedir();
-  const dir = path.join(home, '.gemini', 'antigravity');
-  if (!fs.existsSync(dir)) {
-    try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {
-      log.warn('[Proxy] Failed to create cache directory:', e);
-    }
-  }
-  return path.join(dir, 'load_code_assist_cache.json');
-}
-
-export function unlockCodeAssistPayload(rawJson: string): string {
-  // Pass-through: do not force Google AI Ultra, preserve actual user plan (Pro, Standard, etc.)
-  return rawJson;
-}
-
-function loadCachedCodeAssist(): string | null {
-  if (memoryLoadCodeAssistCache) return unlockCodeAssistPayload(memoryLoadCodeAssistCache);
-  try {
-    const p = getLoadCodeAssistCachePath();
-    if (fs.existsSync(p)) {
-      const content = fs.readFileSync(p, 'utf-8').trim();
-      if (content.startsWith('{')) {
-        const unlocked = unlockCodeAssistPayload(content);
-        memoryLoadCodeAssistCache = unlocked;
-        memoryLoadCodeAssistTime = Date.now();
-        return unlocked;
-      }
-    }
-  } catch (e) {
-    log.debug('[Proxy] Failed to load cached code assist:', e);
-  }
-  return null;
-}
-
-function saveCachedCodeAssist(content: string): void {
-  try {
-    const unlocked = unlockCodeAssistPayload(content);
-    memoryLoadCodeAssistCache = unlocked;
-    memoryLoadCodeAssistTime = Date.now();
-    const p = getLoadCodeAssistCachePath();
-    fs.writeFileSync(p, unlocked, 'utf-8');
-  } catch (e) {
-    log.warn('[Proxy] Failed to save cached code assist:', e);
-  }
-}
-
-// ─── listExperiments Cache (Feature Flags & Planning Resilience) ────────────
-
-let memoryListExperimentsCache: string | null = null;
-let memoryListExperimentsTime = 0;
-
-function getListExperimentsCachePath(): string {
-  const home = os.homedir();
-  const dir = path.join(home, '.gemini', 'antigravity');
-  if (!fs.existsSync(dir)) {
-    try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
-  }
-  return path.join(dir, 'list_experiments_cache.json');
-}
-
-function loadCachedExperiments(): string | null {
-  if (memoryListExperimentsCache) return memoryListExperimentsCache;
-  try {
-    const p = getListExperimentsCachePath();
-    if (fs.existsSync(p)) {
-      const content = fs.readFileSync(p, 'utf-8').trim();
-      if (content.startsWith('{')) {
-        memoryListExperimentsCache = content;
-        return content;
-      }
-    }
-  } catch (e) {
-    log.debug('[Proxy] Failed to load cached experiments:', e);
-  }
-  return null;
-}
-
-function saveCachedExperiments(content: string): void {
-  try {
-    memoryListExperimentsCache = content;
-    memoryListExperimentsTime = Date.now();
-    const p = getListExperimentsCachePath();
-    fs.writeFileSync(p, content, 'utf-8');
-  } catch (e) {
-    log.warn('[Proxy] Failed to save cached experiments:', e);
-  }
-}
-
-// ─── fetchAvailableModels Cache (Discovery & WaitForReady Resilience) ───────
-
-let memoryFetchAvailableModelsCache: string | null = null;
-let memoryFetchAvailableModelsTime = 0;
-
-function getFetchAvailableModelsCachePath(): string {
-  const home = os.homedir();
-  const dir = path.join(home, '.gemini', 'antigravity');
-  if (!fs.existsSync(dir)) {
-    try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
-  }
-  return path.join(dir, 'fetch_available_models_cache.json');
-}
-
-function loadCachedAvailableModels(): string | null {
-  if (memoryFetchAvailableModelsCache) return memoryFetchAvailableModelsCache;
-  try {
-    const p = getFetchAvailableModelsCachePath();
-    if (fs.existsSync(p)) {
-      const content = fs.readFileSync(p, 'utf-8').trim();
-      if (content.startsWith('{')) {
-        memoryFetchAvailableModelsCache = content;
-        return content;
-      }
-    }
-  } catch (e) {
-    log.debug('[Proxy] Failed to load cached available models:', e);
-  }
-  return null;
-}
-
-function saveCachedAvailableModels(content: string): void {
-  try {
-    memoryFetchAvailableModelsCache = content;
-    memoryFetchAvailableModelsTime = Date.now();
-    const p = getFetchAvailableModelsCachePath();
-    fs.writeFileSync(p, content, 'utf-8');
-  } catch (e) {
-    log.warn('[Proxy] Failed to save cached available models:', e);
-  }
-}
-
-/**
- * Detects whether a request URL corresponds to an internal Language Server telemetry / shadow eval RPC.
- */
-export function isTelemetryRpcUrl(url: string | undefined): boolean {
-  if (!url) return false;
-  return (
-    url.includes('/exa.language_server_pb.LanguageServerService/Record') ||
-    url.includes('/exa.language_server_pb.LanguageServerService/DetectBattleModeAutoTrigger') ||
-    url.includes('recordTrajectoryAnalytics') ||
-    url.includes('writeTrajectoryAcls') ||
-    url.includes('/v1internal:record')
-  );
-}
-
-/**
- * Enriches listExperiments responses with required IDE feature flags,
- * performance optimizations, and strictly neutralizes DeepMind / Mendel shadow evaluation.
- */
-export function enrichExperimentsPayload(rawBody: string): string {
-  try {
-    const data = JSON.parse(rawBody);
-    if (!Array.isArray(data.flags)) {
-      data.flags = [];
-    }
-    const requiredFlags = [
-      // DeepMind & Mendel Shadow Eval suppression
-      { name: 'shadow-call-aicode-mendel', boolValue: false },
-      { name: 'mendel_aicode_shadow_diff', boolValue: false },
-      { name: 'enable-battle-mode-auto-trigger', boolValue: false },
-      // High performance & caching boosters
-      { name: 'supercomplete-fast-debounce', boolValue: true },
-      { name: 'command-prompt-cache-config', stringValue: '{"enabled": true}' },
-      { name: 'context-force-local-context', boolValue: true },
-      { name: 'use-special-edit-code-block', boolValue: true },
-      { name: 'supercomplete-always-use-cache-on-equal-state', boolValue: true },
-      { name: 'supercomplete-max-concurrent-requests', intValue: 2 },
-      { name: 'supercomplete-regular-debounce', intValue: 350 },
-      { name: 'use-anthropic-token-efficient-tools-beta', boolValue: true },
-      { name: 'cascade-use-replace-content-edit-tool', boolValue: true },
-      // Core UI & planning capabilities
-      { name: 'use-slash-plan', boolValue: true },
-      { name: 'customization-token-budget', intValue: 20000 },
-      { name: 'rules-token-budget', intValue: 20000 },
-      { name: 'enable-subagent-hub', boolValue: true },
-      { name: 'enable-skill-search-tool', boolValue: true },
-      { name: 'enable-owl-slash-command', boolValue: true },
-      { name: 'enable-browser-subagent-v2', boolValue: true },
-      { name: 'send-subagent-initial-prompt-as-message', boolValue: true },
-      { name: 'show-model-selection-change', boolValue: true },
-      { name: 'scheduled-tasks-v2', boolValue: true },
-      { name: 'enable-tasks', boolValue: true },
-      { name: 'enable-conversation-search-v2', boolValue: true },
-      { name: 'enable-background-task-accumulator', boolValue: true },
-      { name: 'enable-aux-pane-redesign', boolValue: true },
-      { name: 'enable-ui-sidecars', boolValue: true },
-      { name: 'enable-sidecars', boolValue: true },
-      { name: 'enable-split-view', boolValue: true },
-      // Antigravity 2.25+ Major Features (Turbo, Customizations, Marketplace, Audio)
-      { name: 'enable-permissions-selector', boolValue: true },
-      { name: 'jetski-unified-customizations-panel-enabled', boolValue: true },
-      { name: 'enable-plugin-sidebar-section', boolValue: true },
-      { name: 'enable-plugins', boolValue: true },
-      { name: 'enable-auto-permission-preset', boolValue: true },
-      { name: 'permission-v2', boolValue: true },
-      { name: 'enable-audio-transcription', boolValue: true },
-      { name: 'enable-voice-relay', boolValue: true },
-      { name: 'enable-marketplace-search-tool', boolValue: true },
-      { name: 'google-workspace-mentions', boolValue: true },
-      { name: 'enable-customization-skills', boolValue: true },
-      // Antigravity 2.25+ Developer Mode, Reasoning, Branching & Native Tools
-      { name: 'enable-developer-mode', boolValue: true },
-      { name: 'enable-trajectory-debug-tools', boolValue: true },
-      { name: 'enable-conversation-forking', boolValue: true },
-      { name: 'enable-fork-at-historical-step', boolValue: true },
-      { name: 'enable-fork-in-new-worktree', boolValue: true },
-      { name: 'enable-conversation-selection-quoting', boolValue: true },
-      { name: 'enable-resume-conversations-from-restart', boolValue: true },
-      { name: 'enable-thought-editing', boolValue: true },
-      { name: 'enable-thought-steering-from-selection', boolValue: true },
-      { name: 'enable-input-autocomplete', boolValue: true },
-      { name: 'enable-input-draft-persistence', boolValue: true },
-      { name: 'context-window-selector', boolValue: true },
-      { name: 'show-all-models-in-gemini-app', boolValue: true },
-      { name: 'enable-battle-mode', boolValue: true },
-      { name: 'enable-battle-contrib-variants', boolValue: true },
-      { name: 'enable-battle-mode-custom-agents', boolValue: true },
-      { name: 'jetski-autonomous-mode', boolValue: true },
-      { name: 'labs-autonomous-mode', boolValue: true },
-      { name: 'enable-agent-team', boolValue: true },
-      { name: 'enable-swarm-monitor', boolValue: true },
-      { name: 'enable-critique-preview', boolValue: true },
-      { name: 'enable-sidebar-unread-dot', boolValue: true },
-      { name: 'enable-file-explorer-tab', boolValue: true },
-      { name: 'enable-code-search-palette', boolValue: true },
-      { name: 'enable-git-vcs-ui', boolValue: true },
-      { name: 'enable-jj-vcs-ui', boolValue: true },
-      { name: 'enable-file-viewer-keyboard-navigation', boolValue: true },
-      { name: 'markdown-table-v2', boolValue: true },
-      { name: 'enable-pdf-viewer', boolValue: true },
-      { name: 'enable-notebook-rendering', boolValue: true },
-      { name: 'enable-upload-html-artifact-to-drive', boolValue: true },
-      { name: 'enable-hub-builtin-browser', boolValue: true },
-      { name: 'enable-browser-subagent-webview-ux', boolValue: true },
-      { name: 'enable-persistent-terminals', boolValue: true },
-      { name: 'enable-jetbox-terminal-v2', boolValue: true },
-      { name: 'enable-pty', boolValue: true },
-      { name: 'remote-control-setting-enabled', boolValue: true },
-      { name: 'enable-remote-control-audio-transcription', boolValue: true },
-      { name: 'enable-plugin-context-providers', boolValue: true },
-      { name: 'enable-mcp-plugin-auth', boolValue: true },
-      { name: 'enable-mcp-non-blocking-turn-load', boolValue: true },
-      // Enterprise, Cloud Triggers, Automations & Rich UX
-      { name: 'enable-remote-ai', boolValue: true },
-      { name: 'enable-conversation-sharing-prototype', boolValue: true },
-      { name: 'enable-terminal-setup-script', boolValue: true },
-      { name: 'enable-context-menu-system', boolValue: true },
-      { name: 'configure-artifact-width', boolValue: true },
-      { name: 'enable-sidecar-pill-auto-open', boolValue: true },
-      { name: 'enable-notifications-settings', boolValue: true },
-      { name: 'enable-plugin-auth', boolValue: true },
-      { name: 'enable-text-transitions', boolValue: true },
-      { name: 'enable-catch-file-viewer', boolValue: true },
-      { name: 'enable-project-4k', boolValue: false },
-      { name: 'project-4k', boolValue: false },
-      { name: 'enable-workspace-scoped-jetski-extension', boolValue: true },
-    ];
-    for (const reqFlag of requiredFlags) {
-      const existing = data.flags.find((f: any) => f && f.name === reqFlag.name);
-      if (!existing) {
-        data.flags.push(reqFlag);
-      } else if (reqFlag.boolValue !== undefined) {
-        existing.boolValue = reqFlag.boolValue;
-      } else if (reqFlag.intValue !== undefined) {
-        existing.intValue = reqFlag.intValue;
-      } else if ((reqFlag as any).stringValue !== undefined) {
-        existing.stringValue = (reqFlag as any).stringValue;
-      }
-    }
-    return JSON.stringify(data);
-  } catch (_) {
-    return rawBody;
-  }
-}
-
-export async function executeOnRemoteDaemon(
-  rawHost: string,
-  token: string,
-  command: string,
-  workspaceId?: string,
-  sessionId?: string,
-  timeoutMs = 15000,
-): Promise<{ ok: boolean; stdout: string; stderr: string; exitCode: number; error?: string }> {
-  let cleanHost = (rawHost || DEFAULT_REMOTE_HOST).trim().replace(/\/+$/, '');
-  if (!cleanHost.startsWith('http://') && !cleanHost.startsWith('https://')) {
-    cleanHost = 'https://' + cleanHost;
-  }
-  const url = new URL(cleanHost + '/v2/terminal/exec');
-  const isHttps = url.protocol === 'https:';
-  const transport = isHttps ? https : http;
-
-  const payload = JSON.stringify({
-    command,
-    workspaceId: (workspaceId && workspaceId !== 'default') ? workspaceId : 'antigravity-add-model-main',
-    sessionId: sessionId || '',
-    timeoutMs,
-  });
-
-  return new Promise((resolve) => {
-    const r = transport.request(
-      url,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload),
-          Authorization: `Bearer ${token || DEFAULT_REMOTE_TOKEN}`,
-          'User-Agent': 'AntigravityPatchProxy/3.8.2',
-        },
-        timeout: timeoutMs,
-      },
-      (resp) => {
-        const chunks: Buffer[] = [];
-        resp.on('data', (c) => chunks.push(c));
-        resp.on('end', () => {
-          try {
-            const data = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
-            resolve(data);
-          } catch {
-            const raw = Buffer.concat(chunks).toString('utf-8');
-            resolve({
-              ok: resp.statusCode === 200,
-              stdout: raw,
-              stderr: '',
-              exitCode: resp.statusCode === 200 ? 0 : 1,
-            });
-          }
-        });
-      },
-    );
-
-    r.on('error', (err) => {
-      resolve({ ok: false, stdout: '', stderr: err.message, exitCode: 1, error: err.message });
-    });
-
-    r.on('timeout', () => {
-      r.destroy();
-      resolve({ ok: false, stdout: '', stderr: 'Request timed out', exitCode: 124, error: 'timeout' });
-    });
-
-    r.write(payload);
-    r.end();
-  });
-}
+export {
+  enrichExperimentsPayload,
+  unlockCodeAssistPayload,
+  isTelemetryRpcUrl,
+  loadCachedExperiments,
+  saveCachedExperiments,
+  loadCachedCodeAssist,
+  saveCachedCodeAssist,
+  loadCachedAvailableModels,
+  saveCachedAvailableModels,
+  handleGetAvailableModelsProxy,
+  handleGetUserStatusProxy,
+  memoryListExperimentsTime,
+  memoryFetchAvailableModelsTime,
+  memoryLoadCodeAssistTime,
+};
 
 // Initialize on boot
 loadRemoteState();
 
-function generateGracefulMarkdown(diagnostic: ErrorDiagnostic, model?: CustomModel): string {
-  const alertType = diagnostic.severity === 'warning' ? 'WARNING' : 'CAUTION';
-  const rawTitle = diagnostic.title.replace(/^Model unavailable:\s*/i, '');
-  const title = `Model unavailable: ${rawTitle}`;
+import {
+  generateGracefulMarkdown,
+  ProxyErrorPayload,
+  ProxyErrorEmitter,
+  setProxyErrorEmitter,
+  emitProxyError,
+  buildProxyErrorPayload,
+  sendGracefulStreamError,
+  sendGracefulNonStreamError,
+  sendGracefulError,
+  parseBalancedJson,
+  extractAllPseudoToolCalls,
+  sanitizeCandidatesInResponse,
+  writeSafeSseChunk,
+  injectAntiHallucinationInstruction,
+  autoUnstickConversation,
+  transformGoogleStreamForRemote,
+} from './proxy/streamPipeline';
 
-  let md = `> [!${alertType}]\n`;
-  md += `> **${title}**\n>\n`;
-  if (model) {
-    const modelName = model.displayName || model.name;
-    const providerStr = model.provider ? ` · **Provider:** \`${model.provider}\`` : '';
-    md += `> **Model:** \`${modelName}\`${providerStr}\n>\n`;
-  }
-  md += `> ${diagnostic.message}\n`;
-
-  if (diagnostic.suggestions && diagnostic.suggestions.length > 0) {
-    md += `>\n> **Suggested Actions:**\n`;
-    diagnostic.suggestions.forEach(s => {
-      md += `> - ${s}\n`;
-    });
-  }
-
-  if (diagnostic.actionUrl) {
-    md += `>\n> 🔗 [Manage Billing & Credits](${diagnostic.actionUrl})\n`;
-  }
-
-  md += `\n<span class="ag-system-error-marker" data-type="${diagnostic.errorType}" style="display:none;"></span>`;
-  return md;
-}
-
-
-
-// ─── Proxy Error Emitter ──────────────────────────────────────────────────
-// Lets the main process fan-out notable diagnostics to the renderer without
-// proxy.ts depending on Electron directly. ipcHandlers.ts calls
-// setProxyErrorEmitter(...) once on boot. Default is a no-op so unit tests
-// don't need a stub.
-export type ProxyErrorPayload = {
-  traceId: string;
-  provider: string;
-  status?: number;
-  errorType: ErrorType;
-  rawError: string;
-  title: string;
-  message: string;
-  suggestions: string[];
-  actionUrl?: string;
+export {
+  generateGracefulMarkdown,
+  ProxyErrorPayload,
+  ProxyErrorEmitter,
+  setProxyErrorEmitter,
+  buildProxyErrorPayload,
+  sendGracefulStreamError,
+  sendGracefulNonStreamError,
+  sendGracefulError,
+  parseBalancedJson,
+  extractAllPseudoToolCalls,
+  sanitizeCandidatesInResponse,
+  writeSafeSseChunk,
+  injectAntiHallucinationInstruction,
+  autoUnstickConversation,
+  transformGoogleStreamForRemote,
 };
-
-let proxyErrorEmitter: ((p: ProxyErrorPayload) => void) | null = null;
-export function setProxyErrorEmitter(fn: ((p: ProxyErrorPayload) => void) | null): void {
-  proxyErrorEmitter = fn;
-}
-
-function emitProxyError(p: ProxyErrorPayload): void {
-  // 1) In-process fan-out (Electron main → renderer via setProxyErrorEmitter).
-  if (proxyErrorEmitter) proxyErrorEmitter(p);
-  // 2) Mirror to stderr as a single-line JSON payload so the proxy child
-  //    spawned by ag-doctor-ui's ProxyManager reaches the same handler.
-  //    Pure JSON, no whitespace, so a `line.startsWith('{')` filter in the
-  //    consumer can route the structured payload while leaving human logs
-  //    alone. Safe to ignore if the host doesn't watch stderr.
-  try {
-    process.stderr.write(JSON.stringify(p) + '\n');
-  } catch {
-    // stdio might be closed in unit tests — swallow.
-  }
-}
-
-// Build a payload from a raw error triple + provider. Used at the 6 sites
-// in proxy.ts where classifyError() is called and the diagnostic is
-// considered "notable" (i.e. surfaced to the user via the response). We
-// keep this single function so the emission contract is identical across
-// all call sites.
-export function buildProxyErrorPayload(
-  traceId: string,
-  status: number | undefined,
-  bodyOrErr: unknown,
-  provider: string | undefined,
-  fallbackMessage?: string,
-): ProxyErrorPayload {
-  const rawText = typeof bodyOrErr === 'string'
-    ? bodyOrErr
-    : bodyOrErr instanceof Error
-      ? bodyOrErr.message
-      : fallbackMessage ?? '';
-  const diagnostic = classifyError(status, bodyOrErr, typeof bodyOrErr === 'string' ? bodyOrErr : undefined, provider);
-  return {
-    traceId,
-    provider: provider ?? 'unknown',
-    status,
-    errorType: diagnostic.errorType,
-    rawError: rawText,
-    title: diagnostic.title,
-    message: diagnostic.message,
-    suggestions: diagnostic.suggestions ?? [],
-    actionUrl: diagnostic.actionUrl,
-  };
-}
-
-
-
-function sendGracefulStreamError(res: http.ServerResponse, diagnostic: ErrorDiagnostic, model?: CustomModel): void {
-  if (res.writableEnded) return;
-  const errResponse = {
-    response: {
-      candidates: [
-        {
-          content: { parts: [{ text: generateGracefulMarkdown(diagnostic, model) }], role: 'model' },
-          finishReason: 'STOP',
-          index: 0,
-        },
-      ],
-    },
-    traceId: '',
-    metadata: {},
-    _agDiagnostic: diagnostic,
-  };
-  sanitizeCandidatesInResponse(errResponse);
-  if (!res.headersSent) {
-    safeWriteHead(res, 200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-AG-Error-Type': diagnostic.errorType,
-    });
-  }
-  writeSafeSseChunk(res, errResponse);
-  safeEnd(res);
-}
-
-function sendGracefulNonStreamError(res: http.ServerResponse, diagnostic: ErrorDiagnostic, model?: CustomModel): void {
-  if (res.writableEnded) return;
-  const errResponse = {
-    response: {
-      candidates: [
-        {
-          content: { parts: [{ text: generateGracefulMarkdown(diagnostic, model) }], role: 'model' },
-          finishReason: 'STOP',
-          index: 0,
-        },
-      ],
-    },
-    traceId: '',
-    metadata: {},
-    _agDiagnostic: diagnostic,
-  };
-  sanitizeCandidatesInResponse(errResponse);
-  if (!res.headersSent) {
-    safeWriteHead(res, 200, {
-      'Content-Type': 'application/json',
-      'X-AG-Error-Type': diagnostic.errorType,
-    });
-  }
-  safeEnd(res, JSON.stringify(errResponse));
-}
-
-/**
- * Dispatch error response based on stream mode.
- * Prefers explicit stream or non-stream call at call sites to avoid boolean flags.
- */
-function sendGracefulError(res: http.ServerResponse, isStream: boolean, diagnostic: ErrorDiagnostic, model?: CustomModel): void {
-  if (isStream) {
-    sendGracefulStreamError(res, diagnostic, model);
-  } else {
-    sendGracefulNonStreamError(res, diagnostic, model);
-  }
-}
-
-// ─── Model Helpers ────────────────────────────────────────────────────────
-
-// generateModelPlaceholderId and toSlug are now in ./proxy/idGenerator.ts (re-exported above)
-
-// ─── Google Proxy ─────────────────────────────────────────────────────────
-
-export function parseBalancedJson(str: string, startIdx: number): { json: string; endIdx: number } | null {
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  let jsonStart = -1;
-
-  for (let i = startIdx; i < str.length; i++) {
-    const ch = str[i];
-    if (jsonStart === -1) {
-      if (ch === '{' || ch === '[') {
-        jsonStart = i;
-        depth = 1;
-      }
-      continue;
-    }
-
-    if (inString) {
-      if (escape) {
-        escape = false;
-      } else if (ch === '\\') {
-        escape = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-    } else if (ch === '{' || ch === '[') {
-      depth++;
-    } else if (ch === '}' || ch === ']') {
-      depth--;
-      if (depth === 0) {
-        return { json: str.slice(jsonStart, i + 1), endIdx: i + 1 };
-      }
-    }
-  }
-  return null;
-}
-
-export function extractAllPseudoToolCalls(text: string): Array<{ fnName: string; args: any; fullMatch: string; startIdx: number; endIdx: number }> {
-  const results: Array<{ fnName: string; args: any; fullMatch: string; startIdx: number; endIdx: number }> = [];
-  const marker = '[Executed tool:';
-  let cursor = 0;
-
-  while (cursor < text.length) {
-    const startIdx = text.indexOf(marker, cursor);
-    if (startIdx === -1) break;
-
-    const afterMarker = text.slice(startIdx + marker.length);
-    const closeBracketIdx = afterMarker.indexOf(']');
-    const withArgsIdx = afterMarker.indexOf('with arguments:');
-
-    // Case 1: Zero-argument tool call [Executed tool: tool_name]
-    if (closeBracketIdx !== -1 && (withArgsIdx === -1 || closeBracketIdx < withArgsIdx)) {
-      const potentialFn = afterMarker.slice(0, closeBracketIdx).trim();
-      if (/^[a-zA-Z0-9_\-\.:]+$/.test(potentialFn)) {
-        const fullEndIdx = startIdx + marker.length + closeBracketIdx + 1;
-        results.push({
-          fnName: potentialFn,
-          args: {},
-          fullMatch: text.slice(startIdx, fullEndIdx),
-          startIdx,
-          endIdx: fullEndIdx,
-        });
-        cursor = fullEndIdx;
-        continue;
-      }
-    }
-
-    // Case 2: Tool call with arguments
-    if (withArgsIdx === -1) {
-      cursor = startIdx + marker.length;
-      continue;
-    }
-
-    const fnName = afterMarker.slice(0, withArgsIdx).trim();
-    if (!/^[a-zA-Z0-9_\-\.:]+$/.test(fnName)) {
-      cursor = startIdx + marker.length;
-      continue;
-    }
-    const argsStartInText = startIdx + marker.length + withArgsIdx + 'with arguments:'.length;
-
-    const parsedJson = parseBalancedJson(text, argsStartInText);
-    if (!parsedJson) {
-      cursor = startIdx + marker.length;
-      continue;
-    }
-
-    const remainder = text.slice(parsedJson.endIdx);
-    const closeBracketMatch = remainder.match(/^\s*\]/);
-    if (!closeBracketMatch) {
-      cursor = parsedJson.endIdx;
-      continue;
-    }
-
-    const fullEndIdx = parsedJson.endIdx + closeBracketMatch[0].length;
-    const fullMatch = text.slice(startIdx, fullEndIdx);
-
-    let parsedArgs: any = null;
-    try {
-      parsedArgs = JSON.parse(parsedJson.json);
-    } catch (_) {
-      try {
-        const normalized = parsedJson.json.replace(/"((?:[^"\\]|\\.)*)"/gs, (_m, inner) => {
-          const fixed = inner
-            .replace(/\r?\n/g, '\\n')
-            .replace(/\t/g, '\\t')
-            .replace(/\\([^\\"])/g, (match, char) => {
-              if (['"', '\\', '/'].includes(char)) return match;
-              return '\\\\' + char;
-            });
-          return '"' + fixed + '"';
-        });
-        parsedArgs = JSON.parse(normalized);
-      } catch (_) {
-        try {
-          parsedArgs = JSON.parse(parsedJson.json.replace(/\\(?![\"/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\'));
-        } catch (_) {}
-      }
-    }
-
-    if (parsedArgs !== null && fnName) {
-      results.push({
-        fnName,
-        args: parsedArgs,
-        fullMatch,
-        startIdx,
-        endIdx: fullEndIdx,
-      });
-      cursor = fullEndIdx;
-    } else {
-      cursor = parsedJson.endIdx;
-    }
-  }
-  return results;
-}
-
-export function sanitizeCandidatesInResponse(data: any): boolean {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
-  let modified = false;
-
-  // 1. Antigravity Language Server crash protection:
-  // In codeassistclient.(*CodeAssistClient).getStreamingTextCompletion-range1 at generation.go:673,
-  // the Go language server unmarshals v1internal_prediction_service_go_proto.GenerateContentResponse
-  // and accesses resp.Response.UsageMetadata at offset 0x50 without checking if resp.Response is nil.
-  // If data.response is absent or null, resp.Response is nil, triggering panic 0xc0000005 (addr 0x50),
-  // which crashes the language server and causes Antigravity IDE to reload.
-  // Ensure data.response is ALWAYS a non-null object.
-  if (!data.response || typeof data.response !== 'object') {
-    data.response = {};
-    modified = true;
-  }
-
-  // 2. Mirror candidates between root and data.response
-  if (Array.isArray(data.candidates) && (!Array.isArray(data.response.candidates) || data.response.candidates.length === 0)) {
-    data.response.candidates = data.candidates;
-    modified = true;
-  } else if (Array.isArray(data.response.candidates) && (!Array.isArray(data.candidates) || data.candidates.length === 0)) {
-    data.candidates = data.response.candidates;
-    modified = true;
-  }
-  if (!Array.isArray(data.response.candidates)) {
-    data.response.candidates = [];
-    modified = true;
-  }
-  if (!Array.isArray(data.candidates)) {
-    data.candidates = data.response.candidates;
-    modified = true;
-  }
-
-  // 3. Guarantee usageMetadata is non-null on both root and data.response to prevent nil dereference at generation.go:673
-  if (!data.response.usageMetadata || typeof data.response.usageMetadata !== 'object') {
-    data.response.usageMetadata = data.usageMetadata && typeof data.usageMetadata === 'object'
-      ? data.usageMetadata
-      : { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
-    modified = true;
-  }
-  if (!data.usageMetadata || typeof data.usageMetadata !== 'object') {
-    data.usageMetadata = data.response.usageMetadata;
-    modified = true;
-  }
-
-  // 4. Mirror promptFeedback between root and data.response
-  if (data.promptFeedback && !data.response.promptFeedback) {
-    data.response.promptFeedback = data.promptFeedback;
-    modified = true;
-  } else if (data.response.promptFeedback && !data.promptFeedback) {
-    data.promptFeedback = data.response.promptFeedback;
-    modified = true;
-  }
-
-  // 5. Mirror modelVersion
-  if (data.modelVersion && !data.response.modelVersion) {
-    data.response.modelVersion = data.modelVersion;
-    modified = true;
-  } else if (data.response.modelVersion && !data.modelVersion) {
-    data.modelVersion = data.response.modelVersion;
-    modified = true;
-  }
-
-  const sanitizeList = (candidatesList: any[], container: any, key: string): any[] => {
-    if (!Array.isArray(candidatesList)) return [];
-    let filtered = candidatesList.filter((c) => c && typeof c === 'object');
-    if (filtered.length !== candidatesList.length) {
-      container[key] = filtered;
-      modified = true;
-    }
-    if (candidatesList.length === 0) {
-      filtered = [{ content: { parts: [{ text: '' }], role: 'model' }, index: 0 }];
-      container[key] = filtered;
-      modified = true;
-    }
-    for (const cand of filtered) {
-      if (!cand.content || typeof cand.content !== 'object') {
-        cand.content = { parts: [{ text: '' }], role: 'model' };
-        modified = true;
-      } else {
-        if (!Array.isArray(cand.content.parts) || cand.content.parts.length === 0) {
-          cand.content.parts = [{ text: '' }];
-          modified = true;
-        } else {
-          for (let pIdx = 0; pIdx < cand.content.parts.length; pIdx++) {
-            const p = cand.content.parts[pIdx];
-            if (!p || typeof p !== 'object') {
-              cand.content.parts[pIdx] = { text: '' };
-              modified = true;
-            } else if (p.functionCall && p.functionCall.name === SYNTHETIC_TOOL_NAME) {
-              const content = p.functionCall.args?.content;
-              if (typeof content === 'string') {
-                cand.content.parts[pIdx] = { text: content };
-                modified = true;
-              }
-            } else if (typeof p.text === 'string' && p.text.includes('[Executed tool:')) {
-              const toolCalls = extractAllPseudoToolCalls(p.text);
-              if (toolCalls.length > 0) {
-                const newParts: any[] = [];
-                let lastIdx = 0;
-                for (const call of toolCalls) {
-                  const before = p.text.slice(lastIdx, call.startIdx).trim();
-                  if (before) newParts.push({ text: before });
-                  newParts.push({ functionCall: { name: call.fnName, args: call.args } });
-                  lastIdx = call.endIdx;
-                }
-                const after = p.text.slice(lastIdx).trim();
-                if (after) newParts.push({ text: after });
-                if (newParts.length > 0) {
-                  cand.content.parts.splice(pIdx, 1, ...newParts);
-                  pIdx += newParts.length - 1;
-                  modified = true;
-                }
-              }
-            } else if (
-              p.text === undefined &&
-              !p.functionCall &&
-              !p.functionResponse &&
-              !p.fileData &&
-              !p.inlineData &&
-              !p.executableCode &&
-              !p.codeExecutionResult
-            ) {
-              p.text = '';
-              modified = true;
-            }
-          }
-        }
-        if (!cand.content.role) {
-          cand.content.role = 'model';
-          modified = true;
-        }
-      }
-    }
-    return filtered;
-  };
-
-  if (data.candidates) {
-    data.candidates = sanitizeList(data.candidates, data, 'candidates');
-  }
-  if (data.response && typeof data.response === 'object' && data.response.candidates) {
-    data.response.candidates = sanitizeList(data.response.candidates, data.response, 'candidates');
-  }
-
-  return modified;
-}
-
-export function writeSafeSseChunk(res: http.ServerResponse, chunk: any): boolean {
-  if (res.writableEnded || res.destroyed) return false;
-  if (Array.isArray(chunk)) {
-    let ok = true;
-    for (const item of chunk) {
-      if (item && typeof item === 'object') {
-        ok = writeSafeSseChunk(res, item) && ok;
-      }
-    }
-    return ok;
-  }
-  sanitizeCandidatesInResponse(chunk);
-  try {
-    return res.write('data: ' + JSON.stringify(chunk) + '\n\n');
-  } catch (err) {
-    log.warn('[Proxy] writeSafeSseChunk failed:', (err as Error).message);
-    return false;
-  }
-}
-
-/**
- * Injects a strict system instruction into Cloud Code request payloads to ensure
- * models do not hallucinate plain-text tool invocations (e.g. `[Executed tool: ...]`)
- * when continuing after cross-model fallback or sanitized turns.
- */
-export function injectAntiHallucinationInstruction(targetReq: any): void {
-  if (!targetReq || typeof targetReq !== 'object') return;
-  if (!targetReq.systemInstruction || typeof targetReq.systemInstruction !== 'object') {
-    targetReq.systemInstruction = { parts: [] };
-  }
-  if (!Array.isArray(targetReq.systemInstruction.parts)) {
-    targetReq.systemInstruction.parts = [];
-  }
-  const hasInstruction = targetReq.systemInstruction.parts.some((p: any) =>
-    typeof p?.text === 'string' && (p.text.includes('CRITICAL TOOL INVOCATION RULE') || p.text.includes('Always invoke tools using native'))
-  );
-  if (!hasInstruction) {
-    targetReq.systemInstruction.parts.push({ text: ANTI_HALLUCINATION_TOOL_INSTRUCTION });
-  }
-}
-
-/**
- * Automatically resets a stuck conversation session in SQLite conversation_summaries.db
- * from CASCADE_RUN_STATUS_RUNNING / not_fully_idle=1 back to IDLE when an upstream network
- * error or timeout terminates the stream prematurely, preventing permanent UI "Working" locks.
- */
-export function autoUnstickConversation(convId?: string): void {
-  if (!convId || typeof convId !== 'string') return;
-  try {
-    const dataDir = path.join(os.homedir(), '.gemini', 'antigravity');
-    const dbPath = path.join(dataDir, 'conversation_summaries.db');
-    if (!fs.existsSync(dbPath)) return;
-    const { DatabaseSync } = require('node:sqlite');
-    const db = new DatabaseSync(dbPath);
-    try {
-      try { db.exec('PRAGMA busy_timeout = 2500;'); } catch (_) {}
-      db.prepare("UPDATE conversation_summaries SET not_fully_idle = 0, status = 'CASCADE_RUN_STATUS_IDLE' WHERE conversation_id = ? AND (not_fully_idle = 1 OR status != 'CASCADE_RUN_STATUS_IDLE')").run(convId);
-      const protoPath = path.join(dataDir, 'agyhub_summaries_proto.pb');
-      if (fs.existsSync(protoPath)) {
-        try { fs.unlinkSync(protoPath); } catch (_) {}
-      }
-      log.info(`[Proxy] 🔓 Auto-unstick applied to conversation ${convId} after upstream stream drop.`);
-    } finally {
-      db.close();
-    }
-  } catch (e: any) {
-    log.debug(`[Proxy] Auto-unstick non-fatal notice for ${convId}:`, e?.message);
-  }
-}
-
-export function transformGoogleStreamForRemote(
-  proxyRes: http.IncomingMessage,
-  clientRes: http.ServerResponse,
-  convId = '',
-  isRemote = true,
-  modelName = '',
-  startTime = Date.now(),
-): void {
-  const headers = { ...proxyRes.headers };
-  delete headers['content-length'];
-  delete headers['content-encoding'];
-  headers['x-accel-buffering'] = 'no';
-  headers['cache-control'] = 'no-cache, no-transform';
-  safeWriteHead(clientRes, proxyRes.statusCode || 200, headers as Record<string, string>);
-  if (typeof (clientRes as any).flushHeaders === 'function') {
-    (clientRes as any).flushHeaders();
-  }
-  if (clientRes?.socket && typeof clientRes.socket.setNoDelay === 'function') {
-    try { clientRes.socket.setNoDelay(true); } catch (_) {}
-  }
-
-  const onClientClose = () => {
-    if (proxyRes && !proxyRes.destroyed && typeof proxyRes.destroy === 'function') {
-      try { proxyRes.destroy(); } catch (_) {}
-    }
-  };
-  if (typeof clientRes?.once === 'function') {
-    clientRes.once('close', onClientClose);
-  }
-
-  // 3s periodic SSE keepalive heartbeat (prevents Go Language Server 5m0s context deadline timeout
-  // during upstream model reasoning/thinking pauses or temporary network stalls).
-  const HEARTBEAT_INTERVAL_MS = 3000;
-  let lastChunkTime = Date.now();
-  const heartbeatTimer = setInterval(() => {
-    if (clientRes.writableEnded || clientRes.destroyed) {
-      clearInterval(heartbeatTimer);
-      return;
-    }
-    if (Date.now() - lastChunkTime >= HEARTBEAT_INTERVAL_MS) {
-      try {
-        clientRes.write(': ping\n\n');
-        if (typeof (clientRes as any).flush === 'function') {
-          try { (clientRes as any).flush(); } catch (_) {}
-        }
-      } catch {
-        clearInterval(heartbeatTimer);
-      }
-    }
-  }, HEARTBEAT_INTERVAL_MS);
-
-  if (typeof (heartbeatTimer as any)?.unref === 'function') {
-    (heartbeatTimer as any).unref();
-  }
-
-  let idleGuard: IdleTimeoutGuard | undefined;
-  const cleanupHeartbeat = () => {
-    clearInterval(heartbeatTimer);
-  };
-  const onClientDisconnect = () => {
-    cleanupHeartbeat();
-    try { idleGuard?.dispose(); } catch (_) {}
-    try { proxyRes.destroy(); } catch (_) {}
-    if (stream !== proxyRes && typeof (stream as any)?.destroy === 'function') {
-      try { (stream as any).destroy(); } catch (_) {}
-    }
-  };
-  if (typeof clientRes?.on === 'function') {
-    clientRes.on('close', onClientDisconnect);
-    clientRes.on('finish', cleanupHeartbeat);
-  }
-  if (typeof proxyRes?.on === 'function') {
-    proxyRes.on('close', cleanupHeartbeat);
-    proxyRes.on('error', cleanupHeartbeat);
-  }
-
-  const encoding = (proxyRes.headers['content-encoding'] || '').toLowerCase();
-  let stream: NodeJS.ReadableStream = proxyRes;
-  if (encoding === 'gzip') {
-    const gunzip = zlib.createGunzip();
-    proxyRes.pipe(gunzip);
-    proxyRes.on('error', (err) => gunzip.destroy(err));
-    proxyRes.on('close', () => { if (!gunzip.destroyed) gunzip.destroy(); });
-    stream = gunzip;
-  } else if (encoding === 'deflate') {
-    const inflate = zlib.createInflate();
-    proxyRes.pipe(inflate);
-    proxyRes.on('error', (err) => inflate.destroy(err));
-    proxyRes.on('close', () => { if (!inflate.destroyed) inflate.destroy(); });
-    stream = inflate;
-  }
-
-  const isExtendedThinking = /thinking|opus|thought/i.test(modelName || '');
-  const effectiveIdleTimeoutMs = isExtendedThinking
-    ? Math.max(STREAM_IDLE_TIMEOUT_MS, 180_000)
-    : STREAM_IDLE_TIMEOUT_MS;
-
-  idleGuard = new IdleTimeoutGuard(proxyRes, {
-    idleTimeoutMs: effectiveIdleTimeoutMs,
-    label: modelName || 'google-stream',
-    onTimeout: (err) => {
-      log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} — aborting socket`);
-      cleanupHeartbeat();
-      autoUnstickConversation(convId);
-      try { proxyRes.destroy(err); } catch (_) {}
-      if (stream !== proxyRes && typeof (stream as any).destroy === 'function') {
-        try { (stream as any).destroy(err); } catch (_) {}
-      }
-    },
-  });
-
-  const decoder = new StringDecoder('utf-8');
-  let buffer = '';
-
-  let detectedModel = modelName;
-  const lastUsage = {
-    promptTokenCount: 0,
-    candidatesTokenCount: 0,
-    totalTokenCount: 0,
-    cachedContentTokenCount: 0,
-  };
-
-  const inspectUsage = (item: any): void => {
-    if (!item || typeof item !== 'object') return;
-    const usage = item.usageMetadata || (item.response && item.response.usageMetadata);
-    if (usage && typeof usage === 'object') {
-      if (typeof usage.promptTokenCount === 'number') lastUsage.promptTokenCount = usage.promptTokenCount;
-      if (typeof usage.candidatesTokenCount === 'number') lastUsage.candidatesTokenCount = usage.candidatesTokenCount;
-      if (typeof usage.totalTokenCount === 'number') lastUsage.totalTokenCount = usage.totalTokenCount;
-      if (typeof usage.cachedContentTokenCount === 'number') lastUsage.cachedContentTokenCount = usage.cachedContentTokenCount;
-    }
-    const m = item.modelVersion || (item.response && item.response.modelVersion);
-    if (m && typeof m === 'string') {
-      detectedModel = m;
-    }
-  };
-
-  let sawFinishReason = false;
-  const inspectFinishReason = (obj: any): void => {
-    if (!obj || typeof obj !== 'object') return;
-    const cands = obj.candidates || (obj.response && obj.response.candidates);
-    if (Array.isArray(cands)) {
-      for (const c of cands) {
-        if (c && c.finishReason) {
-          sawFinishReason = true;
-          return;
-        }
-      }
-    }
-  };
-
-  // Buffer for fragmentary pseudo-tool text streamed across multiple SSE chunks
-  let pseudoToolBuffer = '';
-  let pseudoToolBaseItem: any = null;
-  let pseudoToolEol = '\n';
-
-  const flushPseudoToolBuffer = (): void => {
-    if (!pseudoToolBuffer) return;
-    if (pseudoToolBaseItem) {
-      const cands = pseudoToolBaseItem.candidates || (pseudoToolBaseItem.response && pseudoToolBaseItem.response.candidates);
-      if (Array.isArray(cands) && cands[0]?.content?.parts) {
-        cands[0].content.parts = [{ text: pseudoToolBuffer }];
-        sanitizeCandidatesInResponse(pseudoToolBaseItem);
-        clientRes.write('data: ' + JSON.stringify(pseudoToolBaseItem) + pseudoToolEol);
-      }
-    }
-    pseudoToolBuffer = '';
-    pseudoToolBaseItem = null;
-  };
-
-  const processLine = (line: string): void => {
-    const trimmed = line.trimEnd();
-    if (trimmed.startsWith('data:')) {
-      const jsonStr = trimmed.slice(5).trim();
-      if (jsonStr === '[DONE]') {
-        // Drop OpenAI-style [DONE] marker — Google Language Server parses all SSE data as protojson
-        // messages (GenerateContentResponse) and crashes with "proto: syntax error (line 1:1): unexpected token [" if it receives [DONE].
-        return;
-      }
-      if (!jsonStr) {
-        clientRes.write(': ping\n');
-        return;
-      }
-      try {
-        const data = JSON.parse(jsonStr);
-        // If data is an array of responses, unwrap each item individually to avoid emitting a JSON array as a proto message
-        if (Array.isArray(data)) {
-          const eol = line.endsWith('\r') ? '\r\n' : '\n';
-          for (const item of data) {
-            if (item && typeof item === 'object') {
-              inspectUsage(item);
-              inspectFinishReason(item);
-              extractAndCacheThoughtSignatures(item, convId);
-              sanitizeCandidatesInResponse(item);
-              clientRes.write('data: ' + JSON.stringify(item) + eol);
-            }
-          }
-          return;
-        }
-
-        inspectUsage(data);
-        // Cache any thought_signature values from this response chunk
-        inspectFinishReason(data);
-        extractAndCacheThoughtSignatures(data, convId);
-
-        const cands = data.candidates || (data.response && data.response.candidates);
-        const firstPart = cands?.[0]?.content?.parts?.[0];
-        const rawText = typeof firstPart?.text === 'string' ? firstPart.text : '';
-
-        // Fragmented pseudo-tool buffering across SSE deltas
-        const PSEUDO_TOOL_MARKER = '[Executed tool:';
-        const trimmedRaw = rawText.trimStart();
-        const isPotentialToolStart = !pseudoToolBuffer && Boolean(rawText) && (
-          PSEUDO_TOOL_MARKER.startsWith(trimmedRaw) ||
-          rawText.includes(PSEUDO_TOOL_MARKER) ||
-          (trimmedRaw.startsWith('[') && PSEUDO_TOOL_MARKER.startsWith(trimmedRaw.slice(0, Math.min(trimmedRaw.length, PSEUDO_TOOL_MARKER.length))))
-        );
-
-        if (pseudoToolBuffer || isPotentialToolStart) {
-          pseudoToolBuffer += rawText;
-          if (!pseudoToolBaseItem) {
-            pseudoToolBaseItem = data;
-            pseudoToolEol = line.endsWith('\r') ? '\r\n' : '\n';
-          }
-
-          // Isolate and emit any prefix text preceding [Executed tool: immediately
-          const markerIdx = pseudoToolBuffer.indexOf(PSEUDO_TOOL_MARKER);
-          if (markerIdx > 0) {
-            const prefixText = pseudoToolBuffer.slice(0, markerIdx);
-            pseudoToolBuffer = pseudoToolBuffer.slice(markerIdx);
-            if (pseudoToolBaseItem) {
-              const cands = pseudoToolBaseItem.candidates || (pseudoToolBaseItem.response && pseudoToolBaseItem.response.candidates);
-              if (Array.isArray(cands) && cands[0]?.content?.parts) {
-                cands[0].content.parts = [{ text: prefixText }];
-                sanitizeCandidatesInResponse(pseudoToolBaseItem);
-                clientRes.write('data: ' + JSON.stringify(pseudoToolBaseItem) + pseudoToolEol);
-              }
-            }
-          }
-
-          const trimmedBuf = pseudoToolBuffer.trimStart();
-          if (trimmedBuf.length < PSEUDO_TOOL_MARKER.length) {
-            if (PSEUDO_TOOL_MARKER.startsWith(trimmedBuf)) {
-              return;
-            } else {
-              flushPseudoToolBuffer();
-              return;
-            }
-          }
-          if (!trimmedBuf.startsWith(PSEUDO_TOOL_MARKER)) {
-            flushPseudoToolBuffer();
-            return;
-          }
-          const toolCalls = extractAllPseudoToolCalls(pseudoToolBuffer);
-          if (toolCalls.length > 0) {
-            const lastCall = toolCalls[toolCalls.length - 1];
-            const remainder = pseudoToolBuffer.slice(lastCall.endIdx).trim();
-            if (!remainder) {
-              flushPseudoToolBuffer();
-              return;
-            }
-          }
-          if (pseudoToolBuffer.length > 524288) {
-            flushPseudoToolBuffer();
-          }
-          return;
-        }
-
-        // Antigravity Language Server crash protection:
-        // In codeassistclient.(*CodeAssistClient).getStreamingTextCompletion-range1,
-        // the language server iterates over chunk.Candidates and accesses
-        // candidate.Content.Parts at offset 0x50 without nil checking.
-        // If Content or Parts is missing/nil/empty, Go panics with signal 0xc0000005.
-        sanitizeCandidatesInResponse(data);
-        const eol = line.endsWith('\r') ? '\r\n' : '\n';
-        clientRes.write('data: ' + JSON.stringify(data) + eol);
-        return;
-      } catch (e) {
-        log.warn('[Proxy] Malformed SSE data chunk from upstream Google:', jsonStr.slice(0, 100));
-        return;
-      }
-    }
-    // Only forward valid SSE control lines or empty lines.
-    // Never forward arbitrary raw text (like raw JSON brackets '[' or '{') into the SSE stream!
-    if (trimmed.startsWith(':') || trimmed.startsWith('event:') || trimmed.startsWith('id:') || trimmed.startsWith('retry:') || !trimmed) {
-      clientRes.write(line + '\n');
-    } else {
-      log.debug('[Proxy] Suppressed non-SSE upstream line from stream:', trimmed.slice(0, 60));
-    }
-  };
-
-  stream.on('data', (chunk: Buffer) => {
-    lastChunkTime = Date.now();
-    buffer += decoder.write(chunk);
-    let lineEndIdx: number;
-    while ((lineEndIdx = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, lineEndIdx);
-      buffer = buffer.slice(lineEndIdx + 1);
-      processLine(line);
-    }
-  });
-
-  stream.on('end', () => {
-    flushPseudoToolBuffer();
-    cleanupHeartbeat();
-    buffer += decoder.end();
-    if (buffer.length > 0) {
-      processLine(buffer);
-      if (buffer.trim().startsWith('data:') && buffer.trim().slice(5).trim() !== '[DONE]') {
-        clientRes.write('\n\n');
-      }
-      buffer = '';
-    }
-    if (!sawFinishReason) {
-      autoUnstickConversation(convId);
-    }
-    if (!sawFinishReason && !clientRes.writableEnded) {
-      const finalChunk = {
-        response: {
-          candidates: [
-            {
-              content: { parts: [{ text: '' }], role: 'model' },
-              finishReason: 'STOP',
-              index: 0,
-            },
-          ],
-        },
-        traceId: '',
-        metadata: {},
-      };
-      sanitizeCandidatesInResponse(finalChunk);
-      writeSafeSseChunk(clientRes, finalChunk);
-    }
-    safeEnd(clientRes);
-
-    const latencyMs = Math.max(1, Date.now() - startTime);
-    const pTokens = lastUsage.promptTokenCount || 0;
-    const cTokens = lastUsage.candidatesTokenCount || 0;
-    const tTokens = lastUsage.totalTokenCount || (pTokens + cTokens);
-    if (tTokens > 0 || pTokens > 0) {
-      logTokenUsageEvent({
-        id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-        timestamp: Date.now(),
-        conversationId: convId || undefined,
-        provider: 'google',
-        model: detectedModel || modelName || 'gemini-3.8-flash',
-        promptTokens: pTokens,
-        completionTokens: cTokens,
-        totalTokens: tTokens,
-        cachedTokens: lastUsage.cachedContentTokenCount || 0,
-        latencyMs,
-        status: proxyRes.statusCode || 200,
-        endpoint: '/v1internal:streamGenerateContent',
-      });
-    }
-    idleGuard.dispose();
-    if (typeof clientRes?.off === 'function') {
-      clientRes.off('close', onClientClose);
-    }
-  });
-
-  stream.on('error', (err) => {
-    flushPseudoToolBuffer();
-    cleanupHeartbeat();
-    idleGuard.dispose();
-    autoUnstickConversation(convId);
-    if (typeof clientRes?.off === 'function') {
-      clientRes.off('close', onClientClose);
-    }
-    log.error('[Proxy] Upstream Google stream error:', err);
-    if (!sawFinishReason && !clientRes.writableEnded && !clientRes.destroyed) {
-      const finalChunk = {
-        response: {
-          candidates: [
-            {
-              content: {
-                parts: [{ text: '\n\n> ⚠️ *[Proxy] La connexion au modèle a été interrompue prématurément par une erreur réseau upstream.*' }],
-                role: 'model',
-              },
-              finishReason: 'STOP',
-              index: 0,
-            },
-          ],
-        },
-        traceId: '',
-        metadata: {},
-      };
-      sanitizeCandidatesInResponse(finalChunk);
-      writeSafeSseChunk(clientRes, finalChunk);
-      safeEnd(clientRes);
-    } else {
-      clientRes.destroy(err);
-    }
-    autoUnstickConversation(convId);
-  });
-}
 
 // ─── Thought Signature Cache Helpers ──────────────────────────────────────
 
@@ -1962,38 +673,6 @@ export interface GoogleRequestOutcome {
   error?: string;
   headers?: http.IncomingHttpHeaders;
   isTransportError?: boolean;
-}
-
-export interface ResponseClaimer {
-  claim(ownerId: string): boolean;
-  isClaimed(): boolean;
-  registerAbort(ownerId: string, abortFn: () => void): void;
-  abortOthers(winnerId: string): void;
-}
-
-export function createResponseClaimer(): ResponseClaimer {
-  let claimed = false;
-  const abortMap = new Map<string, () => void>();
-  return {
-    claim(ownerId: string): boolean {
-      if (claimed) return false;
-      claimed = true;
-      return true;
-    },
-    isClaimed(): boolean {
-      return claimed;
-    },
-    registerAbort(ownerId: string, fn: () => void): void {
-      abortMap.set(ownerId, fn);
-    },
-    abortOthers(winnerId: string): void {
-      for (const [id, fn] of abortMap.entries()) {
-        if (id !== winnerId) {
-          try { fn(); } catch (_) {}
-        }
-      }
-    },
-  };
 }
 
 export function executeGoogleCloudCodeRequest(
@@ -2369,32 +1048,6 @@ export function executeGoogleCloudCodeRequest(
   });
 }
 
-export function trimOldestHistory(obj: any, maxKeep?: number): boolean {
-  if (!obj || typeof obj !== 'object') return false;
-  const contents = obj.contents || obj.request?.contents;
-  if (Array.isArray(contents) && contents.length > 4) {
-    const first = contents[0];
-    let keepCount = Math.max(3, Math.floor(contents.length * 0.7));
-    if (typeof maxKeep === 'number' && maxKeep >= 3) {
-      keepCount = Math.min(keepCount, maxKeep);
-    }
-    let sliceStart = contents.length - keepCount;
-    // Ensure sliceStart does not split a functionCall / functionResponse pair
-    if (sliceStart > 1 && sliceStart < contents.length) {
-      const candidateTurn = contents[sliceStart];
-      const hasFnResponse = Array.isArray(candidateTurn?.parts) && candidateTurn.parts.some((p: any) => p && p.functionResponse);
-      if (hasFnResponse && sliceStart > 1) {
-        sliceStart--;
-      }
-    }
-    const trimmed = [first, ...contents.slice(sliceStart)];
-    if (obj.contents) obj.contents = trimmed;
-    if (obj.request?.contents) obj.request.contents = trimmed;
-    return true;
-  }
-  return false;
-}
-
 export async function executeGoogleCloudCodeWithPool(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -2501,7 +1154,15 @@ export async function executeGoogleCloudCodeWithPool(
   const activePool = accountPool.filter((a) => {
     const qKey = getAccountQuotaKey(a);
     const liveQ = (getLiveAccountQuota(qKey) || a.quotas) as Record<string, any> | undefined;
-    return (a as any).enabled !== false && !(a as any).isUnlicensed && !liveQ?.isUnlicensed && !isAccountUnlicensed(a);
+    return (
+      (a as any).enabled !== false &&
+      (a as any).status !== 'unhealthy' &&
+      !(a as any).isValidationRequired &&
+      (a as any).status !== 'validation_required' &&
+      !(a as any).isUnlicensed &&
+      !liveQ?.isUnlicensed &&
+      !isAccountUnlicensed(a)
+    );
   });
   let eligibleAccounts = activePool.length > 0 ? activePool : accountPool.filter((a) => (a as any).enabled !== false && !isAccountUnlicensed(a));
   if (isClaude55) {
@@ -4035,6 +2696,10 @@ export async function executeGoogleCloudCodeWithPool(
         let fallbackCandidates = allCustomModels.filter(
           (m) =>
             isGoogleCloudCodeModel(m) &&
+            (m as any).enabled !== false &&
+            (m as any).status !== 'unhealthy' &&
+            !(m as any).isValidationRequired &&
+            (m as any).status !== 'validation_required' &&
             !isAccountUnlicensed(m) &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.7') &&
             !normalizeCloudCodeModelId(m.externalModelName || m.name).toLowerCase().includes('3.6') &&
@@ -4390,62 +3055,7 @@ export async function executeGoogleCloudCodeWithPool(
   return false;
 }
 
-// ─── File Data Resolver ────────────────────────────────────────────────────
 
-async function resolveFileData(body: GeminiRequestBody, reqHeaders: Record<string, string | string[] | undefined>): Promise<void> {
-  const contents = body.contents;
-  if (!contents) return;
-  const authHeader = (reqHeaders['authorization'] || reqHeaders['Authorization'] || '') as string;
-  for (const item of contents) {
-    if (!item.parts) continue;
-    for (let i = 0; i < item.parts.length; i++) {
-      const p = item.parts[i] as Record<string, unknown>;
-      const fd = p.fileData as { mimeType?: string; fileUri?: string } | undefined;
-      if (!fd?.fileUri) continue;
-      if (fd.mimeType?.startsWith('image/')) continue;
-      try {
-        const uri = fd.fileUri; let fileContent = '';
-        if (uri.startsWith('file://')) {
-          const fp = uri.replace('file://', '').replace(/\//g, path.sep);
-          try {
-            await fs.promises.access(fp);
-            fileContent = await fs.promises.readFile(fp, 'utf-8');
-          } catch {
-            fileContent = '';
-          }
-        } else if (authHeader && uri.startsWith('https://')) {
-          fileContent = await downloadFileContent(uri, authHeader);
-        }
-        if (fileContent) {
-          (item.parts[i] as Record<string, unknown>) = { text: '[File content]:\n\n' + fileContent };
-        }
-      } catch (e) { throw new Error(`[Proxy] File resolve failed: ${(e as Error).message}`); }
-    }
-  }
-}
-
-function downloadFileContent(url: string, authHeader: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    (u.protocol === 'https:' ? https : http).request({
-      hostname: u.hostname, path: u.pathname + u.search,
-      method: 'GET', headers: { 'Authorization': authHeader }, timeout: FILE_DOWNLOAD_TIMEOUT_MS,
-    }, (res) => {
-      if (res.statusCode !== 200) { reject(new Error('HTTP ' + res.statusCode)); return; }
-      let d = ''; let bytes = 0;
-      res.on('data', (c: Buffer) => {
-        bytes += c.length;
-        if (bytes > 10 * 1024 * 1024) { reject(new Error('File too large')); res.destroy(); return; }
-        d += c.toString();
-      });
-      res.on('end', () => resolve(d));
-    }).on('error', reject).end();
-  });
-}
-
-// Fix 6 helper extraction — spliced into src/proxy.ts at module level
-// (inserted between `downloadFileContent` and the `handleCustomModelRequest` banner).
-// Envelope: Cloud Code `{"response":{...},"traceId":"","metadata":{}}` preserved verbatim.
 
 type RetryDispatch = (
   retryCount: number,
@@ -5051,33 +3661,6 @@ function handleRequestError(err: Error, ctx: StreamRequestCtx): void {
 
 // ─── Custom Model Request Handler ─────────────────────────────────────────
 
-/**
- * Parses the Retry-After header from upstream responses (RFC 7231 §7.1.3).
- * Returns delay in milliseconds, or 0 if no valid header is present.
- */
-export function parseRetryAfter(headers: Record<string, string | string[] | undefined>): number {
-  const val = headers['retry-after'];
-  if (!val) return 0;
-
-  const raw = Array.isArray(val) ? val[0] : val;
-  if (!raw) return 0;
-
-  // Try delta-seconds (e.g. "120")
-  const seconds = parseInt(raw.trim(), 10);
-  if (!isNaN(seconds) && seconds >= 0) {
-    return seconds * 1000;
-  }
-
-  // Try HTTP-date (e.g. "Wed, 21 Oct 2015 07:28:00 GMT")
-  const date = new Date(raw);
-  if (!isNaN(date.getTime())) {
-    const delay = date.getTime() - Date.now();
-    return delay > 0 ? delay : 0;
-  }
-
-  return 0;
-}
-
 // ─── Google Account Pool (re-exported from src/proxy/googlePool.ts) ────────────
 export {
   registerAccountRefreshToken,
@@ -5141,239 +3724,75 @@ export {
 export type { Google429Category, Google429Decision } from './proxy/googlePool';
 
 
-interface SessionAffinity {
-  modelName: string;
-  accountKey: string;
-  lastUsed: number;
-}
+import {
+  extractSessionId,
+  SESSION_AFFINITY_TTL_MS,
+  SESSION_MODEL_FALLBACK_TTL_MS,
+  NATIVE_SESSION_TTL_MS,
+  NATIVE_CASCADE_BLOCK_WINDOW_MS,
+  SessionEffortEntry,
+  setSessionEffortAffinity,
+  getSessionEffortAffinity,
+  clearSessionEffortAffinity,
+  clearAllSessionEffortAffinities,
+  SessionModelFallback,
+  getSessionModelFallback,
+  clearSessionModelFallback,
+  setSessionModelFallback,
+  clearSessionModelFallbacks,
+  getActiveSessionModelFallbacks,
+  getSessionBoundModel,
+  bindSessionToModel,
+  clearSessionAffinities,
+  sessionAffinities,
+  sessionModelFallbacks,
+  sessionEffortAffinities,
+  NativeSessionRecord,
+  markNativeSession,
+  getNativeSession,
+  recordLatestNativeError,
+  updateLatestNativeErrorBody,
+  getLatestNativeErrorAsSession,
+  recordNativeSessionError,
+  clearNativeSessions,
+  nativeSessions,
+  latestNativeGlobalError,
+  clearLatestNativeGlobalError,
+} from './proxy/sessionAffinities';
 
-const sessionAffinities = new Map<string, SessionAffinity>();
-const SESSION_AFFINITY_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
-
-export function extractSessionId(body: Record<string, unknown>, headers?: Record<string, unknown>): string | null {
-  if (body?.sessionId && typeof body.sessionId === 'string') return body.sessionId;
-  if (body?.conversationId && typeof body.conversationId === 'string') return body.conversationId;
-  if (body?.conversation_id && typeof body.conversation_id === 'string') return body.conversation_id;
-  if ((body?.context as any)?.sessionId && typeof (body.context as any).sessionId === 'string') {
-    return (body.context as any).sessionId;
-  }
-  if ((body?.context as any)?.conversationId && typeof (body.context as any).conversationId === 'string') {
-    return (body.context as any).conversationId;
-  }
-  if ((body?.request as any)?.sessionId && typeof (body.request as any).sessionId === 'string') {
-    return (body.request as any).sessionId;
-  }
-  if ((body?.request as any)?.conversationId && typeof (body.request as any).conversationId === 'string') {
-    return (body.request as any).conversationId;
-  }
-  if (headers) {
-    const h = headers['x-session-id'] || headers['x-request-session-id'] || headers['x-conversation-id'];
-    if (typeof h === 'string' && h) return h;
-  }
-  const contents = (body?.contents || (body?.request as any)?.contents) as Array<any> | undefined;
-  if (Array.isArray(contents) && contents.length > 0) {
-    const firstUser = contents.find((c) => c && c.role === 'user');
-    if (firstUser && Array.isArray(firstUser.parts) && firstUser.parts[0]?.text) {
-      const snippet = String(firstUser.parts[0].text).slice(0, 120);
-      let hash = 5381;
-      for (let i = 0; i < snippet.length; i++) {
-        hash = ((hash << 5) + hash) + snippet.charCodeAt(i);
-        hash |= 0;
-      }
-      return 'conv_' + (hash >>> 0).toString(16);
-    }
-  }
-  return null;
-}
-
-export function getSessionBoundModel(
-  sessionId: string,
-  targetModel: CustomModel,
-  allModels: CustomModel[],
-): CustomModel {
-  const now = Date.now();
-  const affinity = sessionAffinities.get(sessionId);
-  if (!affinity) return targetModel;
-
-  if (now - affinity.lastUsed > SESSION_AFFINITY_TTL_MS) {
-    sessionAffinities.delete(sessionId);
-    return targetModel;
-  }
-
-  // Find candidate models that share the same base external model AND effort level (e.g. Gemini 3.8 Flash Medium across accounts)
-  const targetBase = getBaseModelId(targetModel.externalModelName);
-  const targetEffort = targetModel._effortSuffix || targetModel.reasoningEffort || '';
-  const bound = allModels.find((m) => {
-    const mBase = getBaseModelId(m.externalModelName);
-    const mEffort = m._effortSuffix || m.reasoningEffort || '';
-    return mBase === targetBase && mEffort === targetEffort && getAccountQuotaKey(m) === affinity.accountKey;
-  });
-
-  const fam = (targetModel.externalModelName || targetModel.name || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
-
-  if (
-    bound &&
-    (bound as any).enabled !== false &&
-    !isAccountUnlicensed(bound) &&
-    !getOpenBreaker(bound) &&
-    !isAccountInCooldown(bound, fam) &&
-    getModelQuotaScore(bound, fam) > 0
-  ) {
-    affinity.lastUsed = now;
-    return bound;
-  }
-
-  sessionAffinities.delete(sessionId);
-  return targetModel;
-}
-
-export function bindSessionToModel(sessionId: string, model: CustomModel): void {
-  if (model.name?.includes(':auto-pool') || model.apiKey === 'auto') return;
-  if (sessionAffinities.size >= 500) {
-    const now = Date.now();
-    for (const [sId, aff] of sessionAffinities.entries()) {
-      if (now - aff.lastUsed > SESSION_AFFINITY_TTL_MS) {
-        sessionAffinities.delete(sId);
-      }
-    }
-    if (sessionAffinities.size >= 500) {
-      const sorted = Array.from(sessionAffinities.entries()).sort((a, b) => a[1].lastUsed - b[1].lastUsed);
-      const toRemove = sorted.slice(0, sessionAffinities.size - 400);
-      for (const [oldId] of toRemove) {
-        sessionAffinities.delete(oldId);
-      }
-    }
-  }
-  sessionAffinities.set(sessionId, {
-    modelName: model.name,
-    accountKey: getAccountQuotaKey(model),
-    lastUsed: Date.now(),
-  });
-}
-
-export function clearSessionAffinities(): void {
-  sessionAffinities.clear();
-  sessionModelFallbacks.clear();
-  sessionEffortAffinities.clear();
-}
-
-interface SessionEffortEntry {
-  effort: string;
-  lastUsed: number;
-}
-const sessionEffortAffinities = new Map<string, SessionEffortEntry>();
-
-export function setSessionEffortAffinity(sessionId: string, effort: string): void {
-  if (!sessionId || !effort) return;
-  sessionEffortAffinities.set(sessionId, { effort: effort.toLowerCase(), lastUsed: Date.now() });
-}
-
-export function getSessionEffortAffinity(sessionId: string): string | undefined {
-  if (!sessionId) return undefined;
-  const entry = sessionEffortAffinities.get(sessionId);
-  if (!entry) return undefined;
-  if (Date.now() - entry.lastUsed > SESSION_AFFINITY_TTL_MS) {
-    sessionEffortAffinities.delete(sessionId);
-    return undefined;
-  }
-  return entry.effort;
-}
-
-export function clearSessionEffortAffinity(sessionId: string): void {
-  if (sessionId) sessionEffortAffinities.delete(sessionId);
-}
-
-export function clearAllSessionEffortAffinities(): void {
-  sessionEffortAffinities.clear();
-}
-
-export const SESSION_MODEL_FALLBACK_TTL_MS = 3 * 60 * 1000; // 3 minutes auto-recovery back to primary model
-
-export interface SessionModelFallback {
-  originalModel: string;
-  fallbackModel: string;
-  notified: boolean;
-  lastUsed: number;
-}
-
-const sessionModelFallbacks = new Map<string, SessionModelFallback>();
-
-export function getSessionModelFallback(sessionKey: string): SessionModelFallback | undefined {
-  if (!sessionKey) return undefined;
-  const fb = sessionModelFallbacks.get(sessionKey);
-  if (!fb) return undefined;
-  if (
-    Date.now() - fb.lastUsed > SESSION_MODEL_FALLBACK_TTL_MS ||
-    /gemini-(?:3\.[0-7]|2\.0|1\.)/i.test(fb.fallbackModel) ||
-    /gpt-[34]/i.test(fb.fallbackModel)
-  ) {
-    sessionModelFallbacks.delete(sessionKey);
-    return undefined;
-  }
-  return fb;
-}
-
-export function clearSessionModelFallback(sessionKey: string): void {
-  if (sessionKey) {
-    sessionModelFallbacks.delete(sessionKey);
-  }
-}
-
-export function setSessionModelFallback(
-  sessionKey: string,
-  originalModel: string,
-  fallbackModel: string,
-  notified = false,
-): void {
-  if (!sessionKey || !originalModel || !fallbackModel) return;
-  // Strict Zero-Fallback: Gemini 4 Argon or unreleased models must NEVER have a fallback model assigned
-  if (originalModel === 'gemini-4-argon' || originalModel === 'gemini-4-argon-medium') {
-    return;
-  }
-  if (/gemini-(?:3\.[0-7]|2\.0|1\.)/i.test(fallbackModel) || /gpt-[34]/i.test(fallbackModel)) {
-    return;
-  }
-  const cleanOrig = originalModel.trim().toLowerCase();
-  const cleanFb = fallbackModel.trim().toLowerCase();
-  if (cleanOrig === cleanFb && !notified) return;
-
-  const existing = sessionModelFallbacks.get(sessionKey);
-  if (existing) {
-    const existOrig = existing.originalModel.trim().toLowerCase();
-    const existFb = existing.fallbackModel.trim().toLowerCase();
-    // Prevent circular flip-flop (A -> B then B -> A)
-    if (cleanOrig === existFb && cleanFb === existOrig) {
-      log.warn(
-        `[Proxy] Preventing circular session fallback loop for ${sessionKey}: existing (${existing.originalModel} -> ${existing.fallbackModel}) vs new (${originalModel} -> ${fallbackModel})`,
-      );
-      return;
-    }
-  }
-
-  sessionModelFallbacks.set(sessionKey, {
-    originalModel,
-    fallbackModel,
-    notified,
-    lastUsed: Date.now(),
-  });
-}
-
-export function clearSessionModelFallbacks(): void {
-  sessionModelFallbacks.clear();
-}
-
-export function getActiveSessionModelFallbacks(): Record<string, SessionModelFallback> {
-  const result: Record<string, SessionModelFallback> = {};
-  const now = Date.now();
-  for (const [key, fb] of sessionModelFallbacks.entries()) {
-    if (now - fb.lastUsed <= SESSION_MODEL_FALLBACK_TTL_MS) {
-      result[key] = { ...fb };
-    } else {
-      sessionModelFallbacks.delete(key);
-    }
-  }
-  return result;
-}
+export {
+  extractSessionId,
+  SESSION_AFFINITY_TTL_MS,
+  SESSION_MODEL_FALLBACK_TTL_MS,
+  NATIVE_SESSION_TTL_MS,
+  NATIVE_CASCADE_BLOCK_WINDOW_MS,
+  SessionEffortEntry,
+  setSessionEffortAffinity,
+  getSessionEffortAffinity,
+  clearSessionEffortAffinity,
+  clearAllSessionEffortAffinities,
+  SessionModelFallback,
+  getSessionModelFallback,
+  clearSessionModelFallback,
+  setSessionModelFallback,
+  clearSessionModelFallbacks,
+  getActiveSessionModelFallbacks,
+  getSessionBoundModel,
+  bindSessionToModel,
+  clearSessionAffinities,
+  sessionAffinities,
+  sessionModelFallbacks,
+  sessionEffortAffinities,
+  NativeSessionRecord,
+  markNativeSession,
+  getNativeSession,
+  recordLatestNativeError,
+  updateLatestNativeErrorBody,
+  getLatestNativeErrorAsSession,
+  recordNativeSessionError,
+  clearNativeSessions,
+  nativeSessions,
+};
 
 
 function handleCustomModelRequest(
@@ -5766,457 +4185,7 @@ function handleCustomModelRequest(
   request.end();
 }
 
-// ─── GetAvailableModels Proxy Handler ───────────────────────────────────────
-
-function handleGetAvailableModelsProxy(
-  res: http.ServerResponse,
-  reqBody: Buffer,
-  lsUrl: string,
-  reqHeaders: Record<string, string | string[] | undefined>,
-): void {
-  const lsParsed = new URL(lsUrl);
-  const client = lsParsed.protocol === 'https:' ? https : http;
-  const bodyToSend = reqBody && reqBody.length > 0 ? reqBody : Buffer.from([0, 0, 0, 0, 0]);
-
-  const options: https.RequestOptions = {
-    method: 'POST',
-    hostname: lsParsed.hostname,
-    port: lsParsed.port || (lsParsed.protocol === 'https:' ? '443' : '80'),
-    path: lsParsed.pathname + lsParsed.search,
-    headers: {
-      'Content-Type': 'application/grpc-web+proto',
-      'Accept': 'application/grpc-web+proto',
-      'Content-Length': String(bodyToSend.length),
-      ...(reqHeaders['x-codeium-csrf-token'] ? { 'x-codeium-csrf-token': String(reqHeaders['x-codeium-csrf-token']) } : {}),
-      ...(reqHeaders['Connect-Protocol-Version'] ? { 'Connect-Protocol-Version': String(reqHeaders['Connect-Protocol-Version']) } : {}),
-      ...(reqHeaders['X-Grpc-Web'] ? { 'X-Grpc-Web': String(reqHeaders['X-Grpc-Web']) } : {}),
-    },
-    rejectUnauthorized: !LOOPBACK_HOSTS.includes(lsParsed.hostname as typeof LOOPBACK_HOSTS[number]),
-  };
-
-  const lsReq = client.request(options, (lsRes) => {
-    let lsResErrored = false;
-    lsRes.on('error', (err) => {
-      lsResErrored = true;
-      log.error('[Proxy] LS error for GetAvailableModels:', err.message);
-      if (!res.headersSent && !res.writableEnded) {
-        safeWriteHead(res, 502, {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': '*',
-        });
-        safeEnd(res);
-      }
-    });
-
-    const chunks: Buffer[] = [];
-    lsRes.on('data', (chunk: Buffer) => chunks.push(chunk));
-    lsRes.on('end', () => {
-      // Guard: timeout or error may have already terminated the response
-      if (lsResErrored || res.headersSent || res.writableEnded) {
-        log.debug('[Proxy] GetAvailableModels: skipping end handler (response terminated)');
-        return;
-      }
-      const responseBuf = Buffer.concat(chunks);
-      const customModels = loadCustomModels();
-      const disabledModelIds = loadDisabledModelIds();
-      // Run concurrent health checks (cached with TTL, max 800ms wait)
-      getFastOrCachedHealth(customModels, 800).then((healthMap) => {
-        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, healthMap, true, disabledModelIds);
-        if (
-          safeWriteHead(res, lsRes.statusCode || 200, {
-            'Content-Type': 'application/grpc-web+proto',
-            'Content-Length': String(modifiedBuf.length),
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': '*',
-            'Access-Control-Expose-Headers': '*',
-          })
-        ) {
-          safeEnd(res, modifiedBuf);
-        }
-      }).catch(() => {
-        const { buffer: modifiedBuf } = injectCustomModelsIntoResponse(responseBuf, customModels, undefined, true, disabledModelIds);
-        if (
-          safeWriteHead(res, lsRes.statusCode || 200, {
-            'Content-Type': 'application/grpc-web+proto',
-            'Content-Length': String(modifiedBuf.length),
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': '*',
-            'Access-Control-Expose-Headers': '*',
-          })
-        ) {
-          safeEnd(res, modifiedBuf);
-        }
-      });
-    });
-  });
-
-  lsReq.setTimeout(30_000, () => {
-    log.error('[Proxy] GetAvailableModels forward timed out');
-    lsReq.destroy();
-    if (!res.headersSent && !res.writableEnded) {
-      safeWriteHead(res, 504, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': '*',
-      });
-      safeEnd(res);
-    }
-  });
-
-  lsReq.on('error', (err) => {
-    log.error('[Proxy] GetAvailableModels forward error:', err.message);
-    if (!res.headersSent && !res.writableEnded) {
-      safeWriteHead(res, 502, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': '*',
-      });
-      safeEnd(res);
-    }
-  });
-
-  lsReq.write(bodyToSend);
-  lsReq.end();
-}
-
-// ─── GetUserStatus Proxy Handler ─────────────────────────────────────────────
-
-function handleGetUserStatusProxy(
-  res: http.ServerResponse,
-  reqBody: Buffer,
-  lsUrl: string,
-  reqHeaders: Record<string, string | string[] | undefined>,
-): void {
-  const lsParsed = new URL(lsUrl);
-  const client = lsParsed.protocol === 'https:' ? https : http;
-  const bodyToSend = reqBody && reqBody.length > 0 ? reqBody : Buffer.from([0, 0, 0, 0, 0]);
-
-  const options: https.RequestOptions = {
-    method: 'POST',
-    hostname: lsParsed.hostname,
-    port: lsParsed.port || (lsParsed.protocol === 'https:' ? '443' : '80'),
-    path: lsParsed.pathname + lsParsed.search,
-    headers: {
-      'Content-Type': 'application/grpc-web+proto',
-      'Accept': 'application/grpc-web+proto',
-      'Content-Length': String(bodyToSend.length),
-      ...(reqHeaders['x-codeium-csrf-token'] ? { 'x-codeium-csrf-token': String(reqHeaders['x-codeium-csrf-token']) } : {}),
-      ...(reqHeaders['Connect-Protocol-Version'] ? { 'Connect-Protocol-Version': String(reqHeaders['Connect-Protocol-Version']) } : {}),
-      ...(reqHeaders['X-Grpc-Web'] ? { 'X-Grpc-Web': String(reqHeaders['X-Grpc-Web']) } : {}),
-    },
-    rejectUnauthorized: !LOOPBACK_HOSTS.includes(lsParsed.hostname as typeof LOOPBACK_HOSTS[number]),
-  };
-
-  const lsReq = client.request(options, (lsRes) => {
-    let lsResErrored = false;
-    lsRes.on('error', (err) => {
-      lsResErrored = true;
-      log.error('[Proxy] LS error for GetUserStatus:', err.message);
-      if (!res.headersSent && !res.writableEnded) {
-        safeWriteHead(res, 502, {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': '*',
-        });
-        safeEnd(res);
-      }
-    });
-
-    const chunks: Buffer[] = [];
-    lsRes.on('data', (chunk: Buffer) => chunks.push(chunk));
-    lsRes.on('end', () => {
-      if (lsResErrored || res.headersSent || res.writableEnded) {
-        log.debug('[Proxy] GetUserStatus: skipping end handler (response terminated)');
-        return;
-      }
-      const responseBuf = Buffer.concat(chunks);
-      const customModels = loadCustomModels();
-      const disabledModelIds = loadDisabledModelIds();
-      getFastOrCachedHealth(customModels, 800).then((healthMap) => {
-        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels, healthMap, disabledModelIds);
-        log.debug(`[Proxy] GetUserStatus injected ${injectedCount} custom models`);
-        if (
-          safeWriteHead(res, lsRes.statusCode || 200, {
-            'Content-Type': 'application/grpc-web+proto',
-            'Content-Length': String(modifiedBuf.length),
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': '*',
-            'Access-Control-Expose-Headers': '*',
-          })
-        ) {
-          safeEnd(res, modifiedBuf);
-        }
-      }).catch(() => {
-        const { buffer: modifiedBuf, injectedCount } = injectCustomModelsIntoUserStatus(responseBuf, customModels, undefined, disabledModelIds);
-        log.debug(`[Proxy] GetUserStatus injected ${injectedCount} custom models (fallback)`);
-        if (
-          safeWriteHead(res, lsRes.statusCode || 200, {
-            'Content-Type': 'application/grpc-web+proto',
-            'Content-Length': String(modifiedBuf.length),
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': '*',
-            'Access-Control-Expose-Headers': '*',
-          })
-        ) {
-          safeEnd(res, modifiedBuf);
-        }
-      });
-    });
-  });
-
-  lsReq.setTimeout(30_000, () => {
-    log.error('[Proxy] GetUserStatus forward timed out');
-    lsReq.destroy();
-    if (!res.headersSent && !res.writableEnded) {
-      safeWriteHead(res, 504, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': '*',
-      });
-      safeEnd(res);
-    }
-  });
-
-  lsReq.on('error', (err) => {
-    log.error('[Proxy] GetUserStatus forward error:', err.message);
-    if (!res.headersSent && !res.writableEnded) {
-      safeWriteHead(res, 502, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': '*',
-      });
-      safeEnd(res);
-    }
-  });
-
-  lsReq.write(bodyToSend);
-  lsReq.end();
-}
-
 // ─── Main Request Handler ─────────────────────────────────────────────────
-
-export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
-  if (!candidate || typeof candidate !== 'string') return false;
-  // An original native model string without custom- prefix is an IDE native selection, never a custom model
-  if (!candidate.startsWith('custom-') && !/MODEL_PLACEHOLDER_/i.test(candidate) && isNativeCloudCodeModel(candidate)) {
-    return false;
-  }
-  const enumName = generateModelPlaceholderId(m);
-  const slug = toSlug(m);
-  const clean = candidate.replace(/^models\//, '');
-  const cleanLower = clean.toLowerCase();
-  const candLower = candidate.toLowerCase();
-  const extLower = (m.externalModelName || '').toLowerCase();
-  const idLower = ((m as { id?: string }).id || '').toLowerCase();
-  const dispLower = (m.displayName || '').toLowerCase();
-  const slugLower = slug.toLowerCase();
-  const mSlugLower = (m._slug || '').toLowerCase();
-
-  const isCandidateGemini = cleanLower.startsWith('gemini-');
-  const isModelGemini = m.provider === 'google' || (!m.provider && (extLower.startsWith('gemini-') || idLower.startsWith('gemini-')));
-
-  const normCand = isCandidateGemini ? normalizeGoogleModelId(cleanLower) : '';
-  const normExt = (isModelGemini && extLower) ? normalizeGoogleModelId(extLower) : '';
-  const normId = (isModelGemini && idLower) ? normalizeGoogleModelId(idLower) : '';
-
-  // Strict reasoning effort check: if candidate specifies an effort tier, only match models with that same tier
-  const candEffort = /(?:^|[-_ (])(low|medium|high)(?:$|[-_ )])/i.exec(candLower)?.[1]?.toLowerCase();
-  const mEffort = (
-    m.reasoningEffort ||
-    (m._effortSuffix ? m._effortSuffix.replace('-', '') : undefined) ||
-    /(?:^|[-_ (])(low|medium|high)(?:$|[-_ )])/i.exec(dispLower)?.[1]
-  )?.toLowerCase();
-  if (candEffort && mEffort && candEffort !== mEffort) {
-    return false;
-  }
-
-  return (
-    m.name === candidate ||
-    m.name === clean ||
-    m.name.replace(/^models\//, '') === clean ||
-    m.name.replace(/^models\//, '').toLowerCase() === cleanLower ||
-    slug === candidate ||
-    slug === clean ||
-    slugLower === candLower ||
-    slugLower === cleanLower ||
-    enumName === candidate ||
-    enumName === clean ||
-    `models/${enumName}` === candidate ||
-    candidate.endsWith(enumName) ||
-    enumName.toLowerCase() === candLower ||
-    enumName.toLowerCase() === cleanLower ||
-    `models/${enumName.toLowerCase()}` === candLower ||
-    candLower.endsWith(enumName.toLowerCase()) ||
-    (Boolean(extLower) && (candLower === extLower || cleanLower === extLower || candLower === `models/${extLower}`)) ||
-    (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
-    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower || candLower.replace(/^[🟢🟡🔴•\s]+/, '') === dispLower || cleanLower.replace(/^[🟢🟡🔴•\s]+/, '') === dispLower)) ||
-    (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower)) ||
-    (isCandidateGemini && isModelGemini && Boolean(normExt) && normCand === normExt) ||
-    (isCandidateGemini && isModelGemini && Boolean(normId) && normCand === normId) ||
-    (isModelGemini && candLower.includes('gemini-3.8-flash') && (extLower.includes('gemini-3.8-flash') || idLower.includes('gemini-3.8-flash') || dispLower.includes('gemini 3.8 flash')))
-  );
-}
-
-export interface NativeSessionRecord {
-  originalModel: string;
-  lastSeen: number;
-  lastError?: {
-    statusCode: number;
-    headers: Record<string, string>;
-    body: Buffer;
-  };
-}
-
-const nativeSessions = new Map<string, NativeSessionRecord>();
-export const NATIVE_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
-export const NATIVE_CASCADE_BLOCK_WINDOW_MS = 15 * 1000; // 15 seconds (Language Server automated fallback retry occurs within 1-5 seconds)
-
-export function markNativeSession(sessionKey: string, model: string): void {
-  if (!sessionKey) return;
-  const now = Date.now();
-  const existing = nativeSessions.get(sessionKey);
-  nativeSessions.set(sessionKey, {
-    originalModel: model || existing?.originalModel || '',
-    lastSeen: now,
-    lastError: existing?.lastError,
-  });
-}
-
-export function getNativeSession(sessionKey: string): NativeSessionRecord | undefined {
-  if (!sessionKey) return undefined;
-  const rec = nativeSessions.get(sessionKey);
-  if (!rec) return undefined;
-  if (Date.now() - rec.lastSeen > NATIVE_SESSION_TTL_MS) {
-    nativeSessions.delete(sessionKey);
-    return undefined;
-  }
-  return rec;
-}
-
-let latestNativeGlobalError: {
-  originalModel: string;
-  statusCode: number;
-  headers: Record<string, string>;
-  body: Buffer;
-  timestamp: number;
-} | null = null;
-
-export function recordLatestNativeError(
-  statusCode: number,
-  headers: Record<string, string>,
-  body: Buffer,
-  modelName: string,
-): void {
-  if (!modelName || !isNativeCloudCodeModel(modelName)) return;
-  latestNativeGlobalError = {
-    originalModel: modelName,
-    statusCode,
-    headers,
-    body: body || Buffer.alloc(0),
-    timestamp: Date.now(),
-  };
-}
-
-export function updateLatestNativeErrorBody(body: Buffer): void {
-  if (latestNativeGlobalError) {
-    latestNativeGlobalError.body = body;
-  }
-}
-
-export function getLatestNativeErrorAsSession(): NativeSessionRecord | undefined {
-  if (!latestNativeGlobalError) return undefined;
-  if (Date.now() - latestNativeGlobalError.timestamp > NATIVE_CASCADE_BLOCK_WINDOW_MS) {
-    latestNativeGlobalError = null;
-    return undefined;
-  }
-  return {
-    originalModel: latestNativeGlobalError.originalModel,
-    lastSeen: latestNativeGlobalError.timestamp,
-    lastError: {
-      statusCode: latestNativeGlobalError.statusCode,
-      headers: latestNativeGlobalError.headers,
-      body: latestNativeGlobalError.body,
-    },
-  };
-}
-
-export function recordNativeSessionError(
-  sessionKey: string,
-  statusCode: number,
-  headers: Record<string, string>,
-  body: Buffer,
-  modelName?: string,
-): void {
-  const effectiveModel = modelName || (sessionKey ? nativeSessions.get(sessionKey)?.originalModel : '') || '';
-  if (effectiveModel) {
-    recordLatestNativeError(statusCode, headers, body, effectiveModel);
-  }
-  if (!sessionKey) return;
-  const rec = nativeSessions.get(sessionKey);
-  if (rec) {
-    rec.lastError = { statusCode, headers, body };
-    rec.lastSeen = Date.now();
-    if (modelName && !rec.originalModel) {
-      rec.originalModel = modelName;
-    }
-  } else if (modelName && isNativeCloudCodeModel(modelName)) {
-    nativeSessions.set(sessionKey, {
-      originalModel: modelName,
-      lastSeen: Date.now(),
-      lastError: { statusCode, headers, body },
-    });
-  }
-}
-
-export function clearNativeSessions(): void {
-  nativeSessions.clear();
-  latestNativeGlobalError = null;
-}
-
-export function isAllowedOrigin(req: http.IncomingMessage): boolean {
-  const rawHost = (req.headers.host || '').toLowerCase();
-  // Strip port from Host header before validation (handling IPv6 brackets and bare IPv6)
-  let hostname = rawHost;
-  if (rawHost.startsWith('[') && rawHost.includes(']')) {
-    hostname = rawHost.slice(1, rawHost.indexOf(']'));
-  } else if (rawHost.includes(':')) {
-    const parts = rawHost.split(':');
-    if (parts.length === 2) {
-      hostname = parts[0];
-    }
-    // If parts.length > 2 without brackets, it's bare IPv6 (e.g. '::1')
-  }
-
-  const origin = ((req.headers.origin || req.headers.referer || '') as string).toLowerCase();
-
-  // 1. Validate Host header strictly against allowed loopback hosts or googleapis upstream
-  const isHostAllowed =
-    LOOPBACK_HOSTS.includes(hostname as typeof LOOPBACK_HOSTS[number]) ||
-    hostname === 'googleapis.com' ||
-    hostname.endsWith('.googleapis.com');
-  if (!isHostAllowed) return false;
-
-  // Verify socket remoteAddress if available: when socket is present and claims loopback Host,
-  // ensure the actual remote IP is also loopback, preventing LAN spoofing.
-  const remoteAddr = req.socket?.remoteAddress;
-  if (remoteAddr) {
-    const isLoopbackIp =
-      remoteAddr === '127.0.0.1' ||
-      remoteAddr === '::1' ||
-      remoteAddr === '::ffff:127.0.0.1';
-    if (LOOPBACK_HOSTS.includes(hostname as typeof LOOPBACK_HOSTS[number]) && !isLoopbackIp) {
-      return false;
-    }
-  }
-
-  // 2. Direct requests without Origin/Referer (Language Server Go, internal gRPC/HTTP)
-  if (!origin) return true;
-
-  // 3. Validate Origin/Referer header strictly against allowed loopback origins
-  // Note: External origins (including *.googleapis.com) are rejected to prevent CSRF / cross-origin RCE
-  try {
-    const parsed = new URL(origin);
-    const h = parsed.hostname.toLowerCase();
-    return LOOPBACK_HOSTS.includes(h as typeof LOOPBACK_HOSTS[number]);
-  } catch {
-    return false;
-  }
-}
 
 function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
   // Ultra-low latency: Disable Nagle algorithm on loopback sockets immediately
@@ -6258,7 +4227,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       JSON.stringify({
         status: 'ok',
         uptime: process.uptime(),
-        port: proxyPort,
+        port: getProxyPort(),
         pid: process.pid,
         memory: {
           rssMB: Math.round(memUsage.rss / 1024 / 1024),
@@ -6277,476 +4246,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
 
-  // Remote VPS Agent State Sync (from IDE Webview or preload)
-  if (req.url === '/api/remote/status' || req.url?.startsWith('/api/remote/status?')) {
-    if (req.method === 'GET') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          active: isRemoteVpsActive,
-          host: remoteVpsHost,
-          hasToken: Boolean(remoteVpsToken || DEFAULT_REMOTE_TOKEN),
-          remoteSessions: remoteSessionsMap,
-        }),
-      );
-      return;
-    }
-    if (req.method === 'POST') {
-      readBodyWithLimit(req, res).then((buf) => {
-        if (!buf) return;
-        try {
-          const b = JSON.parse(buf.toString('utf-8')) as {
-            active?: boolean;
-            host?: string;
-            token?: string;
-            remoteSessions?: Record<string, boolean>;
-          };
-          if (b.active !== undefined) isRemoteVpsActive = !!b.active;
-          if (b.host) remoteVpsHost = String(b.host);
-          if (b.token && b.token !== 'null' && b.token !== 'undefined' && String(b.token).trim().length > 0) {
-            remoteVpsToken = String(b.token).trim();
-          }
-          if (b.remoteSessions && typeof b.remoteSessions === 'object') {
-            remoteSessionsMap = { ...remoteSessionsMap, ...b.remoteSessions };
-          }
-          saveRemoteState();
-          log.info(`[Proxy] Remote VPS session status updated: active=${isRemoteVpsActive}, host=${remoteVpsHost}, tokenSet=${!!remoteVpsToken}, remoteSessionsCount=${Object.keys(remoteSessionsMap).length}`);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              ok: true,
-              active: isRemoteVpsActive,
-              host: remoteVpsHost,
-              hasToken: Boolean(remoteVpsToken || DEFAULT_REMOTE_TOKEN),
-              remoteSessions: remoteSessionsMap,
-            }),
-          );
-        } catch {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Invalid JSON' }));
-        }
-      });
-      return;
-    }
-  }
-
-  // Plugin Disk Sync Bridge (GET/POST /api/plugins/install and /api/plugins/uninstall)
-  if (req.url === '/api/plugins/install' && req.method === 'POST') {
-    const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      try {
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
-        const item = body.item || {};
-        const id = body.id || item.id || '';
-        const slug = item.slug || (id ? id.split('/').pop() : 'plugin');
-        const pluginsBase = path.join(os.homedir(), '.gemini', 'config', 'plugins');
-        const targetDir = path.join(pluginsBase, slug);
-        fs.mkdirSync(targetDir, { recursive: true });
-        const pluginJson = {
-          name: slug,
-          displayName: item.displayName || slug,
-          version: item.version || '1.0.0',
-          description: item.description || '',
-          logo: item.logo || '',
-          suggestedPrompts: item.suggestedPrompts || [],
-          keywords: item.tags || []
-        };
-        fs.writeFileSync(path.join(targetDir, 'plugin.json'), JSON.stringify(pluginJson, null, 2), 'utf-8');
-        if (item.readme) {
-          fs.writeFileSync(path.join(targetDir, 'README.md'), item.readme, 'utf-8');
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ ok: true, installDir: targetDir }));
-      } catch (err: any) {
-        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ ok: false, error: err?.message }));
-      }
-    });
+  if (handleInternalApiRoute(req, res)) {
     return;
   }
 
-  if (req.url === '/api/plugins/uninstall' && req.method === 'POST') {
-    const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      try {
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
-        const rawId = body.pluginId || body.id || body.slug || '';
-        const slug = rawId.split('/').pop() || rawId;
-        const targetDir = path.join(os.homedir(), '.gemini', 'config', 'plugins', slug);
-        if (fs.existsSync(targetDir)) {
-          fs.rmSync(targetDir, { recursive: true, force: true });
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ ok: true }));
-      } catch (err: any) {
-        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ ok: false, error: err?.message }));
-      }
-    });
-    return;
-  }
-
-  // UI & Chat Enhancements Configuration Bridge (GET/POST /api/ui/config)
-  if (req.url === '/api/ui/config' || req.url?.startsWith('/api/ui/config?')) {
-    const DEFAULT_SUGGESTIONS = [
-      { label: '/plan', text: '/plan ' },
-      { label: 'Continue', text: 'Continue' },
-      { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
-      { label: 'Keep going', text: 'Keep going' },
-      { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
-      { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' }
-    ];
-    const getConfigPath = () => {
-      const home = process.env.USERPROFILE || process.env.HOME || os.homedir();
-      return path.join(home, '.gemini', 'antigravity', 'config.json');
-    };
-    const readUiConfig = () => {
-      try {
-        const p = getConfigPath();
-        if (fs.existsSync(p)) {
-          const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
-          const ui = parsed.ui || {};
-          return {
-            retryButton: ui.retryButton !== undefined ? Boolean(ui.retryButton) : true,
-            suggestionPills: ui.suggestionPills !== undefined ? Boolean(ui.suggestionPills) : true,
-            suggestions: Array.isArray(ui.suggestions) && ui.suggestions.length > 0 ? ui.suggestions : DEFAULT_SUGGESTIONS,
-          };
-        }
-      } catch (err) {
-        log.warn('[Proxy] Failed to read ui config from disk:', err);
-      }
-      return { retryButton: true, suggestionPills: true, suggestions: DEFAULT_SUGGESTIONS };
-    };
-
-    if (req.method === 'GET' || req.method === 'OPTIONS') {
-      res.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      });
-      if (req.method === 'OPTIONS') { res.end(); return; }
-      res.end(JSON.stringify(readUiConfig()));
-      return;
-    }
-
-    if (req.method === 'POST') {
-      const chunks: Buffer[] = [];
-      req.on('data', (c) => chunks.push(c));
-      req.on('end', () => {
-        try {
-          const body = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
-            retryButton?: boolean;
-            suggestionPills?: boolean;
-            suggestions?: Array<{ label: string; text: string }>;
-          };
-          const p = getConfigPath();
-          let parsed: Record<string, any> = {};
-          if (fs.existsSync(p)) {
-            parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
-          }
-          parsed.ui = { ...(parsed.ui || {}) };
-          if (body.retryButton !== undefined) parsed.ui.retryButton = Boolean(body.retryButton);
-          if (body.suggestionPills !== undefined) parsed.ui.suggestionPills = Boolean(body.suggestionPills);
-          if (Array.isArray(body.suggestions)) parsed.ui.suggestions = body.suggestions;
-          fs.mkdirSync(path.dirname(p), { recursive: true });
-          fs.writeFileSync(p, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
-          log.info(`[Proxy] Updated UI configuration: retryButton=${parsed.ui.retryButton}, suggestionPills=${parsed.ui.suggestionPills}`);
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          res.end(JSON.stringify({ ok: true, ...readUiConfig() }));
-        } catch (e: any) {
-          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          res.end(JSON.stringify({ error: e?.message || 'Invalid JSON' }));
-        }
-      });
-      return;
-    }
-  }
-
-  // Remote VPS Command Execution Bridge (POST /api/remote/cmd)
-  if (req.url === '/api/remote/cmd' || req.url?.startsWith('/api/remote/cmd?')) {
-    if (req.method === 'POST') {
-      const chunks: Buffer[] = [];
-      req.on('data', (c) => chunks.push(c));
-      req.on('end', async () => {
-        try {
-          const b = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
-            command?: string;
-            host?: string;
-            token?: string;
-            workspaceId?: string;
-            sessionId?: string;
-            timeoutMs?: number;
-          };
-          const targetHost = b.host || remoteVpsHost || DEFAULT_REMOTE_HOST;
-          const rawToken = b.token ? String(b.token).trim() : '';
-          const token = (rawToken && rawToken !== 'null' && rawToken !== 'undefined')
-            ? rawToken
-            : (remoteVpsToken || DEFAULT_REMOTE_TOKEN);
-          const cmd = b.command || '';
-          const result = await executeOnRemoteDaemon(targetHost, token, cmd, b.workspaceId, b.sessionId, b.timeoutMs);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(result));
-        } catch (e) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
-        }
-      });
-      return;
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && (req.url === '/__diag__' || req.url?.startsWith('/__diag__?'))) {
-    try {
-      const accept = String(req.headers['accept'] ?? '');
-      const snapshot = diagnosticsSnapshot();
-      if (accept.includes('text/markdown') || accept.includes('text/plain')) {
-        res.writeHead(200, {
-          'Content-Type': 'text/markdown; charset=utf-8',
-          'Cache-Control': 'no-store',
-        });
-        res.end(diagnosticsFormat(snapshot));
-        return;
-      }
-      res.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store',
-      });
-      res.end(JSON.stringify(snapshot, null, 2));
-      return;
-    } catch (e) {
-      proxyLog.error('Failed to render /__diag__', (e as Error).message);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'failed to render diagnostics', detail: (e as Error).message }));
-      return;
-    }
-  }
-
-  // Phase 7.1: live counter / histogram inspection. Off by default;
-  // enable with AG_METRICS_ENABLED=1 when debugging a noisy upstream.
-  if (req.method === 'GET' && req.url === '/__metrics__') {
-    try {
-      if (!metricsEnabled()) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Not enabled. Set AG_METRICS_ENABLED=1 to expose /__metrics__.\n');
-        return;
-      }
-      const accept = req.headers['accept'] ? String(req.headers['accept']) : undefined;
-      const ct = negotiateContentType(accept);
-      if (ct === 'text/plain') {
-        res.writeHead(200, {
-          'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
-          'Cache-Control': 'no-store',
-        });
-        res.end(formatPrometheus(getMetricsSnapshot()));
-        return;
-      }
-      res.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store',
-      });
-      res.end(JSON.stringify(getMetricsSnapshot(), null, 2));
-      return;
-    } catch (e) {
-      proxyLog.error('Failed to render /__metrics__', (e as Error).message);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'failed to render metrics', detail: (e as Error).message }));
-      return;
-    }
-  }
-
-  // Per-model health status — returns circuit breaker state for each custom
-  // model so the renderer dropdown can show live green/red indicators.
-  // Reads only in-memory state, no upstream calls, ~1ms response time.
-  if (req.method === 'GET' && req.url === '/model-health') {
-    const customModels = loadCustomModels();
-    const statuses: Record<string, { status: string; errorType?: string; trippedAt?: number; failures?: number }> = {};
-    for (const m of customModels) {
-      const placeholderId = generateModelPlaceholderId(m);
-      const breaker = getOpenBreaker(m);
-      if (breaker) {
-        statuses[placeholderId] = {
-          status: 'error',
-          errorType: breaker.errorType,
-          trippedAt: breaker.trippedAt,
-          failures: breaker.failures,
-        };
-      } else {
-        statuses[placeholderId] = { status: 'healthy' };
-      }
-    }
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    });
-    res.end(JSON.stringify({ models: statuses, timestamp: Date.now() }));
-    return;
-  }
-
-  // Force an immediate live quota poll for all Google accounts.
-  // Useful from the doctor page to bypass the 3-minute poll cadence and get fresh data.
-  if (req.method === 'POST' && (req.url === '/force-quota-refresh' || req.url === '/pool/quota-refresh')) {
-    const models = loadCustomModels();
-    const googleModels = models.filter((m) => isGoogleCloudCodeModel(m));
-    const accountList = googleModels
-      .filter((m, i, arr) => arr.findIndex(x => getAccountQuotaKey(x) === getAccountQuotaKey(m)) === i)
-      .map((m) => m.accountEmail || getAccountQuotaKey(m));
-
-    // Fire-and-forget: poll runs in background, cooldowns reconciled after
-    pollAllGoogleQuotas(googleModels, autoHealAccountOnQuotaRecovery)
-      .then(() => { verifyAndReconcileCooldowns(Date.now(), googleModels); })
-      .catch(() => {});
-
-    if (safeWriteHead(res, 202, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })) {
-      safeEnd(res, JSON.stringify({
-        message: 'Quota refresh triggered for all Google accounts. Check /pool-status in ~5s for results.',
-        accounts: accountList,
-        timestamp: Date.now(),
-      }));
-    }
-    return;
-  }
-
-  // Lift cooldown for a specific account or family directly in proxy memory
-  if (req.method === 'POST' && (req.url === '/pool/lift-cooldown' || req.url === '/lift-cooldown')) {
-    readBodyWithLimit(req, res).then((buf) => {
-      if (!buf) return;
-      try {
-        const payload = JSON.parse(buf.toString('utf-8') || '{}');
-        const target = payload.account || payload.email || payload.key;
-        const family = payload.family;
-        if (target) {
-          clearAccountCooldownByKey(target, family);
-          log.info(`[Proxy] Lifted in-memory cooldown via API for: ${target} (family=${family || 'all'})`);
-        }
-        if (safeWriteHead(res, 200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })) {
-          safeEnd(res, JSON.stringify({ success: true, target }));
-        }
-      } catch (err: any) {
-        if (safeWriteHead(res, 400, { 'Content-Type': 'application/json' })) {
-          safeEnd(res, JSON.stringify({ success: false, error: err.message }));
-        }
-      }
-    });
-    return;
-  }
-
-  // Multi-account pool live telemetry & health inspection endpoint
-  if (req.method === 'GET' && (req.url === '/pool-status' || req.url === '/pool/status')) {
-    const customModels = expandModelsWithEffort(loadCustomModels());
-    const googleModels = customModels.filter((m) => isGoogleCloudCodeModel(m));
-    const seenAccounts = new Set<string>();
-    const poolStats: Array<{
-      accountKey: string;
-      email: string;
-      name: string;
-      dynamicScore: number;
-      baseScore: number;
-      geminiQuotaPct: number;
-      claudeQuotaPct: number;
-      geminiWeeklyPct: number | null;
-      claudeWeeklyPct: number | null;
-      quotaSource: 'LIVE' | 'STATIC';
-      quotaUpdatedAt: number | null;
-      quotaAgeMinutes: number | null;
-      inFlight: number;
-      inProbation: boolean;
-      maxConcurrent: number;
-      slotAvailable: boolean;
-      reauthRequired: boolean;
-      rpmLastMinute: number;
-      cooldownRemainingSec: number;
-      tokenCached: boolean;
-      status: 'HEALTHY' | 'PROBATION' | 'COOLDOWN' | 'BREAKER_OPEN' | 'REAUTH_REQUIRED';
-    }> = [];
-
-    for (const m of googleModels) {
-      const key = getAccountQuotaKey(m);
-      if (seenAccounts.has(key)) continue;
-      seenAccounts.add(key);
-
-      const email = m.accountEmail || (m as any).email || '';
-      const name = m.accountName || m.displayName || m.name;
-      const inFlight = getAccountInFlight(m);
-      const inProbation = isAccountInProbation(m);
-      const rpmLastMinute = getAccountRpmCount(m);
-      const dynamicScore = getAccountDynamicScore(m);
-      const baseScore = getModelQuotaScore(m);
-      const cooldownMs = getAccountCooldownRemaining(m);
-      const breaker = getOpenBreaker(m);
-
-      const live = getLiveAccountQuota(key);
-      const q = (live || m.quotas) as Record<string, any> | undefined;
-      const geminiQuotaPct = typeof q?.geminiFiveHourPct === 'number'
-        ? q.geminiFiveHourPct
-        : typeof q?.fiveHourPercentage === 'number'
-          ? q.fiveHourPercentage
-          : 50;
-      const claudeQuotaPct = typeof q?.claudeFiveHourPct === 'number' ? q.claudeFiveHourPct : 50;
-      const geminiWeeklyPct = typeof q?.geminiWeeklyPct === 'number' ? q.geminiWeeklyPct
-        : typeof q?.weeklyPercentage === 'number' ? q.weeklyPercentage : null;
-      const claudeWeeklyPct = typeof q?.claudeWeeklyPct === 'number' ? q.claudeWeeklyPct : null;
-      const quotaSource: 'LIVE' | 'STATIC' = live ? 'LIVE' : 'STATIC';
-      // How old is the quota data? Helps the UI show a "stale" warning.
-      const quotaUpdatedAt = live?.updatedAt || null;
-      const quotaAgeMinutes = quotaUpdatedAt ? Math.floor((Date.now() - quotaUpdatedAt) / 60_000) : null;
-
-      const revoked = isTokenRevoked(m.refreshToken);
-      let status: 'HEALTHY' | 'PROBATION' | 'COOLDOWN' | 'BREAKER_OPEN' | 'REAUTH_REQUIRED' = 'HEALTHY';
-      if (revoked) {
-        status = 'REAUTH_REQUIRED';
-      } else if (breaker) {
-        status = 'BREAKER_OPEN';
-      } else if (cooldownMs > 0) {
-        status = 'COOLDOWN';
-      } else if (inProbation) {
-        status = 'PROBATION';
-      }
-
-      poolStats.push({
-        accountKey: key,
-        email,
-        name,
-        dynamicScore,
-        baseScore,
-        geminiQuotaPct,
-        claudeQuotaPct,
-        geminiWeeklyPct,
-        claudeWeeklyPct,
-        quotaSource,
-        quotaUpdatedAt,
-        quotaAgeMinutes,
-        inFlight,
-        inProbation,
-        maxConcurrent: MAX_CONCURRENT_PER_ACCOUNT,
-        slotAvailable: inFlight < MAX_CONCURRENT_PER_ACCOUNT,
-        reauthRequired: revoked,
-        rpmLastMinute,
-        cooldownRemainingSec: Math.ceil(cooldownMs / 1000),
-        tokenCached: isTokenCached(m.refreshToken),
-        status,
-      });
-    }
-
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    });
-    res.end(
-      JSON.stringify({
-        poolSize: poolStats.length,
-        maxConcurrentPerAccount: MAX_CONCURRENT_PER_ACCOUNT,
-        timestamp: Date.now(),
-        accounts: poolStats,
-      }),
-    );
-    return;
-  }
-
-  // CORS Preflight handler for browser-initiated requests
+    // CORS Preflight handler for browser-initiated requests
   if (req.method === 'OPTIONS') {
     res.writeHead(200, {
       'Access-Control-Allow-Origin': '*',
@@ -7921,7 +5425,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
             if (sessionKey) nativeSessions.delete(sessionKey);
             if (convId) nativeSessions.delete(convId);
             if (sessId) nativeSessions.delete(sessId);
-            latestNativeGlobalError = null;
+            clearLatestNativeGlobalError();
           }
 
           const isFallbackToDifferentModel = isNativeProtected && !isSameModel && !isExplicitUserCustom;
@@ -8498,405 +6002,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   });
 }
 
-// ─── File Watcher for custom_models.json ──────────────────────────────────
-
-let customModelsWatcher: fs.FSWatcher | null = null;
-let customModelsWatcherDebounce: NodeJS.Timeout | null = null;
-
-
-export function setupCustomModelsWatcher(): void {
-  try {
-    const customModelsPath = getCustomModelsPath();
-    const customModelsDir = path.dirname(customModelsPath);
-    if (!fs.existsSync(customModelsDir)) {
-      fs.mkdirSync(customModelsDir, { recursive: true });
-    }
-
-    try {
-      if (fs.existsSync(customModelsPath)) {
-        setLastCustomModelsContentOnDisk(fs.readFileSync(customModelsPath, 'utf-8'));
-      }
-    } catch (_) {}
-
-    if (customModelsWatcher) {
-      customModelsWatcher.close();
-      customModelsWatcher = null;
-    }
-
-    customModelsWatcher = fs.watch(customModelsDir, (_eventType, filename) => {
-      if (filename) {
-        const baseName = path.basename(filename);
-        if (baseName.endsWith('.tmp') || baseName.includes('.tmp.')) return;
-        if (baseName === 'custom_models.json') {
-          if (customModelsWatcherDebounce) clearTimeout(customModelsWatcherDebounce);
-          customModelsWatcherDebounce = setTimeout(() => {
-            try {
-              if (fs.existsSync(customModelsPath)) {
-                const current = fs.readFileSync(customModelsPath, 'utf-8');
-                if (current === getLastCustomModelsContentOnDisk()) return;
-                setLastCustomModelsContentOnDisk(current);
-              }
-            } catch (_) {}
-            log.info('[Proxy] custom_models.json changed on disk. Invalidating model caches...');
-            invalidateModelStoreCache();
-            invalidateHealthCache();
-            clearSessionAffinities();
-            try {
-              const models = loadCustomModels();
-              if (models.length > 0) {
-                for (const m of models) {
-                  if (m.accountEmail && m.quotas) {
-                    const key = getAccountQuotaKey(m);
-                    updateLiveAccountQuota(key, m.quotas as any);
-                  }
-                }
-                checkAllModelsHealth(models).catch(() => {});
-                prewarmGoogleAccounts(models);
-                pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery)
-                  .then(() => {
-                    verifyAndReconcileCooldowns(Date.now(), models);
-                  })
-                  .catch(() => {});
-              }
-            } catch (err) {
-              log.warn('[Proxy] Failed to reload/health-check models after file change:', err);
-            }
-          }, 1000);
-        }
-      }
-    });
-  } catch (err) {
-    log.warn('[Proxy] Failed to setup custom_models.json watcher:', err);
-  }
-}
-
-export function stopCustomModelsWatcher(): void {
-  if (customModelsWatcherDebounce) {
-    clearTimeout(customModelsWatcherDebounce);
-    customModelsWatcherDebounce = null;
-  }
-  if (customModelsWatcher) {
-    try {
-      customModelsWatcher.close();
-    } catch {}
-    customModelsWatcher = null;
-  }
-}
-
-// ─── Live Quota Polling Interval (Every 3 minutes) ─────────────────────────
-let quotaPollTimer: NodeJS.Timeout | null = null;
-
-export function startQuotaPollingInterval(intervalMs = 180_000): void {
-  stopQuotaPollingInterval();
-  try {
-    const models = loadCustomModels();
-    pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery)
-      .then(() => {
-        verifyAndReconcileCooldowns(Date.now(), models);
-      })
-      .catch((err) => {
-        log.debug('[Proxy] Initial quota polling skipped:', err?.message || err);
-      });
-  } catch (_) {}
-
-  quotaPollTimer = setInterval(() => {
-    try {
-      const models = loadCustomModels();
-      pollAllGoogleQuotas(models, autoHealAccountOnQuotaRecovery)
-        .then(() => {
-          verifyAndReconcileCooldowns(Date.now(), models);
-        })
-        .catch((err) => {
-          log.debug('[Proxy] Quota polling tick skipped:', err?.message || err);
-        });
-    } catch (_) {}
-  }, intervalMs);
-
-  if (quotaPollTimer.unref) quotaPollTimer.unref();
-}
-
-export function stopQuotaPollingInterval(): void {
-  if (quotaPollTimer) {
-    clearInterval(quotaPollTimer);
-    quotaPollTimer = null;
-  }
-  stopPreflightHealthCheckInterval();
-}
-
-// ─── Server Start/Stop ────────────────────────────────────────────────────
 
 export function startProxy(): Promise<number> {
-  // Guard: proxy-runner.js and languageServer.ts both call startProxy().
-  // If the server is already listening, return the existing port.
-  if (server?.listening && proxyPort > 0) {
-    return Promise.resolve(proxyPort);
-  }
-  return new Promise((resolve, reject) => {
-    try {
-      server = http.createServer(handleRequest);
-
-      // The Antigravity language server multiplexes many requests over a few
-      // keep-alive sockets and pipelines them aggressively (state page updates
-      // every ~200ms, back-to-back streamGenerateContent). Node's default
-      // keepAliveTimeout (5s) destroys idle sockets under the LS's next write;
-      // Windows then aborts that write with WSAECONNABORTED, the Go client
-      // retries, and we get a retry flood + CPU burn. Disable all three
-      // reaping timeouts: the proxy binds 127.0.0.1 only, and the idle guard
-      // on upstream streams handles stuck providers.
-      // ponytail: 0 disables reaping → a broken local client could hold
-      // sockets open forever. Acceptable on loopback; re-enable with
-      // keepAliveTimeout=60_000 if the proxy is ever exposed beyond localhost.
-      server.keepAliveTimeout = 0;
-      server.headersTimeout = 0;
-      server.requestTimeout = 0;
-
-      // P2: Make port/host configurable via env vars so the proxy can be
-      // tuned per-machine without recompiling. Defaults preserve legacy behavior.
-      const envPort = parseInt(process.env.AG_PROXY_PORT || '', 10);
-      const defaultPort = Number.isFinite(envPort) && envPort > 0 ? envPort : DEFAULT_PROXY_PORT;
-      const defaultHost = process.env.AG_PROXY_HOST || LOOPBACK_HOSTS[0];
-
-      let primaryPort = defaultPort;
-      let primaryHost = defaultHost;
-
-      const portCandidates: number[] = [defaultPort];
-      portCandidates.push(0); // 0 = OS-assigned dynamic port (last resort)
-
-      let attemptIdx = 0;
-      let eaddrinuseRetries = 0;
-      const MAX_PORT_RETRIES = 10;
-
-      server.once('listening', () => {
-        proxyPort = (server!.address() as import('net').AddressInfo).port;
-        const requestedPort = portCandidates[attemptIdx];
-        const isFallback = requestedPort !== defaultPort && requestedPort !== 0;
-        const isDynamic = requestedPort === 0;
-        if (isFallback) {
-          log.warn(`[Proxy] Default port ${defaultPort} unavailable. Using fallback port ${proxyPort}.`);
-          log.warn(`[Proxy] Set AG_PROXY_PORT=${proxyPort} in your environment to silence this warning.`);
-        } else if (isDynamic) {
-          log.warn(`[Proxy] All configured ports in use. Using OS-assigned dynamic port ${proxyPort}.`);
-        } else {
-          log.info(`[Proxy] Server listening on http://${primaryHost}:${proxyPort}`);
-        }
-
-        // Persist the active port so other processes (ag-doctor-ui, scripts)
-        // can discover which port the proxy is actually bound to.
-        try {
-          const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
-          const portFile = path.join(home, ACTIVE_PORT_FILE);
-          fs.mkdirSync(path.dirname(portFile), { recursive: true });
-          fs.writeFileSync(portFile, String(proxyPort), 'utf-8');
-          log.debug(`[Proxy] Active port persisted to ${portFile}`);
-        } catch (err) {
-          log.warn('[Proxy] Could not persist active port:', (err as Error).message);
-        }
-
-        // Execute cleanup initialization after the server is already listening
-        // so that failures here don't prevent the port from binding.
-        try {
-          const models = loadCustomModels();
-          loadPersistentQuotaCache()
-            .then(() => {
-              for (const m of models) {
-                if (m.accountEmail && m.quotas) {
-                  const key = getAccountQuotaKey(m);
-                  updateLiveAccountQuota(key, m.quotas as any);
-                }
-              }
-              verifyAndReconcileCooldowns(Date.now(), models);
-            })
-            .catch(() => {});
-          startCleanupInterval();
-          startQuotaPollingInterval();
-          startPreflightHealthCheckInterval();
-          setupCustomModelsWatcher();
-          prewarmGoogleAccounts(models);
-          resolveGoogleIp(GOOGLE_HOSTS.CLOUD_CODE).catch(() => {});
-          try {
-            warmTlsConnection(GOOGLE_HOSTS.CLOUD_CODE);
-            warmTlsConnection('daily-cloudcode-pa.googleapis.com');
-            warmTlsConnection('generativelanguage.googleapis.com');
-          } catch (_) {}
-        } catch (err) {
-          log.error('[Proxy] Failed to start cleanup interval / pre-warm:', err);
-        }
-
-        resolve(proxyPort);
-      });
-
-      const tryListen = (port: number, host: string): void => {
-        server!.listen(port, host);
-      };
-
-      server.on('error', (err: NodeJS.ErrnoException) => {
-        // Log full error details for diagnostics on new machines.
-        log.error(`[Proxy] Server error: code=${err.code} message=${err.message} syscall=${err.syscall || ''} address=${(err as any).address || ''} port=${(err as any).port || ''}`);
-        if (err.code === 'EADDRINUSE') {
-          if (attemptIdx === 0 && eaddrinuseRetries < MAX_PORT_RETRIES) {
-            eaddrinuseRetries += 1;
-            log.warn(`[Proxy] Port ${primaryPort} busy (EADDRINUSE), probing port owner (${eaddrinuseRetries}/${MAX_PORT_RETRIES})...`);
-
-            const probeAndEvictStub = (callback: () => void) => {
-              const probeReq = http.get(`http://${primaryHost}:${primaryPort}/health`, { timeout: 300 }, (probeRes) => {
-                let body = '';
-                probeRes.on('data', (chunk) => { body += chunk; });
-                probeRes.on('end', () => {
-                  const isStubHeader = probeRes.headers['x-proxy-stub'] === '1';
-                  let stubPid: number | null = null;
-                  try {
-                    const parsed = JSON.parse(body);
-                    if (parsed.stub || isStubHeader) {
-                      stubPid = typeof parsed.pid === 'number' ? parsed.pid : null;
-                    }
-                  } catch (_) {}
-
-                  if (isStubHeader || stubPid) {
-                    log.warn(`[Proxy] Detected proxy-stub (pid=${stubPid}) occupying primary port ${primaryPort}. Terminating stub to reclaim port...`);
-                    if (stubPid && stubPid !== process.pid) {
-                      try {
-                        process.kill(stubPid, 'SIGKILL');
-                      } catch (_) {
-                        try { process.kill(stubPid); } catch (_) {}
-                      }
-                    }
-                  }
-                  setTimeout(callback, 250);
-                });
-              });
-              probeReq.on('error', () => { setTimeout(callback, 350); });
-              probeReq.on('timeout', () => { probeReq.destroy(); setTimeout(callback, 350); });
-            };
-
-            probeAndEvictStub(() => {
-              tryListen(primaryPort, primaryHost);
-            });
-            return;
-          }
-          if (attemptIdx + 1 < portCandidates.length) {
-            const triedPort = portCandidates[attemptIdx];
-            const nextPort = portCandidates[attemptIdx + 1];
-            log.warn(`[Proxy] Port ${triedPort} is already in use after retries. Trying ${nextPort === 0 ? 'OS-assigned dynamic port' : 'port ' + nextPort}...`);
-            attemptIdx += 1;
-            tryListen(nextPort, primaryHost);
-            return;
-          }
-        } else if (err.code === 'EACCES') {
-          log.warn(`[Proxy] Permission denied binding to ${primaryHost}:${primaryPort}. Trying fallback ports...`);
-          if (attemptIdx + 1 < portCandidates.length) {
-            const triedPort = portCandidates[attemptIdx];
-            const nextPort = portCandidates[attemptIdx + 1];
-            log.warn(`[Proxy] Port ${triedPort} access denied. Trying ${nextPort === 0 ? 'OS-assigned dynamic port' : 'port ' + nextPort}...`);
-            attemptIdx += 1;
-            tryListen(nextPort, primaryHost);
-          } else {
-            log.error(`[Proxy] Permission denied binding to ${primaryHost}:${primaryPort}. Try a different port (AG_PROXY_PORT) or run with sufficient privileges.`);
-            reject(err);
-          }
-        } else {
-          log.error('[Proxy] Startup failed:', err);
-          reject(err);
-        }
-      });
-
-      primaryPort = portCandidates[0];
-      // Hot-reload persisted state from disk before we start accepting
-      // requests. This restores any breakers that were tripped before the
-      // last shutdown, so the proxy doesn't immediately re-fail on a
-      // model the user already determined was broken.
-      loadPersistedState();
-      tryListen(primaryPort, primaryHost);
-    } catch (err) {
-      log.error('[Proxy] Unexpected error during startProxy:', err);
-      reject(err);
-    }
-  });
-}
-
-/**
- * Reads the persisted state file and applies it to the live singletons.
- * Called once on startup. Safe to call again — re-loads idempotently.
- */
-export function loadPersistedState(): void {
-  try {
-    const path = stateFilePath();
-    const file = loadPersisted(path);
-    const { retryBudgetPatch, breakerPatch } = fromPersistedFile(
-      file,
-      Date.now(),
-      CIRCUIT_BREAKER_RESET_MS,
-    );
-    applyBudgetPatch(retryBudgetPatch);
-    applyBreakerPatch(breakerPatch);
-    if (file.recentModels) {
-      restoreRecentModels(file.recentModels);
-    }
-    log.info(
-      `[Proxy] loaded persisted state: budget=${retryBudgetPatch.size} breakers=${breakerPatch.size}`,
-    );
-  } catch (err) {
-    log.warn('[Proxy] could not restore persisted state:', err);
-  }
-}
-
-/**
- * Persist the current in-memory retry budget + breaker state to disk.
- * Throttled by `MIN_FLUSH_INTERVAL_MS` unless `force` is set.
- */
-export function flushPersistedState(opts: { force?: boolean } = {}): void {
-  try {
-    const path = stateFilePath();
-    const file = gatherPersisted();
-    const ok = flushPersisted(path, file);
-    if (!ok && !opts.force) {
-      // Throttled — that's fine. The next mutation will flush.
-      return;
-    }
-  } catch (err) {
-    log.warn('[Proxy] could not persist state:', err);
-  }
+  return startProxyServer(handleRequest);
 }
 
 export function stopProxy(): Promise<void> {
-  return new Promise((resolve) => {
-    // P1-9: Stop cleanup interval to prevent orphaned timers
-    stopCleanupInterval();
-    stopQuotaPollingInterval();
-    stopCustomModelsWatcher();
-
-    const finish = (): void => {
-      // Phase 6.3: flush any pending persisted state (force, ignore throttle)
-      // so the next startProxy() can re-load the same breakers / budgets.
-      flushPersistedState({ force: true });
-      // Phase 3: close per-host https/http agent pools so file descriptors
-      // are released on graceful shutdown (mirrors undici.Agent.close()).
-      disposeAgentPool()
-        .then(() => resolve())
-        .catch((err) => {
-          log.warn('[Proxy] Agent pool dispose error (non-fatal):', err);
-          resolve();
-        });
-    };
-
-    if (server) {
-      // Forcefully close idle connections and active connections to release sockets immediately
-      if (typeof (server as any).closeIdleConnections === 'function') {
-        (server as any).closeIdleConnections();
-      }
-      if (typeof (server as any).closeAllConnections === 'function') {
-        (server as any).closeAllConnections();
-      }
-      server.close(() => {
-        log.info('[Proxy] Server stopped');
-        server = null;
-        finish();
-      });
-    } else {
-      finish();
-    }
-  });
-}
-
-export function getProxyPort(): number {
-  return proxyPort;
+  return stopProxyServer();
 }

@@ -3,6 +3,10 @@
  * Replaces ~9 duplicate regex blocks across proxy.ts.
  */
 
+import { generateModelPlaceholderId, toSlug } from './idGenerator';
+import { normalizeGoogleModelId } from '../services/googleAuth';
+import type { CustomModel } from './types';
+
 /** Helpers re-exported from src/presets/reasoningEffort.ts (single source of truth). */
 import { isReasoningLikeModel } from '../presets/reasoningEffort';
 export {
@@ -442,5 +446,69 @@ export function extractModelNameFromPayload(body: unknown): string {
   return '';
 }
 
+/**
+ * Robust matching between a custom model and a requested candidate model name,
+ * taking into account provider prefixes, slugs, placeholder IDs, and reasoning effort tiers.
+ */
 
+export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
+  if (!candidate || typeof candidate !== 'string') return false;
+  // An original native model string without custom- prefix is an IDE native selection, never a custom model
+  if (!candidate.startsWith('custom-') && !/MODEL_PLACEHOLDER_/i.test(candidate) && isNativeCloudCodeModel(candidate)) {
+    return false;
+  }
+  const enumName = generateModelPlaceholderId(m);
+  const slug = toSlug(m);
+  const clean = candidate.replace(/^models\//, '');
+  const cleanLower = clean.toLowerCase();
+  const candLower = candidate.toLowerCase();
+  const extLower = (m.externalModelName || '').toLowerCase();
+  const idLower = ((m as { id?: string }).id || '').toLowerCase();
+  const dispLower = (m.displayName || '').toLowerCase();
+  const slugLower = slug.toLowerCase();
+  const mSlugLower = (m._slug || '').toLowerCase();
 
+  const isCandidateGemini = cleanLower.startsWith('gemini-');
+  const isModelGemini = m.provider === 'google' || (!m.provider && (extLower.startsWith('gemini-') || idLower.startsWith('gemini-')));
+
+  const normCand = isCandidateGemini ? normalizeGoogleModelId(cleanLower) : '';
+  const normExt = (isModelGemini && extLower) ? normalizeGoogleModelId(extLower) : '';
+  const normId = (isModelGemini && idLower) ? normalizeGoogleModelId(idLower) : '';
+
+  // Strict reasoning effort check: if candidate specifies an effort tier, only match models with that same tier
+  const candEffort = /(?:^|[-_ (])(low|medium|high)(?:$|[-_ )])/i.exec(candLower)?.[1]?.toLowerCase();
+  const mEffort = (
+    m.reasoningEffort ||
+    (m._effortSuffix ? m._effortSuffix.replace('-', '') : undefined) ||
+    /(?:^|[-_ (])(low|medium|high)(?:$|[-_ )])/i.exec(dispLower)?.[1]
+  )?.toLowerCase();
+  if (candEffort && mEffort && candEffort !== mEffort) {
+    return false;
+  }
+
+  return (
+    m.name === candidate ||
+    m.name === clean ||
+    m.name.replace(/^models\//, '') === clean ||
+    m.name.replace(/^models\//, '').toLowerCase() === cleanLower ||
+    slug === candidate ||
+    slug === clean ||
+    slugLower === candLower ||
+    slugLower === cleanLower ||
+    enumName === candidate ||
+    enumName === clean ||
+    `models/${enumName}` === candidate ||
+    candidate.endsWith(enumName) ||
+    enumName.toLowerCase() === candLower ||
+    enumName.toLowerCase() === cleanLower ||
+    `models/${enumName.toLowerCase()}` === candLower ||
+    candLower.endsWith(enumName.toLowerCase()) ||
+    (Boolean(extLower) && (candLower === extLower || cleanLower === extLower || candLower === `models/${extLower}`)) ||
+    (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
+    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower || candLower.replace(/^[🟢🟡🔴•\s]+/, '') === dispLower || cleanLower.replace(/^[🟢🟡🔴•\s]+/, '') === dispLower)) ||
+    (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower)) ||
+    (isCandidateGemini && isModelGemini && Boolean(normExt) && normCand === normExt) ||
+    (isCandidateGemini && isModelGemini && Boolean(normId) && normCand === normId) ||
+    (isModelGemini && candLower.includes('gemini-3.8-flash') && (extLower.includes('gemini-3.8-flash') || idLower.includes('gemini-3.8-flash') || dispLower.includes('gemini 3.8 flash')))
+  );
+}

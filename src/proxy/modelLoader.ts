@@ -289,6 +289,17 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
                       : (p.apiUrl?.includes('cloudcode') && !p.apiUrl.includes('cloudcode-pa.googleapis.com') ? p.apiUrl : 'https://daily-cloudcode-pa.googleapis.com'))
                   : (accApiUrl || p.apiUrl || '')));
 
+        const isAccountExplicitlyDisabled = acc.enabled === false || m.enabled === false || p.enabled === false;
+        const accountStatus = (acc as any).status || (p as any).status;
+        const isValReq = Boolean(
+          (acc as any).isValidationRequired ||
+          (acc as any).status === 'validation_required' ||
+          (acc as any).errorDetails?.status === 'VALIDATION_REQUIRED' ||
+          (p as any).isValidationRequired ||
+          (p as any).status === 'validation_required'
+        );
+        const isUnlic = Boolean((acc as any).isUnlicensed || (p as any).isUnlicensed);
+
         const partialModel: CustomModel = {
           name: m.id ?? '',
           displayName,
@@ -297,6 +308,11 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
           apiKey: acc.apiKey ?? p.apiKey ?? 'none',
           apiUrl: resolvedApiUrl,
           externalModelName: m.id ?? '',
+          enabled: !isAccountExplicitlyDisabled,
+          status: accountStatus,
+          isValidationRequired: isValReq,
+          isUnlicensed: isUnlic,
+          errorDetails: (acc as any).errorDetails || (p as any).errorDetails,
           allowUnauthorized: p.allowUnauthorized,
           encrypted: p.encrypted,
           useRawBaseUrl: p.useRawBaseUrl,

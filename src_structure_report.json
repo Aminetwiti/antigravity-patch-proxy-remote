@@ -1,0 +1,590 @@
+{
+  ".": [
+    {
+      "name": "chatUiEnhancer.js",
+      "lines": 591,
+      "fullPath": "src/chatUiEnhancer.js"
+    },
+    {
+      "name": "configExchange.ts",
+      "lines": 2,
+      "fullPath": "src/configExchange.ts"
+    },
+    {
+      "name": "constants.ts",
+      "lines": 547,
+      "fullPath": "src/constants.ts"
+    },
+    {
+      "name": "cryptoStore.ts",
+      "lines": 2,
+      "fullPath": "src/cryptoStore.ts"
+    },
+    {
+      "name": "customIpcBridge.ts",
+      "lines": 65,
+      "fullPath": "src/customIpcBridge.ts"
+    },
+    {
+      "name": "customModelStore.ts",
+      "lines": 2,
+      "fullPath": "src/customModelStore.ts"
+    },
+    {
+      "name": "customScheme.ts",
+      "lines": 53,
+      "fullPath": "src/customScheme.ts"
+    },
+    {
+      "name": "ipcHandlers.ts",
+      "lines": 1439,
+      "fullPath": "src/ipcHandlers.ts"
+    },
+    {
+      "name": "keybindings.ts",
+      "lines": 24,
+      "fullPath": "src/keybindings.ts"
+    },
+    {
+      "name": "languageServer.ts",
+      "lines": 501,
+      "fullPath": "src/languageServer.ts"
+    },
+    {
+      "name": "loadingOverlay.ts",
+      "lines": 6,
+      "fullPath": "src/loadingOverlay.ts"
+    },
+    {
+      "name": "logger.ts",
+      "lines": 2,
+      "fullPath": "src/logger.ts"
+    },
+    {
+      "name": "main.ts",
+      "lines": 437,
+      "fullPath": "src/main.ts"
+    },
+    {
+      "name": "menu.ts",
+      "lines": 77,
+      "fullPath": "src/menu.ts"
+    },
+    {
+      "name": "metrics.ts",
+      "lines": 183,
+      "fullPath": "src/metrics.ts"
+    },
+    {
+      "name": "paths.ts",
+      "lines": 45,
+      "fullPath": "src/paths.ts"
+    },
+    {
+      "name": "preload.ts",
+      "lines": 354,
+      "fullPath": "src/preload.ts"
+    },
+    {
+      "name": "presets.ts",
+      "lines": 51,
+      "fullPath": "src/presets.ts"
+    },
+    {
+      "name": "proxy.ts",
+      "lines": 6013,
+      "fullPath": "src/proxy.ts"
+    },
+    {
+      "name": "rendererHook.js",
+      "lines": 2437,
+      "fullPath": "src/rendererHook.js"
+    },
+    {
+      "name": "schemaValidator.ts",
+      "lines": 238,
+      "fullPath": "src/schemaValidator.ts"
+    },
+    {
+      "name": "storage.ts",
+      "lines": 98,
+      "fullPath": "src/storage.ts"
+    },
+    {
+      "name": "tray.ts",
+      "lines": 42,
+      "fullPath": "src/tray.ts"
+    },
+    {
+      "name": "types.d.ts",
+      "lines": 291,
+      "fullPath": "src/types.d.ts"
+    },
+    {
+      "name": "updater.ts",
+      "lines": 241,
+      "fullPath": "src/updater.ts"
+    },
+    {
+      "name": "utils.ts",
+      "lines": 293,
+      "fullPath": "src/utils.ts"
+    }
+  ],
+  "config": [
+    {
+      "name": "environment.ts",
+      "lines": 40,
+      "fullPath": "src/config/environment.ts"
+    },
+    {
+      "name": "providers.json",
+      "lines": 271,
+      "fullPath": "src/config/providers.json"
+    }
+  ],
+  "i18n": [
+    {
+      "name": "messages.ts",
+      "lines": 61,
+      "fullPath": "src/i18n/messages.ts"
+    }
+  ],
+  "ideInstall": [
+    {
+      "name": "constants.ts",
+      "lines": 90,
+      "fullPath": "src/ideInstall/constants.ts"
+    },
+    {
+      "name": "index.ts",
+      "lines": 21,
+      "fullPath": "src/ideInstall/index.ts"
+    },
+    {
+      "name": "service.ts",
+      "lines": 150,
+      "fullPath": "src/ideInstall/service.ts"
+    },
+    {
+      "name": "wizard.ts",
+      "lines": 124,
+      "fullPath": "src/ideInstall/wizard.ts"
+    },
+    {
+      "name": "wizardHtml.ts",
+      "lines": 285,
+      "fullPath": "src/ideInstall/wizardHtml.ts"
+    },
+    {
+      "name": "wizardPreload.ts",
+      "lines": 36,
+      "fullPath": "src/ideInstall/wizardPreload.ts"
+    }
+  ],
+  "ipc": [
+    {
+      "name": "channels.ts",
+      "lines": 89,
+      "fullPath": "src/ipc/channels.ts"
+    }
+  ],
+  "main": [
+    {
+      "name": "windowManager.ts",
+      "lines": 101,
+      "fullPath": "src/main/windowManager.ts"
+    }
+  ],
+  "preload": [
+    {
+      "name": "api.ts",
+      "lines": 155,
+      "fullPath": "src/preload/api.ts"
+    },
+    {
+      "name": "doctor-ui.ts",
+      "lines": 449,
+      "fullPath": "src/preload/doctor-ui.ts"
+    },
+    {
+      "name": "index.ts",
+      "lines": 7,
+      "fullPath": "src/preload/index.ts"
+    },
+    {
+      "name": "logger.ts",
+      "lines": 22,
+      "fullPath": "src/preload/logger.ts"
+    },
+    {
+      "name": "model-fetcher.ts",
+      "lines": 294,
+      "fullPath": "src/preload/model-fetcher.ts"
+    },
+    {
+      "name": "native-quota-card.ts",
+      "lines": 172,
+      "fullPath": "src/preload/native-quota-card.ts"
+    },
+    {
+      "name": "provider-manager.ts",
+      "lines": 854,
+      "fullPath": "src/preload/provider-manager.ts"
+    },
+    {
+      "name": "types.ts",
+      "lines": 203,
+      "fullPath": "src/preload/types.ts"
+    }
+  ],
+  "presets": [
+    {
+      "name": "reasoningEffort.ts",
+      "lines": 240,
+      "fullPath": "src/presets/reasoningEffort.ts"
+    }
+  ],
+  "proxy": [
+    {
+      "name": "agentPool.ts",
+      "lines": 292,
+      "fullPath": "src/proxy/agentPool.ts"
+    },
+    {
+      "name": "backoff.ts",
+      "lines": 67,
+      "fullPath": "src/proxy/backoff.ts"
+    },
+    {
+      "name": "bodyLimitGuard.ts",
+      "lines": 54,
+      "fullPath": "src/proxy/bodyLimitGuard.ts"
+    },
+    {
+      "name": "circuitBreaker.ts",
+      "lines": 190,
+      "fullPath": "src/proxy/circuitBreaker.ts"
+    },
+    {
+      "name": "contextTrimmer.ts",
+      "lines": 183,
+      "fullPath": "src/proxy/contextTrimmer.ts"
+    },
+    {
+      "name": "diagnostics.ts",
+      "lines": 234,
+      "fullPath": "src/proxy/diagnostics.ts"
+    },
+    {
+      "name": "dnsResolver.ts",
+      "lines": 250,
+      "fullPath": "src/proxy/dnsResolver.ts"
+    },
+    {
+      "name": "effortExpander.ts",
+      "lines": 52,
+      "fullPath": "src/proxy/effortExpander.ts"
+    },
+    {
+      "name": "emptyStream.ts",
+      "lines": 189,
+      "fullPath": "src/proxy/emptyStream.ts"
+    },
+    {
+      "name": "endpointHandlers.ts",
+      "lines": 513,
+      "fullPath": "src/proxy/endpointHandlers.ts"
+    },
+    {
+      "name": "errorClassifier.ts",
+      "lines": 481,
+      "fullPath": "src/proxy/errorClassifier.ts"
+    },
+    {
+      "name": "googlePool.ts",
+      "lines": 2600,
+      "fullPath": "src/proxy/googlePool.ts"
+    },
+    {
+      "name": "historyTrimmer.ts",
+      "lines": 138,
+      "fullPath": "src/proxy/historyTrimmer.ts"
+    },
+    {
+      "name": "httpUtils.ts",
+      "lines": 118,
+      "fullPath": "src/proxy/httpUtils.ts"
+    },
+    {
+      "name": "idGenerator.ts",
+      "lines": 54,
+      "fullPath": "src/proxy/idGenerator.ts"
+    },
+    {
+      "name": "idleTimeout.ts",
+      "lines": 165,
+      "fullPath": "src/proxy/idleTimeout.ts"
+    },
+    {
+      "name": "internalApiRoutes.ts",
+      "lines": 469,
+      "fullPath": "src/proxy/internalApiRoutes.ts"
+    },
+    {
+      "name": "jsonRepair.ts",
+      "lines": 98,
+      "fullPath": "src/proxy/jsonRepair.ts"
+    },
+    {
+      "name": "logThrottle.ts",
+      "lines": 111,
+      "fullPath": "src/proxy/logThrottle.ts"
+    },
+    {
+      "name": "mcpRelay.ts",
+      "lines": 213,
+      "fullPath": "src/proxy/mcpRelay.ts"
+    },
+    {
+      "name": "metricsRoute.ts",
+      "lines": 101,
+      "fullPath": "src/proxy/metricsRoute.ts"
+    },
+    {
+      "name": "modelHealthChecker.ts",
+      "lines": 246,
+      "fullPath": "src/proxy/modelHealthChecker.ts"
+    },
+    {
+      "name": "modelInjector.ts",
+      "lines": 478,
+      "fullPath": "src/proxy/modelInjector.ts"
+    },
+    {
+      "name": "modelLoader.ts",
+      "lines": 542,
+      "fullPath": "src/proxy/modelLoader.ts"
+    },
+    {
+      "name": "modelRouter.ts",
+      "lines": 111,
+      "fullPath": "src/proxy/modelRouter.ts"
+    },
+    {
+      "name": "modelTimeBudget.ts",
+      "lines": 64,
+      "fullPath": "src/proxy/modelTimeBudget.ts"
+    },
+    {
+      "name": "modelUtils.ts",
+      "lines": 515,
+      "fullPath": "src/proxy/modelUtils.ts"
+    },
+    {
+      "name": "persistedState.ts",
+      "lines": 474,
+      "fullPath": "src/proxy/persistedState.ts"
+    },
+    {
+      "name": "protobuf.ts",
+      "lines": 343,
+      "fullPath": "src/proxy/protobuf.ts"
+    },
+    {
+      "name": "protoInjector.ts",
+      "lines": 895,
+      "fullPath": "src/proxy/protoInjector.ts"
+    },
+    {
+      "name": "providerGate.ts",
+      "lines": 158,
+      "fullPath": "src/proxy/providerGate.ts"
+    },
+    {
+      "name": "recentModelsStore.ts",
+      "lines": 31,
+      "fullPath": "src/proxy/recentModelsStore.ts"
+    },
+    {
+      "name": "registry.ts",
+      "lines": 242,
+      "fullPath": "src/proxy/registry.ts"
+    },
+    {
+      "name": "remoteSessionStore.ts",
+      "lines": 71,
+      "fullPath": "src/proxy/remoteSessionStore.ts"
+    },
+    {
+      "name": "remoteState.ts",
+      "lines": 337,
+      "fullPath": "src/proxy/remoteState.ts"
+    },
+    {
+      "name": "retryBudget.ts",
+      "lines": 348,
+      "fullPath": "src/proxy/retryBudget.ts"
+    },
+    {
+      "name": "retryStrategy.ts",
+      "lines": 382,
+      "fullPath": "src/proxy/retryStrategy.ts"
+    },
+    {
+      "name": "serverLifecycle.ts",
+      "lines": 427,
+      "fullPath": "src/proxy/serverLifecycle.ts"
+    },
+    {
+      "name": "sessionAffinities.ts",
+      "lines": 386,
+      "fullPath": "src/proxy/sessionAffinities.ts"
+    },
+    {
+      "name": "shared.ts",
+      "lines": 582,
+      "fullPath": "src/proxy/shared.ts"
+    },
+    {
+      "name": "streamPipeline.ts",
+      "lines": 907,
+      "fullPath": "src/proxy/streamPipeline.ts"
+    },
+    {
+      "name": "types.ts",
+      "lines": 191,
+      "fullPath": "src/proxy/types.ts"
+    },
+    {
+      "name": "urlBuilder.ts",
+      "lines": 95,
+      "fullPath": "src/proxy/urlBuilder.ts"
+    }
+  ],
+  "proxy\\translators": [
+    {
+      "name": "anthropic.ts",
+      "lines": 512,
+      "fullPath": "src/proxy/translators/anthropic.ts"
+    },
+    {
+      "name": "google.ts",
+      "lines": 207,
+      "fullPath": "src/proxy/translators/google.ts"
+    },
+    {
+      "name": "ollama.ts",
+      "lines": 90,
+      "fullPath": "src/proxy/translators/ollama.ts"
+    },
+    {
+      "name": "openai.ts",
+      "lines": 593,
+      "fullPath": "src/proxy/translators/openai.ts"
+    },
+    {
+      "name": "utils.ts",
+      "lines": 701,
+      "fullPath": "src/proxy/translators/utils.ts"
+    }
+  ],
+  "proxyGateway": [
+    {
+      "name": "server.ts",
+      "lines": 37,
+      "fullPath": "src/proxyGateway/server.ts"
+    },
+    {
+      "name": "streamBuffer.ts",
+      "lines": 56,
+      "fullPath": "src/proxyGateway/streamBuffer.ts"
+    }
+  ],
+  "services": [
+    {
+      "name": "certificateService.ts",
+      "lines": 253,
+      "fullPath": "src/services/certificateService.ts"
+    },
+    {
+      "name": "configExchange.ts",
+      "lines": 223,
+      "fullPath": "src/services/configExchange.ts"
+    },
+    {
+      "name": "cryptoStore.ts",
+      "lines": 243,
+      "fullPath": "src/services/cryptoStore.ts"
+    },
+    {
+      "name": "googleAuth.ts",
+      "lines": 1999,
+      "fullPath": "src/services/googleAuth.ts"
+    },
+    {
+      "name": "healthProbe.ts",
+      "lines": 112,
+      "fullPath": "src/services/healthProbe.ts"
+    },
+    {
+      "name": "localAccountDiscovery.ts",
+      "lines": 101,
+      "fullPath": "src/services/localAccountDiscovery.ts"
+    },
+    {
+      "name": "localCredentialDiscovery.ts",
+      "lines": 153,
+      "fullPath": "src/services/localCredentialDiscovery.ts"
+    },
+    {
+      "name": "localModelDetector.ts",
+      "lines": 151,
+      "fullPath": "src/services/localModelDetector.ts"
+    },
+    {
+      "name": "modelStore.ts",
+      "lines": 656,
+      "fullPath": "src/services/modelStore.ts"
+    },
+    {
+      "name": "quotaCacheStore.ts",
+      "lines": 235,
+      "fullPath": "src/services/quotaCacheStore.ts"
+    },
+    {
+      "name": "runtimeStateService.ts",
+      "lines": 48,
+      "fullPath": "src/services/runtimeStateService.ts"
+    },
+    {
+      "name": "settingsService.ts",
+      "lines": 56,
+      "fullPath": "src/services/settingsService.ts"
+    },
+    {
+      "name": "summaryReconciler.ts",
+      "lines": 464,
+      "fullPath": "src/services/summaryReconciler.ts"
+    },
+    {
+      "name": "telemetryStore.ts",
+      "lines": 98,
+      "fullPath": "src/services/telemetryStore.ts"
+    }
+  ],
+  "shared": [
+    {
+      "name": "logger.ts",
+      "lines": 55,
+      "fullPath": "src/shared/logger.ts"
+    }
+  ],
+  "wellKnown": [
+    {
+      "name": "modelIdUtils.ts",
+      "lines": 275,
+      "fullPath": "src/wellKnown/modelIdUtils.ts"
+    }
+  ]
+}

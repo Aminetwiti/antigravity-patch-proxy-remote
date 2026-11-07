@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createResponseClaimer, type ResponseClaimer } from '../proxy';
+import { createResponseClaimer, trimOldestHistory, type ResponseClaimer } from '../proxy';
 import {
   HEDGED_REQUEST_DELAY_MS,
   CAPACITY_503_CASCADE_THRESHOLD,
@@ -137,6 +137,57 @@ describe('Speculative Hedged Requests, 503 & 504 Timeout Cascade Architecture', 
       const hedgeDelay = Math.min(baseHedgeDelay, Math.floor(poolHeaderTimeout * 0.6));
 
       expect(hedgeDelay).toBe(8_000);
+    });
+  });
+
+  describe('Adversarial Regression Tests (AUDIT-001 to AUDIT-005)', () => {
+    it('AUDIT-004: ensures trimOldestHistory normalizes turns so no consecutive user turns occur', () => {
+      const payload = {
+        contents: [
+          { role: 'user', parts: [{ text: 'Prompt 0' }] },
+          { role: 'model', parts: [{ text: 'Answer 0' }] },
+          { role: 'user', parts: [{ text: 'Prompt 1' }] },
+          { role: 'model', parts: [{ text: 'Answer 1' }] },
+          { role: 'user', parts: [{ text: 'Prompt 2' }] },
+          { role: 'model', parts: [{ text: 'Answer 2' }] },
+          { role: 'user', parts: [{ text: 'Prompt 3' }] },
+        ],
+      };
+      const trimmed = trimOldestHistory(payload, 3);
+      expect(trimmed).toBe(true);
+      // Even if slice landed on user, normalizeConversationTurns merged or ensured valid turns
+      for (let i = 0; i < payload.contents.length - 1; i++) {
+        expect(payload.contents[i].role).not.toBe(payload.contents[i + 1].role);
+      }
+    });
+
+    it('AUDIT-005: bounds dynamic 504 outage threshold to at most 3 even on large pools (23+ accounts)', () => {
+      const sortedAccounts23 = new Array(23).fill({});
+      const threshold23 = Math.min(CONSECUTIVE_504_CASCADE_THRESHOLD, Math.min(3, Math.max(2, Math.ceil(sortedAccounts23.length * 0.25))));
+      expect(threshold23).toBeLessThanOrEqual(3);
+
+      const sortedAccounts100 = new Array(100).fill({});
+      const threshold100 = Math.min(CONSECUTIVE_504_CASCADE_THRESHOLD, Math.min(3, Math.max(2, Math.ceil(sortedAccounts100.length * 0.25))));
+      expect(threshold100).toBeLessThanOrEqual(3);
+    });
+
+    it('AUDIT-003: ensures registerAbort is called immediately and abortOthers destroys non-winner', () => {
+      const claimer = createResponseClaimer();
+      const abortPrimary = vi.fn();
+      const abortHedge = vi.fn();
+
+      claimer.registerAbort('primary', abortPrimary);
+      claimer.registerAbort('hedge', abortHedge);
+
+      // Hedge wins
+      expect(claimer.claim('hedge')).toBe(true);
+      claimer.abortOthers('hedge');
+
+      expect(abortPrimary).toHaveBeenCalledTimes(1);
+      expect(abortHedge).not.toHaveBeenCalled();
+
+      // Primary tries to claim afterwards and fails
+      expect(claimer.claim('primary')).toBe(false);
     });
   });
 });

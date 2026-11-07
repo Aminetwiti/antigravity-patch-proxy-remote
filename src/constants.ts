@@ -161,7 +161,7 @@ export const HEDGED_REQUEST_DELAY_MS = getEnvInt('AG_HEDGED_REQUEST_DELAY_MS', 2
 export const CAPACITY_503_CASCADE_THRESHOLD = getEnvInt('AG_CAPACITY_503_CASCADE_THRESHOLD', 2);
 
 /** Number of consecutive 504 Gateway Timeout errors across different pool accounts before cascading to Claude/fallback (default: 2). */
-export const CONSECUTIVE_504_CASCADE_THRESHOLD = getEnvInt('AG_CONSECUTIVE_504_CASCADE_THRESHOLD', 7);
+export const CONSECUTIVE_504_CASCADE_THRESHOLD = getEnvInt('AG_CONSECUTIVE_504_CASCADE_THRESHOLD', 2);
 
 /**
  * Preventive anti-lockout quota threshold percentage (default: 10%).

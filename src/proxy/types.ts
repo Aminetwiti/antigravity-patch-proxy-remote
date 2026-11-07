@@ -99,6 +99,10 @@ export interface CustomModel {
   isFamilyShared?: boolean;
   hasClaude55?: boolean;
   priority?: number;
+  status?: string;
+  isValidationRequired?: boolean;
+  isUnlicensed?: boolean;
+  errorDetails?: Record<string, unknown>;
   /** Internal: marks a real per-account Google entry kept only for dispatch/quota; hidden from dropdown. */
   _poolOnly?: boolean;
 }

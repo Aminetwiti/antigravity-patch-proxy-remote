@@ -1955,6 +1955,8 @@ export function classifyGoogleCloudCode429(
         } else {
           weeklyResetMs = parsed;
         }
+      } else {
+        retryAfterMs = 0;
       }
     }
   } else if (retryAfterMs > FIVE_H_15_MS) {
@@ -1971,6 +1973,30 @@ export function classifyGoogleCloudCode429(
       reason: 'RPM limit — 60s cooldown',
       isExplicitReset: retryAfterMs !== null,
       rawRetryAfterMs: retryAfterMs,
+    };
+  }
+
+  // 2. Explicit zero-second reset or micro-burst throttle (e.g. "Resets in 0s", "reset in 0s", Retry-After <= 3s)
+  // Takes precedence over quota exhaustion keywords because an explicit 0s reset indicates a concurrency/burst limit,
+  // NOT a 5-hour quota burnout.
+  const isZeroSecondReset =
+    /\breset\s+(?:after|in)\s+0s\b/i.test(msg) ||
+    /\bresets?\s+in\s+0s\b/i.test(msg) ||
+    /\bresets?\s+in\s+0\s*seconds?\b/i.test(msg) ||
+    retryAfterMs === 0;
+
+  if (
+    isZeroSecondReset ||
+    (retryAfterMs !== null && retryAfterMs <= 3000)
+  ) {
+    return {
+      category: 'soft_rate_limit',
+      cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 3000,
+      reason: isZeroSecondReset
+        ? 'Soft burst throttle — momentary capacity pause (resets in 0s)'
+        : 'Soft burst throttle — momentary pause',
+      isExplicitReset: true,
+      rawRetryAfterMs: retryAfterMs ?? 0,
     };
   }
 
@@ -2229,6 +2255,8 @@ export function getGoogleAccountPool(
     if (m.name?.includes(':auto-pool') || m.apiKey === 'auto') return false;
     // Disabled accounts must not be pooled
     if ((m as any).enabled === false) return false;
+    // Unhealthy accounts must not be pooled
+    if ((m as any).status === 'unhealthy') return false;
     // Accounts requiring security validation (challenge) must not be pooled
     if (
       (m as any).isValidationRequired === true ||
@@ -2237,7 +2265,7 @@ export function getGoogleAccountPool(
     ) return false;
     // Unlicensed accounts (HTTP 403) must not be pooled
     if (isAccountUnlicensed(m)) return false;
-    const mRaw = (m.externalModelName || m.name)
+    const mRaw = (m.externalModelName || m.name || (m as any).id || "")
       .replace(/^models\//, '')
       .replace(/^google:/, '')
       .replace(/:auto-pool.*$/, '');
