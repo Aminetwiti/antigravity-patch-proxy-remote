@@ -1,6 +1,15 @@
 import * as http from 'http';
+import { randomBytes } from 'crypto';
 import log from 'electron-log';
+import { createLogger } from '../logger';
 import { LOOPBACK_HOSTS } from '../constants';
+
+export const proxyLog = createLogger('Proxy');
+
+/** 16-char hex request id used for tracing. Cheap, sortable by time. */
+export function newTraceId(): string {
+  return randomBytes(8).toString('hex');
+}
 
 // ─── Safe Response Helpers ─────────────────────────────────────────────────
 // Guard flag pattern to prevent ERR_HTTP_HEADERS_SENT when timeout and

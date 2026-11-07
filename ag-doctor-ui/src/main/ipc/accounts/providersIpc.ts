@@ -333,6 +333,54 @@ export function registerProvidersIpc(ctx: MainContext): void {
           accounts: accountsToSave,
           updatedAt: new Date().toISOString(),
         };
+
+        // If this is a Google provider, sync the updated model enabled states across all other Google providers in parsed.providers
+        if (isGoogle && Array.isArray(modelsToSave)) {
+          for (let i = 0; i < parsed.providers.length; i++) {
+            if (i === idx) continue;
+            const other = parsed.providers[i];
+            if (other && (other.provider === 'google' || other.provider === 'gemini' || other.id?.startsWith('google-'))) {
+              if (Array.isArray(other.models)) {
+                for (const pm of modelsToSave) {
+                  const pmId = pm.id || pm.displayName;
+                  if (!pmId) continue;
+                  const cleanPmId = String(pmId).replace(/^models\//, '');
+                  const om = other.models.find((m: any) => m && (m.id === pmId || m.id === cleanPmId || m.displayName === pm.displayName || m.displayName === pmId));
+                  if (om) {
+                    om.enabled = pm.enabled !== false;
+                  } else if (pm.enabled === false) {
+                    other.models.push({
+                      id: cleanPmId,
+                      displayName: pm.displayName || cleanPmId,
+                      enabled: false,
+                    });
+                  }
+                }
+              }
+              if (Array.isArray(other.accounts)) {
+                for (const acc of other.accounts) {
+                  if (Array.isArray(acc.models)) {
+                    for (const pm of modelsToSave) {
+                      const pmId = pm.id || pm.displayName;
+                      if (!pmId) continue;
+                      const cleanPmId = String(pmId).replace(/^models\//, '');
+                      const accM = acc.models.find((m: any) => m && (m.id === pmId || m.id === cleanPmId || m.displayName === pm.displayName || m.displayName === pmId));
+                      if (accM) {
+                        accM.enabled = pm.enabled !== false;
+                      } else if (pm.enabled === false) {
+                        acc.models.push({
+                          id: cleanPmId,
+                          displayName: pm.displayName || cleanPmId,
+                          enabled: false,
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       } else {
         parsed.providers.push({
           ...p,

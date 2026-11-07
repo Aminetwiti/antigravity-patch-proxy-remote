@@ -672,6 +672,19 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
         }
       }
       await window.ag.providers.save(parentProvider);
+
+      if (parentProvider.provider === 'google' || parentProvider.provider === 'gemini') {
+        if (Array.isArray(providersCache)) {
+          for (const other of providersCache) {
+            if (other && other.id !== parentProvider.id && (other.provider === 'google' || other.provider === 'gemini')) {
+              if (Array.isArray(other.models)) {
+                const om = other.models.find(m => m.id === targetId || m.displayName === targetId || m.id === name || m.displayName === name);
+                if (om) om.enabled = newEnabled;
+              }
+            }
+          }
+        }
+      }
     } else {
       toast('Built-in models cannot be manually disabled yet.', 'warn');
       btn.classList.toggle('is-disabled', isCurrentlyEnabled);
@@ -717,6 +730,18 @@ async function handleModelAction(btn: HTMLElement): Promise<void> {
       const targetId = resolveModelId(parentProvider, name);
       parentProvider.models = parentProvider.models.filter((m) => m.id !== targetId && m.displayName !== targetId && m.id !== name && m.displayName !== name);
       await window.ag.providers.save(parentProvider);
+
+      if (parentProvider.provider === 'google' || parentProvider.provider === 'gemini') {
+        if (Array.isArray(providersCache)) {
+          for (const other of providersCache) {
+            if (other && other.id !== parentProvider.id && (other.provider === 'google' || other.provider === 'gemini')) {
+              if (Array.isArray(other.models)) {
+                other.models = other.models.filter(m => m.id !== targetId && m.displayName !== targetId && m.id !== name && m.displayName !== name);
+              }
+            }
+          }
+        }
+      }
     }
 
     const r = await window.ag.run(['models', 'remove', name, '--yes']);
