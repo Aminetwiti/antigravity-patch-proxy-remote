@@ -24,6 +24,10 @@ import {
   type ProviderFileEntry,
 } from './providerStore';
 
+export function invalidateModelStoreCache(): void {
+  invalidateProviderStoreCache();
+}
+
 let _writeLock: Promise<void> = Promise.resolve();
 export function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
   const next = _writeLock.then(() => fn(), () => fn());

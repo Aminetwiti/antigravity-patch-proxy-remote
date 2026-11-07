@@ -11,7 +11,6 @@ import {
   withWriteLock,
   tryParseJsonWithBackupFallback,
   getCustomModelsPath,
-  invalidateModelStoreCache,
   readExistingJson,
   isNodeError,
 } from './modelStore';
@@ -174,7 +173,7 @@ export async function loadProviders(): Promise<ProviderFileEntry[]> {
 
 
 export async function saveProvidersInternal(providers: ProviderFileEntry[]): Promise<void> {
-  invalidateModelStoreCache();
+  invalidateProviderStoreCache();
   const filePath = getCustomModelsPath();
   const existing = readExistingJson(filePath);
   existing.providers = providers;
