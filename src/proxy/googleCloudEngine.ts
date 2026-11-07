@@ -1393,7 +1393,7 @@ export async function executeGoogleCloudCodeWithPool(
     const largeTimeoutMs = Math.min(
       isFlashModel
         ? (hasOtherCandidates && healthySiblingAccountsCount >= 1
-            ? (isThinkingModel ? 42_000 : 35_000)
+            ? (isThinkingModel ? 65_000 : 35_000)
             : (isThinkingModel ? (updatedBody.length > 100_000 ? 80_000 : 65_000) : 55_000))
         : 85_000,
       GOOGLE_PROXY_TIMEOUT_MS,
@@ -2193,15 +2193,15 @@ export async function executeGoogleCloudCodeWithPool(
         const configuredOutage = Number(process.env.AG_OUTAGE_CONSECUTIVE_TIMEOUTS || 0);
         const upstreamOutageThreshold = configuredOutage >= 4 ? configuredOutage : maxOutageLimit;
         const isUpstreamOutage = consecutiveTimeoutCount >= upstreamOutageThreshold;
-        // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (transient server/thinking latency): 45s cooldown; outages: 45s.
-        const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 45_000 : (isUpstreamOutage ? 45_000 : 30_000));
+        // For HTTP 500 internal errors: 20s cooldown; 504 timeouts (transient server/thinking latency): 60s cooldown; outages: 45s.
+        const timeoutCooldownMs = lastStatus === 500 ? 20_000 : (lastStatus === 504 ? 60_000 : (isUpstreamOutage ? 45_000 : 30_000));
         const isPayloadInducedTimeout = lastStatus === 504 && (isLargePayload || isContextualPayload || isMultiTurn || consecutive504TimeoutCount > 0);
         const isCappedTimeout = wasTimeoutCappedByBudget || (lastStatus === 504 && poolHeaderTimeout < baseCandidateTimeout);
         if (lastStatus === 504) {
           log.info(
-            `[Proxy] Account ${candidateName} timed out (HTTP 504, ${elapsedMs}ms). Placing in 30s transient cooldown to avoid immediate repeat stall.`,
+            `[Proxy] Account ${candidateName} timed out (HTTP 504, ${elapsedMs}ms). Placing in 60s transient cooldown to avoid immediate repeat stall.`,
           );
-          setAccountCooldown(candidate, 30_000, currentFamily, false);
+          setAccountCooldown(candidate, 60_000, currentFamily, false);
         } else {
           log.warn(
             `[Proxy] Account ${candidateName} failed with HTTP ${lastStatus}. Placing in ${timeoutCooldownMs / 1000}s cooldown (${isUpstreamOutage ? 'upstream outage detected' : 'transient server issue'}).`,
