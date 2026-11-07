@@ -24,9 +24,7 @@ import {
   type ProviderFileEntry,
 } from './providerStore';
 
-export function invalidateModelStoreCache(): void {
-  invalidateProviderStoreCache();
-}
+export { invalidateProviderStoreCache as invalidateModelStoreCache } from './providerStore';
 
 let _writeLock: Promise<void> = Promise.resolve();
 export function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
