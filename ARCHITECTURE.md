@@ -23,17 +23,15 @@ src/
 ├── tray.ts                      # System tray icon & status controls
 ├── menu.ts                      # Application menus & keyboard shortcuts
 │
-├── proxy/                       # Proxy internals & protocol translation
-│   ├── registry.ts              # Auto-discovering translator module registry
-│   ├── protoInjector.ts         # Protobuf payload injection for native model picker
-│   ├── protobuf.ts              # Manual varint protobuf encoding/decoding
-│   ├── jsonRepair.ts            # Safe non-eval SSE JSON repair
-│   ├── circuitBreaker.ts        # Per-model circuit breaker & failure isolation
-│   ├── retryStrategy.ts         # Adaptive exponential backoff retry logic
-│   ├── retryBudget.ts           # Provider retry budget manager
-│   ├── idGenerator.ts           # DJB2 hash generator for model placeholder IDs
-│   ├── urlBuilder.ts            # URL sanitization & binary padding stripping
-│   └── translators/             # Format mapping modules (openai.ts, anthropic.ts, google.ts, ollama.ts)
+├── proxy/                       # Proxy internals & protocol translation (modular architecture)
+│   ├── core/                    # Fundamental types, shared state, registry & URL builder
+│   ├── resilience/              # Circuit breakers, retry budget/strategy, pools & affinities
+│   ├── engine/                  # Execution engines, stream pipeline, trimming & repair
+│   ├── http/                    # Server lifecycle, HTTP router, endpoints & metrics
+│   ├── models/                  # Protobuf parser/injector, model loader & ID generator
+│   ├── state/                   # Persisted state, diagnostics & remote daemon state
+│   ├── translators/             # Format mapping modules (openai.ts, anthropic.ts, google.ts, ollama.ts)
+│   └── *.ts                     # Backward-compatible re-export facades
 │
 ├── services/                    # Core domain services & persistent stores
 │   ├── modelStore.ts            # Custom model storage with write-lock mutex (`withWriteLock`)

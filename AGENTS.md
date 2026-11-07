@@ -27,7 +27,14 @@ antigravity-add-model-main/
 │   ├── constants.ts                 # PROVIDERS, ports, timeouts — source of truth
 │   ├── services/configExchange.ts   # Provider config import/export + AES-256-GCM
 │   ├── schemaValidator.ts           # Runtime response validation
-│   ├── proxy/                       # Translators & proxy resilience (circuit breaker, retry budget, etc.)
+│   ├── proxy/                       # Modular proxy architecture
+│   │   ├── core/                    # Types, shared state, registry & URL builder
+│   │   ├── resilience/              # Circuit breaker, retry budget/strategy, pools & affinities
+│   │   ├── engine/                  # Execution engines, stream pipeline, trimming & repair
+│   │   ├── http/                    # Server lifecycle, HTTP router, endpoints & metrics
+│   │   ├── models/                  # Protobuf parser/injector, model loader & ID generator
+│   │   ├── state/                   # Persisted state, diagnostics & remote daemon state
+│   │   └── translators/             # Provider format mapping (OpenAI, Anthropic, Google, Ollama)
 │   ├── services/                    # CryptoStore (safeStorage), ModelStore, SettingsService
 │   ├── ipc/                         # Modular IPC handlers
 │   └── __tests__/                   # 60 test files, 1400+ unit tests (Vitest)
@@ -221,8 +228,14 @@ Determine for each change:
 
 | Path | Owns | Don't touch |
 |---|---|---|
+| `src/proxy/core/` | Fundamental types, shared state, translator registry, URL builder | Business logic, persistence |
+| `src/proxy/resilience/` | Circuit breakers, retry strategies, agent & Google pools, affinities | UI, IPC, persistence |
+| `src/proxy/engine/` | Custom model engine, Google Cloud engine, stream pipeline, trimming | Low-level HTTP, persistence |
+| `src/proxy/http/` | Server lifecycle, HTTP router, endpoint handlers, DNS, MCP relay | Translation, format mapping |
+| `src/proxy/models/` | Protobuf codec, custom model injection, model loader, ID generator | Network transmission |
+| `src/proxy/state/` | Persisted state, diagnostics, remote session store, log throttling | Request handling, encryption |
 | `src/proxy/translators/` | Provider format mapping (request/response/stream) | Business logic, persistence |
-| `src/proxy/` | Proxy internals (resilience, routing, injection) | IPC, UI, main process |
+| `src/proxy/` (root) | Backward-compatible re-export facades | Subdomain implementations |
 | `src/services/` | Data persistence, encryption | HTTP handling, translation |
 | `src/` root | Main process, IPC, preload, config | Proxy internals (put in proxy/) |
 | `src/ipc/` | IPC channel constants + types | Canonical handlers remain in `src/ipcHandlers.ts` |
