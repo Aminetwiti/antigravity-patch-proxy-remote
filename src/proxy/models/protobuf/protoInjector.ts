@@ -15,15 +15,15 @@ import {
   encodeMessageField,
   encodeClientModelConfig,
 } from './protobuf';
-import { generateModelPlaceholderId } from './idGenerator';
+import { generateModelPlaceholderId } from '../catalog/idGenerator';
 import log from 'electron-log';
-import type { CustomModel } from '../core/types';
-import { isRecentModel } from '../state/recentModelsStore';
-import { getCachedHealth, type ModelHealthResult } from '../resilience/pools/modelHealthChecker';
-import { expandModelsWithEffort } from '../engine/effortExpander';
-import { detectModelCapabilities, getCanonicalModelKey, isNativeCloudCodeModel } from './modelUtils';
-import { isObsoleteModel } from '../../constants';
-import { normalizeCloudCodeModelId } from '../../services/auth/googleAuth';
+import type { CustomModel } from '../../core/types';
+import { isRecentModel } from '../../state/recentModelsStore';
+import { getCachedHealth, type ModelHealthResult } from '../../resilience/pools/modelHealthChecker';
+import { expandModelsWithEffort } from '../../engine/transforms/effortExpander';
+import { detectModelCapabilities, getCanonicalModelKey, isNativeCloudCodeModel } from '../catalog/modelUtils';
+import { isObsoleteModel } from '../../../constants';
+import { normalizeCloudCodeModelId } from '../../../services/auth/googleAuth';
 
 /**
  * Checks whether an incoming model id or label matches a model explicitly disabled in custom_models.json.
@@ -895,4 +895,3 @@ export function injectCustomModelsIntoUserStatus(
     return { buffer: responseBuf, injectedCount: 0, modified: false };
   }
 }
-

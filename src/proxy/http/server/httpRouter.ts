@@ -1,4 +1,4 @@
-import * as http from 'http';
+ï»¿import * as http from 'http';
 import https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -20,18 +20,18 @@ import {
   flattenAllToolCallsToText,
   isConvCorruptedSignatures,
 } from '../../core/shared';
-import { loadCustomModels } from '../../models/modelLoader';
+import { loadCustomModels } from '../../models/catalog/modelLoader';
 import { getOpenBreaker } from '../../resilience/circuit/circuitBreaker';
 import { handleInternalApiRoute } from '../routes/internalApiRoutes';
 import { getBaseModelId } from '../../core/urlBuilder';
-import { generateModelPlaceholderId, toSlug } from '../../models/idGenerator';
-import { expandModelsWithEffort } from '../../engine/effortExpander';
+import { generateModelPlaceholderId, toSlug } from '../../models/catalog/idGenerator';
+import { expandModelsWithEffort } from '../../engine/transforms/effortExpander';
 import {
   isNativeCloudCodeModel,
   extractModelNameFromPayload,
   clampSubagentReasoning,
   matchesCustomModel,
-} from '../../models/modelUtils';
+} from '../../models/catalog/modelUtils';
 import { resolveGoogleIp } from './dnsResolver';
 import { checkAllModelsHealth } from '../../resilience/pools/modelHealthChecker';
 import { mcpListServers, mcpCallTool } from '../routes/mcpRelay';
@@ -44,12 +44,12 @@ import {
 } from '../../../services/auth/googleAuth';
 import { selectBestModelByQuota, getGoogleAccountPool } from '../../resilience/pools/googlePool';
 import { safeWriteHead, safeEnd, isAllowedOrigin, proxyLog } from './httpUtils';
-import { resolveFileData } from '../../engine/historyTrimmer';
+import { resolveFileData } from '../../engine/transforms/historyTrimmer';
 import {
   mergeModels,
   injectCustomSlugsIntoAgentModelSorts,
   buildSyntheticModelsResponse,
-} from '../../models/modelInjector';
+} from '../../models/protobuf/modelInjector';
 import {
   enrichExperimentsPayload,
   unlockCodeAssistPayload,
@@ -65,7 +65,7 @@ import {
   memoryListExperimentsTime,
   memoryFetchAvailableModelsTime,
 } from '../routes/endpointHandlers';
-import { injectAntiHallucinationInstruction } from '../../engine/streamPipeline';
+import { injectAntiHallucinationInstruction } from '../../engine/stream/streamPipeline';
 import { getProxyPort } from './serverLifecycle';
 import {
   extractSessionId,
@@ -83,7 +83,7 @@ import {
   bindSessionToModel,
 } from '../../resilience/pools/sessionAffinities';
 import { proxyToGoogle, executeGoogleCloudCodeWithPool } from '../../engine/googleCloudEngine';
-import { handleCustomModelRequest } from '../../engine/customModelEngine';
+import { handleCustomModelRequest } from '../../engine/executors/customModelEngine';
 
 // --- Main Request Handler -------------------------------------------------
 
@@ -117,7 +117,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
     return;
   }
 
-  // Health check — keep this FIRST so the LS sees a live port even if other
+  // Health check ï¿½ keep this FIRST so the LS sees a live port even if other
   // initialization (padding strip, model loading, etc.) is delayed or fails.
   if (req.method === 'GET' && (req.url === '/health' || req.url === '/healthz')) {
     log.debug(`[Proxy] /health hit from ${req.socket.remoteAddress || 'unknown'}`);
@@ -933,8 +933,8 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
             unlockModelsMap(googleJson.availableModels);
             unlockModelsMap(googleJson.available_models);
 
-            // 2. Injecter les modèles personnalisés dans agentModelSorts (menu déroulant Antigravity IDE)
-            // Modèles originaux en tête de liste, modèles personnalisés ajoutés sans duplication
+            // 2. Injecter les modï¿½les personnalisï¿½s dans agentModelSorts (menu dï¿½roulant Antigravity IDE)
+            // Modï¿½les originaux en tï¿½te de liste, modï¿½les personnalisï¿½s ajoutï¿½s sans duplication
             try {
               if (typeof injectCustomSlugsIntoAgentModelSorts === 'function') {
                 injectCustomSlugsIntoAgentModelSorts(googleJson, customModels);
@@ -1851,7 +1851,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
     }
 
     // 5. Fallback: transparent proxy to Google
-    // Strip any Claude thinking blocks before forwarding — they carry account-specific HMAC
+    // Strip any Claude thinking blocks before forwarding ï¿½ they carry account-specific HMAC
     // signatures that become invalid if the account differs from the one that generated them.
     let rawModelName = '';
     try {
@@ -1879,7 +1879,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
         rawModelName = rewrittenModel;
         fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
       }
-    } catch { /* not JSON — continue as-is */ }
+    } catch { /* not JSON ï¿½ continue as-is */ }
 
     // Intercept unresolved placeholder models so internal placeholders never leak to Google upstream
     if (/MODEL_PLACEHOLDER_/i.test(rawModelName) || /MODEL_PLACEHOLDER_/i.test(req.url || '')) {

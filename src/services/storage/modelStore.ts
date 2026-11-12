@@ -1,12 +1,12 @@
-import * as fs from 'fs/promises';
+﻿import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import log from 'electron-log/main';
 
 import * as cryptoStore from '../../cryptoStore';
-import { generateModelPlaceholderId } from '../../proxy/models/idGenerator';
-import { setLastCustomModelsContentOnDisk } from '../../proxy/models/modelLoader';
+import { generateModelPlaceholderId } from '../../proxy/models/catalog/idGenerator';
+import { setLastCustomModelsContentOnDisk } from '../../proxy/models/catalog/modelLoader';
 import { normalizeCloudCodeModelId, normalizeGoogleModelId } from '../auth/googleAuth';
 import {
   CUSTOM_MODEL_MAX_TOKENS,

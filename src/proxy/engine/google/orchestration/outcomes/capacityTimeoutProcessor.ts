@@ -1,4 +1,4 @@
-import log from 'electron-log';
+﻿import log from 'electron-log';
 import type { CustomModel } from '../../../../core/types';
 import type { PoolLoopState } from '../types';
 import {
@@ -9,8 +9,8 @@ import {
 } from '../../../../resilience/pools/googlePool';
 import { sessionAffinities } from '../../../../resilience/pools/sessionAffinities';
 import { observe as metricObserve } from '../../../../../metrics';
-import { trimContextPayload } from '../../../contextTrimmer';
-import { trimOldestHistory } from '../../../historyTrimmer';
+import { trimContextPayload } from '../../../transforms/contextTrimmer';
+import { trimOldestHistory } from '../../../transforms/historyTrimmer';
 import { normalizeConversationTurns } from '../../../../../services/auth/googleAuth';
 import { CAPACITY_503_CASCADE_THRESHOLD, CONSECUTIVE_504_CASCADE_THRESHOLD } from '../../../../../constants';
 

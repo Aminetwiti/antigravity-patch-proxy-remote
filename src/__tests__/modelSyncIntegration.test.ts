@@ -23,7 +23,7 @@ vi.mock('electron-log', () => ({
 }));
 
 import { invalidateHealthCache, getCachedHealth } from '../proxy/resilience/pools/modelHealthChecker';
-import { injectCustomModelsIntoResponse } from '../proxy/models/protoInjector';
+import { injectCustomModelsIntoResponse } from '../proxy/models/protobuf/protoInjector';
 import { setupCustomModelsWatcher, stopCustomModelsWatcher } from '../proxy';
 import type { CustomModel } from '../proxy/core/types';
 

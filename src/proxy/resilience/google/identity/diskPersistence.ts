@@ -1,6 +1,6 @@
 ﻿import fs from 'fs';
 import log from 'electron-log';
-import { getCustomModelsPath } from '../../../models/modelLoader';
+import { getCustomModelsPath } from '../../../models/catalog/modelLoader';
 import { withWriteLock, invalidateModelStoreCache, atomicWriteJson } from '../../../../services/storage/modelStore';
 import {
   googleAccountCooldowns,

@@ -3,14 +3,14 @@ import type { CustomModel, GeminiRequestBody } from '../../../../core/types';
 import type { FallbackParams } from './types';
 import { isGoogleCloudCodeModel } from '../../../../../services/auth/googleAuth';
 import { getOpenBreaker } from '../../../../resilience/circuit/circuitBreaker';
-import { isProviderRateLimited } from '../../../../models/modelRouter';
-import { writeSafeSseChunk } from '../../../streamPipeline';
+import { isProviderRateLimited } from '../../../../models/catalog/modelRouter';
+import { writeSafeSseChunk } from '../../../stream/streamPipeline';
 import { safeWriteHead } from '../../../../http/server/httpUtils';
 import {
   getSessionModelFallback,
   setSessionModelFallback,
 } from '../../../../resilience/pools/sessionAffinities';
-import { handleCustomModelRequest } from '../../../customModelEngine';
+import { handleCustomModelRequest } from '../../../executors/customModelEngine';
 
 export async function attemptExternalCascade(
   params: FallbackParams,

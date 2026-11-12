@@ -9,8 +9,8 @@
  * models pass through unchanged.
  */
 
-import type { CustomModel } from '../core/types';
-import { isReasoningLikeModel } from '../../presets/reasoningEffort';
+import type { CustomModel } from '../../core/types';
+import { isReasoningLikeModel } from '../../../presets/reasoningEffort';
 
 const EFFORT_LEVELS = [
   { suffix: '-low', label: 'Low', effort: 'low', budget: 1000 },

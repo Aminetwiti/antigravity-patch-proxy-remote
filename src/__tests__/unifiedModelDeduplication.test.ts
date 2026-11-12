@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { loadCustomModels } from '../proxy/models/modelLoader';
-import { deduplicateModels } from '../proxy/models/modelInjector';
+import { loadCustomModels } from '../proxy/models/catalog/modelLoader';
+import { deduplicateModels } from '../proxy/models/protobuf/modelInjector';
 
 describe('Unified Model Deduplication (Cloud Code + AI Studio Single Entry)', () => {
   const customModelsPath = path.join(os.homedir(), '.gemini', 'antigravity', 'custom_models.json');

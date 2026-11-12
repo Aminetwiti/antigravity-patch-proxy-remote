@@ -1,14 +1,14 @@
-﻿/**
+/**
  * Centralized model capability detection.
  * Replaces ~9 duplicate regex blocks across proxy.ts.
  */
 
 import { generateModelPlaceholderId, toSlug } from './idGenerator';
-import { normalizeGoogleModelId } from '../../services/auth/googleAuth';
-import type { CustomModel } from '../core/types';
+import { normalizeGoogleModelId } from '../../../services/auth/googleAuth';
+import type { CustomModel } from '../../core/types';
 
 /** Helpers re-exported from src/presets/reasoningEffort.ts (single source of truth). */
-import { isReasoningLikeModel } from '../../presets/reasoningEffort';
+import { isReasoningLikeModel } from '../../../presets/reasoningEffort';
 export {
   REASONING_EFFORTS,
   THINKING_BUDGETS,
@@ -21,7 +21,7 @@ export {
   clampSubagentReasoning,
   type ReasoningEffort as AdaptiveReasoningEffort,
   type ThinkingBudget as AdaptiveThinkingBudget,
-} from '../../presets/reasoningEffort';
+} from '../../../presets/reasoningEffort';
 
 export interface CustomModelConfig {
   name: string;
@@ -55,8 +55,8 @@ export interface ModelUXBadges {
 }
 
 
-// ─── Reasoning Modes (fetched dynamically from /v1/models) ───────────────────────
-// These modes are NOT hardcoded — they are returned from the API endpoint
+// --- Reasoning Modes (fetched dynamically from /v1/models) -----------------------
+// These modes are NOT hardcoded � they are returned from the API endpoint
 // and stored alongside the model for the proxy to use.
 
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'auto' | 'none';
@@ -110,7 +110,7 @@ export interface ModelModeConfig {
   defaultMode?: ModelMode;
 }
 
-// ─── Detection ────────────────────────────────────────────────────────────
+// --- Detection ------------------------------------------------------------
 
 const THINKING_PATTERN = /thinking|reasoning|reasoner|o1|o3|r1|opus-4|sonnet-4|claude-4|4-7|4\.7|gemini-3|gemini-2\.5/i;
 const DEEPSEEK_PATTERN = /deepseek/i;
@@ -171,7 +171,7 @@ export function detectModelCapabilities(m: CustomModelConfig, includeDisplayName
 }
 
 /**
- * Simplified detection for Gemini↔Anthropic translation (checks modelName string only).
+ * Simplified detection for Gemini?Anthropic translation (checks modelName string only).
  */
 export function detectModelCapabilitiesByName(modelName: string): ModelNameCapabilities {
   const lower = (modelName || '').toLowerCase();
@@ -234,7 +234,7 @@ export function mapApiModelToModeConfig(apiModel: { id: string; name: string }, 
 }
 
 /**
- * Computes UX badges for a model (Vision 🖼️, Tools 🛠️, Thinking 🧠, Local 💻, Context Window Label).
+ * Computes UX badges for a model (Vision ???, Tools ???, Thinking ??, Local ??, Context Window Label).
  */
 export function detectModelUXBadges(m: CustomModelConfig): ModelUXBadges {
   const caps = detectModelCapabilities(m);
@@ -364,7 +364,7 @@ export function getCanonicalModelKey(idOrName?: string, displayName?: string): s
       .toLowerCase()
       .replace(/^models\//, '')
       .replace(/^\[[^\]]+\]\s*/, '')
-      .replace(/^[🟢🟡🔴⭐\s•|]+/g, '')
+      .replace(/^[???????\s�|]+/g, '')
       .replace(/\(thinking\)/g, '')
       .replace(/-tiered$/, '')
       .replace(/[^a-z0-9]+/g, '-')
@@ -394,7 +394,7 @@ export function getCanonicalModelKey(idOrName?: string, displayName?: string): s
 export function isNativeCloudCodeModel(modelName: string): boolean {
   if (!modelName || typeof modelName !== 'string') return false;
   if (modelName.startsWith('custom-') || /MODEL_PLACEHOLDER_/i.test(modelName)) return false;
-  if (/[🟢🟡🔴•]/.test(modelName)) return false;
+  if (/[??????�]/.test(modelName)) return false;
 
   const clean = modelName.replace(/^models\//, '').trim().toLowerCase();
   const slug = clean.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -505,7 +505,7 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
     candLower.endsWith(enumName.toLowerCase()) ||
     (Boolean(extLower) && (candLower === extLower || cleanLower === extLower || candLower === `models/${extLower}`)) ||
     (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
-    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower || candLower.replace(/^[🟢🟡🔴•\s]+/, '') === dispLower || cleanLower.replace(/^[🟢🟡🔴•\s]+/, '') === dispLower)) ||
+    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower || candLower.replace(/^[??????�\s]+/, '') === dispLower || cleanLower.replace(/^[??????�\s]+/, '') === dispLower)) ||
     (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower)) ||
     (isCandidateGemini && isModelGemini && Boolean(normExt) && normCand === normExt) ||
     (isCandidateGemini && isModelGemini && Boolean(normId) && normCand === normId) ||

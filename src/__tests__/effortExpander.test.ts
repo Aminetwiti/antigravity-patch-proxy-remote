@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { expandModelsWithEffort } from '../proxy/engine/effortExpander';
+﻿import { describe, it, expect } from 'vitest';
+import { expandModelsWithEffort } from '../proxy/engine/transforms/effortExpander';
 import type { CustomModel } from '../proxy/core/types';
 
 describe('expandModelsWithEffort', () => {

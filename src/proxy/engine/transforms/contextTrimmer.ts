@@ -6,7 +6,7 @@
 
 import { createHash } from 'crypto';
 import log from 'electron-log';
-import type { GeminiRequestBody } from '../core/types';
+import type { GeminiRequestBody } from '../../core/types';
 
 const RECENT_TURNS_PRESERVE_COUNT = 8;
 const MAX_HISTORICAL_TOOL_OUTPUT_CHARS = 4_096;

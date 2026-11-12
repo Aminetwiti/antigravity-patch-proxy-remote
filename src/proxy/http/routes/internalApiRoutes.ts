@@ -1,4 +1,4 @@
-import * as http from 'http';
+ï»¿import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -16,8 +16,8 @@ import {
 } from '../../state/remoteState';
 import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from '../../state/diagnostics';
 import { metricsEnabled, getMetricsSnapshot, formatPrometheus, negotiateContentType } from './metricsRoute';
-import { loadCustomModels } from '../../models/modelLoader';
-import { generateModelPlaceholderId } from '../../models/idGenerator';
+import { loadCustomModels } from '../../models/catalog/modelLoader';
+import { generateModelPlaceholderId } from '../../models/catalog/idGenerator';
 import { getOpenBreaker } from '../../resilience/circuit/circuitBreaker';
 import {
   isGoogleCloudCodeModel,
@@ -136,8 +136,8 @@ export function handleInternalApiRoute(
       { label: 'Continue', text: 'Continue' },
       { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
       { label: 'Keep going', text: 'Keep going' },
-      { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
-      { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' },
+      { label: 'Exï¿½cuter all steps', text: 'Exï¿½cuter toutes les ï¿½tapes prï¿½vues' },
+      { label: 'Next phase', text: 'Passer ï¿½ la phase suivante (Next phase)' },
     ];
     const getConfigPath = () => {
       const home = process.env.USERPROFILE || process.env.HOME || os.homedir();

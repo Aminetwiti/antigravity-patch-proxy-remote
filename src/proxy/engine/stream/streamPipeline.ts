@@ -1,19 +1,19 @@
-﻿import * as http from 'http';
+import * as http from 'http';
 import * as zlib from 'zlib';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { StringDecoder } from 'string_decoder';
 import log from 'electron-log';
-import { STREAM_IDLE_TIMEOUT_MS } from '../../constants';
-import { safeWriteHead, safeEnd } from '../http/server/httpUtils';
-import { IdleTimeoutGuard } from '../resilience/circuit/idleTimeout';
-import { extractAndCacheThoughtSignatures, ANTI_HALLUCINATION_TOOL_INSTRUCTION } from '../core/shared';
-import { classifyError, ErrorDiagnostic, ErrorType } from '../resilience/retry/errorClassifier';
-import type { CustomModel } from '../core/types';
-import { logTokenUsageEvent } from '../state/remoteState';
+import { STREAM_IDLE_TIMEOUT_MS } from '../../../constants';
+import { safeWriteHead, safeEnd } from '../../http/server/httpUtils';
+import { IdleTimeoutGuard } from '../../resilience/circuit/idleTimeout';
+import { extractAndCacheThoughtSignatures, ANTI_HALLUCINATION_TOOL_INSTRUCTION } from '../../core/shared';
+import { classifyError, ErrorDiagnostic, ErrorType } from '../../resilience/retry/errorClassifier';
+import type { CustomModel } from '../../core/types';
+import { logTokenUsageEvent } from '../../state/remoteState';
 
-// ─── Proxy Error Diagnostics & Markdown ──────────────────────────────────────
+// --- Proxy Error Diagnostics & Markdown --------------------------------------
 
 export function generateGracefulMarkdown(diagnostic: ErrorDiagnostic, model?: CustomModel): string {
   const alertType = diagnostic.severity === 'warning' ? 'WARNING' : 'CAUTION';
@@ -24,7 +24,7 @@ export function generateGracefulMarkdown(diagnostic: ErrorDiagnostic, model?: Cu
   md += `> **${title}**\n>\n`;
   if (model) {
     const modelName = model.displayName || model.name;
-    const providerStr = model.provider ? ` · **Provider:** \`${model.provider}\`` : '';
+    const providerStr = model.provider ? ` � **Provider:** \`${model.provider}\`` : '';
     md += `> **Model:** \`${modelName}\`${providerStr}\n>\n`;
   }
   md += `> ${diagnostic.message}\n`;
@@ -37,14 +37,14 @@ export function generateGracefulMarkdown(diagnostic: ErrorDiagnostic, model?: Cu
   }
 
   if (diagnostic.actionUrl) {
-    md += `>\n> 🔗 [Manage Billing & Credits](${diagnostic.actionUrl})\n`;
+    md += `>\n> ?? [Manage Billing & Credits](${diagnostic.actionUrl})\n`;
   }
 
   md += `\n<span class="ag-system-error-marker" data-type="${diagnostic.errorType}" style="display:none;"></span>`;
   return md;
 }
 
-// ─── Proxy Error Emitter ──────────────────────────────────────────────────
+// --- Proxy Error Emitter --------------------------------------------------
 
 export type ProxyErrorPayload = {
   traceId: string;
@@ -71,7 +71,7 @@ export function emitProxyError(p: ProxyErrorPayload): void {
   try {
     process.stderr.write(JSON.stringify(p) + '\n');
   } catch {
-    // stdio might be closed in unit tests — swallow.
+    // stdio might be closed in unit tests � swallow.
   }
 }
 
@@ -102,7 +102,7 @@ export function buildProxyErrorPayload(
   };
 }
 
-// ─── Graceful Error Responders ─────────────────────────────────────────────
+// --- Graceful Error Responders ---------------------------------------------
 
 export function sendGracefulStreamError(res: http.ServerResponse, diagnostic: ErrorDiagnostic, model?: CustomModel): void {
   if (res.writableEnded) return;
@@ -167,7 +167,7 @@ export function sendGracefulError(res: http.ServerResponse, isStream: boolean, d
   }
 }
 
-// ─── Balanced JSON & Pseudo-tool Extractors ─────────────────────────────────
+// --- Balanced JSON & Pseudo-tool Extractors ---------------------------------
 
 export function parseBalancedJson(str: string, startIdx: number): { json: string; endIdx: number } | null {
   let depth = 0;
@@ -310,9 +310,9 @@ export function extractAllPseudoToolCalls(text: string): Array<{ fnName: string;
   return results;
 }
 
-import { SYNTHETIC_TOOL_NAME } from '../../services/auth/googleAuth';
+import { SYNTHETIC_TOOL_NAME } from '../../../services/auth/googleAuth';
 
-// ─── Candidate Sanitization & Crash Protection ──────────────────────────────
+// --- Candidate Sanitization & Crash Protection ------------------------------
 
 export function sanitizeCandidatesInResponse(data: any): boolean {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
@@ -512,7 +512,7 @@ export function autoUnstickConversation(convId?: string): void {
       if (fs.existsSync(protoPath)) {
         try { fs.unlinkSync(protoPath); } catch (_) {}
       }
-      log.info(`[Proxy] 🔓 Auto-unstick applied to conversation ${convId} after upstream stream drop.`);
+      log.info(`[Proxy] ?? Auto-unstick applied to conversation ${convId} after upstream stream drop.`);
     } finally {
       db.close();
     }
@@ -521,7 +521,7 @@ export function autoUnstickConversation(convId?: string): void {
   }
 }
 
-// ─── Upstream Google SSE Stream Transformer ─────────────────────────────────
+// --- Upstream Google SSE Stream Transformer ---------------------------------
 
 export function transformGoogleStreamForRemote(
   proxyRes: http.IncomingMessage,
@@ -623,7 +623,7 @@ export function transformGoogleStreamForRemote(
     idleTimeoutMs: effectiveIdleTimeoutMs,
     label: modelName || 'google-stream',
     onTimeout: (err) => {
-      log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} — aborting socket`);
+      log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} � aborting socket`);
       cleanupHeartbeat();
       autoUnstickConversation(convId);
       try { proxyRes.destroy(err); } catch (_) {}
@@ -884,7 +884,7 @@ export function transformGoogleStreamForRemote(
           candidates: [
             {
               content: {
-                parts: [{ text: '\n\n> ⚠️ *[Proxy] La connexion au modèle a été interrompue prématurément par une erreur réseau upstream.*' }],
+                parts: [{ text: '\n\n> ?? *[Proxy] La connexion au mod�le a �t� interrompue pr�matur�ment par une erreur r�seau upstream.*' }],
                 role: 'model',
               },
               finishReason: 'STOP',

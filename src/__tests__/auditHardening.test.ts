@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { parseProto, parseProtoRaw } from '../proxy/models/protobuf';
+import { parseProto, parseProtoRaw } from '../proxy/models/protobuf/protobuf';
 import {
   notifySlotAvailable,
   waitForAccountSlot,

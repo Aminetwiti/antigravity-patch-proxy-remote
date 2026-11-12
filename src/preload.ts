@@ -7,7 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { webFrame } from 'electron';
-import { generateModelPlaceholderId, toSlug } from './proxy/models/idGenerator';
+import { generateModelPlaceholderId, toSlug } from './proxy/models/catalog/idGenerator';
 import { classifyError } from './proxy/resilience/retry/errorClassifier';
 import { createLogger } from './shared/logger';
 import { registerApiBridge, storageAPI } from './preload/api';

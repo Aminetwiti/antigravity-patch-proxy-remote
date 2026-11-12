@@ -21,7 +21,7 @@ import {
   flattenAllToolCallsToText,
   sanitizeUnsignedToolCalls,
 } from '../../../../core/shared';
-import { writeSafeSseChunk, injectAntiHallucinationInstruction } from '../../../streamPipeline';
+import { writeSafeSseChunk, injectAntiHallucinationInstruction } from '../../../stream/streamPipeline';
 import { safeWriteHead } from '../../../../http/server/httpUtils';
 import {
   getSessionModelFallback,

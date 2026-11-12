@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+﻿import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/mock/home' },
@@ -18,9 +18,9 @@ import https from 'https';
 import * as zlib from 'zlib';
 import { EventEmitter } from 'events';
 import { DEFAULT_MAX_BODY_SIZE } from '../constants';
-import { generateModelPlaceholderId, toSlug } from '../proxy/models/idGenerator';
-import { expandModelsWithEffort } from '../proxy/engine/effortExpander';
-import { injectCustomSlugsIntoAgentModelSorts } from '../proxy/models/modelInjector';
+import { generateModelPlaceholderId, toSlug } from '../proxy/models/catalog/idGenerator';
+import { expandModelsWithEffort } from '../proxy/engine/transforms/effortExpander';
+import { injectCustomSlugsIntoAgentModelSorts } from '../proxy/models/protobuf/modelInjector';
 import type { CustomModel } from '../proxy/core/types';
 
 describe('parseRetryAfter', () => {

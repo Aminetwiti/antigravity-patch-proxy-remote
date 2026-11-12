@@ -1,12 +1,12 @@
-﻿import * as fs from 'fs';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
-import { FILE_DOWNLOAD_TIMEOUT_MS } from '../../constants';
-import type { GeminiRequestBody } from '../core/types';
-import { normalizeConversationTurns } from '../../services/auth/googleAuth';
+import { FILE_DOWNLOAD_TIMEOUT_MS } from '../../../constants';
+import type { GeminiRequestBody } from '../../core/types';
+import { normalizeConversationTurns } from '../../../services/auth/googleAuth';
 
-// ─── Response Claimer for Hedged Requests ───────────────────────────────────
+// --- Response Claimer for Hedged Requests -----------------------------------
 
 export interface ResponseClaimer {
   claim(ownerId: string): boolean;
@@ -40,7 +40,7 @@ export function createResponseClaimer(): ResponseClaimer {
   };
 }
 
-// ─── Conversation History Cascade Trimming ──────────────────────────────────
+// --- Conversation History Cascade Trimming ----------------------------------
 
 export function trimOldestHistory(obj: any, maxKeep?: number): boolean {
   if (!obj || typeof obj !== 'object') return false;
@@ -69,7 +69,7 @@ export function trimOldestHistory(obj: any, maxKeep?: number): boolean {
   return false;
 }
 
-// ─── File Data Resolver ────────────────────────────────────────────────────
+// --- File Data Resolver ----------------------------------------------------
 
 export async function resolveFileData(body: GeminiRequestBody, reqHeaders: Record<string, string | string[] | undefined>): Promise<void> {
   const contents = body.contents;

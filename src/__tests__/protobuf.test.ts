@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   readVarint,
   encodeVarint,
@@ -7,7 +7,7 @@ import {
   findModelEntryFieldTag,
   extractFieldMapping,
   encodeModelEntryForGetModels,
-} from '../proxy/models/protobuf';
+} from '../proxy/models/protobuf/protobuf';
 
 describe('readVarint', () => {
   it('decodes a single-byte varint', () => {

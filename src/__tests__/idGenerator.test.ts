@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   generateModelPlaceholderId,
   toSlug,
   PLACEHOLDER_ID_BASE,
   PLACEHOLDER_ID_RANGE,
-} from '../proxy/models/idGenerator';
+} from '../proxy/models/catalog/idGenerator';
 import type { CustomModel } from '../proxy/core/types';
 
 const baseModel: CustomModel = {

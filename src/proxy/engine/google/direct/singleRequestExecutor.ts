@@ -9,8 +9,8 @@ import { getHttpsAgent, evictAgent } from '../../../resilience/pools/agentPool';
 import { resolveGoogleIp, invalidateCachedDns } from '../../../http/server/dnsResolver';
 import { getAccountVirtualDeviceHeaders } from '../../../resilience/pools/googlePool';
 import { safeWriteHead, proxyLog, newTraceId } from '../../../http/server/httpUtils';
-import type { ResponseClaimer } from '../../historyTrimmer';
-import { transformGoogleStreamForRemote } from '../../streamPipeline';
+import type { ResponseClaimer } from '../../transforms/historyTrimmer';
+import { transformGoogleStreamForRemote } from '../../stream/streamPipeline';
 import type { GoogleRequestOutcome } from './types';
 import { handleBufferedCloudCodeResponse, handleNonStreamingGenerationResponse } from './responseRewriter';
 

@@ -1,4 +1,4 @@
-import * as http from 'http';
+﻿import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -14,7 +14,7 @@ import {
   getCustomModelsPath,
   getLastCustomModelsContentOnDisk,
   setLastCustomModelsContentOnDisk,
-} from '../../models/modelLoader';
+} from '../../models/catalog/modelLoader';
 import { invalidateModelStoreCache } from '../../../services/storage/modelStore';
 import {
   invalidateHealthCache,

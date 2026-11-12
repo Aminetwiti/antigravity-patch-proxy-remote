@@ -14,7 +14,7 @@ import {
   setAccountCooldown,
   isAccountInCooldown,
 } from '../proxy';
-import { parseProvidersSchema } from '../proxy/models/modelLoader';
+import { parseProvidersSchema } from '../proxy/models/catalog/modelLoader';
 import { CustomModel } from '../types';
 import https from 'https';
 import { EventEmitter } from 'events';

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -53,7 +53,7 @@ vi.mock('fs', () => ({
 }));
 
 import { loadProviders, saveProviders, recordProviderUsage } from '../customModelStore';
-import { generateModelPlaceholderId, toSlug } from '../proxy/models/idGenerator';
+import { generateModelPlaceholderId, toSlug } from '../proxy/models/catalog/idGenerator';
 
 describe('Real-World Production E2E Integration Suite', () => {
   beforeEach(() => {

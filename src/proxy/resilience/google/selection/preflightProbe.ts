@@ -1,4 +1,4 @@
-import https from 'https';
+﻿import https from 'https';
 import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
 import { getHttpsAgent } from '../../pools/agentPool';
@@ -12,7 +12,7 @@ import {
   updateLiveAccountQuota,
   type AccountLiveQuota,
 } from '../../../../services/auth/googleAuth';
-import { loadCustomModels } from '../../../models/modelLoader';
+import { loadCustomModels } from '../../../models/catalog/modelLoader';
 import { getAccountVirtualDeviceHeaders } from '../identity/deviceHeaders';
 import { getAccountQuotaKey } from '../identity/accountKeys';
 import { markAccountUnlicensed, unmarkAccountUnlicensed } from '../identity/licensing';

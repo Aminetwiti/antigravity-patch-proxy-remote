@@ -4,7 +4,7 @@
  */
 
 import log from 'electron-log';
-import type { CustomModel } from '../core/types';
+import type { CustomModel } from '../../core/types';
 
 /** Map of hostnames currently in rate-limit cooldown (hostname -> timestamp when cooldown expires) */
 const rateLimitedHosts = new Map<string, number>();

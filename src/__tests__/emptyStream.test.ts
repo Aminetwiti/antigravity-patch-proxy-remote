@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   EmptyStreamGuard,
   EMPTY_STREAM_MIN_USEFUL_BYTES,
   EMPTY_STREAM_MIN_FRAME_BYTES,
-} from '../proxy/engine/emptyStream';
+} from '../proxy/engine/stream/emptyStream';
 
 describe('emptyStream', () => {
   describe('constants', () => {

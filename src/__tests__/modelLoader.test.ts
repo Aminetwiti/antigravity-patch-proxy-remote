@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -43,7 +43,7 @@ vi.mock('fs', async () => {
 import * as fs from 'fs';
 import * as cryptoStore from '../cryptoStore';
 import { validateCustomModel } from '../schemaValidator';
-import { loadCustomModels, getCustomModelsPath, resetLastValidCustomModelsForTest } from '../proxy/models/modelLoader';
+import { loadCustomModels, getCustomModelsPath, resetLastValidCustomModelsForTest } from '../proxy/models/catalog/modelLoader';
 
 describe('getCustomModelsPath', () => {
   it('returns path under .gemini/antigravity in user home', () => {

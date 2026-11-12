@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OpenAI/Ollama provider translator.
  * Handles Gemini ↔ OpenAI/Ollama request/response mapping and streaming chunks.
  */
@@ -13,7 +13,7 @@ import {
   ToolCallArgs,
   TranslatedCallInfo,
 } from './utils';
-import { repairPartialJson } from '../engine/jsonRepair';
+import { repairPartialJson } from '../engine/transforms/jsonRepair';
 import {
   modelToolCallIds,
   activeStreamContexts,

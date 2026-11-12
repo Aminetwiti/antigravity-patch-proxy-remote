@@ -46,8 +46,8 @@ export type { GoogleRequestOutcome } from './proxy/engine/googleCloudEngine';
 
 // ─── Custom Model Engine Re-exports ────────────────────────────────────────
 
-export { handleCustomModelRequest } from './proxy/engine/customModelEngine';
-export type { RetryDispatch, StreamRequestCtx } from './proxy/engine/customModelEngine';
+export { handleCustomModelRequest } from './proxy/engine/executors/customModelEngine';
+export type { RetryDispatch, StreamRequestCtx } from './proxy/engine/executors/customModelEngine';
 
 // ─── Types & Models Re-exports ─────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ export {
   clampSubagentReasoning,
   isSubagentRequest,
   matchesCustomModel,
-} from './proxy/models/modelUtils';
+} from './proxy/models/catalog/modelUtils';
 
 export { parseRetryAfter, isAllowedOrigin } from './proxy/http/server/httpUtils';
 
@@ -73,7 +73,7 @@ export {
   ResponseClaimer,
   createResponseClaimer,
   trimOldestHistory,
-} from './proxy/engine/historyTrimmer';
+} from './proxy/engine/transforms/historyTrimmer';
 
 export {
   isRemoteVpsActive,
@@ -125,4 +125,4 @@ export {
   injectAntiHallucinationInstruction,
   autoUnstickConversation,
   transformGoogleStreamForRemote,
-} from './proxy/engine/streamPipeline';
+} from './proxy/engine/stream/streamPipeline';

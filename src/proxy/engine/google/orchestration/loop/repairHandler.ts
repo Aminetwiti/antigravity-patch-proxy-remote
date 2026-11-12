@@ -1,4 +1,4 @@
-import type * as http from 'http';
+﻿import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel } from '../../../../core/types';
 import type { GoogleRequestOutcome } from '../../direct/types';
@@ -12,7 +12,7 @@ import { normalizeConversationTurns } from '../../../../../services/auth/googleA
 import { clearAccountCooldown } from '../../../../resilience/googlePool';
 import { recordSuccess } from '../../../../resilience/circuitBreaker';
 import { bindSessionToModel } from '../../../../resilience/sessionAffinities';
-import { trimOldestHistory } from '../../../historyTrimmer';
+import { trimOldestHistory } from '../../../transforms/historyTrimmer';
 
 export async function attemptThoughtSignatureRepair(
   req: http.IncomingMessage,

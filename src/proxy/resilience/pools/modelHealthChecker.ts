@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Model Health Checker for Antigravity Proxy
  * Performs concurrent lightweight ping/health checks on custom model endpoints
  * to display status dots (🟢🟡🔴) and dynamic latency (ms) in the IDE model dropdown.
@@ -225,7 +225,7 @@ export async function checkAllModelsHealth(models: CustomModel[]): Promise<Map<s
 }
 
 // Background auto-refresh to pre-warm cache and keep it fresh
-import { loadCustomModels } from '../../models/modelLoader';
+import { loadCustomModels } from '../../models/catalog/modelLoader';
 if (HEALTH_CHECK_INTERVAL_MS > 0) {
   setInterval(() => {
     const models = loadCustomModels();

@@ -2,8 +2,8 @@
 import https from 'https';
 import * as path from 'path';
 import log from 'electron-log';
-import { STREAM_IDLE_TIMEOUT_MS } from '../../constants';
-import type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse } from '../core/types';
+import { STREAM_IDLE_TIMEOUT_MS } from '../../../constants';
+import type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse } from '../../core/types';
 import {
   modelReasoningContent,
   stateTimestamps,
@@ -11,34 +11,34 @@ import {
   restoreThoughtSignatures,
   touchStateTimestamp,
   getSessionModelKey,
-} from '../core/shared';
-import * as registry from '../core/registry';
-import { loadCustomModels } from '../models/modelLoader';
-import { recordProviderUsage } from '../../customModelStore';
-import { classifyError, ErrorDiagnostic, type ErrorType } from '../resilience/retry/errorClassifier';
-import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from '../resilience/retry/retryStrategy';
-import { getOpenBreaker, recordFailure, recordSuccess } from '../resilience/circuit/circuitBreaker';
-import { IdleTimeoutGuard } from '../resilience/circuit/idleTimeout';
-import { resolveClientForUrl } from '../resilience/pools/agentPool';
-import { EmptyStreamGuard } from './emptyStream';
-import { getRetryBudget, RETRY_BUDGET_BASE } from '../resilience/retry/retryBudget';
+} from '../../core/shared';
+import * as registry from '../../core/registry';
+import { loadCustomModels } from '../../models/catalog/modelLoader';
+import { recordProviderUsage } from '../../../customModelStore';
+import { classifyError, ErrorDiagnostic, type ErrorType } from '../../resilience/retry/errorClassifier';
+import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from '../../resilience/retry/retryStrategy';
+import { getOpenBreaker, recordFailure, recordSuccess } from '../../resilience/circuit/circuitBreaker';
+import { IdleTimeoutGuard } from '../../resilience/circuit/idleTimeout';
+import { resolveClientForUrl } from '../../resilience/pools/agentPool';
+import { EmptyStreamGuard } from '../stream/emptyStream';
+import { getRetryBudget, RETRY_BUDGET_BASE } from '../../resilience/retry/retryBudget';
 import {
   resolveProvider,
   resolveCustomModelUrl,
   resolveMaxRetries,
   resolveRequestTimeout,
   getBaseModelId,
-} from '../core/urlBuilder';
-import { expandModelsWithEffort } from './effortExpander';
-import { markProviderRateLimited, isProviderRateLimited } from '../models/modelRouter';
-import { trimContextPayload } from './contextTrimmer';
-import { recordRecentModel } from '../state/recentModelsStore';
+} from '../../core/urlBuilder';
+import { expandModelsWithEffort } from '../transforms/effortExpander';
+import { markProviderRateLimited, isProviderRateLimited } from '../../models/catalog/modelRouter';
+import { trimContextPayload } from '../transforms/contextTrimmer';
+import { recordRecentModel } from '../../state/recentModelsStore';
 import {
   normalizeCloudCodeModelId,
   isGoogleCloudCodeModel,
   sanitizeCloudCodeGenerationConfig,
   normalizeConversationTurns,
-} from '../../services/auth/googleAuth';
+} from '../../../services/auth/googleAuth';
 import {
   registerAccountRefreshToken,
   getAccountQuotaKey,
@@ -89,9 +89,9 @@ import {
   isAccountNearExhaustion,
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
   PREVENTIVE_COOLDOWN_MS,
-} from '../resilience/pools/googlePool';
-import { safeWriteHead, safeEnd, parseRetryAfter, proxyLog } from '../http/server/httpUtils';
-import { logTokenUsageEvent } from '../state/remoteState';
+} from '../../resilience/pools/googlePool';
+import { safeWriteHead, safeEnd, parseRetryAfter, proxyLog } from '../../http/server/httpUtils';
+import { logTokenUsageEvent } from '../../state/remoteState';
 import {
   generateGracefulMarkdown,
   emitProxyError,
@@ -100,7 +100,7 @@ import {
   sendGracefulNonStreamError,
   sanitizeCandidatesInResponse,
   writeSafeSseChunk,
-} from './streamPipeline';
+} from '../stream/streamPipeline';
 import { executeGoogleCloudCodeWithPool } from './googleCloudEngine';
 
 export type { RetryDispatch, StreamRequestCtx };
@@ -133,7 +133,7 @@ function recordModelFailure(model: CustomModel, errorType: ErrorType): void {
   getRetryBudget().recordFailure(model);
 }
 
-/** Shared retry dispatcher — schedules a re-dispatch with a jittered delay. */
+/** Shared retry dispatcher � schedules a re-dispatch with a jittered delay. */
 function scheduleRetry(
   ctx: StreamRequestCtx,
   retryCount: number,
@@ -153,7 +153,7 @@ function scheduleRetry(
 /** Helper to log detailed diagnostics for 401 Unauthorized errors */
 function log401Diagnostic(model: CustomModel, finalUrlStr: string, apiRes: http.IncomingMessage): void {
   const apiKeyInfo = model.apiKey && model.apiKey !== 'none'
-    ? `<set, len=${model.apiKey.length > 50 ? '>50' : model.apiKey.length <= 20 ? '≤20' : '21-50'}>`
+    ? `<set, len=${model.apiKey.length > 50 ? '>50' : model.apiKey.length <= 20 ? '=20' : '21-50'}>`
     : '<empty or none>';
   log.error(`[Proxy] 401 Unauthorized from ${model.name} (${model.provider})`);
   log.error(`[Proxy]   URL: ${finalUrlStr}`);
@@ -168,7 +168,7 @@ function log401Diagnostic(model: CustomModel, finalUrlStr: string, apiRes: http.
   log.error(`[Proxy]   Upstream response: ${JSON.stringify(apiRes.headers).slice(0, 200)}`);
 }
 
-/** Upstream response error (mid-stream connection drop) — emits, ends, logs 401 context. */
+/** Upstream response error (mid-stream connection drop) � emits, ends, logs 401 context. */
 function handleApiResError(err: Error, apiRes: http.IncomingMessage, ctx: StreamRequestCtx, finalUrlStr: string): void {
   const { model, res } = ctx;
   log.error(`[Proxy] Upstream stream error for ${model.name}:`, err.message);
@@ -204,7 +204,7 @@ function handleApiResError(err: Error, apiRes: http.IncomingMessage, ctx: Stream
   }
 }
 
-/** Stream response branch — SSE translation, idle/empty guards, error envelope. */
+/** Stream response branch � SSE translation, idle/empty guards, error envelope. */
 function handleStreamResponse(apiRes: http.IncomingMessage, request: http.ClientRequest, ctx: StreamRequestCtx): void {
   const { model, res, provider, traceId } = ctx;
   const streamStartTime = Date.now();
@@ -220,7 +220,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     apiRes.on('data', (chunk: Buffer) => errorBody += chunk.toString());
     apiRes.on('end', () => {
       const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
-      log.error(`[Proxy] ⚠️ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP ${apiRes.statusCode}: ${errorBody.substring(0, 150)}`);
+      log.error(`[Proxy] ?? [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP ${apiRes.statusCode}: ${errorBody.substring(0, 150)}`);
       const streamDiagnostic = classifyError(apiRes.statusCode!, null, errorBody, model.provider);
       emitProxyError(buildProxyErrorPayload(traceId, apiRes.statusCode!, errorBody, model.provider));
 
@@ -260,7 +260,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     // clear the breaker so subsequent requests don't short-circuit.
     recordSuccess(model);
     const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
-    log.info(`[Proxy] ✅ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP 200 OK (stream started)`);
+    log.info(`[Proxy] ? [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP 200 OK (stream started)`);
   }
 
   if (!res.headersSent) {
@@ -289,7 +289,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     idleTimeoutMs: effectiveIdleTimeoutMsCustom,
     label: model.name,
     onTimeout: (err) => {
-      log.warn(`[Proxy] ${err.message} — aborting request for ${model.name}`);
+      log.warn(`[Proxy] ${err.message} � aborting request for ${model.name}`);
       recordModelFailure(model, 'timeout');
       try {
         request.destroy(err);
@@ -424,7 +424,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     if (verdict.isEmpty && ctx.retryCount < ctx.maxRetries) {
       log.warn(
         `[Proxy] Empty stream from ${model.name}: ${verdict.reason} ` +
-        `(0 frames, ${verdict.bytesReceived}B) — retrying (${ctx.retryCount + 1}/${ctx.maxRetries}).`,
+        `(0 frames, ${verdict.bytesReceived}B) � retrying (${ctx.retryCount + 1}/${ctx.maxRetries}).`,
       );
       recordModelFailure(model, 'empty_stream');
       ctx.retry(ctx.retryCount, computeRetryDelay('stream-error', ctx.retryCount, 0), `Empty stream: ${verdict.reason}`);
@@ -433,7 +433,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     if (verdict.isEmpty) {
       log.warn(
         `[Proxy] Empty stream from ${model.name}: ${verdict.reason} ` +
-        `(0 frames, ${verdict.bytesReceived}B) — max retries exhausted.`,
+        `(0 frames, ${verdict.bytesReceived}B) � max retries exhausted.`,
       );
       // Final attempt exhausted: count it as a failure so the budget
       // can downgrade the model's trust on the next request.
@@ -478,7 +478,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     // When a model finishes thinking but emits STOP with zero text and zero tool calls,
     // inject a fallback non-empty content part so the Language Server state machine progresses smoothly.
     if (streamHasThought && !streamHasTextOrToolCall) {
-      log.warn(`[Proxy] ⚠️ [Auto-Heal] Thinking dropout detected for ${model.name}: model emitted thinking but zero content/toolCall. Injecting auto-heal text frame.`);
+      log.warn(`[Proxy] ?? [Auto-Heal] Thinking dropout detected for ${model.name}: model emitted thinking but zero content/toolCall. Injecting auto-heal text frame.`);
       const healChunk = {
         response: {
           candidates: [
@@ -514,7 +514,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
     res.end();
     safeEnd(res);
     const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
-    log.info(`[Proxy] ✅ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> Stream completed successfully`);
+    log.info(`[Proxy] ? [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> Stream completed successfully`);
     const pId = model.name.includes('-') ? model.name.split('-')[0] : model.provider;
     void recordProviderUsage(pId);
 
@@ -540,7 +540,7 @@ function handleStreamResponse(apiRes: http.IncomingMessage, request: http.Client
   });
 }
 
-/** Non-stream response branch — JSON translate, retry on error status, graceful envelope. */
+/** Non-stream response branch � JSON translate, retry on error status, graceful envelope. */
 function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamRequestCtx): void {
   const { model, res, provider, traceId } = ctx;
   const nonStreamStartTime = Date.now();
@@ -550,7 +550,7 @@ function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamReques
     const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
     if (apiRes.statusCode! >= 400) {
       const diagnostic = classifyError(apiRes.statusCode!, null, body, model.provider);
-      log.error(`[Proxy] ⚠️ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP ${apiRes.statusCode} (${diagnostic.title}: ${diagnostic.message})`);
+      log.error(`[Proxy] ?? [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP ${apiRes.statusCode} (${diagnostic.title}: ${diagnostic.message})`);
       emitProxyError(buildProxyErrorPayload(traceId, apiRes.statusCode!, body, model.provider));
 
       // Trip the breaker on hard failures so subsequent requests
@@ -610,10 +610,10 @@ function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamReques
       };
       sanitizeCandidatesInResponse(cloudCodeResponse);
 
-      // Successful 2xx response — clear breaker for this model.
+      // Successful 2xx response � clear breaker for this model.
       recordSuccess(model);
       const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
-      log.info(`[Proxy] ✅ [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP 200 OK`);
+      log.info(`[Proxy] ? [Feedback] Model: [${model.name}] | Account: [${accountLabel}] -> HTTP 200 OK`);
       // P5-2: feed the per-model retry budget a success sample so the
       // model's trust score recovers after a hard stretch of failures.
       getRetryBudget().recordSuccess(model);
@@ -655,12 +655,12 @@ function handleNonStreamResponse(apiRes: http.IncomingMessage, ctx: StreamReques
   });
 }
 
-/** Request-level timeout — breaker + budget + retry or 504. */
+/** Request-level timeout � breaker + budget + retry or 504. */
 function handleRequestTimeout(request: http.ClientRequest, ctx: StreamRequestCtx): void {
   const { model, res } = ctx;
   log.error(`[Proxy] Request timeout (${resolveRequestTimeout(model)}ms) for ${model.name}`);
   request.destroy();
-  // Trip the breaker immediately on timeout — these are the worst offender
+  // Trip the breaker immediately on timeout � these are the worst offender
   // in retry storms (the request holds the proxy open for the full timeout).
   recordModelFailure(model, 'timeout');
 
@@ -680,7 +680,7 @@ function handleRequestTimeout(request: http.ClientRequest, ctx: StreamRequestCtx
   }
 }
 
-/** Request-level network error — breaker + budget + retry or 502 envelope. */
+/** Request-level network error � breaker + budget + retry or 502 envelope. */
 function handleRequestError(err: Error, ctx: StreamRequestCtx): void {
   const { model, res } = ctx;
   log.error('[Proxy] Custom Model Request Error:', err);
@@ -710,9 +710,9 @@ function handleRequestError(err: Error, ctx: StreamRequestCtx): void {
   }
 }
 
-// ─── Custom Model Request Handler ─────────────────────────────────────────
+// --- Custom Model Request Handler -----------------------------------------
 
-// ─── Google Account Pool (re-exported from src/proxy/googlePool.ts) ────────────
+// --- Google Account Pool (re-exported from src/proxy/googlePool.ts) ------------
 export {
   registerAccountRefreshToken,
   getAccountQuotaKey,
@@ -771,8 +771,8 @@ export {
   isAccountNearExhaustion,
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
   PREVENTIVE_COOLDOWN_MS,
-} from '../resilience/pools/googlePool';
-export type { Google429Category, Google429Decision } from '../resilience/pools/googlePool';
+} from '../../resilience/pools/googlePool';
+export type { Google429Category, Google429Decision } from '../../resilience/pools/googlePool';
 
 
 import {
@@ -809,7 +809,7 @@ import {
   nativeSessions,
   latestNativeGlobalError,
   clearLatestNativeGlobalError,
-} from '../resilience/pools/sessionAffinities';
+} from '../../resilience/pools/sessionAffinities';
 
 export {
   extractSessionId,
@@ -895,7 +895,7 @@ export function handleCustomModelRequest(
   // P3-18: Configurable max retries per model (default 1, min 0, max 5).
   // Lowered from 3 to 1 to prevent retry storms saturating the proxy.
   // P5-2: Seed the per-model retry budget from the configured value. The
-  // budget then scales that base according to observed trust — flaky models
+  // budget then scales that base according to observed trust � flaky models
   // get fewer retries, consistent models get more.
   const CONFIGURED_MAX_RETRIES = resolveMaxRetries(model);
   const MAX_RETRIES = getRetryBudget().getMaxRetries(
@@ -1043,7 +1043,7 @@ export function handleCustomModelRequest(
           }
           const fromName = model.displayName || model.name;
           const toName = m.displayName || m.name;
-          log.warn(`[Proxy] Auto-fallback: ${fromName} → ${toName} (reason: ${diagnostic.errorType} — ${diagnostic.title})`);
+          log.warn(`[Proxy] Auto-fallback: ${fromName} ? ${toName} (reason: ${diagnostic.errorType} � ${diagnostic.title})`);
 
           // Update session affinity on fallback to preserve subsequent queries on healthy account
           const sessId = extractSessionId(geminiBody as Record<string, unknown>);
@@ -1068,7 +1068,7 @@ export function handleCustomModelRequest(
               'X-Accel-Buffering': 'no',
               'X-AG-Fallback': 'true',
             })) {
-              const noticeText = `> ⚡ **Smart Proxy Switch**\n> \`Provider Notice\`: \`${fromName}\` is temporarily rate-limited (${diagnostic.errorType}).\n> 🔄 **Rerouted to**: \`${toName}\` (Zero downtime, uninterrupted session)\n\n`;
+              const noticeText = `> ? **Smart Proxy Switch**\n> \`Provider Notice\`: \`${fromName}\` is temporarily rate-limited (${diagnostic.errorType}).\n> ?? **Rerouted to**: \`${toName}\` (Zero downtime, uninterrupted session)\n\n`;
               const notice = {
                 response: {
                   candidates: [{
@@ -1172,7 +1172,7 @@ export function handleCustomModelRequest(
 
   const accountLabel = model.accountEmail || model.accountName || model.displayName || model.name;
   log.info(
-    `[Proxy] ➡️ [Request] Model: [${cleanModelName || model.name}] | Account/Provider: [${accountLabel}] (${model.provider}) (stream: ${!!isStream})${retryCount > 0 ? ` (retry ${retryCount})` : ''}`,
+    `[Proxy] ?? [Request] Model: [${cleanModelName || model.name}] | Account/Provider: [${accountLabel}] (${model.provider}) (stream: ${!!isStream})${retryCount > 0 ? ` (retry ${retryCount})` : ''}`,
   );
   recordRecentModel(model.name);
 
@@ -1200,9 +1200,9 @@ export function handleCustomModelRequest(
     // Common causes: missing API key, wrong header name, expired token,
     // wrong endpoint URL, account suspended.
     if (status === 401) {
-      // S-2: Never log actual key material — only presence and length bucket.
+      // S-2: Never log actual key material � only presence and length bucket.
       const apiKeyInfo = model.apiKey && model.apiKey !== 'none'
-        ? `<set, len=${model.apiKey.length > 50 ? '>50' : model.apiKey.length <= 20 ? '≤20' : '21-50'}>`
+        ? `<set, len=${model.apiKey.length > 50 ? '>50' : model.apiKey.length <= 20 ? '=20' : '21-50'}>`
         : '<empty or none>';
       log.error(`[Proxy] 401 Unauthorized from ${model.name} (${model.provider})`);
       log.error(`[Proxy]   URL: ${finalUrlStr}`);

@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   detectModelCapabilities,
   detectModelCapabilitiesByName,
   detectModelUXBadges,
   extractModelNameFromPayload,
-} from '../proxy/models/modelUtils';
+} from '../proxy/models/catalog/modelUtils';
 
 
 describe('detectModelCapabilities', () => {

@@ -9,8 +9,8 @@ import type { CustomModelFileEntry as CustomModelFileEntryFromTypes } from '../p
 import { WELL_KNOWN_PRESETS } from '../presets';
 import * as configExchange from '../services/security/configExchange';
 import { DEFAULT_PROXY_PORT } from '../constants';
-import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from '../proxy/models/protoInjector';
-import { loadCustomModels as loadProxyCustomModels } from '../proxy/models/modelLoader';
+import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from '../proxy/models/protobuf/protoInjector';
+import { loadCustomModels as loadProxyCustomModels } from '../proxy/models/catalog/modelLoader';
 import { discoverLocalAntigravityCredential } from '../services/discovery/localCredentialDiscovery';
 import { discoverLocalGoogleAccounts } from '../services/discovery/localAccountDiscovery';
 import { IPC_CHANNELS } from './channels';

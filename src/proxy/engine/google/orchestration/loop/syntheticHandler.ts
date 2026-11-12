@@ -1,4 +1,4 @@
-import type * as http from 'http';
+﻿import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel } from '../../../../core/types';
 import { safeWriteHead, safeEnd } from '../../../../http/httpUtils';
@@ -7,7 +7,7 @@ import {
   sendGracefulNonStreamError,
   sanitizeCandidatesInResponse,
   writeSafeSseChunk,
-} from '../../../streamPipeline';
+} from '../../../stream/streamPipeline';
 import { classifyError } from '../../../../resilience/errorClassifier';
 
 export function handleSyntheticSummaryIfRequested(

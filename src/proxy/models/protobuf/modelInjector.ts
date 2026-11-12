@@ -1,12 +1,12 @@
-﻿import log from 'electron-log';
-import { loadCustomModels } from './modelLoader';
-import { detectModelCapabilities, getCanonicalModelKey } from './modelUtils';
-import { generateModelPlaceholderId, toSlug } from './idGenerator';
-import { getCachedHealth, ModelHealthResult } from '../resilience/pools/modelHealthChecker';
-import { isRecentModel } from '../state/recentModelsStore';
-import type { CustomModel } from '../core/types';
-import { expandModelsWithEffort } from '../engine/effortExpander';
-import { isObsoleteModel } from '../../constants';
+import log from 'electron-log';
+import { loadCustomModels } from '../catalog/modelLoader';
+import { detectModelCapabilities, getCanonicalModelKey } from '../catalog/modelUtils';
+import { generateModelPlaceholderId, toSlug } from '../catalog/idGenerator';
+import { getCachedHealth, ModelHealthResult } from '../../resilience/pools/modelHealthChecker';
+import { isRecentModel } from '../../state/recentModelsStore';
+import type { CustomModel } from '../../core/types';
+import { expandModelsWithEffort } from '../../engine/transforms/effortExpander';
+import { isObsoleteModel } from '../../../constants';
 
 function getHealthScore(health: ModelHealthResult | null): number {
   if (!health) return 2; // pending
@@ -41,7 +41,7 @@ function sortCustomModels(models: CustomModel[]): CustomModel[] {
 export function deduplicateModels(models: CustomModel[]): CustomModel[] {
   const seenKeys = new Set<string>();
   return models.filter((m) => {
-    // Per-account Google entries are dispatch/quota only — the unified
+    // Per-account Google entries are dispatch/quota only � the unified
     // "auto-pool" entry represents them in the model dropdown.
     if (m._poolOnly) return false;
     const effort = m._effortSuffix || '';
@@ -58,15 +58,15 @@ function formatDisplayName(m: CustomModel): string {
   const isFav = isRecentModel(m.name);
   let dispName = m.displayName || m.name;
   dispName = dispName.replace(/^\[[^\]]+\]\s*/, '');
-  const favTag = isFav ? '⭐ ' : '';
+  const favTag = isFav ? '? ' : '';
   
   if (!health || health.status === 'healthy' || health.status === 'slow') {
-    return `${favTag}🟢 • ${dispName}`;
+    return `${favTag}?? � ${dispName}`;
   }
   
   // For unhealthy models, display error tag cleanly
   const err = health.error || 'Offline';
-  return `${favTag}🔴 [${err}] • ${dispName}`;
+  return `${favTag}?? [${err}] � ${dispName}`;
 }
 
 export function resolvePlanModelEnum(modelName?: string): string {

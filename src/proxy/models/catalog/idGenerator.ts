@@ -3,8 +3,8 @@
  * Pure functions -- no I/O, no side effects, fully testable.
  */
 
-import type { CustomModel } from '../core/types';
-import { DJB2_SEED, PLACEHOLDER_ID_BASE, PLACEHOLDER_ID_RANGE } from '../../constants';
+import type { CustomModel } from '../../core/types';
+import { DJB2_SEED, PLACEHOLDER_ID_BASE, PLACEHOLDER_ID_RANGE } from '../../../constants';
 
 export { DJB2_SEED, PLACEHOLDER_ID_BASE, PLACEHOLDER_ID_RANGE };
 

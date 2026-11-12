@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Anthropic provider translator.
  * Handles Gemini ↔ Anthropic request/response mapping and streaming SSE events.
  */
@@ -21,7 +21,7 @@ import {
   getSessionModelKey,
   StreamContext,
 } from '../core/shared';
-import { detectModelCapabilitiesByName } from '../models/modelUtils';
+import { detectModelCapabilitiesByName } from '../models/catalog/modelUtils';
 
 import type {
   GeminiTool,

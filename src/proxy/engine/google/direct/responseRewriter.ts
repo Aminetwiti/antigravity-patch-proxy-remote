@@ -3,9 +3,9 @@ import * as zlib from 'zlib';
 import log from 'electron-log';
 import { safeWriteHead, safeEnd } from '../../../http/server/httpUtils';
 import { extractAndCacheThoughtSignatures } from '../../../core/shared';
-import { sanitizeCandidatesInResponse } from '../../streamPipeline';
+import { sanitizeCandidatesInResponse } from '../../stream/streamPipeline';
 import { logTokenUsageEvent } from '../../../state/remoteState';
-import type { ResponseClaimer } from '../../historyTrimmer';
+import type { ResponseClaimer } from '../../transforms/historyTrimmer';
 import type { GoogleRequestOutcome } from './types';
 
 export function handleBufferedCloudCodeResponse(

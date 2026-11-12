@@ -5,11 +5,11 @@ import log from 'electron-log';
 import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from '../../../../metrics';
 import { GOOGLE_HOSTS, GOOGLE_PROXY_TIMEOUT_MS } from '../../../../constants';
 import { extractAndCacheThoughtSignatures } from '../../../core/shared';
-import { extractModelNameFromPayload } from '../../../models/modelUtils';
+import { extractModelNameFromPayload } from '../../../models/catalog/modelUtils';
 import { resolveGoogleIp } from '../../../http/server/dnsResolver';
 import { safeWriteHead, safeEnd, proxyLog, newTraceId } from '../../../http/server/httpUtils';
 import { unlockCodeAssistPayload, saveCachedCodeAssist } from '../../../http/routes/endpointHandlers';
-import { sanitizeCandidatesInResponse, transformGoogleStreamForRemote } from '../../streamPipeline';
+import { sanitizeCandidatesInResponse, transformGoogleStreamForRemote } from '../../stream/streamPipeline';
 import { logTokenUsageEvent } from '../../../state/remoteState';
 import {
   recordNativeSessionError,

@@ -37,9 +37,9 @@ import {
   getLatestNativeErrorAsSession,
   updateLatestNativeErrorBody,
 } from '../proxy';
-import { isModelOrLabelDisabled } from '../proxy/models/protoInjector';
-import { expandModelsWithEffort } from '../proxy/engine/effortExpander';
-import { generateModelPlaceholderId } from '../proxy/models/idGenerator';
+import { isModelOrLabelDisabled } from '../proxy/models/protobuf/protoInjector';
+import { expandModelsWithEffort } from '../proxy/engine/transforms/effortExpander';
+import { generateModelPlaceholderId } from '../proxy/models/catalog/idGenerator';
 import { normalizeCloudCodeModelId } from '../services/auth/googleAuth';
 import type { CustomModel } from '../proxy/core/types';
 

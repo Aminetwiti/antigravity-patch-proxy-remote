@@ -1,9 +1,9 @@
-import type * as http from 'http';
+﻿import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel } from '../../../../core/types';
 import type { GoogleRequestOutcome } from '../../direct/types';
 import { executeGoogleCloudCodeRequest } from '../../direct/singleRequestExecutor';
-import { createResponseClaimer } from '../../../historyTrimmer';
+import { createResponseClaimer } from '../../../transforms/historyTrimmer';
 import {
   getValidGoogleAccessToken,
   isGeminiCliModel,

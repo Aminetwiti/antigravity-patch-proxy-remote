@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   injectCustomModelsIntoResponse,
   injectCustomModelsIntoUserStatus,
   buildGrpcWebFrame,
   parseGrpcWebHeader,
-} from '../proxy/models/protoInjector';
+} from '../proxy/models/protobuf/protoInjector';
 import {
   encodeProtoBuf,
   encodeVarint,
@@ -12,7 +12,7 @@ import {
   encodeMessageField,
   encodeStringField,
   encodeClientModelConfig,
-} from '../proxy/models/protobuf';
+} from '../proxy/models/protobuf/protobuf';
 import type { CustomModel } from '../proxy/core/types';
 
 describe('buildGrpcWebFrame', () => {

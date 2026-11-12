@@ -1,8 +1,8 @@
 ﻿import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel, GeminiRequestBody } from '../../../core/types';
-import { trimContextPayload } from '../../contextTrimmer';
-import { trimOldestHistory } from '../../historyTrimmer';
+import { trimContextPayload } from '../../transforms/contextTrimmer';
+import { trimOldestHistory } from '../../transforms/historyTrimmer';
 import {
   normalizeCloudCodeModelId,
   sanitizeCloudCodeGenerationConfig,

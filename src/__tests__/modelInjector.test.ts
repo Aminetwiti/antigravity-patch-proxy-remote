@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+﻿import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/mock/home' },
@@ -17,8 +17,8 @@ import {
   mergeModels,
   buildSyntheticModelsResponse,
   DEFAULT_CANONICAL_GOOGLE_MODELS,
-} from '../proxy/models/modelInjector';
-import { generateModelPlaceholderId } from '../proxy/models/idGenerator';
+} from '../proxy/models/protobuf/modelInjector';
+import { generateModelPlaceholderId } from '../proxy/models/catalog/idGenerator';
 import type { CustomModel } from '../proxy/core/types';
 
 describe('mergeModels', () => {
